@@ -329,7 +329,7 @@ interface AppDataContextType {
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
 
   // Contact notes methods
-  addContactNote: (contactId: string, note: string) => Promise<void>;
+  addContactNote: (contactId: string, note: string) => Promise<ContactNote>; // 🔧 FIX: retourne bien la note
   getContactNotes: (contactId: string) => Promise<ContactNote[]>;
   updateContactNote: (noteId: number, note: string) => Promise<void>;
   deleteContactNote: (noteId: number) => Promise<void>;
@@ -445,7 +445,7 @@ const getDefaultAnnualObjectives = (): Objectives => ({
 
 // Utility: sync des propriétés DB/UI (retourne un Opportunity complet)
 const syncOpportunityProperties = (opportunity: Opportunity, updates: Partial<Opportunity>): Opportunity => {
-  // Résolution priority (EN) et priorite (FR) de manière sûre
+  // Résolution priority (EN) et priorite (FR)
   const resolvedPriorityEN: Opportunity['priority'] =
     updates.priority ??
     frToEnPriority(updates.priorite as FrPriority | undefined) ??
@@ -462,7 +462,6 @@ const syncOpportunityProperties = (opportunity: Opportunity, updates: Partial<Op
   return {
     ...opportunity,
     ...updates,
-    // Sync montant/value
     value:
       updates.montant !== undefined
         ? updates.montant
@@ -475,13 +474,10 @@ const syncOpportunityProperties = (opportunity: Opportunity, updates: Partial<Op
         : updates.montant !== undefined
         ? updates.montant
         : opportunity.montant,
-    // Priority (UI) & Priorite (DB) résolues proprement
     priority: resolvedPriorityEN,
     priorite: resolvedPriorityFR,
-    // Notes
     notes: updates.note_base || updates.notes || opportunity.notes,
     note_base: updates.notes || updates.note_base || opportunity.note_base,
-    // Lead magnet
     leadMagnet:
       updates.lead_magnet !== undefined
         ? updates.lead_magnet
@@ -876,7 +872,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   // Notes Contact
-  const addContactNote = async (contactId: string, note: string) => {
+  const addContactNote = async (contactId: string, note: string): Promise<ContactNote> => {
     try {
       const newNote = await contactsApi.addNote(contactId, note);
       toast.success('Note ajoutée avec succès');
@@ -946,7 +942,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     if (!original) return;
 
     try {
-      // Optimistic UI update — garde bien le type Opportunity
+      // Optimistic UI update
       setOpportunities((prev) => prev.map((opp) => (opp.id === id ? syncOpportunityProperties(opp, updates) : opp)));
 
       /* ------------------------------------------------------------
@@ -1078,7 +1074,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     unqualifyCompany,
     addContact,
     updateContact,
-    addContactNote,
+    addContactNote,     // ✅ types alignés
     getContactNotes,
     updateContactNote,
     deleteContactNote,
