@@ -2,7 +2,10 @@
   "name": "crm-vercel",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
+ "scripts": {
+    "fix:use-client": "bash scripts/fix-use-client.sh --changed-only",
+    "fix:use-client:all": "bash scripts/fix-use-client.sh",
+    "fix:use-client:dry": "bash scripts/fix-use-client.sh --dry-run --changed-only",
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
