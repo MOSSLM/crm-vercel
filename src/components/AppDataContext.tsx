@@ -238,6 +238,29 @@ export type MonthlyObjectives = Objectives;
 export type WeeklyObjectives = Objectives;
 export type AnnualObjectives = Objectives;
 
+/* ----------------------------------------------------------------
+   ✅ Bloc 1 — Clés valides + types sécurisés pour insert/update
+----------------------------------------------------------------- */
+export const VALID_OPPORTUNITY_COLUMNS = [
+  "contact_id",
+  "entreprise_id",
+  "montant",
+  "priorite",
+  "stage_id",
+  "lead_magnet",
+  "note_base",
+  "tags",
+  "date_prochain_suivi",
+  "name",
+  "type",
+  "mrr",
+  "recurrence_months",
+] as const;
+
+type ValidOpportunityColumn = (typeof VALID_OPPORTUNITY_COLUMNS)[number];
+type OpportunityWritable = Omit<Opportunity, "id" | "created_at" | "updated_at">;
+type OpportunityInsert = Partial<Pick<Opportunity, ValidOpportunityColumn>>;
+
 interface AppDataContextType {
   // Existing data
   searchResults: SearchResult[];
@@ -534,13 +557,9 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     const currentStage = pipelineStages.find(s => s.id === opportunity.stage_id);
     if (!currentStage) return actions;
 
-    const stageName = currentStage.nom.toLowerCase();
     const stageOrder = currentStage.ordre;
 
     // PRINCIPE : On regarde toutes les étapes passées ET l'étape actuelle pour accumuler les actions
-    // On trouve la valeur maximale pour chaque type d'action dans tout le parcours
-
-    // Pour cette opportunité, on simule son passage par toutes les étapes jusqu'à l'étape actuelle
     const passedStages = pipelineStages
       .filter(stage => stage.ordre <= stageOrder)
       .sort((a, b) => a.ordre - b.ordre);
@@ -548,13 +567,13 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     passedStages.forEach(stage => {
       const name = stage.nom.toLowerCase();
 
-      // APPELS : dès qu'on passe par cold call ou plus loin
+      // APPELS
       if (name.includes('cold') || name.includes('relance') || name.includes('rdv') || 
           name.includes('vente') || name.includes('devis') || name.includes('signature') || name.includes('acompte')) {
         actions.appels = Math.max(actions.appels, 1);
       }
 
-      // RELANCES : extraction du numéro et accumulation
+      // RELANCES
       if (name.includes('relance')) {
         const relanceMatch = name.match(/relance\s*(\d+)/i);
         if (relanceMatch) {
@@ -564,7 +583,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       }
 
-      // RDV : extraction du numéro et accumulation 
+      // RDV
       if (name.includes('rdv') || name.includes('vente')) {
         const rdvMatch = name.match(/(?:rdv|vente).*?(\d+)/i);
         if (rdvMatch) {
@@ -574,17 +593,17 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       }
 
-      // DEVIS : dès qu'on atteint devis ou plus loin
+      // DEVIS
       if (name.includes('devis') || name.includes('signature') || name.includes('acompte')) {
         actions.devis = Math.max(actions.devis, 1);
       }
 
-      // SIGNATURES : dès qu'on atteint signature ou plus loin
+      // SIGNATURES
       if (name.includes('signature') || name.includes('acompte')) {
         actions.signatures = Math.max(actions.signatures, 1);
       }
 
-      // ACOMPTES : seulement quand on est en acompte
+      // ACOMPTES
       if (name.includes('acompte')) {
         actions.acomptes = Math.max(actions.acomptes, 1);
       }
@@ -728,7 +747,6 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
     
     // Check if company has a website
-    // We consider it has a website if canonical_url is present and not empty
     const hasWebsite = company.canonical_url && 
                        company.canonical_url.trim() !== '' && 
                        company.canonical_url !== 'N/A' &&
@@ -892,42 +910,29 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
+  /* ------------------------------------------------------------
+     ✅ Bloc 2 — addOpportunity typé (pas d’indexation string)
+  ------------------------------------------------------------- */
   const addOpportunity = async (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      // Filter opportunity data to only include actual database columns
-      const validColumns = [
-        'contact_id',
-        'entreprise_id', 
-        'montant',
-        'priorite',
-        'stage_id',
-        'lead_magnet',
-        'note_base',
-        'tags',
-        'date_prochain_suivi',
-        'name',
-        'type',
-        'mrr',
-        'recurrence_months'
-      ];
-      
-      const filteredOpportunity = Object.keys(opportunity)
-        .filter(key => validColumns.includes(key))
-        .reduce((obj, key) => {
-          obj[key] = opportunity[key];
-          return obj;
-        }, {} as any);
+      const filteredOpportunity: OpportunityInsert = {};
+      for (const key of VALID_OPPORTUNITY_COLUMNS) {
+        const value = (opportunity as OpportunityWritable)[key as keyof OpportunityWritable];
+        if (value !== undefined) {
+          (filteredOpportunity as any)[key] = value;
+        }
+      }
 
       console.log('addOpportunity called with:', opportunity);
       console.log('Opportunity name being passed:', opportunity.name);
       console.log('Filtered opportunity data:', filteredOpportunity);
-      console.log('Filtered opportunity name:', filteredOpportunity.name);
+      console.log('Filtered opportunity name:', (filteredOpportunity as any).name);
 
       const newOpportunity = await opportunitiesApi.create(filteredOpportunity);
-      
+
       console.log('New opportunity returned from API:', newOpportunity);
       console.log('Returned opportunity name:', newOpportunity.name);
-      
+
       setOpportunities(prev => [...prev, newOpportunity]);
       toast.success('Opportunité ajoutée avec succès');
     } catch (error) {
@@ -949,25 +954,16 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         return opp;
       }));
 
-      // Filter updates to only include actual database columns
-      const validColumns = [
-        'contact_id',
-        'entreprise_id', 
-        'montant',
-        'priorite',
-        'stage_id',
-        'lead_magnet',
-        'note_base',
-        'tags',
-        'date_prochain_suivi'
-      ];
-      
-      const filteredUpdates = Object.keys(updates)
-        .filter(key => validColumns.includes(key))
-        .reduce((obj, key) => {
-          obj[key] = updates[key];
-          return obj;
-        }, {} as any);
+      /* ------------------------------------------------------------
+         ✅ Bloc 3 — filteredUpdates typé via clés valides
+      ------------------------------------------------------------- */
+      const filteredUpdates: OpportunityInsert = {};
+      for (const key of VALID_OPPORTUNITY_COLUMNS) {
+        const value = updates[key as keyof Partial<Opportunity>];
+        if (value !== undefined) {
+          (filteredUpdates as any)[key] = value;
+        }
+      }
 
       await opportunitiesApi.update(id, filteredUpdates);
     } catch (error) {
