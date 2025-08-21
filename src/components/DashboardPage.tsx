@@ -174,13 +174,23 @@ export const DashboardPage: React.FC = () => {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Adapter: string stageId -> number pour calculateDashboardMetrics
+  const getOppsByStageForCalc = React.useCallback(
+    (stageId: string) => {
+      const idNum = Number(stageId);
+      if (Number.isNaN(idNum)) return [];
+      return getOpportunitiesByStage(idNum);
+    },
+    [getOpportunitiesByStage]
+  );
+
   // Calcul de toutes les métriques
   const calculations = calculateDashboardMetrics(
     journalKpis,
     selectedPeriod,
     opportunities,
     pipelineStages,
-    getOpportunitiesByStage,
+    getOppsByStageForCalc, // wrapper compatible
     contacts,
     totalCompanies,
     totalQualifiedCompanies
@@ -553,7 +563,7 @@ export const DashboardPage: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-lg md:text-2xl font-bold text-orange-600">
-                  <span className="md:hidden">{formatCompactCurrency(totalPending)}</span>
+                  <span className="md-hidden">{formatCompactCurrency(totalPending)}</span>
                   <span className="hidden md:inline">{formatCurrency(totalPending)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
