@@ -1,6 +1,7 @@
-import { NewSearchPage } from "@/components/NewSearchPage";
-import { AppLayout } from "@/components/layout/AppLayout";
-export default function Dashboard() {
+import AppLayout from '@/components/layout/AppLayout'
+import { NewSearchPage } from '@/components/NewSearchPage'
+
+export default function SearchPage() {
   return (
     <AppLayout>
       <NewSearchPage />
