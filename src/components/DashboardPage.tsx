@@ -11,7 +11,6 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Progress } from './ui/progress';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { 
   PieChart, 
   Pie, 
@@ -23,22 +22,17 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip as RechartsTooltip, 
-  Legend,
-  LineChart,
-  Line
+  Legend
 } from 'recharts';
 import {
   Building,
   Users,
-  Target,
   Phone,
   Calendar,
   DollarSign,
   TrendingUp,
-  TrendingDown,
   Award,
   Clock,
-  CheckCircle,
   AlertCircle,
   ArrowUp,
   ArrowDown,
@@ -47,11 +41,9 @@ import {
   Repeat,
   FileText,
   Handshake,
-  ArrowRight,
   Zap,
   Star,
   PhoneCall,
-  RefreshCw,
   CalendarDays,
   CalendarRange
 } from 'lucide-react';
@@ -62,6 +54,10 @@ import { formatCurrency, formatCompactCurrency, getPeriodLabel } from './dashboa
 import { PeriodType } from './dashboard/types';
 import { calculateDashboardMetrics } from './dashboard/calculations';
 import { FunnelStep } from './dashboard/FunnelStep';
+
+// Vue / tabs type helpers
+const VIEW_MODES = ['overview', 'commercial', 'funnel'] as const;
+type ViewMode = typeof VIEW_MODES[number];
 
 export const DashboardPage: React.FC = () => {
   const { 
@@ -78,7 +74,7 @@ export const DashboardPage: React.FC = () => {
   } = useAppData();
 
   const [showByKeywords, setShowByKeywords] = useState(true);
-  const [viewMode, setViewMode] = useState<'overview' | 'commercial' | 'funnel'>('overview');
+  const [viewMode, setViewMode] = useState<ViewMode>('overview');
   const [isMobile, setIsMobile] = useState(false);
   const [journalKpis, setJournalKpis] = useState<JournalKpiTotals>({
     total_appels: 0,
@@ -135,7 +131,6 @@ export const DashboardPage: React.FC = () => {
       try {
         setLoadingKpis(true);
         setKpiError(null);
-        
         const kpis = await journalApi.getJournalKpiTotals();
         setJournalKpis(kpis);
       } catch (error) {
@@ -163,14 +158,12 @@ export const DashboardPage: React.FC = () => {
     };
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
-    
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
@@ -190,7 +183,7 @@ export const DashboardPage: React.FC = () => {
     selectedPeriod,
     opportunities,
     pipelineStages,
-    getOppsByStageForCalc, // wrapper compatible
+    getOppsByStageForCalc, // wrapper compatible (string -> number)
     contacts,
     totalCompanies,
     totalQualifiedCompanies
@@ -239,7 +232,15 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {/* Onglets principaux */}
-      <Tabs value={viewMode} onValueChange={(value: 'overview' | 'commercial' | 'funnel') => setViewMode(value)}>
+      <Tabs
+        value={viewMode}
+        onValueChange={(value) => {
+          // Tabs envoie un string; on caste en ViewMode de façon sûre
+          if (VIEW_MODES.includes(value as ViewMode)) {
+            setViewMode(value as ViewMode);
+          }
+        }}
+      >
         <TabsList className="grid w-full grid-cols-3 md:grid-cols-3">
           <TabsTrigger value="overview" className="text-xs md:text-sm px-1 md:px-3">
             <span className="hidden md:inline">Vue d'ensemble</span>
@@ -275,7 +276,7 @@ export const DashboardPage: React.FC = () => {
                   <Label htmlFor="period-select" className="text-sm font-medium">
                     Période :
                   </Label>
-                  <Select value={selectedPeriod} onValueChange={(value: PeriodType) => setSelectedPeriod(value)}>
+                  <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodType)}>
                     <SelectTrigger id="period-select" className="w-32">
                       <SelectValue />
                     </SelectTrigger>
@@ -522,7 +523,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Métriques financières avec nouvelle métrique */}
+          {/* Métriques financières */}
           <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -563,7 +564,7 @@ export const DashboardPage: React.FC = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-lg md:text-2xl font-bold text-orange-600">
-                  <span className="md-hidden">{formatCompactCurrency(totalPending)}</span>
+                  <span className="md:hidden">{formatCompactCurrency(totalPending)}</span>
                   <span className="hidden md:inline">{formatCurrency(totalPending)}</span>
                 </div>
                 <p className="text-xs text-muted-foreground">
