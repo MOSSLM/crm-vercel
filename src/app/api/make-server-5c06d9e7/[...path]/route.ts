@@ -1,9 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
-import { NextRequest } from "next/server";
 
 // —— Next.js route options ——
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Contexte large compatible avec Next
+type RouteContext = { params: Record<string, string | string[]> };
 
 // —— Supabase (server) ——
 const supabase = createClient(
@@ -334,7 +336,6 @@ async function getHistoricalDataFromJournal(type: string, limit: number) {
       else if (t === "acompte") metrics.acomptes++;
       else if (t === "lead_magnet") metrics.leadmagnets++;
       else if (t === "qualified") metrics.leads_qualifies++;
-
       if (e.description && (t.includes("ca") || t.includes("chiffre"))) {
         metrics.ca += extractAmountFromDescription(e.description) || 0;
       }
@@ -388,6 +389,15 @@ async function getRecentPeriodsDataFromJournal(type: string, count: number) {
     });
   }
   return arr.reverse();
+}
+function getPeriodColumnName(type: string) {
+  switch (type) {
+    case "week": return "total_week";
+    case "month": return "total_month";
+    case "quarter": return "total_quarter";
+    case "year": return "total_year";
+    default: return "total_month";
+  }
 }
 function transformRealKpiDataByPeriod(kpiData: any[], periodType: string) {
   const now = new Date();
@@ -456,12 +466,11 @@ export async function OPTIONS() {
   return new Response(null, { status: 204, headers: corsHeaders });
 }
 
-export async function GET(
-  req: NextRequest,
-  { params }: { params: { path: string[] } }
-) {
+export async function GET(req: Request, context: RouteContext) {
   try {
-    const segs = params.path;
+    const params = context.params;
+    const raw = params["path"];
+    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
     const path = `/${segs.join("/")}`;
     const url = new URL(req.url);
 
@@ -706,10 +715,10 @@ export async function GET(
       };
       const setAll = (k: string, t: any) => {
         totals[k] = t.total || 0;
-        totals.week[k] = t.total_week || 0;
-        totals.month[k] = t.total_month || 0;
-        totals.quarter[k] = t.total_quarter || 0;
-        totals.year[k] = t.total_year || 0;
+        (totals.week as any)[k] = t.total_week || 0;
+        (totals.month as any)[k] = t.total_month || 0;
+        (totals.quarter as any)[k] = t.total_quarter || 0;
+        (totals.year as any)[k] = t.total_year || 0;
       };
 
       (data || []).forEach((row) => {
@@ -747,12 +756,11 @@ export async function GET(
   }
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { path: string[] } }
-) {
+export async function POST(req: Request, context: RouteContext) {
   try {
-    const segs = params.path;
+    const params = context.params;
+    const raw = params["path"];
+    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -900,12 +908,11 @@ export async function POST(
   }
 }
 
-export async function PUT(
-  req: NextRequest,
-  { params }: { params: { path: string[] } }
-) {
+export async function PUT(req: Request, context: RouteContext) {
   try {
-    const segs = params.path;
+    const params = context.params;
+    const raw = params["path"];
+    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -987,12 +994,11 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { path: string[] } }
-) {
+export async function DELETE(_req: Request, context: RouteContext) {
   try {
-    const segs = params.path;
+    const params = context.params;
+    const raw = params["path"];
+    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
     const path = `/${segs.join("/")}`;
 
     // Delete note
