@@ -1,26 +1,2094 @@
+@custom-variant dark (&:is(.dark *));
 @import "tailwindcss";
+@plugin "tailwindcss-animate"; /* si tu utilises les animations shadcn */
 
 :root {
+  /* Font system */
+  --font-size: 14px;
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+
+  /* Color system - Light mode */
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: oklch(0.145 0 0);
+  --card: #ffffff;
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: #030213;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95 0.0058 264.53);
+  --secondary-foreground: #030213;
+  --muted: #ececf0;
+  --muted-foreground: #717182;
+  --accent: #e9ebef;
+  --accent-foreground: #030213;
+  --destructive: #d4183d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.1);
+  --input: transparent;
+  --input-background: #ffffff;
+  --switch-background: #cbced4;
+  --ring: oklch(0.708 0 0);
+
+  /* Chart colors */
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+
+  /* Layout */
+  --radius: 0.625rem;
+
+  /* Sidebar colors */
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: #030213;
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* Success, warning, info colors pour light mode */
+  --success: oklch(0.55 0.15 160);
+  --success-foreground: #ffffff;
+  --warning: oklch(0.65 0.18 85);
+  --warning-foreground: oklch(0.145 0 0);
+  --info: oklch(0.55 0.15 220);
+  --info-foreground: #ffffff;
+
+  /* Animation timings */
+  --animation-fast: 150ms;
+  --animation-normal: 250ms;
+  --animation-slow: 350ms;
+  --easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Dark mode overrides - VS Code Dark+ Theme inspiré */
+.dark {
+  /* Palette principale basée sur VS Code Dark+ - Moderne et confortable */
+  --background: oklch(0.16 0.005 240);    /* #1e1e1e - Fond principal VS Code */
+  --foreground: oklch(0.92 0.008 240);    /* #cccccc - Texte principal clair */
+  --card: oklch(0.19 0.008 240);          /* #252526 - Cartes VS Code */
+  --card-foreground: oklch(0.94 0.005 240); /* #e6e6e6 - Texte cartes lisible */
+  --popover: oklch(0.21 0.010 240);       /* #2d2d30 - Popovers plus clairs */
+  --popover-foreground: oklch(0.92 0.008 240);
+  
+  /* Couleurs système VS Code Dark+ */
+  --primary: oklch(0.92 0.008 240);       /* Texte principal */
+  --primary-foreground: oklch(0.16 0.005 240); /* Fond pour contraste */
+  --secondary: oklch(0.24 0.012 240);     /* #3c3c3c - Sections secondaires */
+  --secondary-foreground: oklch(0.86 0.010 240);
+  --muted: oklch(0.22 0.010 240);         /* #383838 - Zones muted */
+  --muted-foreground: oklch(0.68 0.015 240); /* #9d9d9d - Texte muted VS Code */
+  --accent: oklch(0.26 0.015 240);        /* #404040 - Accents subtils */
+  --accent-foreground: oklch(0.88 0.008 240);
+  
+  /* Couleurs fonctionnelles VS Code Dark+ */
+  --destructive: oklch(0.65 0.20 15);     /* #f44747 - Rouge VS Code */
+  --destructive-foreground: oklch(0.95 0.005 240);
+  --border: oklch(0.32 0.015 240);        /* #464647 - Bordures VS Code */
+  --input: oklch(0.19 0.008 240);         /* Même que card pour cohérence */
+  --input-background: oklch(0.17 0.006 240);
+  --switch-background: oklch(0.35 0.020 240);
+  --ring: oklch(0.58 0.15 220);           /* #007acc - Bleu VS Code pour focus */
+  
+  /* Chart colors inspirées VS Code */
+  --chart-1: oklch(0.58 0.15 220);       /* #007acc - Bleu VS Code */
+  --chart-2: oklch(0.65 0.18 140);       /* #4ec9b0 - Vert VS Code */
+  --chart-3: oklch(0.72 0.20 85);        /* #dcdcaa - Jaune VS Code */
+  --chart-4: oklch(0.68 0.22 300);       /* #c586c0 - Violet VS Code */
+  --chart-5: oklch(0.70 0.25 25);        /* #d16969 - Rouge-orange VS Code */
+  
+  /* Success, warning, info colors VS Code */
+  --success: oklch(0.65 0.18 140);       /* #4ec9b0 - Vert VS Code */
+  --success-foreground: oklch(0.95 0.005 240);
+  --warning: oklch(0.72 0.20 85);        /* #dcdcaa - Jaune VS Code */
+  --warning-foreground: oklch(0.16 0.005 240);
+  --info: oklch(0.58 0.15 220);          /* #007acc - Bleu VS Code */
+  --info-foreground: oklch(0.95 0.005 240);
+  
+  /* Sidebar VS Code Dark+ */
+  --sidebar: oklch(0.18 0.006 240);      /* Légèrement plus clair que background */
+  --sidebar-foreground: oklch(0.88 0.008 240);
+  --sidebar-primary: oklch(0.58 0.15 220); /* Bleu VS Code */
+  --sidebar-primary-foreground: oklch(0.95 0.005 240);
+  --sidebar-accent: oklch(0.22 0.010 240); /* #383838 */
+  --sidebar-accent-foreground: oklch(0.84 0.010 240);
+  --sidebar-border: oklch(0.32 0.015 240); /* #464647 - Bordures VS Code */
+  --sidebar-ring: oklch(0.58 0.15 220);
+}
+
+/* Tailwind theme integration */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Base layer - Global reset and typography */
+@layer base {
+  * {
+    @apply border-border;
+    transition: background-color var(--animation-normal) var(--easing-smooth), 
+                color var(--animation-normal) var(--easing-smooth),
+                border-color var(--animation-normal) var(--easing-smooth),
+                box-shadow var(--animation-normal) var(--easing-smooth),
+                opacity var(--animation-normal) var(--easing-smooth);
+  }
+
+  html {
+    font-size: var(--font-size);
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    min-height: 100vh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    transition: background-color var(--animation-normal) var(--easing-smooth), color var(--animation-normal) var(--easing-smooth);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  img, video {
+    max-width: 100%;
+    height: auto;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Typography system */
+@layer base {
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.3;
+    margin-bottom: 0.75rem;
+  }
+
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.4;
+    margin-bottom: 0.5rem;
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.4;
+    margin-bottom: 0.5rem;
+  }
+
+  h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+    margin-bottom: 0.25rem;
+  }
+
+  p {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.6;
+    margin-bottom: 0.75rem;
+  }
+
+  label {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  input, textarea, select {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+  }
+}
+
+/* Enhanced animations */
+@layer components {
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200px 0;
+    }
+    100% {
+      background-position: calc(200px + 100%) 0;
+    }
+  }
+
+  .animate-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  .animate-pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  .animate-shimmer {
+    animation: shimmer 1.5s ease-in-out infinite;
+    background: linear-gradient(
+      90deg,
+      var(--color-muted) 0%,
+      var(--color-accent) 50%,
+      var(--color-muted) 100%
+    );
+    background-size: 200px 100%;
+  }
+
+  /* Sidebar responsive behavior */
+  @media (max-width: 768px) {
+    [data-sidebar="sidebar"] {
+      transform: translateX(-100%);
+      transition: transform var(--animation-normal) var(--easing-smooth);
+    }
+    
+    [data-sidebar="sidebar"][data-state="open"] {
+      transform: translateX(0);
+    }
+  }
+
+  /* Enhanced focus styles */
+  [data-slot="input"]:focus, 
+  [data-slot="textarea"]:focus, 
+  [data-slot="select"]:focus {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-color: var(--color-ring);
+  }
+
+  /* Theme toggle animations */
+  .theme-toggle-icon {
+    transition: all var(--animation-fast) var(--easing-smooth);
+  }
+
+  .theme-toggle:hover {
+    transform: scale(1.05);
+  }
+
+  /* Dark mode body transition */
+  html {
+    transition: background-color var(--animation-normal) var(--easing-smooth);
+  }
+
+  /* Screen reader only */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  /* Hover lift effect */
+  .hover-lift {
+    transition: transform var(--animation-normal) var(--easing-smooth);
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-2px);
+  }
+
+  /* Optimized scrollbars */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-muted) transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--color-muted);
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--color-muted-foreground);
+    background-clip: content-box;
+  }
+}
+
+/* Utility layer */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .scroll-smooth {
+    scroll-behavior: smooth;
+  }
+
+  .animate-fade-in {
+    animation: fadeIn var(--animation-normal) var(--easing-smooth);
+  }
+
+  .animate-slide-up {
+    animation: slideUp var(--animation-normal) var(--easing-smooth);
+  }
+
+  /* Cards colorées optimisées */
+  .card-success {
+    background: var(--color-success);
+    color: var(--color-success-foreground);
+  }
+
+  .card-warning {
+    background: var(--color-warning);
+    color: var(--color-warning-foreground);
+  }
+
+  .card-info {
+    background: var(--color-info);
+    color: var(--color-info-foreground);
+  }
+
+  .card-chart-1 {
+    background: var(--color-chart-1);
+    color: var(--color-background);
+  }
+
+  .card-chart-2 {
+    background: var(--color-chart-2);
+    color: var(--color-background);
+  }
+
+  .card-chart-3 {
+    background: var(--color-chart-3);
+    color: var(--color-background);
+  }
+
+  .card-chart-4 {
+    background: var(--color-chart-4);
+    color: var(--color-background);
+  }
+
+  .card-chart-5 {
+    background: var(--color-chart-5);
+    color: var(--color-background);
+  }
+
+  /* Amélioration des badges et petits éléments colorés */
+  .badge-success {
+    background: var(--color-success);
+    color: var(--color-success-foreground);
+  }
+
+  .badge-warning {
+    background: var(--color-warning);
+    color: var(--color-warning-foreground);
+  }
+
+  .badge-info {
+    background: var(--color-info);
+    color: var(--color-info-foreground);
+  }
+
+  /* Classes adaptatives pour remplacer les couleurs hardcodées */
+  
+  /* Backgrounds clairs adaptés au thème GitHub Dark */
+  .bg-blue-50 {
+    background-color: #eff6ff;
+  }
+  
+  .dark .bg-blue-50 {
+    background-color: oklch(0.22 0.030 220); /* Plus clair que GitHub */
+  }
+  
+  .bg-green-50 {
+    background-color: #f0fdf4;
+  }
+  
+  .dark .bg-green-50 {
+    background-color: oklch(0.22 0.025 140); /* Vert VS Code subtil */
+  }
+  
+  .bg-yellow-50 {
+    background-color: #fefce8;
+  }
+  
+  .dark .bg-yellow-50 {
+    background-color: oklch(0.24 0.030 85); /* Jaune VS Code subtil */
+  }
+  
+  .bg-purple-50 {
+    background-color: #faf5ff;
+  }
+  
+  .dark .bg-purple-50 {
+    background-color: oklch(0.22 0.035 300); /* Violet subtil VS Code */
+  }
+  
+  .bg-orange-50 {
+    background-color: #fff7ed;
+  }
+  
+  .dark .bg-orange-50 {
+    background-color: oklch(0.23 0.033 25); /* Orange subtil VS Code */
+  }
+  
+  .bg-red-50 {
+    background-color: #fef2f2;
+  }
+  
+  .dark .bg-red-50 {
+    background-color: oklch(0.22 0.030 15); /* Rouge subtil VS Code */
+  }
+  
+  .bg-teal-50 {
+    background-color: #f0fdfa;
+  }
+  
+  .dark .bg-teal-50 {
+    background-color: oklch(0.25 0.040 180);
+  }
+  
+  .bg-indigo-50 {
+    background-color: #eef2ff;
+  }
+  
+  .dark .bg-indigo-50 {
+    background-color: oklch(0.25 0.050 260);
+  }
+
+  .bg-emerald-50 {
+    background-color: #ecfdf5;
+  }
+  
+  .dark .bg-emerald-50 {
+    background-color: oklch(0.22 0.025 140); /* Émeraude subtil VS Code */
+  }
+
+  .bg-pink-50 {
+    background-color: #fdf2f8;
+  }
+  
+  .dark .bg-pink-50 {
+    background-color: oklch(0.22 0.030 330); /* Rose subtil VS Code */
+  }
+
+  /* Bordures claires qui deviennent sombres */
+  .border-blue-200 {
+    border-color: #bfdbfe;
+  }
+  
+  .dark .border-blue-200 {
+    border-color: oklch(0.35 0.065 220);
+  }
+  
+  .border-green-200 {
+    border-color: #bbf7d0;
+  }
+  
+  .dark .border-green-200 {
+    border-color: oklch(0.35 0.060 160);
+  }
+  
+  .border-yellow-200 {
+    border-color: #fde047;
+  }
+  
+  .dark .border-yellow-200 {
+    border-color: oklch(0.38 0.065 85);
+  }
+  
+  .border-purple-200 {
+    border-color: #e9d5ff;
+  }
+  
+  .dark .border-purple-200 {
+    border-color: oklch(0.36 0.070 300);
+  }
+  
+  .border-orange-200 {
+    border-color: #fed7aa;
+  }
+  
+  .dark .border-orange-200 {
+    border-color: oklch(0.37 0.068 25);
+  }
+  
+  .border-red-200 {
+    border-color: #fecaca;
+  }
+  
+  .dark .border-red-200 {
+    border-color: oklch(0.35 0.065 15);
+  }
+  
+  .border-teal-200 {
+    border-color: #99f6e4;
+  }
+  
+  .dark .border-teal-200 {
+    border-color: oklch(0.35 0.060 180);
+  }
+  
+  .border-indigo-200 {
+    border-color: #c7d2fe;
+  }
+  
+  .dark .border-indigo-200 {
+    border-color: oklch(0.35 0.070 260);
+  }
+
+  .border-emerald-200 {
+    border-color: #a7f3d0;
+  }
+  
+  .dark .border-emerald-200 {
+    border-color: oklch(0.35 0.060 160);
+  }
+
+  .border-pink-200 {
+    border-color: #fbcfe8;
+  }
+  
+  .dark .border-pink-200 {
+    border-color: oklch(0.35 0.065 330);
+  }
+
+  /* Textes colorés adaptés GitHub Dark */
+  .text-blue-600 {
+    color: #2563eb;
+  }
+  
+  .dark .text-blue-600 {
+    color: oklch(0.58 0.15 220); /* Bleu VS Code */
+  }
+  
+  .text-green-600 {
+    color: #16a34a;
+  }
+  
+  .dark .text-green-600 {
+    color: oklch(0.65 0.18 140); /* Vert VS Code */
+  }
+  
+  .text-yellow-600 {
+    color: #ca8a04;
+  }
+  
+  .dark .text-yellow-600 {
+    color: oklch(0.72 0.20 85); /* Jaune VS Code */
+  }
+
+  .text-yellow-700 {
+    color: #a16207;
+  }
+  
+  .dark .text-yellow-700 {
+    color: oklch(0.70 0.20 85);
+  }
+
+  .text-yellow-800 {
+    color: #854d0e;
+  }
+  
+  .dark .text-yellow-800 {
+    color: oklch(0.75 0.22 85);
+  }
+
+  .text-yellow-400 {
+    color: #facc15;
+  }
+  
+  .dark .text-yellow-400 {
+    color: oklch(0.68 0.16 85);
+  }
+  
+  .text-purple-600 {
+    color: #9333ea;
+  }
+  
+  .dark .text-purple-600 {
+    color: oklch(0.70 0.20 300);
+  }
+  
+  .text-orange-600 {
+    color: #ea580c;
+  }
+  
+  .dark .text-orange-600 {
+    color: oklch(0.73 0.22 25);
+  }
+  
+  .text-red-600 {
+    color: #dc2626;
+  }
+  
+  .dark .text-red-600 {
+    color: oklch(0.68 0.18 15);
+  }
+  
+  .text-teal-600 {
+    color: #0d9488;
+  }
+  
+  .dark .text-teal-600 {
+    color: oklch(0.72 0.16 180);
+  }
+  
+  .text-indigo-600 {
+    color: #4f46e5;
+  }
+  
+  .dark .text-indigo-600 {
+    color: oklch(0.70 0.20 260);
+  }
+
+  .text-emerald-600 {
+    color: #059669;
+  }
+  
+  .dark .text-emerald-600 {
+    color: oklch(0.72 0.16 160);
+  }
+
+  .text-pink-600 {
+    color: #db2777;
+  }
+  
+  .dark .text-pink-600 {
+    color: oklch(0.68 0.18 330);
+  }
+
+  /* Backgrounds moyens adaptés GitHub Dark */
+  .bg-blue-100 {
+    background-color: #dbeafe;
+  }
+  
+  .dark .bg-blue-100 {
+    background-color: oklch(0.26 0.040 220); /* VS Code plus visible */
+  }
+  
+  .bg-green-100 {
+    background-color: #dcfce7;
+  }
+  
+  .dark .bg-green-100 {
+    background-color: oklch(0.26 0.035 140); /* Vert VS Code plus visible */
+  }
+  
+  .bg-yellow-100 {
+    background-color: #fef3c7;
+  }
+  
+  .dark .bg-yellow-100 {
+    background-color: oklch(0.28 0.040 85); /* Jaune VS Code plus visible */
+  }
+  
+  .bg-purple-100 {
+    background-color: #f3e8ff;
+  }
+  
+  .dark .bg-purple-100 {
+    background-color: oklch(0.36 0.067 300);
+  }
+  
+  .bg-orange-100 {
+    background-color: #fed7aa;
+  }
+  
+  .dark .bg-orange-100 {
+    background-color: oklch(0.37 0.065 25);
+  }
+  
+  .bg-red-100 {
+    background-color: #fee2e2;
+  }
+  
+  .dark .bg-red-100 {
+    background-color: oklch(0.35 0.062 15);
+  }
+  
+  .bg-teal-100 {
+    background-color: #ccfbf1;
+  }
+  
+  .dark .bg-teal-100 {
+    background-color: oklch(0.30 0.050 180);
+  }
+  
+  .bg-indigo-100 {
+    background-color: #e0e7ff;
+  }
+  
+  .dark .bg-indigo-100 {
+    background-color: oklch(0.30 0.060 260);
+  }
+
+  .bg-emerald-100 {
+    background-color: #d1fae5;
+  }
+  
+  .dark .bg-emerald-100 {
+    background-color: oklch(0.35 0.057 160);
+  }
+
+  .bg-pink-100 {
+    background-color: #fce7f3;
+  }
+  
+  .dark .bg-pink-100 {
+    background-color: oklch(0.35 0.062 330);
+  }
+
+  /* Textes plus clairs (500) qui s'adaptent */
+  .text-blue-500 {
+    color: #3b82f6;
+  }
+  
+  .dark .text-blue-500 {
+    color: oklch(0.68 0.19 220);
+  }
+  
+  .text-green-500 {
+    color: #22c55e;
+  }
+  
+  .dark .text-green-500 {
+    color: oklch(0.72 0.18 160);
+  }
+  
+  .text-yellow-500 {
+    color: #eab308;
+  }
+  
+  .dark .text-yellow-500 {
+    color: oklch(0.75 0.20 85);
+  }
+  
+  .text-purple-500 {
+    color: #a855f7;
+  }
+  
+  .dark .text-purple-500 {
+    color: oklch(0.70 0.22 300);
+  }
+  
+  .text-orange-500 {
+    color: #f97316;
+  }
+  
+  .dark .text-orange-500 {
+    color: oklch(0.73 0.25 15);
+  }
+  
+  .text-red-500 {
+    color: #ef4444;
+  }
+  
+  .dark .text-red-500 {
+    color: oklch(0.68 0.20 25);
+  }
+  
+  .text-teal-500 {
+    color: #14b8a6;
+  }
+  
+  .dark .text-teal-500 {
+    color: oklch(0.70 0.18 180);
+  }
+  
+  .text-indigo-500 {
+    color: #6366f1;
+  }
+  
+  .dark .text-indigo-500 {
+    color: oklch(0.65 0.22 260);
+  }
+
+  .text-emerald-500 {
+    color: #10b981;
+  }
+  
+  .dark .text-emerald-500 {
+    color: oklch(0.72 0.18 160);
+  }
+
+  .text-pink-500 {
+    color: #ec4899;
+  }
+  
+  .dark .text-pink-500 {
+    color: oklch(0.70 0.22 330);
+  }
+
+  /* Couleurs de bordure plus foncées (300) */
+  .border-blue-300 {
+    border-color: #93c5fd;
+  }
+  
+  .dark .border-blue-300 {
+    border-color: oklch(0.45 0.075 220);
+  }
+  
+  .border-green-300 {
+    border-color: #86efac;
+  }
+  
+  .dark .border-green-300 {
+    border-color: oklch(0.45 0.070 160);
+  }
+  
+  .border-yellow-300 {
+    border-color: #fde047;
+  }
+  
+  .dark .border-yellow-300 {
+    border-color: oklch(0.48 0.075 85);
+  }
+
+  .border-yellow-400 {
+    border-color: #facc15;
+  }
+  
+  .dark .border-yellow-400 {
+    border-color: oklch(0.53 0.085 85);
+  }
+
+  .border-yellow-500 {
+    border-color: #eab308;
+  }
+  
+  .dark .border-yellow-500 {
+    border-color: oklch(0.58 0.095 85);
+  }
+  
+  .border-purple-300 {
+    border-color: #d8b4fe;
+  }
+  
+  .dark .border-purple-300 {
+    border-color: oklch(0.46 0.080 300);
+  }
+  
+  .border-orange-300 {
+    border-color: #fdba74;
+  }
+  
+  .dark .border-orange-300 {
+    border-color: oklch(0.47 0.078 25);
+  }
+  
+  .border-red-300 {
+    border-color: #fca5a5;
+  }
+  
+  .dark .border-red-300 {
+    border-color: oklch(0.45 0.075 15);
+  }
+  
+  .border-teal-300 {
+    border-color: #5eead4;
+  }
+  
+  .dark .border-teal-300 {
+    border-color: oklch(0.45 0.070 180);
+  }
+  
+  .border-indigo-300 {
+    border-color: #a5b4fc;
+  }
+  
+  .dark .border-indigo-300 {
+    border-color: oklch(0.45 0.080 260);
+  }
+
+  .border-emerald-300 {
+    border-color: #6ee7b7;
+  }
+  
+  .dark .border-emerald-300 {
+    border-color: oklch(0.45 0.070 160);
+  }
+
+  .border-pink-300 {
+    border-color: #f9a8d4;
+  }
+  
+  .dark .border-pink-300 {
+    border-color: oklch(0.46 0.080 330);
+  }
+
+  /* Classes spécifiques pour les cartes de pipeline et taux de conversion */
+  
+  /* Statuts de pipeline GitHub Dark */
+  .bg-slate-50 {
+    background-color: #f8fafc;
+  }
+  
+  .dark .bg-slate-50 {
+    background-color: oklch(0.20 0.010 240); /* Proche de card VS Code */
+  }
+  
+  .bg-slate-100 {
+    background-color: #f1f5f9;
+  }
+  
+  .dark .bg-slate-100 {
+    background-color: oklch(0.24 0.015 240); /* Secondary VS Code */
+  }
+  
+  .border-slate-200 {
+    border-color: #e2e8f0;
+  }
+  
+  .dark .border-slate-200 {
+    border-color: oklch(0.32 0.015 240); /* Bordure VS Code */
+  }
+  
+  .text-slate-600 {
+    color: #475569;
+  }
+  
+  .dark .text-slate-600 {
+    color: oklch(0.68 0.015 240); /* Muted foreground VS Code */
+  }
+  
+  .text-slate-700 {
+    color: #334155;
+  }
+  
+  .dark .text-slate-700 {
+    color: oklch(0.78 0.010 240); /* Texte plus clair VS Code */
+  }
+
+  /* Couleurs de statut pour pipeline */
+  .bg-amber-50 {
+    background-color: #fffbeb;
+  }
+  
+  .dark .bg-amber-50 {
+    background-color: oklch(0.28 0.045 85);
+  }
+  
+  .bg-amber-100 {
+    background-color: #fef3c7;
+  }
+  
+  .dark .bg-amber-100 {
+    background-color: oklch(0.33 0.055 85);
+  }
+  
+  .border-amber-200 {
+    border-color: #fde68a;
+  }
+  
+  .dark .border-amber-200 {
+    border-color: oklch(0.38 0.065 85);
+  }
+  
+  .text-amber-600 {
+    color: #d97706;
+  }
+  
+  .dark .text-amber-600 {
+    color: oklch(0.75 0.18 85);
+  }
+  
+  .text-amber-700 {
+    color: #b45309;
+  }
+  
+  .dark .text-amber-700 {
+    color: oklch(0.70 0.20 85);
+  }
+
+  /* Couleurs rose pour certains éléments */
+  .bg-rose-50 {
+    background-color: #fff1f2;
+  }
+  
+  .dark .bg-rose-50 {
+    background-color: oklch(0.25 0.045 350);
+  }
+  
+  .bg-rose-100 {
+    background-color: #ffe4e6;
+  }
+  
+  .dark .bg-rose-100 {
+    background-color: oklch(0.30 0.055 350);
+  }
+  
+  .border-rose-200 {
+    border-color: #fecdd3;
+  }
+  
+  .dark .border-rose-200 {
+    border-color: oklch(0.35 0.065 350);
+  }
+  
+  .text-rose-600 {
+    color: #e11d48;
+  }
+  
+  .dark .text-rose-600 {
+    color: oklch(0.68 0.18 350);
+  }
+
+  /* Couleurs cyan/sky pour éléments spéciaux */
+  .bg-cyan-50 {
+    background-color: #ecfeff;
+  }
+  
+  .dark .bg-cyan-50 {
+    background-color: oklch(0.25 0.040 200);
+  }
+  
+  .bg-cyan-100 {
+    background-color: #cffafe;
+  }
+  
+  .dark .bg-cyan-100 {
+    background-color: oklch(0.30 0.050 200);
+  }
+  
+  .border-cyan-200 {
+    border-color: #a5f3fc;
+  }
+  
+  .dark .border-cyan-200 {
+    border-color: oklch(0.35 0.060 200);
+  }
+  
+  .text-cyan-600 {
+    color: #0891b2;
+  }
+  
+  .dark .text-cyan-600 {
+    color: oklch(0.70 0.16 200);
+  }
+
+  .bg-sky-50 {
+    background-color: #f0f9ff;
+  }
+  
+  .dark .bg-sky-50 {
+    background-color: oklch(0.25 0.045 210);
+  }
+  
+  .bg-sky-100 {
+    background-color: #e0f2fe;
+  }
+  
+  .dark .bg-sky-100 {
+    background-color: oklch(0.30 0.055 210);
+  }
+  
+  .border-sky-200 {
+    border-color: #bae6fd;
+  }
+  
+  .dark .border-sky-200 {
+    border-color: oklch(0.35 0.065 210);
+  }
+  
+  .text-sky-600 {
+    color: #0284c7;
+  }
+  
+  .dark .text-sky-600 {
+    color: oklch(0.70 0.18 210);
+  }
+
+  /* Classes spéciales pour métriques et KPI */
+  .metric-positive {
+    background-color: #dcfce7;
+    color: #166534;
+  }
+  
+  .dark .metric-positive {
+    background-color: oklch(0.30 0.050 160);
+    color: oklch(0.75 0.16 160);
+  }
+  
+  .metric-negative {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+  
+  .dark .metric-negative {
+    background-color: oklch(0.30 0.055 15);
+    color: oklch(0.70 0.18 15);
+  }
+  
+  .metric-warning {
+    background-color: #fef3c7;
+    color: #92400e;
+  }
+  
+  .dark .metric-warning {
+    background-color: oklch(0.33 0.055 85);
+    color: oklch(0.75 0.18 85);
+  }
+  
+  .metric-info {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+  
+  .dark .metric-info {
+    background-color: oklch(0.30 0.055 220);
+    color: oklch(0.75 0.18 220);
+  }
+
+  /* Classes pour les cartes de taux de conversion */
+  .conversion-excellent {
+    background-color: #dcfce7;
+    color: #14532d;
+    border-color: #bbf7d0;
+  }
+  
+  .dark .conversion-excellent {
+    background-color: oklch(0.18 0.025 160);
+    color: oklch(0.65 0.18 160); /* Vert GitHub */
+    border-color: oklch(0.65 0.18 160);
+  }
+  
+  .conversion-good {
+    background-color: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+  }
+  
+  .dark .conversion-good {
+    background-color: oklch(0.20 0.030 85);
+    color: oklch(0.70 0.20 85); /* Jaune GitHub */
+    border-color: oklch(0.70 0.20 85);
+  }
+  
+  .conversion-poor {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border-color: #fecaca;
+  }
+  
+  .dark .conversion-poor {
+    background-color: oklch(0.18 0.025 15);
+    color: oklch(0.60 0.20 15); /* Rouge GitHub */
+    border-color: oklch(0.60 0.20 15);
+  }
+
+  /* Backgrounds plus foncés (200) pour cartes secondaires */
+  .bg-blue-200 {
+    background-color: #bfdbfe;
+  }
+  
+  .dark .bg-blue-200 {
+    background-color: oklch(0.35 0.065 220);
+  }
+  
+  .bg-green-200 {
+    background-color: #bbf7d0;
+  }
+  
+  .dark .bg-green-200 {
+    background-color: oklch(0.35 0.060 160);
+  }
+
+  .bg-green-300 {
+    background-color: #86efac;
+  }
+  
+  .dark .bg-green-300 {
+    background-color: oklch(0.40 0.070 160);
+  }
+
+  .bg-green-400 {
+    background-color: #4ade80;
+  }
+  
+  .dark .bg-green-400 {
+    background-color: oklch(0.45 0.080 160);
+  }
+
+  .bg-green-500 {
+    background-color: #22c55e;
+  }
+  
+  .dark .bg-green-500 {
+    background-color: oklch(0.50 0.090 160);
+  }
+  
+  .bg-yellow-200 {
+    background-color: #fde047;
+  }
+  
+  .dark .bg-yellow-200 {
+    background-color: oklch(0.38 0.065 85);
+  }
+
+  .bg-yellow-300 {
+    background-color: #fde047;
+  }
+  
+  .dark .bg-yellow-300 {
+    background-color: oklch(0.43 0.075 85);
+  }
+
+  .bg-yellow-400 {
+    background-color: #facc15;
+  }
+  
+  .dark .bg-yellow-400 {
+    background-color: oklch(0.48 0.085 85);
+  }
+
+  .bg-yellow-500 {
+    background-color: #eab308;
+  }
+  
+  .dark .bg-yellow-500 {
+    background-color: oklch(0.53 0.095 85);
+  }
+  
+  .bg-purple-200 {
+    background-color: #e9d5ff;
+  }
+  
+  .dark .bg-purple-200 {
+    background-color: oklch(0.36 0.070 300);
+  }
+
+  .bg-purple-300 {
+    background-color: #d8b4fe;
+  }
+  
+  .dark .bg-purple-300 {
+    background-color: oklch(0.41 0.080 300);
+  }
+
+  .bg-purple-400 {
+    background-color: #c084fc;
+  }
+  
+  .dark .bg-purple-400 {
+    background-color: oklch(0.46 0.090 300);
+  }
+
+  .bg-purple-500 {
+    background-color: #a855f7;
+  }
+  
+  .dark .bg-purple-500 {
+    background-color: oklch(0.52 0.100 300);
+  }
+  
+  .bg-emerald-200 {
+    background-color: #a7f3d0;
+  }
+  
+  .dark .bg-emerald-200 {
+    background-color: oklch(0.35 0.060 160);
+  }
+
+  .bg-pink-200 {
+    background-color: #fbcfe8;
+  }
+  
+  .dark .bg-pink-200 {
+    background-color: oklch(0.35 0.065 330);
+  }
+
+  /* Couleurs de texte plus intenses (700-800) */
+  .text-blue-700 {
+    color: #1d4ed8;
+  }
+  
+  .dark .text-blue-700 {
+    color: oklch(0.78 0.20 220);
+  }
+  
+  .text-green-700 {
+    color: #15803d;
+  }
+  
+  .dark .text-green-700 {
+    color: oklch(0.75 0.18 160);
+  }
+
+  .text-green-800 {
+    color: #14532d;
+  }
+  
+  .dark .text-green-800 {
+    color: oklch(0.78 0.20 160);
+  }
+
+  .text-green-400 {
+    color: #4ade80;
+  }
+  
+  .dark .text-green-400 {
+    color: oklch(0.68 0.16 160);
+  }
+  
+  .text-purple-700 {
+    color: #7c3aed;
+  }
+  
+  .dark .text-purple-700 {
+    color: oklch(0.73 0.22 300);
+  }
+
+  .text-purple-800 {
+    color: #6b21a8;
+  }
+  
+  .dark .text-purple-800 {
+    color: oklch(0.78 0.24 300);
+  }
+
+  .text-purple-400 {
+    color: #c084fc;
+  }
+  
+  .dark .text-purple-400 {
+    color: oklch(0.65 0.18 300);
+  }
+  
+  .text-emerald-700 {
+    color: #047857;
+  }
+  
+  .dark .text-emerald-700 {
+    color: oklch(0.75 0.18 160);
+  }
+
+  .text-pink-700 {
+    color: #be185d;
+  }
+  
+  .dark .text-pink-700 {
+    color: oklch(0.73 0.22 330);
+  }
+
+  /* Bordures plus marquées (400) pour focus et states actifs */
+  .border-blue-400 {
+    border-color: #60a5fa;
+  }
+  
+  .dark .border-blue-400 {
+    border-color: oklch(0.55 0.085 220);
+  }
+  
+  .border-green-400 {
+    border-color: #4ade80;
+  }
+  
+  .dark .border-green-400 {
+    border-color: oklch(0.55 0.080 160);
+  }
+
+  .border-green-500 {
+    border-color: #22c55e;
+  }
+  
+  .dark .border-green-500 {
+    border-color: oklch(0.60 0.090 160);
+  }
+  
+  .border-purple-400 {
+    border-color: #c084fc;
+  }
+  
+  .dark .border-purple-400 {
+    border-color: oklch(0.56 0.090 300);
+  }
+  
+  .border-emerald-400 {
+    border-color: #34d399;
+  }
+  
+  .dark .border-emerald-400 {
+    border-color: oklch(0.55 0.080 160);
+  }
+
+  .border-pink-400 {
+    border-color: #f472b6;
+  }
+  
+  .dark .border-pink-400 {
+    border-color: oklch(0.56 0.090 330);
+  }
+
+  /* Classes spécialisées pour les cartes de pipeline avec hiérarchie optimisée */
+  .pipeline-card {
+    background: var(--color-card);
+    border-color: var(--color-border);
+    color: var(--color-card-foreground);
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  }
+
+  .dark .pipeline-card {
+    background: oklch(0.19 0.008 240);      /* Cartes VS Code */
+    border-color: oklch(0.32 0.015 240);    /* Bordures VS Code */
+    color: oklch(0.94 0.005 240);           /* Texte très lisible */
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+  }
+
+  .pipeline-card:hover {
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  }
+
+  .dark .pipeline-card:hover {
+    background: oklch(0.22 0.010 240);      /* Hover VS Code subtil */
+    box-shadow: 0 8px 25px -8px rgb(0 0 0 / 0.4), 0 4px 6px -2px rgb(0 0 0 / 0.3);
+  }
+
+  /* Colonnes de pipeline VS Code Dark+ */
+  .pipeline-column {
+    background: var(--color-secondary);
+    border-color: var(--color-border);
+  }
+
+  .dark .pipeline-column {
+    background: oklch(0.16 0.005 240);      /* Background principal VS Code */
+    border-color: oklch(0.32 0.015 240);    /* Bordures VS Code */
+  }
+
+  /* Headers de colonnes pipeline */
+  .pipeline-column-header {
+    background: var(--color-accent);
+    color: var(--color-accent-foreground);
+  }
+
+  .dark .pipeline-column-header {
+    background: oklch(0.24 0.012 240);      /* Secondary VS Code */
+    color: oklch(0.88 0.008 240);           /* Texte clair VS Code */
+  }
+
+  /* Zone de drop pour pipeline en mode sombre avec meilleur contraste */
+  .pipeline-drop-zone {
+    background: var(--color-muted);
+  }
+
+  .dark .pipeline-drop-zone {
+    background: oklch(0.20 0.030 250);
+  }
+
+  .pipeline-drop-zone-active {
+    background-color: #eff6ff;
+    border-color: #93c5fd;
+  }
+
+  .dark .pipeline-drop-zone-active {
+    background-color: oklch(0.28 0.043 220); /* Décalé d'un niveau */
+    border-color: oklch(0.50 0.085 220);
+  }
+
+  /* Cartes spéciales dans le pipeline */
+  .pipeline-card-priority-high {
+    background: var(--color-card);
+    border-left: 4px solid #ef4444;
+  }
+
+  .dark .pipeline-card-priority-high {
+    background: oklch(0.35 0.048 250);       /* Cartes prioritaires décalées */
+    border-left: 4px solid oklch(0.68 0.20 25);
+  }
+
+  .pipeline-card-overdue {
+    background: var(--color-card);
+    border-left: 4px solid #f97316;
+  }
+
+  .dark .pipeline-card-overdue {
+    background: oklch(0.35 0.048 250);
+    border-left: 4px solid oklch(0.73 0.25 15);
+  }
+
+  /* Amélioration des info-bulles en mode sombre */
+  .info-tooltip {
+    background-color: #eff6ff;
+    color: #1e40af;
+    border-color: #bfdbfe;
+  }
+
+  .dark .info-tooltip {
+    background-color: oklch(0.25 0.045 220);
+    color: oklch(0.75 0.18 220);
+    border-color: oklch(0.35 0.065 220);
+  }
+
+
+
+  /* Classes spécialisées pour statuts colorés courants */
+  
+  /* Statuts avec fond violet */
+  .status-violet {
+    background-color: #f3e8ff;
+    color: #7c3aed;
+    border-color: #e9d5ff;
+  }
+  
+  .dark .status-violet {
+    background-color: oklch(0.31 0.060 300);
+    color: oklch(0.73 0.22 300);
+    border-color: oklch(0.36 0.070 300);
+  }
+  
+  /* Statuts avec fond jaune */
+  .status-yellow {
+    background-color: #fef3c7;
+    color: #ca8a04;
+    border-color: #fde68a;
+  }
+  
+  .dark .status-yellow {
+    background-color: oklch(0.33 0.055 85);
+    color: oklch(0.75 0.18 85);
+    border-color: oklch(0.38 0.065 85);
+  }
+  
+  /* Statuts avec fond vert */
+  .status-green {
+    background-color: #dcfce7;
+    color: #15803d;
+    border-color: #bbf7d0;
+  }
+  
+  .dark .status-green {
+    background-color: oklch(0.30 0.050 160);
+    color: oklch(0.75 0.18 160);
+    border-color: oklch(0.35 0.060 160);
+  }
+
+  /* Boutons colorés spéciaux */
+  .button-violet {
+    background-color: #a855f7;
+    color: #ffffff;
+    border-color: #a855f7;
+  }
+  
+  .dark .button-violet {
+    background-color: oklch(0.52 0.100 300);
+    color: oklch(0.95 0.015 250);
+    border-color: oklch(0.52 0.100 300);
+  }
+  
+  .button-violet:hover {
+    background-color: #9333ea;
+    border-color: #9333ea;
+  }
+  
+  .dark .button-violet:hover {
+    background-color: oklch(0.48 0.110 300);
+    border-color: oklch(0.48 0.110 300);
+  }
+  
+  .button-yellow {
+    background-color: #eab308;
+    color: #ffffff;
+    border-color: #eab308;
+  }
+  
+  .dark .button-yellow {
+    background-color: oklch(0.53 0.095 85);
+    color: oklch(0.12 0.025 250);
+    border-color: oklch(0.53 0.095 85);
+  }
+  
+  .button-yellow:hover {
+    background-color: #ca8a04;
+    border-color: #ca8a04;
+  }
+  
+  .dark .button-yellow:hover {
+    background-color: oklch(0.49 0.105 85);
+    border-color: oklch(0.49 0.105 85);
+  }
+  
+  .button-green {
+    background-color: #22c55e;
+    color: #ffffff;
+    border-color: #22c55e;
+  }
+  
+  .dark .button-green {
+    background-color: oklch(0.50 0.090 160);
+    color: oklch(0.95 0.015 250);
+    border-color: oklch(0.50 0.090 160);
+  }
+  
+  .button-green:hover {
+    background-color: #16a34a;
+    border-color: #16a34a;
+  }
+  
+  .dark .button-green:hover {
+    background-color: oklch(0.46 0.100 160);
+    border-color: oklch(0.46 0.100 160);
+  }
+
+  /* Texte avec meilleur contraste en dark mode */
+  .text-enhanced {
+    color: oklch(0.88 0.015 245);
+  }
+
+  .dark .text-enhanced {
+    color: oklch(0.90 0.015 248);
+  }
+
+  /* Amélioration des ombres en dark mode */
+  .shadow-card {
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  }
+
+  .dark .shadow-card {
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.3), 0 2px 4px -2px rgb(0 0 0 / 0.2);
+  }
+
+  /* Amélioration du hover en dark mode */
+  .hover-lift-enhanced {
+    transition: all var(--animation-normal) var(--easing-smooth);
+  }
+
+  .hover-lift-enhanced:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px -8px rgb(0 0 0 / 0.3);
+  }
+
+  .dark .hover-lift-enhanced:hover {
+    box-shadow: 0 8px 25px -8px rgb(0 0 0 / 0.5);
+  }
+
+  /* Amélioration des éléments interactifs en mode sombre */
+  
+  /* Tabs avec meilleur contraste */
+  .tab-active {
+    background-color: #ffffff;
+    color: #030213;
+    border-color: #e5e7eb;
+  }
+
+  .dark .tab-active {
+    background-color: oklch(0.26 0.015 240); /* Accent VS Code pour tab active */
+    color: oklch(0.94 0.005 240);
+    border-color: oklch(0.58 0.15 220);      /* Bleu VS Code pour l'accent */
+    box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.3);
+  }
+
+  .tab-inactive {
+    background-color: #f9fafb;
+    color: #6b7280;
+    border-color: #e5e7eb;
+  }
+
+  .dark .tab-inactive {
+    background-color: oklch(0.19 0.008 240); /* Card VS Code */
+    color: oklch(0.68 0.015 240);            /* Muted foreground VS Code */
+    border-color: oklch(0.32 0.015 240);     /* Bordure VS Code */
+  }
+
+  .tab-inactive:hover {
+    background-color: #f3f4f6;
+    color: #374151;
+  }
+
+  .dark .tab-inactive:hover {
+    background-color: oklch(0.22 0.010 240); /* Hover VS Code subtil */
+    color: oklch(0.78 0.012 240);            /* Texte plus clair au hover */
+  }
+
+  /* Toggles avec contraste amélioré */
+  .toggle-switch {
+    background-color: #e5e7eb;
+    border: 2px solid #d1d5db;
+  }
+
+  .dark .toggle-switch {
+    background-color: oklch(0.30 0.040 250);
+    border: 2px solid oklch(0.35 0.048 248);
+  }
+
+  .toggle-switch-active {
+    background-color: #3b82f6;
+    border: 2px solid #2563eb;
+  }
+
+  .dark .toggle-switch-active {
+    background-color: oklch(0.58 0.15 220); /* Bleu VS Code pour état actif */
+    border: 2px solid oklch(0.55 0.15 220);
+    box-shadow: 0 0 0 2px oklch(0.58 0.15 220 / 0.3);
+  }
+
+  /* Boutons de navigation avec états clairs */
+  .nav-button {
+    background-color: transparent;
+    color: #6b7280;
+    border: 1px solid transparent;
+  }
+
+  .dark .nav-button {
+    background-color: transparent;
+    color: oklch(0.65 0.015 240);            /* Muted foreground GitHub */
+    border: 1px solid transparent;
+  }
+
+  .nav-button-active {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border: 1px solid #bfdbfe;
+  }
+
+  .dark .nav-button-active {
+    background-color: oklch(0.18 0.012 240); /* Secondary GitHub */
+    color: oklch(0.93 0.008 240);            /* Foreground GitHub */
+    border: 1px solid oklch(0.55 0.15 220);  /* Bleu GitHub */
+    box-shadow: inset 0 1px 0 0 oklch(0.60 0.15 220 / 0.2);
+  }
+
+  .nav-button:hover {
+    background-color: #f9fafb;
+    color: #374151;
+  }
+
+  .dark .nav-button:hover {
+    background-color: oklch(0.28 0.038 250);
+    color: oklch(0.85 0.020 248);
+  }
+
+  /* Sélecteurs avec contraste amélioré */
+  .select-active {
+    background-color: #ffffff;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgb(59 130 246 / 0.1);
+  }
+
+  .dark .select-active {
+    background-color: oklch(0.35 0.048 250);
+    border-color: oklch(0.55 0.12 220);
+    box-shadow: 0 0 0 3px oklch(0.40 0.080 220 / 0.3);
+  }
+
+  /* Cartes actives/sélectionnées */
+  .card-selected {
+    background-color: #eff6ff;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgb(59 130 246 / 0.2);
+  }
+
+  .dark .card-selected {
+    background-color: oklch(0.38 0.050 220);
+    border-color: oklch(0.55 0.12 220);
+    box-shadow: 0 0 0 2px oklch(0.40 0.080 220 / 0.4);
+  }
+
+  /* Badges d'état avec contraste */
+  .badge-active {
+    background-color: #10b981;
+    color: #ffffff;
+  }
+
+  .dark .badge-active {
+    background-color: oklch(0.50 0.090 160);
+    color: oklch(0.95 0.015 250);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.3);
+  }
+
+  .badge-inactive {
+    background-color: #6b7280;
+    color: #ffffff;
+  }
+
+  .dark .badge-inactive {
+    background-color: oklch(0.40 0.020 250);
+    color: oklch(0.85 0.015 248);
+  }
+
+  /* Indicateurs visuels pour contraste */
+  .indicator-primary {
+    background-color: #3b82f6;
+  }
+
+  .dark .indicator-primary {
+    background-color: oklch(0.55 0.12 220);
+    box-shadow: 0 0 8px oklch(0.40 0.080 220 / 0.4);
+  }
+
+  .indicator-success {
+    background-color: #10b981;
+  }
+
+  .dark .indicator-success {
+    background-color: oklch(0.50 0.090 160);
+    box-shadow: 0 0 8px oklch(0.35 0.070 160 / 0.4);
+  }
+
+  .indicator-warning {
+    background-color: #f59e0b;
+  }
+
+  .dark .indicator-warning {
+    background-color: oklch(0.55 0.095 85);
+    box-shadow: 0 0 8px oklch(0.40 0.075 85 / 0.4);
+  }
+
+  /* Classes spécialisées pour le dashboard */
+  
+  /* Sélecteur de période avec contraste fort */
+  .period-selector {
+    background-color: #f9fafb;
+    border: 1px solid #d1d5db;
+    color: #374151;
+  }
+
+  .dark .period-selector {
+    background-color: oklch(0.28 0.038 250);
+    border: 1px solid oklch(0.38 0.050 248);
+    color: oklch(0.85 0.020 248);
+  }
+
+  .period-selector-active {
+    background-color: #3b82f6;
+    border: 1px solid #2563eb;
+    color: #ffffff;
+  }
+
+  .dark .period-selector-active {
+    background-color: oklch(0.60 0.15 220);  /* Bleu GitHub */
+    border: 1px solid oklch(0.55 0.15 220);
+    color: oklch(0.95 0.005 240);            /* Foreground GitHub */
+    box-shadow: 0 0 0 2px oklch(0.60 0.15 220 / 0.3);
+  }
+
+  /* Métriques avec arrière-plan contrasté */
+  .metric-card {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+  }
+
+  .dark .metric-card {
+    background-color: oklch(0.13 0.008 240); /* Card GitHub */
+    border: 1px solid oklch(0.25 0.015 240); /* Bordure GitHub */
+  }
+
+  .metric-card-highlight {
+    background-color: #eff6ff;
+    border: 1px solid #bfdbfe;
+  }
+
+  .dark .metric-card-highlight {
+    background-color: oklch(0.18 0.025 220); /* Bleu subtil GitHub */
+    border: 1px solid oklch(0.60 0.15 220);  /* Bleu GitHub */
+    box-shadow: inset 0 1px 0 0 oklch(0.60 0.15 220 / 0.2);
+  }
+
+  /* Boutons de filtre avec états visibles */
+  .filter-button {
+    background-color: #f3f4f6;
+    border: 1px solid #d1d5db;
+    color: #6b7280;
+  }
+
+  .dark .filter-button {
+    background-color: oklch(0.25 0.035 250);
+    border: 1px solid oklch(0.35 0.048 248);
+    color: oklch(0.70 0.025 248);
+  }
+
+  .filter-button-active {
+    background-color: #1d4ed8;
+    border: 1px solid #1e40af;
+    color: #ffffff;
+  }
+
+  .dark .filter-button-active {
+    background-color: oklch(0.60 0.15 220);  /* Bleu GitHub */
+    border: 1px solid oklch(0.55 0.15 220);
+    color: oklch(0.95 0.005 240);            /* Foreground GitHub */
+    box-shadow: 0 2px 4px 0 rgb(0 0 0 / 0.3), inset 0 1px 0 0 oklch(0.65 0.15 220 / 0.3);
+  }
+
+  /* Widget de statistiques */
+  .stats-widget {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+  }
+
+  .dark .stats-widget {
+    background-color: oklch(0.13 0.008 240); /* Card GitHub */
+    border: 1px solid oklch(0.25 0.015 240); /* Bordure GitHub */
+  }
+
+  /* Graphiques avec fond contrasté */
+  .chart-container {
+    background-color: #fafbfc;
+    border: 1px solid #e1e5e9;
+  }
+
+  .dark .chart-container {
+    background-color: oklch(0.11 0.006 240); /* Background GitHub */
+    border: 1px solid oklch(0.25 0.015 240); /* Bordure GitHub */
+  }
+
+  /* Légendes de graphiques */
+  .chart-legend-item {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+  }
+
+  .dark .chart-legend-item {
+    background-color: oklch(0.28 0.038 250);
+    border: 1px solid oklch(0.36 0.048 248);
+  }
+
+  .chart-legend-item-active {
+    background-color: #e3f2fd;
+    border: 1px solid #90caf9;
+  }
+
+  .dark .chart-legend-item-active {
+    background-color: oklch(0.35 0.048 220);
+    border: 1px solid oklch(0.43 0.065 220);
+  }
+
+  /* Panneaux latéraux avec contraste */
+  .side-panel {
+    background-color: #f9fafb;
+    border-left: 1px solid #e5e7eb;
+  }
+
+  .dark .side-panel {
+    background-color: oklch(0.22 0.035 250);
+    border-left: 1px solid oklch(0.32 0.043 248);
+  }
+
+  /* Dividers visibles */
+  .divider {
+    border-color: #e5e7eb;
+  }
+
+  .dark .divider {
+    border-color: oklch(0.38 0.050 248);
+  }
+
+  /* États de chargement avec contraste */
+  .loading-skeleton {
+    background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+    background-size: 200% 100%;
+  }
+
+  .dark .loading-skeleton {
+    background: linear-gradient(90deg, oklch(0.25 0.035 250) 25%, oklch(0.30 0.040 250) 50%, oklch(0.25 0.035 250) 75%);
+    background-size: 200% 100%;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
