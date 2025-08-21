@@ -11,7 +11,7 @@ import { Badge } from './ui/badge';
 import { Label } from './ui/label';
 import { Switch } from './ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { EmployeesList } from './EmployeesList';
 import { JournalStatsWidget } from './JournalStatsWidget';
@@ -47,13 +47,35 @@ interface CompanyDetailPageProps {
   onBack: () => void;
 }
 
+/* ---------------------------------------------
+   ✅ Enums: listes autorisées + convertisseurs
+---------------------------------------------- */
+const REVENUE_BANDS = [
+  'unknown','0-100k','100k-500k','500k-1m','1m-5m','5m-10m','10m-50m','50m+',
+] as const satisfies readonly RevenueBand[];
+
+const EMPLOYEE_BANDS = [
+  'unknown','1-10','11-50','51-200','201-500','501-1000','1000+',
+] as const satisfies readonly EmployeeBand[];
+
+function fromDbEnum<T extends string>(value: string | undefined, allowed: readonly T[], fallback: T): T {
+  const normalized = (value ?? '').replace(/_/g, '-') as string;
+  return (allowed as readonly string[]).includes(normalized) ? (normalized as T) : fallback;
+}
+
+const fromDbRevenueBand = (v?: string): RevenueBand =>
+  fromDbEnum<RevenueBand>(v, REVENUE_BANDS, 'unknown');
+
+const fromDbEmployeeBand = (v?: string): EmployeeBand =>
+  fromDbEnum<EmployeeBand>(v, EMPLOYEE_BANDS, 'unknown');
+
+const toDbRevenueBand = (v: RevenueBand): string => v.replace(/-/g, '_');
+const toDbEmployeeBand = (v: EmployeeBand): string => v.replace(/-/g, '_');
+
 // Helper functions for display labels
 const getRevenueBandLabel = (band: RevenueBand | undefined): string => {
   if (!band) return 'Non renseigné';
-  
-  // Convert database format (underscores) to UI format (hyphens) for lookups
   const normalizedBand = band.replace(/_/g, '-') as RevenueBand;
-  
   const labels: Record<RevenueBand, string> = {
     'unknown': 'Non renseigné',
     '0-100k': '0 - 100K €',
@@ -69,10 +91,7 @@ const getRevenueBandLabel = (band: RevenueBand | undefined): string => {
 
 const getEmployeeBandLabel = (band: EmployeeBand | undefined): string => {
   if (!band) return 'Non renseigné';
-  
-  // Convert database format (underscores) to UI format (hyphens) for lookups
   const normalizedBand = band.replace(/_/g, '-') as EmployeeBand;
-  
   const labels: Record<EmployeeBand, string> = {
     'unknown': 'Non renseigné',
     '1-10': '1-10 employés',
@@ -137,8 +156,8 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         lat: foundCompany.lat || 0,
         lng: foundCompany.lng || 0,
         qualifie: foundCompany.qualifie || false,
-        ca_estime_band: convertEnumFromDbFormat(foundCompany.ca_estime_band),
-        nb_employes_band: convertEnumFromDbFormat(foundCompany.nb_employes_band),
+        ca_estime_band: fromDbRevenueBand(foundCompany.ca_estime_band as unknown as string | undefined),
+        nb_employes_band: fromDbEmployeeBand(foundCompany.nb_employes_band as unknown as string | undefined),
         nb_employes_exact: foundCompany.nb_employes_exact?.toString() || '',
         linkedin_url: foundCompany.linkedin_url || '',
         site_web_canonique: foundCompany.site_web_canonique || '',
@@ -162,17 +181,6 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     }
   };
 
-  // Helper functions to convert between UI and database formats
-  const convertEnumToDbFormat = (value: string): string => {
-    // Convert hyphens to underscores for database compatibility
-    return value.replace(/-/g, '_');
-  };
-
-  const convertEnumFromDbFormat = (value: string | undefined): string => {
-    // Convert underscores to hyphens for UI consistency
-    return value ? value.replace(/_/g, '-') : 'unknown';
-  };
-
   const handleSave = async () => {
     if (!company) return;
     
@@ -185,8 +193,8 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         manually_enriched: formData.manually_enriched,
         enriched_at: formData.manually_enriched ? new Date().toISOString() : null,
         // Convert enum values to database format (replace hyphens with underscores)
-        ca_estime_band: convertEnumToDbFormat(formData.ca_estime_band),
-        nb_employes_band: convertEnumToDbFormat(formData.nb_employes_band)
+        ca_estime_band: toDbRevenueBand(formData.ca_estime_band),
+        nb_employes_band: toDbEmployeeBand(formData.nb_employes_band)
       };
 
       await updateCompany(company.id, updates);
@@ -213,8 +221,8 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         lat: company.lat || 0,
         lng: company.lng || 0,
         qualifie: company.qualifie || false,
-        ca_estime_band: convertEnumFromDbFormat(company.ca_estime_band),
-        nb_employes_band: convertEnumFromDbFormat(company.nb_employes_band),
+        ca_estime_band: fromDbRevenueBand(company.ca_estime_band as unknown as string | undefined),
+        nb_employes_band: fromDbEmployeeBand(company.nb_employes_band as unknown as string | undefined),
         nb_employes_exact: company.nb_employes_exact?.toString() || '',
         linkedin_url: company.linkedin_url || '',
         site_web_canonique: company.site_web_canonique || '',
@@ -361,8 +369,8 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     lat: company.lat,
     lng: company.lng,
     qualifie: company.qualifie,
-    ca_estime_band: convertEnumFromDbFormat(company.ca_estime_band),
-    nb_employes_band: convertEnumFromDbFormat(company.nb_employes_band),
+    ca_estime_band: fromDbRevenueBand(company.ca_estime_band as unknown as string | undefined),
+    nb_employes_band: fromDbEmployeeBand(company.nb_employes_band as unknown as string | undefined),
     nb_employes_exact: company.nb_employes_exact,
     linkedin_url: company.linkedin_url,
     site_web_canonique: company.site_web_canonique,
@@ -966,7 +974,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
               <div className="flex items-center justify-between">
                 <span className="text-sm">CA estimé</span>
                 <Badge variant="outline">
-                  {getRevenueBandLabel(company.ca_estime_band)}
+                  {getRevenueBandLabel(fromDbRevenueBand(company.ca_estime_band as unknown as string | undefined))}
                 </Badge>
               </div>
 
@@ -974,7 +982,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
                 <span className="text-sm">Employés</span>
                 <div className="text-right">
                   <Badge variant="outline">
-                    {getEmployeeBandLabel(company.nb_employes_band)}
+                    {getEmployeeBandLabel(fromDbEmployeeBand(company.nb_employes_band as unknown as string | undefined))}
                   </Badge>
                   {company.nb_employes_exact && (
                     <p className="text-xs text-muted-foreground mt-1">
