@@ -427,20 +427,50 @@ const getDefaultAnnualObjectives = (): Objectives => ({
 });
 
 // Utility function to sync interface and database properties
-const syncOpportunityProperties = (opportunity: Partial<Opportunity>, updates: Partial<Opportunity>) => {
+const syncOpportunityProperties = (
+  opportunity: Opportunity,
+  updates: Partial<Opportunity>
+): Opportunity => {
   return {
     ...opportunity,
     ...updates,
     // Sync database fields with interface fields
-    value: updates.montant !== undefined ? updates.montant : (updates.value !== undefined ? updates.value : opportunity.value),
-    montant: updates.value !== undefined ? updates.value : (updates.montant !== undefined ? updates.montant : opportunity.montant),
+    value:
+      updates.montant !== undefined
+        ? updates.montant
+        : updates.value !== undefined
+        ? updates.value
+        : opportunity.value,
+    montant:
+      updates.value !== undefined
+        ? updates.value
+        : updates.montant !== undefined
+        ? updates.montant
+        : opportunity.montant,
     priority: updates.priorite || updates.priority || opportunity.priority,
-    priorite: updates.priority === 'high' ? 'haute' : (updates.priority === 'low' ? 'basse' : (updates.priority === 'medium' ? 'moyenne' : (updates.priorite || opportunity.priorite))),
+    priorite:
+      updates.priority === 'high'
+        ? 'haute'
+        : updates.priority === 'low'
+        ? 'basse'
+        : updates.priority === 'medium'
+        ? 'moyenne'
+        : updates.priorite || opportunity.priorite,
     notes: updates.note_base || updates.notes || opportunity.notes,
     note_base: updates.notes || updates.note_base || opportunity.note_base,
-    leadMagnet: updates.lead_magnet !== undefined ? updates.lead_magnet : (updates.leadMagnet !== undefined ? updates.leadMagnet : opportunity.leadMagnet),
-    lead_magnet: updates.leadMagnet !== undefined ? updates.leadMagnet : (updates.lead_magnet !== undefined ? updates.lead_magnet : opportunity.lead_magnet),
-    updated_at: new Date().toISOString()
+    leadMagnet:
+      updates.lead_magnet !== undefined
+        ? updates.lead_magnet
+        : updates.leadMagnet !== undefined
+        ? updates.leadMagnet
+        : opportunity.leadMagnet,
+    lead_magnet:
+      updates.leadMagnet !== undefined
+        ? updates.leadMagnet
+        : updates.lead_magnet !== undefined
+        ? updates.lead_magnet
+        : opportunity.lead_magnet,
+    updated_at: new Date().toISOString(),
   };
 };
 
@@ -947,12 +977,9 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     try {
       // Immediately update the UI with optimistic updates
-      setOpportunities(prev => prev.map(opp => {
-        if (opp.id === id) {
-          return syncOpportunityProperties(opp, updates);
-        }
-        return opp;
-      }));
+      setOpportunities(prev =>
+        prev.map(opp => (opp.id === id ? syncOpportunityProperties(opp, updates) : opp))
+      );
 
       /* ------------------------------------------------------------
          ✅ Bloc 3 — filteredUpdates typé via clés valides
@@ -970,9 +997,8 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       console.error('Error updating opportunity:', error);
       toast.error('Erreur lors de la mise à jour de l\'opportunité');
       // Revert optimistic update on error
-      setOpportunities(prev => prev.map(opp => 
-        opp.id === id ? opportunity : opp
-      ));
+      const original = opportunity!;
+      setOpportunities(prev => prev.map(opp => (opp.id === id ? original : opp)));
     }
   };
 
