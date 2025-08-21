@@ -390,15 +390,6 @@ async function getRecentPeriodsDataFromJournal(type: string, count: number) {
   }
   return arr.reverse();
 }
-function getPeriodColumnName(type: string) {
-  switch (type) {
-    case "week": return "total_week";
-    case "month": return "total_month";
-    case "quarter": return "total_quarter";
-    case "year": return "total_year";
-    default: return "total_month";
-  }
-}
 function transformRealKpiDataByPeriod(kpiData: any[], periodType: string) {
   const now = new Date();
   const current = getCurrentPeriod(now, periodType);
