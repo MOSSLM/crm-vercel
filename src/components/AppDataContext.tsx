@@ -2,7 +2,16 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
-import { searchResultsApi, companiesApi, contactsApi, opportunitiesApi, pipelineStagesApi, notesApi, achievementsApi, statisticsApi } from '../utils/api';
+import {
+  searchResultsApi,
+  companiesApi,
+  contactsApi,
+  opportunitiesApi,
+  pipelineStagesApi,
+  notesApi,
+  achievementsApi,
+  statisticsApi,
+} from '../utils/api';
 import { getCompanyDisplayName, extractDomainNameOnly } from '../utils/displayHelpers';
 
 // Interfaces adaptées aux schémas Supabase
@@ -17,7 +26,7 @@ export interface SearchResult {
   status: 'pending' | 'completed' | 'failed';
   nb_trouves: number;
   nb_qualifies: number;
-  // Interface compatibility properties (computed from database fields)
+  // Compat UI
   useMaps?: boolean;
   useGoogle?: boolean;
   totalCompanies?: number;
@@ -67,7 +76,7 @@ export interface Company {
   qualifie: boolean;
   created_at: string;
   updated_at: string;
-  // New enrichment fields
+  // Enrichment
   ca_estime_band?: RevenueBand;
   nb_employes_band?: EmployeeBand;
   nb_employes_exact?: number;
@@ -76,7 +85,7 @@ export interface Company {
   manually_enriched?: boolean;
   enriched_at?: string;
   enriched_by?: string;
-  // Propriétés supplémentaires pour la page de détail (lecture seule)
+  // Lecture seule (détail)
   recherche_id?: string;
   place_id?: string;
   reference_url?: string;
@@ -88,7 +97,7 @@ export interface Company {
   pays?: string;
   latitude?: number;
   longitude?: number;
-  // Contact info from raw data
+  // Contact info
   telephone?: string;
   email?: string;
   contact_name?: string;
@@ -110,7 +119,7 @@ export interface Contact {
   notes?: string;
   created_at?: string;
   updated_at?: string;
-  // Données étendues pour l'interface (computed/joined fields)
+  // UI étendue
   companyName?: string;
   website?: string;
   address?: string;
@@ -118,7 +127,7 @@ export interface Contact {
   source?: 'google_search' | 'google_maps';
   dateQualified?: string;
   rating?: number;
-  // Legacy virtual fields for backward compatibility
+  // Legacy virtuel
   nom?: string;
   prenom?: string;
   poste?: string;
@@ -161,12 +170,12 @@ export interface Opportunity {
   date_prochain_suivi?: string;
   created_at: string;
   updated_at: string;
-  // New fields from database schema
+  // New DB fields
   name?: string;
   type?: 'one_shot' | 'mrr';
   mrr?: number;
   recurrence_months?: number;
-  // Données étendues pour l'interface
+  // UI étendue
   companyName?: string;
   companyUrl?: string;
   contactId?: string;
@@ -181,7 +190,7 @@ export interface Opportunity {
   pipelineHistory?: any[];
   leadMagnet?: boolean;
   leadMagnetCreatedDate?: string;
-  // Contact information for display
+  // Contact info display
   telephone?: string;
   email?: string;
   linkedin_url?: string;
@@ -195,7 +204,7 @@ export interface Achievement {
   description?: string;
   opportunite_id?: string;
   entreprise_id?: number;
-  // Propriétés étendues pour l'interface
+  // UI
   type?: 'signature' | 'deposit' | 'lead_magnet' | 'qualified' | 'meeting' | 'monthly_goal';
   title?: string;
   value?: number;
@@ -242,24 +251,36 @@ export type AnnualObjectives = Objectives;
    ✅ Bloc 1 — Clés valides + types sécurisés pour insert/update
 ----------------------------------------------------------------- */
 export const VALID_OPPORTUNITY_COLUMNS = [
-  "contact_id",
-  "entreprise_id",
-  "montant",
-  "priorite",
-  "stage_id",
-  "lead_magnet",
-  "note_base",
-  "tags",
-  "date_prochain_suivi",
-  "name",
-  "type",
-  "mrr",
-  "recurrence_months",
+  'contact_id',
+  'entreprise_id',
+  'montant',
+  'priorite',
+  'stage_id',
+  'lead_magnet',
+  'note_base',
+  'tags',
+  'date_prochain_suivi',
+  'name',
+  'type',
+  'mrr',
+  'recurrence_months',
 ] as const;
 
 type ValidOpportunityColumn = (typeof VALID_OPPORTUNITY_COLUMNS)[number];
-type OpportunityWritable = Omit<Opportunity, "id" | "created_at" | "updated_at">;
+type OpportunityWritable = Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>;
 type OpportunityInsert = Partial<Pick<Opportunity, ValidOpportunityColumn>>;
+
+/* --------------------------------------------------------------
+   ✅ Helpers robustes pour le mapping priorité FR ⇄ EN
+--------------------------------------------------------------- */
+type FrPriority = 'haute' | 'moyenne' | 'basse';
+type EnPriority = 'high' | 'medium' | 'low';
+
+const frToEnPriority = (p?: FrPriority): EnPriority | undefined =>
+  p === 'haute' ? 'high' : p === 'basse' ? 'low' : p === 'moyenne' ? 'medium' : undefined;
+
+const enToFrPriority = (p?: EnPriority): FrPriority | undefined =>
+  p === 'high' ? 'haute' : p === 'low' ? 'basse' : p === 'medium' ? 'moyenne' : undefined;
 
 interface AppDataContextType {
   // Existing data
@@ -268,19 +289,19 @@ interface AppDataContextType {
   contacts: Contact[];
   opportunities: Opportunity[];
   pipelineStages: PipelineStage[];
-  
+
   // Computed values
   totalCompanies: number;
   totalQualifiedCompanies: number;
   keywordStats: Record<string, number>;
   locationStats: Record<string, number>;
-  
+
   // Objectives and gamification
   currentObjectives: MonthlyObjectives;
   weeklyObjectives: WeeklyObjectives;
   annualObjectives: AnnualObjectives;
   achievements: Achievement[];
-  
+
   // New: Commercial metrics
   getTotalRelances: () => number;
   getTotalAppels: () => number;
@@ -288,10 +309,10 @@ interface AppDataContextType {
   getTotalDevis: () => number;
   getTotalSignatures: () => number;
   getTotalAcomptes: () => number;
-  
+
   // Loading states
   loading: boolean;
-  
+
   // Methods
   addSearchResult: (result: Omit<SearchResult, 'id' | 'created_at'>) => Promise<void>;
   addCompany: (company: Omit<Company, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
@@ -306,25 +327,25 @@ interface AppDataContextType {
   moveOpportunityToStage: (opportunityId: string, stageId: number) => Promise<void>;
   getOpportunitiesByStage: (stageId: number) => Opportunity[];
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
-  
+
   // Contact notes methods
   addContactNote: (contactId: string, note: string) => Promise<void>;
   getContactNotes: (contactId: string) => Promise<ContactNote[]>;
   updateContactNote: (noteId: number, note: string) => Promise<void>;
   deleteContactNote: (noteId: number) => Promise<void>;
-  
+
   // Search detail methods
   getCompaniesBySearchId: (searchId: string) => Company[];
   getMapCompanies: (searchId: string) => Company[];
   getGoogleCompanies: (searchId: string) => Company[];
-  
+
   // New methods for lead magnet and objectives
   toggleLeadMagnet: (opportunityId: string) => Promise<void>;
   updateObjectives: (objectives: Partial<Objectives>) => Promise<void>;
   updateWeeklyObjectives: (objectives: Partial<Objectives>) => Promise<void>;
   updateAnnualObjectives: (objectives: Partial<Objectives>) => Promise<void>;
   checkAndTriggerAchievements: () => void;
-  
+
   // Data refresh
   refreshData: () => Promise<void>;
 }
@@ -348,27 +369,24 @@ const getCurrentYear = () => {
   return new Date().getFullYear().toString();
 };
 
-// Fonction pour convertir les objectifs Supabase vers l'interface utilisateur
-const supabaseToUiObjectives = (supabaseData: SupabaseObjectives): Objectives => {
-  return {
-    periode: supabaseData.periode,
-    leadsFound: supabaseData.leads_trouves || 0,
-    leadsQualified: supabaseData.leads_qualifies || 0,
-    calls: supabaseData.appels || 0,
-    meetings: supabaseData.rdv || 0,
-    quotes: supabaseData.devis || 0,
-    signatures: supabaseData.signatures || 0,
-    deposits: supabaseData.acomptes || 0,
-    leadMagnets: supabaseData.leadmagnets || 0,
-    relances: supabaseData.relances_total || 0,
-    revenue: supabaseData.ca || 0
-  };
-};
+// Conversion Supabase -> UI
+const supabaseToUiObjectives = (supabaseData: SupabaseObjectives): Objectives => ({
+  periode: supabaseData.periode,
+  leadsFound: supabaseData.leads_trouves || 0,
+  leadsQualified: supabaseData.leads_qualifies || 0,
+  calls: supabaseData.appels || 0,
+  meetings: supabaseData.rdv || 0,
+  quotes: supabaseData.devis || 0,
+  signatures: supabaseData.signatures || 0,
+  deposits: supabaseData.acomptes || 0,
+  leadMagnets: supabaseData.leadmagnets || 0,
+  relances: supabaseData.relances_total || 0,
+  revenue: supabaseData.ca || 0,
+});
 
-// Fonction pour convertir les objectifs UI vers Supabase
+// UI -> Supabase
 const uiToSupabaseObjectives = (uiData: Partial<Objectives>): Partial<SupabaseObjectives> => {
   const result: Partial<SupabaseObjectives> = {};
-  
   if (uiData.periode !== undefined) result.periode = uiData.periode;
   if (uiData.leadsFound !== undefined) result.leads_trouves = uiData.leadsFound;
   if (uiData.leadsQualified !== undefined) result.leads_qualifies = uiData.leadsQualified;
@@ -380,7 +398,6 @@ const uiToSupabaseObjectives = (uiData: Partial<Objectives>): Partial<SupabaseOb
   if (uiData.leadMagnets !== undefined) result.leadmagnets = uiData.leadMagnets;
   if (uiData.relances !== undefined) result.relances_total = uiData.relances;
   if (uiData.revenue !== undefined) result.ca = uiData.revenue;
-  
   return result;
 };
 
@@ -395,7 +412,7 @@ const getDefaultObjectives = (periode: string): Objectives => ({
   deposits: 3,
   leadMagnets: 15,
   relances: 60,
-  revenue: 12500
+  revenue: 12500,
 });
 
 const getDefaultWeeklyObjectives = (): Objectives => ({
@@ -409,7 +426,7 @@ const getDefaultWeeklyObjectives = (): Objectives => ({
   deposits: 1,
   leadMagnets: 4,
   relances: 15,
-  revenue: 3000
+  revenue: 3000,
 });
 
 const getDefaultAnnualObjectives = (): Objectives => ({
@@ -423,18 +440,29 @@ const getDefaultAnnualObjectives = (): Objectives => ({
   deposits: 36,
   leadMagnets: 180,
   relances: 720,
-  revenue: 150000
+  revenue: 150000,
 });
 
-// Utility function to sync interface and database properties
-const syncOpportunityProperties = (
-  opportunity: Opportunity,
-  updates: Partial<Opportunity>
-): Opportunity => {
+// Utility: sync des propriétés DB/UI (retourne un Opportunity complet)
+const syncOpportunityProperties = (opportunity: Opportunity, updates: Partial<Opportunity>): Opportunity => {
+  // Résolution priority (EN) et priorite (FR) de manière sûre
+  const resolvedPriorityEN: Opportunity['priority'] =
+    updates.priority ??
+    frToEnPriority(updates.priorite as FrPriority | undefined) ??
+    opportunity.priority ??
+    frToEnPriority(opportunity.priorite as FrPriority | undefined);
+
+  const resolvedPriorityFR: Opportunity['priorite'] =
+    updates.priorite ??
+    (enToFrPriority(updates.priority as EnPriority | undefined) as FrPriority | undefined) ??
+    opportunity.priorite ??
+    (enToFrPriority(opportunity.priority as EnPriority | undefined) as FrPriority | undefined) ??
+    'moyenne';
+
   return {
     ...opportunity,
     ...updates,
-    // Sync database fields with interface fields
+    // Sync montant/value
     value:
       updates.montant !== undefined
         ? updates.montant
@@ -447,17 +475,13 @@ const syncOpportunityProperties = (
         : updates.montant !== undefined
         ? updates.montant
         : opportunity.montant,
-    priority: updates.priorite || updates.priority || opportunity.priority,
-    priorite:
-      updates.priority === 'high'
-        ? 'haute'
-        : updates.priority === 'low'
-        ? 'basse'
-        : updates.priority === 'medium'
-        ? 'moyenne'
-        : updates.priorite || opportunity.priorite,
+    // Priority (UI) & Priorite (DB) résolues proprement
+    priority: resolvedPriorityEN,
+    priorite: resolvedPriorityFR,
+    // Notes
     notes: updates.note_base || updates.notes || opportunity.notes,
     note_base: updates.notes || updates.note_base || opportunity.note_base,
+    // Lead magnet
     leadMagnet:
       updates.lead_magnet !== undefined
         ? updates.lead_magnet
@@ -474,9 +498,9 @@ const syncOpportunityProperties = (
   };
 };
 
-// Debounce utility for preventing too frequent updates
+// Debounce compatible navigateur/Node
 const debounce = (func: Function, wait: number) => {
-  let timeout: NodeJS.Timeout;
+  let timeout: ReturnType<typeof setTimeout>;
   return function executedFunction(...args: any[]) {
     const later = () => {
       clearTimeout(timeout);
@@ -489,7 +513,7 @@ const debounce = (func: Function, wait: number) => {
 
 export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { isAuthenticated, loading: authLoading } = useAuth();
-  
+
   // State
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -522,7 +546,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         pipelineStagesData,
         achievementsData,
         keywordStatsData,
-        locationStatsData
+        locationStatsData,
       ] = await Promise.all([
         searchResultsApi.getAll(),
         companiesApi.getAll(),
@@ -531,18 +555,17 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         pipelineStagesApi.getAll(),
         achievementsApi.getAll(),
         statisticsApi.getKeywordStats(),
-        statisticsApi.getLocationStats()
+        statisticsApi.getLocationStats(),
       ]);
 
       // Map search results to include compatibility properties
-      const mappedSearchResults = searchResultsData.map(result => ({
+      const mappedSearchResults = searchResultsData.map((result: SearchResult) => ({
         ...result,
-        // Compatibility properties for existing interface
         useMaps: result.source_maps,
         useGoogle: result.source_google,
         totalCompanies: result.nb_trouves,
         qualifiedCompanies: result.nb_qualifies,
-        date: result.created_at
+        date: result.created_at,
       }));
 
       setSearchResults(mappedSearchResults);
@@ -553,9 +576,8 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       setAchievements(achievementsData);
       setKeywordStats(keywordStatsData);
       setLocationStats(locationStatsData);
-      
-      // Keep default objectives for backward compatibility
-      // The new KPI system will handle objectives separately
+
+      // Backward compatibility: objectifs par défaut
       setCurrentObjectives(getDefaultObjectives(getCurrentMonth()));
       setWeeklyObjectives(getDefaultWeeklyObjectives());
       setAnnualObjectives(getDefaultAnnualObjectives());
@@ -569,11 +591,9 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   // Computed values
   const totalCompanies = companies.length;
-  const totalQualifiedCompanies = companies.filter(c => c.qualifie).length;
+  const totalQualifiedCompanies = companies.filter((c) => c.qualifie).length;
 
   // LOGIQUE CORRIGÉE POUR ACCUMULER LES ACTIONS (JAMAIS DE DÉCRÉMENTATION)
-  
-  // Fonction pour calculer les actions cumulées basées sur l'étape la plus avancée atteinte
   const calculateCumulativeActionsFromPipeline = (opportunity: Opportunity) => {
     const actions = {
       relances: 0,
@@ -581,25 +601,31 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       rdv: 0,
       devis: 0,
       signatures: 0,
-      acomptes: 0
+      acomptes: 0,
     };
 
-    const currentStage = pipelineStages.find(s => s.id === opportunity.stage_id);
+    const currentStage = pipelineStages.find((s) => s.id === opportunity.stage_id);
     if (!currentStage) return actions;
 
     const stageOrder = currentStage.ordre;
 
-    // PRINCIPE : On regarde toutes les étapes passées ET l'étape actuelle pour accumuler les actions
     const passedStages = pipelineStages
-      .filter(stage => stage.ordre <= stageOrder)
+      .filter((stage) => stage.ordre <= stageOrder)
       .sort((a, b) => a.ordre - b.ordre);
 
-    passedStages.forEach(stage => {
+    passedStages.forEach((stage) => {
       const name = stage.nom.toLowerCase();
 
       // APPELS
-      if (name.includes('cold') || name.includes('relance') || name.includes('rdv') || 
-          name.includes('vente') || name.includes('devis') || name.includes('signature') || name.includes('acompte')) {
+      if (
+        name.includes('cold') ||
+        name.includes('relance') ||
+        name.includes('rdv') ||
+        name.includes('vente') ||
+        name.includes('devis') ||
+        name.includes('signature') ||
+        name.includes('acompte')
+      ) {
         actions.appels = Math.max(actions.appels, 1);
       }
 
@@ -642,205 +668,161 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     return actions;
   };
 
-  // Nouvelles fonctions de comptage qui accumulent les actions
-  const getTotalRelances = (): number => {
-    return opportunities.reduce((total, opp) => {
-      const actions = calculateCumulativeActionsFromPipeline(opp);
-      return total + actions.relances;
-    }, 0);
-  };
+  const getTotalRelances = (): number =>
+    opportunities.reduce((total, opp) => total + calculateCumulativeActionsFromPipeline(opp).relances, 0);
 
-  const getTotalAppels = (): number => {
-    return opportunities.reduce((total, opp) => {
-      const actions = calculateCumulativeActionsFromPipeline(opp);
-      return total + actions.appels;
-    }, 0);
-  };
+  const getTotalAppels = (): number =>
+    opportunities.reduce((total, opp) => total + calculateCumulativeActionsFromPipeline(opp).appels, 0);
 
-  const getTotalRdv = (): number => {
-    return opportunities.reduce((total, opp) => {
-      const actions = calculateCumulativeActionsFromPipeline(opp);
-      return total + actions.rdv;
-    }, 0);
-  };
+  const getTotalRdv = (): number =>
+    opportunities.reduce((total, opp) => total + calculateCumulativeActionsFromPipeline(opp).rdv, 0);
 
-  const getTotalDevis = (): number => {
-    return opportunities.reduce((total, opp) => {
-      const actions = calculateCumulativeActionsFromPipeline(opp);
-      return total + actions.devis;
-    }, 0);
-  };
+  const getTotalDevis = (): number =>
+    opportunities.reduce((total, opp) => total + calculateCumulativeActionsFromPipeline(opp).devis, 0);
 
-  const getTotalSignatures = (): number => {
-    return opportunities.reduce((total, opp) => {
-      const actions = calculateCumulativeActionsFromPipeline(opp);
-      return total + actions.signatures;
-    }, 0);
-  };
+  const getTotalSignatures = (): number =>
+    opportunities.reduce((total, opp) => total + calculateCumulativeActionsFromPipeline(opp).signatures, 0);
 
-  const getTotalAcomptes = (): number => {
-    return opportunities.reduce((total, opp) => {
-      const actions = calculateCumulativeActionsFromPipeline(opp);
-      return total + actions.acomptes;
-    }, 0);
-  };
+  const getTotalAcomptes = (): number =>
+    opportunities.reduce((total, opp) => total + calculateCumulativeActionsFromPipeline(opp).acomptes, 0);
 
   // API Methods
   const addSearchResult = async (result: Omit<SearchResult, 'id' | 'created_at'>) => {
     try {
       const newResult = await searchResultsApi.create(result);
-      // Add compatibility mapping
       const mappedResult = {
         ...newResult,
         useMaps: newResult.source_maps,
         useGoogle: newResult.source_google,
         totalCompanies: newResult.nb_trouves,
         qualifiedCompanies: newResult.nb_qualifies,
-        date: newResult.created_at
+        date: newResult.created_at,
       };
-      setSearchResults(prev => [...prev, mappedResult]);
+      setSearchResults((prev) => [...prev, mappedResult]);
       toast.success('Recherche ajoutée avec succès');
     } catch (error) {
       console.error('Error adding search result:', error);
-      toast.error('Erreur lors de l\'ajout de la recherche');
+      toast.error("Erreur lors de l'ajout de la recherche");
     }
   };
 
   const addCompany = async (company: Omit<Company, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       const newCompany = await companiesApi.create(company);
-      setCompanies(prev => [...prev, newCompany]);
+      setCompanies((prev) => [...prev, newCompany]);
       toast.success('Entreprise ajoutée avec succès');
     } catch (error) {
       console.error('Error adding company:', error);
-      toast.error('Erreur lors de l\'ajout de l\'entreprise');
+      toast.error("Erreur lors de l'ajout de l'entreprise");
     }
   };
 
   const updateCompany = async (id: number, updates: Partial<Company>) => {
     try {
       const updatedCompany = await companiesApi.update(id, updates);
-      setCompanies(prev => prev.map(company => 
-        company.id === id ? { ...company, ...updatedCompany } : company
-      ));
+      setCompanies((prev) => prev.map((company) => (company.id === id ? { ...company, ...updatedCompany } : company)));
     } catch (error) {
       console.error('Error updating company:', error);
-      toast.error('Erreur lors de la mise à jour de l\'entreprise');
+      toast.error("Erreur lors de la mise à jour de l'entreprise");
     }
   };
 
   const deleteCompany = async (id: number) => {
-    const company = companies.find(c => c.id === id);
+    const company = companies.find((c) => c.id === id);
     if (!company) return;
 
     try {
       await companiesApi.delete(id);
-      
-      // Remove company from local state
-      setCompanies(prev => prev.filter(company => company.id !== id));
-      
-      // Remove associated contacts and opportunities
-      setContacts(prev => prev.filter(contact => contact.entreprise_id !== id));
-      setOpportunities(prev => prev.filter(opp => opp.entreprise_id !== id));
-      
+      setCompanies((prev) => prev.filter((c) => c.id !== id));
+      setContacts((prev) => prev.filter((contact) => contact.entreprise_id !== id));
+      setOpportunities((prev) => prev.filter((opp) => opp.entreprise_id !== id));
       const displayName = getCompanyDisplayName(company.name, company.canonical_url);
       toast.success(`${displayName} supprimée avec succès`);
     } catch (error) {
       console.error('Error deleting company:', error);
-      toast.error('Erreur lors de la suppression de l\'entreprise');
+      toast.error("Erreur lors de la suppression de l'entreprise");
     }
   };
 
-  // Helper function to determine if phone number is mobile
+  // Helper phone
   const isMobilePhone = (phone: string): boolean => {
     if (!phone) return false;
     const cleaned = phone.replace(/[^0-9+]/g, '');
-    // Test for French mobile patterns: 06, 07, +336, +337, 336, 337
     return /^(06|07|\+336|\+337|336|337)/.test(cleaned);
   };
 
-  // Helper function to generate opportunity name based on website presence
+  // Helper name
   const generateOpportunityName = (company: Company): string => {
-    // Get company name, fallback to domain name only (without extension) if no company name
     let companyName = '';
-    
+
     if (company.name && company.name.trim()) {
       companyName = company.name.trim();
     } else if (company.canonical_url) {
-      // Extract just the domain name (without .com, .fr, etc.)
       companyName = extractDomainNameOnly(company.canonical_url);
     }
-    
-    // If still no name, use fallback
-    if (!companyName) {
-      companyName = 'Entreprise';
-    }
-    
-    // Check if company has a website
-    const hasWebsite = company.canonical_url && 
-                       company.canonical_url.trim() !== '' && 
-                       company.canonical_url !== 'N/A' &&
-                       company.canonical_url !== 'null';
-    
-    if (hasWebsite) {
-      return `${companyName} refonte de site web`;
-    } else {
-      return `${companyName} création de site web`;
-    }
+
+    if (!companyName) companyName = 'Entreprise';
+
+    const hasWebsite =
+      !!company.canonical_url &&
+      company.canonical_url.trim() !== '' &&
+      company.canonical_url !== 'N/A' &&
+      company.canonical_url !== 'null';
+
+    return hasWebsite ? `${companyName} refonte de site web` : `${companyName} création de site web`;
   };
 
-  // Modified qualifyCompany - creates opportunity automatically with smart naming
+  // Qualify = crée auto une opportunité
   const qualifyCompany = async (companyId: number) => {
-    const company = companies.find(c => c.id === companyId);
+    const company = companies.find((c) => c.id === companyId);
     if (!company || company.qualifie) return;
 
     try {
-      // Only update company qualification - do not create contact
       await updateCompany(companyId, { qualifie: true });
-      
-      // Create achievement
+
       const achievement: Omit<Achievement, 'id'> = {
         date: new Date().toISOString(),
         type_evenement: 'qualified',
         description: `${getCompanyDisplayName(company.name, company.canonical_url)} a été qualifiée`,
-        entreprise_id: company.id
+        entreprise_id: company.id,
       };
-      
+
       try {
         const savedAchievement = await achievementsApi.create(achievement);
-        setAchievements(prev => [...prev, savedAchievement]);
+        setAchievements((prev) => [...prev, savedAchievement]);
       } catch (achievementError) {
         console.error('Error creating achievement:', achievementError);
-        // Continue even if achievement creation fails
       }
 
-      // Create opportunity automatically
       const opportunityName = generateOpportunityName(company);
-      const defaultStage = pipelineStages.find(stage => stage.ordre === 1) || pipelineStages[0];
-      
-      // Check if company has mobile phone number (French mobile patterns)
-      const hasMobilePhone = company.telephone && isMobilePhone(company.telephone);
-      
+      const defaultStage = pipelineStages.find((stage) => stage.ordre === 1) || pipelineStages[0];
+
+      const hasMobilePhone = !!company.telephone && isMobilePhone(company.telephone);
+
       const opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'> = {
         entreprise_id: company.id,
-        montant: 2500, // Default value of 2500 euros
-        priorite: hasMobilePhone ? 'haute' : 'moyenne', // Higher priority if mobile phone available
+        montant: 2500,
+        priorite: hasMobilePhone ? 'haute' : 'moyenne',
         stage_id: defaultStage?.id,
         lead_magnet: false,
-        note_base: `Opportunité créée automatiquement pour ${getCompanyDisplayName(company.name, company.canonical_url)}.${hasMobilePhone ? ' Numéro mobile disponible (' + company.telephone + ').' : ''}`,
+        note_base: `Opportunité créée automatiquement pour ${getCompanyDisplayName(
+          company.name,
+          company.canonical_url
+        )}.${hasMobilePhone ? ' Numéro mobile disponible (' + company.telephone + ').' : ''}`,
         name: opportunityName,
-        type: 'one_shot' // Default type
+        type: 'one_shot',
       };
 
       try {
         await addOpportunity(opportunity);
       } catch (opportunityError) {
         console.error('Error creating opportunity:', opportunityError);
-        // Continue even if opportunity creation fails
       }
-      
+
       const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-      toast.success(`${displayName} qualifiée avec succès ! Une opportunité "${opportunityName}" a été créée automatiquement.`);
+      toast.success(
+        `${displayName} qualifiée avec succès ! Une opportunité "${opportunityName}" a été créée automatiquement.`
+      );
     } catch (error) {
       console.error('Error qualifying company:', error);
       toast.error('Erreur lors de la qualification');
@@ -848,24 +830,23 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const unqualifyCompany = async (companyId: number) => {
-    const company = companies.find(c => c.id === companyId);
+    const company = companies.find((c) => c.id === companyId);
     if (!company || !company.qualifie) return;
 
     try {
       await updateCompany(companyId, { qualifie: false });
 
-      // Remove associated contacts and opportunities
-      const associatedContacts = contacts.filter(contact => contact.entreprise_id === companyId);
-      const associatedOpportunities = opportunities.filter(opp => opp.entreprise_id === companyId);
+      const associatedContacts = contacts.filter((contact) => contact.entreprise_id === companyId);
+      const associatedOpportunities = opportunities.filter((opp) => opp.entreprise_id === companyId);
 
       await Promise.all([
-        ...associatedContacts.map(contact => contactsApi.delete(contact.id)),
-        ...associatedOpportunities.map(opp => opportunitiesApi.delete(opp.id))
+        ...associatedContacts.map((contact) => contactsApi.delete(contact.id)),
+        ...associatedOpportunities.map((opp) => opportunitiesApi.delete(opp.id)),
       ]);
 
-      setContacts(prev => prev.filter(contact => contact.entreprise_id !== companyId));
-      setOpportunities(prev => prev.filter(opp => opp.entreprise_id !== companyId));
-      
+      setContacts((prev) => prev.filter((contact) => contact.entreprise_id !== companyId));
+      setOpportunities((prev) => prev.filter((opp) => opp.entreprise_id !== companyId));
+
       toast.success(`${company.name} déqualifiée`);
     } catch (error) {
       console.error('Error unqualifying company:', error);
@@ -876,27 +857,25 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   const addContact = async (contact: Omit<Contact, 'id'>) => {
     try {
       const newContact = await contactsApi.create(contact);
-      setContacts(prev => [...prev, newContact]);
+      setContacts((prev) => [...prev, newContact]);
       toast.success('Contact ajouté avec succès');
     } catch (error) {
       console.error('Error adding contact:', error);
-      toast.error('Erreur lors de l\'ajout du contact');
+      toast.error("Erreur lors de l'ajout du contact");
     }
   };
 
   const updateContact = async (id: string, updates: Partial<Contact>) => {
     try {
       const updatedContact = await contactsApi.update(id, updates);
-      setContacts(prev => prev.map(contact => 
-        contact.id === id ? { ...contact, ...updatedContact } : contact
-      ));
+      setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, ...updatedContact } : c)));
     } catch (error) {
       console.error('Error updating contact:', error);
       toast.error('Erreur lors de la mise à jour du contact');
     }
   };
 
-  // Contact notes methods
+  // Notes Contact
   const addContactNote = async (contactId: string, note: string) => {
     try {
       const newNote = await contactsApi.addNote(contactId, note);
@@ -904,7 +883,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       return newNote;
     } catch (error) {
       console.error('Error adding contact note:', error);
-      toast.error('Erreur lors de l\'ajout de la note');
+      toast.error("Erreur lors de l'ajout de la note");
       throw error;
     }
   };
@@ -953,33 +932,22 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       }
 
-      console.log('addOpportunity called with:', opportunity);
-      console.log('Opportunity name being passed:', opportunity.name);
-      console.log('Filtered opportunity data:', filteredOpportunity);
-      console.log('Filtered opportunity name:', (filteredOpportunity as any).name);
-
       const newOpportunity = await opportunitiesApi.create(filteredOpportunity);
-
-      console.log('New opportunity returned from API:', newOpportunity);
-      console.log('Returned opportunity name:', newOpportunity.name);
-
-      setOpportunities(prev => [...prev, newOpportunity]);
+      setOpportunities((prev) => [...prev, newOpportunity]);
       toast.success('Opportunité ajoutée avec succès');
     } catch (error) {
       console.error('Error adding opportunity:', error);
-      toast.error('Erreur lors de l\'ajout de l\'opportunité');
+      toast.error("Erreur lors de l'ajout de l'opportunité");
     }
   };
 
   const updateOpportunity = async (id: string, updates: Partial<Opportunity>) => {
-    const opportunity = opportunities.find(opp => opp.id === id);
-    if (!opportunity) return;
+    const original = opportunities.find((opp) => opp.id === id);
+    if (!original) return;
 
     try {
-      // Immediately update the UI with optimistic updates
-      setOpportunities(prev =>
-        prev.map(opp => (opp.id === id ? syncOpportunityProperties(opp, updates) : opp))
-      );
+      // Optimistic UI update — garde bien le type Opportunity
+      setOpportunities((prev) => prev.map((opp) => (opp.id === id ? syncOpportunityProperties(opp, updates) : opp)));
 
       /* ------------------------------------------------------------
          ✅ Bloc 3 — filteredUpdates typé via clés valides
@@ -995,10 +963,9 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       await opportunitiesApi.update(id, filteredUpdates);
     } catch (error) {
       console.error('Error updating opportunity:', error);
-      toast.error('Erreur lors de la mise à jour de l\'opportunité');
+      toast.error("Erreur lors de la mise à jour de l'opportunité");
       // Revert optimistic update on error
-      const original = opportunity!;
-      setOpportunities(prev => prev.map(opp => (opp.id === id ? original : opp)));
+      setOpportunities((prev) => prev.map((opp) => (opp.id === id ? original : opp)));
     }
   };
 
@@ -1006,67 +973,54 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     await updateOpportunity(opportunityId, { stage_id: stageId });
   };
 
-  const getOpportunitiesByStage = (stageId: number) => {
-    return opportunities.filter(opp => opp.stage_id === stageId);
-  };
+  const getOpportunitiesByStage = (stageId: number) => opportunities.filter((opp) => opp.stage_id === stageId);
 
   const addOpportunityNote = async (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => {
     try {
       const newNote = await notesApi.create({ ...note, opportunite_id: opportunityId });
-      
-      // Update the opportunity with the new note
-      setOpportunities(prev => prev.map(opp => {
-        if (opp.id === opportunityId) {
-          return {
-            ...opp,
-            opportunityNotes: [...(opp.opportunityNotes || []), newNote]
-          };
-        }
-        return opp;
-      }));
-      
+
+      setOpportunities((prev) =>
+        prev.map((opp) => {
+          if (opp.id === opportunityId) {
+            return { ...opp, opportunityNotes: [...(opp.opportunityNotes || []), newNote] };
+          }
+          return opp;
+        })
+      );
+
       toast.success('Note ajoutée avec succès');
     } catch (error) {
       console.error('Error adding opportunity note:', error);
-      toast.error('Erreur lors de l\'ajout de la note');
+      toast.error("Erreur lors de l'ajout de la note");
     }
   };
 
-  const getCompaniesBySearchId = (searchId: string) => {
-    return companies.filter(company => company.recherche_id === searchId);
-  };
+  const getCompaniesBySearchId = (searchId: string) => companies.filter((company) => company.recherche_id === searchId);
 
-  const getMapCompanies = (searchId: string) => {
-    return companies.filter(company => 
-      company.recherche_id === searchId && company.sources.includes('google_maps')
-    );
-  };
+  const getMapCompanies = (searchId: string) =>
+    companies.filter((company) => company.recherche_id === searchId && company.sources.includes('google_maps'));
 
-  const getGoogleCompanies = (searchId: string) => {
-    return companies.filter(company => 
-      company.recherche_id === searchId && company.sources.includes('google_search')
-    );
-  };
+  const getGoogleCompanies = (searchId: string) =>
+    companies.filter((company) => company.recherche_id === searchId && company.sources.includes('google_search'));
 
   const toggleLeadMagnet = async (opportunityId: string) => {
-    const opportunity = opportunities.find(opp => opp.id === opportunityId);
+    const opportunity = opportunities.find((opp) => opp.id === opportunityId);
     if (!opportunity) return;
 
     const newLeadMagnetState = !opportunity.lead_magnet;
     await updateOpportunity(opportunityId, { lead_magnet: newLeadMagnetState });
 
     if (newLeadMagnetState) {
-      // Create achievement for lead magnet
       const achievement: Omit<Achievement, 'id'> = {
         date: new Date().toISOString(),
         type_evenement: 'lead_magnet',
         description: `Lead magnet créé pour ${opportunity.companyName}`,
-        opportunite_id: opportunityId
+        opportunite_id: opportunityId,
       };
-      
+
       try {
         const savedAchievement = await achievementsApi.create(achievement);
-        setAchievements(prev => [...prev, savedAchievement]);
+        setAchievements((prev) => [...prev, savedAchievement]);
       } catch (achievementError) {
         console.error('Error creating achievement:', achievementError);
       }
@@ -1092,8 +1046,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const checkAndTriggerAchievements = () => {
-    // This would check for various achievements and trigger them
-    // Implementation would depend on specific business logic
+    // Ajoutez ici votre logique d’achievements
   };
 
   const contextValue: AppDataContextType = {
@@ -1142,14 +1095,10 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     updateWeeklyObjectives,
     updateAnnualObjectives,
     checkAndTriggerAchievements,
-    refreshData
+    refreshData,
   };
 
-  return (
-    <AppDataContext.Provider value={contextValue}>
-      {children}
-    </AppDataContext.Provider>
-  );
+  return <AppDataContext.Provider value={contextValue}>{children}</AppDataContext.Provider>;
 };
 
 export const useAppData = () => {
