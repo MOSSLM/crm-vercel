@@ -4,9 +4,6 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Contexte large compatible avec Next
-type RouteContext = { params: Record<string, string | string[]> };
-
 // —— Supabase (server) ——
 const supabase = createClient(
   process.env.SUPABASE_URL as string,
@@ -336,6 +333,7 @@ async function getHistoricalDataFromJournal(type: string, limit: number) {
       else if (t === "acompte") metrics.acomptes++;
       else if (t === "lead_magnet") metrics.leadmagnets++;
       else if (t === "qualified") metrics.leads_qualifies++;
+
       if (e.description && (t.includes("ca") || t.includes("chiffre"))) {
         metrics.ca += extractAmountFromDescription(e.description) || 0;
       }
@@ -457,11 +455,13 @@ export async function OPTIONS() {
   return new Response(null, { status: 204, headers: corsHeaders });
 }
 
-export async function GET(req: Request, context: RouteContext) {
+export async function GET(
+  req: Request,
+  { params }: { params: Promise<{ path?: string[] }> }
+) {
   try {
-    const params = context.params;
-    const raw = params["path"];
-    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    const { path: raw } = await params;
+    const segs = raw ?? [];
     const path = `/${segs.join("/")}`;
     const url = new URL(req.url);
 
@@ -629,7 +629,6 @@ export async function GET(req: Request, context: RouteContext) {
         .select("metric, total, total_week, total_month, total_quarter, total_year");
 
       if (error) {
-        // Fallback direct compute
         const { data: jdata, error: jerr } = await supabase
           .from("journal_succes")
           .select("type_evenement, created_at");
@@ -698,7 +697,6 @@ export async function GET(req: Request, context: RouteContext) {
         return json(res);
       }
 
-      // Transform view
       const totals: any = {
         total_appels: 0, total_relances: 0, total_rdvs: 0, total_devis: 0,
         total_signatures: 0, total_acomptes: 0, total_lead_magnets: 0, total_qualified: 0,
@@ -747,11 +745,13 @@ export async function GET(req: Request, context: RouteContext) {
   }
 }
 
-export async function POST(req: Request, context: RouteContext) {
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ path?: string[] }> }
+) {
   try {
-    const params = context.params;
-    const raw = params["path"];
-    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    const { path: raw } = await params;
+    const segs = raw ?? [];
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -899,11 +899,13 @@ export async function POST(req: Request, context: RouteContext) {
   }
 }
 
-export async function PUT(req: Request, context: RouteContext) {
+export async function PUT(
+  req: Request,
+  { params }: { params: Promise<{ path?: string[] }> }
+) {
   try {
-    const params = context.params;
-    const raw = params["path"];
-    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    const { path: raw } = await params;
+    const segs = raw ?? [];
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -985,11 +987,13 @@ export async function PUT(req: Request, context: RouteContext) {
   }
 }
 
-export async function DELETE(_req: Request, context: RouteContext) {
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ path?: string[] }> }
+) {
   try {
-    const params = context.params;
-    const raw = params["path"];
-    const segs = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+    const { path: raw } = await params;
+    const segs = raw ?? [];
     const path = `/${segs.join("/")}`;
 
     // Delete note
