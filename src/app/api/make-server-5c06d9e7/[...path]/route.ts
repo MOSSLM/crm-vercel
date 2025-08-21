@@ -458,10 +458,10 @@ export async function OPTIONS() {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { path?: string[] } }
+  { params }: { params: { path: string[] } }
 ) {
   try {
-    const segs = params.path ?? [];
+    const segs = params.path;
     const path = `/${segs.join("/")}`;
     const url = new URL(req.url);
 
@@ -749,10 +749,10 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { path?: string[] } }
+  { params }: { params: { path: string[] } }
 ) {
   try {
-    const segs = params.path ?? [];
+    const segs = params.path;
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -902,10 +902,10 @@ export async function POST(
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { path?: string[] } }
+  { params }: { params: { path: string[] } }
 ) {
   try {
-    const segs = params.path ?? [];
+    const segs = params.path;
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -989,10 +989,10 @@ export async function PUT(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { path?: string[] } }
+  { params }: { params: { path: string[] } }
 ) {
   try {
-    const segs = params.path ?? [];
+    const segs = params.path;
     const path = `/${segs.join("/")}`;
 
     // Delete note
