@@ -1,3 +1,5 @@
+"use client";
+
 import React from 'react';
 import { Building, MapPin, Globe, Users, Mail, Phone, CheckCircle } from 'lucide-react';
 import { Badge } from '../ui/badge';

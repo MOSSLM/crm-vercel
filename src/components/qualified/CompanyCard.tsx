@@ -1,3 +1,5 @@
+"use client";
+
 import React from 'react';
 import { Building, MapPin, Globe, Users, Calendar } from 'lucide-react';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../../utils/displayHelpers';

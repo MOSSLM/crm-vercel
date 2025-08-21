@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState } from 'react';
 import { useAppData } from './AppDataContext';
 import { Button } from './ui/button';

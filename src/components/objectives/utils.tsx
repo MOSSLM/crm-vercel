@@ -1,3 +1,5 @@
+"use client";
+
 import { Period, PeriodType } from './types';
 
 export const generatePeriods = (type: PeriodType, count: number = 12): Period[] => {

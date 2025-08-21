@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from 'react';
 import { useAppData } from './AppDataContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';

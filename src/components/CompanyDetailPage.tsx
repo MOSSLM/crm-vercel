@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from 'react';
 import { useAppData, Company, RevenueBand, EmployeeBand, Opportunity } from './AppDataContext';
 import { companiesApi } from '../utils/api';

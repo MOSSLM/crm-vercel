@@ -1,4 +1,3 @@
-"use client";
 
 import AppLayout from "@/components/layout/AppLayout";
 import RequireAuth from "@/components/auth/RequireAuth";

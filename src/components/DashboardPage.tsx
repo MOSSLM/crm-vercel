@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect } from 'react';
 import { useAppData } from './AppDataContext';
 import { journalApi, JournalKpiTotals } from '../utils/journalApi';

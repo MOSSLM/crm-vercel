@@ -1,3 +1,5 @@
+"use client";
+
 import React from 'react';
 import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
