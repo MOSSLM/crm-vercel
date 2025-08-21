@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { NextRequest } from "next/server";
 
 // —— Next.js route options ——
 export const runtime = "nodejs";
@@ -450,15 +451,17 @@ function transformRealKpiDataByPeriod(kpiData: any[], periodType: string) {
 // ===================================================
 // =============== ROUTER (catch-all) ================
 // ===================================================
-type NextCtx = { params: { path?: string[] } };
 
 export async function OPTIONS() {
   return new Response(null, { status: 204, headers: corsHeaders });
 }
 
-export async function GET(req: Request, ctx: NextCtx) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: { path?: string[] } }
+) {
   try {
-    const segs = ctx.params.path ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
     const url = new URL(req.url);
 
@@ -744,9 +747,12 @@ export async function GET(req: Request, ctx: NextCtx) {
   }
 }
 
-export async function POST(req: Request, ctx: NextCtx) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { path?: string[] } }
+) {
   try {
-    const segs = ctx.params.path ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -894,9 +900,12 @@ export async function POST(req: Request, ctx: NextCtx) {
   }
 }
 
-export async function PUT(req: Request, ctx: NextCtx) {
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: { path?: string[] } }
+) {
   try {
-    const segs = ctx.params.path ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -978,9 +987,12 @@ export async function PUT(req: Request, ctx: NextCtx) {
   }
 }
 
-export async function DELETE(_req: Request, ctx: NextCtx) {
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { path?: string[] } }
+) {
   try {
-    const segs = ctx.params.path ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
 
     // Delete note
