@@ -10,14 +10,12 @@ import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from './ui/pagination';
 import { 
   Search, 
   Filter, 
   ExternalLink, 
   MapPin, 
-  Star, 
   Calendar,
   Target,
   LayoutGrid,
@@ -213,13 +211,13 @@ export const QualificationPage: React.FC = () => {
                 </Badge>
                 {/* Contact info indicators */}
                 {company.telephone && (
-                  <Phone className="h-3 w-3 text-blue-600" title="Téléphone disponible" />
+                  <Phone className="h-3 w-3 text-blue-600" />
                 )}
                 {company.email && (
-                  <Mail className="h-3 w-3 text-green-600" title="Email disponible" />
+                  <Mail className="h-3 w-3 text-green-600" />
                 )}
                 {company.contact_name && (
-                  <User className="h-3 w-3 text-purple-600" title="Contact nommé" />
+                  <User className="h-3 w-3 text-purple-600" />
                 )}
               </div>
             </div>
@@ -492,13 +490,13 @@ export const QualificationPage: React.FC = () => {
                             <span className="font-medium">{displayName}</span>
                             {/* Contact info indicators */}
                             {company.telephone && (
-                              <Phone className="h-3 w-3 text-blue-600" title="Téléphone disponible" />
+                              <Phone className="h-3 w-3 text-blue-600" />
                             )}
                             {company.email && (
-                              <Mail className="h-3 w-3 text-green-600" title="Email disponible" />
+                              <Mail className="h-3 w-3 text-green-600" />
                             )}
                             {company.contact_name && (
-                              <User className="h-3 w-3 text-purple-600" title="Contact nommé" />
+                              <User className="h-3 w-3 text-purple-600" />
                             )}
                           </div>
                           {company.canonical_url && (
@@ -513,8 +511,8 @@ export const QualificationPage: React.FC = () => {
                             </Badge>
                             {(company.telephone || company.email || company.contact_name) && (
                               <div className="text-xs text-muted-foreground">
-                                {company.telephone && `📞 ${company.telephone}`}
-                                {company.email && `✉️ ${company.email}`}
+                                {company.telephone && `📞 ${company.telephone}`}{" "}
+                                {company.email && `✉️ ${company.email}`}{" "}
                                 {company.contact_name && `👤 ${company.contact_name}`}
                               </div>
                             )}

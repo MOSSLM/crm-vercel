@@ -37,7 +37,7 @@ import {
   Activity,
   Banknote
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 export const ObjectivesPage: React.FC = () => {
   const { 
@@ -83,7 +83,6 @@ export const ObjectivesPage: React.FC = () => {
   }, [annualObjectives]);
 
   // Calcul des statistiques actuelles avec la nouvelle logique
-
   const currentStats = {
     leadsFound: totalCompanies,
     leadsQualified: totalQualifiedCompanies,
@@ -260,7 +259,8 @@ export const ObjectivesPage: React.FC = () => {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 5);
 
-  const getAchievementIcon = (type: string) => {
+  // 🔧 Accepte `string | undefined`
+  const getAchievementIcon = (type?: string) => {
     switch (type) {
       case 'signature': return <Handshake className="h-5 w-5 text-red-600" />;
       case 'deposit': return <Banknote className="h-5 w-5 text-emerald-600" />;

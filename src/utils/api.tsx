@@ -696,29 +696,34 @@ export const contactsApi = {
       if (!contact.notes) return [];
       
       // Split notes by double newlines and parse each note
-      const noteEntries = contact.notes.split('\n\n').filter(note => note.trim());
+      const noteEntries: string[] = contact.notes
+        .split('\n\n')
+        .filter((note: string) => note.trim());
       
-      return noteEntries.map((noteEntry, index) => {
-        // Try to extract timestamp from note
-        const timestampMatch = noteEntry.match(/^\[([^\]]+)\] (.+)$/s);
-        if (timestampMatch) {
-          return {
-            id: index + 1,
-            contact_id: contactId,
-            note: timestampMatch[2],
-            created_at: new Date(timestampMatch[1]).toISOString() || new Date().toISOString(),
-            updated_at: new Date(timestampMatch[1]).toISOString() || new Date().toISOString()
-          };
-        } else {
-          return {
-            id: index + 1,
-            contact_id: contactId,
-            note: noteEntry,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-        }
-      }).reverse(); // Show newest first
+      return noteEntries
+        .map((noteEntry: string, index: number) => {
+          // Try to extract timestamp from note
+          // avant:  /^\[([^\]]+)\] (.+)$/s
+          const timestampMatch = noteEntry.match(/^\[([^\]]+)\] ([\s\S]+)$/);
+          if (timestampMatch) {
+            return {
+              id: index + 1,
+              contact_id: contactId,
+              note: timestampMatch[2],
+              created_at: new Date(timestampMatch[1]).toISOString() || new Date().toISOString(),
+              updated_at: new Date(timestampMatch[1]).toISOString() || new Date().toISOString()
+            };
+          } else {
+            return {
+              id: index + 1,
+              contact_id: contactId,
+              note: noteEntry,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            };
+          }
+        })
+        .reverse(); // Show newest first
     } catch (error) {
       console.error('Error fetching contact notes:', error);
       return [];

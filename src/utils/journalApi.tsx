@@ -33,9 +33,9 @@ export const logEvent = async (eventData: JournalEventData): Promise<void> => {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify(eventData)
+    body: JSON.stringify(eventData),
   });
 
   if (!response.ok) {
@@ -50,9 +50,9 @@ export const logCall = async (opportunite_id?: string, entreprise_id?: number, d
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description })
+    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
   });
 
   if (!response.ok) {
@@ -66,9 +66,9 @@ export const logRelance = async (opportunite_id?: string, entreprise_id?: number
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description })
+    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
   });
 
   if (!response.ok) {
@@ -82,9 +82,9 @@ export const logRdv = async (opportunite_id?: string, entreprise_id?: number, de
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description })
+    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
   });
 
   if (!response.ok) {
@@ -98,9 +98,9 @@ export const logDevis = async (opportunite_id?: string, entreprise_id?: number, 
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description })
+    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
   });
 
   if (!response.ok) {
@@ -114,9 +114,9 @@ export const logSignature = async (opportunite_id?: string, entreprise_id?: numb
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description })
+    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
   });
 
   if (!response.ok) {
@@ -130,9 +130,9 @@ export const logAcompte = async (opportunite_id?: string, entreprise_id?: number
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description })
+    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
   });
 
   if (!response.ok) {
@@ -146,9 +146,9 @@ export const logLeadMagnet = async (opportunite_id?: string, entreprise_id?: num
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`
+      'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description })
+    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
   });
 
   if (!response.ok) {
@@ -165,8 +165,8 @@ export const getJournalStats = async (opportunite_id?: string, entreprise_id?: n
 
   const response = await fetch(`${baseUrl}/journal/stats?${params}`, {
     headers: {
-      'Authorization': `Bearer ${publicAnonKey}`
-    }
+      'Authorization': `Bearer ${publicAnonKey}`,
+    },
   });
 
   if (!response.ok) {
@@ -185,8 +185,8 @@ export const getJournalHistory = async (opportunite_id?: string, entreprise_id?:
 
   const response = await fetch(`${baseUrl}/journal/history?${params}`, {
     headers: {
-      'Authorization': `Bearer ${publicAnonKey}`
-    }
+      'Authorization': `Bearer ${publicAnonKey}`,
+    },
   });
 
   if (!response.ok) {
@@ -205,8 +205,8 @@ export const getNextSequenceNumber = async (type: string, opportunite_id?: strin
 
   const response = await fetch(`${baseUrl}/journal/next-sequence/${type}?${params}`, {
     headers: {
-      'Authorization': `Bearer ${publicAnonKey}`
-    }
+      'Authorization': `Bearer ${publicAnonKey}`,
+    },
   });
 
   if (!response.ok) {
@@ -218,70 +218,79 @@ export const getNextSequenceNumber = async (type: string, opportunite_id?: strin
   return data.nextNumber;
 };
 
+/**
+ * Mapping des étapes pipeline -> type d'événement
+ * Découpé en 2 objets puis fusionné pour éviter les doublons dans un même literal (TS1117).
+ */
+const baseStageMap: Record<string, string> = {
+  // Étapes génériques
+  prospection: 'cold_call',
+  contact: 'cold_call',
+  qualification: 'qualification',
+  rdv: 'rdv',
+  proposition: 'devis',
+  negotiation: 'negotiation',
+  signature: 'signature',
+  acompte: 'acompte',
+  livraison: 'livraison',
+  suivi: 'suivi',
+};
+
+const specificStageMap: Record<string, string> = {
+  // Étapes spécifiques utilisées dans l'appli
+  'cold call': 'cold_call',
+  'relance 1': 'relance',
+  'relance 2': 'relance',
+  'relance 3': 'relance',
+  'relance 4': 'relance',
+  'relance 5': 'relance',
+  'rdv de vente 1': 'rdv',
+  'rdv de vente 2': 'rdv',
+  'rdv de vente 3': 'rdv',
+  'rdv 1': 'rdv',
+  'rdv 2': 'rdv',
+  'rdv 3': 'rdv',
+  devis: 'devis',
+  proposition: 'devis',          // surcharge voulue
+  'devis envoyé': 'devis',
+  'attente devis': 'devis',
+  'négociation': 'negotiation',
+  'négociation en cours': 'negotiation',
+  signature: 'signature',
+  'signé': 'signature',
+  'contrat signé': 'signature',
+  acompte: 'acompte',
+  'acompte reçu': 'acompte',
+  paiement: 'acompte',
+  livraison: 'livraison',
+  'livré': 'livraison',
+  'terminé': 'livraison',
+  suivi: 'suivi',
+  'suivi client': 'suivi',
+  'post-vente': 'suivi',
+};
+
+const stageToEventType: Record<string, string> = {
+  ...baseStageMap,
+  ...specificStageMap,
+};
+
 // Fonction utilitaire pour enregistrer automatiquement les changements d'étape dans le pipeline
 export const logPipelineStageChange = async (
-  newStage: string, 
-  opportunite_id?: string, 
-  entreprise_id?: number, 
+  newStage: string,
+  opportunite_id?: string,
+  entreprise_id?: number,
   description?: string
 ): Promise<void> => {
-  // Mapping complet des étapes pipeline vers les types d'événements
-  const stageToEventType: { [key: string]: string } = {
-    // Étapes génériques
-    'prospection': 'cold_call',
-    'contact': 'cold_call',
-    'qualification': 'qualification',
-    'rdv': 'rdv',
-    'proposition': 'devis',
-    'negotiation': 'negotiation',
-    'signature': 'signature',
-    'acompte': 'acompte',
-    'livraison': 'livraison',
-    'suivi': 'suivi',
-    
-    // Étapes spécifiques réelles utilisées dans l'application
-    'cold call': 'cold_call',
-    'relance 1': 'relance',
-    'relance 2': 'relance',
-    'relance 3': 'relance',
-    'relance 4': 'relance',
-    'relance 5': 'relance',
-    'rdv de vente 1': 'rdv',
-    'rdv de vente 2': 'rdv',
-    'rdv de vente 3': 'rdv',
-    'rdv 1': 'rdv',
-    'rdv 2': 'rdv',
-    'rdv 3': 'rdv',
-    'devis': 'devis',
-    'proposition': 'devis',
-    'devis envoyé': 'devis',
-    'attente devis': 'devis',
-    'négociation': 'negotiation',
-    'négociation en cours': 'negotiation',
-    'signature': 'signature',
-    'signé': 'signature',
-    'contrat signé': 'signature',
-    'acompte': 'acompte',
-    'acompte reçu': 'acompte',
-    'paiement': 'acompte',
-    'livraison': 'livraison',
-    'livré': 'livraison',
-    'terminé': 'livraison',
-    'suivi': 'suivi',
-    'suivi client': 'suivi',
-    'post-vente': 'suivi'
-  };
-
   const normalizedStage = newStage.toLowerCase().trim();
   let eventType = stageToEventType[normalizedStage];
-  
+
   // Si pas trouvé dans le mapping, utiliser la détection automatique
   if (!eventType) {
     console.log(`[Journal] Étape "${newStage}" non trouvée dans le mapping, utilisation de la détection automatique`);
     eventType = detectEventTypeFromStageName(newStage);
   }
 
-  // Pour certaines étapes, utiliser les fonctions spécialisées avec séquence
   try {
     switch (eventType) {
       case 'relance':
@@ -307,7 +316,7 @@ export const logPipelineStageChange = async (
           type_evenement: eventType,
           description: description || `Passage à l'étape: ${newStage}`,
           opportunite_id,
-          entreprise_id
+          entreprise_id,
         });
         break;
     }
@@ -321,7 +330,7 @@ export const logPipelineStageChange = async (
 // Fonction utilitaire pour détecter automatiquement le type d'événement à partir du nom d'étape
 export const detectEventTypeFromStageName = (stageName: string): string => {
   const normalized = stageName.toLowerCase().trim();
-  
+
   // Détection par mots-clés (ordre important - du plus spécifique au plus général)
   if (normalized.includes('call') || normalized.includes('appel') || normalized.includes('cold')) {
     return 'cold_call';
@@ -329,40 +338,41 @@ export const detectEventTypeFromStageName = (stageName: string): string => {
   if (normalized.includes('relance')) {
     return 'relance';
   }
-  if (normalized.includes('rdv') || normalized.includes('rendez-vous') || 
-      (normalized.includes('vente') && (normalized.includes('1') || normalized.includes('2') || normalized.includes('3')))) {
+  if (
+    normalized.includes('rdv') ||
+    normalized.includes('rendez-vous') ||
+    (normalized.includes('vente') && (normalized.includes('1') || normalized.includes('2') || normalized.includes('3')))
+  ) {
     return 'rdv';
   }
-  if (normalized.includes('devis') || normalized.includes('proposition') || 
-      normalized.includes('quote') || normalized.includes('estimate')) {
+  if (normalized.includes('devis') || normalized.includes('proposition') || normalized.includes('quote') || normalized.includes('estimate')) {
     return 'devis';
   }
-  if (normalized.includes('négociation') || normalized.includes('negotiation') || 
-      normalized.includes('nego')) {
+  if (normalized.includes('négociation') || normalized.includes('negotiation') || normalized.includes('nego')) {
     return 'negotiation';
   }
-  if (normalized.includes('signature') || normalized.includes('signé') || 
-      normalized.includes('contrat') || normalized.includes('signed')) {
+  if (normalized.includes('signature') || normalized.includes('signé') || normalized.includes('contrat') || normalized.includes('signed')) {
     return 'signature';
   }
-  if (normalized.includes('acompte') || normalized.includes('paiement') || 
-      normalized.includes('payment') || normalized.includes('deposit')) {
+  if (normalized.includes('acompte') || normalized.includes('paiement') || normalized.includes('payment') || normalized.includes('deposit')) {
     return 'acompte';
   }
-  if (normalized.includes('livraison') || normalized.includes('livré') || 
-      normalized.includes('delivery') || normalized.includes('terminé') || 
-      normalized.includes('completed')) {
+  if (
+    normalized.includes('livraison') ||
+    normalized.includes('livré') ||
+    normalized.includes('delivery') ||
+    normalized.includes('terminé') ||
+    normalized.includes('completed')
+  ) {
     return 'livraison';
   }
-  if (normalized.includes('suivi') || normalized.includes('post') || 
-      normalized.includes('follow') || normalized.includes('maintenance')) {
+  if (normalized.includes('suivi') || normalized.includes('post') || normalized.includes('follow') || normalized.includes('maintenance')) {
     return 'suivi';
   }
-  if (normalized.includes('qualification') || normalized.includes('qualifié') || 
-      normalized.includes('qualified')) {
+  if (normalized.includes('qualification') || normalized.includes('qualifié') || normalized.includes('qualified')) {
     return 'qualification';
   }
-  
+
   // Fallback: utiliser le nom normalisé comme type d'événement personnalisé
   return normalized.replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
 };
@@ -395,19 +405,19 @@ export interface JournalKpiTotals {
 // Récupérer les totaux KPI depuis la vue journal
 export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
   console.log('📡 Appel API vers:', `${baseUrl}/kpi/journal-totals`);
-  
+
   const response = await fetch(`${baseUrl}/kpi/journal-totals`, {
     headers: {
-      'Authorization': `Bearer ${publicAnonKey}`
-    }
+      Authorization: `Bearer ${publicAnonKey}`,
+    },
   });
 
   console.log('📡 Statut de la réponse:', response.status, response.statusText);
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error('❌ Erreur de l\'API:', errorText);
-    
+    console.error("❌ Erreur de l'API:", errorText);
+
     let error;
     try {
       error = JSON.parse(errorText);
@@ -418,8 +428,8 @@ export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
   }
 
   const data = await response.json();
-  console.log('📊 Données reçues de l\'API:', data);
-  
+  console.log("📊 Données reçues de l'API:", data);
+
   return data;
 };
 
@@ -437,5 +447,5 @@ export const journalApi = {
   getNextSequenceNumber,
   logPipelineStageChange,
   detectEventTypeFromStageName,
-  getJournalKpiTotals
+  getJournalKpiTotals,
 };

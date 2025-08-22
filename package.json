@@ -2,16 +2,17 @@
   "name": "crm-vercel",
   "version": "0.1.0",
   "private": true,
- "scripts": {
-  "fix:use-client:all": "bash scripts/fix-use-client.sh",
-  "fix:use-client:all:dry": "bash scripts/fix-use-client.sh --dry-run",
-  "fix:use-client": "bash scripts/fix-use-client.sh --changed-only",
-  "fix:use-client:dry": "bash scripts/fix-use-client.sh --dry-run --changed-only",
-  "dev": "next dev --turbopack",
-  "build": "next build",
-  "start": "next start",
-  "lint": "next lint"
-},
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "fix:use-client:all": "bash scripts/fix-use-client.sh",
+    "fix:use-client:all:dry": "bash scripts/fix-use-client.sh --dry-run",
+    "fix:use-client": "bash scripts/fix-use-client.sh --changed-only",
+    "fix:use-client:dry": "bash scripts/fix-use-client.sh --dry-run --changed-only",
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
   "dependencies": {
     "@hookform/resolvers": "^5.2.1",
     "@radix-ui/react-accordion": "^1.2.12",
@@ -37,6 +38,8 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-toggle": "^1.1.10",
+    "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@supabase/supabase-js": "^2.55.0",
     "autoprefixer": "^10.4.21",
@@ -58,7 +61,7 @@
     "react-resizable-panels": "^3.0.4",
     "recharts": "^3.1.2",
     "shadcn-ui": "^0.9.5",
-    "sonner": "^2.0.3",
+    "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
     "zod": "^4.0.17"

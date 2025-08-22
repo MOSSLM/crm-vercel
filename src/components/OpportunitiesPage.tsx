@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
@@ -21,11 +21,9 @@ import {
   ArrowDown, 
   Minus,
   Edit,
-  Trash2,
   Target,
   Clock,
   AlertCircle,
-  CheckCircle,
   MessageSquare,
   Plus,
   LayoutGrid,
@@ -44,7 +42,6 @@ export const OpportunitiesPage: React.FC = () => {
     updateOpportunity, 
     addOpportunityNote,
     toggleLeadMagnet,
-    contacts,
     companies
   } = useAppData();
   
@@ -58,7 +55,6 @@ export const OpportunitiesPage: React.FC = () => {
   const [noteContent, setNoteContent] = useState('');
 
   const filteredOpportunities = opportunities.filter(opportunity => {
-    // Safe string operations with null checks
     const companyName = opportunity.companyName || '';
     const tags = opportunity.tags ? opportunity.tags.split(',').map(t => t.trim()) : [];
     const notes = opportunity.notes || '';
@@ -70,7 +66,7 @@ export const OpportunitiesPage: React.FC = () => {
       notes.toLowerCase().includes(searchLower);
     
     const matchesStage = stageFilter === 'all' || opportunity.stage_id?.toString() === stageFilter;
-    const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter;
+    const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
     
     return matchesSearch && matchesStage && matchesPriority;
   });
@@ -133,6 +129,7 @@ export const OpportunitiesPage: React.FC = () => {
     if (selectedOpportunity && noteContent.trim()) {
       try {
         await addOpportunityNote(selectedOpportunity.id, {
+          opportunite_id: selectedOpportunity.id, // ✅ requis par le type
           theme: noteType,
           contenu: noteContent.trim()
         });
@@ -147,7 +144,7 @@ export const OpportunitiesPage: React.FC = () => {
         
         toast.success(`Note ajoutée à ${displayName}`);
         
-        // Refresh selected opportunity
+        // Refresh selected opportunity (prend la version mise à jour depuis le store)
         const updated = opportunities.find(opp => opp.id === selectedOpportunity.id);
         if (updated) {
           setSelectedOpportunity(updated);
@@ -163,7 +160,6 @@ export const OpportunitiesPage: React.FC = () => {
     try {
       await toggleLeadMagnet(opportunityId);
       
-      // Récupérer le nom d'affichage pour la notification
       const opportunity = opportunities.find(opp => opp.id === opportunityId);
       const associatedCompany = companies.find(c => c.id === opportunity?.entreprise_id);
       const displayName = getCompanyDisplayName(
@@ -171,10 +167,9 @@ export const OpportunitiesPage: React.FC = () => {
         associatedCompany?.canonical_url
       );
       
-      const isNowActive = !opportunity?.leadMagnet && !opportunity?.lead_magnet;
+      const isNowActive = !(opportunity?.leadMagnet || opportunity?.lead_magnet);
       toast.success(`Lead magnet ${isNowActive ? 'activé' : 'désactivé'} pour ${displayName}`);
       
-      // Update selected opportunity if it's the one being toggled
       if (selectedOpportunity?.id === opportunityId) {
         const updated = opportunities.find(opp => opp.id === opportunityId);
         if (updated) {
@@ -328,7 +323,7 @@ export const OpportunitiesPage: React.FC = () => {
         </p>
       </div>
 
-      {/* Métriques rapides optimisées pour mobile */}
+      {/* Métriques rapides */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
         <Card>
           <CardHeader className="pb-2">
@@ -376,7 +371,7 @@ export const OpportunitiesPage: React.FC = () => {
         </Card>
       </div>
 
-      {/* Filtres et recherche optimisés pour mobile */}
+      {/* Filtres et recherche */}
       <div className="space-y-3 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
         <div className="space-y-3 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-1">
           <div className="relative">
@@ -419,7 +414,7 @@ export const OpportunitiesPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Toggle grille/liste unifié */}
+        {/* Toggle grille/liste */}
         <div className="flex border rounded-lg">
           <Button
             variant={viewMode === 'grid' ? 'default' : 'ghost'}
@@ -440,7 +435,7 @@ export const OpportunitiesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Liste des opportunités optimisée pour mobile */}
+      {/* Liste des opportunités */}
       <div className={viewMode === 'grid' ? 'grid gap-3 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
         {filteredOpportunities.map((opportunity) => (
           <OpportunityCard key={opportunity.id} opportunity={opportunity} />
@@ -476,7 +471,7 @@ export const OpportunitiesPage: React.FC = () => {
             <Tabs defaultValue="details" className="space-y-4">
               <TabsList>
                 <TabsTrigger value="details">Détails</TabsTrigger>
-                <TabsTrigger value="notes">Notes ({selectedOpportunity.opportunityNotes?.length || 0})</TabsTrigger>
+                <TabsTrigger value="notes">Notes ({(selectedOpportunity.opportunityNotes ?? []).length})</TabsTrigger>
               </TabsList>
 
               <TabsContent value="details" className="space-y-4">
@@ -595,7 +590,7 @@ export const OpportunitiesPage: React.FC = () => {
                       placeholder="Ajouter une note..."
                       value={noteContent}
                       onChange={(e) => setNoteContent(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && handleAddNote()}
+                      onKeyDown={(e) => e.key === 'Enter' && handleAddNote()}
                       className="flex-1"
                     />
                     <Button onClick={handleAddNote} disabled={!noteContent.trim()}>
@@ -604,28 +599,34 @@ export const OpportunitiesPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="space-y-3 max-h-80 overflow-y-auto">
-                  {selectedOpportunity.opportunityNotes?.length > 0 ? (
-                    selectedOpportunity.opportunityNotes
-                      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                      .map((note) => (
-                        <div key={note.id} className="border rounded-lg p-3">
-                          <div className="flex items-center justify-between mb-2">
-                            <Badge variant="outline">{note.theme}</Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDate(note.created_at)}
-                            </span>
-                          </div>
-                          <p className="text-sm">{note.contenu}</p>
+                {/* ✅ Sécurisation du tableau de notes */}
+                {(() => {
+                  const notes = selectedOpportunity.opportunityNotes ?? [];
+                  return (
+                    <div className="space-y-3 max-h-80 overflow-y-auto">
+                      {notes.length > 0 ? (
+                        notes
+                          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                          .map((note) => (
+                            <div key={note.id} className="border rounded-lg p-3">
+                              <div className="flex items-center justify-between mb-2">
+                                <Badge variant="outline">{note.theme}</Badge>
+                                <span className="text-xs text-muted-foreground">
+                                  {formatDate(note.created_at)}
+                                </span>
+                              </div>
+                              <p className="text-sm">{note.contenu}</p>
+                            </div>
+                          ))
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p>Aucune note pour cette opportunité</p>
                         </div>
-                      ))
-                  ) : (
-                    <div className="text-center py-8 text-muted-foreground">
-                      <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p>Aucune note pour cette opportunité</p>
+                      )}
                     </div>
-                  )}
-                </div>
+                  );
+                })()}
               </TabsContent>
             </Tabs>
           )}
@@ -669,7 +670,7 @@ export const OpportunitiesPage: React.FC = () => {
                   <Input
                     id="value"
                     type="number"
-                    value={editingOpportunity.montant || ''}
+                    value={editingOpportunity.montant ?? ''}
                     onChange={(e) => setEditingOpportunity({
                       ...editingOpportunity,
                       montant: e.target.value ? parseInt(e.target.value) : undefined

@@ -1,140 +1,179 @@
 "use client";
 
-import React, { useState } from 'react';
-import { Button } from './ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
-import { Textarea } from './ui/textarea';
-import { journalApi } from '../utils/journalApi';
-import { 
-  Phone, 
-  RotateCcw, 
-  Calendar, 
-  FileText, 
-  PenTool, 
+import React, { useState } from "react";
+import { Button } from "./ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "./ui/dialog";
+import { Textarea } from "./ui/textarea";
+import { journalApi } from "../utils/journalApi";
+import {
+  Phone,
+  RotateCcw,
+  Calendar,
+  FileText,
+  PenTool,
   DollarSign,
-  Magnet
-} from 'lucide-react';
-import { toast } from 'sonner';
+  Magnet,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { toast } from "sonner";
 
 interface JournalActionButtonsProps {
   opportunite_id?: string;
   entreprise_id?: number;
   companyName?: string;
   onActionCompleted?: () => void;
-  size?: 'sm' | 'default' | 'lg';
-  variant?: 'default' | 'outline' | 'ghost';
+  size?: "sm" | "default" | "lg";
+  variant?: "default" | "outline" | "ghost";
   showLabels?: boolean;
 }
+
+type ActionConfig = {
+  type: string;
+  label: string;
+  icon: LucideIcon;
+  color: string;
+  action: (description?: string) => Promise<void>;
+};
 
 export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
   opportunite_id,
   entreprise_id,
   companyName,
   onActionCompleted,
-  size = 'sm',
-  variant = 'outline',
-  showLabels = true
+  size = "sm",
+  variant = "outline",
+  showLabels = true,
 }) => {
   const [showDescriptionDialog, setShowDescriptionDialog] = useState(false);
-  const [selectedAction, setSelectedAction] = useState<{
-    type: string;
-    label: string;
-    action: (description?: string) => Promise<void>;
-  } | null>(null);
-  const [description, setDescription] = useState('');
+  const [selectedAction, setSelectedAction] = useState<ActionConfig | null>(
+    null
+  );
+  const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const actions = [
+  const actions: ActionConfig[] = [
     {
-      type: 'call',
-      label: 'Appel',
+      type: "call",
+      label: "Appel",
       icon: Phone,
-      color: 'text-blue-600',
+      color: "text-blue-600",
       action: async (desc?: string) => {
         await journalApi.logCall(opportunite_id, entreprise_id, desc);
-        toast.success(`Appel enregistré ${companyName ? `pour ${companyName}` : ''}`);
-      }
+        toast.success(
+          `Appel enregistré ${companyName ? `pour ${companyName}` : ""}`
+        );
+      },
     },
     {
-      type: 'relance',
-      label: 'Relance',
+      type: "relance",
+      label: "Relance",
       icon: RotateCcw,
-      color: 'text-orange-600',
+      color: "text-orange-600",
       action: async (desc?: string) => {
-        const nextNumber = await journalApi.getNextSequenceNumber('relance', opportunite_id, entreprise_id);
+        const nextNumber = await journalApi.getNextSequenceNumber(
+          "relance",
+          opportunite_id,
+          entreprise_id
+        );
         await journalApi.logRelance(opportunite_id, entreprise_id, desc);
-        toast.success(`Relance ${nextNumber} enregistrée ${companyName ? `pour ${companyName}` : ''}`);
-      }
+        toast.success(
+          `Relance ${nextNumber} enregistrée ${
+            companyName ? `pour ${companyName}` : ""
+          }`
+        );
+      },
     },
     {
-      type: 'rdv',
-      label: 'RDV',
+      type: "rdv",
+      label: "RDV",
       icon: Calendar,
-      color: 'text-purple-600',
+      color: "text-purple-600",
       action: async (desc?: string) => {
-        const nextNumber = await journalApi.getNextSequenceNumber('rdv', opportunite_id, entreprise_id);
+        const nextNumber = await journalApi.getNextSequenceNumber(
+          "rdv",
+          opportunite_id,
+          entreprise_id
+        );
         await journalApi.logRdv(opportunite_id, entreprise_id, desc);
-        toast.success(`RDV ${nextNumber} enregistré ${companyName ? `pour ${companyName}` : ''}`);
-      }
+        toast.success(
+          `RDV ${nextNumber} enregistré ${
+            companyName ? `pour ${companyName}` : ""
+          }`
+        );
+      },
     },
     {
-      type: 'devis',
-      label: 'Devis',
+      type: "devis",
+      label: "Devis",
       icon: FileText,
-      color: 'text-yellow-600',
+      color: "text-yellow-600",
       action: async (desc?: string) => {
         await journalApi.logDevis(opportunite_id, entreprise_id, desc);
-        toast.success(`Devis enregistré ${companyName ? `pour ${companyName}` : ''}`);
-      }
+        toast.success(
+          `Devis enregistré ${companyName ? `pour ${companyName}` : ""}`
+        );
+      },
     },
     {
-      type: 'signature',
-      label: 'Signature',
+      type: "signature",
+      label: "Signature",
       icon: PenTool,
-      color: 'text-green-600',
+      color: "text-green-600",
       action: async (desc?: string) => {
         await journalApi.logSignature(opportunite_id, entreprise_id, desc);
-        toast.success(`Signature enregistrée ${companyName ? `pour ${companyName}` : ''}`);
-      }
+        toast.success(
+          `Signature enregistrée ${companyName ? `pour ${companyName}` : ""}`
+        );
+      },
     },
     {
-      type: 'acompte',
-      label: 'Acompte',
+      type: "acompte",
+      label: "Acompte",
       icon: DollarSign,
-      color: 'text-emerald-600',
+      color: "text-emerald-600",
       action: async (desc?: string) => {
         await journalApi.logAcompte(opportunite_id, entreprise_id, desc);
-        toast.success(`Acompte enregistré ${companyName ? `pour ${companyName}` : ''}`);
-      }
+        toast.success(
+          `Acompte enregistré ${companyName ? `pour ${companyName}` : ""}`
+        );
+      },
     },
     {
-      type: 'lead_magnet',
-      label: 'Lead Magnet',
+      type: "lead_magnet",
+      label: "Lead Magnet",
       icon: Magnet,
-      color: 'text-pink-600',
+      color: "text-pink-600",
       action: async (desc?: string) => {
         await journalApi.logLeadMagnet(opportunite_id, entreprise_id, desc);
-        toast.success(`Lead Magnet enregistré ${companyName ? `pour ${companyName}` : ''}`);
-      }
-    }
+        toast.success(
+          `Lead Magnet enregistré ${companyName ? `pour ${companyName}` : ""}`
+        );
+      },
+    },
   ];
 
-  const handleQuickAction = async (actionConfig: typeof actions[0]) => {
+  const handleQuickAction = async (actionConfig: ActionConfig) => {
     try {
       setIsSubmitting(true);
       await actionConfig.action();
       onActionCompleted?.();
     } catch (error) {
-      console.error('Error executing quick action:', error);
-      toast.error('Erreur lors de l\'enregistrement de l\'action');
+      console.error("Error executing quick action:", error);
+      toast.error("Erreur lors de l'enregistrement de l'action");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleActionWithDescription = (actionConfig: typeof actions[0]) => {
+  const handleActionWithDescription = (actionConfig: ActionConfig) => {
     setSelectedAction(actionConfig);
-    setDescription('');
+    setDescription("");
     setShowDescriptionDialog(true);
   };
 
@@ -146,15 +185,17 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
       await selectedAction.action(description || undefined);
       setShowDescriptionDialog(false);
       setSelectedAction(null);
-      setDescription('');
+      setDescription("");
       onActionCompleted?.();
     } catch (error) {
-      console.error('Error executing action with description:', error);
-      toast.error('Erreur lors de l\'enregistrement de l\'action');
+      console.error("Error executing action with description:", error);
+      toast.error("Erreur lors de l'enregistrement de l'action");
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  const SelectedIcon = selectedAction?.icon;
 
   return (
     <>
@@ -167,15 +208,19 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
               <Button
                 size={size}
                 variant={variant}
-                className={`${showLabels ? 'rounded-r-none' : ''} ${actionConfig.color}`}
+                className={`${showLabels ? "rounded-r-none" : ""} ${
+                  actionConfig.color
+                }`}
                 onClick={() => handleQuickAction(actionConfig)}
                 disabled={isSubmitting}
                 title={`${actionConfig.label} rapide`}
               >
                 <Icon className="h-4 w-4" />
-                {showLabels && <span className="ml-1">{actionConfig.label}</span>}
+                {showLabels && (
+                  <span className="ml-1">{actionConfig.label}</span>
+                )}
               </Button>
-              
+
               {/* Bouton pour ajouter une description */}
               {showLabels && (
                 <Button
@@ -199,9 +244,11 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {selectedAction && (
+              {selectedAction && SelectedIcon && (
                 <div className="flex items-center gap-2">
-                  <selectedAction.icon className={`h-5 w-5 ${selectedAction.color}`} />
+                  <SelectedIcon
+                    className={`h-5 w-5 ${selectedAction.color}`}
+                  />
                   Enregistrer {selectedAction.label.toLowerCase()}
                 </div>
               )}
@@ -223,18 +270,15 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
               />
             </div>
             <div className="flex justify-end gap-2">
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 onClick={() => setShowDescriptionDialog(false)}
                 disabled={isSubmitting}
               >
                 Annuler
               </Button>
-              <Button 
-                onClick={submitActionWithDescription}
-                disabled={isSubmitting}
-              >
-                {isSubmitting ? 'Enregistrement...' : 'Enregistrer'}
+              <Button onClick={submitActionWithDescription} disabled={isSubmitting}>
+                {isSubmitting ? "Enregistrement..." : "Enregistrer"}
               </Button>
             </div>
           </div>

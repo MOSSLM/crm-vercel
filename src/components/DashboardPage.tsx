@@ -11,6 +11,7 @@ import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Progress } from './ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { 
   PieChart, 
   Pie, 
@@ -22,17 +23,22 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip as RechartsTooltip, 
-  Legend
+  Legend,
+  LineChart,
+  Line
 } from 'recharts';
 import {
   Building,
   Users,
+  Target,
   Phone,
   Calendar,
   DollarSign,
   TrendingUp,
+  TrendingDown,
   Award,
   Clock,
+  CheckCircle,
   AlertCircle,
   ArrowUp,
   ArrowDown,
@@ -41,9 +47,11 @@ import {
   Repeat,
   FileText,
   Handshake,
+  ArrowRight,
   Zap,
   Star,
   PhoneCall,
+  RefreshCw,
   CalendarDays,
   CalendarRange
 } from 'lucide-react';
@@ -55,9 +63,7 @@ import { PeriodType } from './dashboard/types';
 import { calculateDashboardMetrics } from './dashboard/calculations';
 import { FunnelStep } from './dashboard/FunnelStep';
 
-// Vue / tabs type helpers
-const VIEW_MODES = ['overview', 'commercial', 'funnel'] as const;
-type ViewMode = typeof VIEW_MODES[number];
+type ViewMode = 'overview' | 'commercial' | 'funnel';
 
 export const DashboardPage: React.FC = () => {
   const { 
@@ -131,6 +137,7 @@ export const DashboardPage: React.FC = () => {
       try {
         setLoadingKpis(true);
         setKpiError(null);
+        
         const kpis = await journalApi.getJournalKpiTotals();
         setJournalKpis(kpis);
       } catch (error) {
@@ -158,12 +165,14 @@ export const DashboardPage: React.FC = () => {
     };
   }, []);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
+    
     checkMobile();
     window.addEventListener('resize', checkMobile);
+    
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
@@ -183,7 +192,7 @@ export const DashboardPage: React.FC = () => {
     selectedPeriod,
     opportunities,
     pipelineStages,
-    getOppsByStageForCalc, // wrapper compatible (string -> number)
+    getOppsByStageForCalc, // wrapper compatible
     contacts,
     totalCompanies,
     totalQualifiedCompanies
@@ -234,12 +243,7 @@ export const DashboardPage: React.FC = () => {
       {/* Onglets principaux */}
       <Tabs
         value={viewMode}
-        onValueChange={(value) => {
-          // Tabs envoie un string; on caste en ViewMode de façon sûre
-          if (VIEW_MODES.includes(value as ViewMode)) {
-            setViewMode(value as ViewMode);
-          }
-        }}
+        onValueChange={(value) => setViewMode(value as ViewMode)}
       >
         <TabsList className="grid w-full grid-cols-3 md:grid-cols-3">
           <TabsTrigger value="overview" className="text-xs md:text-sm px-1 md:px-3">
@@ -276,7 +280,7 @@ export const DashboardPage: React.FC = () => {
                   <Label htmlFor="period-select" className="text-sm font-medium">
                     Période :
                   </Label>
-                  <Select value={selectedPeriod} onValueChange={(value) => setSelectedPeriod(value as PeriodType)}>
+                  <Select value={selectedPeriod} onValueChange={(value: PeriodType) => setSelectedPeriod(value)}>
                     <SelectTrigger id="period-select" className="w-32">
                       <SelectValue />
                     </SelectTrigger>
@@ -523,7 +527,7 @@ export const DashboardPage: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Métriques financières */}
+          {/* Métriques financières avec nouvelle métrique */}
           <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -766,7 +770,10 @@ export const DashboardPage: React.FC = () => {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                      label={({ name, percent }) => {
+                        const p = percent ?? 0;
+                        return `${name} (${Math.round(p * 100)}%)`;
+                      }}
                       outerRadius={isMobile ? 60 : 80}
                       fill="#8884d8"
                       dataKey="value"

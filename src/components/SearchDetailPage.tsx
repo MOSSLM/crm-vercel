@@ -1,34 +1,58 @@
 "use client";
 
-import React, { useState } from 'react';
-import { useAppData, SearchResult, Company } from './AppDataContext';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { ArrowLeft, ArrowUpDown, Merge, Star, Phone, Mail, Globe, MapPin, CheckCircle } from 'lucide-react';
+import React, { useState } from "react";
+import { useAppData, SearchResult, Company } from "./AppDataContext";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { ArrowLeft, ArrowUpDown, Merge, Phone, Mail, Globe, MapPin } from "lucide-react";
 
 interface SearchDetailPageProps {
   searchResult: SearchResult;
   onBack: () => void;
 }
 
-export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult, onBack }) => {
-  const { getMapCompanies, getGoogleCompanies, getCompaniesBySearchId } = useAppData();
-  
-  // Déterminer l'onglet par défaut selon les sources utilisées
+type SortBy = "name";
+
+export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
+  searchResult,
+  onBack,
+}) => {
+  const { getMapCompanies, getGoogleCompanies, getCompaniesBySearchId } =
+    useAppData();
+
   const getDefaultTab = () => {
-    if (searchResult.useMaps && !searchResult.useGoogle) return 'maps';
-    if (!searchResult.useMaps && searchResult.useGoogle) return 'google';
-    if (searchResult.useMaps && searchResult.useGoogle) return 'maps'; // Préférence Maps si les deux
-    return 'maps'; // Fallback
+    if (searchResult.useMaps && !searchResult.useGoogle) return "maps";
+    if (!searchResult.useMaps && searchResult.useGoogle) return "google";
+    if (searchResult.useMaps && searchResult.useGoogle) return "maps";
+    return "maps";
   };
-  
+
   const [activeTab, setActiveTab] = useState(getDefaultTab());
-  const [sortBy, setSortBy] = useState<'name' | 'rating' | 'verified'>('name');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = useState<SortBy>("name");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [showMerged, setShowMerged] = useState(false);
 
   const mapCompanies = getMapCompanies(searchResult.id);
@@ -37,26 +61,15 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
 
   const sortCompanies = (companies: Company[]) => {
     return [...companies].sort((a, b) => {
-      let aValue: any, bValue: any;
-      
+      let aValue: string, bValue: string;
       switch (sortBy) {
-        case 'name':
-          aValue = (a.name || '').toLowerCase();
-          bValue = (b.name || '').toLowerCase();
-          break;
-        case 'rating':
-          aValue = a.rating || 0;
-          bValue = b.rating || 0;
-          break;
-        case 'verified':
-          aValue = a.verified ? 1 : 0;
-          bValue = b.verified ? 1 : 0;
-          break;
+        case "name":
         default:
-          return 0;
+          aValue = (a.name || "").toLowerCase();
+          bValue = (b.name || "").toLowerCase();
+          break;
       }
-
-      if (sortOrder === 'asc') {
+      if (sortOrder === "asc") {
         return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
       } else {
         return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
@@ -64,35 +77,46 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
     });
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('fr-FR');
+  const formatDate = (dateString?: string) =>
+    dateString ? new Date(dateString).toLocaleDateString("fr-FR") : "—";
+
+  const percent = (part?: number, total?: number) => {
+    const p = part ?? 0;
+    const t = total ?? 0;
+    return t > 0 ? Math.round((p / t) * 100) : 0;
   };
 
-  const CompanyTable: React.FC<{ companies: Company[]; title: string }> = ({ companies, title }) => {
+  const CompanyTable: React.FC<{ companies: Company[]; title: string }> = ({
+    companies,
+    title,
+  }) => {
     const sortedCompanies = sortCompanies(companies);
 
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3>{title} ({companies.length} entreprises)</h3>
+          <h3>
+            {title} ({companies.length} entreprises)
+          </h3>
           <div className="flex gap-2">
-            <Select value={sortBy} onValueChange={(value: any) => setSortBy(value)}>
+            <Select
+              value={sortBy}
+              onValueChange={(value) => setSortBy(value as SortBy)}
+            >
               <SelectTrigger className="w-40">
                 <ArrowUpDown className="h-4 w-4 mr-2" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="name">Nom</SelectItem>
-                <SelectItem value="rating">Note</SelectItem>
-                <SelectItem value="verified">Vérifié</SelectItem>
               </SelectContent>
             </Select>
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               size="sm"
-              onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
             >
-              {sortOrder === 'asc' ? '↑' : '↓'}
+              {sortOrder === "asc" ? "↑" : "↓"}
             </Button>
           </div>
         </div>
@@ -104,92 +128,109 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
                 <TableHead>Nom</TableHead>
                 <TableHead>Adresse</TableHead>
                 <TableHead>Contact</TableHead>
-                <TableHead>Note</TableHead>
                 <TableHead>Tags</TableHead>
-                <TableHead>Statut</TableHead>
+                <TableHead>Sources</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedCompanies.map((company) => (
-                <TableRow key={company.id}>
-                  <TableCell>
-                    <div>
-                      <div className="font-medium">{company.name}</div>
-                      {company.website && (
-                        <a 
-                          href={company.website} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-sm inline-flex items-center gap-1"
-                        >
-                          <Globe className="h-3 w-3" />
-                          Site web
-                        </a>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-start gap-1">
-                      <MapPin className="h-3 w-3 mt-1 text-muted-foreground" />
-                      <span className="text-sm">{company.address}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      {company.phone && (
-                        <div className="flex items-center gap-1 text-sm">
-                          <Phone className="h-3 w-3" />
-                          {company.phone}
-                        </div>
-                      )}
-                      {company.email && (
-                        <div className="flex items-center gap-1 text-sm">
-                          <Mail className="h-3 w-3" />
-                          {company.email}
-                        </div>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    {company.rating && (
-                      <div className="flex items-center gap-1">
-                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        <span className="text-sm">{company.rating}</span>
+              {sortedCompanies.map((company) => {
+                const tags =
+                  company.premiers_tags
+                    ?.split(",")
+                    .map((t) => t.trim())
+                    .filter(Boolean) ?? [];
+                const sources = company.sources ?? [];
+                // Champs pas typés sur Company : on les lit prudemment
+                const tel = (company as any)?.tel as string | undefined;
+                const email = (company as any)?.email as string | undefined;
+
+                return (
+                  <TableRow key={company.id}>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{company.name}</div>
+                        {company.canonical_url && (
+                          <a
+                            href={company.canonical_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline text-sm inline-flex items-center gap-1"
+                          >
+                            <Globe className="h-3 w-3" />
+                            Site web
+                          </a>
+                        )}
                       </div>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {company.tags.slice(0, 2).map((tag, index) => (
-                        <Badge key={index} variant="secondary" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                      {company.tags.length > 2 && (
-                        <Badge variant="outline" className="text-xs">
-                          +{company.tags.length - 2}
-                        </Badge>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {company.verified && (
-                        <CheckCircle className="h-4 w-4 text-green-600" />
-                      )}
-                      <Badge variant={company.source === 'maps' ? 'default' : 'secondary'}>
-                        {company.source === 'maps' ? 'Maps' : 'Google'}
-                      </Badge>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-start gap-1">
+                        <MapPin className="h-3 w-3 mt-1 text-muted-foreground" />
+                        <span className="text-sm">{company.adresse}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        {tel && (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Phone className="h-3 w-3" />
+                            {tel}
+                          </div>
+                        )}
+                        {email && (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Mail className="h-3 w-3" />
+                            {email}
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {tags.slice(0, 2).map((tag, index) => (
+                          <Badge
+                            key={`${tag}-${index}`}
+                            variant="secondary"
+                            className="text-xs"
+                          >
+                            {tag}
+                          </Badge>
+                        ))}
+                        {tags.length > 2 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{tags.length - 2}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {sources.includes("maps") && (
+                          <Badge variant="default">Maps</Badge>
+                        )}
+                        {sources.includes("google") && (
+                          <Badge variant="secondary">Google</Badge>
+                        )}
+                        {sources
+                          .filter((s) => s !== "maps" && s !== "google")
+                          .map((s, i) => (
+                            <Badge key={`${s}-${i}`} variant="outline">
+                              {s}
+                            </Badge>
+                          ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
       </div>
     );
   };
+
+  const total = searchResult.totalCompanies ?? allCompanies.length ?? 0;
+  const qualified = searchResult.qualifiedCompanies ?? 0;
 
   return (
     <div className="p-6 space-y-6">
@@ -211,7 +252,7 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
             <CardTitle className="text-sm">Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{searchResult.totalCompanies}</div>
+            <div className="text-2xl font-bold">{total}</div>
             <p className="text-xs text-muted-foreground">Entreprises trouvées</p>
           </CardContent>
         </Card>
@@ -221,9 +262,9 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
             <CardTitle className="text-sm">Qualifiées</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{searchResult.qualifiedCompanies}</div>
+            <div className="text-2xl font-bold text-green-600">{qualified}</div>
             <p className="text-xs text-muted-foreground">
-              {Math.round((searchResult.qualifiedCompanies / searchResult.totalCompanies) * 100)}% du total
+              {percent(qualified, total)}% du total
             </p>
           </CardContent>
         </Card>
@@ -238,7 +279,9 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
                 <Badge variant="default">Maps ({mapCompanies.length})</Badge>
               )}
               {searchResult.useGoogle && (
-                <Badge variant="secondary">Google ({googleCompanies.length})</Badge>
+                <Badge variant="secondary">
+                  Google ({googleCompanies.length})
+                </Badge>
               )}
             </div>
           </CardContent>
@@ -250,17 +293,15 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
           <div className="flex items-center justify-between">
             <div>
               <CardTitle>Résultats détaillés</CardTitle>
-              <CardDescription>
-                Entreprises trouvées par source
-              </CardDescription>
+              <CardDescription>Entreprises trouvées par source</CardDescription>
             </div>
-            <Button 
+            <Button
               onClick={() => setShowMerged(!showMerged)}
               variant={showMerged ? "default" : "outline"}
               className="flex items-center gap-2"
             >
               <Merge className="h-4 w-4" />
-              {showMerged ? 'Séparer' : 'Fusionner'}
+              {showMerged ? "Séparer" : "Fusionner"}
             </Button>
           </div>
         </CardHeader>
@@ -277,11 +318,11 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({ searchResult
                   Google Search ({googleCompanies.length})
                 </TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="maps" className="mt-6">
                 <CompanyTable companies={mapCompanies} title="Google Maps" />
               </TabsContent>
-              
+
               <TabsContent value="google" className="mt-6">
                 <CompanyTable companies={googleCompanies} title="Google Search" />
               </TabsContent>
