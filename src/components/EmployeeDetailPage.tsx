@@ -8,7 +8,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Label } from "./ui/label";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
-import { contactsApi } from "../utils/api";
+import { contactsApi } from "../utils/contactApi";
 import { toast } from "sonner";
 import {
   ArrowLeft,

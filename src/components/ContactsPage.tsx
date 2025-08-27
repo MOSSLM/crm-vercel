@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { EditEmployeeModal } from './EditEmployeeModal';
 import { AddContactForm } from './AddContactForm';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
-import { contactsApi } from '../utils/api';
+import { contactsApi } from '../utils/contactApi';
 import { toast } from "sonner";
 import { 
   LayoutGrid, 

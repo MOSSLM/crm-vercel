@@ -101,7 +101,7 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
     
     try {
       // Import contactsApi here to avoid circular dependencies
-      const { contactsApi } = await import('../utils/api');
+      const { contactsApi } = await import('../utils/contactApi');
       
       const updatedEmployee = {
         first_name: formData.first_name.trim() || undefined,
@@ -135,7 +135,7 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
 
     setAddingNote(true);
     try {
-      const { contactsApi } = await import('../utils/api');
+      const { contactsApi } = await import('../utils/contactApi');
       await contactsApi.addNote(employee.id, newNote.trim());
       
       // Update the notes field locally

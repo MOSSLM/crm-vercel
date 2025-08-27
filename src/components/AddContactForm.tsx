@@ -10,7 +10,7 @@ import { Checkbox } from './ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { useAppData } from './AppDataContext';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
-import { contactsApi } from '../utils/api';
+import { contactsApi } from '../utils/contactApi';
 import { toast } from "sonner";
 import { Plus, Loader2, User, Building, Mail, Phone, Briefcase, Globe, Users, MessageSquare } from 'lucide-react';
 

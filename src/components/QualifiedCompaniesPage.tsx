@@ -18,7 +18,7 @@ import {
   PaginationPrevious,
 } from "./ui/pagination";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
-import { contactsApi } from "../utils/api";
+import { contactsApi } from "../utils/contactApi";
 import { LayoutGrid, List, Search, Filter, CheckCircle } from "lucide-react";
 import { Employee, QualifiedCompaniesPageProps, QUALIFIED_COMPANIES_CONSTANTS } from "./qualified/types";
 import { CompanyCard } from "./qualified/CompanyCard";

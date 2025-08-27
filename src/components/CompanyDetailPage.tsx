@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useAppData, Company, RevenueBand, EmployeeBand, Opportunity } from './AppDataContext';
-import { companiesApi } from '../utils/api';
+import React, { useState } from 'react';
+import { useAppData, RevenueBand, EmployeeBand, Opportunity } from './AppDataContext';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -16,11 +15,13 @@ import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { EmployeesList } from './EmployeesList';
 import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
+import { CompanyInfoForm } from './company/CompanyInfoForm';
+import { useCompanyDetail } from '../hooks/useCompanyDetail';
 import { toast } from "sonner";
 import { 
   ArrowLeft, 
   Save, 
-  Globe, 
+ 
   Phone, 
   Mail, 
   MapPin, 
@@ -28,9 +29,7 @@ import {
   CheckCircle,
   Edit3,
   Eye,
-  Users,
   DollarSign,
-  Calendar,
   Database,
   ExternalLink,
   User,
@@ -39,7 +38,6 @@ import {
   Plus,
   Target,
   Edit2,
-  Trash2
 } from 'lucide-react';
 
 interface CompanyDetailPageProps {
@@ -106,12 +104,19 @@ const getEmployeeBandLabel = (band: EmployeeBand | undefined): string => {
 
 export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId, onBack }) => {
   const { companies, updateCompany, opportunities, pipelineStages, addOpportunity, updateOpportunity } = useAppData();
-  const [company, setCompany] = useState<Company | null>(null);
-  const [detailedCompany, setDetailedCompany] = useState<any>(null);
-  const [isEditing, setIsEditing] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingDetails, setLoadingDetails] = useState(true);
-  
+
+  const {
+    company,
+    detailedCompany,
+    formData,
+    setFormData,
+    isEditing,
+    setIsEditing,
+    isLoading,
+    loadingDetails,
+    save,
+  } = useCompanyDetail(companyId, companies, updateCompany);
+
   // Opportunity management state
   const [showCreateOpportunity, setShowCreateOpportunity] = useState(false);
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
@@ -127,89 +132,6 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     lead_magnet: false
   });
   
-  // Enhanced form data with new fields
-  const [formData, setFormData] = useState({
-    name: '',
-    canonical_url: '',
-    adresse: '',
-    premiers_tags: '',
-    lat: 0,
-    lng: 0,
-    qualifie: false,
-    ca_estime_band: 'unknown' as RevenueBand,
-    nb_employes_band: 'unknown' as EmployeeBand,
-    nb_employes_exact: '',
-    linkedin_url: '',
-    site_web_canonique: '',
-    manually_enriched: false
-  });
-
-  useEffect(() => {
-    const foundCompany = companies.find(c => c.id === companyId);
-    if (foundCompany) {
-      setCompany(foundCompany);
-      setFormData({
-        name: foundCompany.name || '',
-        canonical_url: foundCompany.canonical_url || '',
-        adresse: foundCompany.adresse || '',
-        premiers_tags: foundCompany.premiers_tags || '',
-        lat: foundCompany.lat || 0,
-        lng: foundCompany.lng || 0,
-        qualifie: foundCompany.qualifie || false,
-        ca_estime_band: fromDbRevenueBand(foundCompany.ca_estime_band as unknown as string | undefined),
-        nb_employes_band: fromDbEmployeeBand(foundCompany.nb_employes_band as unknown as string | undefined),
-        nb_employes_exact: foundCompany.nb_employes_exact?.toString() || '',
-        linkedin_url: foundCompany.linkedin_url || '',
-        site_web_canonique: foundCompany.site_web_canonique || '',
-        manually_enriched: foundCompany.manually_enriched || false
-      });
-      
-      // Load detailed company data with raw contact info
-      loadDetailedCompanyData(foundCompany.id);
-    }
-  }, [companyId, companies]);
-
-  const loadDetailedCompanyData = async (id: number) => {
-    setLoadingDetails(true);
-    try {
-      const detailed = await companiesApi.getById(id);
-      setDetailedCompany(detailed);
-    } catch (error) {
-      console.error('Error loading detailed company data:', error);
-    } finally {
-      setLoadingDetails(false);
-    }
-  };
-
-  const handleSave = async () => {
-    if (!company) return;
-    
-    setIsLoading(true);
-    try {
-      // Prepare updates with proper type conversion and enum format conversion
-      const updates: any = {
-        ...formData,
-        nb_employes_exact: formData.nb_employes_exact ? parseInt(formData.nb_employes_exact) : null,
-        manually_enriched: formData.manually_enriched,
-        enriched_at: formData.manually_enriched ? new Date().toISOString() : null,
-        // Convert enum values to database format (replace hyphens with underscores)
-        ca_estime_band: toDbRevenueBand(formData.ca_estime_band),
-        nb_employes_band: toDbEmployeeBand(formData.nb_employes_band)
-      };
-
-      await updateCompany(company.id, updates);
-      setIsEditing(false);
-      toast.success("Entreprise mise à jour avec succès");
-      
-      // Reload detailed data
-      await loadDetailedCompanyData(company.id);
-    } catch (error) {
-      console.error('Erreur lors de la mise à jour:', error);
-      toast.error("Erreur lors de la mise à jour de l'entreprise");
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleCancel = () => {
     if (company) {
@@ -356,12 +278,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     );
   }
 
-  const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-  const tags = company.premiers_tags 
-    ? company.premiers_tags.split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag)
-    : [];
-
-  const currentData = isEditing ? formData : {
+  const displayName = getCompanyDisplayName(company.name, company.canonical_url);  const currentData = isEditing ? formData : {
     name: company.name,
     canonical_url: company.canonical_url,
     adresse: company.adresse,
@@ -411,7 +328,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
               <Button variant="outline" onClick={handleCancel} disabled={isLoading}>
                 Annuler
               </Button>
-              <Button onClick={handleSave} disabled={isLoading}>
+              <Button onClick={save} disabled={isLoading}>
                 <Save className="h-4 w-4 mr-2" />
                 {isLoading ? 'Sauvegarde...' : 'Sauvegarder'}
               </Button>
@@ -428,195 +345,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
       <div className="grid gap-6 xl:grid-cols-4 lg:grid-cols-3">
         {/* Informations principales */}
         <div className="xl:col-span-3 lg:col-span-2 space-y-6">
-          {/* Informations générales */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="h-5 w-5" />
-                Informations générales
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="name">Nom de l'entreprise</Label>
-                  {isEditing ? (
-                    <Input
-                      id="name"
-                      value={currentData.name || ''}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      placeholder="Nom de l'entreprise"
-                    />
-                  ) : (
-                    <p className="text-sm p-2 bg-muted rounded">
-                      {currentData.name || 'Non renseigné'}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="site_web_canonique">Site web canonique</Label>
-                  {isEditing ? (
-                    <Input
-                      id="site_web_canonique"
-                      value={currentData.site_web_canonique || ''}
-                      onChange={(e) => handleInputChange('site_web_canonique', e.target.value)}
-                      placeholder="https://..."
-                    />
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {currentData.site_web_canonique ? (
-                        <a 
-                          href={currentData.site_web_canonique} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                        >
-                          <Globe className="h-3 w-3" />
-                          {currentData.site_web_canonique}
-                        </a>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Non renseigné</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="canonical_url">URL découverte</Label>
-                  {isEditing ? (
-                    <Input
-                      id="canonical_url"
-                      value={currentData.canonical_url || ''}
-                      onChange={(e) => handleInputChange('canonical_url', e.target.value)}
-                      placeholder="https://..."
-                    />
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {currentData.canonical_url ? (
-                        <a 
-                          href={currentData.canonical_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                        >
-                          <Globe className="h-3 w-3" />
-                          {currentData.canonical_url}
-                        </a>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Non renseigné</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="linkedin_url">LinkedIn entreprise</Label>
-                  {isEditing ? (
-                    <Input
-                      id="linkedin_url"
-                      value={currentData.linkedin_url || ''}
-                      onChange={(e) => handleInputChange('linkedin_url', e.target.value)}
-                      placeholder="https://linkedin.com/company/..."
-                    />
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {currentData.linkedin_url ? (
-                        <a 
-                          href={currentData.linkedin_url} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          LinkedIn
-                        </a>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Non renseigné</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="adresse">Adresse</Label>
-                {isEditing ? (
-                  <Textarea
-                    id="adresse"
-                    value={currentData.adresse || ''}
-                    onChange={(e) => handleInputChange('adresse', e.target.value)}
-                    placeholder="Adresse complète"
-                    rows={2}
-                  />
-                ) : (
-                  <p className="text-sm p-2 bg-muted rounded">
-                    {currentData.adresse || 'Non renseignée'}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <Label htmlFor="premiers_tags">Tags (séparés par des virgules)</Label>
-                {isEditing ? (
-                  <Textarea
-                    id="premiers_tags"
-                    value={currentData.premiers_tags || ''}
-                    onChange={(e) => handleInputChange('premiers_tags', e.target.value)}
-                    placeholder="restaurant, gastronomie, cuisine française"
-                    rows={2}
-                  />
-                ) : (
-                  <div className="flex flex-wrap gap-1 p-2 bg-muted rounded">
-                    {tags.length > 0 ? (
-                      tags.map((tag: string, index: number) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-sm text-muted-foreground">Aucun tag</span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label htmlFor="qualifie">Entreprise qualifiée</Label>
-                {isEditing ? (
-                  <Switch
-                    id="qualifie"
-                    checked={currentData.qualifie || false}
-                    onCheckedChange={(checked) => handleInputChange('qualifie', checked)}
-                  />
-                ) : (
-                  <Badge variant={currentData.qualifie ? 'default' : 'secondary'}>
-                    {currentData.qualifie ? 'Qualifiée' : 'Non qualifiée'}
-                  </Badge>
-                )}
-              </div>
-
-              {/* Coordonnées GPS (lecture seule) */}
-              {(company.lat || company.lng) && (
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <Label>Latitude</Label>
-                    <p className="text-sm p-2 bg-muted rounded">
-                      {company.lat || 'Non renseignée'}
-                    </p>
-                  </div>
-                  <div>
-                    <Label>Longitude</Label>
-                    <p className="text-sm p-2 bg-muted rounded">
-                      {company.lng || 'Non renseignée'}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <CompanyInfoForm isEditing={isEditing} currentData={currentData} handleInputChange={handleInputChange} />
 
           {/* Informations commerciales */}
           <Card>

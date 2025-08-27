@@ -2,16 +2,14 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
-import {
-  searchResultsApi,
-  companiesApi,
-  contactsApi,
-  opportunitiesApi,
-  pipelineStagesApi,
-  notesApi,
-  achievementsApi,
-  statisticsApi,
-} from '../utils/api';
+import { searchResultsApi } from '../utils/searchApi';
+import { companiesApi } from '../utils/companyApi';
+import { contactsApi } from '../utils/contactApi';
+import { opportunitiesApi } from '../utils/opportunityApi';
+import { pipelineStagesApi } from '../utils/pipelineApi';
+import { notesApi } from '../utils/notesApi';
+import { achievementsApi } from '../utils/achievementApi';
+import { statisticsApi } from '../utils/statisticsApi';
 import { getCompanyDisplayName, extractDomainNameOnly } from '../utils/displayHelpers';
 
 // Interfaces adaptées aux schémas Supabase

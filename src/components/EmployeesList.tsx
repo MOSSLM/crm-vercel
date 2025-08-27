@@ -6,7 +6,7 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { AddEmployeeModal } from './AddEmployeeModal';
 import { EditEmployeeModal } from './EditEmployeeModal';
-import { contactsApi } from '../utils/api';
+import { contactsApi } from '../utils/contactApi';
 import { toast } from "sonner";
 import { 
   Users, 

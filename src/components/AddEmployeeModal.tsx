@@ -58,7 +58,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
     
     try {
       // Import contactsApi here to avoid circular dependencies
-      const { contactsApi } = await import('../utils/api');
+      const { contactsApi } = await import('../utils/contactApi');
       
       const newEmployee = {
         entreprise_id: companyId,
