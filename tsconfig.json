@@ -22,10 +22,20 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-"exclude": [
+  "include": [
+    "next-env.d.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "next.config.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
     "node_modules",
     ".next",
-    "src/supabase/functions/**"
+    "src/supabase/functions/**",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "jest.config.ts",
+    "setupTests.ts"
   ]
 }

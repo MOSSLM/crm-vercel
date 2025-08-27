@@ -1,5 +1,5 @@
 import { supabase } from './supabase/client';
-import { Company, CompanyRaw, Contact, Opportunity } from '../types';
+import { Company, CompanyRaw, Contact, Opportunity, RevenueBand, EmployeeBand } from '../types';
 
 import logger from './logger';
 // Search Results API (table: recherches)
@@ -171,19 +171,16 @@ export const companiesApi = {
     try {
       // Helper function to convert enum values from UI format (with hyphens) to DB format (with underscores)
       const convertEnumForDatabase = (value: string): string => {
-        if (typeof value === 'string') {
-          return value.replace(/-/g, '_');
-        }
-        return value;
+        return value.replace(/-/g, '_');
       };
 
       // Convert enum fields if they exist
-      const convertedUpdates = { ...updates };
+      const convertedUpdates = { ...updates } as Partial<Company> & Record<string, unknown>;
       if (convertedUpdates.ca_estime_band) {
-        convertedUpdates.ca_estime_band = convertEnumForDatabase(convertedUpdates.ca_estime_band);
+        convertedUpdates.ca_estime_band = convertEnumForDatabase(convertedUpdates.ca_estime_band as string) as RevenueBand;
       }
       if (convertedUpdates.nb_employes_band) {
-        convertedUpdates.nb_employes_band = convertEnumForDatabase(convertedUpdates.nb_employes_band);
+        convertedUpdates.nb_employes_band = convertEnumForDatabase(convertedUpdates.nb_employes_band as string) as EmployeeBand;
       }
 
       const { data, error } = await supabase
@@ -281,7 +278,7 @@ export const companiesApi = {
         // Look for telephone in raw data
         const phoneEntry = rawContactInfo.find(entry => entry.telephone);
         if (phoneEntry) {
-          telephone = phoneEntry.telephone;
+          telephone = phoneEntry.telephone || '';
         }
         
         // Look for email in raw_json
@@ -345,7 +342,7 @@ export const companiesApi = {
                 let contact_name = '';
                 
                 const phoneEntry = rawData.find(entry => entry.telephone);
-                if (phoneEntry) telephone = phoneEntry.telephone;
+              if (phoneEntry) telephone = phoneEntry.telephone || '';
                 
                 const emailEntry = rawData.find(entry => {
                   if (entry.raw_json && typeof entry.raw_json === 'object') {
@@ -830,7 +827,7 @@ export const opportunitiesApi = {
                     if (rawData && rawData.length > 0) {
                       // Extract contact info from raw data
                       const phoneEntry = rawData.find(entry => entry.telephone);
-                      if (phoneEntry) telephone = phoneEntry.telephone;
+                      if (phoneEntry) telephone = phoneEntry.telephone || '';
                       
                       const emailEntry = rawData.find(entry => {
                         if (entry.raw_json && typeof entry.raw_json === 'object') {

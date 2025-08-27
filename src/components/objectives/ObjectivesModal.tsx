@@ -90,7 +90,7 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
       // Vérifier si au moins une valeur KPI est définie et > 0
       const kpiFields = ['leads_trouves', 'leads_qualifies', 'appels', 'rdv', 'devis', 'relances', 'signatures', 'acomptes', 'leadmagnets', 'relances_total', 'ca', 'mrr'] as const;
       return kpiFields.some(
-        field => (obj as unknown as Record<string, number | undefined>)[field] > 0
+        field => ((obj as unknown as Record<string, number | undefined>)[field] ?? 0) > 0
       );
     });
     

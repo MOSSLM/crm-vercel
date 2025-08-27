@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAppData, PipelineStage } from './AppDataContext';
-import { Contact, Opportunity, Company } from '../types';
+import { useAppData, PipelineStage, Contact, Opportunity, Company } from './AppDataContext';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -99,7 +98,7 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
       
       // Trouver l'entreprise associée
       const company = companies.find(c => c.id === foundContact.entreprise_id);
-      setAssociatedCompany(company);
+      setAssociatedCompany(company ?? null);
       
       // Trouver les opportunités liées à ce contact
       const relatedOpportunities = opportunities.filter(opp => 

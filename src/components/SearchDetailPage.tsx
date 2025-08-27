@@ -140,7 +140,7 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
                     .map((t) => t.trim())
                     .filter(Boolean) ?? [];
                 const sources = company.sources ?? [];
-                const tel = company.tel ?? company.telephone;
+                const tel = (company as { tel?: string }).tel ?? company.telephone;
                 const email = company.email;
 
                 return (

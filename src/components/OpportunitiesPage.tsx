@@ -576,7 +576,10 @@ export const OpportunitiesPage: React.FC = () => {
                 
                 <div className="space-y-3">
                   <div className="flex gap-2">
-                    <Select value={noteType} onValueChange={(value: string) => setNoteType(value)}>
+                    <Select
+                      value={noteType}
+                      onValueChange={(value: 'appel' | 'linkedin' | 'whatsapp' | 'email' | 'autre') => setNoteType(value)}
+                    >
                       <SelectTrigger className="w-32">
                         <SelectValue />
                       </SelectTrigger>
@@ -652,10 +655,12 @@ export const OpportunitiesPage: React.FC = () => {
                   <Label htmlFor="priority">Priorité</Label>
                   <Select 
                     value={editingOpportunity.priorite} 
-                    onValueChange={(value: string) => setEditingOpportunity({
-                      ...editingOpportunity,
-                      priorite: value
-                    })}
+                    onValueChange={(value: 'haute' | 'moyenne' | 'basse') =>
+                      setEditingOpportunity({
+                        ...editingOpportunity,
+                        priorite: value
+                      })
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
