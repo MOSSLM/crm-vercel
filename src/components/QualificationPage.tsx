@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useAppData, Company } from './AppDataContext';
+import { useAppData } from './AppDataContext';
+import { Company } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -144,7 +145,7 @@ export const QualificationPage: React.FC = () => {
 
     try {
       // Prepare updates - only include non-empty values
-      const updates: any = {};
+      const updates: Partial<Company> = {};
       
       if (quickEditForm.telephone.trim()) {
         updates.telephone = quickEditForm.telephone.trim();

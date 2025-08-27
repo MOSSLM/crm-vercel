@@ -54,7 +54,7 @@ export interface CompanyRaw {
   lng?: number;
   telephone?: string;
   ferme_definitivement: boolean;
-  raw_json?: any;
+  raw_json?: unknown;
   inserted_at: string;
 }
 
@@ -187,7 +187,7 @@ export interface Opportunity {
   lastUpdate?: string;
   nextFollowUp?: string;
   opportunityNotes?: OpportunityNote[];
-  pipelineHistory?: any[];
+  pipelineHistory?: unknown[];
   leadMagnet?: boolean;
   leadMagnetCreatedDate?: string;
   // Contact info display
@@ -497,7 +497,7 @@ const syncOpportunityProperties = (opportunity: Opportunity, updates: Partial<Op
 // Debounce compatible navigateur/Node
 const debounce = (func: Function, wait: number) => {
   let timeout: ReturnType<typeof setTimeout>;
-  return function executedFunction(...args: any[]) {
+  return function executedFunction(...args: unknown[]) {
     const later = () => {
       clearTimeout(timeout);
       func(...args);
@@ -924,7 +924,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       for (const key of VALID_OPPORTUNITY_COLUMNS) {
         const value = (opportunity as OpportunityWritable)[key as keyof OpportunityWritable];
         if (value !== undefined) {
-          (filteredOpportunity as any)[key] = value;
+          (filteredOpportunity as Record<ValidOpportunityColumn, unknown>)[key] = value;
         }
       }
 
@@ -952,7 +952,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       for (const key of VALID_OPPORTUNITY_COLUMNS) {
         const value = updates[key as keyof Partial<Opportunity>];
         if (value !== undefined) {
-          (filteredUpdates as any)[key] = value;
+          (filteredUpdates as Record<ValidOpportunityColumn, unknown>)[key] = value;
         }
       }
 

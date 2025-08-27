@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useAppData } from "./AppDataContext";
+import { Company } from "../types";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -47,7 +48,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
 }) => {
   const { companies } = useAppData();
   const [employee, setEmployee] = useState<Employee | null>(null);
-  const [associatedCompany, setAssociatedCompany] = useState<any>(null);
+  const [associatedCompany, setAssociatedCompany] = useState<Company | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -64,7 +65,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
     setLoading(true);
     try {
       let foundEmployee: Employee | null = null;
-      let foundCompany: any = null;
+      let foundCompany: Company | null = null;
 
       // Recherche du contact dans toutes les entreprises
       await Promise.all(

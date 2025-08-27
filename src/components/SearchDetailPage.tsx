@@ -140,9 +140,8 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
                     .map((t) => t.trim())
                     .filter(Boolean) ?? [];
                 const sources = company.sources ?? [];
-                // Champs pas typés sur Company : on les lit prudemment
-                const tel = (company as any)?.tel as string | undefined;
-                const email = (company as any)?.email as string | undefined;
+                const tel = company.tel ?? company.telephone;
+                const email = company.email;
 
                 return (
                   <TableRow key={company.id}>

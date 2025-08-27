@@ -976,7 +976,7 @@ export const PipelinePage: React.FC = () => {
                       <Label htmlFor="priority">Priorité</Label>
                       <Select 
                         value={editingOpportunity.priorite} 
-                        onValueChange={(value: any) => setEditingOpportunity({
+                        onValueChange={(value: string) => setEditingOpportunity({
                           ...editingOpportunity,
                           priorite: value
                         })}
@@ -1002,7 +1002,7 @@ export const PipelinePage: React.FC = () => {
                       <Label htmlFor="type">Type d'opportunité</Label>
                       <Select 
                         value={editingOpportunity.type || 'one_shot'} 
-                        onValueChange={(value: any) => setEditingOpportunity({
+                        onValueChange={(value: string) => setEditingOpportunity({
                           ...editingOpportunity,
                           type: value
                         })}

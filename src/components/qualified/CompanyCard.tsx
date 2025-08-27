@@ -4,9 +4,10 @@ import React from 'react';
 import { Building, MapPin, Globe, Users, Calendar } from 'lucide-react';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../../utils/displayHelpers';
 import { Employee, QUALIFIED_COMPANIES_CONSTANTS } from './types';
+import { Company } from '../../types';
 
 interface CompanyCardProps {
-  company: any;
+  company: Company;
   employees: Employee[];
   onContactClick?: (companyId: number) => void;
 }
