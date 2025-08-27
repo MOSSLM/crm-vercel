@@ -16,17 +16,25 @@ interface ObjectivesModalProps {
   onClose: () => void;
   onSave: (objectives: KPIObjective[]) => void;
   existingObjectives?: KPIObjective[];
+  initialPeriodType: PeriodType;
 }
 
 export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
   open,
   onClose,
   onSave,
-  existingObjectives = []
+  existingObjectives = [],
+  initialPeriodType
 }) => {
-  const [selectedPeriodType, setSelectedPeriodType] = useState<PeriodType>('month');
+  const [selectedPeriodType, setSelectedPeriodType] = useState<PeriodType>(initialPeriodType);
   const [periods, setPeriods] = useState<Period[]>([]);
   const [objectives, setObjectives] = useState<Record<string, KPIObjective>>({});
+
+  useEffect(() => {
+    if (open) {
+      setSelectedPeriodType(initialPeriodType);
+    }
+  }, [open, initialPeriodType]);
 
   useEffect(() => {
     if (open) {
