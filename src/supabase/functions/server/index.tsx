@@ -803,7 +803,7 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
 
     // Transformer les données de la vue au format attendu
     // La vue retourne des lignes avec { metric: "appels", total: 5, total_week: 2, ... }
-    let totals = {
+    const totals = {
       total_appels: 0,
       total_relances: 0,
       total_rdvs: 0,
