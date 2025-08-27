@@ -33,6 +33,7 @@ import {
 import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 
+import logger from '../utils/logger';
 export const QualificationPage: React.FC = () => {
   const { 
     companies, 
@@ -111,7 +112,7 @@ export const QualificationPage: React.FC = () => {
         toast.success(`${displayName} qualifiée avec succès !`);
       }
     } catch (error) {
-      console.error('Erreur lors de la qualification:', error);
+      logger.error('Erreur lors de la qualification:', error);
       toast.error('Erreur lors de la modification de la qualification');
     }
   };
@@ -170,7 +171,7 @@ export const QualificationPage: React.FC = () => {
       setShowQuickEditModal(false);
       setEditingCompany(null);
     } catch (error) {
-      console.error('Error updating company contact info:', error);
+      logger.error('Error updating company contact info:', error);
       toast.error('Erreur lors de la mise à jour des informations de contact');
     }
   };
@@ -188,7 +189,7 @@ export const QualificationPage: React.FC = () => {
       setShowDeleteModal(false);
       setCompanyToDelete(null);
     } catch (error) {
-      console.error('Error deleting company:', error);
+      logger.error('Error deleting company:', error);
     }
   };
 

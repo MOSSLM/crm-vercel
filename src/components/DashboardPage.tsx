@@ -56,6 +56,7 @@ import {
   CalendarRange
 } from 'lucide-react';
 
+import logger from '../utils/logger';
 // Local imports
 import { COLORS } from './dashboard/constants';
 import { formatCurrency, formatCompactCurrency, getPeriodLabel } from './dashboard/helpers';
@@ -141,7 +142,7 @@ export const DashboardPage: React.FC = () => {
         const kpis = await journalApi.getJournalKpiTotals();
         setJournalKpis(kpis);
       } catch (error) {
-        console.error('Erreur lors du chargement des KPI du journal:', error);
+        logger.error('Erreur lors du chargement des KPI du journal:', error);
         setKpiError(error instanceof Error ? error.message : 'Erreur de chargement des KPI');
       } finally {
         setLoadingKpis(false);

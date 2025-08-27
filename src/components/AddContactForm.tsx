@@ -14,6 +14,7 @@ import { contactsApi } from '../utils/api';
 import { toast } from "sonner";
 import { Plus, Loader2, User, Building, Mail, Phone, Briefcase, Globe, Users, MessageSquare } from 'lucide-react';
 
+import logger from '../utils/logger';
 interface AddContactFormProps {
   onContactAdded?: () => void;
   className?: string;
@@ -94,7 +95,7 @@ export const AddContactForm: React.FC<AddContactFormProps> = ({ onContactAdded, 
       onContactAdded?.();
       
     } catch (error) {
-      console.error('Error adding contact:', error);
+      logger.error('Error adding contact:', error);
       toast.error("Erreur lors de l'ajout du contact");
     } finally {
       setIsLoading(false);

@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import logger from '../utils/logger';
 interface JournalStatsWidgetProps {
   opportunite_id?: string;
   entreprise_id?: number;
@@ -79,7 +80,7 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
       setStats(statsData);
       setHistory(historyData.slice(0, 10)); // Dernières 10 entrées
     } catch (error) {
-      console.error('Error loading journal data:', error);
+      logger.error('Error loading journal data:', error);
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
@@ -134,7 +135,7 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
       await loadData();
       onStatsUpdate?.();
     } catch (error) {
-      console.error('Error adding action:', error);
+      logger.error('Error adding action:', error);
       toast.error('Erreur lors de l\'enregistrement');
     } finally {
       setIsSubmitting(false);

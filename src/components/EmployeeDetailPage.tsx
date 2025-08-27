@@ -23,6 +23,7 @@ import {
   Briefcase,
 } from "lucide-react";
 
+import logger from '../utils/logger';
 interface Employee {
   id: string;
   nom?: string;
@@ -77,7 +78,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
               foundCompany = company;
             }
           } catch (error) {
-            console.error(
+            logger.error(
               `Erreur lors du chargement des contacts de l'entreprise ${company.id}:`,
               error
             );
@@ -105,7 +106,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
         setAssociatedCompany(null);
       }
     } catch (error) {
-      console.error("Error loading employee:", error);
+      logger.error("Error loading employee:", error);
       toast.error("Erreur lors du chargement du contact");
     } finally {
       setLoading(false);
@@ -136,7 +137,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
       setIsEditing(false);
       toast.success("Contact mis à jour avec succès");
     } catch (error) {
-      console.error("Erreur lors de la mise à jour:", error);
+      logger.error("Erreur lors de la mise à jour:", error);
       toast.error("Erreur lors de la mise à jour du contact");
     } finally {
       setIsLoading(false);

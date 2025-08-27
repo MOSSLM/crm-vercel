@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
 
+import logger from '../../../utils/logger.ts';
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -36,7 +37,7 @@ export const logEvent = async (entry: Omit<JournalEntry, 'date'>): Promise<void>
     });
 
   if (error) {
-    console.error('Error logging journal entry:', error);
+    logger.error('Error logging journal entry:', error);
     throw error;
   }
 };
@@ -61,7 +62,7 @@ export const getNextSequenceNumber = async (
   const { data, error } = await query;
 
   if (error) {
-    console.error('Error getting sequence number:', error);
+    logger.error('Error getting sequence number:', error);
     return 1;
   }
 
@@ -95,7 +96,7 @@ export const getJournalStats = async (opportunite_id?: string, entreprise_id?: n
   const { data, error } = await query;
 
   if (error) {
-    console.error('Error getting journal stats:', error);
+    logger.error('Error getting journal stats:', error);
     return { appels: 0, relances: 0, rdvs: 0, devis: 0, signatures: 0, acomptes: 0 };
   }
 
@@ -152,7 +153,7 @@ export const getJournalHistory = async (opportunite_id?: string, entreprise_id?:
   const { data, error } = await query;
 
   if (error) {
-    console.error('Error getting journal history:', error);
+    logger.error('Error getting journal history:', error);
     throw error;
   }
 

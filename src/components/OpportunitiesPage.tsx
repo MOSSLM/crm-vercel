@@ -35,6 +35,7 @@ import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
 
+import logger from '../utils/logger';
 export const OpportunitiesPage: React.FC = () => {
   const { 
     opportunities, 
@@ -119,7 +120,7 @@ export const OpportunitiesPage: React.FC = () => {
         toast.success(`Opportunité ${displayName} mise à jour`);
         setEditingOpportunity(null);
       } catch (error) {
-        console.error('Erreur lors de la sauvegarde:', error);
+        logger.error('Erreur lors de la sauvegarde:', error);
         toast.error('Erreur lors de la sauvegarde');
       }
     }
@@ -150,7 +151,7 @@ export const OpportunitiesPage: React.FC = () => {
           setSelectedOpportunity(updated);
         }
       } catch (error) {
-        console.error('Erreur lors de l\'ajout de la note:', error);
+        logger.error('Erreur lors de l\'ajout de la note:', error);
         toast.error('Erreur lors de l\'ajout de la note');
       }
     }
@@ -177,7 +178,7 @@ export const OpportunitiesPage: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Erreur lors du toggle lead magnet:', error);
+      logger.error('Erreur lors du toggle lead magnet:', error);
       toast.error('Erreur lors de la modification du lead magnet');
     }
   };

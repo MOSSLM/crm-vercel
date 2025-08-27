@@ -13,6 +13,7 @@ import { Separator } from './ui/separator';
 import { toast } from "sonner";
 import { User, Loader2, Mail, Phone, Briefcase, Globe, Users, MessageSquare, Plus, Save } from 'lucide-react';
 
+import logger from '../utils/logger';
 interface Employee {
   id: string;
   first_name?: string;
@@ -123,7 +124,7 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
       onEmployeeUpdated();
       
     } catch (error) {
-      console.error('Error updating employee:', error);
+      logger.error('Error updating employee:', error);
       toast.error("Erreur lors de la modification du contact");
     } finally {
       setIsLoading(false);
@@ -149,7 +150,7 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
       setNewNote('');
       toast.success("Note ajoutée avec succès");
     } catch (error) {
-      console.error('Error adding note:', error);
+      logger.error('Error adding note:', error);
       toast.error("Erreur lors de l'ajout de la note");
     } finally {
       setAddingNote(false);

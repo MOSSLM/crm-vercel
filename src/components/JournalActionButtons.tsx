@@ -23,6 +23,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 
+import logger from '../utils/logger';
 interface JournalActionButtonsProps {
   opportunite_id?: string;
   entreprise_id?: number;
@@ -164,7 +165,7 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
       await actionConfig.action();
       onActionCompleted?.();
     } catch (error) {
-      console.error("Error executing quick action:", error);
+      logger.error("Error executing quick action:", error);
       toast.error("Erreur lors de l'enregistrement de l'action");
     } finally {
       setIsSubmitting(false);
@@ -188,7 +189,7 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
       setDescription("");
       onActionCompleted?.();
     } catch (error) {
-      console.error("Error executing action with description:", error);
+      logger.error("Error executing action with description:", error);
       toast.error("Erreur lors de l'enregistrement de l'action");
     } finally {
       setIsSubmitting(false);

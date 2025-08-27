@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
+import logger from '../../../../utils/logger';
 // —— Next.js route options ——
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ const json = (data: any, status = 200) =>
 // —— Logger très simple ——
 const log = (...args: any[]) => {
   try {
-    console.log("[api]", ...args);
+    logger.log("[api]", ...args);
   } catch {}
 };
 

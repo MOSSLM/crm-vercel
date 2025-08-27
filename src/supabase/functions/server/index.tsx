@@ -1,10 +1,11 @@
 import { Hono } from 'npm:hono';
 import { cors } from 'npm:hono/cors';
-import { logger } from 'npm:hono/logger';
+import { logger as honoLogger } from 'npm:hono/logger';
 import { createClient } from 'npm:@supabase/supabase-js';
 import * as kv from './kv_store.tsx';
 import * as journal from './journal.tsx';
 
+import logger from '../../../utils/logger.ts';
 const app = new Hono();
 
 // Add CORS middleware
@@ -15,7 +16,7 @@ app.use('*', cors({
 }));
 
 // Add logger middleware
-app.use('*', logger(console.log));
+app.use('*', honoLogger(logger.log));
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -43,7 +44,7 @@ app.get(`${routePrefix}/contacts`, async (c) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Supabase contacts error:', error);
+      logger.error('Supabase contacts error:', error);
       return c.json({ error: 'Failed to fetch contacts' }, 500);
     }
 
@@ -60,7 +61,7 @@ app.get(`${routePrefix}/contacts`, async (c) => {
             prenom: contact.first_name
           };
         } catch (e) {
-          console.error('Error fetching extended contact data:', e);
+          logger.error('Error fetching extended contact data:', e);
           return {
             ...contact,
             nom: contact.last_name,
@@ -72,7 +73,7 @@ app.get(`${routePrefix}/contacts`, async (c) => {
 
     return c.json(enhancedContacts);
   } catch (error) {
-    console.error('Error in contacts endpoint:', error);
+    logger.error('Error in contacts endpoint:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -88,7 +89,7 @@ app.get(`${routePrefix}/contacts/company/:companyId`, async (c) => {
       .eq('entreprise_id', companyId);
 
     if (error) {
-      console.error('Supabase contacts error:', error);
+      logger.error('Supabase contacts error:', error);
       return c.json({ error: 'Failed to fetch contacts' }, 500);
     }
 
@@ -115,7 +116,7 @@ app.get(`${routePrefix}/contacts/company/:companyId`, async (c) => {
 
     return c.json(enhancedContacts);
   } catch (error) {
-    console.error('Error in contacts by company endpoint:', error);
+    logger.error('Error in contacts by company endpoint:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -150,7 +151,7 @@ app.post(`${routePrefix}/contacts`, async (c) => {
       .single();
 
     if (error) {
-      console.error('Supabase contact creation error:', error);
+      logger.error('Supabase contact creation error:', error);
       return c.json({ error: 'Failed to create contact' }, 500);
     }
 
@@ -159,7 +160,7 @@ app.post(`${routePrefix}/contacts`, async (c) => {
       try {
         await kv.set(`contact_extended_${contact.id}`, extendedFields);
       } catch (kvError) {
-        console.error('KV store error:', kvError);
+        logger.error('KV store error:', kvError);
         // Continue even if KV store fails
       }
     }
@@ -171,7 +172,7 @@ app.post(`${routePrefix}/contacts`, async (c) => {
       prenom: contact.first_name
     });
   } catch (error) {
-    console.error('Error creating contact:', error);
+    logger.error('Error creating contact:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -209,7 +210,7 @@ app.put(`${routePrefix}/contacts/:id`, async (c) => {
         .single();
 
       if (error) {
-        console.error('Supabase contact update error:', error);
+        logger.error('Supabase contact update error:', error);
         return c.json({ error: 'Failed to update contact' }, 500);
       }
       updatedContact = data;
@@ -222,7 +223,7 @@ app.put(`${routePrefix}/contacts/:id`, async (c) => {
         .single();
 
       if (error) {
-        console.error('Supabase contact fetch error:', error);
+        logger.error('Supabase contact fetch error:', error);
         return c.json({ error: 'Failed to fetch contact' }, 500);
       }
       updatedContact = data;
@@ -237,7 +238,7 @@ app.put(`${routePrefix}/contacts/:id`, async (c) => {
         const mergedExtended = { ...existingExtended, ...extendedFields };
         await kv.set(`contact_extended_${contactId}`, mergedExtended);
       } catch (kvError) {
-        console.error('KV store error:', kvError);
+        logger.error('KV store error:', kvError);
         // Continue even if KV store fails
       }
     }
@@ -247,7 +248,7 @@ app.put(`${routePrefix}/contacts/:id`, async (c) => {
     try {
       finalExtendedData = await kv.get(`contact_extended_${contactId}`) || {};
     } catch (e) {
-      console.error('Error fetching final extended data:', e);
+      logger.error('Error fetching final extended data:', e);
     }
 
     return c.json({
@@ -257,7 +258,7 @@ app.put(`${routePrefix}/contacts/:id`, async (c) => {
       prenom: updatedContact.first_name
     });
   } catch (error) {
-    console.error('Error updating contact:', error);
+    logger.error('Error updating contact:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -270,7 +271,7 @@ app.get(`${routePrefix}/contacts/:id/notes`, async (c) => {
     
     return c.json(notes);
   } catch (error) {
-    console.error('Error fetching contact notes:', error);
+    logger.error('Error fetching contact notes:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -298,7 +299,7 @@ app.post(`${routePrefix}/contacts/:id/notes`, async (c) => {
     
     return c.json(newNote);
   } catch (error) {
-    console.error('Error creating contact note:', error);
+    logger.error('Error creating contact note:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -329,7 +330,7 @@ app.put(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
     const updatedNote = updatedNotes.find((note: any) => note.id === noteId);
     return c.json(updatedNote);
   } catch (error) {
-    console.error('Error updating contact note:', error);
+    logger.error('Error updating contact note:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -348,7 +349,7 @@ app.delete(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
     
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error deleting contact note:', error);
+    logger.error('Error deleting contact note:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -365,7 +366,7 @@ app.get(`${routePrefix}/searches`, async (c) => {
     
     return c.json(searchList);
   } catch (error) {
-    console.error('Error fetching searches:', error);
+    logger.error('Error fetching searches:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -383,7 +384,7 @@ app.get(`${routePrefix}/companies`, async (c) => {
     
     return c.json(companyList);
   } catch (error) {
-    console.error('Error fetching companies:', error);
+    logger.error('Error fetching companies:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -394,7 +395,7 @@ app.get(`${routePrefix}/kpi/targets`, async (c) => {
     const targets = await kv.getByPrefix('kpi_target_');
     return c.json(targets);
   } catch (error) {
-    console.error('Error fetching KPI targets:', error);
+    logger.error('Error fetching KPI targets:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -413,7 +414,7 @@ app.post(`${routePrefix}/kpi/targets`, async (c) => {
     
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error saving KPI targets:', error);
+    logger.error('Error saving KPI targets:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -425,7 +426,7 @@ app.get(`${routePrefix}/kpi/progress/:periode`, async (c) => {
     
     return c.json(progress);
   } catch (error) {
-    console.error('Error fetching KPI progress:', error);
+    logger.error('Error fetching KPI progress:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -471,16 +472,16 @@ app.post(`${routePrefix}/objectives`, async (c) => {
         }]);
 
       if (error) {
-        console.error('Erreur lors de l\'insertion d\'objectif:', error);
+        logger.error('Erreur lors de l\'insertion d\'objectif:', error);
         return c.json({ error: 'Erreur lors de la sauvegarde' }, 500);
       }
     }
 
-    console.log(`${objectives.length} objectifs sauvegardés`);
+    logger.log(`${objectives.length} objectifs sauvegardés`);
     return c.json({ success: true, count: objectives.length });
 
   } catch (error) {
-    console.error('Erreur lors de la sauvegarde des objectifs:', error);
+    logger.error('Erreur lors de la sauvegarde des objectifs:', error);
     return c.json({ error: 'Erreur interne du serveur' }, 500);
   }
 });
@@ -493,13 +494,13 @@ app.get(`${routePrefix}/objectives`, async (c) => {
       .order('period_start', { ascending: true });
 
     if (error) {
-      console.error('Erreur lors de la récupération des objectifs:', error);
+      logger.error('Erreur lors de la récupération des objectifs:', error);
       return c.json({ error: 'Erreur lors de la récupération' }, 500);
     }
 
     return c.json(objectives || []);
   } catch (error) {
-    console.error('Erreur lors de la récupération des objectifs:', error);
+    logger.error('Erreur lors de la récupération des objectifs:', error);
     return c.json({ error: 'Erreur interne du serveur' }, 500);
   }
 });
@@ -514,7 +515,7 @@ app.get(`${routePrefix}/kpi/by-period`, async (c) => {
       .select('metric, total, total_week, total_month, total_quarter, total_year');
 
     if (error) {
-      console.error('Erreur lors de la récupération des données KPI:', error);
+      logger.error('Erreur lors de la récupération des données KPI:', error);
       return c.json({ error: 'Erreur lors de la récupération des données KPI' }, 500);
     }
 
@@ -523,7 +524,7 @@ app.get(`${routePrefix}/kpi/by-period`, async (c) => {
     return c.json(periodData);
 
   } catch (error) {
-    console.error('Erreur lors de la récupération des données KPI par période:', error);
+    logger.error('Erreur lors de la récupération des données KPI par période:', error);
     return c.json({ error: 'Erreur interne du serveur' }, 500);
   }
 });
@@ -538,7 +539,7 @@ app.get(`${routePrefix}/kpi/historical`, async (c) => {
     return c.json(historicalData);
 
   } catch (error) {
-    console.error('Erreur lors de la récupération des données historiques:', error);
+    logger.error('Erreur lors de la récupération des données historiques:', error);
     return c.json({ error: 'Erreur interne du serveur' }, 500);
   }
 });
@@ -554,7 +555,7 @@ app.get(`${routePrefix}/kpi/recent-periods`, async (c) => {
     return c.json(recentData);
 
   } catch (error) {
-    console.error('Erreur lors de la récupération des données des périodes récentes:', error);
+    logger.error('Erreur lors de la récupération des données des périodes récentes:', error);
     return c.json({ error: 'Erreur interne du serveur' }, 500);
   }
 });
@@ -566,7 +567,7 @@ app.post(`${routePrefix}/journal/log`, async (c) => {
     await journal.logEvent(body);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging journal event:', error);
+    logger.error('Error logging journal event:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -578,7 +579,7 @@ app.post(`${routePrefix}/journal/call`, async (c) => {
     await journal.logCall(opportunite_id, entreprise_id, description);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging call:', error);
+    logger.error('Error logging call:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -590,7 +591,7 @@ app.post(`${routePrefix}/journal/relance`, async (c) => {
     await journal.logRelance(opportunite_id, entreprise_id, description);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging relance:', error);
+    logger.error('Error logging relance:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -602,7 +603,7 @@ app.post(`${routePrefix}/journal/rdv`, async (c) => {
     await journal.logRdv(opportunite_id, entreprise_id, description);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging rdv:', error);
+    logger.error('Error logging rdv:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -614,7 +615,7 @@ app.post(`${routePrefix}/journal/devis`, async (c) => {
     await journal.logDevis(opportunite_id, entreprise_id, description);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging devis:', error);
+    logger.error('Error logging devis:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -626,7 +627,7 @@ app.post(`${routePrefix}/journal/signature`, async (c) => {
     await journal.logSignature(opportunite_id, entreprise_id, description);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging signature:', error);
+    logger.error('Error logging signature:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -638,7 +639,7 @@ app.post(`${routePrefix}/journal/acompte`, async (c) => {
     await journal.logAcompte(opportunite_id, entreprise_id, description);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging acompte:', error);
+    logger.error('Error logging acompte:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -650,7 +651,7 @@ app.post(`${routePrefix}/journal/lead-magnet`, async (c) => {
     await journal.logLeadMagnet(opportunite_id, entreprise_id, description);
     return c.json({ success: true });
   } catch (error) {
-    console.error('Error logging lead magnet:', error);
+    logger.error('Error logging lead magnet:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -663,7 +664,7 @@ app.get(`${routePrefix}/journal/stats`, async (c) => {
     const stats = await journal.getJournalStats(opportunite_id, entreprise_id);
     return c.json(stats);
   } catch (error) {
-    console.error('Error getting journal stats:', error);
+    logger.error('Error getting journal stats:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -676,7 +677,7 @@ app.get(`${routePrefix}/journal/history`, async (c) => {
     const history = await journal.getJournalHistory(opportunite_id, entreprise_id);
     return c.json(history);
   } catch (error) {
-    console.error('Error getting journal history:', error);
+    logger.error('Error getting journal history:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -690,7 +691,7 @@ app.get(`${routePrefix}/journal/next-sequence/:type`, async (c) => {
     const nextNumber = await journal.getNextSequenceNumber(type, opportunite_id, entreprise_id);
     return c.json({ nextNumber });
   } catch (error) {
-    console.error('Error getting next sequence number:', error);
+    logger.error('Error getting next sequence number:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -704,7 +705,7 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
       .select('metric, total, total_week, total_month, total_quarter, total_year');
 
     if (error) {
-      console.error('Error fetching KPI totals from journal view, trying direct query:', error);
+      logger.error('Error fetching KPI totals from journal view, trying direct query:', error);
       
       // Si la vue échoue, utiliser une requête directe sur la table journal
       const { data: journalData, error: journalError } = await supabase
@@ -712,7 +713,7 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
         .select('type_evenement, created_at');
 
       if (journalError) {
-        console.error('Error fetching from journal_succes table:', journalError);
+        logger.error('Error fetching from journal_succes table:', journalError);
         return c.json({ error: 'Failed to fetch KPI totals from both view and table' }, 500);
       }
 
@@ -795,15 +796,15 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
         }
       };
 
-      console.log('KPI totals calculated directly from journal:', totals);
+      logger.log('KPI totals calculated directly from journal:', totals);
       return c.json(totals);
     }
 
-    console.log('KPI data from view (raw):', JSON.stringify(data, null, 2));
+    logger.log('KPI data from view (raw):', JSON.stringify(data, null, 2));
 
     // Transformer les données de la vue au format attendu
     // La vue retourne des lignes avec { metric: "appels", total: 5, total_week: 2, ... }
-    let totals = {
+    const totals = {
       total_appels: 0,
       total_relances: 0,
       total_rdvs: 0,
@@ -889,7 +890,7 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
             case 'qualified':
               return 'total_qualified';
             default:
-              console.log(`Unknown metric from view: ${metric}`);
+              logger.log(`Unknown metric from view: ${metric}`);
               return null;
           }
         };
@@ -905,10 +906,10 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
       }
     }
 
-    console.log('KPI totals transformed from view:', totals);
+    logger.log('KPI totals transformed from view:', totals);
     return c.json(totals);
   } catch (error) {
-    console.error('Error in KPI journal totals endpoint:', error);
+    logger.error('Error in KPI journal totals endpoint:', error);
     return c.json({ error: 'Internal server error' }, 500);
   }
 });
@@ -920,7 +921,7 @@ app.all('*', (c) => {
 
 // Error handler
 app.onError((err, c) => {
-  console.error('Server error:', err);
+  logger.error('Server error:', err);
   return c.json({ error: 'Internal Server Error' }, 500);
 });
 
@@ -1030,7 +1031,7 @@ async function getHistoricalDataFromJournal(periodType: string, limit: number) {
       .lt('date', period.endDate.toISOString());
 
     if (error) {
-      console.error('Erreur lors de la récupération du journal pour la période:', error);
+      logger.error('Erreur lors de la récupération du journal pour la période:', error);
       // En cas d'erreur, utiliser des valeurs par défaut
       data.push({
         period_start: period.startDate.toISOString().split('T')[0],
@@ -1357,7 +1358,7 @@ async function getRecentPeriodsDataFromJournal(periodType: string, count: number
       .lt('date', period.endDate.toISOString());
 
     if (error) {
-      console.error('Erreur lors de la récupération du journal pour la période:', error);
+      logger.error('Erreur lors de la récupération du journal pour la période:', error);
     }
 
     // Compter les événements par type pour cette période

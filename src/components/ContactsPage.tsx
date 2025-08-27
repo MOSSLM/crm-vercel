@@ -28,6 +28,7 @@ import {
   Loader2
 } from 'lucide-react';
 
+import logger from '../utils/logger';
 interface Employee {
   id: string;
   nom?: string;
@@ -65,7 +66,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
             const employees = await contactsApi.getByCompany(company.id);
             allEmployeesData.push(...employees);
           } catch (error) {
-            console.error(`Error loading employees for company ${company.id}:`, error);
+            logger.error(`Error loading employees for company ${company.id}:`, error);
           }
         })
       );
@@ -143,7 +144,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
             const employees = await contactsApi.getByCompany(company.id);
             allEmployeesData.push(...employees);
           } catch (error) {
-            console.error(`Error loading employees for company ${company.id}:`, error);
+            logger.error(`Error loading employees for company ${company.id}:`, error);
           }
         })
       );
@@ -168,7 +169,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
             const employees = await contactsApi.getByCompany(company.id);
             allEmployeesData.push(...employees);
           } catch (error) {
-            console.error(`Error loading employees for company ${company.id}:`, error);
+            logger.error(`Error loading employees for company ${company.id}:`, error);
           }
         })
       );
