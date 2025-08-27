@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import { useAppData, Opportunity } from './AppDataContext';
+import { useAppData } from './AppDataContext';
+import { Opportunity } from '../types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -574,7 +575,7 @@ export const OpportunitiesPage: React.FC = () => {
                 
                 <div className="space-y-3">
                   <div className="flex gap-2">
-                    <Select value={noteType} onValueChange={(value: any) => setNoteType(value)}>
+                    <Select value={noteType} onValueChange={(value: string) => setNoteType(value)}>
                       <SelectTrigger className="w-32">
                         <SelectValue />
                       </SelectTrigger>
@@ -650,7 +651,7 @@ export const OpportunitiesPage: React.FC = () => {
                   <Label htmlFor="priority">Priorité</Label>
                   <Select 
                     value={editingOpportunity.priorite} 
-                    onValueChange={(value: any) => setEditingOpportunity({
+                    onValueChange={(value: string) => setEditingOpportunity({
                       ...editingOpportunity,
                       priorite: value
                     })}

@@ -1,7 +1,8 @@
 import { Employee } from './types';
+import { Company } from '../../types';
 
 export const calculateMetrics = (
-  qualifiedCompanies: any[], 
+  qualifiedCompanies: Company[],
   companyEmployees: Record<number, Employee[]>
 ) => {
   const stats = {
@@ -26,14 +27,17 @@ export const calculateMetrics = (
 };
 
 export const filterCompanies = (
-  qualifiedCompanies: any[],
+  qualifiedCompanies: Company[],
   companyEmployees: Record<number, Employee[]>,
   searchTerm: string,
   filterBy: string,
   getCompanyDisplayName: (name: string, url: string) => string
 ) => {
   return qualifiedCompanies.filter(company => {
-    const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+    const displayName = getCompanyDisplayName(
+      company.name ?? '',
+      company.canonical_url ?? ''
+    );
     const employees = companyEmployees[company.id] || [];
     
     const matchesSearch = !searchTerm || 

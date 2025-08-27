@@ -19,22 +19,14 @@ import { useAppData } from "@/components/AppDataContext";
  */
 function usePageTitle() {
   const pathname = usePathname() || "/";
-  const app = useAppData();
-  const companies: any[] = (app as any)?.companies ?? [];
+  const { companies } = useAppData();
 
   // Entreprise: /companies/[id]
   const mCompany = pathname.match(/^\/companies\/([^/]+)$/);
   if (mCompany) {
     const id = decodeURIComponent(mCompany[1]);
-    const company = Array.isArray(companies)
-      ? companies.find((c) => String((c as any)?.id) === String(id))
-      : undefined;
-
-    const companyName =
-      company && typeof (company as any).name === "string"
-        ? (company as any).name
-        : undefined;
-
+    const company = companies.find((c) => String(c.id) === String(id));
+    const companyName = company?.name;
     return companyName ? `Entreprise · ${companyName}` : `Entreprise #${id}`;
   }
 

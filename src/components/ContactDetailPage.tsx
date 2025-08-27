@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAppData, Contact, Opportunity, PipelineStage } from './AppDataContext';
+import { useAppData, PipelineStage } from './AppDataContext';
+import { Contact, Opportunity, Company } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -63,7 +64,7 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
   } = useAppData();
 
   const [contact, setContact] = useState<Contact | null>(null);
-  const [associatedCompany, setAssociatedCompany] = useState<any>(null);
+  const [associatedCompany, setAssociatedCompany] = useState<Company | null>(null);
   const [contactOpportunities, setContactOpportunities] = useState<Opportunity[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -133,7 +134,7 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
     setIsEditing(false);
   };
 
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({
       ...prev,
       [field]: value

@@ -5,9 +5,10 @@ import { Building, MapPin, Globe, Users, Mail, Phone, CheckCircle } from 'lucide
 import { Badge } from '../ui/badge';
 import { getCompanyDisplayName } from '../../utils/displayHelpers';
 import { Employee, QUALIFIED_COMPANIES_CONSTANTS } from './types';
+import { Company } from '../../types';
 
 interface CompanyRowProps {
-  company: any;
+  company: Company;
   employees: Employee[];
   onContactClick?: (companyId: number) => void;
   onEmployeeClick: (employee: Employee, e: React.MouseEvent) => void;

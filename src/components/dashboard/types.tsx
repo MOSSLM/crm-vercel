@@ -1,4 +1,5 @@
 import { JournalKpiPeriodTotals } from '../../utils/journalApi';
+import { Opportunity } from '../../types';
 
 export interface RecentActivity {
   action: string;
@@ -36,12 +37,12 @@ export interface DashboardCalculations {
   totalSignatures: number;
   totalAcomptes: number;
   totalLeadMagnets: number;
-  qualifiedOpportunities: any[];
+  qualifiedOpportunities: Opportunity[];
   totalPipelineValue: number;
   averageDealValue: number;
   callsToBeMade: number;
-  signedOpportunities: any[];
-  depositOpportunities: any[];
+  signedOpportunities: Opportunity[];
+  depositOpportunities: Opportunity[];
   totalSigned: number;
   totalCollected: number;
   totalPending: number;

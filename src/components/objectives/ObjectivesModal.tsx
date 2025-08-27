@@ -88,8 +88,10 @@ export const ObjectivesModal: React.FC<ObjectivesModalProps> = ({
   const handleSave = () => {
     const objectivesList = Object.values(objectives).filter(obj => {
       // Vérifier si au moins une valeur KPI est définie et > 0
-      const kpiFields = ['leads_trouves', 'leads_qualifies', 'appels', 'rdv', 'devis', 'relances', 'signatures', 'acomptes', 'leadmagnets', 'relances_total', 'ca', 'mrr'];
-      return kpiFields.some(field => (obj as any)[field] > 0);
+      const kpiFields = ['leads_trouves', 'leads_qualifies', 'appels', 'rdv', 'devis', 'relances', 'signatures', 'acomptes', 'leadmagnets', 'relances_total', 'ca', 'mrr'] as const;
+      return kpiFields.some(
+        field => (obj as unknown as Record<string, number | undefined>)[field] > 0
+      );
     });
     
     onSave(objectivesList);

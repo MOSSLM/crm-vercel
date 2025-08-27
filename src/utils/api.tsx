@@ -1,4 +1,5 @@
 import { supabase } from './supabase/client';
+import { Company, CompanyRaw, Contact, Opportunity } from '../types';
 
 // Search Results API (table: recherches)
 export const searchResultsApi = {
@@ -46,7 +47,7 @@ export const searchResultsApi = {
     }
   },
   
-  create: async (searchData: any) => {
+  create: async (searchData: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('recherches')
@@ -63,7 +64,7 @@ export const searchResultsApi = {
     }
   },
   
-  update: async (id: string, updates: any) => {
+  update: async (id: string, updates: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('recherches')
@@ -107,8 +108,8 @@ export const companiesApi = {
             qualifie: true,
             created_at: '2024-01-15T00:00:00Z',
             updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '500k-1m',
-            nb_employes_band: '11-50',
+            ca_estime_band: '500k-1m' as RevenueBand,
+            nb_employes_band: '11-50' as EmployeeBand,
             nb_employes_exact: 25,
             linkedin_url: 'https://linkedin.com/company/legourmet',
             site_web_canonique: 'https://legourmet.fr',
@@ -129,8 +130,8 @@ export const companiesApi = {
             qualifie: true,
             created_at: '2024-01-15T00:00:00Z',
             updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '100k-500k',
-            nb_employes_band: '1-10',
+            ca_estime_band: '100k-500k' as RevenueBand,
+            nb_employes_band: '1-10' as EmployeeBand,
             nb_employes_exact: 8,
             linkedin_url: null,
             site_web_canonique: 'https://bistrotparis.fr',
@@ -147,7 +148,9 @@ export const companiesApi = {
     }
   },
   
-  create: async (companyData: any) => {
+  create: async (
+    companyData: Omit<Company, 'id' | 'created_at' | 'updated_at'>
+  ) => {
     try {
       const { data, error } = await supabase
         .from('entreprises')
@@ -163,7 +166,7 @@ export const companiesApi = {
     }
   },
   
-  update: async (id: number, updates: any) => {
+  update: async (id: number, updates: Partial<Company>) => {
     try {
       // Helper function to convert enum values from UI format (with hyphens) to DB format (with underscores)
       const convertEnumForDatabase = (value: string): string => {
@@ -252,13 +255,13 @@ export const companiesApi = {
       }
 
       // Get raw contact data from entreprises_raw
-      let rawContactInfo: any[] = [];
+      let rawContactInfo: CompanyRaw[] = [];
       if (company?.raw_ids && company.raw_ids.length > 0) {
         try {
-          const { data: rawData, error: rawError } = await supabase
-            .from('entreprises_raw')
-            .select('*')
-            .in('id', company.raw_ids);
+                const { data: rawData, error: rawError } = await supabase
+                  .from('entreprises_raw')
+                  .select('*')
+                  .in('id', company.raw_ids);
           
           if (!rawError && rawData) {
             rawContactInfo = rawData;
@@ -282,34 +285,37 @@ export const companiesApi = {
         
         // Look for email in raw_json
         const emailEntry = rawContactInfo.find(entry => {
-          if (entry.raw_json && typeof entry.raw_json === 'object') {
-            return entry.raw_json.email || entry.raw_json.contact_email;
-          }
-          return false;
+          const raw = entry.raw_json as Record<string, unknown> | undefined;
+          return (
+            typeof raw?.email === 'string' || typeof raw?.contact_email === 'string'
+          );
         });
         if (emailEntry) {
-          email = emailEntry.raw_json.email || emailEntry.raw_json.contact_email;
+          const raw = emailEntry.raw_json as Record<string, unknown>;
+          email = (raw.email as string) || (raw.contact_email as string) || '';
         }
         
         // Look for contact name
         const nameEntry = rawContactInfo.find(entry => {
-          if (entry.raw_json && typeof entry.raw_json === 'object') {
-            return entry.raw_json.contact_name || entry.raw_json.owner;
-          }
-          return false;
+          const raw = entry.raw_json as Record<string, unknown> | undefined;
+          return (
+            typeof raw?.contact_name === 'string' || typeof raw?.owner === 'string'
+          );
         });
         if (nameEntry) {
-          contact_name = nameEntry.raw_json.contact_name || nameEntry.raw_json.owner;
+          const raw = nameEntry.raw_json as Record<string, unknown>;
+          contact_name = (raw.contact_name as string) || (raw.owner as string) || '';
         }
       }
 
-      return {
+      const result: Company = {
         ...company,
         raw_contact_info: rawContactInfo,
         telephone,
         email,
         contact_name
       };
+      return result;
     } catch (error) {
       console.error('Error fetching company by ID:', error);
       return null;
@@ -417,7 +423,7 @@ export const rawCompaniesApi = {
     }
   },
   
-  create: async (rawCompanyData: any) => {
+  create: async (rawCompanyData: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('entreprises_raw')
@@ -504,7 +510,7 @@ export const contactsApi = {
     }
   },
   
-  create: async (contactData: any) => {
+  create: async (contactData: Partial<Contact>) => {
     try {
       // Map UI fields to database columns
       const dbFields = {
@@ -550,10 +556,10 @@ export const contactsApi = {
     }
   },
   
-  update: async (id: string, updates: any) => {
+  update: async (id: string, updates: Partial<Contact>) => {
     try {
       // Map UI fields to database columns
-      const dbUpdates: any = {};
+      const dbUpdates: Record<string, unknown> = {};
       if (updates.first_name !== undefined) dbUpdates.first_name = updates.first_name;
       if (updates.last_name !== undefined) dbUpdates.last_name = updates.last_name;
       if (updates.email !== undefined) dbUpdates.email = updates.email;
@@ -900,7 +906,7 @@ export const opportunitiesApi = {
     }
   },
   
-  create: async (opportunityData: any) => {
+  create: async (opportunityData: Partial<Opportunity>) => {
     try {
       // Filter to only include actual database columns
       const validColumns = [
@@ -924,9 +930,9 @@ export const opportunitiesApi = {
       const filteredData = Object.keys(opportunityData)
         .filter(key => validColumns.includes(key))
         .reduce((obj, key) => {
-          obj[key] = opportunityData[key];
+          obj[key] = (opportunityData as Record<string, unknown>)[key];
           return obj;
-        }, {} as any);
+        }, {} as Record<string, unknown>);
         
       console.log('Filtered data for opportunity creation:', filteredData);
 
@@ -949,7 +955,7 @@ export const opportunitiesApi = {
     }
   },
   
-  update: async (id: string, updates: any) => {
+  update: async (id: string, updates: Partial<Opportunity>) => {
     try {
       // Filter updates to only include actual database columns
       const validColumns = [
@@ -967,9 +973,9 @@ export const opportunitiesApi = {
       const filteredUpdates = Object.keys(updates)
         .filter(key => validColumns.includes(key))
         .reduce((obj, key) => {
-          obj[key] = updates[key];
+          obj[key] = (updates as Record<string, unknown>)[key];
           return obj;
-        }, {} as any);
+        }, {} as Record<string, unknown>);
 
       const { data, error } = await supabase
         .from('opportunites')
@@ -1033,7 +1039,7 @@ export const pipelineStagesApi = {
     }
   },
   
-  create: async (stageData: any) => {
+  create: async (stageData: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('etapes_pipeline')
@@ -1049,7 +1055,7 @@ export const pipelineStagesApi = {
     }
   },
   
-  update: async (id: number, updates: any) => {
+  update: async (id: number, updates: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('etapes_pipeline')
@@ -1085,7 +1091,7 @@ export const notesApi = {
     }
   },
   
-  create: async (noteData: any) => {
+  create: async (noteData: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('notes')
@@ -1101,7 +1107,7 @@ export const notesApi = {
     }
   },
   
-  update: async (id: number, updates: any) => {
+  update: async (id: number, updates: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('notes')
@@ -1162,7 +1168,7 @@ export const achievementsApi = {
     }
   },
   
-  create: async (achievementData: any) => {
+  create: async (achievementData: Record<string, unknown>) => {
     try {
       const { data, error } = await supabase
         .from('journal_succes')

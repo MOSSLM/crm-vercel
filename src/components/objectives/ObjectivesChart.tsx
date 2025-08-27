@@ -33,12 +33,20 @@ export const ObjectivesChart: React.FC<ObjectivesChartProps> = ({
     ...item
   }));
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({
+    active,
+    payload,
+    label
+  }: {
+    active?: boolean;
+    payload?: { dataKey: string; value: number; color: string }[];
+    label?: string;
+  }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
           <p>{label}</p>
-          {payload.map((entry: any) => {
+          {payload.map((entry) => {
             const kpi = enabledKPIs.find(k => k.key === entry.dataKey);
             return (
               <p key={entry.dataKey} style={{ color: entry.color }}>

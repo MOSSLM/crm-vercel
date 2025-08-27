@@ -1,5 +1,7 @@
 import { JournalKpiTotals, JournalKpiPeriodTotals } from '../../utils/journalApi';
 import { DashboardCalculations, FunnelStepData, PipelineBreakdownData, RecentActivity, PeriodType } from './types';
+import { Opportunity, Contact } from '../../types';
+import { PipelineStage } from '../AppDataContext';
 import {
   Building,
   Users,
@@ -30,10 +32,10 @@ export const getCurrentPeriodData = (journalKpis: JournalKpiTotals, selectedPeri
 export const calculateDashboardMetrics = (
   journalKpis: JournalKpiTotals,
   selectedPeriod: PeriodType,
-  opportunities: any[],
-  pipelineStages: any[],
-  getOpportunitiesByStage: (stageId: string) => any[],
-  contacts: any[],
+  opportunities: Opportunity[],
+  pipelineStages: PipelineStage[],
+  getOpportunitiesByStage: (stageId: string) => Opportunity[],
+  contacts: Contact[],
   totalCompanies: number,
   totalQualifiedCompanies: number
 ): DashboardCalculations => {
@@ -162,7 +164,7 @@ export const calculateDashboardMetrics = (
   const pipelineBreakdown: PipelineBreakdownData[] = pipelineStages
     .filter(stage => !stage.nom.toLowerCase().includes('côté'))
     .map(stage => {
-      const stageOpps = getOpportunitiesByStage(stage.id);
+      const stageOpps = getOpportunitiesByStage(String(stage.id));
       const stageValue = stageOpps.reduce((sum, opp) => sum + (opp.value || opp.montant || 0), 0);
       return {
         name: stage.nom,

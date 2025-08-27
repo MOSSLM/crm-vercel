@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAppData, Company, RevenueBand, EmployeeBand, Opportunity } from './AppDataContext';
+import { useAppData } from './AppDataContext';
+import { Company, RevenueBand, EmployeeBand, Opportunity, CompanyRaw } from '../types';
 import { companiesApi } from '../utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -107,7 +108,7 @@ const getEmployeeBandLabel = (band: EmployeeBand | undefined): string => {
 export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId, onBack }) => {
   const { companies, updateCompany, opportunities, pipelineStages, addOpportunity, updateOpportunity } = useAppData();
   const [company, setCompany] = useState<Company | null>(null);
-  const [detailedCompany, setDetailedCompany] = useState<any>(null);
+  const [detailedCompany, setDetailedCompany] = useState<Company | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(true);
@@ -187,7 +188,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     setIsLoading(true);
     try {
       // Prepare updates with proper type conversion and enum format conversion
-      const updates: any = {
+      const updates: Partial<Company> = {
         ...formData,
         nb_employes_exact: formData.nb_employes_exact ? parseInt(formData.nb_employes_exact) : null,
         manually_enriched: formData.manually_enriched,
@@ -232,7 +233,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     setIsEditing(false);
   };
 
-  const handleInputChange = (field: string, value: any) => {
+  const handleInputChange = (field: string, value: string | number | boolean) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
@@ -281,7 +282,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     if (!company) return;
 
     try {
-      const opportunityData: any = {
+      const opportunityData: Partial<Opportunity> = {
         entreprise_id: company.id,
         name: opportunityForm.name,
         montant: parseFloat(opportunityForm.montant) || 0,
@@ -797,7 +798,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
                   <div className="mt-4">
                     <Label>Sources des données</Label>
                     <div className="flex gap-2 flex-wrap mt-2">
-                      {detailedCompany.raw_contact_info.map((raw: any, index: number) => (
+                    {detailedCompany.raw_contact_info.map((raw: CompanyRaw, index: number) => (
                         <Badge key={index} variant="outline" className="text-xs">
                           {raw.source === 'google_maps' ? 'Google Maps' : 'Google Search'}
                           {raw.position && ` #${raw.position}`}
