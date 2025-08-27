@@ -3,6 +3,28 @@ import { projectId, publicAnonKey } from './supabase/info';
 import logger from './logger';
 const baseUrl = `https://${projectId}.supabase.co/functions/v1/make-server-5c06d9e7`;
 
+const handleFetchError = async (
+  response: Response,
+  context: string,
+): Promise<never> => {
+  let message = context;
+  try {
+    const data = await response.json();
+    message = data.error || data.message || message;
+  } catch {
+    try {
+      const text = await response.text();
+      if (text) {
+        message = text;
+      }
+    } catch {
+      // Ignore
+    }
+  }
+  logger.error(context, message);
+  throw new Error(message);
+};
+
 interface JournalEventData {
   type_evenement: string;
   description?: string;
@@ -40,8 +62,7 @@ export const logEvent = async (eventData: JournalEventData): Promise<void> => {
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log event');
+    await handleFetchError(response, 'Failed to log event');
   }
 };
 
@@ -57,8 +78,7 @@ export const logCall = async (opportunite_id?: string, entreprise_id?: number, d
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log call');
+    await handleFetchError(response, 'Failed to log call');
   }
 };
 
@@ -73,8 +93,7 @@ export const logRelance = async (opportunite_id?: string, entreprise_id?: number
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log relance');
+    await handleFetchError(response, 'Failed to log relance');
   }
 };
 
@@ -89,8 +108,7 @@ export const logRdv = async (opportunite_id?: string, entreprise_id?: number, de
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log rdv');
+    await handleFetchError(response, 'Failed to log rdv');
   }
 };
 
@@ -105,8 +123,7 @@ export const logDevis = async (opportunite_id?: string, entreprise_id?: number, 
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log devis');
+    await handleFetchError(response, 'Failed to log devis');
   }
 };
 
@@ -121,8 +138,7 @@ export const logSignature = async (opportunite_id?: string, entreprise_id?: numb
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log signature');
+    await handleFetchError(response, 'Failed to log signature');
   }
 };
 
@@ -137,8 +153,7 @@ export const logAcompte = async (opportunite_id?: string, entreprise_id?: number
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log acompte');
+    await handleFetchError(response, 'Failed to log acompte');
   }
 };
 
@@ -153,8 +168,7 @@ export const logLeadMagnet = async (opportunite_id?: string, entreprise_id?: num
   });
 
   if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || 'Failed to log lead magnet');
+    await handleFetchError(response, 'Failed to log lead magnet');
   }
 };
 
