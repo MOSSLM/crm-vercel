@@ -1,14 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
+import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "@/env";
 
 // —— Next.js route options ——
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 // —— Supabase (server) ——
-const supabase = createClient(
-  process.env.SUPABASE_URL as string,
-  process.env.SUPABASE_SERVICE_ROLE_KEY as string
-);
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 // —— CORS helpers ——
 const corsHeaders: Record<string, string> = {
