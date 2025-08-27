@@ -1,8 +1,6 @@
 "use client";
 
 import logger from '../utils/logger';
-"use client"
-
 import React, { useState, useRef } from 'react';
 import { useAppData, Opportunity, PipelineStage } from './AppDataContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
