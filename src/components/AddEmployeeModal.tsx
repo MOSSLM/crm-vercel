@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from "sonner";
 import { Plus, Loader2, Mail, Phone, Briefcase, Globe, User, Users, MessageSquare } from 'lucide-react';
 
+import logger from '../utils/logger';
 interface AddEmployeeModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -94,7 +95,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
       onEmployeeAdded();
       
     } catch (error) {
-      console.error('Error adding employee:', error);
+      logger.error('Error adding employee:', error);
       toast.error("Erreur lors de l'ajout du contact");
     } finally {
       setIsLoading(false);

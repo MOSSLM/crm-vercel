@@ -1,5 +1,6 @@
 import { projectId, publicAnonKey } from './supabase/info';
 
+import logger from './logger';
 const baseUrl = `https://${projectId}.supabase.co/functions/v1/make-server-5c06d9e7`;
 
 interface JournalEventData {
@@ -287,7 +288,7 @@ export const logPipelineStageChange = async (
 
   // Si pas trouvé dans le mapping, utiliser la détection automatique
   if (!eventType) {
-    console.log(`[Journal] Étape "${newStage}" non trouvée dans le mapping, utilisation de la détection automatique`);
+    logger.log(`[Journal] Étape "${newStage}" non trouvée dans le mapping, utilisation de la détection automatique`);
     eventType = detectEventTypeFromStageName(newStage);
   }
 
@@ -320,9 +321,9 @@ export const logPipelineStageChange = async (
         });
         break;
     }
-    console.log(`[Journal] Événement "${eventType}" enregistré avec succès pour l'étape "${newStage}"`);
+    logger.log(`[Journal] Événement "${eventType}" enregistré avec succès pour l'étape "${newStage}"`);
   } catch (error) {
-    console.error(`[Journal] Erreur lors de l'enregistrement de l'événement "${eventType}" pour l'étape "${newStage}":`, error);
+    logger.error(`[Journal] Erreur lors de l'enregistrement de l'événement "${eventType}" pour l'étape "${newStage}":`, error);
     throw error;
   }
 };
@@ -404,7 +405,7 @@ export interface JournalKpiTotals {
 
 // Récupérer les totaux KPI depuis la vue journal
 export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
-  console.log('📡 Appel API vers:', `${baseUrl}/kpi/journal-totals`);
+  logger.log('📡 Appel API vers:', `${baseUrl}/kpi/journal-totals`);
 
   const response = await fetch(`${baseUrl}/kpi/journal-totals`, {
     headers: {
@@ -412,11 +413,11 @@ export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
     },
   });
 
-  console.log('📡 Statut de la réponse:', response.status, response.statusText);
+  logger.log('📡 Statut de la réponse:', response.status, response.statusText);
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("❌ Erreur de l'API:", errorText);
+    logger.error("❌ Erreur de l'API:", errorText);
 
     let error;
     try {
@@ -428,7 +429,7 @@ export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
   }
 
   const data = await response.json();
-  console.log("📊 Données reçues de l'API:", data);
+  logger.log("📊 Données reçues de l'API:", data);
 
   return data;
 };

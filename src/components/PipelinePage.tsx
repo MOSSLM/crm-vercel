@@ -1,5 +1,6 @@
 "use client";
 
+import logger from '../utils/logger';
 "use client"
 
 import React, { useState, useRef } from 'react';
@@ -465,23 +466,23 @@ export const PipelinePage: React.FC = () => {
       // Enregistrer le changement d'étape dans le journal
       if (opportunity && stageName) {
         try {
-          console.log(`[Journal] Enregistrement changement d'étape: "${stageName}" pour opportunité ${opportunity.id}`);
+          logger.log(`[Journal] Enregistrement changement d'étape: "${stageName}" pour opportunité ${opportunity.id}`);
           await journalApi.logPipelineStageChange(
             stageName,
             opportunity.id,
             opportunity.entreprise_id,
             `Déplacement vers "${stageName}" depuis le pipeline`
           );
-          console.log(`[Journal] Changement d'étape enregistré avec succès`);
+          logger.log(`[Journal] Changement d'étape enregistré avec succès`);
         } catch (journalError) {
-          console.error('Erreur lors de l\'enregistrement dans le journal:', journalError);
+          logger.error('Erreur lors de l\'enregistrement dans le journal:', journalError);
           // Ne pas interrompre le processus principal si la journalisation échoue
         }
       }
       
       toast.success(`${displayName} déplacé vers "${stageName}"`);
     } catch (error) {
-      console.error('Erreur lors du déplacement:', error);
+      logger.error('Erreur lors du déplacement:', error);
       toast.error('Erreur lors du déplacement de l\'opportunité');
     }
   };
@@ -506,7 +507,7 @@ export const PipelinePage: React.FC = () => {
         toast.success(`Opportunité ${displayName} mise à jour`);
         setEditingOpportunity(null);
       } catch (error) {
-        console.error('Erreur lors de la sauvegarde:', error);
+        logger.error('Erreur lors de la sauvegarde:', error);
         toast.error('Erreur lors de la sauvegarde');
       }
     }

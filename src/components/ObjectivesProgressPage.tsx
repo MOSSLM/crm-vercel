@@ -20,6 +20,7 @@ import {
 } from './objectives/types';
 import { calculateCompletionRate } from './objectives/utils';
 
+import logger from '../utils/logger';
 export const ObjectivesProgressPage: React.FC = () => {
   const [selectedPeriodType, setSelectedPeriodType] = useState<PeriodType>('month');
   const [isObjectivesModalOpen, setIsObjectivesModalOpen] = useState(false);
@@ -46,7 +47,7 @@ export const ObjectivesProgressPage: React.FC = () => {
       setKpiData(kpiCurrentData);
       setHistoricalData(historicalKpiData);
     } catch (error) {
-      console.error('Erreur lors du chargement des données:', error);
+      logger.error('Erreur lors du chargement des données:', error);
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
@@ -59,7 +60,7 @@ export const ObjectivesProgressPage: React.FC = () => {
       await loadData(); // Recharger les données
       toast.success('Objectifs sauvegardés avec succès');
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde:', error);
+      logger.error('Erreur lors de la sauvegarde:', error);
       toast.error('Erreur lors de la sauvegarde des objectifs');
     }
   };

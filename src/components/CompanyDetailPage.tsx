@@ -43,6 +43,7 @@ import {
   Trash2
 } from 'lucide-react';
 
+import logger from '../utils/logger';
 interface CompanyDetailPageProps {
   companyId: number;
   onBack: () => void;
@@ -176,7 +177,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
       const detailed = await companiesApi.getById(id);
       setDetailedCompany(detailed);
     } catch (error) {
-      console.error('Error loading detailed company data:', error);
+      logger.error('Error loading detailed company data:', error);
     } finally {
       setLoadingDetails(false);
     }
@@ -205,7 +206,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
       // Reload detailed data
       await loadDetailedCompanyData(company.id);
     } catch (error) {
-      console.error('Erreur lors de la mise à jour:', error);
+      logger.error('Erreur lors de la mise à jour:', error);
       toast.error("Erreur lors de la mise à jour de l'entreprise");
     } finally {
       setIsLoading(false);
@@ -309,7 +310,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
       setShowCreateOpportunity(false);
       setEditingOpportunity(null);
     } catch (error) {
-      console.error('Error saving opportunity:', error);
+      logger.error('Error saving opportunity:', error);
       toast.error('Erreur lors de la sauvegarde de l\'opportunité');
     }
   };

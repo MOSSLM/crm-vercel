@@ -19,6 +19,7 @@ import {
   Edit3 
 } from 'lucide-react';
 
+import logger from '../utils/logger';
 interface Employee {
   id: string;
   nom?: string;
@@ -52,7 +53,7 @@ export const EmployeesList: React.FC<EmployeesListProps> = ({
       const data = await contactsApi.getByCompany(companyId);
       setEmployees(data);
     } catch (error) {
-      console.error('Error loading employees:', error);
+      logger.error('Error loading employees:', error);
       toast.error("Erreur lors du chargement des employés");
     } finally {
       setLoading(false);

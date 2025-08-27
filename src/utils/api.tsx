@@ -1,6 +1,7 @@
 import { supabase } from './supabase/client';
 import { Company, CompanyRaw, Contact, Opportunity } from '../types';
 
+import logger from './logger';
 // Search Results API (table: recherches)
 export const searchResultsApi = {
   getAll: async () => {
@@ -11,7 +12,7 @@ export const searchResultsApi = {
         .order('created_at', { ascending: false });
       
       if (error) {
-        console.error('Supabase error:', error);
+        logger.error('Supabase error:', error);
         // Return mock data as fallback
         return [
           {
@@ -42,7 +43,7 @@ export const searchResultsApi = {
       }
       return data || [];
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error:', error);
       return [];
     }
   },
@@ -58,7 +59,7 @@ export const searchResultsApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error creating search:', error);
+      logger.error('Error creating search:', error);
       // Return mock data
       return { ...searchData, id: Date.now().toString(), created_at: new Date().toISOString() };
     }
@@ -76,7 +77,7 @@ export const searchResultsApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error updating search:', error);
+      logger.error('Error updating search:', error);
       return { id, ...updates };
     }
   }
@@ -92,7 +93,7 @@ export const companiesApi = {
         .order('created_at', { ascending: false });
       
       if (error) {
-        console.error('Supabase error:', error);
+        logger.error('Supabase error:', error);
         // Return mock data as fallback with new fields
         return [
           {
@@ -143,7 +144,7 @@ export const companiesApi = {
       }
       return data || [];
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error:', error);
       return [];
     }
   },
@@ -161,7 +162,7 @@ export const companiesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error creating company:', error);
+      logger.error('Error creating company:', error);
       return { ...companyData, id: Date.now(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     }
   },
@@ -195,7 +196,7 @@ export const companiesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error updating company:', error);
+      logger.error('Error updating company:', error);
       return { id, ...updates };
     }
   },
@@ -210,7 +211,7 @@ export const companiesApi = {
         .single();
 
       if (fetchError) {
-        console.error('Error fetching company raw_ids:', fetchError);
+        logger.error('Error fetching company raw_ids:', fetchError);
         throw fetchError;
       }
 
@@ -222,7 +223,7 @@ export const companiesApi = {
           .in('id', company.raw_ids);
 
         if (rawDeleteError) {
-          console.error('Error deleting raw companies:', rawDeleteError);
+          logger.error('Error deleting raw companies:', rawDeleteError);
           // Continue with company deletion even if raw deletion fails
         }
       }
@@ -235,7 +236,7 @@ export const companiesApi = {
       
       if (companyDeleteError) throw companyDeleteError;
     } catch (error) {
-      console.error('Error deleting company:', error);
+      logger.error('Error deleting company:', error);
       throw error;
     }
   },
@@ -250,7 +251,7 @@ export const companiesApi = {
         .single();
       
       if (error) {
-        console.error('Error fetching company:', error);
+        logger.error('Error fetching company:', error);
         return null;
       }
 
@@ -267,7 +268,7 @@ export const companiesApi = {
             rawContactInfo = rawData;
           }
         } catch (rawError) {
-          console.error('Error fetching raw contact data:', rawError);
+          logger.error('Error fetching raw contact data:', rawError);
         }
       }
 
@@ -317,7 +318,7 @@ export const companiesApi = {
       };
       return result;
     } catch (error) {
-      console.error('Error fetching company by ID:', error);
+      logger.error('Error fetching company by ID:', error);
       return null;
     }
   },
@@ -375,7 +376,7 @@ export const companiesApi = {
                 };
               }
             } catch (error) {
-              console.error('Error fetching raw data for company:', company.id, error);
+              logger.error('Error fetching raw data for company:', company.id, error);
             }
           }
           return company;
@@ -384,7 +385,7 @@ export const companiesApi = {
       
       return companiesWithRawData;
     } catch (error) {
-      console.error('Error fetching companies with raw data:', error);
+      logger.error('Error fetching companies with raw data:', error);
       return [];
     }
   }
@@ -403,7 +404,7 @@ export const rawCompaniesApi = {
       if (error) throw error;
       return data || [];
     } catch (error) {
-      console.error('Error fetching raw companies:', error);
+      logger.error('Error fetching raw companies:', error);
       return [];
     }
   },
@@ -418,7 +419,7 @@ export const rawCompaniesApi = {
       if (error) throw error;
       return data || [];
     } catch (error) {
-      console.error('Error fetching raw companies by IDs:', error);
+      logger.error('Error fetching raw companies by IDs:', error);
       return [];
     }
   },
@@ -434,7 +435,7 @@ export const rawCompaniesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error creating raw company:', error);
+      logger.error('Error creating raw company:', error);
       return { ...rawCompanyData, id: Date.now() };
     }
   }
@@ -451,7 +452,7 @@ export const contactsApi = {
         .order('created_at', { ascending: false });
       
       if (contactsError) {
-        console.error('Supabase error:', contactsError);
+        logger.error('Supabase error:', contactsError);
         // Return mock data as fallback
         return [
           {
@@ -505,7 +506,7 @@ export const contactsApi = {
       
       return [];
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error:', error);
       return [];
     }
   },
@@ -538,7 +539,7 @@ export const contactsApi = {
         .single();
       
       if (error) {
-        console.error('Supabase create error:', error);
+        logger.error('Supabase create error:', error);
         throw error;
       }
       
@@ -551,7 +552,7 @@ export const contactsApi = {
         linkedin: data.linkedin_url
       };
     } catch (error) {
-      console.error('Error creating contact:', error);
+      logger.error('Error creating contact:', error);
       throw error;
     }
   },
@@ -583,7 +584,7 @@ export const contactsApi = {
         .single();
       
       if (error) {
-        console.error('Supabase update error:', error);
+        logger.error('Supabase update error:', error);
         throw error;
       }
       
@@ -596,7 +597,7 @@ export const contactsApi = {
         linkedin: data.linkedin_url
       };
     } catch (error) {
-      console.error('Error updating contact:', error);
+      logger.error('Error updating contact:', error);
       throw error;
     }
   },
@@ -610,7 +611,7 @@ export const contactsApi = {
       
       if (error) throw error;
     } catch (error) {
-      console.error('Error deleting contact:', error);
+      logger.error('Error deleting contact:', error);
       throw error;
     }
   },
@@ -625,7 +626,7 @@ export const contactsApi = {
         .order('created_at', { ascending: false });
       
       if (error) {
-        console.error('Supabase error:', error);
+        logger.error('Supabase error:', error);
         return [];
       }
       
@@ -638,7 +639,7 @@ export const contactsApi = {
         linkedin: contact.linkedin_url
       }));
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error:', error);
       return [];
     }
   },
@@ -683,7 +684,7 @@ export const contactsApi = {
         updated_at: new Date().toISOString()
       };
     } catch (error) {
-      console.error('Error adding contact note:', error);
+      logger.error('Error adding contact note:', error);
       throw error;
     }
   },
@@ -731,7 +732,7 @@ export const contactsApi = {
         })
         .reverse(); // Show newest first
     } catch (error) {
-      console.error('Error fetching contact notes:', error);
+      logger.error('Error fetching contact notes:', error);
       return [];
     }
   },
@@ -760,7 +761,7 @@ export const opportunitiesApi = {
         .order('created_at', { ascending: false });
       
       if (opportunitiesError) {
-        console.error('Supabase error:', opportunitiesError);
+        logger.error('Supabase error:', opportunitiesError);
         // Return mock data as fallback
         return [
           {
@@ -852,12 +853,12 @@ export const opportunitiesApi = {
                       }
                     }
                   } catch (rawError) {
-                    console.error('Error fetching raw contact data:', rawError);
+                    logger.error('Error fetching raw contact data:', rawError);
                   }
                 }
               }
             } catch (e) {
-              console.error('Error fetching company:', e);
+              logger.error('Error fetching company:', e);
             }
           }
           
@@ -871,7 +872,7 @@ export const opportunitiesApi = {
                 .single();
               stageName = stageData?.nom || '';
             } catch (e) {
-              console.error('Error fetching stage:', e);
+              logger.error('Error fetching stage:', e);
             }
           }
           
@@ -901,7 +902,7 @@ export const opportunitiesApi = {
       
       return enrichedData;
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error:', error);
       return [];
     }
   },
@@ -925,7 +926,7 @@ export const opportunitiesApi = {
         'recurrence_months'
       ];
       
-      console.log('Creating opportunity with data:', opportunityData);
+      logger.log('Creating opportunity with data:', opportunityData);
       
       const filteredData = Object.keys(opportunityData)
         .filter(key => validColumns.includes(key))
@@ -934,7 +935,7 @@ export const opportunitiesApi = {
           return obj;
         }, {} as Record<string, unknown>);
         
-      console.log('Filtered data for opportunity creation:', filteredData);
+      logger.log('Filtered data for opportunity creation:', filteredData);
 
       const { data, error } = await supabase
         .from('opportunites')
@@ -943,14 +944,14 @@ export const opportunitiesApi = {
         .single();
       
       if (error) {
-        console.error('Supabase opportunity creation error:', error);
+        logger.error('Supabase opportunity creation error:', error);
         throw error;
       }
       
-      console.log('Successfully created opportunity:', data);
+      logger.log('Successfully created opportunity:', data);
       return data;
     } catch (error) {
-      console.error('Error creating opportunity:', error);
+      logger.error('Error creating opportunity:', error);
       return { ...opportunityData, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
     }
   },
@@ -987,7 +988,7 @@ export const opportunitiesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error updating opportunity:', error);
+      logger.error('Error updating opportunity:', error);
       return { id, ...updates };
     }
   },
@@ -1001,7 +1002,7 @@ export const opportunitiesApi = {
       
       if (error) throw error;
     } catch (error) {
-      console.error('Error deleting opportunity:', error);
+      logger.error('Error deleting opportunity:', error);
     }
   }
 };
@@ -1017,7 +1018,7 @@ export const pipelineStagesApi = {
         .order('ordre', { ascending: true });
       
       if (error) {
-        console.error('Supabase error:', error);
+        logger.error('Supabase error:', error);
         // Return default pipeline stages as fallback
         return [
           { id: 1, nom: 'Qualifié', ordre: 1, visible: true },
@@ -1034,7 +1035,7 @@ export const pipelineStagesApi = {
       }
       return data || [];
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error:', error);
       return [];
     }
   },
@@ -1050,7 +1051,7 @@ export const pipelineStagesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error creating stage:', error);
+      logger.error('Error creating stage:', error);
       return { ...stageData, id: Date.now() };
     }
   },
@@ -1067,7 +1068,7 @@ export const pipelineStagesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error updating stage:', error);
+      logger.error('Error updating stage:', error);
       return { id, ...updates };
     }
   }
@@ -1086,7 +1087,7 @@ export const notesApi = {
       if (error) throw error;
       return data || [];
     } catch (error) {
-      console.error('Error fetching notes:', error);
+      logger.error('Error fetching notes:', error);
       return [];
     }
   },
@@ -1102,7 +1103,7 @@ export const notesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error creating note:', error);
+      logger.error('Error creating note:', error);
       return { ...noteData, id: Date.now(), created_at: new Date().toISOString() };
     }
   },
@@ -1119,7 +1120,7 @@ export const notesApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error updating note:', error);
+      logger.error('Error updating note:', error);
       return { id, ...updates };
     }
   },
@@ -1133,7 +1134,7 @@ export const notesApi = {
       
       if (error) throw error;
     } catch (error) {
-      console.error('Error deleting note:', error);
+      logger.error('Error deleting note:', error);
     }
   }
 };
@@ -1149,7 +1150,7 @@ export const achievementsApi = {
         .order('date', { ascending: false });
       
       if (error) {
-        console.error('Supabase error:', error);
+        logger.error('Supabase error:', error);
         // Return mock data as fallback
         return [];
       }
@@ -1163,7 +1164,7 @@ export const achievementsApi = {
         companyName: null // We'll skip this for now to avoid JOIN issues
       }));
     } catch (error) {
-      console.error('API Error:', error);
+      logger.error('API Error:', error);
       return [];
     }
   },
@@ -1179,7 +1180,7 @@ export const achievementsApi = {
       if (error) throw error;
       return data;
     } catch (error) {
-      console.error('Error creating achievement:', error);
+      logger.error('Error creating achievement:', error);
       return { ...achievementData, id: Date.now(), date: new Date().toISOString() };
     }
   }
@@ -1209,7 +1210,7 @@ export const statisticsApi = {
         totalOpportunities: totalOpportunities || 0
       };
     } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
+      logger.error('Error fetching dashboard stats:', error);
       // Return mock stats as fallback
       return {
         totalCompanies: 10,
@@ -1239,7 +1240,7 @@ export const statisticsApi = {
         return acc;
       }, {} as Record<string, number>);
     } catch (error) {
-      console.error('Error fetching keyword stats:', error);
+      logger.error('Error fetching keyword stats:', error);
       return {};
     }
   },
@@ -1263,7 +1264,7 @@ export const statisticsApi = {
         return acc;
       }, {} as Record<string, number>);
     } catch (error) {
-      console.error('Error fetching location stats:', error);
+      logger.error('Error fetching location stats:', error);
       return {};
     }
   }

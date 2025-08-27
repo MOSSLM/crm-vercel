@@ -39,6 +39,7 @@ import {
   Users
 } from 'lucide-react';
 
+import logger from '../utils/logger';
 interface ContactDetailPageProps {
   contactId: string;
   onBack: () => void;
@@ -117,7 +118,7 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
       setIsEditing(false);
       toast.success("Contact mis à jour avec succès");
     } catch (error) {
-      console.error('Erreur lors de la mise à jour:', error);
+      logger.error('Erreur lors de la mise à jour:', error);
       toast.error("Erreur lors de la mise à jour du contact");
     } finally {
       setIsLoading(false);
@@ -180,7 +181,7 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
         setContactOpportunities(relatedOpportunities);
       }, 100);
     } catch (error) {
-      console.error('Erreur lors de la création de l\'opportunité:', error);
+      logger.error('Erreur lors de la création de l\'opportunité:', error);
       toast.error("Erreur lors de la création de l'opportunité");
     } finally {
       setIsCreatingOpportunity(false);

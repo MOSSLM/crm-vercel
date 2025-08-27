@@ -14,6 +14,7 @@ import {
 } from '../utils/api';
 import { getCompanyDisplayName, extractDomainNameOnly } from '../utils/displayHelpers';
 
+import logger from '../utils/logger';
 // Interfaces adaptées aux schémas Supabase
 export interface SearchResult {
   id: string;
@@ -578,7 +579,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       setWeeklyObjectives(getDefaultWeeklyObjectives());
       setAnnualObjectives(getDefaultAnnualObjectives());
     } catch (error) {
-      console.error('Error loading data:', error);
+      logger.error('Error loading data:', error);
       toast.error('Erreur lors du chargement des données');
     } finally {
       setLoading(false);
@@ -697,7 +698,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       setSearchResults((prev) => [...prev, mappedResult]);
       toast.success('Recherche ajoutée avec succès');
     } catch (error) {
-      console.error('Error adding search result:', error);
+      logger.error('Error adding search result:', error);
       toast.error("Erreur lors de l'ajout de la recherche");
     }
   };
@@ -708,7 +709,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       setCompanies((prev) => [...prev, newCompany]);
       toast.success('Entreprise ajoutée avec succès');
     } catch (error) {
-      console.error('Error adding company:', error);
+      logger.error('Error adding company:', error);
       toast.error("Erreur lors de l'ajout de l'entreprise");
     }
   };
@@ -718,7 +719,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       const updatedCompany = await companiesApi.update(id, updates);
       setCompanies((prev) => prev.map((company) => (company.id === id ? { ...company, ...updatedCompany } : company)));
     } catch (error) {
-      console.error('Error updating company:', error);
+      logger.error('Error updating company:', error);
       toast.error("Erreur lors de la mise à jour de l'entreprise");
     }
   };
@@ -735,7 +736,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       const displayName = getCompanyDisplayName(company.name, company.canonical_url);
       toast.success(`${displayName} supprimée avec succès`);
     } catch (error) {
-      console.error('Error deleting company:', error);
+      logger.error('Error deleting company:', error);
       toast.error("Erreur lors de la suppression de l'entreprise");
     }
   };
@@ -787,7 +788,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         const savedAchievement = await achievementsApi.create(achievement);
         setAchievements((prev) => [...prev, savedAchievement]);
       } catch (achievementError) {
-        console.error('Error creating achievement:', achievementError);
+        logger.error('Error creating achievement:', achievementError);
       }
 
       const opportunityName = generateOpportunityName(company);
@@ -812,7 +813,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       try {
         await addOpportunity(opportunity);
       } catch (opportunityError) {
-        console.error('Error creating opportunity:', opportunityError);
+        logger.error('Error creating opportunity:', opportunityError);
       }
 
       const displayName = getCompanyDisplayName(company.name, company.canonical_url);
@@ -820,7 +821,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         `${displayName} qualifiée avec succès ! Une opportunité "${opportunityName}" a été créée automatiquement.`
       );
     } catch (error) {
-      console.error('Error qualifying company:', error);
+      logger.error('Error qualifying company:', error);
       toast.error('Erreur lors de la qualification');
     }
   };
@@ -845,7 +846,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       toast.success(`${company.name} déqualifiée`);
     } catch (error) {
-      console.error('Error unqualifying company:', error);
+      logger.error('Error unqualifying company:', error);
       toast.error('Erreur lors de la déqualification');
     }
   };
@@ -856,7 +857,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       setContacts((prev) => [...prev, newContact]);
       toast.success('Contact ajouté avec succès');
     } catch (error) {
-      console.error('Error adding contact:', error);
+      logger.error('Error adding contact:', error);
       toast.error("Erreur lors de l'ajout du contact");
     }
   };
@@ -866,7 +867,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       const updatedContact = await contactsApi.update(id, updates);
       setContacts((prev) => prev.map((c) => (c.id === id ? { ...c, ...updatedContact } : c)));
     } catch (error) {
-      console.error('Error updating contact:', error);
+      logger.error('Error updating contact:', error);
       toast.error('Erreur lors de la mise à jour du contact');
     }
   };
@@ -878,7 +879,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       toast.success('Note ajoutée avec succès');
       return newNote;
     } catch (error) {
-      console.error('Error adding contact note:', error);
+      logger.error('Error adding contact note:', error);
       toast.error("Erreur lors de l'ajout de la note");
       throw error;
     }
@@ -888,7 +889,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     try {
       return await contactsApi.getNotes(contactId);
     } catch (error) {
-      console.error('Error fetching contact notes:', error);
+      logger.error('Error fetching contact notes:', error);
       return [];
     }
   };
@@ -898,7 +899,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       await contactsApi.updateNote(noteId, note);
       toast.success('Note mise à jour avec succès');
     } catch (error) {
-      console.error('Error updating contact note:', error);
+      logger.error('Error updating contact note:', error);
       toast.error('Erreur lors de la mise à jour de la note');
       throw error;
     }
@@ -909,7 +910,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       await contactsApi.deleteNote(noteId);
       toast.success('Note supprimée avec succès');
     } catch (error) {
-      console.error('Error deleting contact note:', error);
+      logger.error('Error deleting contact note:', error);
       toast.error('Erreur lors de la suppression de la note');
       throw error;
     }
@@ -932,7 +933,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       setOpportunities((prev) => [...prev, newOpportunity]);
       toast.success('Opportunité ajoutée avec succès');
     } catch (error) {
-      console.error('Error adding opportunity:', error);
+      logger.error('Error adding opportunity:', error);
       toast.error("Erreur lors de l'ajout de l'opportunité");
     }
   };
@@ -958,7 +959,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       await opportunitiesApi.update(id, filteredUpdates);
     } catch (error) {
-      console.error('Error updating opportunity:', error);
+      logger.error('Error updating opportunity:', error);
       toast.error("Erreur lors de la mise à jour de l'opportunité");
       // Revert optimistic update on error
       setOpportunities((prev) => prev.map((opp) => (opp.id === id ? original : opp)));
@@ -986,7 +987,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
       toast.success('Note ajoutée avec succès');
     } catch (error) {
-      console.error('Error adding opportunity note:', error);
+      logger.error('Error adding opportunity note:', error);
       toast.error("Erreur lors de l'ajout de la note");
     }
   };
@@ -1018,7 +1019,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         const savedAchievement = await achievementsApi.create(achievement);
         setAchievements((prev) => [...prev, savedAchievement]);
       } catch (achievementError) {
-        console.error('Error creating achievement:', achievementError);
+        logger.error('Error creating achievement:', achievementError);
       }
     }
   };

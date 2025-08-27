@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, ReactNode, useEffect } from
 import { createClient } from '../utils/supabase/client';
 import { User as SupabaseUser } from '@supabase/supabase-js';
 
+import logger from '../utils/logger';
 interface User {
   id: string;
   email: string;
@@ -51,7 +52,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(userData);
         }
       } catch (error) {
-        console.error('Error checking auth:', error);
+        logger.error('Error checking auth:', error);
       } finally {
         setLoading(false);
       }
@@ -92,7 +93,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       return false;
     } catch (error) {
-      console.error('Login error:', error);
+      logger.error('Login error:', error);
       return false;
     }
   };
@@ -102,7 +103,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await supabase.auth.signOut();
       setUser(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      logger.error('Logout error:', error);
     }
   };
 
