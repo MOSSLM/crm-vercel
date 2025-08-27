@@ -1,4 +1,5 @@
 import { supabase } from './supabase/client';
+import { handleSupabaseError } from './supabase/error';
 
 // Search Results API (table: recherches)
 export const searchResultsApi = {
@@ -8,44 +9,14 @@ export const searchResultsApi = {
         .from('recherches')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        // Return mock data as fallback
-        return [
-          {
-            id: '1',
-            created_at: '2024-01-15T00:00:00Z',
-            keyword: 'restaurant',
-            location: 'Paris',
-            precision: 'Précise',
-            source_google: true,
-            source_maps: true,
-            status: 'completed',
-            nb_trouves: 5,
-            nb_qualifies: 2
-          },
-          {
-            id: '2',
-            created_at: '2024-01-14T00:00:00Z',
-            keyword: 'coiffeur',
-            location: 'Lyon',
-            precision: 'Large',
-            source_google: true,
-            source_maps: true,
-            status: 'completed',
-            nb_trouves: 5,
-            nb_qualifies: 2
-          }
-        ];
-      }
+
+      if (error) handleSupabaseError(error, 'fetching searches');
       return data || [];
     } catch (error) {
-      console.error('API Error:', error);
-      return [];
+      handleSupabaseError(error, 'fetching searches');
     }
   },
-  
+
   create: async (searchData: any) => {
     try {
       const { data, error } = await supabase
@@ -53,16 +24,14 @@ export const searchResultsApi = {
         .insert([searchData])
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'creating search');
       return data;
     } catch (error) {
-      console.error('Error creating search:', error);
-      // Return mock data
-      return { ...searchData, id: Date.now().toString(), created_at: new Date().toISOString() };
+      handleSupabaseError(error, 'creating search');
     }
   },
-  
+
   update: async (id: string, updates: any) => {
     try {
       const { data, error } = await supabase
@@ -71,12 +40,11 @@ export const searchResultsApi = {
         .eq('id', id)
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'updating search');
       return data;
     } catch (error) {
-      console.error('Error updating search:', error);
-      return { id, ...updates };
+      handleSupabaseError(error, 'updating search');
     }
   }
 };
@@ -89,61 +57,11 @@ export const companiesApi = {
         .from('entreprises')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        // Return mock data as fallback with new fields
-        return [
-          {
-            id: 1,
-            canonical_url: 'https://legourmet.fr',
-            name: 'Restaurant Le Gourmet',
-            adresse: '15 rue de la Paix, 75001 Paris',
-            lat: 48.8566,
-            lng: 2.3522,
-            premiers_tags: 'Restaurant,Gastronomie',
-            sources: ['google_search'],
-            raw_ids: [1],
-            qualifie: true,
-            created_at: '2024-01-15T00:00:00Z',
-            updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '500k-1m',
-            nb_employes_band: '11-50',
-            nb_employes_exact: 25,
-            linkedin_url: 'https://linkedin.com/company/legourmet',
-            site_web_canonique: 'https://legourmet.fr',
-            manually_enriched: false,
-            enriched_at: null,
-            enriched_by: null
-          },
-          {
-            id: 2,
-            canonical_url: 'https://bistrotparis.fr',
-            name: 'Bistrot de Paris',
-            adresse: '8 rue Saint-Antoine, 75004 Paris',
-            lat: 48.8553,
-            lng: 2.3647,
-            premiers_tags: 'Restaurant,Bistrot',
-            sources: ['google_maps'],
-            raw_ids: [2],
-            qualifie: true,
-            created_at: '2024-01-15T00:00:00Z',
-            updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '100k-500k',
-            nb_employes_band: '1-10',
-            nb_employes_exact: 8,
-            linkedin_url: null,
-            site_web_canonique: 'https://bistrotparis.fr',
-            manually_enriched: false,
-            enriched_at: null,
-            enriched_by: null
-          }
-        ];
-      }
+
+      if (error) handleSupabaseError(error, 'fetching companies');
       return data || [];
     } catch (error) {
-      console.error('API Error:', error);
-      return [];
+      handleSupabaseError(error, 'fetching companies');
     }
   },
   
@@ -154,12 +72,11 @@ export const companiesApi = {
         .insert([companyData])
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'creating company');
       return data;
     } catch (error) {
-      console.error('Error creating company:', error);
-      return { ...companyData, id: Date.now(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      handleSupabaseError(error, 'creating company');
     }
   },
   
@@ -188,12 +105,11 @@ export const companiesApi = {
         .eq('id', id)
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'updating company');
       return data;
     } catch (error) {
-      console.error('Error updating company:', error);
-      return { id, ...updates };
+      handleSupabaseError(error, 'updating company');
     }
   },
   
@@ -206,10 +122,7 @@ export const companiesApi = {
         .eq('id', id)
         .single();
 
-      if (fetchError) {
-        console.error('Error fetching company raw_ids:', fetchError);
-        throw fetchError;
-      }
+      if (fetchError) handleSupabaseError(fetchError, 'fetching company raw_ids');
 
       // Delete associated raw companies if they exist
       if (company?.raw_ids && company.raw_ids.length > 0) {
@@ -218,10 +131,7 @@ export const companiesApi = {
           .delete()
           .in('id', company.raw_ids);
 
-        if (rawDeleteError) {
-          console.error('Error deleting raw companies:', rawDeleteError);
-          // Continue with company deletion even if raw deletion fails
-        }
+        if (rawDeleteError) handleSupabaseError(rawDeleteError, 'deleting raw companies');
       }
 
       // Then delete the company
@@ -229,11 +139,10 @@ export const companiesApi = {
         .from('entreprises')
         .delete()
         .eq('id', id);
-      
-      if (companyDeleteError) throw companyDeleteError;
+
+      if (companyDeleteError) handleSupabaseError(companyDeleteError, 'deleting company');
     } catch (error) {
-      console.error('Error deleting company:', error);
-      throw error;
+      handleSupabaseError(error, 'deleting company');
     }
   },
 
@@ -245,11 +154,8 @@ export const companiesApi = {
         .select('*')
         .eq('id', id)
         .single();
-      
-      if (error) {
-        console.error('Error fetching company:', error);
-        return null;
-      }
+
+      if (error) handleSupabaseError(error, 'fetching company');
 
       // Get raw contact data from entreprises_raw
       let rawContactInfo: any[] = [];
@@ -259,12 +165,13 @@ export const companiesApi = {
             .from('entreprises_raw')
             .select('*')
             .in('id', company.raw_ids);
-          
-          if (!rawError && rawData) {
+
+          if (rawError) handleSupabaseError(rawError, 'fetching raw contact data');
+          if (rawData) {
             rawContactInfo = rawData;
           }
         } catch (rawError) {
-          console.error('Error fetching raw contact data:', rawError);
+          handleSupabaseError(rawError, 'fetching raw contact data');
         }
       }
 
@@ -272,14 +179,14 @@ export const companiesApi = {
       let telephone = '';
       let email = '';
       let contact_name = '';
-      
+
       if (rawContactInfo.length > 0) {
         // Look for telephone in raw data
         const phoneEntry = rawContactInfo.find(entry => entry.telephone);
         if (phoneEntry) {
           telephone = phoneEntry.telephone;
         }
-        
+
         // Look for email in raw_json
         const emailEntry = rawContactInfo.find(entry => {
           if (entry.raw_json && typeof entry.raw_json === 'object') {
@@ -290,7 +197,7 @@ export const companiesApi = {
         if (emailEntry) {
           email = emailEntry.raw_json.email || emailEntry.raw_json.contact_email;
         }
-        
+
         // Look for contact name
         const nameEntry = rawContactInfo.find(entry => {
           if (entry.raw_json && typeof entry.raw_json === 'object') {
@@ -311,8 +218,7 @@ export const companiesApi = {
         contact_name
       };
     } catch (error) {
-      console.error('Error fetching company by ID:', error);
-      return null;
+      handleSupabaseError(error, 'fetching company by ID');
     }
   },
 
@@ -320,26 +226,28 @@ export const companiesApi = {
   getAllWithRawData: async () => {
     try {
       const companies = await companiesApi.getAll();
-      
+
       // For each company, fetch raw contact data
       const companiesWithRawData = await Promise.all(
         companies.map(async (company) => {
           if (company.raw_ids && company.raw_ids.length > 0) {
             try {
-              const { data: rawData } = await supabase
+              const { data: rawData, error } = await supabase
                 .from('entreprises_raw')
                 .select('*')
                 .in('id', company.raw_ids);
-              
+
+              if (error) handleSupabaseError(error, 'fetching raw data for company');
+
               if (rawData) {
                 // Extract contact info
                 let telephone = '';
                 let email = '';
                 let contact_name = '';
-                
+
                 const phoneEntry = rawData.find(entry => entry.telephone);
                 if (phoneEntry) telephone = phoneEntry.telephone;
-                
+
                 const emailEntry = rawData.find(entry => {
                   if (entry.raw_json && typeof entry.raw_json === 'object') {
                     return entry.raw_json.email || entry.raw_json.contact_email;
@@ -349,7 +257,7 @@ export const companiesApi = {
                 if (emailEntry) {
                   email = emailEntry.raw_json.email || emailEntry.raw_json.contact_email;
                 }
-                
+
                 const nameEntry = rawData.find(entry => {
                   if (entry.raw_json && typeof entry.raw_json === 'object') {
                     return entry.raw_json.contact_name || entry.raw_json.owner;
@@ -359,7 +267,7 @@ export const companiesApi = {
                 if (nameEntry) {
                   contact_name = nameEntry.raw_json.contact_name || nameEntry.raw_json.owner;
                 }
-                
+
                 return {
                   ...company,
                   raw_contact_info: rawData,
@@ -369,17 +277,16 @@ export const companiesApi = {
                 };
               }
             } catch (error) {
-              console.error('Error fetching raw data for company:', company.id, error);
+              handleSupabaseError(error, 'fetching raw data for company');
             }
           }
           return company;
         })
       );
-      
+
       return companiesWithRawData;
     } catch (error) {
-      console.error('Error fetching companies with raw data:', error);
-      return [];
+      handleSupabaseError(error, 'fetching companies with raw data');
     }
   }
 };
@@ -393,12 +300,11 @@ export const rawCompaniesApi = {
         .select('*')
         .eq('recherche_id', rechercheId)
         .order('position', { ascending: true });
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'fetching raw companies');
       return data || [];
     } catch (error) {
-      console.error('Error fetching raw companies:', error);
-      return [];
+      handleSupabaseError(error, 'fetching raw companies');
     }
   },
   
@@ -408,12 +314,11 @@ export const rawCompaniesApi = {
         .from('entreprises_raw')
         .select('*')
         .in('id', ids);
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'fetching raw companies by IDs');
       return data || [];
     } catch (error) {
-      console.error('Error fetching raw companies by IDs:', error);
-      return [];
+      handleSupabaseError(error, 'fetching raw companies by IDs');
     }
   },
   
@@ -424,12 +329,11 @@ export const rawCompaniesApi = {
         .insert([rawCompanyData])
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'creating raw company');
       return data;
     } catch (error) {
-      console.error('Error creating raw company:', error);
-      return { ...rawCompanyData, id: Date.now() };
+      handleSupabaseError(error, 'creating raw company');
     }
   }
 };
@@ -443,43 +347,19 @@ export const contactsApi = {
         .from('contacts')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      if (contactsError) {
-        console.error('Supabase error:', contactsError);
-        // Return mock data as fallback
-        return [
-          {
-            id: '1',
-            entreprise_id: 1,
-            first_name: 'Jean',
-            last_name: 'Dupont',
-            email: 'jean.dupont@legourmet.fr',
-            tel: '+33 1 42 86 75 90',
-            role_title: 'Directeur',
-            linkedin_url: 'https://linkedin.com/in/jeandupont',
-            is_decision_maker: true,
-            preferred_channel: 'email',
-            notes: 'Contact principal, très réactif',
-            companyName: 'Restaurant Le Gourmet',
-            address: '15 rue de la Paix, 75001 Paris',
-            tags: ['Restaurant', 'Gastronomie'],
-            // Legacy compatibility fields
-            nom: 'Dupont',
-            prenom: 'Jean',
-            poste: 'Directeur',
-            linkedin: 'https://linkedin.com/in/jeandupont'
-          }
-        ];
-      }
-      
+
+      if (contactsError) handleSupabaseError(contactsError, 'fetching contacts');
+
       // If we have contacts, try to get company info separately
       if (contactsData && contactsData.length > 0) {
         const companyIds = contactsData.map(c => c.entreprise_id);
-        const { data: companiesData } = await supabase
+        const { data: companiesData, error } = await supabase
           .from('entreprises')
           .select('id, name, adresse, premiers_tags')
           .in('id', companyIds);
-        
+
+        if (error) handleSupabaseError(error, 'fetching companies for contacts');
+
         // Merge contact and company data with proper field mapping
         return contactsData.map(contact => {
           const company = companiesData?.find(c => c.id === contact.entreprise_id);
@@ -496,11 +376,10 @@ export const contactsApi = {
           };
         });
       }
-      
+
       return [];
     } catch (error) {
-      console.error('API Error:', error);
-      return [];
+      handleSupabaseError(error, 'fetching contacts');
     }
   },
   
@@ -530,12 +409,9 @@ export const contactsApi = {
         .insert([cleanedFields])
         .select()
         .single();
-      
-      if (error) {
-        console.error('Supabase create error:', error);
-        throw error;
-      }
-      
+
+      if (error) handleSupabaseError(error, 'creating contact');
+
       // Return with compatibility fields
       return {
         ...data,
@@ -545,8 +421,7 @@ export const contactsApi = {
         linkedin: data.linkedin_url
       };
     } catch (error) {
-      console.error('Error creating contact:', error);
-      throw error;
+      handleSupabaseError(error, 'creating contact');
     }
   },
   
@@ -565,7 +440,7 @@ export const contactsApi = {
       if (updates.is_decision_maker !== undefined) dbUpdates.is_decision_maker = updates.is_decision_maker;
       if (updates.preferred_channel !== undefined) dbUpdates.preferred_channel = updates.preferred_channel;
       if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-      
+
       // Add updated timestamp
       dbUpdates.updated_at = new Date().toISOString();
 
@@ -575,12 +450,9 @@ export const contactsApi = {
         .eq('id', id)
         .select()
         .single();
-      
-      if (error) {
-        console.error('Supabase update error:', error);
-        throw error;
-      }
-      
+
+      if (error) handleSupabaseError(error, 'updating contact');
+
       // Return with compatibility fields
       return {
         ...data,
@@ -590,8 +462,7 @@ export const contactsApi = {
         linkedin: data.linkedin_url
       };
     } catch (error) {
-      console.error('Error updating contact:', error);
-      throw error;
+      handleSupabaseError(error, 'updating contact');
     }
   },
   
@@ -601,11 +472,10 @@ export const contactsApi = {
         .from('contacts')
         .delete()
         .eq('id', id);
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'deleting contact');
     } catch (error) {
-      console.error('Error deleting contact:', error);
-      throw error;
+      handleSupabaseError(error, 'deleting contact');
     }
   },
   
@@ -617,12 +487,9 @@ export const contactsApi = {
         .select('*')
         .eq('entreprise_id', companyId)
         .order('created_at', { ascending: false });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        return [];
-      }
-      
+
+      if (error) handleSupabaseError(error, 'fetching contacts by company');
+
       // Return with compatibility fields
       return (data || []).map(contact => ({
         ...contact,
@@ -632,8 +499,7 @@ export const contactsApi = {
         linkedin: contact.linkedin_url
       }));
     } catch (error) {
-      console.error('API Error:', error);
-      return [];
+      handleSupabaseError(error, 'fetching contacts by company');
     }
   },
 
@@ -677,8 +543,7 @@ export const contactsApi = {
         updated_at: new Date().toISOString()
       };
     } catch (error) {
-      console.error('Error adding contact note:', error);
-      throw error;
+      handleSupabaseError(error, 'adding contact note');
     }
   },
 
@@ -689,21 +554,20 @@ export const contactsApi = {
         .select('notes')
         .eq('id', contactId)
         .single();
-      
-      if (error) throw error;
-      
+
+      if (error) handleSupabaseError(error, 'fetching contact notes');
+
       // Parse notes into array format
       if (!contact.notes) return [];
-      
+
       // Split notes by double newlines and parse each note
       const noteEntries: string[] = contact.notes
         .split('\n\n')
         .filter((note: string) => note.trim());
-      
+
       return noteEntries
         .map((noteEntry: string, index: number) => {
           // Try to extract timestamp from note
-          // avant:  /^\[([^\]]+)\] (.+)$/s
           const timestampMatch = noteEntry.match(/^\[([^\]]+)\] ([\s\S]+)$/);
           if (timestampMatch) {
             return {
@@ -725,8 +589,7 @@ export const contactsApi = {
         })
         .reverse(); // Show newest first
     } catch (error) {
-      console.error('Error fetching contact notes:', error);
-      return [];
+      handleSupabaseError(error, 'fetching contact notes');
     }
   },
 
@@ -752,40 +615,9 @@ export const opportunitiesApi = {
         .from('opportunites')
         .select('*')
         .order('created_at', { ascending: false });
-      
-      if (opportunitiesError) {
-        console.error('Supabase error:', opportunitiesError);
-        // Return mock data as fallback
-        return [
-          {
-            id: '1',
-            contact_id: '1',
-            entreprise_id: 1,
-            montant: 2500,
-            priorite: 'moyenne',
-            stage_id: 1,
-            lead_magnet: true,
-            note_base: 'Très intéressé, RDV prévu',
-            tags: 'Restaurant,Urgent',
-            date_prochain_suivi: '2024-01-25',
-            created_at: '2024-01-16T00:00:00Z',
-            updated_at: '2024-01-18T00:00:00Z',
-            companyName: 'Restaurant Le Gourmet',
-            contactId: '1',
-            stage: 'RDV de vente 1',
-            value: 2500,
-            priority: 'high',
-            notes: 'Très intéressé, RDV prévu',
-            createdDate: '2024-01-16',
-            lastUpdate: '2024-01-18',
-            nextFollowUp: '2024-01-25',
-            leadMagnet: true,
-            opportunityNotes: [],
-            pipelineHistory: []
-          }
-        ];
-      }
-      
+
+      if (opportunitiesError) handleSupabaseError(opportunitiesError, 'fetching opportunities');
+
       // Get related data separately to avoid JOIN issues
       const enrichedData = [];
       if (opportunitiesData) {
@@ -846,12 +678,12 @@ export const opportunitiesApi = {
                       }
                     }
                   } catch (rawError) {
-                    console.error('Error fetching raw contact data:', rawError);
+                    handleSupabaseError(rawError, 'fetching raw contact data');
                   }
                 }
               }
             } catch (e) {
-              console.error('Error fetching company:', e);
+              handleSupabaseError(e, 'fetching company');
             }
           }
           
@@ -865,7 +697,7 @@ export const opportunitiesApi = {
                 .single();
               stageName = stageData?.nom || '';
             } catch (e) {
-              console.error('Error fetching stage:', e);
+              handleSupabaseError(e, 'fetching stage');
             }
           }
           
@@ -895,8 +727,7 @@ export const opportunitiesApi = {
       
       return enrichedData;
     } catch (error) {
-      console.error('API Error:', error);
-      return [];
+      handleSupabaseError(error, 'fetching opportunities');
     }
   },
   
@@ -905,7 +736,7 @@ export const opportunitiesApi = {
       // Filter to only include actual database columns
       const validColumns = [
         'contact_id',
-        'entreprise_id', 
+        'entreprise_id',
         'montant',
         'priorite',
         'stage_id',
@@ -918,16 +749,16 @@ export const opportunitiesApi = {
         'mrr',
         'recurrence_months'
       ];
-      
+
       console.log('Creating opportunity with data:', opportunityData);
-      
+
       const filteredData = Object.keys(opportunityData)
         .filter(key => validColumns.includes(key))
         .reduce((obj, key) => {
           obj[key] = opportunityData[key];
           return obj;
         }, {} as any);
-        
+
       console.log('Filtered data for opportunity creation:', filteredData);
 
       const { data, error } = await supabase
@@ -935,17 +766,13 @@ export const opportunitiesApi = {
         .insert([filteredData])
         .select()
         .single();
-      
-      if (error) {
-        console.error('Supabase opportunity creation error:', error);
-        throw error;
-      }
-      
+
+      if (error) handleSupabaseError(error, 'creating opportunity');
+
       console.log('Successfully created opportunity:', data);
       return data;
     } catch (error) {
-      console.error('Error creating opportunity:', error);
-      return { ...opportunityData, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      handleSupabaseError(error, 'creating opportunity');
     }
   },
   
@@ -954,7 +781,7 @@ export const opportunitiesApi = {
       // Filter updates to only include actual database columns
       const validColumns = [
         'contact_id',
-        'entreprise_id', 
+        'entreprise_id',
         'montant',
         'priorite',
         'stage_id',
@@ -963,7 +790,7 @@ export const opportunitiesApi = {
         'tags',
         'date_prochain_suivi'
       ];
-      
+
       const filteredUpdates = Object.keys(updates)
         .filter(key => validColumns.includes(key))
         .reduce((obj, key) => {
@@ -977,12 +804,11 @@ export const opportunitiesApi = {
         .eq('id', id)
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'updating opportunity');
       return data;
     } catch (error) {
-      console.error('Error updating opportunity:', error);
-      return { id, ...updates };
+      handleSupabaseError(error, 'updating opportunity');
     }
   },
   
@@ -992,10 +818,10 @@ export const opportunitiesApi = {
         .from('opportunites')
         .delete()
         .eq('id', id);
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'deleting opportunity');
     } catch (error) {
-      console.error('Error deleting opportunity:', error);
+      handleSupabaseError(error, 'deleting opportunity');
     }
   }
 };
@@ -1009,27 +835,11 @@ export const pipelineStagesApi = {
         .select('*')
         .eq('visible', true)
         .order('ordre', { ascending: true });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        // Return default pipeline stages as fallback
-        return [
-          { id: 1, nom: 'Qualifié', ordre: 1, visible: true },
-          { id: 2, nom: 'Cold Call', ordre: 2, visible: true },
-          { id: 3, nom: 'Relance 1', ordre: 3, visible: true },
-          { id: 4, nom: 'Relance 2', ordre: 4, visible: true },
-          { id: 5, nom: 'Relance 3', ordre: 5, visible: true },
-          { id: 6, nom: 'RDV de vente 1', ordre: 6, visible: true },
-          { id: 7, nom: 'RDV de vente 2', ordre: 7, visible: true },
-          { id: 8, nom: 'Devis', ordre: 8, visible: true },
-          { id: 9, nom: 'Signature', ordre: 9, visible: true },
-          { id: 10, nom: 'Acompte', ordre: 10, visible: true }
-        ];
-      }
+
+      if (error) handleSupabaseError(error, 'fetching pipeline stages');
       return data || [];
     } catch (error) {
-      console.error('API Error:', error);
-      return [];
+      handleSupabaseError(error, 'fetching pipeline stages');
     }
   },
   
@@ -1040,12 +850,11 @@ export const pipelineStagesApi = {
         .insert([stageData])
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'creating stage');
       return data;
     } catch (error) {
-      console.error('Error creating stage:', error);
-      return { ...stageData, id: Date.now() };
+      handleSupabaseError(error, 'creating stage');
     }
   },
   
@@ -1057,12 +866,11 @@ export const pipelineStagesApi = {
         .eq('id', id)
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'updating stage');
       return data;
     } catch (error) {
-      console.error('Error updating stage:', error);
-      return { id, ...updates };
+      handleSupabaseError(error, 'updating stage');
     }
   }
 };
@@ -1076,12 +884,11 @@ export const notesApi = {
         .select('*')
         .eq('opportunite_id', opportuniteId)
         .order('created_at', { ascending: false });
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'fetching notes');
       return data || [];
     } catch (error) {
-      console.error('Error fetching notes:', error);
-      return [];
+      handleSupabaseError(error, 'fetching notes');
     }
   },
   
@@ -1092,12 +899,11 @@ export const notesApi = {
         .insert([noteData])
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'creating note');
       return data;
     } catch (error) {
-      console.error('Error creating note:', error);
-      return { ...noteData, id: Date.now(), created_at: new Date().toISOString() };
+      handleSupabaseError(error, 'creating note');
     }
   },
   
@@ -1109,12 +915,11 @@ export const notesApi = {
         .eq('id', id)
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'updating note');
       return data;
     } catch (error) {
-      console.error('Error updating note:', error);
-      return { id, ...updates };
+      handleSupabaseError(error, 'updating note');
     }
   },
   
@@ -1124,10 +929,10 @@ export const notesApi = {
         .from('notes')
         .delete()
         .eq('id', id);
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'deleting note');
     } catch (error) {
-      console.error('Error deleting note:', error);
+      handleSupabaseError(error, 'deleting note');
     }
   }
 };
@@ -1141,13 +946,9 @@ export const achievementsApi = {
         .from('journal_succes')
         .select('*')
         .order('date', { ascending: false });
-      
-      if (error) {
-        console.error('Supabase error:', error);
-        // Return mock data as fallback
-        return [];
-      }
-      
+
+      if (error) handleSupabaseError(error, 'fetching achievements');
+
       // Transform data to match interface without complex JOINs
       return (data || []).map(achievement => ({
         ...achievement,
@@ -1157,8 +958,7 @@ export const achievementsApi = {
         companyName: null // We'll skip this for now to avoid JOIN issues
       }));
     } catch (error) {
-      console.error('API Error:', error);
-      return [];
+      handleSupabaseError(error, 'fetching achievements');
     }
   },
   
@@ -1169,12 +969,11 @@ export const achievementsApi = {
         .insert([achievementData])
         .select()
         .single();
-      
-      if (error) throw error;
+
+      if (error) handleSupabaseError(error, 'creating achievement');
       return data;
     } catch (error) {
-      console.error('Error creating achievement:', error);
-      return { ...achievementData, id: Date.now(), date: new Date().toISOString() };
+      handleSupabaseError(error, 'creating achievement');
     }
   }
 };
@@ -1195,7 +994,7 @@ export const statisticsApi = {
         supabase.from('contacts').select('*', { count: 'exact', head: true }),
         supabase.from('opportunites').select('*', { count: 'exact', head: true })
       ]);
-      
+
       return {
         totalCompanies: totalCompanies || 0,
         qualifiedCompanies: qualifiedCompanies || 0,
@@ -1203,14 +1002,7 @@ export const statisticsApi = {
         totalOpportunities: totalOpportunities || 0
       };
     } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-      // Return mock stats as fallback
-      return {
-        totalCompanies: 10,
-        qualifiedCompanies: 4,
-        totalContacts: 4,
-        totalOpportunities: 4
-      };
+      handleSupabaseError(error, 'fetching dashboard stats');
     }
   },
   
@@ -1219,22 +1011,15 @@ export const statisticsApi = {
       const { data, error } = await supabase
         .from('recherches')
         .select('keyword, nb_trouves');
-      
-      if (error) {
-        // Return mock data as fallback
-        return {
-          'restaurant': 5,
-          'coiffeur': 5
-        };
-      }
-      
+
+      if (error) handleSupabaseError(error, 'fetching keyword stats');
+
       return (data || []).reduce((acc, item) => {
         acc[item.keyword] = (acc[item.keyword] || 0) + item.nb_trouves;
         return acc;
       }, {} as Record<string, number>);
     } catch (error) {
-      console.error('Error fetching keyword stats:', error);
-      return {};
+      handleSupabaseError(error, 'fetching keyword stats');
     }
   },
   
@@ -1243,22 +1028,15 @@ export const statisticsApi = {
       const { data, error } = await supabase
         .from('recherches')
         .select('location, nb_trouves');
-      
-      if (error) {
-        // Return mock data as fallback
-        return {
-          'Paris': 5,
-          'Lyon': 5
-        };
-      }
-      
+
+      if (error) handleSupabaseError(error, 'fetching location stats');
+
       return (data || []).reduce((acc, item) => {
         acc[item.location] = (acc[item.location] || 0) + item.nb_trouves;
         return acc;
       }, {} as Record<string, number>);
     } catch (error) {
-      console.error('Error fetching location stats:', error);
-      return {};
+      handleSupabaseError(error, 'fetching location stats');
     }
   }
 };
