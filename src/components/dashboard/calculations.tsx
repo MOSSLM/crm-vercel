@@ -62,7 +62,7 @@ export const calculateDashboardMetrics = (
 
   // Calcul des appels à passer
   const qualifiedStage = findStageByName('qualifié');
-  const callsToBeMade = qualifiedStage ? getOpportunitiesByStage(qualifiedStage.id).length : 0;
+  const callsToBeMade = qualifiedStage ? getOpportunitiesByStage(qualifiedStage.id.toString()).length : 0;
 
   // Métriques financières
   const signedOpportunities = opportunities.filter(opp => {

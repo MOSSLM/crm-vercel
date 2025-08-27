@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAppData } from './AppDataContext';
-import { Company, RevenueBand, EmployeeBand, Opportunity, CompanyRaw } from '../types';
+import { useAppData, Company, RevenueBand, EmployeeBand, Opportunity, CompanyRaw } from './AppDataContext';
 import { companiesApi } from '../utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -71,8 +70,6 @@ const fromDbRevenueBand = (v?: string): RevenueBand =>
 const fromDbEmployeeBand = (v?: string): EmployeeBand =>
   fromDbEnum<EmployeeBand>(v, EMPLOYEE_BANDS, 'unknown');
 
-const toDbRevenueBand = (v: RevenueBand): string => v.replace(/-/g, '_');
-const toDbEmployeeBand = (v: EmployeeBand): string => v.replace(/-/g, '_');
 
 // Helper functions for display labels
 const getRevenueBandLabel = (band: RevenueBand | undefined): string => {
@@ -175,7 +172,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     setLoadingDetails(true);
     try {
       const detailed = await companiesApi.getById(id);
-      setDetailedCompany(detailed);
+      setDetailedCompany(detailed as Company);
     } catch (error) {
       logger.error('Error loading detailed company data:', error);
     } finally {
@@ -191,12 +188,11 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
       // Prepare updates with proper type conversion and enum format conversion
       const updates: Partial<Company> = {
         ...formData,
-        nb_employes_exact: formData.nb_employes_exact ? parseInt(formData.nb_employes_exact) : null,
+        nb_employes_exact: formData.nb_employes_exact ? parseInt(formData.nb_employes_exact) : undefined,
         manually_enriched: formData.manually_enriched,
-        enriched_at: formData.manually_enriched ? new Date().toISOString() : null,
-        // Convert enum values to database format (replace hyphens with underscores)
-        ca_estime_band: toDbRevenueBand(formData.ca_estime_band),
-        nb_employes_band: toDbEmployeeBand(formData.nb_employes_band)
+        enriched_at: formData.manually_enriched ? new Date().toISOString() : undefined,
+        ca_estime_band: formData.ca_estime_band,
+        nb_employes_band: formData.nb_employes_band
       };
 
       await updateCompany(company.id, updates);
@@ -283,16 +279,16 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     if (!company) return;
 
     try {
-      const opportunityData: Partial<Opportunity> = {
-        entreprise_id: company.id,
-        name: opportunityForm.name,
-        montant: parseFloat(opportunityForm.montant) || 0,
-        priorite: opportunityForm.priorite,
-        stage_id: parseInt(opportunityForm.stage_id),
-        type: opportunityForm.type,
-        note_base: opportunityForm.note_base,
-        lead_magnet: opportunityForm.lead_magnet
-      };
+        const opportunityData: Omit<Opportunity, 'created_at' | 'id' | 'updated_at'> = {
+          entreprise_id: company.id,
+          name: opportunityForm.name,
+          montant: parseFloat(opportunityForm.montant) || 0,
+          priorite: opportunityForm.priorite,
+          stage_id: parseInt(opportunityForm.stage_id),
+          type: opportunityForm.type,
+          note_base: opportunityForm.note_base,
+          lead_magnet: opportunityForm.lead_magnet
+        };
 
       if (opportunityForm.type === 'mrr') {
         opportunityData.mrr = parseFloat(opportunityForm.mrr) || 0;
