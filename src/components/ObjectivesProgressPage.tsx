@@ -5,7 +5,6 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Badge } from './ui/badge';
 import { Settings, Target, TrendingUp, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -19,7 +18,7 @@ import {
   KPIActual, 
   PeriodComparison,
 } from './objectives/types';
-import { generatePeriods, calculateCompletionRate } from './objectives/utils';
+import { calculateCompletionRate } from './objectives/utils';
 
 export const ObjectivesProgressPage: React.FC = () => {
   const [selectedPeriodType, setSelectedPeriodType] = useState<PeriodType>('month');
@@ -118,9 +117,6 @@ export const ObjectivesProgressPage: React.FC = () => {
     }
   };
 
-  const getFilteredObjectives = () => {
-    return objectives.filter(obj => obj.period_unit === selectedPeriodType);
-  };
 
   if (loading) {
     return (
@@ -241,7 +237,8 @@ export const ObjectivesProgressPage: React.FC = () => {
         open={isObjectivesModalOpen}
         onClose={() => setIsObjectivesModalOpen(false)}
         onSave={handleSaveObjectives}
-        existingObjectives={getFilteredObjectives()}
+        existingObjectives={objectives}
+        initialPeriodType={selectedPeriodType}
       />
     </div>
   );
