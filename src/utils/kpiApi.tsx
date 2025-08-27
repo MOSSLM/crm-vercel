@@ -1,6 +1,5 @@
 import { supabase } from './supabase/client';
-
-import logger from './logger';
+import { handleSupabaseError } from './supabase/error';
 // Types pour les métriques KPI
 export type KPIMetric = 
   | 'leads_trouves' 
@@ -259,14 +258,14 @@ export const kpiTargetsApi = {
         .order('period_start', { ascending: false });
 
       if (error) {
-        logger.error('Erreur lors de la récupération des objectifs KPI:', error);
-        return [];
+        handleSupabaseError(error, 'kpiTargetsApi.getAll');
+        throw error;
       }
 
       return data || [];
     } catch (error) {
-      logger.error('Erreur API getAll objectifs:', error);
-      return [];
+      handleSupabaseError(error, 'kpiTargetsApi.getAll');
+      throw error;
     }
   },
 
@@ -280,13 +279,13 @@ export const kpiTargetsApi = {
         .single();
 
       if (error) {
-        logger.error('Erreur lors de la création de l\'objectif KPI:', error);
+        handleSupabaseError(error, 'kpiTargetsApi.create');
         throw error;
       }
 
       return data;
     } catch (error) {
-      logger.error('Erreur API create objectif:', error);
+      handleSupabaseError(error, 'kpiTargetsApi.create');
       throw error;
     }
   }
@@ -304,14 +303,14 @@ export const kpiProgressCurrentApi = {
         .order('metric', { ascending: true });
 
       if (error) {
-        logger.error('Erreur lors de la récupération de la progression KPI:', error);
-        return [];
+        handleSupabaseError(error, 'kpiProgressCurrentApi.getAll');
+        throw error;
       }
 
       return data || [];
     } catch (error) {
-      logger.error('Erreur API getAll progression:', error);
-      return [];
+      handleSupabaseError(error, 'kpiProgressCurrentApi.getAll');
+      throw error;
     }
   }
 };
@@ -328,14 +327,14 @@ export const kpiMonthlyCurveApi = {
         .order('metric', { ascending: true });
 
       if (error) {
-        logger.error('Erreur lors de la récupération des courbes mensuelles KPI:', error);
-        return [];
+        handleSupabaseError(error, 'kpiMonthlyCurveApi.getAll');
+        throw error;
       }
 
       return data || [];
     } catch (error) {
-      logger.error('Erreur API getAll courbes mensuelles:', error);
-      return [];
+      handleSupabaseError(error, 'kpiMonthlyCurveApi.getAll');
+      throw error;
     }
   }
 };
@@ -360,18 +359,8 @@ export const journalKpiApi = {
       const { journalApi } = await import('./journalApi');
       return await journalApi.getJournalKpiTotals();
     } catch (error) {
-      logger.error('Erreur lors de la récupération des totaux KPI du journal:', error);
-      
-      // Valeurs par défaut en cas d'erreur
-      return {
-        total_appels: 0,
-        total_relances: 0,
-        total_rdvs: 0,
-        total_devis: 0,
-        total_signatures: 0,
-        total_acomptes: 0,
-        total_lead_magnets: 0
-      };
+      handleSupabaseError(error, 'journalKpiApi.getTotals');
+      throw error;
     }
   }
 };
