@@ -36,13 +36,14 @@ import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
 export const QualificationPage: React.FC = () => {
-  const { 
-    companies, 
-    qualifyCompany, 
+  const {
+    companies,
+    qualifyCompany,
     unqualifyCompany,
     updateCompany,
     deleteCompany,
-    loading 
+    loading,
+    isDuplicate
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -50,6 +51,7 @@ export const QualificationPage: React.FC = () => {
   const [qualificationFilter, setQualificationFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [showDuplicates, setShowDuplicates] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -70,7 +72,7 @@ export const QualificationPage: React.FC = () => {
 
   const filteredCompanies = companies.filter(company => {
     const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-    const matchesSearch = 
+    const matchesSearch =
       displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (company.adresse && company.adresse.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (company.premiers_tags && company.premiers_tags.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -83,7 +85,11 @@ export const QualificationPage: React.FC = () => {
       (qualificationFilter === 'qualified' && company.qualifie) ||
       (qualificationFilter === 'not_qualified' && !company.qualifie);
     
-    return matchesSearch && matchesSource && matchesQualification;
+    const hideByDuplicate =
+      !showDuplicates &&
+      (isDuplicate(company.id) || company.is_network || company.is_blacklisted);
+
+    return matchesSearch && matchesSource && matchesQualification && !hideByDuplicate;
   });
 
   // Pagination logic
@@ -410,8 +416,8 @@ export const QualificationPage: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-2 md:flex md:gap-4">
-            <select 
-              value={sourceFilter} 
+            <select
+              value={sourceFilter}
               onChange={(e) => setSourceFilter(e.target.value)}
               className="px-3 py-2 border border-border rounded-md bg-card text-card-foreground text-sm"
             >
@@ -420,8 +426,8 @@ export const QualificationPage: React.FC = () => {
               <option value="google_maps">Google Maps</option>
             </select>
 
-            <select 
-              value={qualificationFilter} 
+            <select
+              value={qualificationFilter}
               onChange={(e) => setQualificationFilter(e.target.value)}
               className="px-3 py-2 border border-border rounded-md bg-card text-card-foreground text-sm"
             >
@@ -429,6 +435,14 @@ export const QualificationPage: React.FC = () => {
               <option value="qualified">Qualifiées</option>
               <option value="not_qualified">Non qualifiées</option>
             </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={showDuplicates}
+              onCheckedChange={setShowDuplicates}
+            />
+            <Label>Afficher les duplicats</Label>
           </div>
         </div>
 

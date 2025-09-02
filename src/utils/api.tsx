@@ -107,6 +107,8 @@ export const companiesApi = {
             sources: ['google_search'],
             raw_ids: [1],
             qualifie: true,
+            is_network: false,
+            is_blacklisted: false,
             created_at: '2024-01-15T00:00:00Z',
             updated_at: '2024-01-16T00:00:00Z',
             ca_estime_band: '500k-1m' as RevenueBand,
@@ -129,6 +131,8 @@ export const companiesApi = {
             sources: ['google_maps'],
             raw_ids: [2],
             qualifie: true,
+            is_network: false,
+            is_blacklisted: false,
             created_at: '2024-01-15T00:00:00Z',
             updated_at: '2024-01-16T00:00:00Z',
             ca_estime_band: '100k-500k' as RevenueBand,
@@ -163,7 +167,14 @@ export const companiesApi = {
       return data;
     } catch (error) {
       logger.error('Error creating company:', error);
-      return { ...companyData, id: Date.now(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      return {
+        ...companyData,
+        id: Date.now(),
+        is_network: false,
+        is_blacklisted: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
     }
   },
   

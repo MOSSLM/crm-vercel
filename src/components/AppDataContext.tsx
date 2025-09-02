@@ -12,7 +12,7 @@ import {
   achievementsApi,
   statisticsApi,
 } from '../utils/api';
-import { getCompanyDisplayName, extractDomainNameOnly } from '../utils/displayHelpers';
+import { getCompanyDisplayName, extractDomainNameOnly, extractDomainFromUrl } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
 // Interfaces adaptées aux schémas Supabase
@@ -75,6 +75,8 @@ export interface Company {
   sources: string[];
   raw_ids: number[];
   qualifie: boolean;
+  is_network?: boolean;
+  is_blacklisted?: boolean;
   created_at: string;
   updated_at: string;
   // Enrichment
@@ -296,6 +298,8 @@ interface AppDataContextType {
   totalQualifiedCompanies: number;
   keywordStats: Record<string, number>;
   locationStats: Record<string, number>;
+  duplicateGroups: { domain: string; companies: Company[] }[];
+  isDuplicate: (id: number) => boolean;
 
   // Objectives and gamification
   currentObjectives: MonthlyObjectives;
@@ -328,6 +332,8 @@ interface AppDataContextType {
   moveOpportunityToStage: (opportunityId: string, stageId: number) => Promise<void>;
   getOpportunitiesByStage: (stageId: number) => Opportunity[];
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
+  markAsNetwork: (id: number) => Promise<void>;
+  blacklistCompany: (id: number) => Promise<void>;
 
   // Contact notes methods
   addContactNote: (contactId: string, note: string) => Promise<ContactNote>; // 🔧 FIX: retourne bien la note
@@ -590,6 +596,24 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   const totalCompanies = companies.length;
   const totalQualifiedCompanies = companies.filter((c) => c.qualifie).length;
 
+  const duplicateGroups = React.useMemo(() => {
+    const groups: Record<string, Company[]> = {};
+    companies.forEach((c) => {
+      const url = c.canonical_url || c.site_web_canonique;
+      if (!url) return;
+      const domain = extractDomainFromUrl(url);
+      if (!domain) return;
+      if (!groups[domain]) groups[domain] = [];
+      groups[domain].push(c);
+    });
+    return Object.entries(groups)
+      .filter(([, list]) => list.length > 1)
+      .map(([domain, list]) => ({ domain, companies: list }));
+  }, [companies]);
+
+  const isDuplicate = (id: number): boolean =>
+    duplicateGroups.some((group) => group.companies.some((c) => c.id === id));
+
   // LOGIQUE CORRIGÉE POUR ACCUMULER LES ACTIONS (JAMAIS DE DÉCRÉMENTATION)
   const calculateCumulativeActionsFromPipeline = (opportunity: Opportunity) => {
     const actions = {
@@ -722,6 +746,14 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       logger.error('Error updating company:', error);
       toast.error("Erreur lors de la mise à jour de l'entreprise");
     }
+  };
+
+  const markAsNetwork = async (id: number) => {
+    await updateCompany(id, { is_network: true });
+  };
+
+  const blacklistCompany = async (id: number) => {
+    await updateCompany(id, { is_blacklisted: true });
   };
 
   const deleteCompany = async (id: number) => {
@@ -1056,6 +1088,8 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     totalQualifiedCompanies,
     keywordStats,
     locationStats,
+    duplicateGroups,
+    isDuplicate,
     currentObjectives,
     weeklyObjectives,
     annualObjectives,
@@ -1084,6 +1118,8 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     moveOpportunityToStage,
     getOpportunitiesByStage,
     addOpportunityNote,
+    markAsNetwork,
+    blacklistCompany,
     getCompaniesBySearchId,
     getMapCompanies,
     getGoogleCompanies,
