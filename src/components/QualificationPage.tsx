@@ -29,7 +29,8 @@ import {
   User,
   Save,
   X,
-  Trash2
+  Trash2,
+  Ban
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
@@ -43,7 +44,8 @@ export const QualificationPage: React.FC = () => {
     updateCompany,
     deleteCompany,
     loading,
-    isDuplicate
+    isDuplicate,
+    blacklistCompany
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -133,6 +135,17 @@ export const QualificationPage: React.FC = () => {
       toast.success(`Site web de ${displayName} ouvert`);
     } else {
       toast.error('Aucune URL disponible pour cette entreprise');
+    }
+  };
+
+  const handleBlacklistCompany = async (company: Company) => {
+    try {
+      await blacklistCompany(company.id);
+      const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+      toast.success(`${displayName} black-listée`);
+    } catch (error) {
+      logger.error('Erreur lors du blacklist:', error);
+      toast.error('Erreur lors du blacklist');
     }
   };
 
@@ -589,13 +602,21 @@ export const QualificationPage: React.FC = () => {
                           >
                             <Edit3 className="h-3 w-3" />
                           </Button>
-                          <Button 
-                            size="sm" 
+                          <Button
+                            size="sm"
                             variant="outline"
                             onClick={() => setSelectedCompany(company)}
                             title="Voir détails"
                           >
                             <Eye className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleBlacklistCompany(company)}
+                            title="Blacklister"
+                          >
+                            <Ban className="h-3 w-3" />
                           </Button>
                         </div>
                       </TableCell>
