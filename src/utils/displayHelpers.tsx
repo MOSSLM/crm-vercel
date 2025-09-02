@@ -86,8 +86,8 @@ export const canonicalizeUrl = (url: string): string => {
     }
 
     const parsed = new URL(temp);
-    let hostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
-    let pathname = parsed.pathname.toLowerCase().replace(/\/$/, '');
+    const hostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    const pathname = parsed.pathname.toLowerCase().replace(/\/$/, '');
     const canonical = `https://${hostname}${pathname}`;
     return canonical;
   } catch {
