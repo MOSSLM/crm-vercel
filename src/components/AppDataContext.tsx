@@ -12,7 +12,12 @@ import {
   achievementsApi,
   statisticsApi,
 } from '../utils/api';
-import { getCompanyDisplayName, extractDomainNameOnly, extractDomainFromUrl } from '../utils/displayHelpers';
+import {
+  getCompanyDisplayName,
+  extractDomainNameOnly,
+  extractDomainFromUrl,
+  canonicalizeUrl,
+} from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
 // Interfaces adaptées aux schémas Supabase
@@ -334,6 +339,7 @@ interface AppDataContextType {
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
   markAsNetwork: (id: number) => Promise<void>;
   blacklistCompany: (id: number) => Promise<void>;
+  markAsUniqueSite: (ids: number[], canonicalUrl: string) => Promise<void>;
 
   // Contact notes methods
   addContactNote: (contactId: string, note: string) => Promise<ContactNote>; // 🔧 FIX: retourne bien la note
@@ -572,7 +578,11 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       }));
 
       setSearchResults(mappedSearchResults);
-      setCompanies(companiesData);
+      const normalizedCompanies = companiesData.map((c: Company) => {
+        const canonical = canonicalizeUrl(c.canonical_url || c.site_web_canonique || (c as any).url || '');
+        return { ...c, canonical_url: canonical || undefined };
+      });
+      setCompanies(normalizedCompanies);
       setContacts(contactsData);
       setOpportunities(opportunitiesData);
       setPipelineStages(pipelineStagesData);
@@ -729,7 +739,8 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const addCompany = async (company: Omit<Company, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      const newCompany = await companiesApi.create(company);
+      const canonical = canonicalizeUrl(company.canonical_url || company.site_web_canonique || '');
+      const newCompany = await companiesApi.create({ ...company, canonical_url: canonical });
       setCompanies((prev) => [...prev, newCompany]);
       toast.success('Entreprise ajoutée avec succès');
     } catch (error) {
@@ -740,7 +751,11 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const updateCompany = async (id: number, updates: Partial<Company>) => {
     try {
-      const updatedCompany = await companiesApi.update(id, updates);
+      const canonical = updates.canonical_url || updates.site_web_canonique;
+      const payload = canonical
+        ? { ...updates, canonical_url: canonicalizeUrl(canonical) }
+        : updates;
+      const updatedCompany = await companiesApi.update(id, payload);
       setCompanies((prev) => prev.map((company) => (company.id === id ? { ...company, ...updatedCompany } : company)));
     } catch (error) {
       logger.error('Error updating company:', error);
@@ -754,6 +769,11 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const blacklistCompany = async (id: number) => {
     await updateCompany(id, { is_blacklisted: true });
+  };
+
+  const markAsUniqueSite = async (ids: number[], canonicalUrl: string) => {
+    const canonical = canonicalizeUrl(canonicalUrl);
+    await Promise.all(ids.map((id) => updateCompany(id, { canonical_url: canonical })));
   };
 
   const deleteCompany = async (id: number) => {
@@ -1120,6 +1140,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     addOpportunityNote,
     markAsNetwork,
     blacklistCompany,
+    markAsUniqueSite,
     getCompaniesBySearchId,
     getMapCompanies,
     getGoogleCompanies,

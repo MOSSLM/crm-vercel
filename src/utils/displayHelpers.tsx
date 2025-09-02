@@ -69,9 +69,36 @@ export const getCompanyDisplayName = (name?: string | null, canonicalUrl?: strin
 // Fonction pour formater une URL pour l'affichage
 export const formatUrlForDisplay = (url?: string | null): string => {
   if (!url) return '';
-  
+
   const domain = extractDomainFromUrl(url);
   return domain || url;
+};
+
+// Canonicalize URL: force https, remove protocol/www, trailing slash, params and lowercase
+export const canonicalizeUrl = (url: string): string => {
+  if (!url) return '';
+
+  try {
+    // Ensure we have a protocol for URL constructor
+    let temp = url.trim();
+    if (!temp.startsWith('http://') && !temp.startsWith('https://')) {
+      temp = `https://${temp}`;
+    }
+
+    const parsed = new URL(temp);
+    let hostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+    let pathname = parsed.pathname.toLowerCase().replace(/\/$/, '');
+    const canonical = `https://${hostname}${pathname}`;
+    return canonical;
+  } catch {
+    // Fallback manual cleaning
+    let cleaned = url.trim().toLowerCase();
+    cleaned = cleaned.replace(/^https?:\/\//, '');
+    cleaned = cleaned.replace(/^www\./, '');
+    cleaned = cleaned.split(/[?#]/)[0];
+    cleaned = cleaned.replace(/\/$/, '');
+    return cleaned ? `https://${cleaned}` : '';
+  }
 };
 
 // Helper function to ensure URL has a valid protocol for opening in new window
