@@ -464,14 +464,14 @@ export const PipelinePage: React.FC = () => {
       // Enregistrer le changement d'étape dans le journal
       if (opportunity && stageName) {
         try {
-          logger.log(`[Journal] Enregistrement changement d'étape: "${stageName}" pour opportunité ${opportunity.id}`);
+          logger.info(`[Journal] Enregistrement changement d'étape: "${stageName}" pour opportunité ${opportunity.id}`);
           await journalApi.logPipelineStageChange(
             stageName,
             opportunity.id,
             opportunity.entreprise_id,
             `Déplacement vers "${stageName}" depuis le pipeline`
           );
-          logger.log(`[Journal] Changement d'étape enregistré avec succès`);
+          logger.info(`[Journal] Changement d'étape enregistré avec succès`);
         } catch (journalError) {
           logger.error('Erreur lors de l\'enregistrement dans le journal:', journalError);
           // Ne pas interrompre le processus principal si la journalisation échoue

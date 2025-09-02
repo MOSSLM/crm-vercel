@@ -13,38 +13,12 @@ export const searchResultsApi = {
       
       if (error) {
         logger.error('Supabase error:', error);
-        // Return mock data as fallback
-        return [
-          {
-            id: '1',
-            created_at: '2024-01-15T00:00:00Z',
-            keyword: 'restaurant',
-            location: 'Paris',
-            precision: 'Précise',
-            source_google: true,
-            source_maps: true,
-            status: 'completed',
-            nb_trouves: 5,
-            nb_qualifies: 2
-          },
-          {
-            id: '2',
-            created_at: '2024-01-14T00:00:00Z',
-            keyword: 'coiffeur',
-            location: 'Lyon',
-            precision: 'Large',
-            source_google: true,
-            source_maps: true,
-            status: 'completed',
-            nb_trouves: 5,
-            nb_qualifies: 2
-          }
-        ];
+        throw error;
       }
       return data || [];
     } catch (error) {
       logger.error('API Error:', error);
-      return [];
+      throw error;
     }
   },
   
@@ -60,8 +34,7 @@ export const searchResultsApi = {
       return data;
     } catch (error) {
       logger.error('Error creating search:', error);
-      // Return mock data
-      return { ...searchData, id: Date.now().toString(), created_at: new Date().toISOString() };
+      throw error;
     }
   },
   
@@ -78,7 +51,7 @@ export const searchResultsApi = {
       return data;
     } catch (error) {
       logger.error('Error updating search:', error);
-      return { id, ...updates };
+      throw error;
     }
   }
 };
@@ -94,62 +67,12 @@ export const companiesApi = {
       
       if (error) {
         logger.error('Supabase error:', error);
-        // Return mock data as fallback with new fields
-        return [
-          {
-            id: 1,
-            canonical_url: 'https://legourmet.fr',
-            name: 'Restaurant Le Gourmet',
-            adresse: '15 rue de la Paix, 75001 Paris',
-            lat: 48.8566,
-            lng: 2.3522,
-            premiers_tags: 'Restaurant,Gastronomie',
-            sources: ['google_search'],
-            raw_ids: [1],
-            qualifie: true,
-            is_network: false,
-            is_blacklisted: false,
-            created_at: '2024-01-15T00:00:00Z',
-            updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '500k-1m' as RevenueBand,
-            nb_employes_band: '11-50' as EmployeeBand,
-            nb_employes_exact: 25,
-            linkedin_url: 'https://linkedin.com/company/legourmet',
-            site_web_canonique: 'https://legourmet.fr',
-            manually_enriched: false,
-            enriched_at: null,
-            enriched_by: null
-          },
-          {
-            id: 2,
-            canonical_url: 'https://bistrotparis.fr',
-            name: 'Bistrot de Paris',
-            adresse: '8 rue Saint-Antoine, 75004 Paris',
-            lat: 48.8553,
-            lng: 2.3647,
-            premiers_tags: 'Restaurant,Bistrot',
-            sources: ['google_maps'],
-            raw_ids: [2],
-            qualifie: true,
-            is_network: false,
-            is_blacklisted: false,
-            created_at: '2024-01-15T00:00:00Z',
-            updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '100k-500k' as RevenueBand,
-            nb_employes_band: '1-10' as EmployeeBand,
-            nb_employes_exact: 8,
-            linkedin_url: null,
-            site_web_canonique: 'https://bistrotparis.fr',
-            manually_enriched: false,
-            enriched_at: null,
-            enriched_by: null
-          }
-        ];
+        throw error;
       }
       return data || [];
     } catch (error) {
       logger.error('API Error:', error);
-      return [];
+      throw error;
     }
   },
   
@@ -167,14 +90,7 @@ export const companiesApi = {
       return data;
     } catch (error) {
       logger.error('Error creating company:', error);
-      return {
-        ...companyData,
-        id: Date.now(),
-        is_network: false,
-        is_blacklisted: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      throw error;
     }
   },
   
@@ -205,7 +121,7 @@ export const companiesApi = {
       return data;
     } catch (error) {
       logger.error('Error updating company:', error);
-      return { id, ...updates };
+      throw error;
     }
   },
   
@@ -394,7 +310,7 @@ export const companiesApi = {
       return companiesWithRawData;
     } catch (error) {
       logger.error('Error fetching companies with raw data:', error);
-      return [];
+      throw error;
     }
   }
 };
@@ -413,7 +329,7 @@ export const rawCompaniesApi = {
       return data || [];
     } catch (error) {
       logger.error('Error fetching raw companies:', error);
-      return [];
+      throw error;
     }
   },
   
@@ -428,7 +344,7 @@ export const rawCompaniesApi = {
       return data || [];
     } catch (error) {
       logger.error('Error fetching raw companies by IDs:', error);
-      return [];
+      throw error;
     }
   },
   
@@ -444,7 +360,7 @@ export const rawCompaniesApi = {
       return data;
     } catch (error) {
       logger.error('Error creating raw company:', error);
-      return { ...rawCompanyData, id: Date.now() };
+      throw error;
     }
   }
 };
@@ -515,7 +431,7 @@ export const contactsApi = {
       return [];
     } catch (error) {
       logger.error('API Error:', error);
-      return [];
+      throw error;
     }
   },
   
@@ -648,7 +564,7 @@ export const contactsApi = {
       }));
     } catch (error) {
       logger.error('API Error:', error);
-      return [];
+      throw error;
     }
   },
 
@@ -685,11 +601,11 @@ export const contactsApi = {
       
       // Return note object for compatibility
       return {
-        id: Date.now(),
+        id: crypto.randomUUID(),
         contact_id: contactId,
         note: newNoteWithTimestamp,
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
       };
     } catch (error) {
       logger.error('Error adding contact note:', error);
@@ -722,7 +638,7 @@ export const contactsApi = {
           const timestampMatch = noteEntry.match(/^\[([^\]]+)\] ([\s\S]+)$/);
           if (timestampMatch) {
             return {
-              id: index + 1,
+              id: (index + 1).toString(),
               contact_id: contactId,
               note: timestampMatch[2],
               created_at: new Date(timestampMatch[1]).toISOString() || new Date().toISOString(),
@@ -730,7 +646,7 @@ export const contactsApi = {
             };
           } else {
             return {
-              id: index + 1,
+              id: (index + 1).toString(),
               contact_id: contactId,
               note: noteEntry,
               created_at: new Date().toISOString(),
@@ -745,13 +661,13 @@ export const contactsApi = {
     }
   },
 
-  updateNote: async (noteId: number, note: string) => {
+  updateNote: async (noteId: string, note: string) => {
     // For simplicity, we'll just add this as a new note
     // In a real implementation, we'd need a more complex note management system
     throw new Error('Note editing not supported in simplified implementation');
   },
 
-  deleteNote: async (noteId: number) => {
+  deleteNote: async (noteId: string) => {
     // For simplicity, we'll not support note deletion
     // In a real implementation, we'd need a more complex note management system
     throw new Error('Note deletion not supported in simplified implementation');
@@ -934,7 +850,7 @@ export const opportunitiesApi = {
         'recurrence_months'
       ];
       
-      logger.log('Creating opportunity with data:', opportunityData);
+      logger.info('Creating opportunity with data:', opportunityData);
       
       const filteredData = Object.keys(opportunityData)
         .filter(key => validColumns.includes(key))
@@ -943,7 +859,7 @@ export const opportunitiesApi = {
           return obj;
         }, {} as Record<string, unknown>);
         
-      logger.log('Filtered data for opportunity creation:', filteredData);
+      logger.info('Filtered data for opportunity creation:', filteredData);
 
       const { data, error } = await supabase
         .from('opportunites')
@@ -956,11 +872,11 @@ export const opportunitiesApi = {
         throw error;
       }
       
-      logger.log('Successfully created opportunity:', data);
+      logger.info('Successfully created opportunity:', data);
       return data;
     } catch (error) {
       logger.error('Error creating opportunity:', error);
-      return { ...opportunityData, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      throw error;
     }
   },
   
@@ -1055,12 +971,12 @@ export const pipelineStagesApi = {
         .insert([stageData])
         .select()
         .single();
-      
+
       if (error) throw error;
       return data;
     } catch (error) {
       logger.error('Error creating stage:', error);
-      return { ...stageData, id: Date.now() };
+      throw error;
     }
   },
   
@@ -1112,7 +1028,7 @@ export const notesApi = {
       return data;
     } catch (error) {
       logger.error('Error creating note:', error);
-      return { ...noteData, id: Date.now(), created_at: new Date().toISOString() };
+      throw error;
     }
   },
   
@@ -1189,7 +1105,7 @@ export const achievementsApi = {
       return data;
     } catch (error) {
       logger.error('Error creating achievement:', error);
-      return { ...achievementData, id: Date.now(), date: new Date().toISOString() };
+      throw error;
     }
   }
 };

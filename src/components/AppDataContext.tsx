@@ -143,7 +143,7 @@ export interface Contact {
 }
 
 export interface ContactNote {
-  id: number;
+  id: string;
   contact_id: string;
   note: string;
   created_at: string;
@@ -344,8 +344,8 @@ interface AppDataContextType {
   // Contact notes methods
   addContactNote: (contactId: string, note: string) => Promise<ContactNote>; // 🔧 FIX: retourne bien la note
   getContactNotes: (contactId: string) => Promise<ContactNote[]>;
-  updateContactNote: (noteId: number, note: string) => Promise<void>;
-  deleteContactNote: (noteId: number) => Promise<void>;
+  updateContactNote: (noteId: string, note: string) => Promise<void>;
+  deleteContactNote: (noteId: string) => Promise<void>;
 
   // Search detail methods
   getCompaniesBySearchId: (searchId: string) => Company[];
@@ -946,7 +946,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
-  const updateContactNote = async (noteId: number, note: string) => {
+  const updateContactNote = async (noteId: string, note: string) => {
     try {
       await contactsApi.updateNote(noteId, note);
       toast.success('Note mise à jour avec succès');
@@ -957,7 +957,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
-  const deleteContactNote = async (noteId: number) => {
+  const deleteContactNote = async (noteId: string) => {
     try {
       await contactsApi.deleteNote(noteId);
       toast.success('Note supprimée avec succès');

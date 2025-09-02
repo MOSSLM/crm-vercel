@@ -1,10 +1,16 @@
-import { createClient } from 'npm:@supabase/supabase-js@2.39.3';
-
+import { createClient } from '@supabase/supabase-js';
 import logger from '../../../utils/logger.ts';
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+
+const getEnv = (key: string): string | undefined =>
+  typeof Deno !== 'undefined' ? Deno.env.get(key) : process.env[key];
+const SUPABASE_URL = getEnv('SUPABASE_URL') || 'http://localhost:54321';
+const SERVICE_KEY = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+if (!SERVICE_KEY) {
+  const msg = 'SUPABASE_SERVICE_ROLE_KEY is not defined';
+  logger.error(msg);
+  throw new Error(msg);
+}
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 export interface JournalEntry {
   date: string;
