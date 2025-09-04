@@ -71,6 +71,7 @@ export const NewSearchPage: React.FC = () => {
     | { found: number; saved: number; pages: number }
     | null
   >(null);
+  const [loading, setLoading] = useState(false);
 
   const {
     control,
@@ -156,6 +157,7 @@ export const NewSearchPage: React.FC = () => {
   }, [jobId, status, supabase]);
 
   const onSubmit = async (values: FormValues) => {
+    setLoading(true);
     try {
       const {
         data: { session },
@@ -166,7 +168,6 @@ export const NewSearchPage: React.FC = () => {
           ? { Authorization: `Bearer ${session.access_token}` }
           : {}),
       };
-      toast.info("Recherche lancée");
       const res = await fetch("/api/gmaps/crawl", {
         method: "POST",
         headers,
@@ -181,15 +182,26 @@ export const NewSearchPage: React.FC = () => {
       });
       if (!res.ok) throw new Error("crawl failed");
       const data = await res.json();
+      toast.info("Recherche lancée");
       setJobId(data.jobId);
       setStatus(data.status);
     } catch (err) {
-      toast.error("Erreur lors du lancement");
+      console.error(err);
+      const message =
+        err instanceof Error ? err.message : "Erreur lors du lancement";
+      toast.error(message);
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900">
+      {loading && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/50">
+          <div className="h-12 w-12 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+        </div>
+      )}
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
         <Card className="w-full max-w-md bg-white dark:bg-gray-800">
           <CardHeader className="text-center">
@@ -329,7 +341,11 @@ export const NewSearchPage: React.FC = () => {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" disabled={!!jobId && status !== "done"}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={loading || (!!jobId && status !== "done")}
+              >
                 Lancer la recherche
               </Button>
             </form>
