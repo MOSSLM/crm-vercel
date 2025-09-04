@@ -13,10 +13,10 @@ import { Label } from "@/components/ui/label";
 const formSchema = z.object({
   location: z.string().min(1),
   businessTypes: z.string().min(1),
-  tileStep: z.coerce.number().int().min(1),
-  useSearch: z.boolean().optional().default(false),
-  useMaps: z.boolean().optional().default(false),
-  pagesCount: z.coerce.number().int().min(1),
+  tileStep: z.number().int().min(1),
+  useSearch: z.boolean().default(false),
+  useMaps: z.boolean().default(false),
+  pagesCount: z.number().int().min(1),
 });
 
 type FormValues = z.infer<typeof formSchema>;
