@@ -5,6 +5,7 @@ import {
   ListTasksCommand,
   DescribeTasksCommand,
   waitUntilServicesStable,
+  KeyValuePair,
 } from "@aws-sdk/client-ecs";
 import {
   EC2Client,
@@ -72,7 +73,7 @@ export async function getCurrentIP(): Promise<string> {
     })
   );
   const eni = taskRes.tasks?.[0]?.attachments?.[0]?.details?.find(
-    (d) => d.name === "networkInterfaceId"
+    (d: KeyValuePair) => d.name === "networkInterfaceId"
   )?.value;
   if (!eni) {
     throw new Error("No network interface found");
