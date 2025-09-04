@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useForm, Controller } from "react-hook-form";
+import { useForm, Controller, type SubmitHandler } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import AppLayout from "@/components/layout/AppLayout";
@@ -14,8 +14,8 @@ const formSchema = z.object({
   location: z.string().min(1),
   businessTypes: z.string().min(1),
   tileStep: z.number().int().min(1),
-  useSearch: z.boolean().default(false),
-  useMaps: z.boolean().default(false),
+  useSearch: z.boolean(),
+  useMaps: z.boolean(),
   pagesCount: z.number().int().min(1),
 });
 
@@ -57,7 +57,7 @@ export default function RechercheEntreprisePage() {
     };
   }, [jobId, status]);
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit: SubmitHandler<FormValues> = async (values) => {
     const res = await fetch("/api/gmaps/crawl", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
