@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "@/env";
 
 export default async function Home() {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const token = cookieStore.get(
     "sb-llzrpcbwnqvbrcjjwysm-auth-token"
   );

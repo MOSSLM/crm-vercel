@@ -231,8 +231,11 @@ export const NewSearchPage: React.FC = () => {
                   render={({ field }) => (
                     <Input
                       id="location"
-                      ref={locationRef}
                       {...field}
+                      ref={(el) => {
+                        locationRef.current = el;
+                        field.ref(el);
+                      }}
                       className="dark:bg-gray-900 dark:text-gray-100"
                       placeholder="ex: Paris, Lyon..."
                     />
