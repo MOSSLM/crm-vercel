@@ -1,101 +1,197 @@
 "use client";
 
-import React, { useState } from 'react';
-import { useAppData } from './AppDataContext';
-import { Button } from './ui/button';
-import { Input } from './ui/input';
-import { Label } from './ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Checkbox } from './ui/checkbox';
-import { toast } from 'sonner';
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
+import { Input } from "./ui/input";
+import { Label } from "./ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Switch } from "./ui/switch";
+import { Button } from "./ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "./ui/table";
+import { toast } from "sonner";
+import { useForm, Controller } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { createClient } from "@/utils/supabase/client";
+
+const tileSteps = ["0.005", "0.01", "0.02", "0.05", "0.1"] as const;
+
+declare global {
+  interface Window {
+    google?: any;
+  }
+}
+
+const formSchema = z
+  .object({
+    keyword: z.string().min(1),
+    location: z.string().min(1),
+    tileStep: z.enum(tileSteps),
+    useMaps: z.boolean(),
+    useSearch: z.boolean(),
+    pagesCount: z.number().int().min(1).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.useSearch && !data.pagesCount) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["pagesCount"],
+        message: "Requis quand la recherche Google est activée",
+      });
+    }
+  });
+
+type FormValues = z.infer<typeof formSchema>;
 
 export const NewSearchPage: React.FC = () => {
-  const { addSearchResult } = useAppData();
-  const [formData, setFormData] = useState({
-    keyword: '',
-    location: '',
-    precision: '',
-    useMaps: false,
-    useGoogle: false
-  });
-  const [isLoading, setIsLoading] = useState(false);
+  const supabase = createClient();
+  const locationRef = useRef<HTMLInputElement>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [stats, setStats] = useState<
+    | { found: number; saved: number; pages: number }
+    | null
+  >(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.keyword || !formData.location || !formData.precision) {
-      toast.error('Veuillez remplir tous les champs obligatoires');
-      return;
-    }
-
-    if (!formData.useMaps && !formData.useGoogle) {
-      toast.error('Veuillez sélectionner au moins une source (Maps ou Google)');
-      return;
-    }
-
-    setIsLoading(true);
-
-    // Simulation de la recherche
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    // Génération de résultats simulés - avec les noms de colonnes corrects
-    const mockResults = {
-      keyword: formData.keyword,
-      location: formData.location,
-      precision: formData.precision,
-      source_maps: formData.useMaps,
-      source_google: formData.useGoogle,
-      status: 'completed' as const,
-      nb_trouves: Math.floor(Math.random() * 300) + 50,
-      nb_qualifies: Math.floor(Math.random() * 100) + 20
-    };
-
-    addSearchResult(mockResults);
-    setIsLoading(false);
-    
-    toast.success(`Recherche terminée ! ${mockResults.nb_trouves} entreprises trouvées`);
-    
-    // Reset du formulaire
-    setFormData({
-      keyword: '',
-      location: '',
-      precision: '',
+  const {
+    control,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      keyword: "",
+      location: "",
+      tileStep: "0.1",
       useMaps: false,
-      useGoogle: false
-    });
+      useSearch: false,
+    },
+  });
+
+  const useSearch = watch("useSearch");
+
+  useEffect(() => {
+    const load = async () => {
+      if (typeof window === "undefined") return;
+      if (window.google && window.google.maps && window.google.maps.places) {
+        init();
+        return;
+      }
+      const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      const script = document.createElement("script");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&language=fr`;
+      script.async = true;
+      script.onload = init;
+      document.head.appendChild(script);
+    };
+    const init = () => {
+      if (!locationRef.current || !window.google?.maps?.places) return;
+      const autocomplete = new window.google.maps.places.Autocomplete(
+        locationRef.current,
+        { types: ["(cities)"] }
+      );
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        const value = place.formatted_address || place.name || "";
+        setValue("location", value);
+      });
+    };
+    load();
+  }, [setValue]);
+
+  useEffect(() => {
+    if (!jobId || status === "done") return;
+    const poll = setInterval(async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        const headers: HeadersInit = session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {};
+        const res = await fetch(`/api/gmaps/job/${jobId}`, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          setStatus(data.status);
+          if (data.status === "done") {
+            setStats({
+              found: data.found ?? 0,
+              saved: data.saved ?? 0,
+              pages: data.pages ?? 0,
+            });
+            toast.success("Recherche terminée");
+            await fetch(`/api/gmaps/scale-down`, {
+              method: "POST",
+              headers,
+            });
+            clearInterval(poll);
+          }
+        }
+      } catch {
+        toast.error("Erreur lors du suivi de la recherche");
+      }
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [jobId, status, supabase]);
+
+  const onSubmit = async (values: FormValues) => {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        ...(session?.access_token
+          ? { Authorization: `Bearer ${session.access_token}` }
+          : {}),
+      };
+      toast.info("Recherche lancée");
+      const res = await fetch("/api/gmaps/crawl", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          keyword: values.keyword,
+          location: values.location,
+          tileStep: parseFloat(values.tileStep),
+          useMaps: values.useMaps,
+          useSearch: values.useSearch,
+          pagesCount: values.pagesCount,
+        }),
+      });
+      if (!res.ok) throw new Error("crawl failed");
+      const data = await res.json();
+      setJobId(data.jobId);
+      setStatus(data.status);
+    } catch (err) {
+      toast.error("Erreur lors du lancement");
+    }
   };
 
   return (
-    <div className="relative min-h-screen">
-      {/* Carte en arrière-plan - Simulation avec un dégradé */}
-      <div 
-        className="absolute inset-0 bg-gradient-to-br from-green-100 via-blue-50 to-blue-100"
-        style={{
-          backgroundImage: `
-            radial-gradient(circle at 20% 30%, rgba(34, 197, 94, 0.1) 0%, transparent 50%),
-            radial-gradient(circle at 80% 70%, rgba(59, 130, 246, 0.1) 0%, transparent 50%),
-            radial-gradient(circle at 40% 80%, rgba(168, 85, 247, 0.05) 0%, transparent 50%)
-          `
-        }}
-      >
-        {/* Grille simulant une carte */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="h-full w-full" style={{
-            backgroundImage: `
-              linear-gradient(rgba(0,0,0,0.1) 1px, transparent 1px),
-              linear-gradient(90deg, rgba(0,0,0,0.1) 1px, transparent 1px)
-            `,
-            backgroundSize: '50px 50px'
-          }}></div>
-        </div>
-      </div>
-
-      {/* Overlay pour assurer la lisibilité */}
-      <div className="absolute inset-0 bg-black/5"></div>
-
-      {/* Formulaire centré */}
+    <div className="relative min-h-screen bg-gray-50 dark:bg-gray-900">
       <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-md shadow-lg backdrop-blur-sm bg-white/95">
+        <Card className="w-full max-w-md bg-white dark:bg-gray-800">
           <CardHeader className="text-center">
             <CardTitle>Nouvelle Recherche</CardTitle>
             <CardDescription>
@@ -103,86 +199,185 @@ export const NewSearchPage: React.FC = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="keyword">Mot-clé *</Label>
-                <Input
-                  id="keyword"
-                  placeholder="ex: Restaurant, Pharmacie..."
-                  value={formData.keyword}
-                  onChange={(e) => setFormData(prev => ({ ...prev, keyword: e.target.value }))}
-                  required
+                <Label htmlFor="keyword" className="text-gray-700 dark:text-gray-200">
+                  Mot-clé
+                </Label>
+                <Controller
+                  control={control}
+                  name="keyword"
+                  render={({ field }) => (
+                    <Input
+                      id="keyword"
+                      {...field}
+                      className="dark:bg-gray-900 dark:text-gray-100"
+                      placeholder="ex: Restaurant, Pharmacie..."
+                    />
+                  )}
+                />
+                {errors.keyword && (
+                  <p className="text-sm text-red-500">{errors.keyword.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="location" className="text-gray-700 dark:text-gray-200">
+                  Lieu
+                </Label>
+                <Controller
+                  control={control}
+                  name="location"
+                  render={({ field }) => (
+                    <Input
+                      id="location"
+                      ref={locationRef}
+                      {...field}
+                      className="dark:bg-gray-900 dark:text-gray-100"
+                      placeholder="ex: Paris, Lyon..."
+                    />
+                  )}
+                />
+                {errors.location && (
+                  <p className="text-sm text-red-500">{errors.location.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tileStep" className="text-gray-700 dark:text-gray-200">
+                  Précision
+                </Label>
+                <Controller
+                  control={control}
+                  name="tileStep"
+                  render={({ field }) => (
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <SelectTrigger className="dark:bg-gray-900 dark:text-gray-100">
+                        <SelectValue placeholder="Sélectionnez la précision" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0.1">Basique</SelectItem>
+                        <SelectItem value="0.05">Moyenne</SelectItem>
+                        <SelectItem value="0.02">Élevée</SelectItem>
+                        <SelectItem value="0.01">Maximale</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="location">Lieu *</Label>
-                <Input
-                  id="location"
-                  placeholder="ex: Paris, Lyon, Marseille..."
-                  value={formData.location}
-                  onChange={(e) => setFormData(prev => ({ ...prev, location: e.target.value }))}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="precision">Précision *</Label>
-                <Select 
-                  value={formData.precision} 
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, precision: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionnez la précision" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Basique">Basique</SelectItem>
-                    <SelectItem value="Moyenne">Moyenne</SelectItem>
-                    <SelectItem value="Élevée">Élevée</SelectItem>
-                    <SelectItem value="Maximale">Maximale</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-3">
-                <Label>Sources de données</Label>
-                <div className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="maps"
-                      checked={formData.useMaps}
-                      onCheckedChange={(checked) => 
-                        setFormData(prev => ({ ...prev, useMaps: checked as boolean }))
-                      }
-                    />
-                    <Label htmlFor="maps" className="text-sm font-normal">
-                      Google Maps
-                    </Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="google"
-                      checked={formData.useGoogle}
-                      onCheckedChange={(checked) => 
-                        setFormData(prev => ({ ...prev, useGoogle: checked as boolean }))
-                      }
-                    />
-                    <Label htmlFor="google" className="text-sm font-normal">
-                      Recherche Google
-                    </Label>
-                  </div>
+                <Label className="text-gray-700 dark:text-gray-200">
+                  Sources
+                </Label>
+                <div className="flex items-center justify-between">
+                  <span>Google Maps</span>
+                  <Controller
+                    control={control}
+                    name="useMaps"
+                    render={({ field }) => (
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    )}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span>Recherche Google</span>
+                  <Controller
+                    control={control}
+                    name="useSearch"
+                    render={({ field }) => (
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    )}
+                  />
                 </div>
               </div>
 
-              <Button 
-                type="submit" 
-                className="w-full" 
-                disabled={isLoading}
-                size="lg"
-              >
-                {isLoading ? 'Recherche en cours...' : 'Lancer la recherche'}
+              {useSearch && (
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="pagesCount"
+                    className="text-gray-700 dark:text-gray-200"
+                  >
+                    Nombre de pages
+                  </Label>
+                  <Controller
+                    control={control}
+                    name="pagesCount"
+                    render={({ field }) => (
+                      <Input
+                        id="pagesCount"
+                        type="number"
+                        {...field}
+                        className="dark:bg-gray-900 dark:text-gray-100"
+                      />
+                    )}
+                  />
+                  {errors.pagesCount && (
+                    <p className="text-sm text-red-500">
+                      {errors.pagesCount.message}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <Button type="submit" className="w-full" disabled={!!jobId && status !== "done"}>
+                Lancer la recherche
               </Button>
             </form>
+
+            {jobId && (
+              <div className="mt-4 space-y-4 text-center">
+                <p>Statut: {status}</p>
+                {status === "done" && (
+                  <div className="space-y-4">
+                    <div className="space-x-4">
+                      <a
+                        href={`/api/gmaps/results/${jobId}?format=csv`}
+                        className="underline"
+                      >
+                        Télécharger CSV
+                      </a>
+                      <a
+                        href={`/api/gmaps/results/${jobId}?format=json`}
+                        className="underline"
+                      >
+                        Télécharger JSON
+                      </a>
+                    </div>
+                    {stats && (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Type</TableHead>
+                            <TableHead>Valeur</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          <TableRow>
+                            <TableCell>Entreprises trouvées</TableCell>
+                            <TableCell>{stats.found}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell>Entreprises sauvegardées</TableCell>
+                            <TableCell>{stats.saved}</TableCell>
+                          </TableRow>
+                          <TableRow>
+                            <TableCell>Pages explorées</TableCell>
+                            <TableCell>{stats.pages}</TableCell>
+                          </TableRow>
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
