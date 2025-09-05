@@ -24,7 +24,7 @@ const json = (data: any, status = 200) =>
 // —— Logger très simple ——
 const log = (...args: any[]) => {
   try {
-    logger.log("[api]", ...args);
+    logger.info("[api]", ...args);
   } catch {}
 };
 

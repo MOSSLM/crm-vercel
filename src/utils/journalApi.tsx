@@ -302,7 +302,7 @@ export const logPipelineStageChange = async (
 
   // Si pas trouvé dans le mapping, utiliser la détection automatique
   if (!eventType) {
-    logger.log(`[Journal] Étape "${newStage}" non trouvée dans le mapping, utilisation de la détection automatique`);
+    logger.info(`[Journal] Étape "${newStage}" non trouvée dans le mapping, utilisation de la détection automatique`);
     eventType = detectEventTypeFromStageName(newStage);
   }
 
@@ -335,7 +335,7 @@ export const logPipelineStageChange = async (
         });
         break;
     }
-    logger.log(`[Journal] Événement "${eventType}" enregistré avec succès pour l'étape "${newStage}"`);
+    logger.info(`[Journal] Événement "${eventType}" enregistré avec succès pour l'étape "${newStage}"`);
   } catch (error) {
     logger.error(`[Journal] Erreur lors de l'enregistrement de l'événement "${eventType}" pour l'étape "${newStage}":`, error);
     throw error;
@@ -419,7 +419,7 @@ export interface JournalKpiTotals {
 
 // Récupérer les totaux KPI depuis la vue journal
 export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
-  logger.log('📡 Appel API vers:', `${baseUrl}/kpi/journal-totals`);
+  logger.info('📡 Appel API vers:', `${baseUrl}/kpi/journal-totals`);
 
   const response = await fetch(`${baseUrl}/kpi/journal-totals`, {
     headers: {
@@ -427,7 +427,7 @@ export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
     },
   });
 
-  logger.log('📡 Statut de la réponse:', response.status, response.statusText);
+  logger.info('📡 Statut de la réponse:', response.status, response.statusText);
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -443,7 +443,7 @@ export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
   }
 
   const data = await response.json();
-  logger.log("📊 Données reçues de l'API:", data);
+  logger.info("📊 Données reçues de l'API:", data);
 
   return data;
 };

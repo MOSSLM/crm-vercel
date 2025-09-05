@@ -1,12 +1,14 @@
-import { Hono } from 'npm:hono';
-import { cors } from 'npm:hono/cors';
-import { logger as honoLogger } from 'npm:hono/logger';
-import { createClient } from 'npm:@supabase/supabase-js';
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger as honoLogger } from 'hono/logger';
+import { createClient } from '@supabase/supabase-js';
+import { z } from 'zod';
 import * as kv from './kv_store.tsx';
 import * as journal from './journal.tsx';
 
 import logger from '../../../utils/logger.ts';
-const app = new Hono();
+
+export const app = new Hono();
 
 // Add CORS middleware
 app.use('*', cors({
@@ -16,14 +18,70 @@ app.use('*', cors({
 }));
 
 // Add logger middleware
-app.use('*', honoLogger(logger.log));
+app.use('*', honoLogger(logger.info));
 
-// Initialize Supabase client
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+// Initialize Supabase client with env guard
+const getEnv = (key: string): string | undefined =>
+  typeof Deno !== 'undefined' ? Deno.env.get(key) : process.env[key];
 
+const supabaseUrl = getEnv('SUPABASE_URL') || 'http://localhost:54321';
+const serviceKey = getEnv('SUPABASE_SERVICE_ROLE_KEY');
+if (!serviceKey) {
+  const msg = 'SUPABASE_SERVICE_ROLE_KEY is not defined';
+  logger.error(msg);
+  throw new Error(msg);
+}
+const supabase = createClient(supabaseUrl, serviceKey);
+
+// Schemas
+const extendedFieldsSchema = z.object({
+  poste: z.string().optional(),
+  linkedin: z.string().optional(),
+  is_decision_maker: z.boolean().optional(),
+  notes: z.string().optional(),
+});
+
+const contactCreateSchema = z.object({
+  entreprise_id: z.number(),
+  first_name: z.string(),
+  last_name: z.string(),
+  email: z.string().email().optional().nullable(),
+  tel: z.string().optional().nullable(),
+}).merge(extendedFieldsSchema);
+type ContactCreate = z.infer<typeof contactCreateSchema>;
+
+const contactUpdateSchema = contactCreateSchema.partial().extend({
+  updated_at: z.string().optional(),
+});
+type ContactUpdate = z.infer<typeof contactUpdateSchema>;
+
+type ContactRecord = {
+  id: string;
+  first_name: string;
+  last_name: string;
+  [key: string]: unknown;
+};
+
+const getExtendedContactData = async (
+  contact: ContactRecord,
+): Promise<ContactRecord & z.infer<typeof extendedFieldsSchema> & { nom: string; prenom: string }> => {
+  try {
+    const extendedData = await kv.get(`contact_extended_${contact.id}`) as z.infer<typeof extendedFieldsSchema>;
+    return {
+      ...contact,
+      ...extendedData,
+      nom: contact.last_name,
+      prenom: contact.first_name,
+    };
+  } catch (e) {
+    logger.error('Error fetching extended contact data:', e);
+    return {
+      ...contact,
+      nom: contact.last_name,
+      prenom: contact.first_name,
+    };
+  }
+};
 // Route prefix
 const routePrefix = '/make-server-5c06d9e7';
 
@@ -50,25 +108,9 @@ app.get(`${routePrefix}/contacts`, async (c) => {
 
     // Enhance contacts with extended fields from KV store
     const enhancedContacts = await Promise.all(
-      (contacts || []).map(async (contact) => {
-        try {
-          const extendedData = await kv.get(`contact_extended_${contact.id}`);
-          return {
-            ...contact,
-            ...extendedData, // This will include linkedin, notes, etc.
-            // Legacy compatibility
-            nom: contact.last_name,
-            prenom: contact.first_name
-          };
-        } catch (e) {
-          logger.error('Error fetching extended contact data:', e);
-          return {
-            ...contact,
-            nom: contact.last_name,
-            prenom: contact.first_name
-          };
-        }
-      })
+      (contacts || []).map((contact) =>
+        getExtendedContactData(contact as ContactRecord),
+      ),
     );
 
     return c.json(enhancedContacts);
@@ -124,52 +166,37 @@ app.get(`${routePrefix}/contacts/company/:companyId`, async (c) => {
 // Create contact with extended fields
 app.post(`${routePrefix}/contacts`, async (c) => {
   try {
-    const body = await c.req.json();
-    
-    // Extract basic fields for Supabase
-    const basicFields = {
-      entreprise_id: body.entreprise_id,
-      first_name: body.first_name,
-      last_name: body.last_name,
-      email: body.email,
-      tel: body.tel
-    };
+    const parsed = contactCreateSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      logger.error('Invalid contact payload:', parsed.error);
+      return c.json({ error: 'Invalid contact data' }, 400);
+    }
 
-    // Extract extended fields for KV store
-    const extendedFields = {
-      poste: body.poste,
-      linkedin: body.linkedin,
-      is_decision_maker: body.is_decision_maker,
-      notes: body.notes
-    };
+    const { poste, linkedin, is_decision_maker, notes, ...basicFields } = parsed.data;
+    const extendedFields = { poste, linkedin, is_decision_maker, notes };
 
-    // Create contact in Supabase
     const { data: contact, error } = await supabase
       .from('contacts')
       .insert([basicFields])
       .select()
       .single();
 
-    if (error) {
+    if (error || !contact) {
       logger.error('Supabase contact creation error:', error);
       return c.json({ error: 'Failed to create contact' }, 500);
     }
 
-    // Store extended fields in KV store
-    if (contact) {
-      try {
-        await kv.set(`contact_extended_${contact.id}`, extendedFields);
-      } catch (kvError) {
-        logger.error('KV store error:', kvError);
-        // Continue even if KV store fails
-      }
+    try {
+      await kv.set(`contact_extended_${contact.id}`, extendedFields);
+    } catch (kvError) {
+      logger.error('KV store error:', kvError);
     }
 
     return c.json({
       ...contact,
       ...extendedFields,
       nom: contact.last_name,
-      prenom: contact.first_name
+      prenom: contact.first_name,
     });
   } catch (error) {
     logger.error('Error creating contact:', error);
@@ -181,26 +208,26 @@ app.post(`${routePrefix}/contacts`, async (c) => {
 app.put(`${routePrefix}/contacts/:id`, async (c) => {
   try {
     const contactId = c.req.param('id');
-    const body = await c.req.json();
-    
-    // Extract basic fields for Supabase
-    const basicFields: any = {};
-    if (body.entreprise_id !== undefined) basicFields.entreprise_id = body.entreprise_id;
-    if (body.first_name !== undefined) basicFields.first_name = body.first_name;
-    if (body.last_name !== undefined) basicFields.last_name = body.last_name;
-    if (body.email !== undefined) basicFields.email = body.email;
-    if (body.tel !== undefined) basicFields.tel = body.tel;
-    if (body.updated_at !== undefined) basicFields.updated_at = body.updated_at;
+    const parsed = contactUpdateSchema.safeParse(await c.req.json());
+    if (!parsed.success) {
+      logger.error('Invalid contact payload:', parsed.error);
+      return c.json({ error: 'Invalid contact data' }, 400);
+    }
 
-    // Extract extended fields for KV store
-    const extendedFields: any = {};
-    if (body.poste !== undefined) extendedFields.poste = body.poste;
-    if (body.linkedin !== undefined) extendedFields.linkedin = body.linkedin;
-    if (body.is_decision_maker !== undefined) extendedFields.is_decision_maker = body.is_decision_maker;
-    if (body.notes !== undefined) extendedFields.notes = body.notes;
+    const { poste, linkedin, is_decision_maker, notes, ...basicUpdates } = parsed.data;
+    const basicFields: Partial<ContactCreate> & { updated_at?: string } = {};
+    Object.entries(basicUpdates).forEach(([k, v]) => {
+      if (v !== undefined) (basicFields as any)[k] = v;
+    });
 
-    // Update contact in Supabase if there are basic fields to update
-    let updatedContact = null;
+    const extendedFields: Partial<z.infer<typeof extendedFieldsSchema>> = {
+      poste,
+      linkedin,
+      is_decision_maker,
+      notes,
+    };
+
+    let contact: any = null;
     if (Object.keys(basicFields).length > 0) {
       const { data, error } = await supabase
         .from('contacts')
@@ -208,55 +235,37 @@ app.put(`${routePrefix}/contacts/:id`, async (c) => {
         .eq('id', contactId)
         .select()
         .single();
-
       if (error) {
         logger.error('Supabase contact update error:', error);
         return c.json({ error: 'Failed to update contact' }, 500);
       }
-      updatedContact = data;
+      contact = data;
     } else {
-      // If no basic fields to update, just get the current contact
       const { data, error } = await supabase
         .from('contacts')
         .select('*')
         .eq('id', contactId)
         .single();
-
       if (error) {
         logger.error('Supabase contact fetch error:', error);
-        return c.json({ error: 'Failed to fetch contact' }, 500);
+        return c.json({ error: 'Failed to update contact' }, 500);
       }
-      updatedContact = data;
+      contact = data;
     }
 
-    // Update extended fields in KV store
     if (Object.keys(extendedFields).length > 0) {
       try {
-        // Get existing extended data
-        const existingExtended = await kv.get(`contact_extended_${contactId}`) || {};
-        // Merge with new data
-        const mergedExtended = { ...existingExtended, ...extendedFields };
-        await kv.set(`contact_extended_${contactId}`, mergedExtended);
+        await kv.set(`contact_extended_${contactId}`, {
+          ...(await kv.get(`contact_extended_${contactId}`) || {}),
+          ...extendedFields,
+        });
       } catch (kvError) {
         logger.error('KV store error:', kvError);
-        // Continue even if KV store fails
       }
     }
 
-    // Get final extended data
-    let finalExtendedData = {};
-    try {
-      finalExtendedData = await kv.get(`contact_extended_${contactId}`) || {};
-    } catch (e) {
-      logger.error('Error fetching final extended data:', e);
-    }
-
-    return c.json({
-      ...updatedContact,
-      ...finalExtendedData,
-      nom: updatedContact.last_name,
-      prenom: updatedContact.first_name
-    });
+    const finalContact = await getExtendedContactData({ ...contact, id: contactId } as ContactRecord);
+    return c.json(finalContact);
   } catch (error) {
     logger.error('Error updating contact:', error);
     return c.json({ error: 'Internal server error' }, 500);
@@ -283,20 +292,20 @@ app.post(`${routePrefix}/contacts/:id/notes`, async (c) => {
     
     // Get existing notes
     const existingNotes = await kv.get(`contact_notes_${contactId}`) || [];
-    
+
     // Create new note
     const newNote = {
-      id: Date.now(), // Simple ID generation
+      id: crypto.randomUUID(),
       contact_id: contactId,
       note: body.note,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     };
-    
+
     // Add to existing notes
     const updatedNotes = [newNote, ...existingNotes];
     await kv.set(`contact_notes_${contactId}`, updatedNotes);
-    
+
     return c.json(newNote);
   } catch (error) {
     logger.error('Error creating contact note:', error);
@@ -304,18 +313,18 @@ app.post(`${routePrefix}/contacts/:id/notes`, async (c) => {
   }
 });
 
-app.put(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
-  try {
-    const contactId = c.req.param('contactId');
-    const noteId = parseInt(c.req.param('noteId'));
-    const body = await c.req.json();
+  app.put(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
+    try {
+      const contactId = c.req.param('contactId');
+      const noteId = c.req.param('noteId');
+      const body = await c.req.json();
     
     // Get existing notes
     const existingNotes = await kv.get(`contact_notes_${contactId}`) || [];
     
     // Update the specific note
-    const updatedNotes = existingNotes.map((note: any) => {
-      if (note.id === noteId) {
+      const updatedNotes = existingNotes.map((note: any) => {
+        if (String(note.id) === noteId) {
         return {
           ...note,
           note: body.note,
@@ -327,7 +336,7 @@ app.put(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
     
     await kv.set(`contact_notes_${contactId}`, updatedNotes);
     
-    const updatedNote = updatedNotes.find((note: any) => note.id === noteId);
+    const updatedNote = updatedNotes.find((note: any) => String(note.id) === noteId);
     return c.json(updatedNote);
   } catch (error) {
     logger.error('Error updating contact note:', error);
@@ -335,16 +344,16 @@ app.put(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
   }
 });
 
-app.delete(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
-  try {
-    const contactId = c.req.param('contactId');
-    const noteId = parseInt(c.req.param('noteId'));
+  app.delete(`${routePrefix}/contacts/:contactId/notes/:noteId`, async (c) => {
+    try {
+      const contactId = c.req.param('contactId');
+      const noteId = c.req.param('noteId');
     
     // Get existing notes
     const existingNotes = await kv.get(`contact_notes_${contactId}`) || [];
     
     // Remove the specific note
-    const updatedNotes = existingNotes.filter((note: any) => note.id !== noteId);
+    const updatedNotes = existingNotes.filter((note: any) => String(note.id) !== noteId);
     await kv.set(`contact_notes_${contactId}`, updatedNotes);
     
     return c.json({ success: true });
@@ -360,8 +369,8 @@ app.get(`${routePrefix}/searches`, async (c) => {
     const searches = await kv.getByPrefix('search_');
     const searchList = searches.map((search: any) => ({
       ...search,
-      id: search.id || crypto.randomUUID(),
-      created_at: search.created_at || new Date().toISOString()
+      id: String(search.id || crypto.randomUUID()),
+      created_at: search.created_at || new Date().toISOString(),
     }));
     
     return c.json(searchList);
@@ -377,9 +386,9 @@ app.get(`${routePrefix}/companies`, async (c) => {
     const companies = await kv.getByPrefix('company_');
     const companyList = companies.map((company: any) => ({
       ...company,
-      id: company.id || Date.now(),
+      id: String(company.id || crypto.randomUUID()),
       created_at: company.created_at || new Date().toISOString(),
-      updated_at: company.updated_at || new Date().toISOString()
+      updated_at: company.updated_at || new Date().toISOString(),
     }));
     
     return c.json(companyList);
@@ -477,7 +486,7 @@ app.post(`${routePrefix}/objectives`, async (c) => {
       }
     }
 
-    logger.log(`${objectives.length} objectifs sauvegardés`);
+    logger.info(`${objectives.length} objectifs sauvegardés`);
     return c.json({ success: true, count: objectives.length });
 
   } catch (error) {
@@ -796,11 +805,11 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
         }
       };
 
-      logger.log('KPI totals calculated directly from journal:', totals);
+      logger.info('KPI totals calculated directly from journal:', totals);
       return c.json(totals);
     }
 
-    logger.log('KPI data from view (raw):', JSON.stringify(data, null, 2));
+    logger.info('KPI data from view (raw):', JSON.stringify(data, null, 2));
 
     // Transformer les données de la vue au format attendu
     // La vue retourne des lignes avec { metric: "appels", total: 5, total_week: 2, ... }
@@ -890,7 +899,7 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
             case 'qualified':
               return 'total_qualified';
             default:
-              logger.log(`Unknown metric from view: ${metric}`);
+              logger.info(`Unknown metric from view: ${metric}`);
               return null;
           }
         };
@@ -906,7 +915,7 @@ app.get(`${routePrefix}/kpi/journal-totals`, async (c) => {
       }
     }
 
-    logger.log('KPI totals transformed from view:', totals);
+    logger.info('KPI totals transformed from view:', totals);
     return c.json(totals);
   } catch (error) {
     logger.error('Error in KPI journal totals endpoint:', error);
@@ -1427,5 +1436,7 @@ function countEventsByType(journalData: any[]) {
   return metrics;
 }
 
-// Start server
-Deno.serve(app.fetch);
+// Start server when running in Deno environment
+if (typeof Deno !== 'undefined' && (Deno as any).serve) {
+  Deno.serve(app.fetch);
+}

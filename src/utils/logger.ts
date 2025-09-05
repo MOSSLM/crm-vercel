@@ -1,19 +1,31 @@
-declare const Deno: { env: { get(key: string): string | undefined } };
+import type {} from 'node:crypto';
 
-const isProd =
-  (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') ||
-  (typeof Deno !== 'undefined' && Deno.env.get('NODE_ENV') === 'production');
+/** Determine environment variables in both Node and Deno */
+const getEnv = (key: string): string | undefined => {
+  if (typeof process !== 'undefined' && process.env) return process.env[key];
+  // @ts-ignore Deno global for edge functions
+  if (typeof Deno !== 'undefined' && Deno.env) return Deno.env.get(key);
+  return undefined;
+};
 
-const logger = {
-  log: (...args: unknown[]) => {
-    if (!isProd) {
-      console.log(...args);
-    }
+const levelNames = ['debug', 'info', 'warn', 'error'] as const;
+type LogLevel = typeof levelNames[number];
+const levelOrder: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
+
+const envLevel = (getEnv('LOG_LEVEL') || 'info').toLowerCase() as LogLevel;
+const currentLevel: LogLevel = levelNames.includes(envLevel) ? envLevel : 'info';
+
+const shouldLog = (level: LogLevel) => levelOrder[level] >= levelOrder[currentLevel];
+
+export const logger = {
+  info: (...args: unknown[]) => {
+    if (shouldLog('info')) console.log(...args);
   },
   error: (...args: unknown[]) => {
-    if (!isProd) {
-      console.error(...args);
-    }
+    if (shouldLog('error')) console.error(...args);
+  },
+  debug: (...args: unknown[]) => {
+    if (shouldLog('debug')) console.debug(...args);
   },
 };
 
