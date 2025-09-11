@@ -1,7 +1,20 @@
 import { supabase } from './supabase/client';
-import { Company, CompanyRaw, Contact, Opportunity, RevenueBand, EmployeeBand } from '../types';
+import { Company, CompanyRaw, Contact, Opportunity, RevenueBand, EmployeeBand, CompanyNetwork, UrlBlacklist } from '../types';
 
 import logger from './logger';
+
+export const canonicalizeDomain = (url: string): string => {
+  try {
+    const { hostname } = new URL(url.startsWith('http') ? url : `http://${url}`);
+    return hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return url
+      .replace(/^https?:\/\//, '')
+      .replace(/^www\./, '')
+      .split('/')[0]
+      .toLowerCase();
+  }
+};
 // Search Results API (table: recherches)
 export const searchResultsApi = {
   getAll: async () => {
@@ -1275,6 +1288,92 @@ export const statisticsApi = {
       logger.error('Error fetching location stats:', error);
       return {};
     }
+  }
+};
+
+export const networksApi = {
+  getAll: async (): Promise<CompanyNetwork[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('reseaux')
+        .select('*');
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      logger.error('Error fetching networks:', error);
+      return [];
+    }
+  },
+
+  getById: async (id: number): Promise<CompanyNetwork | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('reseaux')
+        .select('*')
+        .eq('id', id)
+        .single();
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      logger.error('Error fetching network:', error);
+      return null;
+    }
+  },
+
+  create: async (
+    network: Omit<CompanyNetwork, 'id' | 'members_count'>
+  ): Promise<CompanyNetwork> => {
+    const { data, error } = await supabase
+      .from('reseaux')
+      .insert([network])
+      .select()
+      .single();
+    if (error) throw error;
+    return data as CompanyNetwork;
+  },
+
+  update: async (
+    id: number,
+    updates: Partial<CompanyNetwork>
+  ): Promise<CompanyNetwork> => {
+    const { data, error } = await supabase
+      .from('reseaux')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return data as CompanyNetwork;
+  },
+
+  delete: async (id: number): Promise<void> => {
+    const { error } = await supabase.from('reseaux').delete().eq('id', id);
+    if (error) throw error;
+  }
+};
+
+export const urlBlacklistApi = {
+  getAll: async (): Promise<UrlBlacklist[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('url_blacklist')
+        .select('*');
+      if (error) throw error;
+      return data || [];
+    } catch (error) {
+      logger.error('Error fetching url blacklist:', error);
+      return [];
+    }
+  },
+
+  create: async (domain: string): Promise<UrlBlacklist> => {
+    const { data, error } = await supabase
+      .from('url_blacklist')
+      .insert([{ domain }])
+      .select()
+      .single();
+    if (error) throw error;
+    return data as UrlBlacklist;
   }
 };
 

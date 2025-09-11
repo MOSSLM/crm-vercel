@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import { ensureHttpsUrl, getCompanyDisplayName } from "../utils/displayHelpers";
 
 const DuplicatesPage: React.FC = () => {
-  const { duplicateGroups, markAsNetwork, blacklistCompany, markAsUniqueSite } = useAppData();
+  const { duplicateGroups, createNetworkFromCompanies, blacklistDomain, markAsUniqueSite } = useAppData();
   const [selected, setSelected] = React.useState<Record<string, string>>({});
 
   const handleVisit = (url?: string) => {
@@ -26,13 +26,13 @@ const DuplicatesPage: React.FC = () => {
   };
 
   const handleMarkNetwork = async (ids: number[]) => {
-    await Promise.all(ids.map((id) => markAsNetwork(id)));
+    await createNetworkFromCompanies(ids);
     toast.success("Entreprises ajoutées au réseau");
   };
 
-  const handleBlacklist = async (ids: number[]) => {
-    await Promise.all(ids.map((id) => blacklistCompany(id)));
-    toast.success("Entreprises black-listées");
+  const handleBlacklist = async (domain: string) => {
+    await blacklistDomain(domain);
+    toast.success("Domaine black-listé");
   };
 
   const handleUnique = async (groupDomain: string, ids: number[], fallbackUrl?: string) => {
@@ -108,7 +108,7 @@ const DuplicatesPage: React.FC = () => {
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={() => handleBlacklist(group.companies.map((c) => c.id))}
+                  onClick={() => handleBlacklist(group.domain)}
                 >
                   Blacklister
                 </Button>

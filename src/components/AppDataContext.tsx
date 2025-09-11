@@ -11,6 +11,9 @@ import {
   notesApi,
   achievementsApi,
   statisticsApi,
+  networksApi,
+  urlBlacklistApi,
+  canonicalizeDomain,
 } from '../utils/api';
 import {
   getCompanyDisplayName,
@@ -82,6 +85,7 @@ export interface Company {
   qualifie: boolean;
   is_network?: boolean;
   is_blacklisted?: boolean;
+  reseau_id?: number;
   created_at: string;
   updated_at: string;
   // Enrichment
@@ -205,6 +209,13 @@ export interface Opportunity {
   contact_name?: string;
 }
 
+export interface CompanyNetwork {
+  id: number;
+  label: string;
+  note?: string;
+  members_count: number;
+}
+
 export interface Achievement {
   id: number;
   date: string;
@@ -294,6 +305,7 @@ interface AppDataContextType {
   // Existing data
   searchResults: SearchResult[];
   companies: Company[];
+  networks: CompanyNetwork[];
   contacts: Contact[];
   opportunities: Opportunity[];
   pipelineStages: PipelineStage[];
@@ -337,9 +349,11 @@ interface AppDataContextType {
   moveOpportunityToStage: (opportunityId: string, stageId: number) => Promise<void>;
   getOpportunitiesByStage: (stageId: number) => Opportunity[];
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
-  markAsNetwork: (id: number) => Promise<void>;
   blacklistCompany: (id: number) => Promise<void>;
   markAsUniqueSite: (ids: number[], canonicalUrl: string) => Promise<void>;
+  createNetworkFromCompanies: (companyIds: number[]) => Promise<void>;
+  getNetworkMembers: (networkId: number) => Company[];
+  blacklistDomain: (url: string) => Promise<void>;
 
   // Contact notes methods
   addContactNote: (contactId: string, note: string) => Promise<ContactNote>; // 🔧 FIX: retourne bien la note
@@ -524,12 +538,13 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   const { isAuthenticated, loading: authLoading } = useAuth();
 
   // State
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
-  const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaultObjectives(getCurrentMonth()));
+const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+const [companies, setCompanies] = useState<Company[]>([]);
+const [contacts, setContacts] = useState<Contact[]>([]);
+const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
+const [networks, setNetworks] = useState<CompanyNetwork[]>([]);
+const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaultObjectives(getCurrentMonth()));
   const [weeklyObjectives, setWeeklyObjectives] = useState<Objectives>(getDefaultWeeklyObjectives());
   const [annualObjectives, setAnnualObjectives] = useState<Objectives>(getDefaultAnnualObjectives());
   const [achievements, setAchievements] = useState<Achievement[]>([]);
@@ -556,6 +571,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         achievementsData,
         keywordStatsData,
         locationStatsData,
+        networksData,
       ] = await Promise.all([
         searchResultsApi.getAll(),
         companiesApi.getAll(),
@@ -565,6 +581,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
         achievementsApi.getAll(),
         statisticsApi.getKeywordStats(),
         statisticsApi.getLocationStats(),
+        networksApi.getAll(),
       ]);
 
       // Map search results to include compatibility properties
@@ -589,6 +606,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
       setAchievements(achievementsData);
       setKeywordStats(keywordStatsData);
       setLocationStats(locationStatsData);
+      setNetworks(networksData);
 
       // Backward compatibility: objectifs par défaut
       setCurrentObjectives(getDefaultObjectives(getCurrentMonth()));
@@ -763,10 +781,6 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
-  const markAsNetwork = async (id: number) => {
-    await updateCompany(id, { is_network: true });
-  };
-
   const blacklistCompany = async (id: number) => {
     await updateCompany(id, { is_blacklisted: true });
   };
@@ -774,6 +788,40 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   const markAsUniqueSite = async (ids: number[], canonicalUrl: string) => {
     const canonical = canonicalizeUrl(canonicalUrl);
     await Promise.all(ids.map((id) => updateCompany(id, { canonical_url: canonical })));
+  };
+
+  const createNetworkFromCompanies = async (companyIds: number[]) => {
+    if (companyIds.length === 0) return;
+    const first = companies.find(c => c.id === companyIds[0]);
+    const domain = first ? extractDomainFromUrl(first.canonical_url || first.site_web_canonique || '') : '';
+    const label = domain || 'Nouveau réseau';
+    const network = await networksApi.create({ label });
+    await Promise.all(companyIds.map(id => companiesApi.update(id, { reseau_id: network.id })));
+    const [updatedCompanies, updatedNetworks] = await Promise.all([
+      companiesApi.getAll(),
+      networksApi.getAll(),
+    ]);
+    const normalizedCompanies = updatedCompanies.map((c: Company) => {
+      const canonical = canonicalizeUrl(c.canonical_url || c.site_web_canonique || (c as any).url || '');
+      return { ...c, canonical_url: canonical || undefined };
+    });
+    setCompanies(normalizedCompanies);
+    setNetworks(updatedNetworks);
+  };
+
+  const getNetworkMembers = (networkId: number): Company[] => {
+    return companies.filter(c => c.reseau_id === networkId);
+  };
+
+  const blacklistDomain = async (url: string) => {
+    const domain = canonicalizeDomain(url);
+    await urlBlacklistApi.create(domain);
+    const affected = companies.filter(c => {
+      const site = c.canonical_url || c.site_web_canonique;
+      if (!site) return false;
+      return canonicalizeDomain(site) === domain;
+    });
+    await Promise.all(affected.map(c => updateCompany(c.id, { is_blacklisted: true })));
   };
 
   const deleteCompany = async (id: number) => {
@@ -1101,6 +1149,7 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
   const contextValue: AppDataContextType = {
     searchResults,
     companies,
+    networks,
     contacts,
     opportunities,
     pipelineStages,
@@ -1138,9 +1187,11 @@ export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children })
     moveOpportunityToStage,
     getOpportunitiesByStage,
     addOpportunityNote,
-    markAsNetwork,
     blacklistCompany,
     markAsUniqueSite,
+    createNetworkFromCompanies,
+    getNetworkMembers,
+    blacklistDomain,
     getCompaniesBySearchId,
     getMapCompanies,
     getGoogleCompanies,
