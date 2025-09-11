@@ -7,6 +7,7 @@ export async function POST(req: Request) {
   await ensureServiceRunning();
   const base = await getCurrentIP();
   const url = new URL("/crawl", base);
+  const payload = await req.json();
   const res = await fetch(url, {
     method: "POST",
     headers: {
@@ -14,9 +15,9 @@ export async function POST(req: Request) {
       ...(req.headers.get("authorization")
         ? { "x-user-auth": req.headers.get("authorization") as string }
         : {}),
-      "Content-Type": req.headers.get("content-type") || "application/json",
+      "Content-Type": "application/json",
     },
-    body: req.body,
+    body: JSON.stringify(payload),
   });
   const headers = new Headers(res.headers);
   headers.delete("authorization");
