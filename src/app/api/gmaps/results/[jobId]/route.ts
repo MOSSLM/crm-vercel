@@ -13,14 +13,14 @@ export async function GET(
   const url = new URL(`/results/${params.jobId}${search}`, base);
   const res = await fetch(url, {
     headers: {
+      Authorization: `Bearer ${GMAPS_API_TOKEN}`,
       ...(req.headers.get("authorization")
-        ? { Authorization: req.headers.get("authorization") as string }
+        ? { "x-user-auth": req.headers.get("authorization") as string }
         : {}),
-      "x-api-token": `Bearer ${GMAPS_API_TOKEN}`,
     },
   });
   const headers = new Headers(res.headers);
   headers.delete("authorization");
-  headers.delete("x-api-token");
+  headers.delete("x-user-auth");
   return new Response(res.body, { status: res.status, headers });
 }
