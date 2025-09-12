@@ -831,7 +831,11 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
   const blacklistDomain = async (url: string) => {
     const domain = canonicalizeDomain(url);
-    await urlBlacklistApi.create('domain', domain);
+    if (!domain) {
+      throw new Error('Invalid domain');
+    }
+    const entry = await urlBlacklistApi.create('domain', domain);
+    setUrlBlacklist(prev => [...prev, entry]);
     const affected = companies.filter(c => {
       const site = c.canonical_url || c.site_web_canonique;
       if (!site) return false;

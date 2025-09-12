@@ -30,9 +30,18 @@ const DuplicatesPage: React.FC = () => {
     toast.success("Entreprises ajoutées au réseau");
   };
 
-  const handleBlacklist = async (url: string) => {
-    await blacklistDomain(url);
-    toast.success("Domaine black-listé");
+  const handleBlacklist = async (
+    groupDomain: string,
+    fallbackUrl?: string
+  ) => {
+    const url = selected[groupDomain] || fallbackUrl;
+    if (!url) return;
+    try {
+      await blacklistDomain(url);
+      toast.success("Domaine black-listé");
+    } catch (error) {
+      toast.error("Erreur lors du blacklist");
+    }
   };
 
   const handleUnique = async (groupDomain: string, ids: number[], fallbackUrl?: string) => {
@@ -108,7 +117,12 @@ const DuplicatesPage: React.FC = () => {
                 <Button
                   size="sm"
                   variant="destructive"
-                  onClick={() => handleBlacklist(group.domain)}
+                  onClick={() =>
+                    handleBlacklist(
+                      group.domain,
+                      group.companies[0].canonical_url
+                    )
+                  }
                 >
                   Blacklister
                 </Button>
