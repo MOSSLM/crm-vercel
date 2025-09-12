@@ -362,11 +362,11 @@ interface AppDataContextType {
   moveOpportunityToStage: (opportunityId: string, stageId: number) => Promise<void>;
   getOpportunitiesByStage: (stageId: number) => Opportunity[];
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
-  blacklistCompany: (id: number) => Promise<void>;
+  blacklistCompany: (id: number, reason?: string) => Promise<void>;
   markAsUniqueSite: (ids: number[], canonicalUrl: string) => Promise<void>;
   createNetworkFromCompanies: (companyIds: number[]) => Promise<void>;
   getNetworkMembers: (networkId: string) => Company[];
-  blacklistDomain: (url: string) => Promise<void>;
+  blacklistDomain: (url: string, reason?: string) => Promise<void>;
   unblacklist: (id: string, scope: 'domain' | 'exact_url', value: string) => Promise<void>;
 
   // Contact notes methods
@@ -800,12 +800,16 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
-  const blacklistCompany = async (id: number) => {
+  const blacklistCompany = async (id: number, reason?: string) => {
     const company = companies.find(c => c.id === id);
     if (!company) return;
     const url = canonicalizeUrl(company.canonical_url || company.site_web_canonique || '');
     if (!url) return;
-    await urlBlacklistApi.create('exact_url', url);
+    if (reason) {
+      await urlBlacklistApi.create('exact_url', url, reason);
+    } else {
+      await urlBlacklistApi.create('exact_url', url);
+    }
     await companiesApi.update(id, { is_blacklisted: true });
     await refreshData();
   };
@@ -829,12 +833,14 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     return companies.filter(c => c.reseau_id === networkId);
   };
 
-  const blacklistDomain = async (url: string) => {
+  const blacklistDomain = async (url: string, reason?: string) => {
     const domain = canonicalizeDomain(url);
     if (!domain) {
       throw new Error('Invalid domain');
     }
-    const entry = await urlBlacklistApi.create('domain', domain);
+    const entry = reason
+      ? await urlBlacklistApi.create('domain', domain, reason)
+      : await urlBlacklistApi.create('domain', domain);
     setUrlBlacklist(prev => [...prev, entry]);
     const affected = companies.filter(c => {
       const site = c.canonical_url || c.site_web_canonique;
