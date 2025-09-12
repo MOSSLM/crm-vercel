@@ -31,6 +31,7 @@ import {
   CheckCircle,
   Copy,
   Share2,
+  Ban,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 
@@ -49,6 +50,7 @@ export const AppSidebar = () => {
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
     { title: "Duplicats", icon: Copy, href: "/duplicates" },
     { title: "Réseaux", icon: Share2, href: "/networks" },
+    { title: "Blacklist", icon: Ban, href: "/blacklist" },
     { title: "Contacts", icon: Users, href: "/contacts" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
