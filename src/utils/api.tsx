@@ -1380,6 +1380,7 @@ export const urlBlacklistApi = {
       value
     };
     if (reason) row.reason = reason;
+    logger.log('urlBlacklistApi.create row:', row);
 
     const { data, error } = await supabase
       .from('url_blacklist')
@@ -1387,6 +1388,7 @@ export const urlBlacklistApi = {
       .select()
       .single();
 
+    logger.log('url_blacklist insert returned data:', data);
     if (error) {
       logger.error('Supabase error inserting url_blacklist:', error.message);
       throw error;
