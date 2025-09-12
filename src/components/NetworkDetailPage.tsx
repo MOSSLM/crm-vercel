@@ -8,7 +8,7 @@ import { Badge } from "./ui/badge";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
 
 interface Props {
-  id: number;
+  id: string;
 }
 
 const NetworkDetailPage: React.FC<Props> = ({ id }) => {

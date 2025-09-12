@@ -6,10 +6,9 @@ interface Props {
 }
 
 export default function NetworkDetail({ params }: Props) {
-  const id = Number(params.id);
   return (
     <AppLayout>
-      <NetworkDetailPage id={id} />
+      <NetworkDetailPage id={params.id} />
     </AppLayout>
   );
 }

@@ -1295,7 +1295,7 @@ export const networksApi = {
   getAll: async (): Promise<CompanyNetwork[]> => {
     try {
       const { data, error } = await supabase
-        .from('reseaux')
+        .from('reseaux_entreprises')
         .select('*');
       if (error) throw error;
       return data || [];
@@ -1305,10 +1305,10 @@ export const networksApi = {
     }
   },
 
-  getById: async (id: number): Promise<CompanyNetwork | null> => {
+  getById: async (id: string): Promise<CompanyNetwork | null> => {
     try {
       const { data, error } = await supabase
-        .from('reseaux')
+        .from('reseaux_entreprises')
         .select('*')
         .eq('id', id)
         .single();
@@ -1321,10 +1321,10 @@ export const networksApi = {
   },
 
   create: async (
-    network: Omit<CompanyNetwork, 'id' | 'members_count'>
+    network: Omit<CompanyNetwork, 'id' | 'members_count' | 'created_at' | 'updated_at'>
   ): Promise<CompanyNetwork> => {
     const { data, error } = await supabase
-      .from('reseaux')
+      .from('reseaux_entreprises')
       .insert([network])
       .select()
       .single();
@@ -1333,11 +1333,11 @@ export const networksApi = {
   },
 
   update: async (
-    id: number,
+    id: string,
     updates: Partial<CompanyNetwork>
   ): Promise<CompanyNetwork> => {
     const { data, error } = await supabase
-      .from('reseaux')
+      .from('reseaux_entreprises')
       .update(updates)
       .eq('id', id)
       .select()
@@ -1346,8 +1346,11 @@ export const networksApi = {
     return data as CompanyNetwork;
   },
 
-  delete: async (id: number): Promise<void> => {
-    const { error } = await supabase.from('reseaux').delete().eq('id', id);
+  delete: async (id: string): Promise<void> => {
+    const { error } = await supabase
+      .from('reseaux_entreprises')
+      .delete()
+      .eq('id', id);
     if (error) throw error;
   }
 };
@@ -1357,7 +1360,8 @@ export const urlBlacklistApi = {
     try {
       const { data, error } = await supabase
         .from('url_blacklist')
-        .select('*');
+        .select('*')
+        .eq('active', true);
       if (error) throw error;
       return data || [];
     } catch (error) {
@@ -1366,14 +1370,26 @@ export const urlBlacklistApi = {
     }
   },
 
-  create: async (domain: string): Promise<UrlBlacklist> => {
+  create: async (
+    scope: 'domain' | 'exact_url',
+    value: string,
+    reason?: string
+  ): Promise<UrlBlacklist> => {
     const { data, error } = await supabase
       .from('url_blacklist')
-      .insert([{ domain }])
+      .insert([{ scope, value, reason }])
       .select()
       .single();
     if (error) throw error;
     return data as UrlBlacklist;
+  },
+
+  deactivate: async (id: string): Promise<void> => {
+    const { error } = await supabase
+      .from('url_blacklist')
+      .update({ active: false })
+      .eq('id', id);
+    if (error) throw error;
   }
 };
 
