@@ -1375,12 +1375,22 @@ export const urlBlacklistApi = {
     value: string,
     reason?: string
   ): Promise<UrlBlacklist> => {
+    const row: { scope: 'domain' | 'exact_url'; value: string; reason?: string } = {
+      scope,
+      value
+    };
+    if (reason) row.reason = reason;
+
     const { data, error } = await supabase
       .from('url_blacklist')
-      .insert([{ scope, value, reason }])
+      .insert(row)
       .select()
       .single();
-    if (error) throw error;
+
+    if (error) {
+      logger.error('Supabase error inserting url_blacklist:', error);
+      throw error;
+    }
     return data as UrlBlacklist;
   },
 
