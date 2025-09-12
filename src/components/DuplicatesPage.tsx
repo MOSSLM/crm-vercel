@@ -30,8 +30,8 @@ const DuplicatesPage: React.FC = () => {
     toast.success("Entreprises ajoutées au réseau");
   };
 
-  const handleBlacklist = async (domain: string) => {
-    await blacklistDomain(domain);
+  const handleBlacklist = async (url: string) => {
+    await blacklistDomain(url);
     toast.success("Domaine black-listé");
   };
 

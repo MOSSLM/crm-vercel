@@ -54,7 +54,7 @@ export interface Company {
   qualifie: boolean;
   is_network?: boolean;
   is_blacklisted?: boolean;
-  reseau_id?: number;
+  reseau_id?: string | null;
   created_at: string;
   updated_at: string;
   ca_estime_band?: RevenueBand;
@@ -156,14 +156,20 @@ export interface Opportunity {
 }
 
 export interface CompanyNetwork {
-  id: number;
+  id: string;
   label: string;
   note?: string;
   members_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface UrlBlacklist {
-  id: number;
-  domain: string;
+  id: string;
+  scope: 'domain' | 'exact_url';
+  value: string;
+  reason?: string;
+  active: boolean;
   created_at: string;
+  created_by?: string;
 }

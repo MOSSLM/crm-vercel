@@ -139,6 +139,10 @@ export const QualificationPage: React.FC = () => {
   };
 
   const handleBlacklistCompany = async (company: Company) => {
+    if (!company.canonical_url) {
+      toast.error("Aucune URL à blacklister");
+      return;
+    }
     try {
       await blacklistCompany(company.id);
       const displayName = getCompanyDisplayName(company.name, company.canonical_url);

@@ -85,7 +85,7 @@ export interface Company {
   qualifie: boolean;
   is_network?: boolean;
   is_blacklisted?: boolean;
-  reseau_id?: number;
+  reseau_id?: string | null;
   created_at: string;
   updated_at: string;
   // Enrichment
@@ -210,10 +210,22 @@ export interface Opportunity {
 }
 
 export interface CompanyNetwork {
-  id: number;
+  id: string;
   label: string;
   note?: string;
   members_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UrlBlacklist {
+  id: string;
+  scope: 'domain' | 'exact_url';
+  value: string;
+  reason?: string;
+  active: boolean;
+  created_at: string;
+  created_by?: string;
 }
 
 export interface Achievement {
@@ -306,6 +318,7 @@ interface AppDataContextType {
   searchResults: SearchResult[];
   companies: Company[];
   networks: CompanyNetwork[];
+  urlBlacklist: UrlBlacklist[];
   contacts: Contact[];
   opportunities: Opportunity[];
   pipelineStages: PipelineStage[];
@@ -352,8 +365,9 @@ interface AppDataContextType {
   blacklistCompany: (id: number) => Promise<void>;
   markAsUniqueSite: (ids: number[], canonicalUrl: string) => Promise<void>;
   createNetworkFromCompanies: (companyIds: number[]) => Promise<void>;
-  getNetworkMembers: (networkId: number) => Company[];
+  getNetworkMembers: (networkId: string) => Company[];
   blacklistDomain: (url: string) => Promise<void>;
+  unblacklist: (id: string, scope: 'domain' | 'exact_url', value: string) => Promise<void>;
 
   // Contact notes methods
   addContactNote: (contactId: string, note: string) => Promise<ContactNote>; // 🔧 FIX: retourne bien la note
@@ -544,6 +558,7 @@ const [contacts, setContacts] = useState<Contact[]>([]);
 const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
 const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
 const [networks, setNetworks] = useState<CompanyNetwork[]>([]);
+const [urlBlacklist, setUrlBlacklist] = useState<UrlBlacklist[]>([]);
 const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaultObjectives(getCurrentMonth()));
   const [weeklyObjectives, setWeeklyObjectives] = useState<Objectives>(getDefaultWeeklyObjectives());
   const [annualObjectives, setAnnualObjectives] = useState<Objectives>(getDefaultAnnualObjectives());
@@ -572,6 +587,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         keywordStatsData,
         locationStatsData,
         networksData,
+        urlBlacklistData,
       ] = await Promise.all([
         searchResultsApi.getAll(),
         companiesApi.getAll(),
@@ -582,6 +598,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         statisticsApi.getKeywordStats(),
         statisticsApi.getLocationStats(),
         networksApi.getAll(),
+        urlBlacklistApi.getAll(),
       ]);
 
       // Map search results to include compatibility properties
@@ -607,6 +624,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       setKeywordStats(keywordStatsData);
       setLocationStats(locationStatsData);
       setNetworks(networksData);
+      setUrlBlacklist(urlBlacklistData);
 
       // Backward compatibility: objectifs par défaut
       setCurrentObjectives(getDefaultObjectives(getCurrentMonth()));
@@ -627,6 +645,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const duplicateGroups = React.useMemo(() => {
     const groups: Record<string, Company[]> = {};
     companies.forEach((c) => {
+      if (c.is_blacklisted) return;
       const url = c.canonical_url || c.site_web_canonique;
       if (!url) return;
       const domain = extractDomainFromUrl(url);
@@ -782,7 +801,13 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
   const blacklistCompany = async (id: number) => {
-    await updateCompany(id, { is_blacklisted: true });
+    const company = companies.find(c => c.id === id);
+    if (!company) return;
+    const url = canonicalizeUrl(company.canonical_url || company.site_web_canonique || '');
+    if (!url) return;
+    await urlBlacklistApi.create('exact_url', url);
+    await companiesApi.update(id, { is_blacklisted: true });
+    await refreshData();
   };
 
   const markAsUniqueSite = async (ids: number[], canonicalUrl: string) => {
@@ -797,31 +822,43 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     const label = domain || 'Nouveau réseau';
     const network = await networksApi.create({ label });
     await Promise.all(companyIds.map(id => companiesApi.update(id, { reseau_id: network.id })));
-    const [updatedCompanies, updatedNetworks] = await Promise.all([
-      companiesApi.getAll(),
-      networksApi.getAll(),
-    ]);
-    const normalizedCompanies = updatedCompanies.map((c: Company) => {
-      const canonical = canonicalizeUrl(c.canonical_url || c.site_web_canonique || (c as any).url || '');
-      return { ...c, canonical_url: canonical || undefined };
-    });
-    setCompanies(normalizedCompanies);
-    setNetworks(updatedNetworks);
+    await refreshData();
   };
 
-  const getNetworkMembers = (networkId: number): Company[] => {
+  const getNetworkMembers = (networkId: string): Company[] => {
     return companies.filter(c => c.reseau_id === networkId);
   };
 
   const blacklistDomain = async (url: string) => {
     const domain = canonicalizeDomain(url);
-    await urlBlacklistApi.create(domain);
+    await urlBlacklistApi.create('domain', domain);
     const affected = companies.filter(c => {
       const site = c.canonical_url || c.site_web_canonique;
       if (!site) return false;
       return canonicalizeDomain(site) === domain;
     });
-    await Promise.all(affected.map(c => updateCompany(c.id, { is_blacklisted: true })));
+    await Promise.all(affected.map(c => companiesApi.update(c.id, { is_blacklisted: true })));
+    await refreshData();
+  };
+
+  const unblacklist = async (id: string, scope: 'domain' | 'exact_url', value: string) => {
+    await urlBlacklistApi.deactivate(id);
+    let affected: Company[] = [];
+    if (scope === 'domain') {
+      affected = companies.filter(c => {
+        const site = c.canonical_url || c.site_web_canonique;
+        if (!site) return false;
+        return canonicalizeDomain(site) === value;
+      });
+    } else {
+      affected = companies.filter(c => {
+        const site = c.canonical_url || c.site_web_canonique;
+        if (!site) return false;
+        return canonicalizeUrl(site) === value;
+      });
+    }
+    await Promise.all(affected.map(c => companiesApi.update(c.id, { is_blacklisted: false })));
+    await refreshData();
   };
 
   const deleteCompany = async (id: number) => {
@@ -1150,6 +1187,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     searchResults,
     companies,
     networks,
+    urlBlacklist,
     contacts,
     opportunities,
     pipelineStages,
@@ -1192,6 +1230,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     createNetworkFromCompanies,
     getNetworkMembers,
     blacklistDomain,
+    unblacklist,
     getCompaniesBySearchId,
     getMapCompanies,
     getGoogleCompanies,
