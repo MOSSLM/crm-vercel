@@ -801,17 +801,23 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
   const blacklistCompany = async (id: number, reason?: string) => {
-    const company = companies.find(c => c.id === id);
-    if (!company) return;
-    const url = canonicalizeUrl(company.canonical_url || company.site_web_canonique || '');
-    if (!url) return;
-    if (reason) {
-      await urlBlacklistApi.create('exact_url', url, reason);
-    } else {
-      await urlBlacklistApi.create('exact_url', url);
+    try {
+      logger.log('blacklistCompany called with id:', id);
+      const company = companies.find(c => c.id === id);
+      if (!company) return;
+      const url = canonicalizeUrl(company.canonical_url || company.site_web_canonique || '');
+      logger.log('Computed canonical URL:', url);
+      if (!url) return;
+      const response = reason
+        ? await urlBlacklistApi.create('exact_url', url, reason)
+        : await urlBlacklistApi.create('exact_url', url);
+      logger.log('urlBlacklistApi.create response:', response);
+      await companiesApi.update(id, { is_blacklisted: true });
+      await refreshData();
+    } catch (err) {
+      logger.error('Error blacklisting company:', err);
+      toast.error((err as Error).message);
     }
-    await companiesApi.update(id, { is_blacklisted: true });
-    await refreshData();
   };
 
   const markAsUniqueSite = async (ids: number[], canonicalUrl: string) => {
@@ -834,21 +840,29 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
   const blacklistDomain = async (url: string, reason?: string) => {
-    const domain = canonicalizeDomain(url);
-    if (!domain) {
-      throw new Error('Invalid domain');
+    try {
+      logger.log('blacklistDomain called with url:', url);
+      const domain = canonicalizeDomain(url);
+      logger.log('Derived domain:', domain);
+      if (!domain) {
+        throw new Error('Invalid domain');
+      }
+      const entry = reason
+        ? await urlBlacklistApi.create('domain', domain, reason)
+        : await urlBlacklistApi.create('domain', domain);
+      logger.log('urlBlacklistApi.create response:', entry);
+      setUrlBlacklist(prev => [...prev, entry]);
+      const affected = companies.filter(c => {
+        const site = c.canonical_url || c.site_web_canonique;
+        if (!site) return false;
+        return canonicalizeDomain(site) === domain;
+      });
+      await Promise.all(affected.map(c => companiesApi.update(c.id, { is_blacklisted: true })));
+      await refreshData();
+    } catch (err) {
+      logger.error('Error blacklisting domain:', err);
+      toast.error((err as Error).message);
     }
-    const entry = reason
-      ? await urlBlacklistApi.create('domain', domain, reason)
-      : await urlBlacklistApi.create('domain', domain);
-    setUrlBlacklist(prev => [...prev, entry]);
-    const affected = companies.filter(c => {
-      const site = c.canonical_url || c.site_web_canonique;
-      if (!site) return false;
-      return canonicalizeDomain(site) === domain;
-    });
-    await Promise.all(affected.map(c => companiesApi.update(c.id, { is_blacklisted: true })));
-    await refreshData();
   };
 
   const unblacklist = async (id: string, scope: 'domain' | 'exact_url', value: string) => {
