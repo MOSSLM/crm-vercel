@@ -18,6 +18,9 @@ const envSchema = z.object({
     .string()
     .min(1, { message: "GMAPS_API_TOKEN est requis" }),
   GMAPS_BASE_URL: z.string().url().optional(),
+  NEXT_PUBLIC_GOOGLE_API_KEY: z
+    .string()
+    .min(1, { message: "NEXT_PUBLIC_GOOGLE_API_KEY est requis" }),
 });
 
 const envResult = envSchema.safeParse({
@@ -28,6 +31,7 @@ const envResult = envSchema.safeParse({
   GMAPS_AWS_SERVICE: process.env.GMAPS_AWS_SERVICE,
   GMAPS_API_TOKEN: process.env.GMAPS_API_TOKEN,
   GMAPS_BASE_URL: process.env.GMAPS_BASE_URL,
+  NEXT_PUBLIC_GOOGLE_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_API_KEY,
 });
 
 if (!envResult.success) {
@@ -47,4 +51,5 @@ export const {
   GMAPS_AWS_SERVICE,
   GMAPS_API_TOKEN,
   GMAPS_BASE_URL,
+  NEXT_PUBLIC_GOOGLE_API_KEY,
 } = envResult.data;
