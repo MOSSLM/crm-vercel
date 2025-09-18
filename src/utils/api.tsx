@@ -463,69 +463,80 @@ export const rawCompaniesApi = {
 };
 
 // Contacts API using real database columns
+const CONTACT_LIST_SELECT =
+  'id, entreprise_id, first_name, last_name, email, tel, role_title, linkedin_url, preferred_channel, created_at';
+const DEFAULT_CONTACTS_PAGE_SIZE = 500;
+
+const contactsListCache = new Map<number, Contact[]>();
+
+const mapContactRecord = (contact: any): Contact => ({
+  ...contact,
+  nom: contact.last_name,
+  prenom: contact.first_name,
+  poste: contact.role_title,
+  linkedin: contact.linkedin_url,
+});
+
+const invalidateContactsCache = (companyId?: number) => {
+  if (companyId !== undefined && companyId !== null) {
+    contactsListCache.delete(companyId);
+  } else {
+    contactsListCache.clear();
+  }
+};
+
 export const contactsApi = {
   getAll: async () => {
     try {
-      // Query contacts with all real columns
-      const { data: contactsData, error: contactsError } = await supabase
-        .from('contacts')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (contactsError) {
-        logger.error('Supabase error:', contactsError);
-        // Return mock data as fallback
-        return [
-          {
-            id: '1',
-            entreprise_id: 1,
-            first_name: 'Jean',
-            last_name: 'Dupont',
-            email: 'jean.dupont@legourmet.fr',
-            tel: '+33 1 42 86 75 90',
-            role_title: 'Directeur',
-            linkedin_url: 'https://linkedin.com/in/jeandupont',
-            is_decision_maker: true,
-            preferred_channel: 'email',
-            notes: 'Contact principal, très réactif',
-            companyName: 'Restaurant Le Gourmet',
-            address: '15 rue de la Paix, 75001 Paris',
-            tags: ['Restaurant', 'Gastronomie'],
-            // Legacy compatibility fields
-            nom: 'Dupont',
-            prenom: 'Jean',
-            poste: 'Directeur',
-            linkedin: 'https://linkedin.com/in/jeandupont'
-          }
-        ];
-      }
-      
-      // If we have contacts, try to get company info separately
-      if (contactsData && contactsData.length > 0) {
-        const companyIds = contactsData.map(c => c.entreprise_id);
-        const { data: companiesData } = await supabase
-          .from('entreprises')
-          .select('id, name, adresse, premiers_tags')
-          .in('id', companyIds);
-        
-        // Merge contact and company data with proper field mapping
-        return contactsData.map(contact => {
-          const company = companiesData?.find(c => c.id === contact.entreprise_id);
-          return {
-            ...contact,
-            companyName: company?.name,
-            address: company?.adresse,
-            tags: company?.premiers_tags ? [company.premiers_tags] : [],
-            // Legacy compatibility fields
-            nom: contact.last_name,
-            prenom: contact.first_name,
-            poste: contact.role_title,
-            linkedin: contact.linkedin_url
-          };
+      const allContacts: Contact[] = [];
+      const groupedByCompany = new Map<number, Contact[]>();
+      let cursor: string | null = null;
+      let hasMore = true;
+
+      while (hasMore) {
+        let query = supabase
+          .from('contacts')
+          .select(CONTACT_LIST_SELECT)
+          .order('created_at', { ascending: false })
+          .limit(DEFAULT_CONTACTS_PAGE_SIZE);
+
+        if (cursor) {
+          query = query.lt('created_at', cursor);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+          logger.error('Supabase error:', error);
+          return [];
+        }
+
+        const mapped = (data || []).map(mapContactRecord);
+        mapped.forEach((contact) => {
+          allContacts.push(contact);
+          const existing = groupedByCompany.get(contact.entreprise_id) || [];
+          existing.push(contact);
+          groupedByCompany.set(contact.entreprise_id, existing);
         });
+
+        if (!data || data.length < DEFAULT_CONTACTS_PAGE_SIZE) {
+          hasMore = false;
+        } else {
+          const last = data[data.length - 1];
+          if (last?.created_at) {
+            cursor = last.created_at;
+          } else {
+            hasMore = false;
+          }
+        }
       }
-      
-      return [];
+
+      contactsListCache.clear();
+      groupedByCompany.forEach((list, companyId) => {
+        contactsListCache.set(companyId, list);
+      });
+
+      return allContacts;
     } catch (error) {
       logger.error('API Error:', error);
       return [];
@@ -564,14 +575,20 @@ export const contactsApi = {
         throw error;
       }
       
-      // Return with compatibility fields
-      return {
+      const mapped = {
         ...data,
         nom: data.last_name,
         prenom: data.first_name,
         poste: data.role_title,
         linkedin: data.linkedin_url
       };
+
+      if (mapped.entreprise_id) {
+        const cached = contactsListCache.get(mapped.entreprise_id) || [];
+        contactsListCache.set(mapped.entreprise_id, [mapped, ...cached]);
+      }
+
+      return mapped;
     } catch (error) {
       logger.error('Error creating contact:', error);
       throw error;
@@ -603,66 +620,144 @@ export const contactsApi = {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) {
         logger.error('Supabase update error:', error);
         throw error;
       }
-      
-      // Return with compatibility fields
-      return {
+
+      const mapped = {
         ...data,
         nom: data.last_name,
         prenom: data.first_name,
         poste: data.role_title,
         linkedin: data.linkedin_url
       };
+
+      if (mapped.entreprise_id) {
+        const cached = contactsListCache.get(mapped.entreprise_id);
+        if (cached) {
+          contactsListCache.set(
+            mapped.entreprise_id,
+            cached.map((contact) => (contact.id === mapped.id ? mapped : contact))
+          );
+        }
+      } else {
+        invalidateContactsCache();
+      }
+
+      return mapped;
     } catch (error) {
       logger.error('Error updating contact:', error);
       throw error;
     }
   },
-  
+
   delete: async (id: string) => {
     try {
       const { error } = await supabase
         .from('contacts')
         .delete()
         .eq('id', id);
-      
+
       if (error) throw error;
+
+      contactsListCache.forEach((contacts, companyId) => {
+        const filtered = contacts.filter((contact) => contact.id !== id);
+        if (filtered.length !== contacts.length) {
+          contactsListCache.set(companyId, filtered);
+        }
+      });
     } catch (error) {
       logger.error('Error deleting contact:', error);
       throw error;
     }
   },
-  
+
   // Get employees by company ID
-  getByCompany: async (companyId: number) => {
+  getByCompany: async (companyId: number, options?: { cursor?: string; pageSize?: number; forceRefresh?: boolean }) => {
     try {
-      const { data, error } = await supabase
+      if (!options?.forceRefresh && contactsListCache.has(companyId)) {
+        return contactsListCache.get(companyId) || [];
+      }
+
+      const pageSize = Math.min(options?.pageSize ?? DEFAULT_CONTACTS_PAGE_SIZE, DEFAULT_CONTACTS_PAGE_SIZE);
+
+      let query = supabase
         .from('contacts')
-        .select('*')
+        .select(CONTACT_LIST_SELECT)
         .eq('entreprise_id', companyId)
-        .order('created_at', { ascending: false });
-      
+        .order('created_at', { ascending: false })
+        .limit(pageSize);
+
+      if (options?.cursor) {
+        query = query.lt('created_at', options.cursor);
+      }
+
+      const { data, error } = await query;
+
       if (error) {
         logger.error('Supabase error:', error);
         return [];
       }
-      
-      // Return with compatibility fields
-      return (data || []).map(contact => ({
-        ...contact,
-        nom: contact.last_name,
-        prenom: contact.first_name,
-        poste: contact.role_title,
-        linkedin: contact.linkedin_url
-      }));
+
+      const mapped = (data || []).map(mapContactRecord);
+      contactsListCache.set(companyId, mapped);
+      return mapped;
     } catch (error) {
       logger.error('API Error:', error);
       return [];
     }
+  },
+
+  getManyByCompanyIds: async (
+    companyIds: number[],
+    options?: { forceRefresh?: boolean; pageSizePerCompany?: number }
+  ): Promise<Record<number, Contact[]>> => {
+    const uniqueIds = Array.from(new Set(companyIds));
+    const result: Record<number, Contact[]> = {};
+
+    if (uniqueIds.length === 0) {
+      return result;
+    }
+
+    const idsToFetch = options?.forceRefresh
+      ? uniqueIds
+      : uniqueIds.filter((id) => !contactsListCache.has(id));
+
+    if (idsToFetch.length > 0) {
+      const pageSize = Math.min(options?.pageSizePerCompany ?? DEFAULT_CONTACTS_PAGE_SIZE, DEFAULT_CONTACTS_PAGE_SIZE);
+      const limit = pageSize * idsToFetch.length;
+
+      const { data, error } = await supabase
+        .from('contacts')
+        .select(CONTACT_LIST_SELECT)
+        .in('entreprise_id', idsToFetch)
+        .order('created_at', { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        logger.error('Supabase error:', error);
+      } else {
+        const grouped = new Map<number, Contact[]>();
+        (data || []).forEach((contact) => {
+          const mapped = mapContactRecord(contact);
+          const current = grouped.get(mapped.entreprise_id) || [];
+          current.push(mapped);
+          grouped.set(mapped.entreprise_id, current);
+        });
+
+        idsToFetch.forEach((id) => {
+          contactsListCache.set(id, grouped.get(id) || []);
+        });
+      }
+    }
+
+    uniqueIds.forEach((id) => {
+      result[id] = contactsListCache.get(id) || [];
+    });
+
+    return result;
   },
 
   // Contact notes methods - using the notes field in contacts table

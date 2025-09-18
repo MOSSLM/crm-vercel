@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAppData } from "./AppDataContext";
+import { useAppData, Contact } from "./AppDataContext";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
@@ -18,20 +18,19 @@ import {
   PaginationPrevious,
 } from "./ui/pagination";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
-import { contactsApi } from "../utils/api";
 import { LayoutGrid, List, Search, Filter, CheckCircle } from "lucide-react";
 import { Employee, QualifiedCompaniesPageProps, QUALIFIED_COMPANIES_CONSTANTS } from "./qualified/types";
 import { CompanyCard } from "./qualified/CompanyCard";
 import { CompanyRow } from "./qualified/CompanyRow";
 import { calculateMetrics, filterCompanies } from "./qualified/utils";
+import logger from "../utils/logger";
 
 export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ onContactClick }) => {
   const router = useRouter();
-  const { companies } = useAppData();
+  const { companies, contacts, refreshData } = useAppData();
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBy, setFilterBy] = useState("all");
-  const [companyEmployees, setCompanyEmployees] = useState<Record<number, Employee[]>>({});
   const [showEditEmployeeModal, setShowEditEmployeeModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedCompanyName, setSelectedCompanyName] = useState("");
@@ -40,24 +39,27 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
   // Entreprises qualifiées
   const qualifiedCompanies = companies.filter((c) => c.qualifie);
 
-  // Charger les employés
-  useEffect(() => {
-    const load = async () => {
-      const ids = qualifiedCompanies.map((c) => c.id);
-      const map: Record<number, Employee[]> = {};
-      await Promise.all(
-        ids.map(async (id) => {
-          try {
-            map[id] = await contactsApi.getByCompany(id);
-          } catch {
-            map[id] = [];
-          }
-        })
-      );
-      setCompanyEmployees(map);
-    };
-    if (qualifiedCompanies.length) load();
-  }, [qualifiedCompanies]);
+  const companyEmployees = React.useMemo(() => {
+    const employeesMap: Record<number, Employee[]> = {};
+
+    qualifiedCompanies.forEach((company) => {
+      const employeesForCompany = contacts
+        .filter((contact) => contact.entreprise_id === company.id)
+        .map((contact: Contact) => ({
+          id: contact.id,
+          entreprise_id: contact.entreprise_id,
+          nom: contact.nom ?? contact.last_name,
+          prenom: contact.prenom ?? contact.first_name,
+          email: contact.email,
+          tel: contact.tel,
+          poste: contact.poste ?? contact.role_title,
+        }));
+
+      employeesMap[company.id] = employeesForCompany;
+    });
+
+    return employeesMap;
+  }, [qualifiedCompanies, contacts]);
 
   // Filtrage
   const filteredCompanies = React.useMemo(
@@ -90,18 +92,14 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
     setShowEditEmployeeModal(true);
   };
 
-  const handleEmployeeUpdated = () => {
-    const reload = async () => {
-      if (selectedEmployee) {
-        try {
-          const employees = await contactsApi.getByCompany(selectedEmployee.entreprise_id);
-          setCompanyEmployees((prev) => ({ ...prev, [selectedEmployee.entreprise_id]: employees }));
-        } catch {}
-      }
-    };
-    reload();
+  const handleEmployeeUpdated = async () => {
     setSelectedEmployee(null);
     setSelectedCompanyName("");
+    try {
+      await refreshData();
+    } catch (error) {
+      logger.error("Error refreshing contacts after update:", error);
+    }
   };
 
   // Navigation helper
