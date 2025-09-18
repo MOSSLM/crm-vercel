@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { useAppData } from "./AppDataContext";
+import React, { useState, useEffect, useMemo } from "react";
+import { useAppData, Contact } from "./AppDataContext";
 import { Company } from "../types";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
@@ -9,7 +9,6 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Label } from "./ui/label";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
-import { contactsApi } from "../utils/api";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -47,7 +46,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
   employeeId,
   onBack,
 }) => {
-  const { companies } = useAppData();
+  const { companies, contacts, updateContact, loading: appDataLoading } = useAppData();
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [associatedCompany, setAssociatedCompany] = useState<Company | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -62,79 +61,75 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
     poste: "",
   });
 
-  const loadEmployee = useCallback(async () => {
-    setLoading(true);
-    try {
-      let foundEmployee: Employee | null = null;
-      let foundCompany: Company | null = null;
-
-      // Recherche du contact dans toutes les entreprises
-      await Promise.all(
-        companies.map(async (company) => {
-          try {
-            const list = await contactsApi.getByCompany(company.id);
-            const match = (list as Employee[]).find((e) => e.id === employeeId);
-            if (match) {
-              foundEmployee = match;
-              foundCompany = company;
-            }
-          } catch (error) {
-            logger.error(
-              `Erreur lors du chargement des contacts de l'entreprise ${company.id}:`,
-              error
-            );
-          }
-        })
-      );
-
-      if (foundEmployee && foundCompany) {
-        setEmployee(foundEmployee);
-        setAssociatedCompany(foundCompany);
-
-        // Copie défensive + valeurs par défaut pour éviter les undefined
-        const {
-          nom = "",
-          prenom = "",
-          email = "",
-          tel = "",
-          poste = "",
-        } = foundEmployee as Employee;
-
-        setFormData({ nom, prenom, email, tel, poste });
-      } else {
-        // Rien trouvé
-        setEmployee(null);
-        setAssociatedCompany(null);
-      }
-    } catch (error) {
-      logger.error("Error loading employee:", error);
-      toast.error("Erreur lors du chargement du contact");
-    } finally {
-      setLoading(false);
-    }
-  }, [companies, employeeId]);
+  const contactFromContext = useMemo(() => {
+    return contacts.find((c) => c.id === employeeId) || null;
+  }, [contacts, employeeId]);
 
   useEffect(() => {
-    loadEmployee();
-  }, [loadEmployee]);
+    if (appDataLoading) {
+      setLoading(true);
+      return;
+    }
+
+    setLoading(false);
+
+    if (contactFromContext) {
+      const mappedEmployee: Employee = {
+        id: contactFromContext.id,
+        entreprise_id: contactFromContext.entreprise_id,
+        nom: contactFromContext.nom ?? contactFromContext.last_name,
+        prenom: contactFromContext.prenom ?? contactFromContext.first_name,
+        email: contactFromContext.email,
+        tel: contactFromContext.tel,
+        poste: contactFromContext.poste ?? contactFromContext.role_title,
+      };
+
+      setEmployee(mappedEmployee);
+      const company = companies.find((c) => c.id === contactFromContext.entreprise_id) ?? null;
+      setAssociatedCompany(company);
+
+      const {
+        nom = "",
+        prenom = "",
+        email = "",
+        tel = "",
+        poste = "",
+      } = mappedEmployee;
+
+      setFormData({ nom, prenom, email, tel, poste });
+    } else {
+      setEmployee(null);
+      setAssociatedCompany(null);
+    }
+  }, [appDataLoading, contactFromContext, companies]);
 
   const handleSave = async () => {
     if (!employee) return;
 
     setIsLoading(true);
     try {
-      const updatedData: EmployeeForm = {
-        nom: formData.nom?.trim() || undefined,
-        prenom: formData.prenom?.trim() || undefined,
+      const updatedData: Partial<Contact> = {
+        last_name: formData.nom?.trim() || undefined,
+        first_name: formData.prenom?.trim() || undefined,
         email: formData.email?.trim() || undefined,
         tel: formData.tel?.trim() || undefined,
-        poste: formData.poste?.trim() || undefined,
+        role_title: formData.poste?.trim() || undefined,
       };
 
-      await contactsApi.update(employee.id, updatedData);
+      await updateContact(employee.id, updatedData);
 
-      // Mise à jour locale
-      setEmployee((prev) => (prev ? { ...prev, ...updatedData } : prev));
+      setEmployee((prev) =>
+        prev
+          ? {
+              ...prev,
+              nom: updatedData.last_name ?? prev.nom,
+              prenom: updatedData.first_name ?? prev.prenom,
+              email: updatedData.email ?? prev.email,
+              tel: updatedData.tel ?? prev.tel,
+              poste: updatedData.role_title ?? prev.poste,
+            }
+          : prev
+      );
       setIsEditing(false);
       toast.success("Contact mis à jour avec succès");
     } catch (error) {

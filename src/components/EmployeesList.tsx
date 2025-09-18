@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { AddEmployeeModal } from './AddEmployeeModal';
 import { EditEmployeeModal } from './EditEmployeeModal';
-import { contactsApi } from '../utils/api';
+import { useAppData, Contact } from './AppDataContext';
 import { toast } from "sonner";
 import { 
   Users, 
@@ -36,41 +36,58 @@ interface EmployeesListProps {
   className?: string;
 }
 
-export const EmployeesList: React.FC<EmployeesListProps> = ({ 
-  companyId, 
-  companyName, 
-  className 
+export const EmployeesList: React.FC<EmployeesListProps> = ({
+  companyId,
+  companyName,
+  className
 }) => {
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const { contacts, refreshData, loading: appDataLoading } = useAppData();
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
-  const loadEmployees = async () => {
+  const employees = useMemo(() => {
+    return contacts
+      .filter((contact) => contact.entreprise_id === companyId)
+      .map((contact: Contact) => ({
+        id: contact.id,
+        entreprise_id: contact.entreprise_id,
+        nom: contact.nom ?? contact.last_name,
+        prenom: contact.prenom ?? contact.first_name,
+        email: contact.email,
+        tel: contact.tel,
+        poste: contact.poste ?? contact.role_title,
+      }));
+  }, [contacts, companyId]);
+
+  useEffect(() => {
+    setLoading(appDataLoading && employees.length === 0);
+  }, [appDataLoading, employees.length]);
+
+  const handleEmployeeAdded = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const data = await contactsApi.getByCompany(companyId);
-      setEmployees(data);
+      await refreshData();
     } catch (error) {
-      logger.error('Error loading employees:', error);
-      toast.error("Erreur lors du chargement des employés");
+      logger.error('Error refreshing employees after addition:', error);
+      toast.error("Erreur lors de la mise à jour des employés");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadEmployees();
-  }, [companyId]);
-
-  const handleEmployeeAdded = () => {
-    loadEmployees();
-  };
-
-  const handleEmployeeUpdated = () => {
-    loadEmployees();
-    setSelectedEmployee(null);
+  const handleEmployeeUpdated = async () => {
+    setLoading(true);
+    try {
+      await refreshData();
+    } catch (error) {
+      logger.error('Error refreshing employees after update:', error);
+      toast.error("Erreur lors de la mise à jour des employés");
+    } finally {
+      setLoading(false);
+      setSelectedEmployee(null);
+    }
   };
 
   const handleEmployeeClick = (employee: Employee) => {

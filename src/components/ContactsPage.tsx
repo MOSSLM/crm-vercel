@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useAppData } from './AppDataContext';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAppData, Contact } from './AppDataContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
 import { Button } from './ui/button';
@@ -10,7 +10,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { EditEmployeeModal } from './EditEmployeeModal';
 import { AddContactForm } from './AddContactForm';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
-import { contactsApi } from '../utils/api';
 import { toast } from "sonner";
 import { 
   LayoutGrid, 
@@ -44,7 +43,7 @@ interface ContactsPageProps {
 }
 
 export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) => {
-  const { companies } = useAppData();
+  const { companies, contacts, refreshData, loading: appDataLoading } = useAppData();
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
@@ -54,33 +53,22 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedCompanyName, setSelectedCompanyName] = useState('');
 
-  // Load all employees from all companies
-  useEffect(() => {
-    const loadAllEmployees = async () => {
-      setLoading(true);
-      const allEmployeesData: Employee[] = [];
-      
-      await Promise.all(
-        companies.map(async (company) => {
-          try {
-            const employees = await contactsApi.getByCompany(company.id);
-            allEmployeesData.push(...employees);
-          } catch (error) {
-            logger.error(`Error loading employees for company ${company.id}:`, error);
-          }
-        })
-      );
-      
-      setAllEmployees(allEmployeesData);
-      setLoading(false);
-    };
+  const mappedContacts = useMemo(() => {
+    return contacts.map((contact: Contact) => ({
+      id: contact.id,
+      entreprise_id: contact.entreprise_id,
+      nom: contact.nom ?? contact.last_name,
+      prenom: contact.prenom ?? contact.first_name,
+      email: contact.email,
+      tel: contact.tel,
+      poste: contact.poste ?? contact.role_title,
+    }));
+  }, [contacts]);
 
-    if (companies.length > 0) {
-      loadAllEmployees();
-    } else {
-      setLoading(false);
-    }
-  }, [companies]);
+  useEffect(() => {
+    setAllEmployees(mappedContacts);
+    setLoading(appDataLoading && mappedContacts.length === 0);
+  }, [mappedContacts, appDataLoading]);
 
   const getEmployeeDisplayName = (employee: Employee) => {
     if (employee.prenom && employee.nom) {
@@ -133,51 +121,29 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
     setShowEditEmployeeModal(true);
   };
 
-  const handleEmployeeUpdated = () => {
-    // Reload all employees
-    const reloadEmployees = async () => {
-      const allEmployeesData: Employee[] = [];
-      
-      await Promise.all(
-        companies.map(async (company) => {
-          try {
-            const employees = await contactsApi.getByCompany(company.id);
-            allEmployeesData.push(...employees);
-          } catch (error) {
-            logger.error(`Error loading employees for company ${company.id}:`, error);
-          }
-        })
-      );
-      
-      setAllEmployees(allEmployeesData);
-    };
-    
-    reloadEmployees();
+  const handleEmployeeUpdated = async () => {
     setSelectedEmployee(null);
     setSelectedCompanyName('');
-    toast.success("Contact mis à jour avec succès");
+    setLoading(true);
+    try {
+      await refreshData();
+      toast.success("Contact mis à jour avec succès");
+    } catch (error) {
+      logger.error('Error refreshing contacts after update:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleContactAdded = () => {
-    // Reload all employees when a new contact is added
-    const reloadEmployees = async () => {
-      const allEmployeesData: Employee[] = [];
-      
-      await Promise.all(
-        companies.map(async (company) => {
-          try {
-            const employees = await contactsApi.getByCompany(company.id);
-            allEmployeesData.push(...employees);
-          } catch (error) {
-            logger.error(`Error loading employees for company ${company.id}:`, error);
-          }
-        })
-      );
-      
-      setAllEmployees(allEmployeesData);
-    };
-    
-    reloadEmployees();
+  const handleContactAdded = async () => {
+    setLoading(true);
+    try {
+      await refreshData();
+    } catch (error) {
+      logger.error('Error refreshing contacts after addition:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const EmployeeCard: React.FC<{ employee: Employee }> = ({ employee }) => {
