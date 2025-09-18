@@ -582,6 +582,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       const [
         searchResultsData,
         companiesData,
+        qualifiedCompaniesData,
         opportunitiesData,
         pipelineStagesData,
         achievementsData,
@@ -592,6 +593,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       ] = await Promise.all([
         searchResultsApi.getAll(),
         companiesApi.getAll(),
+        companiesApi.getQualifiedOnly(),
         opportunitiesApi.getAll(),
         pipelineStagesApi.getAll(),
         achievementsApi.getAll(),
@@ -601,10 +603,36 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         urlBlacklistApi.getAll(),
       ]);
 
-      const initialCompanyIds = companiesData
+      const companiesMap = new Map<number, Company>();
+      [...companiesData, ...qualifiedCompaniesData].forEach((company: Company) => {
+        if (typeof company?.id !== 'number') {
+          return;
+        }
+
+        const existing = companiesMap.get(company.id);
+        companiesMap.set(company.id, { ...existing, ...company });
+      });
+
+      const combinedCompanies = Array.from(companiesMap.values()).sort((a, b) => {
+        const dateA = new Date(a.created_at ?? 0).getTime();
+        const dateB = new Date(b.created_at ?? 0).getTime();
+        return dateB - dateA;
+      });
+
+      const baseInitialCompanyIds = combinedCompanies
+        .slice(0, INITIAL_CONTACT_COMPANY_BATCH)
         .map((company: Company) => company.id)
-        .filter((id): id is number => typeof id === 'number')
-        .slice(0, INITIAL_CONTACT_COMPANY_BATCH);
+        .filter((id): id is number => typeof id === 'number');
+
+      const qualifiedCompanyIds = qualifiedCompaniesData
+        .map((company: Company) => company.id)
+        .filter((id): id is number => typeof id === 'number');
+
+      const additionalQualifiedIds = qualifiedCompanyIds.filter(
+        (id) => !baseInitialCompanyIds.includes(id),
+      );
+
+      const initialCompanyIds = [...baseInitialCompanyIds, ...additionalQualifiedIds];
 
       let contactsData: Contact[] = [];
 
@@ -626,7 +654,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       }));
 
       setSearchResults(mappedSearchResults);
-      const normalizedCompanies = companiesData.map((c: Company) => {
+      const normalizedCompanies = combinedCompanies.map((c: Company) => {
         const canonical = canonicalizeUrl(c.canonical_url || c.site_web_canonique || (c as any).url || '');
         return { ...c, canonical_url: canonical || undefined };
       });

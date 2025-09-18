@@ -165,6 +165,45 @@ export const companiesApi = {
       return [];
     }
   },
+
+  getQualifiedOnly: async () => {
+    const pageSize = 1000;
+    let from = 0;
+    let to = pageSize - 1;
+    const allQualified: Company[] = [];
+
+    try {
+      while (true) {
+        const { data, error } = await supabase
+          .from('entreprises')
+          .select('*')
+          .eq('qualifie', true)
+          .order('created_at', { ascending: false })
+          .range(from, to);
+
+        if (error) {
+          logger.error('Supabase error:', error);
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allQualified.push(...data);
+        }
+
+        if (!data || data.length < pageSize) {
+          break;
+        }
+
+        from += pageSize;
+        to += pageSize;
+      }
+
+      return allQualified;
+    } catch (error) {
+      logger.error('API Error:', error);
+      return [];
+    }
+  },
   
   create: async (
     companyData: Omit<Company, 'id' | 'created_at' | 'updated_at'>
