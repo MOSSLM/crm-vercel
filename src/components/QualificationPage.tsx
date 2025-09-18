@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAppData } from './AppDataContext';
-import { Company } from './AppDataContext';
+import { Company } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';

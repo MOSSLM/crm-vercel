@@ -1,7 +1,6 @@
 import { JournalKpiTotals, JournalKpiPeriodTotals } from '../../utils/journalApi';
 import { DashboardCalculations, FunnelStepData, PipelineBreakdownData, RecentActivity, PeriodType } from './types';
-import { Opportunity, Contact } from '../../types';
-import { PipelineStage } from '../AppDataContext';
+import { Contact, Opportunity, PipelineStage } from '@/types';
 import {
   Building,
   Users,

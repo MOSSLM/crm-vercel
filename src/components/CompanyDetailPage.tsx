@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { useAppData, Company, RevenueBand, EmployeeBand, Opportunity, CompanyRaw } from './AppDataContext';
+import { useAppData } from './AppDataContext';
+import { Company, CompanyRaw, EmployeeBand, Opportunity, RevenueBand } from '@/types';
 import { companiesApi } from '../utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';

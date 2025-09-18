@@ -1,7 +1,48 @@
 import { supabase } from './supabase/client';
-import { Company, CompanyRaw, Contact, Opportunity, RevenueBand, EmployeeBand, CompanyNetwork, UrlBlacklist } from '../types';
+import {
+  Company,
+  CompanyNetwork,
+  CompanyRaw,
+  Contact,
+  EmployeeBand,
+  PipelineStage,
+  Opportunity,
+  RevenueBand,
+  SearchResult,
+  UrlBlacklist,
+} from '@/types';
 
 import logger from './logger';
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const isCompanyRow = (row: unknown): row is Company =>
+  isRecord(row) && typeof row.id === 'number';
+
+const isCompanyRawRow = (row: unknown): row is CompanyRaw =>
+  isRecord(row) && typeof row.id === 'number' && typeof row.recherche_id === 'string';
+
+const isOpportunityRow = (row: unknown): row is Opportunity =>
+  isRecord(row) && typeof row.id === 'string' && 'lead_magnet' in row;
+
+const isStageRow = (row: unknown): row is { id: number; nom?: string | null } =>
+  isRecord(row) && typeof row.id === 'number';
+
+const isFullStageRow = (row: unknown): row is PipelineStage =>
+  isStageRow(row) &&
+  typeof row.nom === 'string' &&
+  typeof (row as { ordre?: unknown }).ordre === 'number' &&
+  typeof (row as { visible?: unknown }).visible === 'boolean';
+
+const isSearchResultRow = (row: unknown): row is SearchResult =>
+  isRecord(row) && typeof row.id === 'string' && typeof row.keyword === 'string';
+
+const isCompanyNetworkRow = (row: unknown): row is CompanyNetwork =>
+  isRecord(row) && typeof row.id === 'string' && typeof row.label === 'string';
+
+const isUrlBlacklistRow = (row: unknown): row is UrlBlacklist =>
+  isRecord(row) && typeof row.id === 'string' && typeof row.value === 'string';
 
 const SEARCH_RESULTS_COLUMNS = [
   'id',
@@ -128,6 +169,12 @@ type RawContactRecord = {
   raw_json?: unknown;
 };
 
+const isCompanyMetadataRow = (row: unknown): row is CompanyMetadata =>
+  isRecord(row) && typeof row.id === 'number';
+
+const isRawContactRecord = (row: unknown): row is RawContactRecord =>
+  isRecord(row) && typeof row.id === 'number';
+
 const companyMetadataCache = new Map<number, CompanyMetadata>();
 const stageMetadataCache = new Map<number, string>();
 
@@ -234,7 +281,10 @@ export const searchResultsApi = {
           }
         ];
       }
-      return data || [];
+      if (Array.isArray(data)) {
+        return data.filter(isSearchResultRow);
+      }
+      return [];
     } catch (error) {
       logger.error('API Error:', error);
       return [];
@@ -250,7 +300,11 @@ export const searchResultsApi = {
         .single();
       
       if (error) throw error;
-      return data;
+      if (isSearchResultRow(data)) {
+        return data;
+      }
+      logger.error('Invalid search result payload received from Supabase');
+      return { ...searchData, id: Date.now().toString(), created_at: new Date().toISOString() };
     } catch (error) {
       logger.error('Error creating search:', error);
       // Return mock data
@@ -268,7 +322,11 @@ export const searchResultsApi = {
         .single();
       
       if (error) throw error;
-      return data;
+      if (isSearchResultRow(data)) {
+        return data;
+      }
+      logger.error('Invalid updated search result payload received from Supabase');
+      return { id, ...updates };
     } catch (error) {
       logger.error('Error updating search:', error);
       return { id, ...updates };
@@ -296,7 +354,7 @@ export const companiesApi = {
           logger.error('Supabase error:', error);
           if (pageIndex === 0) {
             // Return mock data as fallback with new fields
-            return [
+            const fallbackCompanies: Company[] = [
               {
                 id: 1,
                 canonical_url: 'https://legourmet.fr',
@@ -345,16 +403,20 @@ export const companiesApi = {
                 enriched_at: null,
                 enriched_by: null
               }
-            ] as Company[];
+            ];
+            return fallbackCompanies;
           }
           break;
         }
 
-        if (data && data.length > 0) {
-          allCompanies.push(...(data as Company[]));
+        if (Array.isArray(data)) {
+          const validCompanies = data.filter(isCompanyRow);
+          if (validCompanies.length > 0) {
+            allCompanies.push(...validCompanies);
+          }
         }
 
-        if (!data || data.length < COMPANIES_PAGE_SIZE) {
+        if (!Array.isArray(data) || data.length < COMPANIES_PAGE_SIZE) {
           break;
         }
 
@@ -405,11 +467,14 @@ export const companiesApi = {
           break;
         }
 
-        if (data && data.length > 0) {
-          allQualified.push(...(data as Company[]));
+        if (Array.isArray(data)) {
+          const validCompanies = data.filter(isCompanyRow);
+          if (validCompanies.length > 0) {
+            allQualified.push(...validCompanies);
+          }
         }
 
-        if (!data || data.length < pageSize) {
+        if (!Array.isArray(data) || data.length < pageSize) {
           break;
         }
 
@@ -435,7 +500,11 @@ export const companiesApi = {
         .single();
       
       if (error) throw error;
-      return data;
+      if (isCompanyRow(data)) {
+        return data;
+      }
+      logger.error('Invalid company payload received from Supabase');
+      throw new Error('Invalid company payload');
     } catch (error) {
       logger.error('Error creating company:', error);
       return {
@@ -473,7 +542,11 @@ export const companiesApi = {
         .single();
       
       if (error) throw error;
-      return data;
+      if (isCompanyRow(data)) {
+        return data;
+      }
+      logger.error('Invalid updated company payload received from Supabase');
+      throw new Error('Invalid company payload');
     } catch (error) {
       logger.error('Error updating company:', error);
       return { id, ...updates };
@@ -495,11 +568,15 @@ export const companiesApi = {
       }
 
       // Delete associated raw companies if they exist
-      if (company?.raw_ids && company.raw_ids.length > 0) {
+      const rawIds = isRecord(company) && Array.isArray((company as { raw_ids?: unknown }).raw_ids)
+        ? ((company as { raw_ids: number[] }).raw_ids)
+        : [];
+
+      if (rawIds.length > 0) {
         const { error: rawDeleteError } = await supabase
           .from('entreprises_raw')
           .delete()
-          .in('id', company.raw_ids);
+          .in('id', rawIds);
 
         if (rawDeleteError) {
           logger.error('Error deleting raw companies:', rawDeleteError);
@@ -534,68 +611,44 @@ export const companiesApi = {
         return null;
       }
 
-      // Get raw contact data from entreprises_raw
+      if (!isCompanyRow(company)) {
+        logger.error('Invalid company payload received from Supabase');
+        return null;
+      }
+
+      const rawIds = Array.isArray(company.raw_ids) ? company.raw_ids : [];
       let rawContactInfo: CompanyRaw[] = [];
-      if (company?.raw_ids && company.raw_ids.length > 0) {
+
+      if (rawIds.length > 0) {
         try {
-                const { data: rawData, error: rawError } = await supabase
-                  .from('entreprises_raw')
-                  .select(RAW_COMPANY_SELECT)
-                  .in('id', company.raw_ids);
-          
-          if (!rawError && rawData) {
-            rawContactInfo = rawData;
+          const { data: rawData, error: rawError } = await supabase
+            .from('entreprises_raw')
+            .select(RAW_COMPANY_SELECT)
+            .in('id', rawIds);
+
+          if (!rawError && Array.isArray(rawData)) {
+            rawContactInfo = rawData.filter(isCompanyRawRow);
           }
         } catch (rawError) {
           logger.error('Error fetching raw contact data:', rawError);
         }
       }
 
-      // Extract contact info from raw data
-      let telephone = '';
-      let email = '';
-      let contact_name = '';
-      
-      if (rawContactInfo.length > 0) {
-        // Look for telephone in raw data
-        const phoneEntry = rawContactInfo.find(entry => entry.telephone);
-        if (phoneEntry) {
-          telephone = phoneEntry.telephone || '';
-        }
-        
-        // Look for email in raw_json
-        const emailEntry = rawContactInfo.find(entry => {
-          const raw = entry.raw_json as Record<string, unknown> | undefined;
-          return (
-            typeof raw?.email === 'string' || typeof raw?.contact_email === 'string'
-          );
-        });
-        if (emailEntry) {
-          const raw = emailEntry.raw_json as Record<string, unknown>;
-          email = (raw.email as string) || (raw.contact_email as string) || '';
-        }
-        
-        // Look for contact name
-        const nameEntry = rawContactInfo.find(entry => {
-          const raw = entry.raw_json as Record<string, unknown> | undefined;
-          return (
-            typeof raw?.contact_name === 'string' || typeof raw?.owner === 'string'
-          );
-        });
-        if (nameEntry) {
-          const raw = nameEntry.raw_json as Record<string, unknown>;
-          contact_name = (raw.contact_name as string) || (raw.owner as string) || '';
-        }
-      }
+      const contactInfo = extractContactInfoFromRawEntries(
+        rawContactInfo.map((entry) => ({
+          id: entry.id,
+          telephone: entry.telephone,
+          raw_json: entry.raw_json,
+        }))
+      );
 
-      const result: Company = {
+      return {
         ...company,
         raw_contact_info: rawContactInfo,
-        telephone,
-        email,
-        contact_name
+        telephone: contactInfo.telephone,
+        email: contactInfo.email,
+        contact_name: contactInfo.contact_name,
       };
-      return result;
     } catch (error) {
       logger.error('Error fetching company by ID:', error);
       return null;
@@ -610,48 +663,30 @@ export const companiesApi = {
       // For each company, fetch raw contact data
       const companiesWithRawData = await Promise.all(
         companies.map(async (company) => {
-          if (company.raw_ids && company.raw_ids.length > 0) {
+          const rawIds = Array.isArray(company.raw_ids) ? company.raw_ids : [];
+          if (rawIds.length > 0) {
             try {
-              const { data: rawData } = await supabase
+              const { data: rawData, error: rawError } = await supabase
                 .from('entreprises_raw')
                 .select(RAW_COMPANY_SELECT)
-                .in('id', company.raw_ids);
-              
-              if (rawData) {
-                // Extract contact info
-                let telephone = '';
-                let email = '';
-                let contact_name = '';
-                
-                const phoneEntry = rawData.find(entry => entry.telephone);
-              if (phoneEntry) telephone = phoneEntry.telephone || '';
-                
-                const emailEntry = rawData.find(entry => {
-                  if (entry.raw_json && typeof entry.raw_json === 'object') {
-                    return entry.raw_json.email || entry.raw_json.contact_email;
-                  }
-                  return false;
-                });
-                if (emailEntry) {
-                  email = emailEntry.raw_json.email || emailEntry.raw_json.contact_email;
-                }
-                
-                const nameEntry = rawData.find(entry => {
-                  if (entry.raw_json && typeof entry.raw_json === 'object') {
-                    return entry.raw_json.contact_name || entry.raw_json.owner;
-                  }
-                  return false;
-                });
-                if (nameEntry) {
-                  contact_name = nameEntry.raw_json.contact_name || nameEntry.raw_json.owner;
-                }
-                
+                .in('id', rawIds);
+
+              if (!rawError && Array.isArray(rawData)) {
+                const validRawData = rawData.filter(isCompanyRawRow);
+                const contactInfo = extractContactInfoFromRawEntries(
+                  validRawData.map((entry) => ({
+                    id: entry.id,
+                    telephone: entry.telephone,
+                    raw_json: entry.raw_json,
+                  }))
+                );
+
                 return {
                   ...company,
-                  raw_contact_info: rawData,
-                  telephone,
-                  email,
-                  contact_name
+                  raw_contact_info: validRawData,
+                  telephone: contactInfo.telephone,
+                  email: contactInfo.email,
+                  contact_name: contactInfo.contact_name,
                 };
               }
             } catch (error) {
@@ -681,7 +716,7 @@ export const rawCompaniesApi = {
         .order('position', { ascending: true });
       
       if (error) throw error;
-      return data || [];
+      return Array.isArray(data) ? data.filter(isCompanyRawRow) : [];
     } catch (error) {
       logger.error('Error fetching raw companies:', error);
       return [];
@@ -696,7 +731,7 @@ export const rawCompaniesApi = {
         .in('id', ids);
       
       if (error) throw error;
-      return data || [];
+      return Array.isArray(data) ? data.filter(isCompanyRawRow) : [];
     } catch (error) {
       logger.error('Error fetching raw companies by IDs:', error);
       return [];
@@ -712,7 +747,11 @@ export const rawCompaniesApi = {
         .single();
       
       if (error) throw error;
-      return data;
+      if (isCompanyRawRow(data)) {
+        return data;
+      }
+      logger.error('Invalid raw company payload received from Supabase');
+      throw new Error('Invalid raw company payload');
     } catch (error) {
       logger.error('Error creating raw company:', error);
       return { ...rawCompanyData, id: Date.now() };
@@ -954,6 +993,11 @@ export const contactsApi = {
         throw error;
       }
       
+      if (!isRecord(data)) {
+        logger.error('Invalid contact payload received from Supabase');
+        throw new Error('Invalid contact payload');
+      }
+
       const mapped = mapContactRecord(data);
 
       if (mapped.entreprise_id) {
@@ -1008,6 +1052,11 @@ export const contactsApi = {
       if (error) {
         logger.error('Supabase update error:', error);
         throw error;
+      }
+
+      if (!isRecord(data)) {
+        logger.error('Invalid contact payload received from Supabase');
+        throw new Error('Invalid contact payload');
       }
 
       const mapped = mapContactRecord(data);
@@ -1143,10 +1192,13 @@ export const contactsApi = {
         .single();
       
       if (fetchError) throw fetchError;
-      
+      if (!isRecord(contact)) {
+        throw new Error('Invalid contact notes payload');
+      }
+
       // Append new note with timestamp
       const timestamp = new Date().toLocaleString('fr-FR');
-      const existingNotes = contact.notes || '';
+      const existingNotes = typeof contact.notes === 'string' ? contact.notes : '';
       const newNoteWithTimestamp = `[${timestamp}] ${note}`;
       const updatedNotes = existingNotes 
         ? `${existingNotes}\n\n${newNoteWithTimestamp}`
@@ -1186,9 +1238,12 @@ export const contactsApi = {
         .single();
       
       if (error) throw error;
-      
+      if (!isRecord(contact)) {
+        throw new Error('Invalid contact notes payload');
+      }
+
       // Parse notes into array format
-      if (!contact.notes) return [];
+      if (!contact.notes || typeof contact.notes !== 'string') return [];
       
       // Split notes by double newlines and parse each note
       const noteEntries: string[] = contact.notes
@@ -1280,13 +1335,18 @@ export const opportunitiesApi = {
         ];
       }
 
-      if (!opportunitiesData || opportunitiesData.length === 0) {
+      if (!Array.isArray(opportunitiesData) || opportunitiesData.length === 0) {
+        return [];
+      }
+
+      const validOpportunities = opportunitiesData.filter(isOpportunityRow);
+      if (validOpportunities.length === 0) {
         return [];
       }
 
       const companyIds = Array.from(
         new Set(
-          opportunitiesData
+          validOpportunities
             .map((opp) => opp.entreprise_id)
             .filter((id): id is number => typeof id === 'number')
         )
@@ -1294,7 +1354,7 @@ export const opportunitiesApi = {
 
       const stageIds = Array.from(
         new Set(
-          opportunitiesData
+          validOpportunities
             .map((opp) => opp.stage_id)
             .filter((id): id is number => typeof id === 'number')
         )
@@ -1309,8 +1369,8 @@ export const opportunitiesApi = {
 
         if (companyError) {
           logger.error('Error fetching company metadata:', companyError);
-        } else if (companyRows) {
-          (companyRows as CompanyMetadata[]).forEach((row) => {
+        } else if (Array.isArray(companyRows)) {
+          companyRows.filter(isCompanyMetadataRow).forEach((row) => {
             if (typeof row.id === 'number') {
               companyMetadataCache.set(row.id, row);
             }
@@ -1344,9 +1404,9 @@ export const opportunitiesApi = {
 
         if (rawError) {
           logger.error('Error fetching raw contact data:', rawError);
-        } else if (rawRows) {
+        } else if (Array.isArray(rawRows)) {
           rawDataMap = new Map(
-            (rawRows as RawContactRecord[]).map((row) => [row.id, row])
+            rawRows.filter(isRawContactRecord).map((row) => [row.id, row])
           );
         }
       }
@@ -1360,16 +1420,14 @@ export const opportunitiesApi = {
 
         if (stageError) {
           logger.error('Error fetching stage metadata:', stageError);
-        } else if (stageRows) {
-          (stageRows as { id: number; nom?: string | null }[]).forEach((row) => {
-            if (typeof row.id === 'number') {
-              stageMetadataCache.set(row.id, row.nom || '');
-            }
+        } else if (Array.isArray(stageRows)) {
+          stageRows.filter(isStageRow).forEach((row) => {
+            stageMetadataCache.set(row.id, row.nom || '');
           });
         }
       }
 
-      const enrichedData = opportunitiesData.map((opp) => {
+      const enrichedData = validOpportunities.map((opp) => {
         const metadata =
           typeof opp.entreprise_id === 'number'
             ? companiesMetadata.get(opp.entreprise_id)
@@ -1472,12 +1530,17 @@ export const opportunitiesApi = {
         .insert([filteredData])
         .select()
         .single();
-      
+
       if (error) {
         logger.error('Supabase opportunity creation error:', error);
         throw error;
       }
-      
+
+      if (!isOpportunityRow(data)) {
+        logger.error('Invalid opportunity payload received from Supabase');
+        throw new Error('Invalid opportunity payload');
+      }
+
       logger.log('Successfully created opportunity:', data);
       return data;
     } catch (error) {
@@ -1514,9 +1577,13 @@ export const opportunitiesApi = {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      return data;
+      if (isOpportunityRow(data)) {
+        return data;
+      }
+      logger.error('Invalid opportunity payload received from Supabase');
+      throw new Error('Invalid opportunity payload');
     } catch (error) {
       logger.error('Error updating opportunity:', error);
       return { id, ...updates };
@@ -1563,7 +1630,7 @@ export const pipelineStagesApi = {
           { id: 10, nom: 'Acompte', ordre: 10, visible: true }
         ];
       }
-      return data || [];
+      return Array.isArray(data) ? data.filter(isFullStageRow) : [];
     } catch (error) {
       logger.error('API Error:', error);
       return [];
@@ -1579,7 +1646,11 @@ export const pipelineStagesApi = {
         .single();
       
       if (error) throw error;
-      return data;
+      if (isFullStageRow(data)) {
+        return data;
+      }
+      logger.error('Invalid stage payload received from Supabase');
+      throw new Error('Invalid stage payload');
     } catch (error) {
       logger.error('Error creating stage:', error);
       return { ...stageData, id: Date.now() };
@@ -1596,7 +1667,11 @@ export const pipelineStagesApi = {
         .single();
       
       if (error) throw error;
-      return data;
+      if (isFullStageRow(data)) {
+        return data;
+      }
+      logger.error('Invalid stage payload received from Supabase');
+      throw new Error('Invalid stage payload');
     } catch (error) {
       logger.error('Error updating stage:', error);
       return { id, ...updates };
@@ -1615,7 +1690,7 @@ export const notesApi = {
         .order('created_at', { ascending: false });
       
       if (error) throw error;
-      return data || [];
+      return Array.isArray(data) ? data : [];
     } catch (error) {
       logger.error('Error fetching notes:', error);
       return [];
@@ -1631,6 +1706,9 @@ export const notesApi = {
         .single();
       
       if (error) throw error;
+      if (!isRecord(data)) {
+        throw new Error('Invalid note payload');
+      }
       return data;
     } catch (error) {
       logger.error('Error creating note:', error);
@@ -1648,6 +1726,9 @@ export const notesApi = {
         .single();
       
       if (error) throw error;
+      if (!isRecord(data)) {
+        throw new Error('Invalid note payload');
+      }
       return data;
     } catch (error) {
       logger.error('Error updating note:', error);
@@ -1684,9 +1765,11 @@ export const achievementsApi = {
         // Return mock data as fallback
         return [];
       }
-      
+
+      const rows = Array.isArray(data) ? data : [];
+
       // Transform data to match interface without complex JOINs
-      return (data || []).map(achievement => ({
+      return rows.map(achievement => ({
         ...achievement,
         type: achievement.type_evenement,
         title: achievement.description,
@@ -1708,6 +1791,9 @@ export const achievementsApi = {
         .single();
       
       if (error) throw error;
+      if (!isRecord(data)) {
+        throw new Error('Invalid achievement payload');
+      }
       return data;
     } catch (error) {
       logger.error('Error creating achievement:', error);
@@ -1765,7 +1851,9 @@ export const statisticsApi = {
         };
       }
       
-      return (data || []).reduce((acc, item) => {
+      const rows = Array.isArray(data) ? data : [];
+
+      return rows.reduce((acc, item) => {
         acc[item.keyword] = (acc[item.keyword] || 0) + item.nb_trouves;
         return acc;
       }, {} as Record<string, number>);
@@ -1789,7 +1877,9 @@ export const statisticsApi = {
         };
       }
       
-      return (data || []).reduce((acc, item) => {
+      const rows = Array.isArray(data) ? data : [];
+
+      return rows.reduce((acc, item) => {
         acc[item.location] = (acc[item.location] || 0) + item.nb_trouves;
         return acc;
       }, {} as Record<string, number>);
@@ -1807,7 +1897,7 @@ export const networksApi = {
         .from('reseaux_entreprises')
         .select('*');
       if (error) throw error;
-      return data || [];
+      return Array.isArray(data) ? data.filter(isCompanyNetworkRow) : [];
     } catch (error) {
       logger.error('Error fetching networks:', error);
       return [];
@@ -1822,7 +1912,11 @@ export const networksApi = {
         .eq('id', id)
         .single();
       if (error) throw error;
-      return data;
+      if (isCompanyNetworkRow(data)) {
+        return data;
+      }
+      logger.error('Invalid company network payload received from Supabase');
+      return null;
     } catch (error) {
       logger.error('Error fetching network:', error);
       return null;
@@ -1838,7 +1932,10 @@ export const networksApi = {
       .select()
       .single();
     if (error) throw error;
-    return data as CompanyNetwork;
+    if (isCompanyNetworkRow(data)) {
+      return data;
+    }
+    throw new Error('Invalid company network payload');
   },
 
   update: async (
@@ -1852,7 +1949,10 @@ export const networksApi = {
       .select()
       .single();
     if (error) throw error;
-    return data as CompanyNetwork;
+    if (isCompanyNetworkRow(data)) {
+      return data;
+    }
+    throw new Error('Invalid company network payload');
   },
 
   delete: async (id: string): Promise<void> => {
@@ -1872,7 +1972,7 @@ export const urlBlacklistApi = {
         .select('*')
         .eq('active', true);
       if (error) throw error;
-      return data || [];
+      return Array.isArray(data) ? data.filter(isUrlBlacklistRow) : [];
     } catch (error) {
       logger.error('Error fetching url blacklist:', error);
       return [];
@@ -1902,7 +2002,10 @@ export const urlBlacklistApi = {
       logger.error('Supabase error inserting url_blacklist:', error.message);
       throw error;
     }
-    return data as UrlBlacklist;
+    if (isUrlBlacklistRow(data)) {
+      return data;
+    }
+    throw new Error('Invalid url blacklist payload');
   },
 
   deactivate: async (id: string): Promise<void> => {

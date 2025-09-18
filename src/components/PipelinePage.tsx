@@ -2,7 +2,8 @@
 
 import logger from '../utils/logger';
 import React, { useState, useRef } from 'react';
-import { useAppData, Opportunity, PipelineStage } from './AppDataContext';
+import { useAppData } from './AppDataContext';
+import { Opportunity, PipelineStage } from '@/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
