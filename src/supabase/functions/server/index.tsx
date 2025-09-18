@@ -673,8 +673,9 @@ app.get(`${routePrefix}/journal/history`, async (c) => {
   try {
     const opportunite_id = c.req.query('opportunite_id');
     const entreprise_id = c.req.query('entreprise_id') ? parseInt(c.req.query('entreprise_id')!) : undefined;
-    
-    const history = await journal.getJournalHistory(opportunite_id, entreprise_id);
+    const limit = parseInt(c.req.query('limit') ?? '10', 10);
+
+    const history = await journal.getJournalHistory(opportunite_id, entreprise_id, limit);
     return c.json(history);
   } catch (error) {
     logger.error('Error getting journal history:', error);
