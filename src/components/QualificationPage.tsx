@@ -45,7 +45,8 @@ export const QualificationPage: React.FC = () => {
     deleteCompany,
     loading,
     isDuplicate,
-    blacklistCompany
+    blacklistCompany,
+    blacklistDomain
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -138,18 +139,54 @@ export const QualificationPage: React.FC = () => {
     }
   };
 
-  const handleBlacklistCompany = async (company: Company) => {
-    if (!company.canonical_url) {
-      toast.error("Aucune URL à blacklister");
+  const [companyToBlacklist, setCompanyToBlacklist] = useState<Company | null>(null);
+  const [isProcessingBlacklist, setIsProcessingBlacklist] = useState(false);
+
+  const handleBlacklistClick = (company: Company) => {
+    setCompanyToBlacklist(company);
+  };
+
+  const handleBlacklistExact = async () => {
+    if (!companyToBlacklist) return;
+
+    setIsProcessingBlacklist(true);
+    try {
+      await blacklistCompany(companyToBlacklist.id);
+      const displayName = getCompanyDisplayName(
+        companyToBlacklist.name,
+        companyToBlacklist.canonical_url
+      );
+      toast.success(`${displayName} black-listée (URL exacte)`);
+      setCompanyToBlacklist(null);
+    } catch (error) {
+      logger.error('Erreur lors du blacklist (URL exacte):', error);
+      toast.error('Erreur lors du blacklist de l\'URL exacte');
+    } finally {
+      setIsProcessingBlacklist(false);
+    }
+  };
+
+  const handleBlacklistDomain = async () => {
+    if (!companyToBlacklist) return;
+    if (!companyToBlacklist.canonical_url) {
+      toast.error('Impossible de blacklister le domaine : aucune URL disponible');
       return;
     }
+
+    setIsProcessingBlacklist(true);
     try {
-      await blacklistCompany(company.id);
-      const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-      toast.success(`${displayName} black-listée`);
+      await blacklistDomain(companyToBlacklist.canonical_url);
+      const displayName = getCompanyDisplayName(
+        companyToBlacklist.name,
+        companyToBlacklist.canonical_url
+      );
+      toast.success(`Domaine black-listé pour ${displayName}`);
+      setCompanyToBlacklist(null);
     } catch (error) {
-      logger.error('Erreur lors du blacklist:', error);
-      toast.error('Erreur lors du blacklist');
+      logger.error('Erreur lors du blacklist du domaine:', error);
+      toast.error('Erreur lors du blacklist du domaine');
+    } finally {
+      setIsProcessingBlacklist(false);
     }
   };
 
@@ -617,7 +654,7 @@ export const QualificationPage: React.FC = () => {
                           <Button
                             size="sm"
                             variant="destructive"
-                            onClick={() => handleBlacklistCompany(company)}
+                            onClick={() => handleBlacklistClick(company)}
                             title="Blacklister"
                           >
                             <Ban className="h-3 w-3" />
@@ -757,6 +794,70 @@ export const QualificationPage: React.FC = () => {
           </CardContent>
         </Card>
       )}
+
+      <Dialog
+        open={!!companyToBlacklist}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCompanyToBlacklist(null);
+            setIsProcessingBlacklist(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="h-5 w-5" />
+              Blacklister une entreprise
+            </DialogTitle>
+            <DialogDescription>
+              Choisissez si vous souhaitez blacklister uniquement cette URL ou tout le domaine associé.
+            </DialogDescription>
+          </DialogHeader>
+
+          {companyToBlacklist && (
+            <div className="rounded-md border p-3 text-sm space-y-1">
+              <div className="font-medium">
+                {getCompanyDisplayName(companyToBlacklist.name, companyToBlacklist.canonical_url)}
+              </div>
+              <div className="text-muted-foreground break-words">
+                {companyToBlacklist.canonical_url || 'Aucune URL disponible'}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              <strong>URL exacte :</strong> seule cette fiche d'entreprise sera retirée de la qualification.
+            </p>
+            <p>
+              <strong>Domaine complet :</strong> toutes les entreprises partageant ce domaine seront blacklistées.
+            </p>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCompanyToBlacklist(null);
+                setIsProcessingBlacklist(false);
+              }}
+            >
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleBlacklistExact} disabled={isProcessingBlacklist}>
+              Blacklister l'URL exacte
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBlacklistDomain}
+              disabled={isProcessingBlacklist || !companyToBlacklist?.canonical_url}
+            >
+              Blacklister le domaine
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal d'édition rapide */}
       <Dialog open={showQuickEditModal} onOpenChange={setShowQuickEditModal}>
