@@ -471,14 +471,25 @@ export async function GET(
 
     // Contacts list
     if (path === "/contacts") {
-      const { data: contacts, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const pageSizeParam = Number(url.searchParams.get("pageSize"));
+      const pageSize = Number.isFinite(pageSizeParam) && pageSizeParam > 0
+        ? Math.min(pageSizeParam, 200)
+        : 50;
+      const after = url.searchParams.get("after");
+
+      const { data: contacts, error } = await supabase.rpc(
+        "list_company_contacts",
+        {
+          p_company_id: null,
+          p_after: after || null,
+          p_page_size: pageSize,
+        }
+      );
       if (error) return json({ error: "Failed to fetch contacts" }, 500);
 
+      const contactList = contacts ?? [];
       const enhanced = await Promise.all(
-        (contacts || []).map(async (c: any) => {
+        contactList.map(async (c: any) => {
           try {
             const ext = (await kvGet(`contact_extended_${c.id}`)) || {};
             return { ...c, ...ext, nom: c.last_name, prenom: c.first_name };
@@ -487,21 +498,35 @@ export async function GET(
           }
         })
       );
-      return json(enhanced);
+      const nextCursor = contactList.length
+        ? contactList[contactList.length - 1].created_at ?? null
+        : null;
+      return json({ data: enhanced, nextCursor });
     }
 
     // Contacts by company
     const companyMatch = path.match(/^\/contacts\/company\/(\d+)$/);
     if (companyMatch) {
       const companyId = parseInt(companyMatch[1], 10);
-      const { data: contacts, error } = await supabase
-        .from("contacts")
-        .select("*")
-        .eq("entreprise_id", companyId);
+      const pageSizeParam = Number(url.searchParams.get("pageSize"));
+      const pageSize = Number.isFinite(pageSizeParam) && pageSizeParam > 0
+        ? Math.min(pageSizeParam, 200)
+        : 50;
+      const after = url.searchParams.get("after");
+
+      const { data: contacts, error } = await supabase.rpc(
+        "list_company_contacts",
+        {
+          p_company_id: companyId,
+          p_after: after || null,
+          p_page_size: pageSize,
+        }
+      );
       if (error) return json({ error: "Failed to fetch contacts" }, 500);
 
+      const contactList = contacts ?? [];
       const enhanced = await Promise.all(
-        (contacts || []).map(async (c: any) => {
+        contactList.map(async (c: any) => {
           try {
             const ext = (await kvGet(`contact_extended_${c.id}`)) || {};
             return { ...c, ...ext, nom: c.last_name, prenom: c.first_name };
@@ -510,7 +535,10 @@ export async function GET(
           }
         })
       );
-      return json(enhanced);
+      const nextCursor = contactList.length
+        ? contactList[contactList.length - 1].created_at ?? null
+        : null;
+      return json({ data: enhanced, nextCursor });
     }
 
     // Contact notes
