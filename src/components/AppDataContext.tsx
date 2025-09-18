@@ -548,6 +548,8 @@ const debounce = (func: Function, wait: number) => {
   };
 };
 
+const INITIAL_CONTACT_COMPANY_BATCH = 20;
+
 export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { isAuthenticated, loading: authLoading } = useAuth();
 
@@ -580,7 +582,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       const [
         searchResultsData,
         companiesData,
-        contactsData,
         opportunitiesData,
         pipelineStagesData,
         achievementsData,
@@ -591,7 +592,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       ] = await Promise.all([
         searchResultsApi.getAll(),
         companiesApi.getAll(),
-        contactsApi.getAll(),
         opportunitiesApi.getAll(),
         pipelineStagesApi.getAll(),
         achievementsApi.getAll(),
@@ -600,6 +600,20 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         networksApi.getAll(),
         urlBlacklistApi.getAll(),
       ]);
+
+      const initialCompanyIds = companiesData
+        .map((company: Company) => company.id)
+        .filter((id): id is number => typeof id === 'number')
+        .slice(0, INITIAL_CONTACT_COMPANY_BATCH);
+
+      let contactsData: Contact[] = [];
+
+      if (initialCompanyIds.length > 0) {
+        const contactsByCompany = await contactsApi.getManyByCompanyIds(initialCompanyIds, {
+          forceRefresh: true,
+        });
+        contactsData = initialCompanyIds.flatMap((id) => contactsByCompany[id] || []);
+      }
 
       // Map search results to include compatibility properties
       const mappedSearchResults = searchResultsData.map((result: SearchResult) => ({

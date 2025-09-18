@@ -463,11 +463,28 @@ export const rawCompaniesApi = {
 };
 
 // Contacts API using real database columns
-const CONTACT_LIST_SELECT =
-  'id, entreprise_id, first_name, last_name, email, tel, role_title, linkedin_url, preferred_channel, created_at';
-const DEFAULT_CONTACTS_PAGE_SIZE = 500;
+const CONTACTS_MAX_PAGE_SIZE = 200;
+const DEFAULT_CONTACTS_PAGE_SIZE = 200;
 
-const contactsListCache = new Map<number, Contact[]>();
+type ContactsCacheEntry = {
+  contacts: Contact[];
+  nextCursor: string | null;
+  fullyLoaded: boolean;
+};
+
+type CompanyContactsResponse = {
+  contacts: Contact[];
+  nextCursor: string | null;
+  hasMore: boolean;
+};
+
+const contactsListCache = new Map<number, ContactsCacheEntry>();
+
+const createEmptyContactsCacheEntry = (): ContactsCacheEntry => ({
+  contacts: [],
+  nextCursor: null,
+  fullyLoaded: false,
+});
 
 const mapContactRecord = (contact: any): Contact => ({
   ...contact,
@@ -485,58 +502,162 @@ const invalidateContactsCache = (companyId?: number) => {
   }
 };
 
-export const contactsApi = {
-  getAll: async () => {
-    try {
-      const allContacts: Contact[] = [];
-      const groupedByCompany = new Map<number, Contact[]>();
-      let cursor: string | null = null;
-      let hasMore = true;
+const getContactsCacheEntry = (companyId: number): ContactsCacheEntry => {
+  const existing = contactsListCache.get(companyId);
+  if (existing) {
+    return existing;
+  }
+  const emptyEntry = createEmptyContactsCacheEntry();
+  contactsListCache.set(companyId, emptyEntry);
+  return emptyEntry;
+};
 
-      while (hasMore) {
-        let query = supabase
-          .from('contacts')
-          .select(CONTACT_LIST_SELECT)
-          .order('created_at', { ascending: false })
-          .limit(DEFAULT_CONTACTS_PAGE_SIZE);
+const fetchContactsPage = async (
+  companyId: number,
+  after: string | null,
+  size: number
+): Promise<CompanyContactsResponse> => {
+  const pageSize = Math.min(size, CONTACTS_MAX_PAGE_SIZE);
 
-        if (cursor) {
-          query = query.lt('created_at', cursor);
-        }
+  const { data, error } = await supabase.rpc('list_company_contacts', {
+    p_company_id: companyId,
+    p_after: after,
+    p_page_size: pageSize,
+  });
 
-        const { data, error } = await query;
+  if (error) {
+    logger.error('Supabase error:', error);
+    return { contacts: [], nextCursor: after, hasMore: false };
+  }
 
-        if (error) {
-          logger.error('Supabase error:', error);
-          return [];
-        }
+  const mapped = (data || []).map(mapContactRecord);
+  const nextCursor = mapped.length > 0 ? mapped[mapped.length - 1]?.created_at ?? null : after;
+  const hasMore = mapped.length === pageSize;
 
-        const mapped = (data || []).map(mapContactRecord);
-        mapped.forEach((contact) => {
-          allContacts.push(contact);
-          const existing = groupedByCompany.get(contact.entreprise_id) || [];
-          existing.push(contact);
-          groupedByCompany.set(contact.entreprise_id, existing);
-        });
+  return { contacts: mapped, nextCursor, hasMore };
+};
 
-        if (!data || data.length < DEFAULT_CONTACTS_PAGE_SIZE) {
-          hasMore = false;
-        } else {
-          const last = data[data.length - 1];
-          if (last?.created_at) {
-            cursor = last.created_at;
-          } else {
-            hasMore = false;
-          }
-        }
+const loadContactsForCompany = async (
+  companyId: number,
+  options?: { cursor?: string | null; forceRefresh?: boolean; pageSize?: number }
+): Promise<CompanyContactsResponse> => {
+  const forceRefresh = options?.forceRefresh ?? false;
+  const requestedPageSize = options?.pageSize ?? DEFAULT_CONTACTS_PAGE_SIZE;
+  const targetSize = requestedPageSize > 0 ? requestedPageSize : DEFAULT_CONTACTS_PAGE_SIZE;
+
+  let entry = forceRefresh ? createEmptyContactsCacheEntry() : getContactsCacheEntry(companyId);
+
+  if (forceRefresh) {
+    contactsListCache.set(companyId, entry);
+  }
+
+  if (options?.cursor !== undefined && options.cursor !== null) {
+    const cursor = options.cursor;
+    let aggregated: Contact[] = [];
+    let currentCursor: string | null = cursor;
+    let nextCursor: string | null = cursor;
+    let hasMore = true;
+
+    while (hasMore && aggregated.length < targetSize) {
+      const remaining = targetSize - aggregated.length;
+      const { contacts, nextCursor: pageCursor, hasMore: pageHasMore } = await fetchContactsPage(
+        companyId,
+        currentCursor,
+        remaining > 0 ? remaining : CONTACTS_MAX_PAGE_SIZE
+      );
+
+      if (contacts.length === 0) {
+        hasMore = false;
+        break;
       }
 
-      contactsListCache.clear();
-      groupedByCompany.forEach((list, companyId) => {
-        contactsListCache.set(companyId, list);
-      });
+      aggregated = aggregated.concat(contacts);
+      currentCursor = pageCursor;
+      nextCursor = pageCursor;
+      hasMore = pageHasMore;
+    }
 
-      return allContacts;
+    if (entry.nextCursor === cursor) {
+      entry = {
+        contacts: entry.contacts.concat(aggregated),
+        nextCursor,
+        fullyLoaded: entry.fullyLoaded || !hasMore,
+      };
+      contactsListCache.set(companyId, entry);
+    } else if (forceRefresh || entry.contacts.length === 0) {
+      entry = {
+        contacts: aggregated,
+        nextCursor,
+        fullyLoaded: !hasMore,
+      };
+      contactsListCache.set(companyId, entry);
+    }
+
+    return {
+      contacts: aggregated,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  if (entry.contacts.length === 0 || forceRefresh) {
+    entry = createEmptyContactsCacheEntry();
+  }
+
+  let hasMore = !entry.fullyLoaded;
+
+  while (entry.contacts.length < targetSize && hasMore) {
+    const remaining = targetSize - entry.contacts.length;
+    const { contacts, nextCursor, hasMore: pageHasMore } = await fetchContactsPage(
+      companyId,
+      entry.nextCursor,
+      remaining > 0 ? remaining : CONTACTS_MAX_PAGE_SIZE
+    );
+
+    if (contacts.length === 0) {
+      entry.fullyLoaded = true;
+      hasMore = false;
+      break;
+    }
+
+    entry.contacts = entry.contacts.concat(contacts);
+    entry.nextCursor = nextCursor;
+    entry.fullyLoaded = !pageHasMore;
+    hasMore = pageHasMore;
+  }
+
+  contactsListCache.set(companyId, entry);
+
+  return {
+    contacts: entry.contacts,
+    nextCursor: entry.nextCursor,
+    hasMore: !entry.fullyLoaded,
+  };
+};
+
+export const contactsApi = {
+  getAll: async (options?: {
+    companyIds?: number[];
+    forceRefresh?: boolean;
+    pageSizePerCompany?: number;
+  }): Promise<Contact[]> => {
+    try {
+      const companyIds = options?.companyIds ?? [];
+
+      if (companyIds.length === 0) {
+        return Array.from(contactsListCache.values()).flatMap((entry) => entry.contacts);
+      }
+
+      const results = await Promise.all(
+        companyIds.map((companyId) =>
+          loadContactsForCompany(companyId, {
+            forceRefresh: options?.forceRefresh,
+            pageSize: options?.pageSizePerCompany,
+          })
+        )
+      );
+
+      return results.flatMap((result) => result.contacts);
     } catch (error) {
       logger.error('API Error:', error);
       return [];
@@ -575,17 +696,22 @@ export const contactsApi = {
         throw error;
       }
       
-      const mapped = {
-        ...data,
-        nom: data.last_name,
-        prenom: data.first_name,
-        poste: data.role_title,
-        linkedin: data.linkedin_url
-      };
+      const mapped = mapContactRecord(data);
 
       if (mapped.entreprise_id) {
-        const cached = contactsListCache.get(mapped.entreprise_id) || [];
-        contactsListCache.set(mapped.entreprise_id, [mapped, ...cached]);
+        const cached = contactsListCache.get(mapped.entreprise_id);
+        if (cached) {
+          contactsListCache.set(mapped.entreprise_id, {
+            ...cached,
+            contacts: [mapped, ...cached.contacts],
+          });
+        } else {
+          contactsListCache.set(mapped.entreprise_id, {
+            contacts: [mapped],
+            nextCursor: null,
+            fullyLoaded: false,
+          });
+        }
       }
 
       return mapped;
@@ -626,21 +752,17 @@ export const contactsApi = {
         throw error;
       }
 
-      const mapped = {
-        ...data,
-        nom: data.last_name,
-        prenom: data.first_name,
-        poste: data.role_title,
-        linkedin: data.linkedin_url
-      };
+      const mapped = mapContactRecord(data);
 
       if (mapped.entreprise_id) {
         const cached = contactsListCache.get(mapped.entreprise_id);
         if (cached) {
-          contactsListCache.set(
-            mapped.entreprise_id,
-            cached.map((contact) => (contact.id === mapped.id ? mapped : contact))
-          );
+          contactsListCache.set(mapped.entreprise_id, {
+            ...cached,
+            contacts: cached.contacts.map((contact) =>
+              contact.id === mapped.id ? mapped : contact
+            ),
+          });
         }
       } else {
         invalidateContactsCache();
@@ -662,10 +784,13 @@ export const contactsApi = {
 
       if (error) throw error;
 
-      contactsListCache.forEach((contacts, companyId) => {
-        const filtered = contacts.filter((contact) => contact.id !== id);
-        if (filtered.length !== contacts.length) {
-          contactsListCache.set(companyId, filtered);
+      contactsListCache.forEach((entry, companyId) => {
+        const filtered = entry.contacts.filter((contact) => contact.id !== id);
+        if (filtered.length !== entry.contacts.length) {
+          contactsListCache.set(companyId, {
+            ...entry,
+            contacts: filtered,
+          });
         }
       });
     } catch (error) {
@@ -675,38 +800,21 @@ export const contactsApi = {
   },
 
   // Get employees by company ID
-  getByCompany: async (companyId: number, options?: { cursor?: string; pageSize?: number; forceRefresh?: boolean }) => {
+  getByCompany: async (
+    companyId: number,
+    options?: { cursor?: string | null; pageSize?: number; forceRefresh?: boolean }
+  ): Promise<CompanyContactsResponse> => {
     try {
-      if (!options?.forceRefresh && contactsListCache.has(companyId)) {
-        return contactsListCache.get(companyId) || [];
-      }
+      const response = await loadContactsForCompany(companyId, {
+        cursor: options?.cursor ?? null,
+        forceRefresh: options?.forceRefresh,
+        pageSize: options?.pageSize,
+      });
 
-      const pageSize = Math.min(options?.pageSize ?? DEFAULT_CONTACTS_PAGE_SIZE, DEFAULT_CONTACTS_PAGE_SIZE);
-
-      let query = supabase
-        .from('contacts')
-        .select(CONTACT_LIST_SELECT)
-        .eq('entreprise_id', companyId)
-        .order('created_at', { ascending: false })
-        .limit(pageSize);
-
-      if (options?.cursor) {
-        query = query.lt('created_at', options.cursor);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        logger.error('Supabase error:', error);
-        return [];
-      }
-
-      const mapped = (data || []).map(mapContactRecord);
-      contactsListCache.set(companyId, mapped);
-      return mapped;
+      return response;
     } catch (error) {
       logger.error('API Error:', error);
-      return [];
+      return { contacts: [], nextCursor: null, hasMore: false };
     }
   },
 
@@ -721,40 +829,46 @@ export const contactsApi = {
       return result;
     }
 
+    const targetSize = options?.pageSizePerCompany ?? DEFAULT_CONTACTS_PAGE_SIZE;
+
     const idsToFetch = options?.forceRefresh
       ? uniqueIds
-      : uniqueIds.filter((id) => !contactsListCache.has(id));
+      : uniqueIds.filter((id) => {
+          const entry = contactsListCache.get(id);
+          if (!entry) {
+            return true;
+          }
+
+          if (!entry.fullyLoaded && entry.contacts.length < targetSize) {
+            return true;
+          }
+
+          return false;
+        });
 
     if (idsToFetch.length > 0) {
-      const pageSize = Math.min(options?.pageSizePerCompany ?? DEFAULT_CONTACTS_PAGE_SIZE, DEFAULT_CONTACTS_PAGE_SIZE);
-      const limit = pageSize * idsToFetch.length;
+      const responses = await Promise.all(
+        idsToFetch.map((id) =>
+          loadContactsForCompany(id, {
+            forceRefresh: options?.forceRefresh,
+            pageSize: targetSize,
+          })
+        )
+      );
 
-      const { data, error } = await supabase
-        .from('contacts')
-        .select(CONTACT_LIST_SELECT)
-        .in('entreprise_id', idsToFetch)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (error) {
-        logger.error('Supabase error:', error);
-      } else {
-        const grouped = new Map<number, Contact[]>();
-        (data || []).forEach((contact) => {
-          const mapped = mapContactRecord(contact);
-          const current = grouped.get(mapped.entreprise_id) || [];
-          current.push(mapped);
-          grouped.set(mapped.entreprise_id, current);
+      responses.forEach((response, index) => {
+        const companyId = idsToFetch[index];
+        contactsListCache.set(companyId, {
+          contacts: response.contacts,
+          nextCursor: response.nextCursor,
+          fullyLoaded: !response.hasMore,
         });
-
-        idsToFetch.forEach((id) => {
-          contactsListCache.set(id, grouped.get(id) || []);
-        });
-      }
+      });
     }
 
     uniqueIds.forEach((id) => {
-      result[id] = contactsListCache.get(id) || [];
+      const entry = contactsListCache.get(id);
+      result[id] = entry ? entry.contacts : [];
     });
 
     return result;
