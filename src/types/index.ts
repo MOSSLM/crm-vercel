@@ -17,6 +17,24 @@ export type EmployeeBand =
   | '501-1000'
   | '1000+';
 
+export interface SearchResult {
+  id: string;
+  created_at: string;
+  keyword: string;
+  location: string;
+  precision: string;
+  source_google: boolean;
+  source_maps: boolean;
+  status: 'pending' | 'completed' | 'failed';
+  nb_trouves: number;
+  nb_qualifies: number;
+  useMaps?: boolean;
+  useGoogle?: boolean;
+  totalCompanies?: number;
+  qualifiedCompanies?: number;
+  date?: string;
+}
+
 export interface CompanyRaw {
   id: number;
   recherche_id: string;
@@ -118,6 +136,14 @@ export interface OpportunityNote {
   created_at: string;
 }
 
+export interface ContactNote {
+  id: number;
+  contact_id: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Opportunity {
   id: string;
   contact_id?: string;
@@ -172,4 +198,53 @@ export interface UrlBlacklist {
   active: boolean;
   created_at: string;
   created_by?: string;
+}
+
+export interface PipelineStage {
+  id: number;
+  nom: string;
+  ordre: number;
+  visible: boolean;
+}
+
+export interface Achievement {
+  id: number;
+  date: string;
+  type_evenement?: string;
+  description?: string;
+  opportunite_id?: string;
+  entreprise_id?: number;
+  type?: 'signature' | 'deposit' | 'lead_magnet' | 'qualified' | 'meeting' | 'monthly_goal';
+  title?: string;
+  value?: number;
+  companyName?: string;
+}
+
+export interface SupabaseObjectives {
+  periode: string;
+  leads_trouves?: number;
+  leads_qualifies?: number;
+  appels?: number;
+  rdv?: number;
+  devis?: number;
+  relances?: number;
+  signatures?: number;
+  acomptes?: number;
+  leadmagnets?: number;
+  relances_total?: number;
+  ca?: number;
+}
+
+export interface Objectives {
+  periode: string;
+  leadsFound: number;
+  leadsQualified: number;
+  calls: number;
+  meetings: number;
+  quotes: number;
+  signatures: number;
+  deposits: number;
+  leadMagnets: number;
+  relances: number;
+  revenue: number;
 }

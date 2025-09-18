@@ -6,7 +6,8 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { AddEmployeeModal } from './AddEmployeeModal';
 import { EditEmployeeModal } from './EditEmployeeModal';
-import { useAppData, Contact } from './AppDataContext';
+import { useAppData } from './AppDataContext';
+import { Contact } from '@/types';
 import { toast } from "sonner";
 import { 
   Users, 
