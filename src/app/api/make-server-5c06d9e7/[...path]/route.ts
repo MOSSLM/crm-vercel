@@ -138,11 +138,19 @@ async function getJournalStats(opportunite_id?: string, entreprise_id?: number) 
   });
   return stats;
 }
-async function getJournalHistory(opportunite_id?: string, entreprise_id?: number) {
+const JOURNAL_HISTORY_COLUMNS = "date,type_evenement,description,opportunite_id,entreprise_id";
+
+async function getJournalHistory(
+  opportunite_id?: string,
+  entreprise_id?: number,
+  limit = 10
+) {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 10;
   let query = supabase
     .from("journal_succes")
-    .select("*")
-    .order("date", { ascending: false });
+    .select(JOURNAL_HISTORY_COLUMNS)
+    .order("date", { ascending: false })
+    .limit(safeLimit);
   if (opportunite_id) query = query.eq("opportunite_id", opportunite_id);
   else if (entreprise_id) query = query.eq("entreprise_id", entreprise_id);
 
@@ -633,7 +641,8 @@ export async function GET(
       const entreprise_id = url.searchParams.get("entreprise_id")
         ? parseInt(url.searchParams.get("entreprise_id") as string, 10)
         : undefined;
-      const hist = await getJournalHistory(opportunite_id, entreprise_id);
+      const limit = parseInt(url.searchParams.get("limit") || "10", 10);
+      const hist = await getJournalHistory(opportunite_id, entreprise_id, limit);
       return json(hist);
     }
 

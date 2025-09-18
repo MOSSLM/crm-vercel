@@ -138,11 +138,19 @@ export const getJournalStats = async (opportunite_id?: string, entreprise_id?: n
 };
 
 // Obtenir l'historique complet d'une opportunité ou entreprise
-export const getJournalHistory = async (opportunite_id?: string, entreprise_id?: number) => {
+const JOURNAL_HISTORY_COLUMNS = 'date,type_evenement,description,opportunite_id,entreprise_id';
+
+export const getJournalHistory = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  limit = 10
+) => {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 10;
   let query = supabase
     .from('journal_succes')
-    .select('*')
-    .order('date', { ascending: false });
+    .select(JOURNAL_HISTORY_COLUMNS)
+    .order('date', { ascending: false })
+    .limit(safeLimit);
 
   if (opportunite_id) {
     query = query.eq('opportunite_id', opportunite_id);

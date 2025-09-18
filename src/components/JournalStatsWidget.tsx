@@ -55,6 +55,7 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
   showAddActions = true,
   onStatsUpdate
 }) => {
+  const DEFAULT_HISTORY_LIMIT = 10;
   const [stats, setStats] = useState<JournalStats>({
     appels: 0,
     relances: 0,
@@ -75,10 +76,12 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
       setLoading(true);
       const [statsData, historyData] = await Promise.all([
         journalApi.getJournalStats(opportunite_id, entreprise_id),
-        journalApi.getJournalHistory(opportunite_id, entreprise_id)
+        journalApi.getJournalHistory(opportunite_id, entreprise_id, {
+          limit: DEFAULT_HISTORY_LIMIT
+        })
       ]);
       setStats(statsData);
-      setHistory(historyData.slice(0, 10)); // Dernières 10 entrées
+      setHistory(historyData);
     } catch (error) {
       logger.error('Error loading journal data:', error);
       toast.error('Erreur lors du chargement des données');

@@ -50,6 +50,10 @@ interface JournalEntry {
   entreprise_id?: number;
 }
 
+interface GetJournalHistoryOptions {
+  limit?: number;
+}
+
 // Fonction générique pour enregistrer un événement
 export const logEvent = async (eventData: JournalEventData): Promise<void> => {
   const response = await fetch(`${baseUrl}/journal/log`, {
@@ -193,10 +197,18 @@ export const getJournalStats = async (opportunite_id?: string, entreprise_id?: n
 };
 
 // Obtenir l'historique complet d'une opportunité ou entreprise
-export const getJournalHistory = async (opportunite_id?: string, entreprise_id?: number): Promise<JournalEntry[]> => {
+export const getJournalHistory = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  options?: GetJournalHistoryOptions
+): Promise<JournalEntry[]> => {
   const params = new URLSearchParams();
   if (opportunite_id) params.append('opportunite_id', opportunite_id);
   if (entreprise_id) params.append('entreprise_id', entreprise_id.toString());
+  const limit = options?.limit ?? 10;
+  if (Number.isFinite(limit) && limit > 0) {
+    params.append('limit', Math.floor(limit).toString());
+  }
 
   const response = await fetch(`${baseUrl}/journal/history?${params}`, {
     headers: {

@@ -3,6 +3,186 @@ import { Company, CompanyRaw, Contact, Opportunity, RevenueBand, EmployeeBand, C
 
 import logger from './logger';
 
+const SEARCH_RESULTS_COLUMNS = [
+  'id',
+  'created_at',
+  'keyword',
+  'location',
+  'precision',
+  'source_google',
+  'source_maps',
+  'status',
+  'nb_trouves',
+  'nb_qualifies'
+] as const;
+const SEARCH_RESULTS_SELECT = SEARCH_RESULTS_COLUMNS.join(',');
+
+const COMPANY_COLUMNS = [
+  'id',
+  'canonical_url',
+  'site_web_canonique',
+  'name',
+  'adresse',
+  'lat',
+  'lng',
+  'latitude',
+  'longitude',
+  'premiers_tags',
+  'sources',
+  'raw_ids',
+  'qualifie',
+  'is_network',
+  'is_blacklisted',
+  'reseau_id',
+  'created_at',
+  'updated_at',
+  'ca_estime_band',
+  'nb_employes_band',
+  'nb_employes_exact',
+  'linkedin_url',
+  'manually_enriched',
+  'enriched_at',
+  'enriched_by',
+  'recherche_id',
+  'place_id',
+  'reference_url',
+  'position',
+  'note_moyenne',
+  'nombre_avis',
+  'ville',
+  'code_postal',
+  'pays',
+  'telephone',
+  'email',
+  'contact_name'
+] as const;
+const COMPANY_SELECT = COMPANY_COLUMNS.join(',');
+
+const RAW_COMPANY_COLUMNS = [
+  'id',
+  'recherche_id',
+  'source',
+  'position',
+  'page',
+  'title',
+  'meta',
+  'url',
+  'keyword',
+  'location',
+  'name',
+  'avis',
+  'nombre_avis',
+  'tags',
+  'adresse',
+  'lat',
+  'lng',
+  'telephone',
+  'ferme_definitivement',
+  'raw_json',
+  'inserted_at'
+] as const;
+const RAW_COMPANY_SELECT = RAW_COMPANY_COLUMNS.join(',');
+
+const COMPANY_METADATA_COLUMNS = ['id', 'name', 'canonical_url', 'raw_ids', 'linkedin_url'] as const;
+const COMPANY_METADATA_SELECT = COMPANY_METADATA_COLUMNS.join(',');
+
+const RAW_CONTACT_COLUMNS = ['id', 'telephone', 'raw_json'] as const;
+const RAW_CONTACT_SELECT = RAW_CONTACT_COLUMNS.join(',');
+
+const STAGE_METADATA_COLUMNS = ['id', 'nom'] as const;
+const STAGE_METADATA_SELECT = STAGE_METADATA_COLUMNS.join(',');
+
+const OPPORTUNITY_COLUMNS = [
+  'id',
+  'contact_id',
+  'entreprise_id',
+  'montant',
+  'priorite',
+  'stage_id',
+  'lead_magnet',
+  'note_base',
+  'tags',
+  'date_prochain_suivi',
+  'created_at',
+  'updated_at',
+  'name',
+  'type',
+  'mrr',
+  'recurrence_months'
+] as const;
+const OPPORTUNITY_SELECT = OPPORTUNITY_COLUMNS.join(',');
+
+const COMPANIES_PAGE_SIZE = 500;
+
+type CompanyMetadata = {
+  id: number;
+  name?: string | null;
+  canonical_url?: string | null;
+  raw_ids?: number[] | null;
+  linkedin_url?: string | null;
+};
+
+type RawContactRecord = {
+  id: number;
+  telephone?: string | null;
+  raw_json?: unknown;
+};
+
+const companyMetadataCache = new Map<number, CompanyMetadata>();
+const stageMetadataCache = new Map<number, string>();
+
+const parseRawJson = (raw: unknown): Record<string, unknown> | null => {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as Record<string, unknown>;
+  }
+  return null;
+};
+
+const extractContactInfoFromRawEntries = (rawEntries: RawContactRecord[]) => {
+  let telephone = '';
+  let email = '';
+  let contact_name = '';
+
+  for (const entry of rawEntries) {
+    if (!telephone && entry.telephone) {
+      telephone = entry.telephone;
+    }
+
+    const parsed = parseRawJson(entry.raw_json);
+    if (parsed) {
+      if (!email) {
+        const candidate = parsed.email || parsed.contact_email;
+        if (typeof candidate === 'string') {
+          email = candidate;
+        }
+      }
+      if (!contact_name) {
+        const candidate = parsed.contact_name || parsed.owner;
+        if (typeof candidate === 'string') {
+          contact_name = candidate;
+        }
+      }
+    }
+
+    if (telephone && email && contact_name) {
+      break;
+    }
+  }
+
+  return { telephone, email, contact_name };
+};
+
 export const canonicalizeDomain = (url: string): string => {
   try {
     const { hostname } = new URL(url.startsWith('http') ? url : `http://${url}`);
@@ -21,9 +201,9 @@ export const searchResultsApi = {
     try {
       const { data, error } = await supabase
         .from('recherches')
-        .select('*')
+        .select(SEARCH_RESULTS_SELECT)
         .order('created_at', { ascending: false });
-      
+
       if (error) {
         logger.error('Supabase error:', error);
         // Return mock data as fallback
@@ -100,66 +280,105 @@ export const searchResultsApi = {
 export const companiesApi = {
   getAll: async () => {
     try {
-      const { data, error } = await supabase
-        .from('entreprises')
-        .select('*')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        logger.error('Supabase error:', error);
-        // Return mock data as fallback with new fields
-        return [
-          {
-            id: 1,
-            canonical_url: 'https://legourmet.fr',
-            name: 'Restaurant Le Gourmet',
-            adresse: '15 rue de la Paix, 75001 Paris',
-            lat: 48.8566,
-            lng: 2.3522,
-            premiers_tags: 'Restaurant,Gastronomie',
-            sources: ['google_search'],
-            raw_ids: [1],
-            qualifie: true,
-            is_network: false,
-            is_blacklisted: false,
-            created_at: '2024-01-15T00:00:00Z',
-            updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '500k-1m' as RevenueBand,
-            nb_employes_band: '11-50' as EmployeeBand,
-            nb_employes_exact: 25,
-            linkedin_url: 'https://linkedin.com/company/legourmet',
-            site_web_canonique: 'https://legourmet.fr',
-            manually_enriched: false,
-            enriched_at: null,
-            enriched_by: null
-          },
-          {
-            id: 2,
-            canonical_url: 'https://bistrotparis.fr',
-            name: 'Bistrot de Paris',
-            adresse: '8 rue Saint-Antoine, 75004 Paris',
-            lat: 48.8553,
-            lng: 2.3647,
-            premiers_tags: 'Restaurant,Bistrot',
-            sources: ['google_maps'],
-            raw_ids: [2],
-            qualifie: true,
-            is_network: false,
-            is_blacklisted: false,
-            created_at: '2024-01-15T00:00:00Z',
-            updated_at: '2024-01-16T00:00:00Z',
-            ca_estime_band: '100k-500k' as RevenueBand,
-            nb_employes_band: '1-10' as EmployeeBand,
-            nb_employes_exact: 8,
-            linkedin_url: null,
-            site_web_canonique: 'https://bistrotparis.fr',
-            manually_enriched: false,
-            enriched_at: null,
-            enriched_by: null
+      const allCompanies: Company[] = [];
+      let from = 0;
+      let to = COMPANIES_PAGE_SIZE - 1;
+      let pageIndex = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('entreprises')
+          .select(COMPANY_SELECT)
+          .order('created_at', { ascending: false })
+          .range(from, to);
+
+        if (error) {
+          logger.error('Supabase error:', error);
+          if (pageIndex === 0) {
+            // Return mock data as fallback with new fields
+            return [
+              {
+                id: 1,
+                canonical_url: 'https://legourmet.fr',
+                name: 'Restaurant Le Gourmet',
+                adresse: '15 rue de la Paix, 75001 Paris',
+                lat: 48.8566,
+                lng: 2.3522,
+                premiers_tags: 'Restaurant,Gastronomie',
+                sources: ['google_search'],
+                raw_ids: [1],
+                qualifie: true,
+                is_network: false,
+                is_blacklisted: false,
+                created_at: '2024-01-15T00:00:00Z',
+                updated_at: '2024-01-16T00:00:00Z',
+                ca_estime_band: '500k-1m' as RevenueBand,
+                nb_employes_band: '11-50' as EmployeeBand,
+                nb_employes_exact: 25,
+                linkedin_url: 'https://linkedin.com/company/legourmet',
+                site_web_canonique: 'https://legourmet.fr',
+                manually_enriched: false,
+                enriched_at: null,
+                enriched_by: null
+              },
+              {
+                id: 2,
+                canonical_url: 'https://bistrotparis.fr',
+                name: 'Bistrot de Paris',
+                adresse: '8 rue Saint-Antoine, 75004 Paris',
+                lat: 48.8553,
+                lng: 2.3647,
+                premiers_tags: 'Restaurant,Bistrot',
+                sources: ['google_maps'],
+                raw_ids: [2],
+                qualifie: true,
+                is_network: false,
+                is_blacklisted: false,
+                created_at: '2024-01-15T00:00:00Z',
+                updated_at: '2024-01-16T00:00:00Z',
+                ca_estime_band: '100k-500k' as RevenueBand,
+                nb_employes_band: '1-10' as EmployeeBand,
+                nb_employes_exact: 8,
+                linkedin_url: null,
+                site_web_canonique: 'https://bistrotparis.fr',
+                manually_enriched: false,
+                enriched_at: null,
+                enriched_by: null
+              }
+            ] as Company[];
           }
-        ];
+          break;
+        }
+
+        if (data && data.length > 0) {
+          allCompanies.push(...(data as Company[]));
+        }
+
+        if (!data || data.length < COMPANIES_PAGE_SIZE) {
+          break;
+        }
+
+        pageIndex += 1;
+        from += COMPANIES_PAGE_SIZE;
+        to += COMPANIES_PAGE_SIZE;
       }
-      return data || [];
+
+      const deduped: Company[] = [];
+      const seenIds = new Set<number>();
+      for (const company of allCompanies) {
+        if (!company) {
+          continue;
+        }
+        if (typeof company?.id === 'number') {
+          if (seenIds.has(company.id)) {
+            continue;
+          }
+          seenIds.add(company.id);
+        }
+        deduped.push(company);
+      }
+
+      return deduped;
     } catch (error) {
       logger.error('API Error:', error);
       return [];
@@ -167,7 +386,7 @@ export const companiesApi = {
   },
 
   getQualifiedOnly: async () => {
-    const pageSize = 1000;
+    const pageSize = COMPANIES_PAGE_SIZE;
     let from = 0;
     let to = pageSize - 1;
     const allQualified: Company[] = [];
@@ -176,7 +395,7 @@ export const companiesApi = {
       while (true) {
         const { data, error } = await supabase
           .from('entreprises')
-          .select('*')
+          .select(COMPANY_SELECT)
           .eq('qualifie', true)
           .order('created_at', { ascending: false })
           .range(from, to);
@@ -187,7 +406,7 @@ export const companiesApi = {
         }
 
         if (data && data.length > 0) {
-          allQualified.push(...data);
+          allQualified.push(...(data as Company[]));
         }
 
         if (!data || data.length < pageSize) {
@@ -306,7 +525,7 @@ export const companiesApi = {
       // Get company with all its fields
       const { data: company, error } = await supabase
         .from('entreprises')
-        .select('*')
+        .select(COMPANY_SELECT)
         .eq('id', id)
         .single();
       
@@ -321,7 +540,7 @@ export const companiesApi = {
         try {
                 const { data: rawData, error: rawError } = await supabase
                   .from('entreprises_raw')
-                  .select('*')
+                  .select(RAW_COMPANY_SELECT)
                   .in('id', company.raw_ids);
           
           if (!rawError && rawData) {
@@ -395,7 +614,7 @@ export const companiesApi = {
             try {
               const { data: rawData } = await supabase
                 .from('entreprises_raw')
-                .select('*')
+                .select(RAW_COMPANY_SELECT)
                 .in('id', company.raw_ids);
               
               if (rawData) {
@@ -457,7 +676,7 @@ export const rawCompaniesApi = {
     try {
       const { data, error } = await supabase
         .from('entreprises_raw')
-        .select('*')
+        .select(RAW_COMPANY_SELECT)
         .eq('recherche_id', rechercheId)
         .order('position', { ascending: true });
       
@@ -473,7 +692,7 @@ export const rawCompaniesApi = {
     try {
       const { data, error } = await supabase
         .from('entreprises_raw')
-        .select('*')
+        .select(RAW_COMPANY_SELECT)
         .in('id', ids);
       
       if (error) throw error;
@@ -1023,12 +1242,11 @@ export const contactsApi = {
 export const opportunitiesApi = {
   getAll: async () => {
     try {
-      // Simple query without complex JOINs
       const { data: opportunitiesData, error: opportunitiesError } = await supabase
         .from('opportunites')
-        .select('*')
+        .select(OPPORTUNITY_SELECT)
         .order('created_at', { ascending: false });
-      
+
       if (opportunitiesError) {
         logger.error('Supabase error:', opportunitiesError);
         // Return mock data as fallback
@@ -1061,114 +1279,157 @@ export const opportunitiesApi = {
           }
         ];
       }
-      
-      // Get related data separately to avoid JOIN issues
-      const enrichedData = [];
-      if (opportunitiesData) {
-        for (const opp of opportunitiesData) {
-          let companyName = '';
-          let companyUrl = '';
-          let stageName = '';
-          let telephone = '';
-          let email = '';
-          let linkedin_url = '';
-          let contact_name = '';
-          
-          // Get company data with contact info
-          if (opp.entreprise_id) {
-            try {
-              const { data: companyData } = await supabase
-                .from('entreprises')
-                .select('name, canonical_url, raw_ids, linkedin_url')
-                .eq('id', opp.entreprise_id)
-                .single();
-              
-              if (companyData) {
-                companyName = companyData.name || '';
-                companyUrl = companyData.canonical_url || '';
-                linkedin_url = companyData.linkedin_url || '';
-                
-                // Get raw contact data if available
-                if (companyData.raw_ids && companyData.raw_ids.length > 0) {
-                  try {
-                    const { data: rawData } = await supabase
-                      .from('entreprises_raw')
-                      .select('*')
-                      .in('id', companyData.raw_ids);
-                    
-                    if (rawData && rawData.length > 0) {
-                      // Extract contact info from raw data
-                      const phoneEntry = rawData.find(entry => entry.telephone);
-                      if (phoneEntry) telephone = phoneEntry.telephone || '';
-                      
-                      const emailEntry = rawData.find(entry => {
-                        if (entry.raw_json && typeof entry.raw_json === 'object') {
-                          return entry.raw_json.email || entry.raw_json.contact_email;
-                        }
-                        return false;
-                      });
-                      if (emailEntry) {
-                        email = emailEntry.raw_json.email || emailEntry.raw_json.contact_email;
-                      }
-                      
-                      const nameEntry = rawData.find(entry => {
-                        if (entry.raw_json && typeof entry.raw_json === 'object') {
-                          return entry.raw_json.contact_name || entry.raw_json.owner;
-                        }
-                        return false;
-                      });
-                      if (nameEntry) {
-                        contact_name = nameEntry.raw_json.contact_name || nameEntry.raw_json.owner;
-                      }
-                    }
-                  } catch (rawError) {
-                    logger.error('Error fetching raw contact data:', rawError);
-                  }
-                }
-              }
-            } catch (e) {
-              logger.error('Error fetching company:', e);
+
+      if (!opportunitiesData || opportunitiesData.length === 0) {
+        return [];
+      }
+
+      const companyIds = Array.from(
+        new Set(
+          opportunitiesData
+            .map((opp) => opp.entreprise_id)
+            .filter((id): id is number => typeof id === 'number')
+        )
+      );
+
+      const stageIds = Array.from(
+        new Set(
+          opportunitiesData
+            .map((opp) => opp.stage_id)
+            .filter((id): id is number => typeof id === 'number')
+        )
+      );
+
+      const missingCompanyIds = companyIds.filter((id) => !companyMetadataCache.has(id));
+      if (missingCompanyIds.length > 0) {
+        const { data: companyRows, error: companyError } = await supabase
+          .from('entreprises')
+          .select(COMPANY_METADATA_SELECT)
+          .in('id', missingCompanyIds);
+
+        if (companyError) {
+          logger.error('Error fetching company metadata:', companyError);
+        } else if (companyRows) {
+          (companyRows as CompanyMetadata[]).forEach((row) => {
+            if (typeof row.id === 'number') {
+              companyMetadataCache.set(row.id, row);
             }
-          }
-          
-          // Get stage name
-          if (opp.stage_id) {
-            try {
-              const { data: stageData } = await supabase
-                .from('etapes_pipeline')
-                .select('nom')
-                .eq('id', opp.stage_id)
-                .single();
-              stageName = stageData?.nom || '';
-            } catch (e) {
-              logger.error('Error fetching stage:', e);
-            }
-          }
-          
-          enrichedData.push({
-            ...opp,
-            companyName,
-            companyUrl,
-            contactId: opp.contact_id,
-            stage: stageName,
-            value: opp.montant,
-            priority: opp.priorite === 'haute' ? 'high' : opp.priorite === 'basse' ? 'low' : 'medium',
-            notes: opp.note_base,
-            createdDate: opp.created_at?.split('T')[0],
-            lastUpdate: opp.updated_at?.split('T')[0],
-            nextFollowUp: opp.date_prochain_suivi,
-            leadMagnet: opp.lead_magnet,
-            opportunityNotes: [],
-            pipelineHistory: [],
-            // Contact information
-            telephone,
-            email,
-            linkedin_url,
-            contact_name
           });
         }
       }
-      
+
+      const companiesMetadata = new Map<number, CompanyMetadata>();
+      companyIds.forEach((id) => {
+        const cached = companyMetadataCache.get(id);
+        if (cached) {
+          companiesMetadata.set(id, cached);
+        }
+      });
+
+      const allRawIds = new Set<number>();
+      companiesMetadata.forEach((metadata) => {
+        (metadata.raw_ids || []).forEach((rawId) => {
+          if (typeof rawId === 'number') {
+            allRawIds.add(rawId);
+          }
+        });
+      });
+
+      let rawDataMap = new Map<number, RawContactRecord>();
+      if (allRawIds.size > 0) {
+        const { data: rawRows, error: rawError } = await supabase
+          .from('entreprises_raw')
+          .select(RAW_CONTACT_SELECT)
+          .in('id', Array.from(allRawIds));
+
+        if (rawError) {
+          logger.error('Error fetching raw contact data:', rawError);
+        } else if (rawRows) {
+          rawDataMap = new Map(
+            (rawRows as RawContactRecord[]).map((row) => [row.id, row])
+          );
+        }
+      }
+
+      const missingStageIds = stageIds.filter((id) => !stageMetadataCache.has(id));
+      if (missingStageIds.length > 0) {
+        const { data: stageRows, error: stageError } = await supabase
+          .from('etapes_pipeline')
+          .select(STAGE_METADATA_SELECT)
+          .in('id', missingStageIds);
+
+        if (stageError) {
+          logger.error('Error fetching stage metadata:', stageError);
+        } else if (stageRows) {
+          (stageRows as { id: number; nom?: string | null }[]).forEach((row) => {
+            if (typeof row.id === 'number') {
+              stageMetadataCache.set(row.id, row.nom || '');
+            }
+          });
+        }
+      }
+
+      const enrichedData = opportunitiesData.map((opp) => {
+        const metadata =
+          typeof opp.entreprise_id === 'number'
+            ? companiesMetadata.get(opp.entreprise_id)
+            : undefined;
+        let companyName = '';
+        let companyUrl = '';
+        let linkedin_url = '';
+        let telephone = '';
+        let email = '';
+        let contact_name = '';
+
+        if (metadata) {
+          companyName = metadata.name || '';
+          companyUrl = metadata.canonical_url || '';
+          linkedin_url = metadata.linkedin_url || '';
+
+          const rawEntries = (metadata.raw_ids || [])
+            .map((rawId) => rawDataMap.get(rawId))
+            .filter((entry): entry is RawContactRecord => Boolean(entry));
+
+          if (rawEntries.length > 0) {
+            const contactInfo = extractContactInfoFromRawEntries(rawEntries);
+            telephone = contactInfo.telephone;
+            email = contactInfo.email;
+            contact_name = contactInfo.contact_name;
+          }
+        }
+
+        const stageName =
+          typeof opp.stage_id === 'number'
+            ? stageMetadataCache.get(opp.stage_id) || ''
+            : '';
+
+        return {
+          ...opp,
+          companyName,
+          companyUrl,
+          contactId: opp.contact_id,
+          stage: stageName,
+          value: opp.montant,
+          priority:
+            opp.priorite === 'haute'
+              ? 'high'
+              : opp.priorite === 'basse'
+              ? 'low'
+              : 'medium',
+          notes: opp.note_base,
+          createdDate: opp.created_at ? opp.created_at.split('T')[0] : undefined,
+          lastUpdate: opp.updated_at ? opp.updated_at.split('T')[0] : undefined,
+          nextFollowUp: opp.date_prochain_suivi,
+          leadMagnet: opp.lead_magnet,
+          opportunityNotes: [],
+          pipelineHistory: [],
+          telephone,
+          email,
+          linkedin_url,
+          contact_name
+        };
+      });
+
       return enrichedData;
     } catch (error) {
       logger.error('API Error:', error);
