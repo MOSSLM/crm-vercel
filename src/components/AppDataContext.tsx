@@ -14,6 +14,10 @@ import {
   networksApi,
   urlBlacklistApi,
   canonicalizeDomain,
+  isSearchResultRow,
+  isOpportunityRow,
+  isAchievementRow,
+  isOpportunityNoteRow,
 } from '../utils/api';
 import {
   getCompanyDisplayName,
@@ -38,6 +42,8 @@ import {
   SupabaseObjectives,
   UrlBlacklist,
 } from '@/types';
+
+export type { Contact, Company, SearchResult } from '@/types';
 
 // Type alias pour compatibilité avec l'interface existante
 export type MonthlyObjectives = Objectives;
@@ -369,6 +375,10 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         urlBlacklistApi.getAll(),
       ]);
 
+      const safeSearchResults = searchResultsData.filter(isSearchResultRow);
+      const safeOpportunities = opportunitiesData.filter(isOpportunityRow);
+      const safeAchievements = achievementsData.filter(isAchievementRow);
+
       const companiesMap = new Map<number, Company>();
       [...companiesData, ...qualifiedCompaniesData].forEach((company: Company) => {
         if (typeof company?.id !== 'number') {
@@ -410,7 +420,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       }
 
       // Map search results to include compatibility properties
-      const mappedSearchResults = searchResultsData.map((result: SearchResult) => ({
+      const mappedSearchResults = safeSearchResults.map((result) => ({
         ...result,
         useMaps: result.source_maps,
         useGoogle: result.source_google,
@@ -426,9 +436,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       });
       setCompanies(normalizedCompanies);
       setContacts(contactsData);
-      setOpportunities(opportunitiesData);
+      setOpportunities(safeOpportunities);
       setPipelineStages(pipelineStagesData);
-      setAchievements(achievementsData);
+      setAchievements(safeAchievements);
       setKeywordStats(keywordStatsData);
       setLocationStats(locationStatsData);
       setNetworks(networksData);
@@ -566,6 +576,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const addSearchResult = async (result: Omit<SearchResult, 'id' | 'created_at'>) => {
     try {
       const newResult = await searchResultsApi.create(result);
+      if (!isSearchResultRow(newResult)) {
+        throw new Error('Invalid search result payload');
+      }
       const mappedResult = {
         ...newResult,
         useMaps: newResult.source_maps,
@@ -755,7 +768,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
       try {
         const savedAchievement = await achievementsApi.create(achievement);
-        setAchievements((prev) => [...prev, savedAchievement]);
+        if (isAchievementRow(savedAchievement)) {
+          setAchievements((prev) => [...prev, savedAchievement]);
+        }
       } catch (achievementError) {
         logger.error('Error creating achievement:', achievementError);
       }
@@ -899,7 +914,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       }
 
       const newOpportunity = await opportunitiesApi.create(filteredOpportunity);
-      setOpportunities((prev) => [...prev, newOpportunity]);
+      if (isOpportunityRow(newOpportunity)) {
+        setOpportunities((prev) => [...prev, newOpportunity]);
+      }
       toast.success('Opportunité ajoutée avec succès');
     } catch (error) {
       logger.error('Error adding opportunity:', error);
@@ -944,6 +961,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const addOpportunityNote = async (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => {
     try {
       const newNote = await notesApi.create({ ...note, opportunite_id: opportunityId });
+      if (!isOpportunityNoteRow(newNote)) {
+        throw new Error('Invalid opportunity note payload');
+      }
 
       setOpportunities((prev) =>
         prev.map((opp) => {
@@ -986,7 +1006,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
       try {
         const savedAchievement = await achievementsApi.create(achievement);
-        setAchievements((prev) => [...prev, savedAchievement]);
+        if (isAchievementRow(savedAchievement)) {
+          setAchievements((prev) => [...prev, savedAchievement]);
+        }
       } catch (achievementError) {
         logger.error('Error creating achievement:', achievementError);
       }

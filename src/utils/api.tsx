@@ -1,12 +1,14 @@
 import { supabase } from './supabase/client';
 import {
+  Achievement,
   Company,
   CompanyNetwork,
   CompanyRaw,
   Contact,
   EmployeeBand,
-  PipelineStage,
   Opportunity,
+  OpportunityNote,
+  PipelineStage,
   RevenueBand,
   SearchResult,
   UrlBlacklist,
@@ -17,13 +19,13 @@ import logger from './logger';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-const isCompanyRow = (row: unknown): row is Company =>
+export const isCompanyRow = (row: unknown): row is Company =>
   isRecord(row) && typeof row.id === 'number';
 
 const isCompanyRawRow = (row: unknown): row is CompanyRaw =>
   isRecord(row) && typeof row.id === 'number' && typeof row.recherche_id === 'string';
 
-const isOpportunityRow = (row: unknown): row is Opportunity =>
+export const isOpportunityRow = (row: unknown): row is Opportunity =>
   isRecord(row) && typeof row.id === 'string' && 'lead_magnet' in row;
 
 const isStageRow = (row: unknown): row is { id: number; nom?: string | null } =>
@@ -35,7 +37,7 @@ const isFullStageRow = (row: unknown): row is PipelineStage =>
   typeof (row as { ordre?: unknown }).ordre === 'number' &&
   typeof (row as { visible?: unknown }).visible === 'boolean';
 
-const isSearchResultRow = (row: unknown): row is SearchResult =>
+export const isSearchResultRow = (row: unknown): row is SearchResult =>
   isRecord(row) && typeof row.id === 'string' && typeof row.keyword === 'string';
 
 const isCompanyNetworkRow = (row: unknown): row is CompanyNetwork =>
@@ -43,6 +45,16 @@ const isCompanyNetworkRow = (row: unknown): row is CompanyNetwork =>
 
 const isUrlBlacklistRow = (row: unknown): row is UrlBlacklist =>
   isRecord(row) && typeof row.id === 'string' && typeof row.value === 'string';
+
+export const isAchievementRow = (row: unknown): row is Achievement =>
+  isRecord(row) && typeof row.id === 'number' && typeof row.date === 'string';
+
+export const isOpportunityNoteRow = (row: unknown): row is OpportunityNote =>
+  isRecord(row) &&
+  typeof row.id === 'number' &&
+  typeof row.opportunite_id === 'string' &&
+  typeof row.theme === 'string' &&
+  typeof row.created_at === 'string';
 
 const SEARCH_RESULTS_COLUMNS = [
   'id',
@@ -196,6 +208,198 @@ const parseRawJson = (raw: unknown): Record<string, unknown> | null => {
   return null;
 };
 
+const toOptionalString = (value: unknown): string | undefined =>
+  typeof value === 'string' ? value : undefined;
+
+const toOptionalNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' ? value : undefined;
+
+const toOptionalBoolean = (value: unknown): boolean | undefined =>
+  typeof value === 'boolean' ? value : undefined;
+
+const toNumberArray = (value: unknown): number[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is number => typeof item === 'number')
+    : [];
+
+const toStringArray = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+
+const buildCompanyFromPartial = (
+  id: number,
+  partial: Partial<Company> & {
+    sources?: unknown;
+    raw_ids?: unknown;
+    qualifie?: unknown;
+  }
+): Company => {
+  const now = new Date().toISOString();
+  return {
+    id,
+    sources: toStringArray(partial.sources),
+    raw_ids: toNumberArray(partial.raw_ids),
+    qualifie: typeof partial.qualifie === 'boolean' ? partial.qualifie : false,
+    created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
+    updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
+    canonical_url: toOptionalString(partial.canonical_url),
+    site_web_canonique: toOptionalString(partial.site_web_canonique),
+    name: toOptionalString(partial.name),
+    adresse: toOptionalString(partial.adresse),
+    lat: toOptionalNumber(partial.lat),
+    lng: toOptionalNumber(partial.lng),
+    latitude: toOptionalNumber(partial.latitude),
+    longitude: toOptionalNumber(partial.longitude),
+    premiers_tags: toOptionalString(partial.premiers_tags),
+    is_network: toOptionalBoolean(partial.is_network),
+    is_blacklisted: toOptionalBoolean(partial.is_blacklisted),
+    reseau_id: toOptionalString(partial.reseau_id),
+    ca_estime_band:
+      typeof partial.ca_estime_band === 'string'
+        ? (partial.ca_estime_band as RevenueBand)
+        : undefined,
+    nb_employes_band:
+      typeof partial.nb_employes_band === 'string'
+        ? (partial.nb_employes_band as EmployeeBand)
+        : undefined,
+    nb_employes_exact: toOptionalNumber(partial.nb_employes_exact),
+    linkedin_url: toOptionalString(partial.linkedin_url),
+    manually_enriched: toOptionalBoolean(partial.manually_enriched),
+    enriched_at: toOptionalString(partial.enriched_at),
+    enriched_by: toOptionalString(partial.enriched_by),
+    recherche_id: toOptionalString(partial.recherche_id),
+    place_id: toOptionalString(partial.place_id),
+    reference_url: toOptionalString(partial.reference_url),
+    position: toOptionalNumber(partial.position),
+    note_moyenne: toOptionalNumber(partial.note_moyenne),
+    nombre_avis: toOptionalNumber(partial.nombre_avis),
+    ville: toOptionalString(partial.ville),
+    code_postal: toOptionalString(partial.code_postal),
+    pays: toOptionalString(partial.pays),
+    telephone: toOptionalString(partial.telephone),
+    tel: toOptionalString(partial.tel),
+    email: toOptionalString(partial.email),
+    contact_name: toOptionalString(partial.contact_name),
+    raw_contact_info: Array.isArray(partial.raw_contact_info)
+      ? partial.raw_contact_info.filter(isCompanyRawRow)
+      : undefined,
+  };
+};
+
+const buildOpportunityFromPartial = (
+  id: string,
+  partial: Partial<Opportunity> & {
+    priorite?: unknown;
+    lead_magnet?: unknown;
+  }
+): Opportunity => {
+  const now = new Date().toISOString();
+  const priorite: Opportunity['priorite'] =
+    partial.priorite === 'haute' || partial.priorite === 'moyenne' || partial.priorite === 'basse'
+      ? partial.priorite
+      : 'moyenne';
+  const leadMagnet = typeof partial.lead_magnet === 'boolean' ? partial.lead_magnet : false;
+  const opportunityNotes = Array.isArray(partial.opportunityNotes)
+    ? (partial.opportunityNotes as unknown[]).filter(isOpportunityNoteRow)
+    : [];
+
+  return {
+    id,
+    priorite,
+    lead_magnet: leadMagnet,
+    created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
+    updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
+    contact_id: toOptionalString(partial.contact_id),
+    entreprise_id: toOptionalNumber(partial.entreprise_id),
+    montant: toOptionalNumber(partial.montant),
+    stage_id: toOptionalNumber(partial.stage_id),
+    note_base: toOptionalString(partial.note_base),
+    tags: toOptionalString(partial.tags),
+    date_prochain_suivi: toOptionalString(partial.date_prochain_suivi),
+    name: toOptionalString(partial.name),
+    type:
+      partial.type === 'one_shot' || partial.type === 'mrr'
+        ? partial.type
+        : undefined,
+    mrr: toOptionalNumber(partial.mrr),
+    recurrence_months: toOptionalNumber(partial.recurrence_months),
+    companyName: toOptionalString(partial.companyName),
+    companyUrl: toOptionalString(partial.companyUrl),
+    contactId: toOptionalString(partial.contactId),
+    stage: toOptionalString(partial.stage),
+    value: toOptionalNumber(partial.value),
+    priority:
+      partial.priority === 'high' || partial.priority === 'medium' || partial.priority === 'low'
+        ? partial.priority
+        : undefined,
+    notes: toOptionalString(partial.notes),
+    createdDate: toOptionalString(partial.createdDate),
+    lastUpdate: toOptionalString(partial.lastUpdate),
+    nextFollowUp: toOptionalString(partial.nextFollowUp),
+    opportunityNotes,
+    pipelineHistory: Array.isArray(partial.pipelineHistory)
+      ? (partial.pipelineHistory as unknown[])
+      : [],
+    leadMagnet: typeof partial.leadMagnet === 'boolean' ? partial.leadMagnet : undefined,
+    leadMagnetCreatedDate: toOptionalString(partial.leadMagnetCreatedDate),
+    telephone: toOptionalString(partial.telephone),
+    email: toOptionalString(partial.email),
+    linkedin_url: toOptionalString(partial.linkedin_url),
+    contact_name: toOptionalString(partial.contact_name),
+  };
+};
+
+const buildAchievementFromPartial = (
+  id: number,
+  partial: Partial<Achievement>
+): Achievement => {
+  const now = new Date().toISOString();
+  return {
+    id,
+    date: typeof partial.date === 'string' ? partial.date : now,
+    type_evenement: toOptionalString(partial.type_evenement),
+    description: toOptionalString(partial.description),
+    opportunite_id: toOptionalString(partial.opportunite_id),
+    entreprise_id: toOptionalNumber(partial.entreprise_id),
+    type:
+      partial.type === 'signature' ||
+      partial.type === 'deposit' ||
+      partial.type === 'lead_magnet' ||
+      partial.type === 'qualified' ||
+      partial.type === 'meeting' ||
+      partial.type === 'monthly_goal'
+        ? partial.type
+        : undefined,
+    title: toOptionalString(partial.title),
+    value: toOptionalNumber(partial.value),
+    companyName: toOptionalString(partial.companyName),
+  };
+};
+
+const buildOpportunityNoteFromPartial = (
+  id: number,
+  partial: Partial<OpportunityNote>
+): OpportunityNote => {
+  const now = new Date().toISOString();
+  const theme: OpportunityNote['theme'] =
+    partial.theme === 'appel' ||
+    partial.theme === 'linkedin' ||
+    partial.theme === 'whatsapp' ||
+    partial.theme === 'email' ||
+    partial.theme === 'autre'
+      ? partial.theme
+      : 'autre';
+
+  return {
+    id,
+    opportunite_id: toOptionalString(partial.opportunite_id) ?? '',
+    theme,
+    contenu: toOptionalString(partial.contenu),
+    created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
+  };
+};
+
 const extractContactInfoFromRawEntries = (rawEntries: RawContactRecord[]) => {
   let telephone = '';
   let email = '';
@@ -244,7 +448,7 @@ export const canonicalizeDomain = (url: string): string => {
 };
 // Search Results API (table: recherches)
 export const searchResultsApi = {
-  getAll: async () => {
+  getAll: async (): Promise<SearchResult[]> => {
     try {
       const { data, error } = await supabase
         .from('recherches')
@@ -253,8 +457,7 @@ export const searchResultsApi = {
 
       if (error) {
         logger.error('Supabase error:', error);
-        // Return mock data as fallback
-        return [
+        const fallback: SearchResult[] = [
           {
             id: '1',
             created_at: '2024-01-15T00:00:00Z',
@@ -265,7 +468,7 @@ export const searchResultsApi = {
             source_maps: true,
             status: 'completed',
             nb_trouves: 5,
-            nb_qualifies: 2
+            nb_qualifies: 2,
           },
           {
             id: '2',
@@ -277,42 +480,58 @@ export const searchResultsApi = {
             source_maps: true,
             status: 'completed',
             nb_trouves: 5,
-            nb_qualifies: 2
-          }
+            nb_qualifies: 2,
+          },
         ];
+        return fallback;
       }
-      if (Array.isArray(data)) {
-        return data.filter(isSearchResultRow);
-      }
-      return [];
+
+      const rows = Array.isArray(data) ? (data as unknown[]) : [];
+      return rows.filter(isSearchResultRow);
     } catch (error) {
       logger.error('API Error:', error);
       return [];
     }
   },
-  
-  create: async (searchData: Record<string, unknown>) => {
+
+  create: async (
+    searchData: Omit<SearchResult, 'id' | 'created_at'>
+  ): Promise<SearchResult> => {
     try {
       const { data, error } = await supabase
         .from('recherches')
         .insert([searchData])
         .select()
         .single();
-      
+
       if (error) throw error;
       if (isSearchResultRow(data)) {
         return data;
       }
       logger.error('Invalid search result payload received from Supabase');
-      return { ...searchData, id: Date.now().toString(), created_at: new Date().toISOString() };
     } catch (error) {
       logger.error('Error creating search:', error);
-      // Return mock data
-      return { ...searchData, id: Date.now().toString(), created_at: new Date().toISOString() };
     }
+
+    const now = new Date().toISOString();
+    return {
+      id: Date.now().toString(),
+      created_at: now,
+      keyword: searchData.keyword,
+      location: searchData.location,
+      precision: searchData.precision,
+      source_google: searchData.source_google,
+      source_maps: searchData.source_maps,
+      status: searchData.status ?? 'pending',
+      nb_trouves: searchData.nb_trouves ?? 0,
+      nb_qualifies: searchData.nb_qualifies ?? 0,
+    };
   },
-  
-  update: async (id: string, updates: Record<string, unknown>) => {
+
+  update: async (
+    id: string,
+    updates: Partial<SearchResult>
+  ): Promise<SearchResult> => {
     try {
       const { data, error } = await supabase
         .from('recherches')
@@ -320,18 +539,41 @@ export const searchResultsApi = {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
       if (isSearchResultRow(data)) {
         return data;
       }
       logger.error('Invalid updated search result payload received from Supabase');
-      return { id, ...updates };
     } catch (error) {
       logger.error('Error updating search:', error);
-      return { id, ...updates };
     }
-  }
+
+    const status =
+      typeof updates.status === 'string' &&
+      ['pending', 'completed', 'failed'].includes(updates.status)
+        ? (updates.status as SearchResult['status'])
+        : 'pending';
+
+    return {
+      id,
+      created_at:
+        typeof updates.created_at === 'string'
+          ? updates.created_at
+          : new Date().toISOString(),
+      keyword: typeof updates.keyword === 'string' ? updates.keyword : '',
+      location: typeof updates.location === 'string' ? updates.location : '',
+      precision: typeof updates.precision === 'string' ? updates.precision : '',
+      source_google:
+        typeof updates.source_google === 'boolean' ? updates.source_google : false,
+      source_maps:
+        typeof updates.source_maps === 'boolean' ? updates.source_maps : false,
+      status,
+      nb_trouves: typeof updates.nb_trouves === 'number' ? updates.nb_trouves : 0,
+      nb_qualifies:
+        typeof updates.nb_qualifies === 'number' ? updates.nb_qualifies : 0,
+    };
+  },
 };
 
 // Companies API with enhanced fields (table: entreprises)
@@ -353,7 +595,6 @@ export const companiesApi = {
         if (error) {
           logger.error('Supabase error:', error);
           if (pageIndex === 0) {
-            // Return mock data as fallback with new fields
             const fallbackCompanies: Company[] = [
               {
                 id: 1,
@@ -370,14 +611,14 @@ export const companiesApi = {
                 is_blacklisted: false,
                 created_at: '2024-01-15T00:00:00Z',
                 updated_at: '2024-01-16T00:00:00Z',
-                ca_estime_band: '500k-1m' as RevenueBand,
-                nb_employes_band: '11-50' as EmployeeBand,
+                ca_estime_band: '500k-1m',
+                nb_employes_band: '11-50',
                 nb_employes_exact: 25,
                 linkedin_url: 'https://linkedin.com/company/legourmet',
                 site_web_canonique: 'https://legourmet.fr',
                 manually_enriched: false,
-                enriched_at: null,
-                enriched_by: null
+                enriched_at: undefined,
+                enriched_by: undefined,
               },
               {
                 id: 2,
@@ -394,29 +635,28 @@ export const companiesApi = {
                 is_blacklisted: false,
                 created_at: '2024-01-15T00:00:00Z',
                 updated_at: '2024-01-16T00:00:00Z',
-                ca_estime_band: '100k-500k' as RevenueBand,
-                nb_employes_band: '1-10' as EmployeeBand,
+                ca_estime_band: '100k-500k',
+                nb_employes_band: '1-10',
                 nb_employes_exact: 8,
-                linkedin_url: null,
+                linkedin_url: undefined,
                 site_web_canonique: 'https://bistrotparis.fr',
                 manually_enriched: false,
-                enriched_at: null,
-                enriched_by: null
-              }
+                enriched_at: undefined,
+                enriched_by: undefined,
+              },
             ];
             return fallbackCompanies;
           }
           break;
         }
 
-        if (Array.isArray(data)) {
-          const validCompanies = data.filter(isCompanyRow);
-          if (validCompanies.length > 0) {
-            allCompanies.push(...validCompanies);
-          }
+        const rows = Array.isArray(data) ? (data as unknown[]) : [];
+        const validCompanies = rows.filter(isCompanyRow);
+        if (validCompanies.length > 0) {
+          allCompanies.push(...validCompanies);
         }
 
-        if (!Array.isArray(data) || data.length < COMPANIES_PAGE_SIZE) {
+        if (rows.length < COMPANIES_PAGE_SIZE) {
           break;
         }
 
@@ -467,14 +707,13 @@ export const companiesApi = {
           break;
         }
 
-        if (Array.isArray(data)) {
-          const validCompanies = data.filter(isCompanyRow);
-          if (validCompanies.length > 0) {
-            allQualified.push(...validCompanies);
-          }
+        const rows = Array.isArray(data) ? (data as unknown[]) : [];
+        const validCompanies = rows.filter(isCompanyRow);
+        if (validCompanies.length > 0) {
+          allQualified.push(...validCompanies);
         }
 
-        if (!Array.isArray(data) || data.length < pageSize) {
+        if (rows.length < pageSize) {
           break;
         }
 
@@ -507,14 +746,14 @@ export const companiesApi = {
       throw new Error('Invalid company payload');
     } catch (error) {
       logger.error('Error creating company:', error);
-      return {
+      const now = new Date().toISOString();
+      return buildCompanyFromPartial(Date.now(), {
         ...companyData,
-        id: Date.now(),
+        created_at: now,
+        updated_at: now,
         is_network: false,
         is_blacklisted: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
+      });
     }
   },
   
@@ -549,7 +788,8 @@ export const companiesApi = {
       throw new Error('Invalid company payload');
     } catch (error) {
       logger.error('Error updating company:', error);
-      return { id, ...updates };
+      const now = new Date().toISOString();
+      return buildCompanyFromPartial(id, { ...updates, updated_at: now });
     }
   },
   
@@ -1335,11 +1575,15 @@ export const opportunitiesApi = {
         ];
       }
 
-      if (!Array.isArray(opportunitiesData) || opportunitiesData.length === 0) {
+      const opportunitiesRows = Array.isArray(opportunitiesData)
+        ? (opportunitiesData as unknown[])
+        : [];
+
+      if (opportunitiesRows.length === 0) {
         return [];
       }
 
-      const validOpportunities = opportunitiesData.filter(isOpportunityRow);
+      const validOpportunities = opportunitiesRows.filter(isOpportunityRow);
       if (validOpportunities.length === 0) {
         return [];
       }
@@ -1370,10 +1614,9 @@ export const opportunitiesApi = {
         if (companyError) {
           logger.error('Error fetching company metadata:', companyError);
         } else if (Array.isArray(companyRows)) {
-          companyRows.filter(isCompanyMetadataRow).forEach((row) => {
-            if (typeof row.id === 'number') {
-              companyMetadataCache.set(row.id, row);
-            }
+          const metadataRows = (companyRows as unknown[]).filter(isCompanyMetadataRow);
+          metadataRows.forEach((row) => {
+            companyMetadataCache.set(row.id, row);
           });
         }
       }
@@ -1405,9 +1648,8 @@ export const opportunitiesApi = {
         if (rawError) {
           logger.error('Error fetching raw contact data:', rawError);
         } else if (Array.isArray(rawRows)) {
-          rawDataMap = new Map(
-            rawRows.filter(isRawContactRecord).map((row) => [row.id, row])
-          );
+          const records = (rawRows as unknown[]).filter(isRawContactRecord);
+          rawDataMap = new Map(records.map((row) => [row.id, row]));
         }
       }
 
@@ -1421,7 +1663,8 @@ export const opportunitiesApi = {
         if (stageError) {
           logger.error('Error fetching stage metadata:', stageError);
         } else if (Array.isArray(stageRows)) {
-          stageRows.filter(isStageRow).forEach((row) => {
+          const stages = (stageRows as unknown[]).filter(isStageRow);
+          stages.forEach((row) => {
             stageMetadataCache.set(row.id, row.nom || '');
           });
         }
@@ -1545,7 +1788,17 @@ export const opportunitiesApi = {
       return data;
     } catch (error) {
       logger.error('Error creating opportunity:', error);
-      return { ...opportunityData, id: crypto.randomUUID(), created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+      const now = new Date().toISOString();
+      const fallbackId =
+        typeof globalThis.crypto !== 'undefined' &&
+        typeof globalThis.crypto.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : Date.now().toString();
+      return buildOpportunityFromPartial(fallbackId, {
+        ...opportunityData,
+        created_at: now,
+        updated_at: now,
+      });
     }
   },
   
@@ -1586,7 +1839,8 @@ export const opportunitiesApi = {
       throw new Error('Invalid opportunity payload');
     } catch (error) {
       logger.error('Error updating opportunity:', error);
-      return { id, ...updates };
+      const now = new Date().toISOString();
+      return buildOpportunityFromPartial(id, { ...updates, updated_at: now });
     }
   },
   
@@ -1681,42 +1935,49 @@ export const pipelineStagesApi = {
 
 // Notes API (table: notes)
 export const notesApi = {
-  getByOpportunity: async (opportuniteId: string) => {
+  getByOpportunity: async (opportuniteId: string): Promise<OpportunityNote[]> => {
     try {
       const { data, error } = await supabase
         .from('notes')
         .select('*')
         .eq('opportunite_id', opportuniteId)
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
-      return Array.isArray(data) ? data : [];
+      const rows = Array.isArray(data) ? (data as unknown[]) : [];
+      return rows.filter(isOpportunityNoteRow);
     } catch (error) {
       logger.error('Error fetching notes:', error);
       return [];
     }
   },
-  
-  create: async (noteData: Record<string, unknown>) => {
+
+  create: async (
+    noteData: Omit<OpportunityNote, 'id' | 'created_at'> & { opportunite_id: string }
+  ): Promise<OpportunityNote> => {
     try {
       const { data, error } = await supabase
         .from('notes')
         .insert([noteData])
         .select()
         .single();
-      
+
       if (error) throw error;
-      if (!isRecord(data)) {
-        throw new Error('Invalid note payload');
+      if (isOpportunityNoteRow(data)) {
+        return data;
       }
-      return data;
+      throw new Error('Invalid note payload');
     } catch (error) {
       logger.error('Error creating note:', error);
-      return { ...noteData, id: Date.now(), created_at: new Date().toISOString() };
+      const id = Date.now();
+      return buildOpportunityNoteFromPartial(id, noteData);
     }
   },
-  
-  update: async (id: number, updates: Record<string, unknown>) => {
+
+  update: async (
+    id: number,
+    updates: Partial<OpportunityNote>
+  ): Promise<OpportunityNote> => {
     try {
       const { data, error } = await supabase
         .from('notes')
@@ -1724,15 +1985,16 @@ export const notesApi = {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
-      if (!isRecord(data)) {
-        throw new Error('Invalid note payload');
+      if (isOpportunityNoteRow(data)) {
+        return data;
       }
-      return data;
+      throw new Error('Invalid note payload');
     } catch (error) {
       logger.error('Error updating note:', error);
-      return { id, ...updates };
+      const now = new Date().toISOString();
+      return buildOpportunityNoteFromPartial(id, { ...updates, created_at: now });
     }
   },
   
@@ -1752,52 +2014,53 @@ export const notesApi = {
 
 // Achievements API (table: journal_succes)
 export const achievementsApi = {
-  getAll: async () => {
+  getAll: async (): Promise<Achievement[]> => {
     try {
       // Simple query without JOINs to avoid relationship errors
       const { data, error } = await supabase
         .from('journal_succes')
         .select('*')
         .order('date', { ascending: false });
-      
+
       if (error) {
         logger.error('Supabase error:', error);
         // Return mock data as fallback
         return [];
       }
 
-      const rows = Array.isArray(data) ? data : [];
+      const rows = Array.isArray(data) ? (data as unknown[]) : [];
+      const achievements = rows.filter(isAchievementRow);
 
-      // Transform data to match interface without complex JOINs
-      return rows.map(achievement => ({
+      return achievements.map((achievement) => ({
         ...achievement,
         type: achievement.type_evenement,
         title: achievement.description,
-        value: null, // We'll skip this for now to avoid JOIN issues
-        companyName: null // We'll skip this for now to avoid JOIN issues
+        value: achievement.value ?? undefined,
+        companyName: achievement.companyName ?? undefined,
       }));
     } catch (error) {
       logger.error('API Error:', error);
       return [];
     }
   },
-  
-  create: async (achievementData: Record<string, unknown>) => {
+
+  create: async (achievementData: Omit<Achievement, 'id'>): Promise<Achievement> => {
     try {
       const { data, error } = await supabase
         .from('journal_succes')
         .insert([achievementData])
         .select()
         .single();
-      
+
       if (error) throw error;
-      if (!isRecord(data)) {
-        throw new Error('Invalid achievement payload');
+      if (isAchievementRow(data)) {
+        return data;
       }
-      return data;
+      throw new Error('Invalid achievement payload');
     } catch (error) {
       logger.error('Error creating achievement:', error);
-      return { ...achievementData, id: Date.now(), date: new Date().toISOString() };
+      const id = Date.now();
+      return buildAchievementFromPartial(id, achievementData);
     }
   }
 };
