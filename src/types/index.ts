@@ -35,66 +35,40 @@ export interface SearchResult {
   date?: string;
 }
 
-export interface CompanyRaw {
-  id: number;
-  recherche_id: string;
-  source: 'google_search' | 'google_maps';
-  position?: number;
-  page?: number;
-  title?: string;
-  meta?: string;
-  url?: string;
-  keyword: string;
-  location: string;
-  name?: string;
-  avis?: number;
-  nombre_avis?: number;
-  tags?: string;
-  adresse?: string;
-  lat?: number;
-  lng?: number;
-  telephone?: string;
-  ferme_definitivement: boolean;
-  raw_json?: unknown;
-  inserted_at: string;
-}
-
 export interface Company {
   id: number;
-  canonical_url?: string;
-  name?: string;
-  adresse?: string;
-  lat?: number;
-  lng?: number;
-  premiers_tags?: string;
+  canonical_url?: string | null;
+  name?: string | null;
+  adresse?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+  premiers_tags?: string | null;
   sources: string[];
-  raw_ids: number[];
   qualifie: boolean;
-  is_network?: boolean;
-  is_blacklisted?: boolean;
+  is_network?: boolean | null;
+  is_blacklisted?: boolean | null;
   reseau_id?: string | null;
   created_at: string;
   updated_at: string;
   ca_estime_band?: RevenueBand;
   nb_employes_band?: EmployeeBand;
   nb_employes_exact?: number | null;
-  linkedin_url?: string;
-  manually_enriched?: boolean;
+  linkedin_url?: string | null;
+  manually_enriched?: boolean | null;
   enriched_at?: string | null;
   enriched_by?: string | null;
-  recherche_id?: string;
-  place_id?: string;
-  reference_url?: string;
-  position?: number;
-  note_moyenne?: number;
-  nombre_avis?: number;
-  ville?: string;
-  code_postal?: string;
-  pays?: string;
-  telephone?: string;
-  email?: string;
-  contact_name?: string;
-  raw_contact_info?: CompanyRaw[];
+  recherche_id?: string | null;
+  place_id?: string | null;
+  reference_url?: string | null;
+  position?: number | null;
+  note_moyenne?: number | null;
+  nombre_avis?: number | null;
+  ville?: string | null;
+  code_postal?: string | null;
+  pays?: string | null;
+  telephone?: string | null;
+  email?: string | null;
+  contact_name?: string | null;
 }
 
 export interface Contact {
