@@ -78,8 +78,6 @@ const COMPANY_COLUMNS = [
   'adresse',
   'lat',
   'lng',
-  'latitude',
-  'longitude',
   'premiers_tags',
   'sources',
   'raw_ids',
@@ -236,6 +234,10 @@ const buildCompanyFromPartial = (
   }
 ): Company => {
   const now = new Date().toISOString();
+  const lat = toOptionalNumber(partial.lat);
+  const lng = toOptionalNumber(partial.lng);
+  const latitude = toOptionalNumber(partial.latitude) ?? lat;
+  const longitude = toOptionalNumber(partial.longitude) ?? lng;
   return {
     id,
     sources: toStringArray(partial.sources),
@@ -247,10 +249,10 @@ const buildCompanyFromPartial = (
     site_web_canonique: toOptionalString(partial.site_web_canonique),
     name: toOptionalString(partial.name),
     adresse: toOptionalString(partial.adresse),
-    lat: toOptionalNumber(partial.lat),
-    lng: toOptionalNumber(partial.lng),
-    latitude: toOptionalNumber(partial.latitude),
-    longitude: toOptionalNumber(partial.longitude),
+    lat,
+    lng,
+    latitude,
+    longitude,
     premiers_tags: toOptionalString(partial.premiers_tags),
     is_network: toOptionalBoolean(partial.is_network),
     is_blacklisted: toOptionalBoolean(partial.is_blacklisted),
