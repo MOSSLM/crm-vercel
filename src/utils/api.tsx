@@ -881,6 +881,11 @@ export const companiesApi = {
         return null;
       }
 
+      if (!company) {
+        logger.warn(`No company found with id ${id}`);
+        return null;
+      }
+
       if (!isCompanyRow(company)) {
         logger.error('Invalid company payload received from Supabase');
         return null;
