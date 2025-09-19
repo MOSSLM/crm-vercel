@@ -31,7 +31,6 @@ import {
   Achievement,
   Company,
   CompanyNetwork,
-  CompanyRaw,
   Contact,
   ContactNote,
   Objectives,
