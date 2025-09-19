@@ -431,7 +431,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
       setSearchResults(mappedSearchResults);
       const normalizedCompanies = combinedCompanies.map((c: Company) => {
-        const canonical = canonicalizeUrl(c.canonical_url || c.site_web_canonique || (c as any).url || '');
+        const legacySite = 'site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined;
+        const canonical = canonicalizeUrl(c.canonical_url || legacySite || (c as any).url || '');
         return { ...c, canonical_url: canonical || undefined };
       });
       setCompanies(normalizedCompanies);
@@ -464,7 +465,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     const groups: Record<string, Company[]> = {};
     companies.forEach((c) => {
       if (c.is_blacklisted) return;
-      const url = c.canonical_url || c.site_web_canonique;
+      const legacySite = 'site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined;
+      const url = c.canonical_url || legacySite;
       if (!url) return;
       const domain = extractDomainFromUrl(url);
       if (!domain) return;
@@ -597,7 +599,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
   const addCompany = async (company: Omit<Company, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      const canonical = canonicalizeUrl(company.canonical_url || company.site_web_canonique || '');
+      const legacySite = 'site_web_canonique' in company ? (company as { site_web_canonique?: string }).site_web_canonique : undefined;
+      const canonical = canonicalizeUrl(company.canonical_url || legacySite || '');
       const newCompany = await companiesApi.create({ ...company, canonical_url: canonical });
       setCompanies((prev) => [...prev, newCompany]);
       toast.success('Entreprise ajoutée avec succès');
@@ -609,7 +612,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
   const updateCompany = async (id: number, updates: Partial<Company>) => {
     try {
-      const canonical = updates.canonical_url || updates.site_web_canonique;
+      const canonical = updates.canonical_url;
       const payload = canonical
         ? { ...updates, canonical_url: canonicalizeUrl(canonical) }
         : updates;
@@ -626,7 +629,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       logger.log('blacklistCompany called with id:', id);
       const company = companies.find(c => c.id === id);
       if (!company) return;
-      const url = canonicalizeUrl(company.canonical_url || company.site_web_canonique || '');
+      const legacySite = 'site_web_canonique' in company ? (company as { site_web_canonique?: string }).site_web_canonique : undefined;
+      const url = canonicalizeUrl(company.canonical_url || legacySite || '');
       logger.log('Computed canonical URL:', url);
       if (!url) return;
       const response = reason
@@ -649,7 +653,15 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const createNetworkFromCompanies = async (companyIds: number[]) => {
     if (companyIds.length === 0) return;
     const first = companies.find(c => c.id === companyIds[0]);
-    const domain = first ? extractDomainFromUrl(first.canonical_url || first.site_web_canonique || '') : '';
+    const domain = first
+      ? extractDomainFromUrl(
+          first.canonical_url ||
+            ('site_web_canonique' in first
+              ? (first as { site_web_canonique?: string }).site_web_canonique
+              : '') ||
+            ''
+        )
+      : '';
     const label = domain || 'Nouveau réseau';
     const network = await networksApi.create({ label });
     await Promise.all(companyIds.map(id => companiesApi.update(id, { reseau_id: network.id })));
@@ -674,7 +686,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       logger.log('urlBlacklistApi.create response:', entry);
       setUrlBlacklist(prev => [...prev, entry]);
       const affected = companies.filter(c => {
-        const site = c.canonical_url || c.site_web_canonique;
+        const site =
+          c.canonical_url ||
+          ('site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined);
         if (!site) return false;
         return canonicalizeDomain(site) === domain;
       });
@@ -691,13 +705,17 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     let affected: Company[] = [];
     if (scope === 'domain') {
       affected = companies.filter(c => {
-        const site = c.canonical_url || c.site_web_canonique;
+        const site =
+          c.canonical_url ||
+          ('site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined);
         if (!site) return false;
         return canonicalizeDomain(site) === value;
       });
     } else {
       affected = companies.filter(c => {
-        const site = c.canonical_url || c.site_web_canonique;
+        const site =
+          c.canonical_url ||
+          ('site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined);
         if (!site) return false;
         return canonicalizeUrl(site) === value;
       });

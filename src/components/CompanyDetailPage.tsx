@@ -140,7 +140,6 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     nb_employes_band: 'unknown' as EmployeeBand,
     nb_employes_exact: '',
     linkedin_url: '',
-    site_web_canonique: '',
     manually_enriched: false
   });
 
@@ -160,7 +159,6 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         nb_employes_band: fromDbEmployeeBand(foundCompany.nb_employes_band as unknown as string | undefined),
         nb_employes_exact: foundCompany.nb_employes_exact?.toString() || '',
         linkedin_url: foundCompany.linkedin_url || '',
-        site_web_canonique: foundCompany.site_web_canonique || '',
         manually_enriched: foundCompany.manually_enriched || false
       });
       
@@ -224,7 +222,6 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         nb_employes_band: fromDbEmployeeBand(company.nb_employes_band as unknown as string | undefined),
         nb_employes_exact: company.nb_employes_exact?.toString() || '',
         linkedin_url: company.linkedin_url || '',
-        site_web_canonique: company.site_web_canonique || '',
         manually_enriched: company.manually_enriched || false
       });
     }
@@ -372,7 +369,6 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     nb_employes_band: fromDbEmployeeBand(company.nb_employes_band as unknown as string | undefined),
     nb_employes_exact: company.nb_employes_exact,
     linkedin_url: company.linkedin_url,
-    site_web_canonique: company.site_web_canonique,
     manually_enriched: company.manually_enriched
   };
 
@@ -438,53 +434,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-2">
                 <div>
-                  <Label htmlFor="name">Nom de l'entreprise</Label>
-                  {isEditing ? (
-                    <Input
-                      id="name"
-                      value={currentData.name || ''}
-                      onChange={(e) => handleInputChange('name', e.target.value)}
-                      placeholder="Nom de l'entreprise"
-                    />
-                  ) : (
-                    <p className="text-sm p-2 bg-muted rounded">
-                      {currentData.name || 'Non renseigné'}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <Label htmlFor="site_web_canonique">Site web canonique</Label>
-                  {isEditing ? (
-                    <Input
-                      id="site_web_canonique"
-                      value={currentData.site_web_canonique || ''}
-                      onChange={(e) => handleInputChange('site_web_canonique', e.target.value)}
-                      placeholder="https://..."
-                    />
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      {currentData.site_web_canonique ? (
-                        <a 
-                          href={currentData.site_web_canonique} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                        >
-                          <Globe className="h-3 w-3" />
-                          {currentData.site_web_canonique}
-                        </a>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">Non renseigné</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <Label htmlFor="canonical_url">URL découverte</Label>
+                  <Label htmlFor="canonical_url">Site web</Label>
                   {isEditing ? (
                     <Input
                       id="canonical_url"
@@ -1021,9 +971,9 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
               <CardTitle>Actions rapides</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {(company.site_web_canonique || company.canonical_url) && (
+              {(company.canonical_url) && (
                 <Button variant="outline" size="sm" className="w-full justify-start" asChild>
-                  <a href={company.site_web_canonique || company.canonical_url} target="_blank" rel="noopener noreferrer">
+                  <a href={company.canonical_url} target="_blank" rel="noopener noreferrer">
                     <Eye className="h-4 w-4 mr-2" />
                     Visiter le site web
                   </a>
