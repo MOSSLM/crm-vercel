@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { ArrowLeft, ArrowUpDown, Merge, Phone, Mail, Globe, MapPin } from "lucide-react";
+import { ArrowLeft, ArrowUpDown, Merge, Phone, Globe, MapPin } from "lucide-react";
 
 interface SearchDetailPageProps {
   searchResult: SearchResult;
@@ -141,7 +141,6 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
                     .filter(Boolean) ?? [];
                 const sources = company.sources ?? [];
                 const tel = (company as { tel?: string }).tel ?? company.telephone;
-                const email = company.email;
 
                 return (
                   <TableRow key={company.id}>
@@ -173,12 +172,6 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
                           <div className="flex items-center gap-1 text-sm">
                             <Phone className="h-3 w-3" />
                             {tel}
-                          </div>
-                        )}
-                        {email && (
-                          <div className="flex items-center gap-1 text-sm">
-                            <Mail className="h-3 w-3" />
-                            {email}
                           </div>
                         )}
                       </div>

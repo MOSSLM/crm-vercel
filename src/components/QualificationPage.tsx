@@ -25,8 +25,6 @@ import {
   CheckCircle,
   Edit3,
   Phone,
-  Mail,
-  User,
   Save,
   X,
   Trash2,
@@ -46,7 +44,8 @@ export const QualificationPage: React.FC = () => {
     loading,
     isDuplicate,
     blacklistCompany,
-    blacklistDomain
+    blacklistDomain,
+    isCompanyBlacklisted
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -64,9 +63,7 @@ export const QualificationPage: React.FC = () => {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
   const [showQuickEditModal, setShowQuickEditModal] = useState(false);
   const [quickEditForm, setQuickEditForm] = useState({
-    telephone: '',
-    email: '',
-    contact_name: ''
+    telephone: ''
   });
 
   // Delete confirmation state
@@ -90,7 +87,7 @@ export const QualificationPage: React.FC = () => {
     
     const hideByDuplicate =
       !showDuplicates &&
-      (isDuplicate(company.id) || company.is_network || company.is_blacklisted);
+      (isDuplicate(company.id) || isCompanyBlacklisted(company));
 
     return matchesSearch && matchesSource && matchesQualification && !hideByDuplicate;
   });
@@ -194,9 +191,7 @@ export const QualificationPage: React.FC = () => {
     setEditingCompany(company);
     // Reset form with current company data if any
     setQuickEditForm({
-      telephone: '',
-      email: '',
-      contact_name: ''
+      telephone: company.telephone || ''
     });
     setShowQuickEditModal(true);
   };
@@ -210,14 +205,9 @@ export const QualificationPage: React.FC = () => {
       
       if (quickEditForm.telephone.trim()) {
         updates.telephone = quickEditForm.telephone.trim();
+      } else if (editingCompany.telephone) {
+        updates.telephone = null;
       }
-      if (quickEditForm.email.trim()) {
-        updates.email = quickEditForm.email.trim();
-      }
-      if (quickEditForm.contact_name.trim()) {
-        updates.contact_name = quickEditForm.contact_name.trim();
-      }
-
       // If no updates, just close the modal
       if (Object.keys(updates).length === 0) {
         setShowQuickEditModal(false);
@@ -275,12 +265,6 @@ export const QualificationPage: React.FC = () => {
                 {company.telephone && (
                   <Phone className="h-3 w-3 text-blue-600" />
                 )}
-                {company.email && (
-                  <Mail className="h-3 w-3 text-green-600" />
-                )}
-                {company.contact_name && (
-                  <User className="h-3 w-3 text-purple-600" />
-                )}
               </div>
             </div>
             <Button
@@ -319,26 +303,10 @@ export const QualificationPage: React.FC = () => {
             )}
 
             {/* Contact information if available */}
-            {(company.telephone || company.email || company.contact_name) && (
-              <div className="space-y-1 text-xs">
-                {company.telephone && (
-                  <div className="flex items-center gap-1 text-blue-600">
-                    <Phone className="h-3 w-3" />
-                    {company.telephone}
-                  </div>
-                )}
-                {company.email && (
-                  <div className="flex items-center gap-1 text-green-600">
-                    <Mail className="h-3 w-3" />
-                    {company.email}
-                  </div>
-                )}
-                {company.contact_name && (
-                  <div className="flex items-center gap-1 text-purple-600">
-                    <User className="h-3 w-3" />
-                    {company.contact_name}
-                  </div>
-                )}
+            {company.telephone && (
+              <div className="flex items-center gap-1 text-xs text-blue-600">
+                <Phone className="h-3 w-3" />
+                {company.telephone}
               </div>
             )}
 
@@ -443,14 +411,14 @@ export const QualificationPage: React.FC = () => {
 
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Avec contact</CardTitle>
+            <CardTitle className="text-sm">Téléphone disponible</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-600">
-              {companies.filter(c => c.telephone || c.email || c.contact_name).length}
+              {companies.filter(c => c.telephone).length}
             </div>
             <p className="text-xs text-muted-foreground">
-              {companies.length > 0 ? Math.round((companies.filter(c => c.telephone || c.email || c.contact_name).length / companies.length) * 100) : 0}% du total
+              {companies.length > 0 ? Math.round((companies.filter(c => c.telephone).length / companies.length) * 100) : 0}% du total
             </p>
           </CardContent>
         </Card>
@@ -562,12 +530,6 @@ export const QualificationPage: React.FC = () => {
                             {company.telephone && (
                               <Phone className="h-3 w-3 text-blue-600" />
                             )}
-                            {company.email && (
-                              <Mail className="h-3 w-3 text-green-600" />
-                            )}
-                            {company.contact_name && (
-                              <User className="h-3 w-3 text-purple-600" />
-                            )}
                           </div>
                           {company.canonical_url && (
                             <div className="text-xs text-muted-foreground truncate max-w-xs">
@@ -579,11 +541,9 @@ export const QualificationPage: React.FC = () => {
                             <Badge variant="outline" className="text-xs">
                               {company.sources.includes('google_maps') ? 'Maps' : 'Search'}
                             </Badge>
-                            {(company.telephone || company.email || company.contact_name) && (
+                            {company.telephone && (
                               <div className="text-xs text-muted-foreground">
-                                {company.telephone && `📞 ${company.telephone}`}{" "}
-                                {company.email && `✉️ ${company.email}`}{" "}
-                                {company.contact_name && `👤 ${company.contact_name}`}
+                                {`📞 ${company.telephone}`}
                               </div>
                             )}
                             <div className="text-xs text-muted-foreground">
@@ -869,8 +829,8 @@ export const QualificationPage: React.FC = () => {
             </DialogTitle>
             <DialogDescription>
               {editingCompany ? 
-                `Ajoutez des informations de contact pour ${getCompanyDisplayName(editingCompany.name, editingCompany.canonical_url)}` :
-                'Ajoutez des informations de contact pour cette entreprise'
+                `Ajoutez un numéro de téléphone pour ${getCompanyDisplayName(editingCompany.name, editingCompany.canonical_url)}` :
+                'Ajoutez un numéro de téléphone pour cette entreprise'
               }
             </DialogDescription>
           </DialogHeader>
@@ -886,33 +846,6 @@ export const QualificationPage: React.FC = () => {
                 value={quickEditForm.telephone}
                 onChange={(e) => setQuickEditForm(prev => ({ ...prev, telephone: e.target.value }))}
                 placeholder="Ex: 01 23 45 67 89 ou 06 12 34 56 78"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="quick-email" className="flex items-center gap-2">
-                <Mail className="h-4 w-4" />
-                Email
-              </Label>
-              <Input
-                id="quick-email"
-                type="email"
-                value={quickEditForm.email}
-                onChange={(e) => setQuickEditForm(prev => ({ ...prev, email: e.target.value }))}
-                placeholder="contact@entreprise.com"
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="quick-contact" className="flex items-center gap-2">
-                <User className="h-4 w-4" />
-                Nom du contact
-              </Label>
-              <Input
-                id="quick-contact"
-                value={quickEditForm.contact_name}
-                onChange={(e) => setQuickEditForm(prev => ({ ...prev, contact_name: e.target.value }))}
-                placeholder="Nom de la personne de contact"
               />
             </div>
           </div>
@@ -988,28 +921,12 @@ export const QualificationPage: React.FC = () => {
               )}
 
               {/* Contact information section */}
-              {(selectedCompany.telephone || selectedCompany.email || selectedCompany.contact_name) && (
+              {selectedCompany.telephone && (
                 <div>
                   <label className="text-sm font-medium">Informations de contact</label>
-                  <div className="mt-2 space-y-2">
-                    {selectedCompany.telephone && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-blue-600" />
-                        <span className="text-sm">{selectedCompany.telephone}</span>
-                      </div>
-                    )}
-                    {selectedCompany.email && (
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-green-600" />
-                        <span className="text-sm">{selectedCompany.email}</span>
-                      </div>
-                    )}
-                    {selectedCompany.contact_name && (
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-purple-600" />
-                        <span className="text-sm">{selectedCompany.contact_name}</span>
-                      </div>
-                    )}
+                  <div className="mt-2 flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm">{selectedCompany.telephone}</span>
                   </div>
                 </div>
               )}

@@ -75,31 +75,25 @@ const COMPANY_COLUMNS = [
   'lng',
   'premiers_tags',
   'sources',
+  'raw_ids',
   'qualifie',
-  'is_network',
-  'is_blacklisted',
-  'reseau_id',
   'created_at',
   'updated_at',
   'ca_estime_band',
   'nb_employes_band',
   'nb_employes_exact',
   'linkedin_url',
+  'site_web_canonique',
   'manually_enriched',
   'enriched_at',
   'enriched_by',
-  'recherche_id',
-  'place_id',
-  'reference_url',
-  'position',
+  'reseau_id',
+  'telephone',
   'note_moyenne',
   'nombre_avis',
   'ville',
   'code_postal',
-  'pays',
-  'telephone',
-  'email',
-  'contact_name'
+  'pays'
 ] as const;
 const COMPANY_SELECT = COMPANY_COLUMNS.join(',');
 
@@ -138,8 +132,6 @@ const COMPANY_METADATA_COLUMNS = [
   'canonical_url',
   'linkedin_url',
   'telephone',
-  'email',
-  'contact_name',
   'note_moyenne',
   'nombre_avis',
   'sources',
@@ -177,8 +169,6 @@ type CompanyMetadata = {
   canonical_url?: string | null;
   linkedin_url?: string | null;
   telephone?: string | null;
-  email?: string | null;
-  contact_name?: string | null;
   note_moyenne?: number | null;
   nombre_avis?: number | null;
   sources?: string[] | null;
@@ -215,6 +205,7 @@ const buildCompanyFromPartial = (
   return {
     id,
     sources: toStringArray(partial.sources),
+    raw_ids: toStringArray(partial.raw_ids),
     qualifie: typeof partial.qualifie === 'boolean' ? partial.qualifie : false,
     created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
     updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
@@ -224,9 +215,6 @@ const buildCompanyFromPartial = (
     lat: toOptionalNumber(partial.lat),
     lng: toOptionalNumber(partial.lng),
     premiers_tags: toOptionalString(partial.premiers_tags),
-    is_network: toOptionalBoolean(partial.is_network),
-    is_blacklisted: toOptionalBoolean(partial.is_blacklisted),
-    reseau_id: toOptionalString(partial.reseau_id),
     ca_estime_band:
       typeof partial.ca_estime_band === 'string'
         ? (partial.ca_estime_band as RevenueBand)
@@ -237,21 +225,17 @@ const buildCompanyFromPartial = (
         : undefined,
     nb_employes_exact: toOptionalNumber(partial.nb_employes_exact),
     linkedin_url: toOptionalString(partial.linkedin_url),
+    site_web_canonique: toOptionalString(partial.site_web_canonique),
     manually_enriched: toOptionalBoolean(partial.manually_enriched),
     enriched_at: toOptionalString(partial.enriched_at),
     enriched_by: toOptionalString(partial.enriched_by),
-    recherche_id: toOptionalString(partial.recherche_id),
-    place_id: toOptionalString(partial.place_id),
-    reference_url: toOptionalString(partial.reference_url),
-    position: toOptionalNumber(partial.position),
+    reseau_id: toOptionalString(partial.reseau_id),
     note_moyenne: toOptionalNumber(partial.note_moyenne),
     nombre_avis: toOptionalNumber(partial.nombre_avis),
     ville: toOptionalString(partial.ville),
     code_postal: toOptionalString(partial.code_postal),
     pays: toOptionalString(partial.pays),
     telephone: toOptionalString(partial.telephone),
-    email: toOptionalString(partial.email),
-    contact_name: toOptionalString(partial.contact_name),
   };
 };
 
@@ -669,8 +653,6 @@ export const companiesApi = {
         ...fallbackData,
         created_at: now,
         updated_at: now,
-        is_network: false,
-        is_blacklisted: false,
       });
     }
   },
@@ -1420,16 +1402,12 @@ export const opportunitiesApi = {
         let companyUrl = '';
         let linkedin_url = '';
         let telephone = '';
-        let email = '';
-        let contact_name = '';
 
         if (metadata) {
           companyName = metadata.name || '';
           companyUrl = metadata.canonical_url || '';
           linkedin_url = metadata.linkedin_url || '';
           telephone = metadata.telephone || '';
-          email = metadata.email || '';
-          contact_name = metadata.contact_name || '';
         }
 
         const stageName =
@@ -1453,9 +1431,7 @@ export const opportunitiesApi = {
           opportunityNotes: [],
           pipelineHistory: [],
           telephone,
-          email,
           linkedin_url,
-          contact_name
         };
       });
 

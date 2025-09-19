@@ -19,12 +19,11 @@ import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
 import { toast } from "sonner";
 import { 
-  ArrowLeft, 
-  Save, 
-  Globe, 
-  Phone, 
-  Mail, 
-  MapPin, 
+  ArrowLeft,
+  Save,
+  Globe,
+  Phone,
+  MapPin,
   Building,
   CheckCircle,
   Edit3,
@@ -34,7 +33,6 @@ import {
   Calendar,
   Database,
   ExternalLink,
-  User,
   Briefcase,
   Loader2,
   Plus,
@@ -690,53 +688,23 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {detailedCompany && (detailedCompany.telephone || detailedCompany.email || detailedCompany.contact_name) ? (
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {detailedCompany.telephone && (
-                      <div>
-                        <Label className="flex items-center gap-2">
-                          <Phone className="h-4 w-4" />
-                          Téléphone
-                        </Label>
-                        <p className="text-sm p-2 bg-muted rounded">
-                          <a href={`tel:${detailedCompany.telephone}`} className="text-blue-600 hover:underline">
-                            {detailedCompany.telephone}
-                          </a>
-                        </p>
-                      </div>
-                    )}
-
-                    {detailedCompany.email && (
-                      <div>
-                        <Label className="flex items-center gap-2">
-                          <Mail className="h-4 w-4" />
-                          Email
-                        </Label>
-                        <p className="text-sm p-2 bg-muted rounded">
-                          <a href={`mailto:${detailedCompany.email}`} className="text-blue-600 hover:underline">
-                            {detailedCompany.email}
-                          </a>
-                        </p>
-                      </div>
-                    )}
-
-                    {detailedCompany.contact_name && (
-                      <div className="md:col-span-2">
-                        <Label className="flex items-center gap-2">
-                          <User className="h-4 w-4" />
-                          Contact principal
-                        </Label>
-                        <p className="text-sm p-2 bg-muted rounded">
-                          {detailedCompany.contact_name}
-                        </p>
-                      </div>
-                    )}
+                {detailedCompany && detailedCompany.telephone ? (
+                  <div>
+                    <Label className="flex items-center gap-2">
+                      <Phone className="h-4 w-4" />
+                      Téléphone
+                    </Label>
+                    <p className="text-sm p-2 bg-muted rounded">
+                      <a href={`tel:${detailedCompany.telephone}`} className="text-blue-600 hover:underline">
+                        {detailedCompany.telephone}
+                      </a>
+                    </p>
                   </div>
                 ) : (
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                     <p className="text-sm text-amber-800">
-                      <strong>Aucune information de contact disponible</strong><br />
-                      Vous pouvez renseigner ces informations manuellement ou ajouter des contacts ci-dessous.
+                      <strong>Aucun numéro de téléphone disponible</strong><br />
+                      Vous pouvez renseigner cette information manuellement ou ajouter des contacts ci-dessous.
                     </p>
                   </div>
                 )}
@@ -1015,14 +983,6 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
                 </Button>
               )}
 
-              {detailedCompany?.email && (
-                <Button variant="outline" size="sm" className="w-full justify-start" asChild>
-                  <a href={`mailto:${detailedCompany.email}`}>
-                    <Mail className="h-4 w-4 mr-2" />
-                    Envoyer un email
-                  </a>
-                </Button>
-              )}
             </CardContent>
           </Card>
         </div>
