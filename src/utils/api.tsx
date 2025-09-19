@@ -350,6 +350,36 @@ const buildOpportunityFromPartial = (
   };
 };
 
+const mapOpportunityPriority = (
+  priorite: Opportunity['priorite']
+): NonNullable<Opportunity['priority']> => {
+  switch (priorite) {
+    case 'haute':
+      return 'high';
+    case 'basse':
+      return 'low';
+    case 'moyenne':
+    default:
+      return 'medium';
+  }
+};
+
+const mapAchievementEventType = (
+  typeEvenement: string | undefined
+): Achievement['type'] | undefined => {
+  switch (typeEvenement) {
+    case 'signature':
+    case 'deposit':
+    case 'lead_magnet':
+    case 'qualified':
+    case 'meeting':
+    case 'monthly_goal':
+      return typeEvenement;
+    default:
+      return undefined;
+  }
+};
+
 const buildAchievementFromPartial = (
   id: number,
   partial: Partial<Achievement>
@@ -866,8 +896,12 @@ export const companiesApi = {
             .select(RAW_COMPANY_SELECT)
             .in('id', rawIds);
 
-          if (!rawError && Array.isArray(rawData)) {
-            rawContactInfo = rawData.filter(isCompanyRawRow);
+          if (!rawError) {
+            const rawRows = Array.isArray(rawData) ? (rawData as unknown[]) : [];
+            const validRawData = rawRows.filter(isCompanyRawRow);
+            if (validRawData.length > 0) {
+              rawContactInfo = validRawData;
+            }
           }
         } catch (rawError) {
           logger.error('Error fetching raw contact data:', rawError);
@@ -911,23 +945,26 @@ export const companiesApi = {
                 .select(RAW_COMPANY_SELECT)
                 .in('id', rawIds);
 
-              if (!rawError && Array.isArray(rawData)) {
-                const validRawData = rawData.filter(isCompanyRawRow);
-                const contactInfo = extractContactInfoFromRawEntries(
-                  validRawData.map((entry) => ({
-                    id: entry.id,
-                    telephone: entry.telephone,
-                    raw_json: entry.raw_json,
-                  }))
-                );
+              if (!rawError) {
+                const rawRows = Array.isArray(rawData) ? (rawData as unknown[]) : [];
+                const validRawData = rawRows.filter(isCompanyRawRow);
+                if (validRawData.length > 0) {
+                  const contactInfo = extractContactInfoFromRawEntries(
+                    validRawData.map((entry) => ({
+                      id: entry.id,
+                      telephone: entry.telephone,
+                      raw_json: entry.raw_json,
+                    }))
+                  );
 
-                return {
-                  ...company,
-                  raw_contact_info: validRawData,
-                  telephone: contactInfo.telephone,
-                  email: contactInfo.email,
-                  contact_name: contactInfo.contact_name,
-                };
+                  return {
+                    ...company,
+                    raw_contact_info: validRawData,
+                    telephone: contactInfo.telephone,
+                    email: contactInfo.email,
+                    contact_name: contactInfo.contact_name,
+                  };
+                }
               }
             } catch (error) {
               logger.error('Error fetching raw data for company:', company.id, error);
@@ -1534,8 +1571,40 @@ export const contactsApi = {
 };
 
 // Opportunities API (table: opportunites)
+const createFallbackOpportunity = (): Opportunity => {
+  const baseOpportunity = buildOpportunityFromPartial('1', {
+    contact_id: '1',
+    entreprise_id: 1,
+    montant: 2500,
+    priorite: 'moyenne',
+    stage_id: 1,
+    lead_magnet: true,
+    note_base: 'Très intéressé, RDV prévu',
+    tags: 'Restaurant,Urgent',
+    date_prochain_suivi: '2024-01-25',
+    created_at: '2024-01-16T00:00:00Z',
+    updated_at: '2024-01-18T00:00:00Z',
+  });
+
+  return {
+    ...baseOpportunity,
+    companyName: 'Restaurant Le Gourmet',
+    contactId: '1',
+    stage: 'RDV de vente 1',
+    value: baseOpportunity.montant,
+    priority: mapOpportunityPriority(baseOpportunity.priorite),
+    notes: baseOpportunity.note_base,
+    createdDate: '2024-01-16',
+    lastUpdate: '2024-01-18',
+    nextFollowUp: '2024-01-25',
+    leadMagnet: true,
+    opportunityNotes: [],
+    pipelineHistory: [],
+  };
+};
+
 export const opportunitiesApi = {
-  getAll: async () => {
+  getAll: async (): Promise<Opportunity[]> => {
     try {
       const { data: opportunitiesData, error: opportunitiesError } = await supabase
         .from('opportunites')
@@ -1545,34 +1614,7 @@ export const opportunitiesApi = {
       if (opportunitiesError) {
         logger.error('Supabase error:', opportunitiesError);
         // Return mock data as fallback
-        return [
-          {
-            id: '1',
-            contact_id: '1',
-            entreprise_id: 1,
-            montant: 2500,
-            priorite: 'moyenne',
-            stage_id: 1,
-            lead_magnet: true,
-            note_base: 'Très intéressé, RDV prévu',
-            tags: 'Restaurant,Urgent',
-            date_prochain_suivi: '2024-01-25',
-            created_at: '2024-01-16T00:00:00Z',
-            updated_at: '2024-01-18T00:00:00Z',
-            companyName: 'Restaurant Le Gourmet',
-            contactId: '1',
-            stage: 'RDV de vente 1',
-            value: 2500,
-            priority: 'high',
-            notes: 'Très intéressé, RDV prévu',
-            createdDate: '2024-01-16',
-            lastUpdate: '2024-01-18',
-            nextFollowUp: '2024-01-25',
-            leadMagnet: true,
-            opportunityNotes: [],
-            pipelineHistory: []
-          }
-        ];
+        return [createFallbackOpportunity()];
       }
 
       const opportunitiesRows = Array.isArray(opportunitiesData)
@@ -1711,12 +1753,7 @@ export const opportunitiesApi = {
           contactId: opp.contact_id,
           stage: stageName,
           value: opp.montant,
-          priority:
-            opp.priorite === 'haute'
-              ? 'high'
-              : opp.priorite === 'basse'
-              ? 'low'
-              : 'medium',
+          priority: mapOpportunityPriority(opp.priorite),
           notes: opp.note_base,
           createdDate: opp.created_at ? opp.created_at.split('T')[0] : undefined,
           lastUpdate: opp.updated_at ? opp.updated_at.split('T')[0] : undefined,
@@ -2033,7 +2070,7 @@ export const achievementsApi = {
 
       return achievements.map((achievement) => ({
         ...achievement,
-        type: achievement.type_evenement,
+        type: mapAchievementEventType(achievement.type_evenement),
         title: achievement.description,
         value: achievement.value ?? undefined,
         companyName: achievement.companyName ?? undefined,
