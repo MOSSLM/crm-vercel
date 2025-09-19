@@ -78,7 +78,6 @@ export function CreateCompanyPage() {
         linkedin_url: formState.linkedin.trim() || undefined,
         premiers_tags: formState.tags.trim() || undefined,
         sources: ["manual"],
-        raw_ids: [],
         qualifie: formState.isQualified,
         is_network: formState.isNetwork,
         is_blacklisted: false,
