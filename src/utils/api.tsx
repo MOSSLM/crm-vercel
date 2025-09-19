@@ -3,7 +3,6 @@ import {
   Achievement,
   Company,
   CompanyNetwork,
-  CompanyRaw,
   Contact,
   EmployeeBand,
   Opportunity,
@@ -21,9 +20,6 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export const isCompanyRow = (row: unknown): row is Company =>
   isRecord(row) && typeof row.id === 'number';
-
-const isCompanyRawRow = (row: unknown): row is CompanyRaw =>
-  isRecord(row) && typeof row.id === 'number' && typeof row.recherche_id === 'string';
 
 export const isOpportunityRow = (row: unknown): row is Opportunity =>
   isRecord(row) && typeof row.id === 'string' && 'lead_magnet' in row;
@@ -79,7 +75,6 @@ const COMPANY_COLUMNS = [
   'lng',
   'premiers_tags',
   'sources',
-  'raw_ids',
   'qualifie',
   'is_network',
   'is_blacklisted',
@@ -137,36 +132,18 @@ const normalizeCompanyEnums = (input: Partial<Company>): Partial<Company> => {
   return converted;
 };
 
-const RAW_COMPANY_COLUMNS = [
+const COMPANY_METADATA_COLUMNS = [
   'id',
-  'recherche_id',
-  'source',
-  'position',
-  'page',
-  'title',
-  'meta',
-  'url',
-  'keyword',
-  'location',
   'name',
-  'avis',
-  'nombre_avis',
-  'tags',
-  'adresse',
-  'lat',
-  'lng',
+  'canonical_url',
+  'linkedin_url',
   'telephone',
-  'ferme_definitivement',
-  'raw_json',
-  'inserted_at'
+  'email',
+  'contact_name',
+  'note_moyenne',
+  'nombre_avis'
 ] as const;
-const RAW_COMPANY_SELECT = RAW_COMPANY_COLUMNS.join(',');
-
-const COMPANY_METADATA_COLUMNS = ['id', 'name', 'canonical_url', 'raw_ids', 'linkedin_url'] as const;
 const COMPANY_METADATA_SELECT = COMPANY_METADATA_COLUMNS.join(',');
-
-const RAW_CONTACT_COLUMNS = ['id', 'telephone', 'raw_json'] as const;
-const RAW_CONTACT_SELECT = RAW_CONTACT_COLUMNS.join(',');
 
 const STAGE_METADATA_COLUMNS = ['id', 'nom'] as const;
 const STAGE_METADATA_SELECT = STAGE_METADATA_COLUMNS.join(',');
@@ -197,42 +174,19 @@ type CompanyMetadata = {
   id: number;
   name?: string | null;
   canonical_url?: string | null;
-  raw_ids?: number[] | null;
   linkedin_url?: string | null;
-};
-
-type RawContactRecord = {
-  id: number;
   telephone?: string | null;
-  raw_json?: unknown;
+  email?: string | null;
+  contact_name?: string | null;
+  note_moyenne?: number | null;
+  nombre_avis?: number | null;
 };
 
 const isCompanyMetadataRow = (row: unknown): row is CompanyMetadata =>
   isRecord(row) && typeof row.id === 'number';
 
-const isRawContactRecord = (row: unknown): row is RawContactRecord =>
-  isRecord(row) && typeof row.id === 'number';
-
 const companyMetadataCache = new Map<number, CompanyMetadata>();
 const stageMetadataCache = new Map<number, string>();
-
-const parseRawJson = (raw: unknown): Record<string, unknown> | null => {
-  if (!raw) return null;
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      return null;
-    }
-  }
-  if (typeof raw === 'object' && !Array.isArray(raw)) {
-    return raw as Record<string, unknown>;
-  }
-  return null;
-};
 
 const toOptionalString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
@@ -243,11 +197,6 @@ const toOptionalNumber = (value: unknown): number | undefined =>
 const toOptionalBoolean = (value: unknown): boolean | undefined =>
   typeof value === 'boolean' ? value : undefined;
 
-const toNumberArray = (value: unknown): number[] =>
-  Array.isArray(value)
-    ? value.filter((item): item is number => typeof item === 'number')
-    : [];
-
 const toStringArray = (value: unknown): string[] =>
   Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
@@ -257,7 +206,6 @@ const buildCompanyFromPartial = (
   id: number,
   partial: Partial<Company> & {
     sources?: unknown;
-    raw_ids?: unknown;
     qualifie?: unknown;
   }
 ): Company => {
@@ -265,7 +213,6 @@ const buildCompanyFromPartial = (
   return {
     id,
     sources: toStringArray(partial.sources),
-    raw_ids: toNumberArray(partial.raw_ids),
     qualifie: typeof partial.qualifie === 'boolean' ? partial.qualifie : false,
     created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
     updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
@@ -303,9 +250,6 @@ const buildCompanyFromPartial = (
     telephone: toOptionalString(partial.telephone),
     email: toOptionalString(partial.email),
     contact_name: toOptionalString(partial.contact_name),
-    raw_contact_info: Array.isArray(partial.raw_contact_info)
-      ? partial.raw_contact_info.filter(isCompanyRawRow)
-      : undefined,
   };
 };
 
@@ -450,40 +394,6 @@ const buildOpportunityNoteFromPartial = (
     contenu: toOptionalString(partial.contenu),
     created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
   };
-};
-
-const extractContactInfoFromRawEntries = (rawEntries: RawContactRecord[]) => {
-  let telephone = '';
-  let email = '';
-  let contact_name = '';
-
-  for (const entry of rawEntries) {
-    if (!telephone && entry.telephone) {
-      telephone = entry.telephone;
-    }
-
-    const parsed = parseRawJson(entry.raw_json);
-    if (parsed) {
-      if (!email) {
-        const candidate = parsed.email || parsed.contact_email;
-        if (typeof candidate === 'string') {
-          email = candidate;
-        }
-      }
-      if (!contact_name) {
-        const candidate = parsed.contact_name || parsed.owner;
-        if (typeof candidate === 'string') {
-          contact_name = candidate;
-        }
-      }
-    }
-
-    if (telephone && email && contact_name) {
-      break;
-    }
-  }
-
-  return { telephone, email, contact_name };
 };
 
 export const canonicalizeDomain = (url: string): string => {
@@ -793,36 +703,6 @@ export const companiesApi = {
   
   delete: async (id: number) => {
     try {
-      // First, get the raw_ids associated with this company
-      const { data: company, error: fetchError } = await supabase
-        .from('entreprises')
-        .select('raw_ids')
-        .eq('id', id)
-        .single();
-
-      if (fetchError) {
-        logger.error('Error fetching company raw_ids:', fetchError);
-        throw fetchError;
-      }
-
-      // Delete associated raw companies if they exist
-      const rawIds = isRecord(company) && Array.isArray((company as { raw_ids?: unknown }).raw_ids)
-        ? ((company as { raw_ids: number[] }).raw_ids)
-        : [];
-
-      if (rawIds.length > 0) {
-        const { error: rawDeleteError } = await supabase
-          .from('entreprises_raw')
-          .delete()
-          .in('id', rawIds);
-
-        if (rawDeleteError) {
-          logger.error('Error deleting raw companies:', rawDeleteError);
-          // Continue with company deletion even if raw deletion fails
-        }
-      }
-
-      // Then delete the company
       const { error: companyDeleteError } = await supabase
         .from('entreprises')
         .delete()
@@ -861,152 +741,21 @@ export const companiesApi = {
 
       const companyData: Company = company;
 
-      const rawIds = Array.isArray(companyData.raw_ids) ? companyData.raw_ids : [];
-      let rawContactInfo: CompanyRaw[] = [];
-
-      if (rawIds.length > 0) {
-        try {
-          const { data: rawData, error: rawError } = await supabase
-            .from('entreprises_raw')
-            .select(RAW_COMPANY_SELECT)
-            .in('id', rawIds);
-
-          if (!rawError) {
-            const rawRows = Array.isArray(rawData) ? (rawData as unknown[]) : [];
-            const validRawData = rawRows.filter(isCompanyRawRow);
-            if (validRawData.length > 0) {
-              rawContactInfo = validRawData;
-            }
-          }
-        } catch (rawError) {
-          logger.error('Error fetching raw contact data:', rawError);
-        }
-      }
-
-      const contactInfo = extractContactInfoFromRawEntries(
-        rawContactInfo.map((entry) => ({
-          id: entry.id,
-          telephone: entry.telephone,
-          raw_json: entry.raw_json,
-        }))
-      );
-
-      return {
-        ...companyData,
-        raw_contact_info: rawContactInfo,
-        telephone: contactInfo.telephone,
-        email: contactInfo.email,
-        contact_name: contactInfo.contact_name,
-      };
+      return buildCompanyFromPartial(companyData.id, companyData);
     } catch (error) {
       logger.error('Error fetching company by ID:', error);
       return null;
     }
   },
 
-  // Get companies with their raw contact info
   getAllWithRawData: async () => {
     try {
       const companies = await companiesApi.getAll();
-      
-      // For each company, fetch raw contact data
-      const companiesWithRawData = await Promise.all(
-        companies.map(async (company) => {
-          const rawIds = Array.isArray(company.raw_ids) ? company.raw_ids : [];
-          if (rawIds.length > 0) {
-            try {
-              const { data: rawData, error: rawError } = await supabase
-                .from('entreprises_raw')
-                .select(RAW_COMPANY_SELECT)
-                .in('id', rawIds);
 
-              if (!rawError) {
-                const rawRows = Array.isArray(rawData) ? (rawData as unknown[]) : [];
-                const validRawData = rawRows.filter(isCompanyRawRow);
-                if (validRawData.length > 0) {
-                  const contactInfo = extractContactInfoFromRawEntries(
-                    validRawData.map((entry) => ({
-                      id: entry.id,
-                      telephone: entry.telephone,
-                      raw_json: entry.raw_json,
-                    }))
-                  );
-
-                  return {
-                    ...company,
-                    raw_contact_info: validRawData,
-                    telephone: contactInfo.telephone,
-                    email: contactInfo.email,
-                    contact_name: contactInfo.contact_name,
-                  };
-                }
-              }
-            } catch (error) {
-              logger.error('Error fetching raw data for company:', company.id, error);
-            }
-          }
-          return company;
-        })
-      );
-      
-      return companiesWithRawData;
+      return companies.map((company) => buildCompanyFromPartial(company.id, company));
     } catch (error) {
       logger.error('Error fetching companies with raw data:', error);
       return [];
-    }
-  }
-};
-
-// Raw Companies API (table: entreprises_raw)
-export const rawCompaniesApi = {
-  getBySearch: async (rechercheId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('entreprises_raw')
-        .select(RAW_COMPANY_SELECT)
-        .eq('recherche_id', rechercheId)
-        .order('position', { ascending: true });
-      
-      if (error) throw error;
-      return Array.isArray(data) ? data.filter(isCompanyRawRow) : [];
-    } catch (error) {
-      logger.error('Error fetching raw companies:', error);
-      return [];
-    }
-  },
-  
-  getByIds: async (ids: number[]) => {
-    try {
-      const { data, error } = await supabase
-        .from('entreprises_raw')
-        .select(RAW_COMPANY_SELECT)
-        .in('id', ids);
-      
-      if (error) throw error;
-      return Array.isArray(data) ? data.filter(isCompanyRawRow) : [];
-    } catch (error) {
-      logger.error('Error fetching raw companies by IDs:', error);
-      return [];
-    }
-  },
-  
-  create: async (rawCompanyData: Record<string, unknown>) => {
-    try {
-      const { data, error } = await supabase
-        .from('entreprises_raw')
-        .insert([rawCompanyData])
-        .select()
-        .single();
-      
-      if (error) throw error;
-      if (isCompanyRawRow(data)) {
-        return data;
-      }
-      logger.error('Invalid raw company payload received from Supabase');
-      throw new Error('Invalid raw company payload');
-    } catch (error) {
-      logger.error('Error creating raw company:', error);
-      return { ...rawCompanyData, id: Date.now() };
     }
   }
 };
@@ -1646,30 +1395,6 @@ export const opportunitiesApi = {
         }
       });
 
-      const allRawIds = new Set<number>();
-      companiesMetadata.forEach((metadata) => {
-        (metadata.raw_ids || []).forEach((rawId) => {
-          if (typeof rawId === 'number') {
-            allRawIds.add(rawId);
-          }
-        });
-      });
-
-      let rawDataMap = new Map<number, RawContactRecord>();
-      if (allRawIds.size > 0) {
-        const { data: rawRows, error: rawError } = await supabase
-          .from('entreprises_raw')
-          .select(RAW_CONTACT_SELECT)
-          .in('id', Array.from(allRawIds));
-
-        if (rawError) {
-          logger.error('Error fetching raw contact data:', rawError);
-        } else if (Array.isArray(rawRows)) {
-          const records = (rawRows as unknown[]).filter(isRawContactRecord);
-          rawDataMap = new Map(records.map((row) => [row.id, row]));
-        }
-      }
-
       const missingStageIds = stageIds.filter((id) => !stageMetadataCache.has(id));
       if (missingStageIds.length > 0) {
         const { data: stageRows, error: stageError } = await supabase
@@ -1703,17 +1428,9 @@ export const opportunitiesApi = {
           companyName = metadata.name || '';
           companyUrl = metadata.canonical_url || '';
           linkedin_url = metadata.linkedin_url || '';
-
-          const rawEntries = (metadata.raw_ids || [])
-            .map((rawId) => rawDataMap.get(rawId))
-            .filter((entry): entry is RawContactRecord => Boolean(entry));
-
-          if (rawEntries.length > 0) {
-            const contactInfo = extractContactInfoFromRawEntries(rawEntries);
-            telephone = contactInfo.telephone;
-            email = contactInfo.email;
-            contact_name = contactInfo.contact_name;
-          }
+          telephone = metadata.telephone || '';
+          email = metadata.email || '';
+          contact_name = metadata.contact_name || '';
         }
 
         const stageName =

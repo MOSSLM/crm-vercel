@@ -1092,7 +1092,6 @@ export const QualificationPage: React.FC = () => {
                   <br /><br />
                   Cette action supprimera également :
                   <ul className="list-disc list-inside mt-2 space-y-1">
-                    <li>Toutes les données brutes associées</li>
                     <li>Tous les contacts liés à cette entreprise</li>
                     <li>Toutes les opportunités en cours</li>
                   </ul>
