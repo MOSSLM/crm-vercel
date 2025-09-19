@@ -10,6 +10,11 @@ const logger = {
       console.log(...args);
     }
   },
+  warn: (...args: unknown[]) => {
+    if (!isProd) {
+      console.warn(...args);
+    }
+  },
   error: (...args: unknown[]) => {
     if (!isProd) {
       console.error(...args);
