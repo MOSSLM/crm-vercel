@@ -133,11 +133,11 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sortedCompanies.map((company) => {
+              {sortedCompanies.map((company: Company) => {
                 const tags =
                   company.premiers_tags
                     ?.split(",")
-                    .map((t) => t.trim())
+                    .map((t: string) => t.trim())
                     .filter(Boolean) ?? [];
                 const sources = company.sources ?? [];
                 const tel = (company as { tel?: string }).tel ?? company.telephone;
@@ -185,7 +185,7 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {tags.slice(0, 2).map((tag, index) => (
+                        {tags.slice(0, 2).map((tag: string, index: number) => (
                           <Badge
                             key={`${tag}-${index}`}
                             variant="secondary"
@@ -210,8 +210,8 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
                           <Badge variant="secondary">Google</Badge>
                         )}
                         {sources
-                          .filter((s) => s !== "maps" && s !== "google")
-                          .map((s, i) => (
+                          .filter((s: string) => s !== "maps" && s !== "google")
+                          .map((s: string, i: number) => (
                             <Badge key={`${s}-${i}`} variant="outline">
                               {s}
                             </Badge>
