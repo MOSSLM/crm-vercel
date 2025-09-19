@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAppData } from './AppDataContext';
-import { Company, CompanyRaw, EmployeeBand, Opportunity, RevenueBand } from '@/types';
+import { Company, EmployeeBand, Opportunity, RevenueBand } from '@/types';
 import { companiesApi } from '../utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Input } from './ui/input';
@@ -736,20 +736,19 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
                   <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
                     <p className="text-sm text-amber-800">
                       <strong>Aucune information de contact disponible</strong><br />
-                      Les informations de contact proviennent des données de recherche brutes. 
-                      Vous pouvez ajouter des contacts manuellement dans la section ci-dessous.
+                      Renseignez un numéro, une adresse email ou un contact principal depuis Supabase
+                      ou via les formulaires d'édition pour les afficher ici.
                     </p>
                   </div>
                 )}
 
-                {detailedCompany?.raw_contact_info && detailedCompany.raw_contact_info.length > 0 && (
+                {detailedCompany?.sources && detailedCompany.sources.length > 0 && (
                   <div className="mt-4">
                     <Label>Sources des données</Label>
                     <div className="flex gap-2 flex-wrap mt-2">
-                    {detailedCompany.raw_contact_info.map((raw: CompanyRaw, index: number) => (
-                        <Badge key={index} variant="outline" className="text-xs">
-                          {raw.source === 'google_maps' ? 'Google Maps' : 'Google Search'}
-                          {raw.position && ` #${raw.position}`}
+                      {detailedCompany.sources.map((source) => (
+                        <Badge key={source} variant="outline" className="text-xs capitalize">
+                          {source.replace(/_/g, ' ')}
                         </Badge>
                       ))}
                     </div>

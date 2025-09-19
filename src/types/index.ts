@@ -35,30 +35,6 @@ export interface SearchResult {
   date?: string;
 }
 
-export interface CompanyRaw {
-  id: number;
-  recherche_id: string;
-  source: 'google_search' | 'google_maps';
-  position?: number;
-  page?: number;
-  title?: string;
-  meta?: string;
-  url?: string;
-  keyword: string;
-  location: string;
-  name?: string;
-  avis?: number;
-  nombre_avis?: number;
-  tags?: string;
-  adresse?: string;
-  lat?: number;
-  lng?: number;
-  telephone?: string;
-  ferme_definitivement: boolean;
-  raw_json?: unknown;
-  inserted_at: string;
-}
-
 export interface Company {
   id: number;
   canonical_url?: string;
@@ -68,7 +44,6 @@ export interface Company {
   lng?: number;
   premiers_tags?: string;
   sources: string[];
-  raw_ids: number[];
   qualifie: boolean;
   is_network?: boolean;
   is_blacklisted?: boolean;
@@ -94,7 +69,6 @@ export interface Company {
   telephone?: string;
   email?: string;
   contact_name?: string;
-  raw_contact_info?: CompanyRaw[];
 }
 
 export interface Contact {
