@@ -891,7 +891,9 @@ export const companiesApi = {
         return null;
       }
 
-      const rawIds = Array.isArray(company.raw_ids) ? company.raw_ids : [];
+      const companyData: Company = company;
+
+      const rawIds = Array.isArray(companyData.raw_ids) ? companyData.raw_ids : [];
       let rawContactInfo: CompanyRaw[] = [];
 
       if (rawIds.length > 0) {
@@ -922,7 +924,7 @@ export const companiesApi = {
       );
 
       return {
-        ...company,
+        ...companyData,
         raw_contact_info: rawContactInfo,
         telephone: contactInfo.telephone,
         email: contactInfo.email,
