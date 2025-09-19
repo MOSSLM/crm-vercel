@@ -62,7 +62,7 @@ export interface Company {
   ville?: string;
   code_postal?: string;
   pays?: string;
-  telephone?: string;
+  telephone?: string | null;
 }
 
 export interface Contact {
