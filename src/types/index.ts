@@ -44,31 +44,25 @@ export interface Company {
   lng?: number;
   premiers_tags?: string;
   sources: string[];
+  raw_ids?: string[];
   qualifie: boolean;
-  is_network?: boolean;
-  is_blacklisted?: boolean;
-  reseau_id?: string | null;
   created_at: string;
   updated_at: string;
   ca_estime_band?: RevenueBand;
   nb_employes_band?: EmployeeBand;
   nb_employes_exact?: number | null;
   linkedin_url?: string;
+  site_web_canonique?: string | null;
   manually_enriched?: boolean;
   enriched_at?: string | null;
   enriched_by?: string | null;
-  recherche_id?: string;
-  place_id?: string;
-  reference_url?: string;
-  position?: number;
+  reseau_id?: string | null;
   note_moyenne?: number;
   nombre_avis?: number;
   ville?: string;
   code_postal?: string;
   pays?: string;
   telephone?: string;
-  email?: string;
-  contact_name?: string;
 }
 
 export interface Contact {

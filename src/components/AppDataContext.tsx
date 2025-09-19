@@ -101,6 +101,7 @@ interface AppDataContextType {
   locationStats: Record<string, number>;
   duplicateGroups: { domain: string; companies: Company[] }[];
   isDuplicate: (id: number) => boolean;
+  isCompanyBlacklisted: (company: Company) => boolean;
 
   // Objectives and gamification
   currentObjectives: MonthlyObjectives;
@@ -460,14 +461,39 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const totalCompanies = companies.length;
   const totalQualifiedCompanies = companies.filter((c) => c.qualifie).length;
 
+  const getCompanyCanonicalSite = React.useCallback((company: Company): string | undefined => {
+    const legacySite = 'site_web_canonique' in company
+      ? (company as { site_web_canonique?: string | null }).site_web_canonique
+      : undefined;
+    const url = company.canonical_url || legacySite;
+    if (!url) return undefined;
+    const canonical = canonicalizeUrl(url);
+    return canonical || undefined;
+  }, []);
+
+  const isCompanyBlacklisted = React.useCallback(
+    (company: Company): boolean => {
+      const site = getCompanyCanonicalSite(company);
+      if (!site) return false;
+      const siteDomain = canonicalizeDomain(site);
+      return urlBlacklist.some((entry) => {
+        if (!entry.active) return false;
+        if (entry.scope === 'domain') {
+          return canonicalizeDomain(entry.value) === siteDomain;
+        }
+        return canonicalizeUrl(entry.value) === site;
+      });
+    },
+    [getCompanyCanonicalSite, urlBlacklist],
+  );
+
   const duplicateGroups = React.useMemo(() => {
     const groups: Record<string, Company[]> = {};
     companies.forEach((c) => {
-      if (c.is_blacklisted) return;
-      const legacySite = 'site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined;
-      const url = c.canonical_url || legacySite;
-      if (!url) return;
-      const domain = extractDomainFromUrl(url);
+      if (isCompanyBlacklisted(c)) return;
+      const site = getCompanyCanonicalSite(c);
+      if (!site) return;
+      const domain = extractDomainFromUrl(site);
       if (!domain) return;
       if (!groups[domain]) groups[domain] = [];
       groups[domain].push(c);
@@ -475,7 +501,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     return Object.entries(groups)
       .filter(([, list]) => list.length > 1)
       .map(([domain, list]) => ({ domain, companies: list }));
-  }, [companies]);
+  }, [companies, getCompanyCanonicalSite, isCompanyBlacklisted]);
 
   const isDuplicate = (id: number): boolean =>
     duplicateGroups.some((group) => group.companies.some((c) => c.id === id));
@@ -636,7 +662,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         ? await urlBlacklistApi.create('exact_url', url, reason)
         : await urlBlacklistApi.create('exact_url', url);
       logger.log('urlBlacklistApi.create response:', response);
-      await companiesApi.update(id, { is_blacklisted: true });
       await refreshData();
     } catch (err) {
       logger.error('Error blacklisting company:', err);
@@ -684,14 +709,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         : await urlBlacklistApi.create('domain', domain);
       logger.log('urlBlacklistApi.create response:', entry);
       setUrlBlacklist(prev => [...prev, entry]);
-      const affected = companies.filter(c => {
-        const site =
-          c.canonical_url ||
-          ('site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined);
-        if (!site) return false;
-        return canonicalizeDomain(site) === domain;
-      });
-      await Promise.all(affected.map(c => companiesApi.update(c.id, { is_blacklisted: true })));
       await refreshData();
     } catch (err) {
       logger.error('Error blacklisting domain:', err);
@@ -701,25 +718,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
   const unblacklist = async (id: string, scope: 'domain' | 'exact_url', value: string) => {
     await urlBlacklistApi.deactivate(id);
-    let affected: Company[] = [];
-    if (scope === 'domain') {
-      affected = companies.filter(c => {
-        const site =
-          c.canonical_url ||
-          ('site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined);
-        if (!site) return false;
-        return canonicalizeDomain(site) === value;
-      });
-    } else {
-      affected = companies.filter(c => {
-        const site =
-          c.canonical_url ||
-          ('site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined);
-        if (!site) return false;
-        return canonicalizeUrl(site) === value;
-      });
-    }
-    await Promise.all(affected.map(c => companiesApi.update(c.id, { is_blacklisted: false })));
     await refreshData();
   };
 
@@ -998,13 +996,19 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
-  const getCompaniesBySearchId = (searchId: string) => companies.filter((company) => company.recherche_id === searchId);
+  const hasSearchReference = React.useCallback(
+    (company: Company, searchId: string) => Array.isArray(company.raw_ids) && company.raw_ids.includes(searchId),
+    [],
+  );
+
+  const getCompaniesBySearchId = (searchId: string) =>
+    companies.filter((company) => hasSearchReference(company, searchId));
 
   const getMapCompanies = (searchId: string) =>
-    companies.filter((company) => company.recherche_id === searchId && company.sources.includes('google_maps'));
+    companies.filter((company) => hasSearchReference(company, searchId) && company.sources.includes('google_maps'));
 
   const getGoogleCompanies = (searchId: string) =>
-    companies.filter((company) => company.recherche_id === searchId && company.sources.includes('google_search'));
+    companies.filter((company) => hasSearchReference(company, searchId) && company.sources.includes('google_search'));
 
   const toggleLeadMagnet = async (opportunityId: string) => {
     const opportunity = opportunities.find((opp) => opp.id === opportunityId);
@@ -1068,6 +1072,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     locationStats,
     duplicateGroups,
     isDuplicate,
+    isCompanyBlacklisted,
     currentObjectives,
     weeklyObjectives,
     annualObjectives,

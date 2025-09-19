@@ -20,11 +20,9 @@ interface CreateCompanyFormState {
   postalCode: string;
   country: string;
   phone: string;
-  email: string;
   linkedin: string;
   tags: string;
   isQualified: boolean;
-  isNetwork: boolean;
 }
 
 const initialFormState: CreateCompanyFormState = {
@@ -35,11 +33,9 @@ const initialFormState: CreateCompanyFormState = {
   postalCode: "",
   country: "",
   phone: "",
-  email: "",
   linkedin: "",
   tags: "",
   isQualified: false,
-  isNetwork: false,
 };
 
 export function CreateCompanyPage() {
@@ -74,13 +70,10 @@ export function CreateCompanyPage() {
         code_postal: formState.postalCode.trim() || undefined,
         pays: formState.country.trim() || undefined,
         telephone: formState.phone.trim() || undefined,
-        email: formState.email.trim() || undefined,
         linkedin_url: formState.linkedin.trim() || undefined,
         premiers_tags: formState.tags.trim() || undefined,
         sources: ["manual"],
         qualifie: formState.isQualified,
-        is_network: formState.isNetwork,
-        is_blacklisted: false,
         manually_enriched: true,
       });
 
@@ -175,29 +168,15 @@ export function CreateCompanyPage() {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="company-phone">Téléphone</Label>
-                <Input
-                  id="company-phone"
-                  value={formState.phone}
-                  onChange={(event) => updateField("phone", event.target.value)}
-                  placeholder="01 23 45 67 89"
-                  disabled={isSubmitting}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="company-email">Email</Label>
-                <Input
-                  id="company-email"
-                  type="email"
-                  value={formState.email}
-                  onChange={(event) => updateField("email", event.target.value)}
-                  placeholder="contact@exemple.com"
-                  disabled={isSubmitting}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="company-phone">Téléphone</Label>
+              <Input
+                id="company-phone"
+                value={formState.phone}
+                onChange={(event) => updateField("phone", event.target.value)}
+                placeholder="01 23 45 67 89"
+                disabled={isSubmitting}
+              />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
@@ -234,16 +213,6 @@ export function CreateCompanyPage() {
                   disabled={isSubmitting}
                 />
                 Entreprise qualifiée
-              </label>
-
-              <label className="flex items-center gap-2 text-sm font-medium">
-                <Checkbox
-                  id="company-network"
-                  checked={formState.isNetwork}
-                  onCheckedChange={(checked) => updateField("isNetwork", checked === true)}
-                  disabled={isSubmitting}
-                />
-                Marquer comme réseau
               </label>
             </div>
           </CardContent>
