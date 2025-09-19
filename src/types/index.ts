@@ -79,7 +79,6 @@ export interface Company {
   nb_employes_band?: EmployeeBand;
   nb_employes_exact?: number | null;
   linkedin_url?: string;
-  site_web_canonique?: string;
   manually_enriched?: boolean;
   enriched_at?: string | null;
   enriched_by?: string | null;
@@ -92,10 +91,7 @@ export interface Company {
   ville?: string;
   code_postal?: string;
   pays?: string;
-  latitude?: number;
-  longitude?: number;
   telephone?: string;
-  tel?: string;
   email?: string;
   contact_name?: string;
   raw_contact_info?: CompanyRaw[];

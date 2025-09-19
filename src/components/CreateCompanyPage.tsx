@@ -69,7 +69,6 @@ export function CreateCompanyPage() {
       await addCompany({
         name: formState.name.trim(),
         canonical_url: formState.website.trim() || undefined,
-        site_web_canonique: formState.website.trim() || undefined,
         adresse: formState.address.trim() || undefined,
         ville: formState.city.trim() || undefined,
         code_postal: formState.postalCode.trim() || undefined,

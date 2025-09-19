@@ -73,13 +73,10 @@ const SEARCH_RESULTS_SELECT = SEARCH_RESULTS_COLUMNS.join(',');
 const COMPANY_COLUMNS = [
   'id',
   'canonical_url',
-  'site_web_canonique',
   'name',
   'adresse',
   'lat',
   'lng',
-  'latitude',
-  'longitude',
   'premiers_tags',
   'sources',
   'raw_ids',
@@ -110,6 +107,35 @@ const COMPANY_COLUMNS = [
   'contact_name'
 ] as const;
 const COMPANY_SELECT = COMPANY_COLUMNS.join(',');
+
+const COMPANY_WRITEABLE_COLUMNS = COMPANY_COLUMNS.filter(
+  (column) => column !== 'id' && column !== 'created_at' && column !== 'updated_at'
+);
+
+const sanitizeCompanyPayload = (input: Partial<Company>): Record<string, unknown> => {
+  const payload: Record<string, unknown> = {};
+  for (const column of COMPANY_WRITEABLE_COLUMNS) {
+    const value = input[column as keyof Company];
+    if (value !== undefined) {
+      payload[column] = value;
+    }
+  }
+  return payload;
+};
+
+const normalizeCompanyEnums = (input: Partial<Company>): Partial<Company> => {
+  const converted: Partial<Company> = { ...input };
+  const convertEnumForDatabase = (value: string): string => value.replace(/-/g, '_');
+
+  if (typeof converted.ca_estime_band === 'string') {
+    converted.ca_estime_band = convertEnumForDatabase(converted.ca_estime_band) as RevenueBand;
+  }
+  if (typeof converted.nb_employes_band === 'string') {
+    converted.nb_employes_band = convertEnumForDatabase(converted.nb_employes_band) as EmployeeBand;
+  }
+
+  return converted;
+};
 
 const RAW_COMPANY_COLUMNS = [
   'id',
@@ -244,13 +270,10 @@ const buildCompanyFromPartial = (
     created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
     updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
     canonical_url: toOptionalString(partial.canonical_url),
-    site_web_canonique: toOptionalString(partial.site_web_canonique),
     name: toOptionalString(partial.name),
     adresse: toOptionalString(partial.adresse),
     lat: toOptionalNumber(partial.lat),
     lng: toOptionalNumber(partial.lng),
-    latitude: toOptionalNumber(partial.latitude),
-    longitude: toOptionalNumber(partial.longitude),
     premiers_tags: toOptionalString(partial.premiers_tags),
     is_network: toOptionalBoolean(partial.is_network),
     is_blacklisted: toOptionalBoolean(partial.is_blacklisted),
@@ -278,7 +301,6 @@ const buildCompanyFromPartial = (
     code_postal: toOptionalString(partial.code_postal),
     pays: toOptionalString(partial.pays),
     telephone: toOptionalString(partial.telephone),
-    tel: toOptionalString(partial.tel),
     email: toOptionalString(partial.email),
     contact_name: toOptionalString(partial.contact_name),
     raw_contact_info: Array.isArray(partial.raw_contact_info)
@@ -712,12 +734,14 @@ export const companiesApi = {
     companyData: Omit<Company, 'id' | 'created_at' | 'updated_at'>
   ) => {
     try {
+      const normalizedData = normalizeCompanyEnums(companyData);
+      const payload = sanitizeCompanyPayload(normalizedData);
       const { data, error } = await supabase
         .from('entreprises')
-        .insert([companyData])
+        .insert([payload])
         .select()
         .single();
-      
+
       if (error) throw error;
       if (isCompanyRow(data)) {
         return data;
@@ -728,7 +752,7 @@ export const companiesApi = {
       logger.error('Error creating company:', error);
       const now = new Date().toISOString();
       return buildCompanyFromPartial(Date.now(), {
-        ...companyData,
+        ...normalizedData,
         created_at: now,
         updated_at: now,
         is_network: false,
@@ -740,22 +764,12 @@ export const companiesApi = {
   update: async (id: number, updates: Partial<Company>) => {
     try {
       // Helper function to convert enum values from UI format (with hyphens) to DB format (with underscores)
-      const convertEnumForDatabase = (value: string): string => {
-        return value.replace(/-/g, '_');
-      };
-
-      // Convert enum fields if they exist
-      const convertedUpdates = { ...updates } as Partial<Company> & Record<string, unknown>;
-      if (convertedUpdates.ca_estime_band) {
-        convertedUpdates.ca_estime_band = convertEnumForDatabase(convertedUpdates.ca_estime_band as string) as RevenueBand;
-      }
-      if (convertedUpdates.nb_employes_band) {
-        convertedUpdates.nb_employes_band = convertEnumForDatabase(convertedUpdates.nb_employes_band as string) as EmployeeBand;
-      }
-
+      const convertedUpdates = normalizeCompanyEnums(updates);
+      const payload = sanitizeCompanyPayload(convertedUpdates);
+      payload.updated_at = new Date().toISOString();
       const { data, error } = await supabase
         .from('entreprises')
-        .update({ ...convertedUpdates, updated_at: new Date().toISOString() })
+        .update(payload)
         .eq('id', id)
         .select()
         .single();
@@ -769,7 +783,7 @@ export const companiesApi = {
     } catch (error) {
       logger.error('Error updating company:', error);
       const now = new Date().toISOString();
-      return buildCompanyFromPartial(id, { ...updates, updated_at: now });
+      return buildCompanyFromPartial(id, { ...convertedUpdates, updated_at: now });
     }
   },
   
