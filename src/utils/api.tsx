@@ -623,61 +623,8 @@ export const companiesApi = {
           .range(from, to);
 
         if (error) {
-          logger.error('Supabase error:', error);
-          if (pageIndex === 0) {
-            const fallbackCompanies: Company[] = [
-              {
-                id: 1,
-                canonical_url: 'https://legourmet.fr',
-                name: 'Restaurant Le Gourmet',
-                adresse: '15 rue de la Paix, 75001 Paris',
-                lat: 48.8566,
-                lng: 2.3522,
-                premiers_tags: 'Restaurant,Gastronomie',
-                sources: ['google_search'],
-                raw_ids: [1],
-                qualifie: true,
-                is_network: false,
-                is_blacklisted: false,
-                created_at: '2024-01-15T00:00:00Z',
-                updated_at: '2024-01-16T00:00:00Z',
-                ca_estime_band: '500k-1m',
-                nb_employes_band: '11-50',
-                nb_employes_exact: 25,
-                linkedin_url: 'https://linkedin.com/company/legourmet',
-                site_web_canonique: 'https://legourmet.fr',
-                manually_enriched: false,
-                enriched_at: undefined,
-                enriched_by: undefined,
-              },
-              {
-                id: 2,
-                canonical_url: 'https://bistrotparis.fr',
-                name: 'Bistrot de Paris',
-                adresse: '8 rue Saint-Antoine, 75004 Paris',
-                lat: 48.8553,
-                lng: 2.3647,
-                premiers_tags: 'Restaurant,Bistrot',
-                sources: ['google_maps'],
-                raw_ids: [2],
-                qualifie: true,
-                is_network: false,
-                is_blacklisted: false,
-                created_at: '2024-01-15T00:00:00Z',
-                updated_at: '2024-01-16T00:00:00Z',
-                ca_estime_band: '100k-500k',
-                nb_employes_band: '1-10',
-                nb_employes_exact: 8,
-                linkedin_url: undefined,
-                site_web_canonique: 'https://bistrotparis.fr',
-                manually_enriched: false,
-                enriched_at: undefined,
-                enriched_by: undefined,
-              },
-            ];
-            return fallbackCompanies;
-          }
-          break;
+          logger.error('Supabase error while fetching companies:', error);
+          throw error;
         }
 
         const rows = Array.isArray(data) ? (data as unknown[]) : [];
@@ -713,7 +660,10 @@ export const companiesApi = {
       return deduped;
     } catch (error) {
       logger.error('API Error:', error);
-      return [];
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to fetch companies');
     }
   },
 
