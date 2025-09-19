@@ -733,8 +733,9 @@ export const companiesApi = {
   create: async (
     companyData: Omit<Company, 'id' | 'created_at' | 'updated_at'>
   ) => {
+    let normalizedData: Partial<Company> | null = null;
     try {
-      const normalizedData = normalizeCompanyEnums(companyData);
+      normalizedData = normalizeCompanyEnums(companyData);
       const payload = sanitizeCompanyPayload(normalizedData);
       const { data, error } = await supabase
         .from('entreprises')
@@ -750,9 +751,10 @@ export const companiesApi = {
       throw new Error('Invalid company payload');
     } catch (error) {
       logger.error('Error creating company:', error);
+      const fallbackData = normalizedData ?? normalizeCompanyEnums(companyData);
       const now = new Date().toISOString();
       return buildCompanyFromPartial(Date.now(), {
-        ...normalizedData,
+        ...fallbackData,
         created_at: now,
         updated_at: now,
         is_network: false,
@@ -760,11 +762,12 @@ export const companiesApi = {
       });
     }
   },
-  
+
   update: async (id: number, updates: Partial<Company>) => {
+    let convertedUpdates: Partial<Company> | null = null;
     try {
       // Helper function to convert enum values from UI format (with hyphens) to DB format (with underscores)
-      const convertedUpdates = normalizeCompanyEnums(updates);
+      convertedUpdates = normalizeCompanyEnums(updates);
       const payload = sanitizeCompanyPayload(convertedUpdates);
       payload.updated_at = new Date().toISOString();
       const { data, error } = await supabase
@@ -782,8 +785,9 @@ export const companiesApi = {
       throw new Error('Invalid company payload');
     } catch (error) {
       logger.error('Error updating company:', error);
+      const fallbackUpdates = convertedUpdates ?? normalizeCompanyEnums(updates);
       const now = new Date().toISOString();
-      return buildCompanyFromPartial(id, { ...convertedUpdates, updated_at: now });
+      return buildCompanyFromPartial(id, { ...fallbackUpdates, updated_at: now });
     }
   },
   
