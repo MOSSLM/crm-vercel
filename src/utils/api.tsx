@@ -1577,7 +1577,7 @@ export const pipelineStagesApi = {
         // Return default pipeline stages as fallback
         return [
           { id: 1, nom: 'Qualifié', ordre: 1, visible: true },
-          { id: 2, nom: 'Cold Call', ordre: 2, visible: true },
+          { id: 2, nom: 'Approche', ordre: 2, visible: true },
           { id: 3, nom: 'Relance 1', ordre: 3, visible: true },
           { id: 4, nom: 'Relance 2', ordre: 4, visible: true },
           { id: 5, nom: 'Relance 3', ordre: 5, visible: true },
