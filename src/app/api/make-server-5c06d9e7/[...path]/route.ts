@@ -77,6 +77,20 @@ type TouchpointPayload = {
   details?: string | null;
 };
 
+type ContactTouchpointKind = "approche" | "relance" | "autre";
+
+const translateTouchpointKind = (stepKind: string): ContactTouchpointKind => {
+  switch (stepKind) {
+    case "approche":
+    case "cold_call":
+      return "approche";
+    case "relance":
+      return "relance";
+    default:
+      return "autre";
+  }
+};
+
 async function getNextTouchpointSequence({
   opportunite_id,
   entreprise_id,
@@ -84,7 +98,7 @@ async function getNextTouchpointSequence({
 }: {
   opportunite_id?: string | null;
   entreprise_id?: number | null;
-  step_kind: string;
+  step_kind: ContactTouchpointKind;
 }): Promise<number> {
   let query = supabase
     .from("opportunity_touchpoints")
@@ -107,17 +121,24 @@ async function getNextTouchpointSequence({
 }
 
 async function createTouchpoint(payload: TouchpointPayload) {
-  const step_sequence = await getNextTouchpointSequence({
-    opportunite_id: payload.opportunite_id ?? undefined,
-    entreprise_id: payload.entreprise_id ?? undefined,
-    step_kind: payload.step_kind,
-  });
+  const touchpoint_kind = translateTouchpointKind(payload.step_kind);
+  let step_sequence: number | null = null;
+
+  if (touchpoint_kind === "relance") {
+    step_sequence = await getNextTouchpointSequence({
+      opportunite_id: payload.opportunite_id ?? undefined,
+      entreprise_id: payload.entreprise_id ?? undefined,
+      step_kind: touchpoint_kind,
+    });
+  } else if (touchpoint_kind === "approche") {
+    step_sequence = 1;
+  }
 
   const { error } = await supabase.from("opportunity_touchpoints").insert({
     opportunite_id: payload.opportunite_id ?? null,
     entreprise_id: payload.entreprise_id ?? null,
-    step_kind: payload.step_kind,
-    step_sequence,
+    step_kind: touchpoint_kind,
+    step_sequence: step_sequence ?? null,
     channel: payload.channel,
     direction: payload.direction ?? ContactDirection.Outgoing,
     outcome: payload.outcome ?? ContactOutcome.Inconnu,
@@ -126,7 +147,10 @@ async function createTouchpoint(payload: TouchpointPayload) {
 
   if (error) throw error;
 
-  return step_sequence;
+  return {
+    step_sequence,
+    touchpoint_kind,
+  };
 }
 
 async function logEvent(
@@ -1190,7 +1214,7 @@ export async function POST(
       }
 
       try {
-        const sequence = await createTouchpoint({
+        const { step_sequence, touchpoint_kind } = await createTouchpoint({
           opportunite_id: opportunite_id ?? null,
           entreprise_id: entreprise_id ?? null,
           step_kind,
@@ -1199,7 +1223,7 @@ export async function POST(
           outcome,
           details: details ?? null,
         });
-        return json({ success: true, step_sequence: sequence });
+        return json({ success: true, step_sequence, touchpoint_kind });
       } catch (error: any) {
         log("Touchpoint insertion error", error);
         return json({ error: error?.message || "Failed to create touchpoint" }, 500);

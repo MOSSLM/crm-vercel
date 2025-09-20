@@ -66,9 +66,24 @@ interface CreateTouchpointPayload {
   details?: string;
 }
 
+type ContactTouchpointKind = 'approche' | 'relance' | 'autre';
+
+const translateTouchpointKind = (stepKind: string): ContactTouchpointKind => {
+  switch (stepKind) {
+    case 'approche':
+    case 'cold_call':
+      return 'approche';
+    case 'relance':
+      return 'relance';
+    default:
+      return 'autre';
+  }
+};
+
 export const createTouchpoint = async (
   payload: CreateTouchpointPayload,
 ): Promise<void> => {
+  const touchpointKind = translateTouchpointKind(payload.step_kind);
   const response = await fetch(`${baseUrl}/journal/touchpoint`, {
     method: 'POST',
     headers: {
@@ -77,6 +92,7 @@ export const createTouchpoint = async (
     },
     body: JSON.stringify({
       ...payload,
+      step_kind: touchpointKind,
       direction: payload.direction ?? ContactDirection.Outgoing,
       outcome: payload.outcome ?? ContactOutcome.Inconnu,
     }),
