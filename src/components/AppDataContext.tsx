@@ -163,7 +163,27 @@ interface AppDataContextType {
   refreshData: () => Promise<void>;
 }
 
-const AppDataContext = createContext<AppDataContextType | undefined>(undefined);
+const isValidRawId = (value: unknown): value is string | number =>
+  (typeof value === 'string' || typeof value === 'number') && value !== '';
+
+export const normalizeCompanyRawIds = (rawIds: Company['raw_ids']): string[] => {
+  if (!Array.isArray(rawIds)) return [];
+  return (rawIds as unknown[]).filter(isValidRawId).map(String);
+};
+
+export const companyHasSearchReference = (company: Pick<Company, 'raw_ids'>, searchId: string): boolean =>
+  normalizeCompanyRawIds(company.raw_ids).includes(searchId);
+
+export const filterCompaniesBySearchId = (companies: Company[], searchId: string): Company[] =>
+  companies.filter((company) => companyHasSearchReference(company, searchId));
+
+export const filterMapCompanies = (companies: Company[], searchId: string): Company[] =>
+  filterCompaniesBySearchId(companies, searchId).filter((company) => company.sources.includes('google_maps'));
+
+export const filterGoogleCompanies = (companies: Company[], searchId: string): Company[] =>
+  filterCompaniesBySearchId(companies, searchId).filter((company) => company.sources.includes('google_search'));
+
+export const AppDataContext = createContext<AppDataContextType | undefined>(undefined);
 
 const getCurrentMonth = () => {
   const now = new Date();
@@ -997,18 +1017,15 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
   const hasSearchReference = React.useCallback(
-    (company: Company, searchId: string) => Array.isArray(company.raw_ids) && company.raw_ids.includes(searchId),
+    (company: Company, searchId: string) => companyHasSearchReference(company, searchId),
     [],
   );
 
-  const getCompaniesBySearchId = (searchId: string) =>
-    companies.filter((company) => hasSearchReference(company, searchId));
+  const getCompaniesBySearchId = (searchId: string) => filterCompaniesBySearchId(companies, searchId);
 
-  const getMapCompanies = (searchId: string) =>
-    companies.filter((company) => hasSearchReference(company, searchId) && company.sources.includes('google_maps'));
+  const getMapCompanies = (searchId: string) => filterMapCompanies(companies, searchId);
 
-  const getGoogleCompanies = (searchId: string) =>
-    companies.filter((company) => hasSearchReference(company, searchId) && company.sources.includes('google_search'));
+  const getGoogleCompanies = (searchId: string) => filterGoogleCompanies(companies, searchId);
 
   const toggleLeadMagnet = async (opportunityId: string) => {
     const opportunity = opportunities.find((opp) => opp.id === opportunityId);
