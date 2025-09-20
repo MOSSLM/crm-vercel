@@ -35,6 +35,20 @@ type TouchpointPayload = {
   details?: string | null;
 };
 
+type ContactTouchpointKind = 'approche' | 'relance' | 'autre';
+
+const translateTouchpointKind = (stepKind: string): ContactTouchpointKind => {
+  switch (stepKind) {
+    case 'approche':
+    case 'cold_call':
+      return 'approche';
+    case 'relance':
+      return 'relance';
+    default:
+      return 'autre';
+  }
+};
+
 const getNextTouchpointSequence = async ({
   opportunite_id,
   entreprise_id,
@@ -42,7 +56,7 @@ const getNextTouchpointSequence = async ({
 }: {
   opportunite_id?: string | null;
   entreprise_id?: number | null;
-  step_kind: string;
+  step_kind: ContactTouchpointKind;
 }) => {
   let query = supabase
     .from('opportunity_touchpoints')
@@ -68,19 +82,26 @@ const getNextTouchpointSequence = async ({
 };
 
 export const createTouchpoint = async (payload: TouchpointPayload) => {
-  const step_sequence = await getNextTouchpointSequence({
-    opportunite_id: payload.opportunite_id ?? undefined,
-    entreprise_id: payload.entreprise_id ?? undefined,
-    step_kind: payload.step_kind,
-  });
+  const touchpoint_kind = translateTouchpointKind(payload.step_kind);
+  let step_sequence: number | null = null;
+
+  if (touchpoint_kind === 'relance') {
+    step_sequence = await getNextTouchpointSequence({
+      opportunite_id: payload.opportunite_id ?? undefined,
+      entreprise_id: payload.entreprise_id ?? undefined,
+      step_kind: touchpoint_kind,
+    });
+  } else if (touchpoint_kind === 'approche') {
+    step_sequence = 1;
+  }
 
   const { error } = await supabase
     .from('opportunity_touchpoints')
     .insert({
       opportunite_id: payload.opportunite_id ?? null,
       entreprise_id: payload.entreprise_id ?? null,
-      step_kind: payload.step_kind,
-      step_sequence,
+      step_kind: touchpoint_kind,
+      step_sequence: step_sequence ?? null,
       channel: payload.channel,
       direction: payload.direction ?? ContactDirection.Outgoing,
       outcome: payload.outcome ?? ContactOutcome.Inconnu,
@@ -92,7 +113,10 @@ export const createTouchpoint = async (payload: TouchpointPayload) => {
     throw error;
   }
 
-  return step_sequence;
+  return {
+    step_sequence,
+    touchpoint_kind,
+  };
 };
 
 // Enregistrer une nouvelle entrée dans le journal

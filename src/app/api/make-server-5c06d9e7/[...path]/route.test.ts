@@ -4,6 +4,7 @@ const mockFrom = jest.fn();
 const mockInsertTouchpoints = jest.fn();
 const mockInsertJournal = jest.fn();
 let touchpointSelect: any;
+let touchpointSelectMock: jest.Mock;
 
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => ({
@@ -18,6 +19,7 @@ describe('make-server journal routes', () => {
       order: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue({ data: [{ step_sequence: 2 }], error: null }),
     };
+    touchpointSelectMock = jest.fn().mockReturnValue(touchpointSelect);
 
     mockInsertTouchpoints.mockResolvedValue({ error: null });
     mockInsertJournal.mockResolvedValue({ error: null });
@@ -25,7 +27,7 @@ describe('make-server journal routes', () => {
     mockFrom.mockImplementation((table: string) => {
       if (table === 'opportunity_touchpoints') {
         return {
-          select: jest.fn(() => touchpointSelect),
+          select: touchpointSelectMock,
           insert: mockInsertTouchpoints,
         };
       }
@@ -55,7 +57,7 @@ describe('make-server journal routes', () => {
       { params: Promise.resolve({ path }) }
     );
 
-  it('creates touchpoint with computed sequence', async () => {
+  it('creates relance touchpoint with computed sequence', async () => {
     const response = await executePost(['journal', 'touchpoint'], {
       opportunite_id: 'opp-1',
       step_kind: 'relance',
@@ -64,7 +66,7 @@ describe('make-server journal routes', () => {
 
     expect(response.status).toBe(200);
     const payload = await response.json();
-    expect(payload).toMatchObject({ success: true, step_sequence: 3 });
+    expect(payload).toMatchObject({ success: true, step_sequence: 3, touchpoint_kind: 'relance' });
     expect(mockInsertTouchpoints).toHaveBeenCalledWith(
       expect.objectContaining({
         step_kind: 'relance',
@@ -72,6 +74,48 @@ describe('make-server journal routes', () => {
         channel: 'email',
       })
     );
+    expect(touchpointSelectMock).toHaveBeenCalledTimes(1);
+    expect(touchpointSelect.limit).toHaveBeenCalledTimes(1);
+  });
+
+  it('maps cold_call to approche with fixed sequence', async () => {
+    const response = await executePost(['journal', 'touchpoint'], {
+      opportunite_id: 'opp-approche',
+      step_kind: 'cold_call',
+      channel: 'sms',
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({ success: true, step_sequence: 1, touchpoint_kind: 'approche' });
+    expect(mockInsertTouchpoints).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step_kind: 'approche',
+        step_sequence: 1,
+        channel: 'sms',
+      })
+    );
+    expect(touchpointSelectMock).not.toHaveBeenCalled();
+  });
+
+  it('collapses non relance kinds into autre with null sequence', async () => {
+    const response = await executePost(['journal', 'touchpoint'], {
+      opportunite_id: 'opp-autre',
+      step_kind: 'rdv',
+      channel: 'email',
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload).toMatchObject({ success: true, step_sequence: null, touchpoint_kind: 'autre' });
+    expect(mockInsertTouchpoints).toHaveBeenCalledWith(
+      expect.objectContaining({
+        step_kind: 'autre',
+        step_sequence: null,
+        channel: 'email',
+      })
+    );
+    expect(touchpointSelectMock).not.toHaveBeenCalled();
   });
 
   it('logs call with channel fallback when journal table lacks column', async () => {

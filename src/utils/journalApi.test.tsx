@@ -24,7 +24,7 @@ describe('journalApi', () => {
     expect(url).toContain('/journal/touchpoint');
     const body = JSON.parse((options as RequestInit).body as string);
     expect(body).toMatchObject({
-      step_kind: 'cold_call',
+      step_kind: 'approche',
       channel: ContactChannel.Telephone,
       direction: 'outgoing',
       outcome: 'inconnu',
@@ -41,6 +41,8 @@ describe('journalApi', () => {
 
     const firstCall = mockFetch.mock.calls[0];
     expect(firstCall[0]).toContain('/journal/touchpoint');
+    const firstBody = JSON.parse((firstCall[1] as RequestInit).body as string);
+    expect(firstBody).toMatchObject({ step_kind: 'approche' });
 
     const secondCall = mockFetch.mock.calls[1];
     expect(secondCall[0]).toContain('/journal/call');
@@ -52,5 +54,16 @@ describe('journalApi', () => {
       channel: ContactChannel.Email,
       skipTouchpoint: true,
     });
+  });
+
+  it('maps non relance touchpoints to autre', async () => {
+    await createTouchpoint({
+      step_kind: 'rdv',
+      channel: ContactChannel.Email,
+    });
+
+    const [, options] = mockFetch.mock.calls[0];
+    const body = JSON.parse((options as RequestInit).body as string);
+    expect(body).toMatchObject({ step_kind: 'autre' });
   });
 });
