@@ -41,6 +41,7 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { toast } from 'sonner';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { journalApi } from '../utils/journalApi';
+import { ContactChannel } from '../types';
 
 const ItemType = 'OPPORTUNITY';
 
@@ -470,7 +471,8 @@ export const PipelinePage: React.FC = () => {
             stageName,
             opportunity.id,
             opportunity.entreprise_id,
-            `Déplacement vers "${stageName}" depuis le pipeline`
+            `Déplacement vers "${stageName}" depuis le pipeline`,
+            ContactChannel.PasDefini
           );
           logger.log(`[Journal] Changement d'étape enregistré avec succès`);
         } catch (journalError) {
