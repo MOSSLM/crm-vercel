@@ -413,6 +413,7 @@ export const PipelinePage: React.FC = () => {
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [pipelineContactChannel, setPipelineContactChannel] = useState<ContactChannel>(ContactChannel.PasDefini);
   
   // Configuration des étapes (visibilité et taille)
   const [stageConfigs, setStageConfigs] = useState<StageConfiguration[]>(
@@ -472,7 +473,7 @@ export const PipelinePage: React.FC = () => {
             opportunity.id,
             opportunity.entreprise_id,
             `Déplacement vers "${stageName}" depuis le pipeline`,
-            ContactChannel.PasDefini
+            pipelineContactChannel
           );
           logger.log(`[Journal] Changement d'étape enregistré avec succès`);
         } catch (journalError) {
@@ -706,6 +707,7 @@ export const PipelinePage: React.FC = () => {
         <Dialog open={!!selectedOpportunity || !!editingOpportunity} onOpenChange={() => {
           setSelectedOpportunity(null);
           setEditingOpportunity(null);
+          setPipelineContactChannel(ContactChannel.PasDefini);
         }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -939,6 +941,27 @@ export const PipelinePage: React.FC = () => {
                     </p>
                   </div>
                 )}
+
+                <div>
+                  <label className="text-sm font-medium">Canal de contact</label>
+                  <Select
+                    value={pipelineContactChannel}
+                    onValueChange={(value) => setPipelineContactChannel(value as ContactChannel)}
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ContactChannel.PasDefini}>Pas défini</SelectItem>
+                      <SelectItem value={ContactChannel.Telephone}>Téléphone</SelectItem>
+                      <SelectItem value={ContactChannel.Email}>Email</SelectItem>
+                      <SelectItem value={ContactChannel.Linkedin}>LinkedIn</SelectItem>
+                      <SelectItem value={ContactChannel.Whatsapp}>WhatsApp</SelectItem>
+                      <SelectItem value={ContactChannel.Sms}>SMS</SelectItem>
+                      <SelectItem value={ContactChannel.Autre}>Autre</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
                 <div className="flex gap-2">
                   <Button onClick={() => handleEditOpportunity(selectedOpportunity)}>
