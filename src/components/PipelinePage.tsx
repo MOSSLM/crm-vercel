@@ -56,7 +56,7 @@ const getStageColor = (stageName: string) => {
   if (name.includes('qualifié')) {
     return '#3b82f6'; // Bleu
   }
-  if (name.includes('cold call') || name.includes('relance')) {
+  if (name.includes('cold call') || name.includes('approche') || name.includes('relance')) {
     return '#eab308'; // Jaune
   }
   if (name.includes('rdv') || name.includes('rdv de vente') || name.includes('rendez-vous')) {

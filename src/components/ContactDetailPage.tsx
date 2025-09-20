@@ -192,7 +192,7 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
     const name = stageName.toLowerCase();
     
     if (name.includes('qualifié')) return '#3b82f6';
-    if (name.includes('cold call') || name.includes('relance')) return '#eab308';
+    if (name.includes('cold call') || name.includes('approche') || name.includes('relance')) return '#eab308';
     if (name.includes('rdv') || name.includes('rendez-vous')) return '#f97316';
     if (name.includes('devis')) return '#22c55e';
     if (name.includes('signature') || name.includes('acompte')) return '#16a34a';

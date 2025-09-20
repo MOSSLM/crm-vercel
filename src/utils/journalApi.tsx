@@ -266,6 +266,7 @@ const baseStageMap: Record<string, string> = {
 const specificStageMap: Record<string, string> = {
   // Étapes spécifiques utilisées dans l'appli
   'cold call': 'cold_call',
+  approche: 'cold_call',
   'relance 1': 'relance',
   'relance 2': 'relance',
   'relance 3': 'relance',
@@ -359,7 +360,12 @@ export const detectEventTypeFromStageName = (stageName: string): string => {
   const normalized = stageName.toLowerCase().trim();
 
   // Détection par mots-clés (ordre important - du plus spécifique au plus général)
-  if (normalized.includes('call') || normalized.includes('appel') || normalized.includes('cold')) {
+  if (
+    normalized.includes('call') ||
+    normalized.includes('appel') ||
+    normalized.includes('cold') ||
+    normalized.includes('approche')
+  ) {
     return 'cold_call';
   }
   if (normalized.includes('relance')) {
