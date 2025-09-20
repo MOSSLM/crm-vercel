@@ -84,14 +84,18 @@ interface OpportunityCardProps {
   stageColor?: string;
   onView: (opportunity: Opportunity) => void;
   onEdit: (opportunity: Opportunity) => void;
+  contactChannel: ContactChannel;
+  onContactChannelChange: (channel: ContactChannel) => void;
   isReduced?: boolean;
 }
 
-const OpportunityCard: React.FC<OpportunityCardProps> = ({ 
-  opportunity, 
-  stageColor, 
-  onView, 
+const OpportunityCard: React.FC<OpportunityCardProps> = ({
+  opportunity,
+  stageColor,
+  onView,
   onEdit,
+  contactChannel,
+  onContactChannelChange,
   isReduced = false
 }) => {
   const { companies } = useAppData();
@@ -188,6 +192,10 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
     );
   }
 
+  const handleChannelChange = (value: string) => {
+    onContactChannelChange(value as ContactChannel);
+  };
+
   return (
     <div
       ref={ref}
@@ -271,6 +279,28 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
             </div>
           )}
 
+          <div
+            className="flex flex-col gap-1"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <Label className="text-xs text-muted-foreground">Canal de contact</Label>
+            <Select value={contactChannel} onValueChange={handleChannelChange}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Sélectionner un canal" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ContactChannel.PasDefini}>Pas défini</SelectItem>
+                <SelectItem value={ContactChannel.Telephone}>Téléphone</SelectItem>
+                <SelectItem value={ContactChannel.Email}>Email</SelectItem>
+                <SelectItem value={ContactChannel.Linkedin}>LinkedIn</SelectItem>
+                <SelectItem value={ContactChannel.Whatsapp}>WhatsApp</SelectItem>
+                <SelectItem value={ContactChannel.Sms}>SMS</SelectItem>
+                <SelectItem value={ContactChannel.Autre}>Autre</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex gap-1 pt-2">
             <Button 
               size="sm" 
@@ -310,15 +340,19 @@ interface PipelineColumnProps {
   onDrop: (opportunityId: string, stageId: number) => void;
   onView: (opportunity: Opportunity) => void;
   onEdit: (opportunity: Opportunity) => void;
+  contactChannel: ContactChannel;
+  onContactChannelChange: (channel: ContactChannel) => void;
   isReduced?: boolean;
 }
 
-const PipelineColumn: React.FC<PipelineColumnProps> = ({ 
-  stage, 
-  opportunities, 
-  onDrop, 
-  onView, 
+const PipelineColumn: React.FC<PipelineColumnProps> = ({
+  stage,
+  opportunities,
+  onDrop,
+  onView,
   onEdit,
+  contactChannel,
+  onContactChannelChange,
   isReduced = false
 }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -373,12 +407,14 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
 
       <div className="space-y-3">
         {opportunities.map((opportunity) => (
-          <OpportunityCard 
-            key={opportunity.id} 
-            opportunity={opportunity} 
+          <OpportunityCard
+            key={opportunity.id}
+            opportunity={opportunity}
             stageColor={stageColor}
             onView={onView}
             onEdit={onEdit}
+            contactChannel={contactChannel}
+            onContactChannelChange={onContactChannelChange}
             isReduced={isReduced}
           />
         ))}
@@ -476,6 +512,7 @@ export const PipelinePage: React.FC = () => {
             pipelineContactChannel
           );
           logger.log(`[Journal] Changement d'étape enregistré avec succès`);
+          setPipelineContactChannel(ContactChannel.PasDefini);
         } catch (journalError) {
           logger.error('Erreur lors de l\'enregistrement dans le journal:', journalError);
           // Ne pas interrompre le processus principal si la journalisation échoue
@@ -689,12 +726,14 @@ export const PipelinePage: React.FC = () => {
                 
                 return (
                   <div key={stage.id} className={`flex-shrink-0 ${isReduced ? 'w-48' : 'w-72'}`}>
-                    <PipelineColumn 
-                      stage={stage} 
+                    <PipelineColumn
+                      stage={stage}
                       opportunities={getOpportunitiesByStage(stage.id)}
                       onDrop={handleDrop}
                       onView={setSelectedOpportunity}
                       onEdit={handleEditOpportunity}
+                      contactChannel={pipelineContactChannel}
+                      onContactChannelChange={(channel) => setPipelineContactChannel(channel)}
                       isReduced={isReduced}
                     />
                   </div>
