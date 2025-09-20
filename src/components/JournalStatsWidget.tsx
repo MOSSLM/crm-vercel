@@ -9,6 +9,7 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Separator } from './ui/separator';
 import { journalApi } from '../utils/journalApi';
+import { ContactChannel } from '../types';
 import { 
   Phone, 
   Calendar, 
@@ -49,6 +50,16 @@ interface JournalEntry {
   entreprise_id?: number;
 }
 
+const contactChannelOptions: { value: ContactChannel; label: string }[] = [
+  { value: ContactChannel.PasDefini, label: 'Pas défini' },
+  { value: ContactChannel.Telephone, label: 'Téléphone' },
+  { value: ContactChannel.Email, label: 'Email' },
+  { value: ContactChannel.Linkedin, label: 'LinkedIn' },
+  { value: ContactChannel.Whatsapp, label: 'WhatsApp' },
+  { value: ContactChannel.Sms, label: 'SMS' },
+  { value: ContactChannel.Autre, label: 'Autre' },
+];
+
 export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
   opportunite_id,
   entreprise_id,
@@ -69,6 +80,9 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [selectedActionType, setSelectedActionType] = useState<string>('');
   const [actionDescription, setActionDescription] = useState('');
+  const [selectedChannel, setSelectedChannel] = useState<ContactChannel>(
+    ContactChannel.PasDefini
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadData = async () => {
@@ -107,25 +121,60 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
       
       switch (selectedActionType) {
         case 'call':
-          await journalApi.logCall(opportunite_id, entreprise_id, actionDescription);
+          await journalApi.logCall(
+            opportunite_id,
+            entreprise_id,
+            actionDescription,
+            selectedChannel
+          );
           break;
         case 'relance':
-          await journalApi.logRelance(opportunite_id, entreprise_id, actionDescription);
+          await journalApi.logRelance(
+            opportunite_id,
+            entreprise_id,
+            actionDescription,
+            selectedChannel
+          );
           break;
         case 'rdv':
-          await journalApi.logRdv(opportunite_id, entreprise_id, actionDescription);
+          await journalApi.logRdv(
+            opportunite_id,
+            entreprise_id,
+            actionDescription,
+            selectedChannel
+          );
           break;
         case 'devis':
-          await journalApi.logDevis(opportunite_id, entreprise_id, actionDescription);
+          await journalApi.logDevis(
+            opportunite_id,
+            entreprise_id,
+            actionDescription,
+            selectedChannel
+          );
           break;
         case 'signature':
-          await journalApi.logSignature(opportunite_id, entreprise_id, actionDescription);
+          await journalApi.logSignature(
+            opportunite_id,
+            entreprise_id,
+            actionDescription,
+            selectedChannel
+          );
           break;
         case 'acompte':
-          await journalApi.logAcompte(opportunite_id, entreprise_id, actionDescription);
+          await journalApi.logAcompte(
+            opportunite_id,
+            entreprise_id,
+            actionDescription,
+            selectedChannel
+          );
           break;
         case 'lead_magnet':
-          await journalApi.logLeadMagnet(opportunite_id, entreprise_id, actionDescription);
+          await journalApi.logLeadMagnet(
+            opportunite_id,
+            entreprise_id,
+            actionDescription,
+            selectedChannel
+          );
           break;
         default:
           throw new Error('Type d\'action non reconnu');
@@ -135,6 +184,7 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
       setShowAddDialog(false);
       setSelectedActionType('');
       setActionDescription('');
+      setSelectedChannel(ContactChannel.PasDefini);
       await loadData();
       onStatsUpdate?.();
     } catch (error) {
@@ -236,6 +286,26 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
                       <SelectItem value="signature">Signature</SelectItem>
                       <SelectItem value="acompte">Acompte</SelectItem>
                       <SelectItem value="lead_magnet">Lead Magnet</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Canal de contact</label>
+                  <Select
+                    value={selectedChannel}
+                    onValueChange={(value) =>
+                      setSelectedChannel(value as ContactChannel)
+                    }
+                  >
+                    <SelectTrigger className="mt-1">
+                      <SelectValue placeholder="Pas défini" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {contactChannelOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>

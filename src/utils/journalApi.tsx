@@ -1,5 +1,7 @@
 import { projectId, publicAnonKey } from './supabase/info';
 
+import { ContactChannel, ContactDirection, ContactOutcome } from '../types';
+
 import logger from './logger';
 const baseUrl = `https://${projectId}.supabase.co/functions/v1/make-server-5c06d9e7`;
 
@@ -54,6 +56,37 @@ interface GetJournalHistoryOptions {
   limit?: number;
 }
 
+interface CreateTouchpointPayload {
+  opportunite_id?: string;
+  entreprise_id?: number;
+  step_kind: string;
+  channel: ContactChannel;
+  direction?: ContactDirection;
+  outcome?: ContactOutcome;
+  details?: string;
+}
+
+export const createTouchpoint = async (
+  payload: CreateTouchpointPayload,
+): Promise<void> => {
+  const response = await fetch(`${baseUrl}/journal/touchpoint`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${publicAnonKey}`,
+    },
+    body: JSON.stringify({
+      ...payload,
+      direction: payload.direction ?? ContactDirection.Outgoing,
+      outcome: payload.outcome ?? ContactOutcome.Inconnu,
+    }),
+  });
+
+  if (!response.ok) {
+    await handleFetchError(response, 'Failed to create touchpoint');
+  }
+};
+
 // Fonction générique pour enregistrer un événement
 export const logEvent = async (eventData: JournalEventData): Promise<void> => {
   const response = await fetch(`${baseUrl}/journal/log`, {
@@ -71,14 +104,35 @@ export const logEvent = async (eventData: JournalEventData): Promise<void> => {
 };
 
 // Fonctions spécialisées pour chaque type d'événement
-export const logCall = async (opportunite_id?: string, entreprise_id?: number, description?: string): Promise<void> => {
+export const logCall = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
+): Promise<void> => {
+  await createTouchpoint({
+    opportunite_id,
+    entreprise_id,
+    step_kind: 'cold_call',
+    channel,
+    details: details ?? description,
+  });
+
   const response = await fetch(`${baseUrl}/journal/call`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
+    body: JSON.stringify({
+      opportunite_id,
+      entreprise_id,
+      description,
+      channel,
+      details,
+      skipTouchpoint: true,
+    }),
   });
 
   if (!response.ok) {
@@ -86,14 +140,35 @@ export const logCall = async (opportunite_id?: string, entreprise_id?: number, d
   }
 };
 
-export const logRelance = async (opportunite_id?: string, entreprise_id?: number, description?: string): Promise<void> => {
+export const logRelance = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
+): Promise<void> => {
+  await createTouchpoint({
+    opportunite_id,
+    entreprise_id,
+    step_kind: 'relance',
+    channel,
+    details: details ?? description,
+  });
+
   const response = await fetch(`${baseUrl}/journal/relance`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
+    body: JSON.stringify({
+      opportunite_id,
+      entreprise_id,
+      description,
+      channel,
+      details,
+      skipTouchpoint: true,
+    }),
   });
 
   if (!response.ok) {
@@ -101,14 +176,35 @@ export const logRelance = async (opportunite_id?: string, entreprise_id?: number
   }
 };
 
-export const logRdv = async (opportunite_id?: string, entreprise_id?: number, description?: string): Promise<void> => {
+export const logRdv = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
+): Promise<void> => {
+  await createTouchpoint({
+    opportunite_id,
+    entreprise_id,
+    step_kind: 'rdv',
+    channel,
+    details: details ?? description,
+  });
+
   const response = await fetch(`${baseUrl}/journal/rdv`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
+    body: JSON.stringify({
+      opportunite_id,
+      entreprise_id,
+      description,
+      channel,
+      details,
+      skipTouchpoint: true,
+    }),
   });
 
   if (!response.ok) {
@@ -116,14 +212,35 @@ export const logRdv = async (opportunite_id?: string, entreprise_id?: number, de
   }
 };
 
-export const logDevis = async (opportunite_id?: string, entreprise_id?: number, description?: string): Promise<void> => {
+export const logDevis = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
+): Promise<void> => {
+  await createTouchpoint({
+    opportunite_id,
+    entreprise_id,
+    step_kind: 'devis',
+    channel,
+    details: details ?? description,
+  });
+
   const response = await fetch(`${baseUrl}/journal/devis`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
+    body: JSON.stringify({
+      opportunite_id,
+      entreprise_id,
+      description,
+      channel,
+      details,
+      skipTouchpoint: true,
+    }),
   });
 
   if (!response.ok) {
@@ -131,14 +248,35 @@ export const logDevis = async (opportunite_id?: string, entreprise_id?: number, 
   }
 };
 
-export const logSignature = async (opportunite_id?: string, entreprise_id?: number, description?: string): Promise<void> => {
+export const logSignature = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
+): Promise<void> => {
+  await createTouchpoint({
+    opportunite_id,
+    entreprise_id,
+    step_kind: 'signature',
+    channel,
+    details: details ?? description,
+  });
+
   const response = await fetch(`${baseUrl}/journal/signature`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
+    body: JSON.stringify({
+      opportunite_id,
+      entreprise_id,
+      description,
+      channel,
+      details,
+      skipTouchpoint: true,
+    }),
   });
 
   if (!response.ok) {
@@ -146,14 +284,35 @@ export const logSignature = async (opportunite_id?: string, entreprise_id?: numb
   }
 };
 
-export const logAcompte = async (opportunite_id?: string, entreprise_id?: number, description?: string): Promise<void> => {
+export const logAcompte = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
+): Promise<void> => {
+  await createTouchpoint({
+    opportunite_id,
+    entreprise_id,
+    step_kind: 'acompte',
+    channel,
+    details: details ?? description,
+  });
+
   const response = await fetch(`${baseUrl}/journal/acompte`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
+    body: JSON.stringify({
+      opportunite_id,
+      entreprise_id,
+      description,
+      channel,
+      details,
+      skipTouchpoint: true,
+    }),
   });
 
   if (!response.ok) {
@@ -161,14 +320,35 @@ export const logAcompte = async (opportunite_id?: string, entreprise_id?: number
   }
 };
 
-export const logLeadMagnet = async (opportunite_id?: string, entreprise_id?: number, description?: string): Promise<void> => {
+export const logLeadMagnet = async (
+  opportunite_id?: string,
+  entreprise_id?: number,
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
+): Promise<void> => {
+  await createTouchpoint({
+    opportunite_id,
+    entreprise_id,
+    step_kind: 'lead_magnet',
+    channel,
+    details: details ?? description,
+  });
+
   const response = await fetch(`${baseUrl}/journal/lead-magnet`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${publicAnonKey}`,
     },
-    body: JSON.stringify({ opportunite_id, entreprise_id, description }),
+    body: JSON.stringify({
+      opportunite_id,
+      entreprise_id,
+      description,
+      channel,
+      details,
+      skipTouchpoint: true,
+    }),
   });
 
   if (!response.ok) {
@@ -308,7 +488,9 @@ export const logPipelineStageChange = async (
   newStage: string,
   opportunite_id?: string,
   entreprise_id?: number,
-  description?: string
+  description?: string,
+  channel: ContactChannel = ContactChannel.PasDefini,
+  details?: string,
 ): Promise<void> => {
   const normalizedStage = newStage.toLowerCase().trim();
   let eventType = stageToEventType[normalizedStage];
@@ -322,24 +504,67 @@ export const logPipelineStageChange = async (
   try {
     switch (eventType) {
       case 'relance':
-        await logRelance(opportunite_id, entreprise_id, description || `Passage à l'étape: ${newStage}`);
+        await logRelance(
+          opportunite_id,
+          entreprise_id,
+          description || `Passage à l'étape: ${newStage}`,
+          channel,
+          details,
+        );
         break;
       case 'rdv':
-        await logRdv(opportunite_id, entreprise_id, description || `Passage à l'étape: ${newStage}`);
+        await logRdv(
+          opportunite_id,
+          entreprise_id,
+          description || `Passage à l'étape: ${newStage}`,
+          channel,
+          details,
+        );
         break;
       case 'devis':
-        await logDevis(opportunite_id, entreprise_id, description || `Passage à l'étape: ${newStage}`);
+        await logDevis(
+          opportunite_id,
+          entreprise_id,
+          description || `Passage à l'étape: ${newStage}`,
+          channel,
+          details,
+        );
         break;
       case 'signature':
-        await logSignature(opportunite_id, entreprise_id, description || `Passage à l'étape: ${newStage}`);
+        await logSignature(
+          opportunite_id,
+          entreprise_id,
+          description || `Passage à l'étape: ${newStage}`,
+          channel,
+          details,
+        );
         break;
       case 'acompte':
-        await logAcompte(opportunite_id, entreprise_id, description || `Passage à l'étape: ${newStage}`);
+        await logAcompte(
+          opportunite_id,
+          entreprise_id,
+          description || `Passage à l'étape: ${newStage}`,
+          channel,
+          details,
+        );
         break;
       case 'cold_call':
-        await logCall(opportunite_id, entreprise_id, description || `Passage à l'étape: ${newStage}`);
+        await logCall(
+          opportunite_id,
+          entreprise_id,
+          description || `Passage à l'étape: ${newStage}`,
+          channel,
+          details,
+        );
         break;
       default:
+        await createTouchpoint({
+          opportunite_id,
+          entreprise_id,
+          step_kind: eventType,
+          channel,
+          details: details ?? description,
+        });
         await logEvent({
           type_evenement: eventType,
           description: description || `Passage à l'étape: ${newStage}`,

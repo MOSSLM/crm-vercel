@@ -572,11 +572,52 @@ app.post(`${routePrefix}/journal/log`, async (c) => {
   }
 });
 
+app.post(`${routePrefix}/journal/touchpoint`, async (c) => {
+  try {
+    const body = await c.req.json();
+    const {
+      opportunite_id,
+      entreprise_id,
+      step_kind,
+      channel,
+      direction,
+      outcome,
+      details,
+    } = body;
+
+    if (!step_kind || !channel) {
+      return c.json({ error: 'step_kind et channel sont requis' }, 400);
+    }
+
+    const sequence = await journal.createTouchpoint({
+      opportunite_id: opportunite_id ?? null,
+      entreprise_id: entreprise_id ?? null,
+      step_kind,
+      channel,
+      direction,
+      outcome,
+      details: details ?? null,
+    });
+
+    return c.json({ success: true, step_sequence: sequence });
+  } catch (error) {
+    logger.error('Error creating touchpoint:', error);
+    return c.json({ error: 'Internal server error' }, 500);
+  }
+});
+
 app.post(`${routePrefix}/journal/call`, async (c) => {
   try {
     const body = await c.req.json();
-    const { opportunite_id, entreprise_id, description } = body;
-    await journal.logCall(opportunite_id, entreprise_id, description);
+    const { opportunite_id, entreprise_id, description, channel, details, skipTouchpoint, direction, outcome } = body;
+    await journal.logCall(opportunite_id, entreprise_id, {
+      description,
+      channel,
+      details,
+      skipTouchpoint,
+      direction,
+      outcome,
+    });
     return c.json({ success: true });
   } catch (error) {
     logger.error('Error logging call:', error);
@@ -587,8 +628,15 @@ app.post(`${routePrefix}/journal/call`, async (c) => {
 app.post(`${routePrefix}/journal/relance`, async (c) => {
   try {
     const body = await c.req.json();
-    const { opportunite_id, entreprise_id, description } = body;
-    await journal.logRelance(opportunite_id, entreprise_id, description);
+    const { opportunite_id, entreprise_id, description, channel, details, skipTouchpoint, direction, outcome } = body;
+    await journal.logRelance(opportunite_id, entreprise_id, {
+      description,
+      channel,
+      details,
+      skipTouchpoint,
+      direction,
+      outcome,
+    });
     return c.json({ success: true });
   } catch (error) {
     logger.error('Error logging relance:', error);
@@ -599,8 +647,15 @@ app.post(`${routePrefix}/journal/relance`, async (c) => {
 app.post(`${routePrefix}/journal/rdv`, async (c) => {
   try {
     const body = await c.req.json();
-    const { opportunite_id, entreprise_id, description } = body;
-    await journal.logRdv(opportunite_id, entreprise_id, description);
+    const { opportunite_id, entreprise_id, description, channel, details, skipTouchpoint, direction, outcome } = body;
+    await journal.logRdv(opportunite_id, entreprise_id, {
+      description,
+      channel,
+      details,
+      skipTouchpoint,
+      direction,
+      outcome,
+    });
     return c.json({ success: true });
   } catch (error) {
     logger.error('Error logging rdv:', error);
@@ -611,8 +666,15 @@ app.post(`${routePrefix}/journal/rdv`, async (c) => {
 app.post(`${routePrefix}/journal/devis`, async (c) => {
   try {
     const body = await c.req.json();
-    const { opportunite_id, entreprise_id, description } = body;
-    await journal.logDevis(opportunite_id, entreprise_id, description);
+    const { opportunite_id, entreprise_id, description, channel, details, skipTouchpoint, direction, outcome } = body;
+    await journal.logDevis(opportunite_id, entreprise_id, {
+      description,
+      channel,
+      details,
+      skipTouchpoint,
+      direction,
+      outcome,
+    });
     return c.json({ success: true });
   } catch (error) {
     logger.error('Error logging devis:', error);
@@ -623,8 +685,15 @@ app.post(`${routePrefix}/journal/devis`, async (c) => {
 app.post(`${routePrefix}/journal/signature`, async (c) => {
   try {
     const body = await c.req.json();
-    const { opportunite_id, entreprise_id, description } = body;
-    await journal.logSignature(opportunite_id, entreprise_id, description);
+    const { opportunite_id, entreprise_id, description, channel, details, skipTouchpoint, direction, outcome } = body;
+    await journal.logSignature(opportunite_id, entreprise_id, {
+      description,
+      channel,
+      details,
+      skipTouchpoint,
+      direction,
+      outcome,
+    });
     return c.json({ success: true });
   } catch (error) {
     logger.error('Error logging signature:', error);
@@ -635,8 +704,15 @@ app.post(`${routePrefix}/journal/signature`, async (c) => {
 app.post(`${routePrefix}/journal/acompte`, async (c) => {
   try {
     const body = await c.req.json();
-    const { opportunite_id, entreprise_id, description } = body;
-    await journal.logAcompte(opportunite_id, entreprise_id, description);
+    const { opportunite_id, entreprise_id, description, channel, details, skipTouchpoint, direction, outcome } = body;
+    await journal.logAcompte(opportunite_id, entreprise_id, {
+      description,
+      channel,
+      details,
+      skipTouchpoint,
+      direction,
+      outcome,
+    });
     return c.json({ success: true });
   } catch (error) {
     logger.error('Error logging acompte:', error);
@@ -647,8 +723,15 @@ app.post(`${routePrefix}/journal/acompte`, async (c) => {
 app.post(`${routePrefix}/journal/lead-magnet`, async (c) => {
   try {
     const body = await c.req.json();
-    const { opportunite_id, entreprise_id, description } = body;
-    await journal.logLeadMagnet(opportunite_id, entreprise_id, description);
+    const { opportunite_id, entreprise_id, description, channel, details, skipTouchpoint, direction, outcome } = body;
+    await journal.logLeadMagnet(opportunite_id, entreprise_id, {
+      description,
+      channel,
+      details,
+      skipTouchpoint,
+      direction,
+      outcome,
+    });
     return c.json({ success: true });
   } catch (error) {
     logger.error('Error logging lead magnet:', error);

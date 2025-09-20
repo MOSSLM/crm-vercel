@@ -199,6 +199,27 @@ export interface SupabaseObjectives {
   ca?: number;
 }
 
+export enum ContactChannel {
+  PasDefini = 'pas_defini',
+  Telephone = 'telephone',
+  Email = 'email',
+  Linkedin = 'linkedin',
+  Whatsapp = 'whatsapp',
+  Sms = 'sms',
+  Autre = 'autre',
+}
+
+export enum ContactDirection {
+  Incoming = 'incoming',
+  Outgoing = 'outgoing',
+}
+
+export enum ContactOutcome {
+  Inconnu = 'inconnu',
+  Positif = 'positif',
+  Negatif = 'negatif',
+}
+
 export interface Objectives {
   periode: string;
   leadsFound: number;
