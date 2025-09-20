@@ -85,7 +85,7 @@ interface OpportunityCardProps {
   onView: (opportunity: Opportunity) => void;
   onEdit: (opportunity: Opportunity) => void;
   contactChannel: ContactChannel;
-  onContactChannelChange: (channel: ContactChannel) => void;
+  onContactChannelChange: (opportunityId: string, channel: ContactChannel) => void;
   isReduced?: boolean;
 }
 
@@ -193,7 +193,7 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
   }
 
   const handleChannelChange = (value: string) => {
-    onContactChannelChange(value as ContactChannel);
+    onContactChannelChange(opportunity.id, value as ContactChannel);
   };
 
   return (
@@ -340,8 +340,8 @@ interface PipelineColumnProps {
   onDrop: (opportunityId: string, stageId: number) => void;
   onView: (opportunity: Opportunity) => void;
   onEdit: (opportunity: Opportunity) => void;
-  contactChannel: ContactChannel;
-  onContactChannelChange: (channel: ContactChannel) => void;
+  contactChannels: Record<string, ContactChannel>;
+  onContactChannelChange: (opportunityId: string, channel: ContactChannel) => void;
   isReduced?: boolean;
 }
 
@@ -351,7 +351,7 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
   onDrop,
   onView,
   onEdit,
-  contactChannel,
+  contactChannels,
   onContactChannelChange,
   isReduced = false
 }) => {
@@ -413,7 +413,7 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
             stageColor={stageColor}
             onView={onView}
             onEdit={onEdit}
-            contactChannel={contactChannel}
+            contactChannel={contactChannels[opportunity.id] ?? ContactChannel.PasDefini}
             onContactChannelChange={onContactChannelChange}
             isReduced={isReduced}
           />
@@ -449,7 +449,7 @@ export const PipelinePage: React.FC = () => {
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [pipelineContactChannel, setPipelineContactChannel] = useState<ContactChannel>(ContactChannel.PasDefini);
+  const [contactChannels, setContactChannels] = useState<Record<string, ContactChannel>>({});
   
   // Configuration des étapes (visibilité et taille)
   const [stageConfigs, setStageConfigs] = useState<StageConfiguration[]>(
@@ -487,10 +487,26 @@ export const PipelinePage: React.FC = () => {
     }
   };
 
+  const handleContactChannelChange = (opportunityId: string, channel: ContactChannel) => {
+    setContactChannels((previousChannels) => {
+      if (channel === ContactChannel.PasDefini) {
+        const { [opportunityId]: _removedChannel, ...rest } = previousChannels;
+        return rest;
+      }
+      return {
+        ...previousChannels,
+        [opportunityId]: channel,
+      };
+    });
+  };
+
+  const getContactChannelForOpportunity = (opportunityId: string) =>
+    contactChannels[opportunityId] ?? ContactChannel.PasDefini;
+
   const handleDrop = async (opportunityId: string, newStageId: number) => {
     try {
       await moveOpportunityToStage(opportunityId, newStageId);
-      
+
       // Récupérer les informations pour la notification et la journalisation
       const opportunity = opportunities.find(opp => opp.id === opportunityId);
       const associatedCompany = companies.find(c => c.id === opportunity?.entreprise_id);
@@ -504,21 +520,26 @@ export const PipelinePage: React.FC = () => {
       if (opportunity && stageName) {
         try {
           logger.log(`[Journal] Enregistrement changement d'étape: "${stageName}" pour opportunité ${opportunity.id}`);
+          const contactChannel = getContactChannelForOpportunity(opportunityId);
           await journalApi.logPipelineStageChange(
             stageName,
             opportunity.id,
             opportunity.entreprise_id,
             `Déplacement vers "${stageName}" depuis le pipeline`,
-            pipelineContactChannel
+            contactChannel
           );
           logger.log(`[Journal] Changement d'étape enregistré avec succès`);
-          setPipelineContactChannel(ContactChannel.PasDefini);
         } catch (journalError) {
           logger.error('Erreur lors de l\'enregistrement dans le journal:', journalError);
           // Ne pas interrompre le processus principal si la journalisation échoue
         }
       }
-      
+
+      setContactChannels((previousChannels) => {
+        const { [opportunityId]: _removedChannel, ...rest } = previousChannels;
+        return rest;
+      });
+
       toast.success(`${displayName} déplacé vers "${stageName}"`);
     } catch (error) {
       logger.error('Erreur lors du déplacement:', error);
@@ -732,8 +753,8 @@ export const PipelinePage: React.FC = () => {
                       onDrop={handleDrop}
                       onView={setSelectedOpportunity}
                       onEdit={handleEditOpportunity}
-                      contactChannel={pipelineContactChannel}
-                      onContactChannelChange={(channel) => setPipelineContactChannel(channel)}
+                      contactChannels={contactChannels}
+                      onContactChannelChange={handleContactChannelChange}
                       isReduced={isReduced}
                     />
                   </div>
@@ -746,7 +767,6 @@ export const PipelinePage: React.FC = () => {
         <Dialog open={!!selectedOpportunity || !!editingOpportunity} onOpenChange={() => {
           setSelectedOpportunity(null);
           setEditingOpportunity(null);
-          setPipelineContactChannel(ContactChannel.PasDefini);
         }}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
@@ -984,8 +1004,12 @@ export const PipelinePage: React.FC = () => {
                 <div>
                   <label className="text-sm font-medium">Canal de contact</label>
                   <Select
-                    value={pipelineContactChannel}
-                    onValueChange={(value) => setPipelineContactChannel(value as ContactChannel)}
+                    value={selectedOpportunity ? getContactChannelForOpportunity(selectedOpportunity.id) : ContactChannel.PasDefini}
+                    onValueChange={(value) => {
+                      if (selectedOpportunity) {
+                        handleContactChannelChange(selectedOpportunity.id, value as ContactChannel);
+                      }
+                    }}
                   >
                     <SelectTrigger className="mt-1">
                       <SelectValue />
