@@ -23,6 +23,8 @@
   --foreground: oklch(0.145 0 0);
   --card: #ffffff;
   --card-foreground: oklch(0.145 0 0);
+  --popover: #ffffff;
+  --popover-foreground: oklch(0.145 0 0);
   --primary: #030213;
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.95 0.0058 264.53);
@@ -74,6 +76,8 @@
   --foreground: oklch(0.92 0.008 240);    /* #cccccc - Texte principal clair */
   --card: oklch(0.19 0.008 240);          /* #252526 - Cartes VS Code */
   --card-foreground: oklch(0.94 0.005 240); /* #e6e6e6 - Texte cartes lisible */
+  --popover: oklch(0.19 0.008 240);
+  --popover-foreground: oklch(0.94 0.005 240);
   
   /* Couleurs système VS Code Dark+ */
   --primary: oklch(0.92 0.008 240);       /* Texte principal */
@@ -119,6 +123,8 @@
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
