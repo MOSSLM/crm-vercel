@@ -43,6 +43,18 @@ import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { journalApi } from '../utils/journalApi';
 import { ContactChannel } from '../types';
 
+const normalizeWebsiteUrl = (url?: string | null) => {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+
+  const sanitized = trimmed.replace(/^\/+/, '');
+  return `https://${sanitized}`;
+};
+
 const ItemType = 'OPPORTUNITY';
 
 interface DragItem {
@@ -141,7 +153,8 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
   const hasPhone = !!(opportunity.telephone || associatedCompany?.telephone);
   const hasEmail = !!(opportunity.email);
   const hasLinkedin = !!(opportunity.linkedin_url || associatedCompany?.linkedin_url);
-  const hasWebsite = !!(opportunity.companyUrl || associatedCompany?.canonical_url);
+  const websiteUrl = normalizeWebsiteUrl(opportunity.companyUrl || associatedCompany?.canonical_url);
+  const hasWebsite = !!websiteUrl;
 
   if (isReduced) {
     return (
@@ -302,8 +315,23 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
           </div>
 
           <div className="flex gap-1 pt-2">
-            <Button 
-              size="sm" 
+            {websiteUrl && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs px-2 py-1 h-6"
+                onClick={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                asChild
+              >
+                <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
+                  <Globe className="h-3 w-3" />
+                  Site
+                </a>
+              </Button>
+            )}
+            <Button
+              size="sm"
               variant="outline"
               onClick={(e) => {
                 e.stopPropagation();
@@ -450,7 +478,14 @@ export const PipelinePage: React.FC = () => {
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [contactChannels, setContactChannels] = useState<Record<string, ContactChannel>>({});
-  
+
+  const selectedCompany = selectedOpportunity
+    ? companies.find(c => c.id === selectedOpportunity.entreprise_id)
+    : undefined;
+  const selectedOpportunityWebsiteUrl = selectedOpportunity
+    ? normalizeWebsiteUrl(selectedOpportunity.companyUrl || selectedCompany?.canonical_url)
+    : undefined;
+
   // Configuration des étapes (visibilité et taille)
   const [stageConfigs, setStageConfigs] = useState<StageConfiguration[]>(
     pipelineStages.map(stage => ({
@@ -879,16 +914,16 @@ export const PipelinePage: React.FC = () => {
                       </div>
                     )}
 
-                    {(selectedOpportunity.companyUrl || companies.find(c => c.id === selectedOpportunity.entreprise_id)?.canonical_url) && (
+                    {selectedOpportunityWebsiteUrl && (
                       <div>
                         <label className="text-sm font-medium flex items-center gap-2">
                           <Globe className="h-4 w-4 text-gray-600" />
                           Site web
                         </label>
                         <div className="mt-1">
-                          <a 
-                            href={selectedOpportunity.companyUrl || companies.find(c => c.id === selectedOpportunity.entreprise_id)?.canonical_url} 
-                            target="_blank" 
+                          <a
+                            href={selectedOpportunityWebsiteUrl}
+                            target="_blank"
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:underline text-sm"
                           >
