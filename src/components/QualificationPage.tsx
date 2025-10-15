@@ -45,7 +45,9 @@ export const QualificationPage: React.FC = () => {
     isDuplicate,
     blacklistCompany,
     blacklistDomain,
-    isCompanyBlacklisted
+    isCompanyBlacklisted,
+    autoOpportunityAmount,
+    setAutoOpportunityAmount
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -138,6 +140,27 @@ export const QualificationPage: React.FC = () => {
 
   const [companyToBlacklist, setCompanyToBlacklist] = useState<Company | null>(null);
   const [isProcessingBlacklist, setIsProcessingBlacklist] = useState(false);
+
+  const [autoAmountInput, setAutoAmountInput] = useState<string>(() => autoOpportunityAmount.toString());
+
+  React.useEffect(() => {
+    setAutoAmountInput(autoOpportunityAmount.toString());
+  }, [autoOpportunityAmount]);
+
+  const handleAutoOpportunityAmountChange = (value: string) => {
+    setAutoAmountInput(value);
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) {
+      setAutoOpportunityAmount(parsed);
+    }
+  };
+
+  const handleAutoOpportunityAmountBlur = () => {
+    if (autoAmountInput.trim() === '') {
+      setAutoOpportunityAmount(0);
+      setAutoAmountInput('0');
+    }
+  };
 
   const handleBlacklistClick = (company: Company) => {
     setCompanyToBlacklist(company);
@@ -372,6 +395,31 @@ export const QualificationPage: React.FC = () => {
           Qualifiez les entreprises trouvées pour créer automatiquement des opportunités (création ou refonte de site)
         </p>
       </div>
+
+      <Card className="max-w-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Montant automatique des opportunités</CardTitle>
+          <CardDescription>
+            Définit le montant attribué aux opportunités créées lors de la qualification.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Label htmlFor="auto-amount" className="text-xs text-muted-foreground">Montant en euros</Label>
+          <div className="relative mt-1">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
+            <Input
+              id="auto-amount"
+              type="number"
+              min={0}
+              step={50}
+              value={autoAmountInput}
+              onChange={(event) => handleAutoOpportunityAmountChange(event.target.value)}
+              onBlur={handleAutoOpportunityAmountBlur}
+              className="pl-7"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Métriques rapides - optimisées pour mobile */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">

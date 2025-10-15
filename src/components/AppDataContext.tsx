@@ -120,6 +120,10 @@ interface AppDataContextType {
   // Loading states
   loading: boolean;
 
+  // Qualification configuration
+  autoOpportunityAmount: number;
+  setAutoOpportunityAmount: (amount: number) => void;
+
   // Methods
   addSearchResult: (result: Omit<SearchResult, 'id' | 'created_at'>) => Promise<void>;
   addCompany: (company: Omit<Company, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
@@ -360,6 +364,27 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const [loading, setLoading] = useState(false);
   const [keywordStats, setKeywordStats] = useState<Record<string, number>>({});
   const [locationStats, setLocationStats] = useState<Record<string, number>>({});
+  const [autoOpportunityAmountState, setAutoOpportunityAmountState] = useState<number>(2500);
+
+  const setAutoOpportunityAmount = (amount: number) => {
+    const sanitized = Number.isFinite(amount) && amount >= 0 ? amount : 0;
+    setAutoOpportunityAmountState(sanitized);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedAmount = window.localStorage.getItem('autoOpportunityAmount');
+    if (!storedAmount) return;
+    const parsed = Number.parseFloat(storedAmount);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      setAutoOpportunityAmountState(parsed);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('autoOpportunityAmount', String(autoOpportunityAmountState));
+  }, [autoOpportunityAmountState]);
 
   // Load data from API when authenticated
   useEffect(() => {
@@ -817,7 +842,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
       const opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'> = {
         entreprise_id: company.id,
-        montant: 2500,
+        montant: autoOpportunityAmountState,
         priorite: hasMobilePhone ? 'haute' : 'moyenne',
         stage_id: defaultStage?.id,
         lead_magnet: false,
@@ -1101,6 +1126,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     getTotalSignatures,
     getTotalAcomptes,
     loading,
+    autoOpportunityAmount: autoOpportunityAmountState,
+    setAutoOpportunityAmount,
     addSearchResult,
     addCompany,
     updateCompany,
