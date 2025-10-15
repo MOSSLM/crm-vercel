@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import React, { useState, useRef } from 'react';
 import { useAppData } from './AppDataContext';
 import { Opportunity, PipelineStage } from '@/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
@@ -13,6 +13,7 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
+import { Checkbox } from './ui/checkbox';
 import { 
   DollarSign, 
   Calendar, 
@@ -90,6 +91,9 @@ interface StageConfiguration {
   isVisible: boolean;
   isReduced: boolean;
 }
+
+type SortOption = 'recent' | 'price-asc' | 'price-desc' | 'priority-high' | 'priority-low';
+type NormalizedPriority = 'haute' | 'moyenne' | 'basse';
 
 interface OpportunityCardProps {
   opportunity: Opportunity;
@@ -468,8 +472,7 @@ export const PipelinePage: React.FC = () => {
   const { 
     opportunities, 
     pipelineStages, 
-    moveOpportunityToStage, 
-    getOpportunitiesByStage,
+    moveOpportunityToStage,
     updateOpportunity,
     companies
   } = useAppData();
@@ -478,6 +481,163 @@ export const PipelinePage: React.FC = () => {
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [contactChannels, setContactChannels] = useState<Record<string, ContactChannel>>({});
+  const [searchTerm, setSearchTerm] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [selectedPriorities, setSelectedPriorities] = useState<NormalizedPriority[]>([]);
+  const [requireMobilePhone, setRequireMobilePhone] = useState(false);
+  const [requireEmployees, setRequireEmployees] = useState(false);
+  const [sortOption, setSortOption] = useState<SortOption>('recent');
+
+  const companiesById = React.useMemo(() => {
+    const map = new Map<number, (typeof companies)[number]>();
+    companies.forEach(company => {
+      map.set(company.id, company);
+    });
+    return map;
+  }, [companies]);
+
+  const getNormalizedPriority = (opportunity: Opportunity): NormalizedPriority | undefined => {
+    const priorityValue = (opportunity.priorite || opportunity.priority)?.toString().toLowerCase();
+    if (!priorityValue) return undefined;
+
+    if (priorityValue.includes('haut') || priorityValue === 'high') return 'haute';
+    if (priorityValue.includes('moy') || priorityValue === 'medium') return 'moyenne';
+    if (priorityValue.includes('bas') || priorityValue === 'low') return 'basse';
+    return undefined;
+  };
+
+  const calculateOpportunityValue = (opportunity: Opportunity) => {
+    if (opportunity.type === 'mrr' && opportunity.mrr) {
+      const months = opportunity.recurrence_months || 12;
+      return opportunity.mrr * months;
+    }
+    return opportunity.value || opportunity.montant || 0;
+  };
+
+  const doesPhoneLookMobile = (phone?: string | null) => {
+    if (!phone) return false;
+    const digits = phone.replace(/[^0-9]/g, '');
+    if (!digits) return false;
+    return (
+      digits.startsWith('06') ||
+      digits.startsWith('07') ||
+      digits.startsWith('336') ||
+      digits.startsWith('337') ||
+      digits.startsWith('00336') ||
+      digits.startsWith('00337')
+    );
+  };
+
+  const companyHasEmployees = (company?: (typeof companies)[number]) => {
+    if (!company) return false;
+    if (typeof company.nb_employes_exact === 'number') {
+      return company.nb_employes_exact >= 1;
+    }
+    if (company.nb_employes_band && company.nb_employes_band !== 'unknown') {
+      return true;
+    }
+    return false;
+  };
+
+  const filteredOpportunities = React.useMemo(() => {
+    const minValue = minPrice ? Number(minPrice) : undefined;
+    const maxValue = maxPrice ? Number(maxPrice) : undefined;
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    return opportunities.filter(opportunity => {
+      const company = opportunity.entreprise_id ? companiesById.get(opportunity.entreprise_id) : undefined;
+      const normalizedPriority = getNormalizedPriority(opportunity);
+      const opportunityValue = calculateOpportunityValue(opportunity);
+
+      const matchesMin = minValue === undefined || opportunityValue >= minValue;
+      const matchesMax = maxValue === undefined || opportunityValue <= maxValue;
+      const matchesPriority =
+        selectedPriorities.length === 0 || (normalizedPriority && selectedPriorities.includes(normalizedPriority));
+      const matchesPhone =
+        !requireMobilePhone ||
+        doesPhoneLookMobile(opportunity.telephone) ||
+        doesPhoneLookMobile(company?.telephone ?? undefined);
+      const matchesEmployees = !requireEmployees || companyHasEmployees(company);
+
+      const matchesSearch =
+        !normalizedSearch ||
+        [
+          opportunity.name,
+          opportunity.tags,
+          opportunity.note_base,
+          opportunity.contact_name,
+          opportunity.companyName,
+          opportunity.companyUrl,
+          company?.name,
+          company?.canonical_url,
+        ]
+          .filter(Boolean)
+          .some(value => value!.toString().toLowerCase().includes(normalizedSearch));
+
+      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesSearch;
+    });
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm]);
+
+  const sortedOpportunities = React.useMemo(() => {
+    const priorityOrderHighFirst: Record<string, number> = {
+      haute: 0,
+      moyenne: 1,
+      basse: 2,
+    };
+    const priorityOrderLowFirst: Record<string, number> = {
+      basse: 0,
+      moyenne: 1,
+      haute: 2,
+    };
+
+    const base = [...filteredOpportunities];
+
+    switch (sortOption) {
+      case 'price-asc':
+        return base.sort((a, b) => calculateOpportunityValue(a) - calculateOpportunityValue(b));
+      case 'price-desc':
+        return base.sort((a, b) => calculateOpportunityValue(b) - calculateOpportunityValue(a));
+      case 'priority-high':
+        return base.sort((a, b) => {
+          const priorityA = getNormalizedPriority(a);
+          const priorityB = getNormalizedPriority(b);
+          const valueA = priorityA ? priorityOrderHighFirst[priorityA] : Number.POSITIVE_INFINITY;
+          const valueB = priorityB ? priorityOrderHighFirst[priorityB] : Number.POSITIVE_INFINITY;
+          return valueA - valueB;
+        });
+      case 'priority-low':
+        return base.sort((a, b) => {
+          const priorityA = getNormalizedPriority(a);
+          const priorityB = getNormalizedPriority(b);
+          const valueA = priorityA ? priorityOrderLowFirst[priorityA] : Number.POSITIVE_INFINITY;
+          const valueB = priorityB ? priorityOrderLowFirst[priorityB] : Number.POSITIVE_INFINITY;
+          return valueA - valueB;
+        });
+      case 'recent':
+      default:
+        return base.sort((a, b) => {
+          const dateA = new Date(a.updated_at || a.lastUpdate || a.created_at || 0).getTime();
+          const dateB = new Date(b.updated_at || b.lastUpdate || b.created_at || 0).getTime();
+          return dateB - dateA;
+        });
+    }
+  }, [filteredOpportunities, sortOption]);
+
+  const getFilteredOpportunitiesByStage = React.useCallback(
+    (stageId: number) => sortedOpportunities.filter(opportunity => opportunity.stage_id === stageId),
+    [sortedOpportunities]
+  );
+
+  const handleResetFilters = () => {
+    setSearchTerm('');
+    setMinPrice('');
+    setMaxPrice('');
+    setSelectedPriorities([]);
+    setRequireMobilePhone(false);
+    setRequireEmployees(false);
+    setSortOption('recent');
+  };
 
   const selectedCompany = selectedOpportunity
     ? companies.find(c => c.id === selectedOpportunity.entreprise_id)
@@ -642,15 +802,8 @@ export const PipelinePage: React.FC = () => {
     return config?.isVisible !== false;
   });
 
-  const totalValue = opportunities.reduce((sum, opp) => {
-    if (opp.type === 'mrr' && opp.mrr) {
-      // Pour MRR, utiliser la valeur mensuelle multipliée par la durée ou 12 mois par défaut
-      const months = opp.recurrence_months || 12;
-      return sum + (opp.mrr * months);
-    }
-    return sum + (opp.value || opp.montant || 0);
-  }, 0);
-  const averageValue = opportunities.length > 0 ? totalValue / opportunities.length : 0;
+  const totalValue = sortedOpportunities.reduce((sum, opp) => sum + calculateOpportunityValue(opp), 0);
+  const averageValue = sortedOpportunities.length > 0 ? totalValue / sortedOpportunities.length : 0;
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -719,8 +872,8 @@ export const PipelinePage: React.FC = () => {
               <CardTitle className="text-sm">Opportunités totales</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{opportunities.length}</div>
-              <p className="text-xs text-muted-foreground">Dans le pipeline</p>
+              <div className="text-2xl font-bold">{sortedOpportunities.length}</div>
+              <p className="text-xs text-muted-foreground">Dans le pipeline (après filtres)</p>
             </CardContent>
           </Card>
 
@@ -732,7 +885,7 @@ export const PipelinePage: React.FC = () => {
               <div className="text-2xl font-bold text-green-600">
                 {totalValue.toLocaleString()}€
               </div>
-              <p className="text-xs text-muted-foreground">Pipeline complet</p>
+              <p className="text-xs text-muted-foreground">Pipeline filtré</p>
             </CardContent>
           </Card>
 
@@ -744,7 +897,7 @@ export const PipelinePage: React.FC = () => {
               <div className="text-2xl font-bold text-blue-600">
                 {Math.round(averageValue).toLocaleString()}€
               </div>
-              <p className="text-xs text-muted-foreground">Par opportunité</p>
+              <p className="text-xs text-muted-foreground">Par opportunité filtrée</p>
             </CardContent>
           </Card>
 
@@ -754,14 +907,133 @@ export const PipelinePage: React.FC = () => {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-purple-600">
-                {visibleStages.filter(stage => 
-                  getOpportunitiesByStage(stage.id).length > 0
+                {visibleStages.filter(stage =>
+                  getFilteredOpportunitiesByStage(stage.id).length > 0
                 ).length}
               </div>
               <p className="text-xs text-muted-foreground">Sur {visibleStages.length}</p>
             </CardContent>
           </Card>
         </div>
+
+        <Card className="p-4">
+          <div className="flex flex-col gap-4">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-2">
+                <Label>Recherche globale</Label>
+                <Input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Rechercher une opportunité, une entreprise..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Tarif minimum (€)</Label>
+                <Input
+                  type="number"
+                  value={minPrice}
+                  onChange={(event) => setMinPrice(event.target.value)}
+                  placeholder="0"
+                  min={0}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Tarif maximum (€)</Label>
+                <Input
+                  type="number"
+                  value={maxPrice}
+                  onChange={(event) => setMaxPrice(event.target.value)}
+                  placeholder="Illimité"
+                  min={0}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Tri des cartes</Label>
+                <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Choisir un tri" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recent">Mises à jour les plus récentes</SelectItem>
+                    <SelectItem value="price-asc">Prix croissant</SelectItem>
+                    <SelectItem value="price-desc">Prix décroissant</SelectItem>
+                    <SelectItem value="priority-high">Priorité la plus élevée</SelectItem>
+                    <SelectItem value="priority-low">Priorité la plus basse</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div>
+                <Label>Priorité</Label>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  {[
+                  { value: 'haute' as NormalizedPriority, label: 'Haute' },
+                  { value: 'moyenne' as NormalizedPriority, label: 'Moyenne' },
+                  { value: 'basse' as NormalizedPriority, label: 'Basse' },
+                  ].map(priority => (
+                    <label key={priority.value} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={selectedPriorities.includes(priority.value)}
+                        onCheckedChange={(checked) => {
+                          const isChecked = checked === true;
+                          setSelectedPriorities(prev => {
+                            if (isChecked) {
+                              if (prev.includes(priority.value)) {
+                                return prev;
+                              }
+                              return [...prev, priority.value];
+                            }
+                            return prev.filter(value => value !== priority.value);
+                          });
+                        }}
+                      />
+                      {priority.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 border rounded-lg px-3 py-2">
+                <Switch checked={requireMobilePhone} onCheckedChange={setRequireMobilePhone} />
+                <div>
+                  <Label className="text-sm">Téléphone mobile (06 ou 07)</Label>
+                  <p className="text-xs text-muted-foreground">Inclut les numéros d&apos;entreprise et d&apos;opportunité</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 border rounded-lg px-3 py-2">
+                <Switch checked={requireEmployees} onCheckedChange={setRequireEmployees} />
+                <div>
+                  <Label className="text-sm">Entreprise avec employés</Label>
+                  <p className="text-xs text-muted-foreground">Au moins un employé connu</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-3 justify-end">
+              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || requireMobilePhone || requireEmployees || sortOption !== 'recent') && (
+                <Badge variant="outline" className="h-7 px-3 text-xs">
+                  {[
+                    searchTerm ? 'Recherche active' : null,
+                    minPrice ? `Min ${minPrice}€` : null,
+                    maxPrice ? `Max ${maxPrice}€` : null,
+                    selectedPriorities.length ? `${selectedPriorities.length} priorité(s)` : null,
+                    requireMobilePhone ? 'Téléphone mobile' : null,
+                    requireEmployees ? 'Avec employés' : null,
+                    sortOption !== 'recent' ? 'Tri personnalisé' : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' • ')}
+                </Badge>
+              )}
+              <Button variant="outline" size="sm" onClick={handleResetFilters}>
+                Réinitialiser
+              </Button>
+            </div>
+          </div>
+        </Card>
 
         <div className="info-tooltip border rounded-lg p-4">
           <div className="flex items-center gap-2">
@@ -779,12 +1051,13 @@ export const PipelinePage: React.FC = () => {
               .map((stage) => {
                 const config = stageConfigs.find(c => c.id === stage.id);
                 const isReduced = config?.isReduced || false;
-                
+                const stageOpportunities = getFilteredOpportunitiesByStage(stage.id);
+
                 return (
                   <div key={stage.id} className={`flex-shrink-0 ${isReduced ? 'w-48' : 'w-72'}`}>
                     <PipelineColumn
                       stage={stage}
-                      opportunities={getOpportunitiesByStage(stage.id)}
+                      opportunities={stageOpportunities}
                       onDrop={handleDrop}
                       onView={setSelectedOpportunity}
                       onEdit={handleEditOpportunity}
