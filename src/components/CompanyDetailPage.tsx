@@ -152,7 +152,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         premiers_tags: foundCompany.premiers_tags || '',
         lat: foundCompany.lat || 0,
         lng: foundCompany.lng || 0,
-        qualifie: foundCompany.qualifie || false,
+        qualifie: foundCompany.qualifie ?? false,
         ca_estime_band: fromDbRevenueBand(foundCompany.ca_estime_band as unknown as string | undefined),
         nb_employes_band: fromDbEmployeeBand(foundCompany.nb_employes_band as unknown as string | undefined),
         nb_employes_exact: foundCompany.nb_employes_exact?.toString() || '',
@@ -215,7 +215,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         premiers_tags: company.premiers_tags || '',
         lat: company.lat || 0,
         lng: company.lng || 0,
-        qualifie: company.qualifie || false,
+        qualifie: company.qualifie ?? false,
         ca_estime_band: fromDbRevenueBand(company.ca_estime_band as unknown as string | undefined),
         nb_employes_band: fromDbEmployeeBand(company.nb_employes_band as unknown as string | undefined),
         nb_employes_exact: company.nb_employes_exact?.toString() || '',
@@ -362,7 +362,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     premiers_tags: company.premiers_tags,
     lat: company.lat,
     lng: company.lng,
-    qualifie: company.qualifie,
+    qualifie: company.qualifie ?? false,
     ca_estime_band: fromDbRevenueBand(company.ca_estime_band as unknown as string | undefined),
     nb_employes_band: fromDbEmployeeBand(company.nb_employes_band as unknown as string | undefined),
     nb_employes_exact: company.nb_employes_exact,
@@ -382,7 +382,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
           <div>
             <h1 className="flex items-center gap-2">
               {displayName}
-              {company.qualifie && (
+              {company.qualifie === true && (
                 <CheckCircle className="h-5 w-5 text-green-600" />
               )}
               {company.manually_enriched && (
@@ -535,12 +535,12 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
                 {isEditing ? (
                   <Switch
                     id="qualifie"
-                    checked={currentData.qualifie || false}
+                    checked={currentData.qualifie ?? false}
                     onCheckedChange={(checked) => handleInputChange('qualifie', checked)}
                   />
                 ) : (
-                  <Badge variant={currentData.qualifie ? 'default' : 'secondary'}>
-                    {currentData.qualifie ? 'Qualifiée' : 'Non qualifiée'}
+                  <Badge variant={currentData.qualifie === true ? 'default' : 'secondary'}>
+                    {currentData.qualifie === true ? 'Qualifiée' : 'Non qualifiée'}
                   </Badge>
                 )}
               </div>
@@ -857,8 +857,8 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
               
               <div className="flex items-center justify-between">
                 <span className="text-sm">Qualification</span>
-                <Badge variant={company.qualifie ? 'default' : 'secondary'}>
-                  {company.qualifie ? 'Qualifiée' : 'Non qualifiée'}
+                <Badge variant={company.qualifie === true ? 'default' : 'secondary'}>
+                  {company.qualifie === true ? 'Qualifiée' : 'Non qualifiée'}
                 </Badge>
               </div>
 

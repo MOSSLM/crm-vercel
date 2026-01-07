@@ -94,8 +94,8 @@ const DuplicatesPage: React.FC = () => {
         qualificationFilter === "all" ||
         group.companies.some(
           (c) =>
-            (qualificationFilter === "qualified" && c.qualifie) ||
-            (qualificationFilter === "not_qualified" && !c.qualifie)
+            (qualificationFilter === "qualified" && c.qualifie === true) ||
+            (qualificationFilter === "not_qualified" && c.qualifie === false)
         );
 
       return matchesSearch && matchesSource && matchesQualification;

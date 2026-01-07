@@ -45,7 +45,7 @@ export interface Company {
   premiers_tags?: string;
   sources: string[];
   raw_ids?: string[];
-  qualifie: boolean;
+  qualifie: boolean | null;
   created_at: string;
   updated_at: string;
   ca_estime_band?: RevenueBand;
