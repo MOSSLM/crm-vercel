@@ -50,6 +50,9 @@ function usePageTitle() {
     "/pipeline": "Pipeline",
     // ton dossier est `app/objectifs`, pas `/objectives`
     "/objectifs": "Objectifs & Progression",
+    "/production/enrichissement": "Enrichissement",
+    "/production/copywriting": "Copywriting",
+    "/production/lead-magnet": "Lead magnet",
     "/search": "Recherche",
     "/search/new": "Nouvelle recherche",
     "/settings": "Paramètres",
