@@ -77,6 +77,7 @@ const COMPANY_COLUMNS = [
   'sources',
   'raw_ids',
   'qualifie',
+  'hidden_in_qualification',
   'created_at',
   'updated_at',
   'ca_estime_band',
@@ -207,6 +208,10 @@ const buildCompanyFromPartial = (
     sources: toStringArray(partial.sources),
     raw_ids: toStringArray(partial.raw_ids),
     qualifie: typeof partial.qualifie === 'boolean' ? partial.qualifie : false,
+    hidden_in_qualification:
+      typeof partial.hidden_in_qualification === 'boolean'
+        ? partial.hidden_in_qualification
+        : false,
     created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
     updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
     canonical_url: toOptionalString(partial.canonical_url),

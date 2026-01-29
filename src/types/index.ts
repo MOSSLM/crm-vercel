@@ -46,6 +46,7 @@ export interface Company {
   sources: string[];
   raw_ids?: string[];
   qualifie: boolean;
+  hidden_in_qualification?: boolean;
   created_at: string;
   updated_at: string;
   ca_estime_band?: RevenueBand;
