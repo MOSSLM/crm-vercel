@@ -206,7 +206,12 @@ const buildCompanyFromPartial = (
     id,
     sources: toStringArray(partial.sources),
     raw_ids: toStringArray(partial.raw_ids),
-    qualifie: typeof partial.qualifie === 'boolean' ? partial.qualifie : false,
+    qualifie:
+      typeof partial.qualifie === 'boolean'
+        ? partial.qualifie
+        : partial.qualifie === null
+          ? null
+          : null,
     created_at: typeof partial.created_at === 'string' ? partial.created_at : now,
     updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
     canonical_url: toOptionalString(partial.canonical_url),

@@ -123,6 +123,8 @@ interface AppDataContextType {
   // Qualification configuration
   autoOpportunityAmount: number;
   setAutoOpportunityAmount: (amount: number) => void;
+  autoOpportunityTitleTemplate: string;
+  setAutoOpportunityTitleTemplate: (template: string) => void;
 
   // Methods
   addSearchResult: (result: Omit<SearchResult, 'id' | 'created_at'>) => Promise<void>;
@@ -365,10 +367,15 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const [keywordStats, setKeywordStats] = useState<Record<string, number>>({});
   const [locationStats, setLocationStats] = useState<Record<string, number>>({});
   const [autoOpportunityAmountState, setAutoOpportunityAmountState] = useState<number>(2500);
+  const [autoOpportunityTitleTemplateState, setAutoOpportunityTitleTemplateState] = useState<string>('');
 
   const setAutoOpportunityAmount = (amount: number) => {
     const sanitized = Number.isFinite(amount) && amount >= 0 ? amount : 0;
     setAutoOpportunityAmountState(sanitized);
+  };
+
+  const setAutoOpportunityTitleTemplate = (template: string) => {
+    setAutoOpportunityTitleTemplateState(template);
   };
 
   useEffect(() => {
@@ -383,8 +390,21 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    const storedTemplate = window.localStorage.getItem('autoOpportunityTitleTemplate');
+    if (storedTemplate !== null) {
+      setAutoOpportunityTitleTemplateState(storedTemplate);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
     window.localStorage.setItem('autoOpportunityAmount', String(autoOpportunityAmountState));
   }, [autoOpportunityAmountState]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('autoOpportunityTitleTemplate', autoOpportunityTitleTemplateState);
+  }, [autoOpportunityTitleTemplateState]);
 
   // Load data from API when authenticated
   useEffect(() => {
@@ -504,7 +524,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
   // Computed values
   const totalCompanies = companies.length;
-  const totalQualifiedCompanies = companies.filter((c) => c.qualifie).length;
+  const totalQualifiedCompanies = companies.filter((c) => c.qualifie === true).length;
 
   const getCompanyCanonicalSite = React.useCallback((company: Company): string | undefined => {
     const legacySite = 'site_web_canonique' in company
@@ -814,7 +834,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   // Qualify = crée auto une opportunité
   const qualifyCompany = async (companyId: number) => {
     const company = companies.find((c) => c.id === companyId);
-    if (!company || company.qualifie) return;
+    if (!company || company.qualifie === true) return;
 
     try {
       await updateCompany(companyId, { qualifie: true });
@@ -835,7 +855,11 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         logger.error('Error creating achievement:', achievementError);
       }
 
-      const opportunityName = generateOpportunityName(company);
+      const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+      const customTemplate = autoOpportunityTitleTemplateState.trim();
+      const opportunityName = customTemplate
+        ? customTemplate.replace(/\{entreprise\}/gi, displayName)
+        : generateOpportunityName(company);
       const defaultStage = pipelineStages.find((stage) => stage.ordre === 1) || pipelineStages[0];
 
       const hasMobilePhone = !!company.telephone && isMobilePhone(company.telephone);
@@ -872,22 +896,10 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
 
   const unqualifyCompany = async (companyId: number) => {
     const company = companies.find((c) => c.id === companyId);
-    if (!company || !company.qualifie) return;
+    if (!company || company.qualifie !== true) return;
 
     try {
       await updateCompany(companyId, { qualifie: false });
-
-      const associatedContacts = contacts.filter((contact) => contact.entreprise_id === companyId);
-      const associatedOpportunities = opportunities.filter((opp) => opp.entreprise_id === companyId);
-
-      await Promise.all([
-        ...associatedContacts.map((contact) => contactsApi.delete(contact.id)),
-        ...associatedOpportunities.map((opp) => opportunitiesApi.delete(opp.id)),
-      ]);
-
-      setContacts((prev) => prev.filter((contact) => contact.entreprise_id !== companyId));
-      setOpportunities((prev) => prev.filter((opp) => opp.entreprise_id !== companyId));
-
       toast.success(`${company.name} déqualifiée`);
     } catch (error) {
       logger.error('Error unqualifying company:', error);
@@ -1128,6 +1140,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     loading,
     autoOpportunityAmount: autoOpportunityAmountState,
     setAutoOpportunityAmount,
+    autoOpportunityTitleTemplate: autoOpportunityTitleTemplateState,
+    setAutoOpportunityTitleTemplate,
     addSearchResult,
     addCompany,
     updateCompany,

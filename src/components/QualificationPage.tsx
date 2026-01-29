@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { Checkbox } from './ui/checkbox';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
@@ -47,12 +48,18 @@ export const QualificationPage: React.FC = () => {
     blacklistDomain,
     isCompanyBlacklisted,
     autoOpportunityAmount,
-    setAutoOpportunityAmount
+    setAutoOpportunityAmount,
+    autoOpportunityTitleTemplate,
+    setAutoOpportunityTitleTemplate
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [sourceFilter, setSourceFilter] = useState('all');
-  const [qualificationFilter, setQualificationFilter] = useState('all');
+  const [qualificationFilter, setQualificationFilter] = useState({
+    qualified: true,
+    not_qualified: true,
+    unknown: true
+  });
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -83,9 +90,12 @@ export const QualificationPage: React.FC = () => {
       (sourceFilter === 'google_search' && company.sources.includes('google_search')) ||
       (sourceFilter === 'google_maps' && company.sources.includes('google_maps'));
     
-    const matchesQualification = qualificationFilter === 'all' ||
-      (qualificationFilter === 'qualified' && company.qualifie) ||
-      (qualificationFilter === 'not_qualified' && !company.qualifie);
+    const qualificationStatus =
+      company.qualifie === true ? 'qualified' : company.qualifie === false ? 'not_qualified' : 'unknown';
+    const hasQualificationFilters = Object.values(qualificationFilter).some(Boolean);
+    const matchesQualification = hasQualificationFilters
+      ? qualificationFilter[qualificationStatus]
+      : true;
     
     const hideByDuplicate =
       !showDuplicates &&
@@ -113,7 +123,7 @@ export const QualificationPage: React.FC = () => {
     const displayName = getCompanyDisplayName(company.name, company.canonical_url);
     
     try {
-      if (company.qualifie) {
+      if (company.qualifie === true) {
         await unqualifyCompany(company.id);
         toast.success(`${displayName} déqualifiée`);
       } else {
@@ -142,10 +152,15 @@ export const QualificationPage: React.FC = () => {
   const [isProcessingBlacklist, setIsProcessingBlacklist] = useState(false);
 
   const [autoAmountInput, setAutoAmountInput] = useState<string>(() => autoOpportunityAmount.toString());
+  const [autoTitleInput, setAutoTitleInput] = useState<string>(() => autoOpportunityTitleTemplate);
 
   React.useEffect(() => {
     setAutoAmountInput(autoOpportunityAmount.toString());
   }, [autoOpportunityAmount]);
+
+  React.useEffect(() => {
+    setAutoTitleInput(autoOpportunityTitleTemplate);
+  }, [autoOpportunityTitleTemplate]);
 
   const handleAutoOpportunityAmountChange = (value: string) => {
     setAutoAmountInput(value);
@@ -160,6 +175,15 @@ export const QualificationPage: React.FC = () => {
       setAutoOpportunityAmount(0);
       setAutoAmountInput('0');
     }
+  };
+
+  const handleAutoOpportunityTitleChange = (value: string) => {
+    setAutoTitleInput(value);
+    setAutoOpportunityTitleTemplate(value);
+  };
+
+  const handleQualificationFilterToggle = (key: keyof typeof qualificationFilter) => {
+    setQualificationFilter((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleBlacklistClick = (company: Company) => {
@@ -272,14 +296,18 @@ export const QualificationPage: React.FC = () => {
     const tags = company.premiers_tags ? company.premiers_tags.split(',').map(t => t.trim()) : [];
     
     return (
-      <Card className={`hover:shadow-md transition-shadow ${company.qualifie ? 'bg-green-50 border-green-200' : ''}`}>
+      <Card className={`hover:shadow-md transition-shadow ${company.qualifie === true ? 'bg-green-50 border-green-200' : ''}`}>
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
             <div className="flex-1">
               <CardTitle className="text-base leading-tight">{displayName}</CardTitle>
               <div className="flex items-center gap-2 mt-1">
-                <Badge variant={company.qualifie ? 'default' : 'secondary'}>
-                  {company.qualifie ? 'Qualifiée' : 'En attente'}
+                <Badge variant={company.qualifie === true ? 'default' : 'secondary'}>
+                  {company.qualifie === true
+                    ? 'Qualifiée'
+                    : company.qualifie === false
+                      ? 'Non qualifiée'
+                      : 'Non renseignée'}
                 </Badge>
                 <Badge variant="outline">
                   {company.sources.includes('google_maps') ? 'Maps' : 'Search'}
@@ -373,10 +401,10 @@ export const QualificationPage: React.FC = () => {
 
             <div className="flex items-center gap-2 pt-2 border-t">
               <span className="text-sm font-medium">
-                {company.qualifie ? 'Qualifiée' : 'Qualifier'}
+                {company.qualifie === true ? 'Qualifiée' : 'Qualifier'}
               </span>
               <Switch
-                checked={company.qualifie}
+                checked={company.qualifie === true}
                 onCheckedChange={() => handleQualificationToggle(company)}
                 disabled={loading}
               />
@@ -398,25 +426,43 @@ export const QualificationPage: React.FC = () => {
 
       <Card className="max-w-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Montant automatique des opportunités</CardTitle>
+          <CardTitle className="text-sm">Paramètres automatiques des opportunités</CardTitle>
           <CardDescription>
-            Définit le montant attribué aux opportunités créées lors de la qualification.
+            Personnalisez le montant et le titre pour les opportunités créées lors de la qualification.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Label htmlFor="auto-amount" className="text-xs text-muted-foreground">Montant en euros</Label>
-          <div className="relative mt-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
-            <Input
-              id="auto-amount"
-              type="number"
-              min={0}
-              step={50}
-              value={autoAmountInput}
-              onChange={(event) => handleAutoOpportunityAmountChange(event.target.value)}
-              onBlur={handleAutoOpportunityAmountBlur}
-              className="pl-7"
-            />
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="auto-amount" className="text-xs text-muted-foreground">Montant en euros</Label>
+              <div className="relative mt-1">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
+                <Input
+                  id="auto-amount"
+                  type="number"
+                  min={0}
+                  step={50}
+                  value={autoAmountInput}
+                  onChange={(event) => handleAutoOpportunityAmountChange(event.target.value)}
+                  onBlur={handleAutoOpportunityAmountBlur}
+                  className="pl-7"
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="auto-title" className="text-xs text-muted-foreground">
+                Titre automatique
+              </Label>
+              <Input
+                id="auto-title"
+                value={autoTitleInput}
+                onChange={(event) => handleAutoOpportunityTitleChange(event.target.value)}
+                placeholder="Ex: {entreprise} refonte de site web (laisser vide pour défaut)"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Utilisez {'{entreprise}'} pour insérer le nom de l'entreprise.
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -438,10 +484,12 @@ export const QualificationPage: React.FC = () => {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {companies.filter(c => c.qualifie).length}
+              {companies.filter(c => c.qualifie === true).length}
             </div>
             <p className="text-xs text-muted-foreground">
-              {companies.length > 0 ? Math.round((companies.filter(c => c.qualifie).length / companies.length) * 100) : 0}% du total
+              {companies.length > 0
+                ? Math.round((companies.filter(c => c.qualifie === true).length / companies.length) * 100)
+                : 0}% du total
             </p>
           </CardContent>
         </Card>
@@ -496,15 +544,32 @@ export const QualificationPage: React.FC = () => {
               <option value="google_maps">Google Maps</option>
             </select>
 
-            <select
-              value={qualificationFilter}
-              onChange={(e) => setQualificationFilter(e.target.value)}
-              className="px-3 py-2 border border-border rounded-md bg-card text-card-foreground text-sm"
-            >
-              <option value="all">Toutes</option>
-              <option value="qualified">Qualifiées</option>
-              <option value="not_qualified">Non qualifiées</option>
-            </select>
+            <div className="flex flex-col gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="filter-qualified"
+                  checked={qualificationFilter.qualified}
+                  onCheckedChange={() => handleQualificationFilterToggle('qualified')}
+                />
+                <Label htmlFor="filter-qualified">Qualifiées</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="filter-not-qualified"
+                  checked={qualificationFilter.not_qualified}
+                  onCheckedChange={() => handleQualificationFilterToggle('not_qualified')}
+                />
+                <Label htmlFor="filter-not-qualified">Non qualifiées</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="filter-unknown"
+                  checked={qualificationFilter.unknown}
+                  onCheckedChange={() => handleQualificationFilterToggle('unknown')}
+                />
+                <Label htmlFor="filter-unknown">Non renseignées</Label>
+              </div>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -568,7 +633,7 @@ export const QualificationPage: React.FC = () => {
                   return (
                     <TableRow 
                       key={company.id} 
-                      className={company.qualifie ? 'bg-green-50' : ''}
+                      className={company.qualifie === true ? 'bg-green-50' : ''}
                     >
                       <TableCell>
                         <div>
@@ -672,11 +737,11 @@ export const QualificationPage: React.FC = () => {
                       <TableCell className="text-center">
                         <div className="flex items-center justify-center gap-2">
                           <Switch
-                            checked={company.qualifie}
+                            checked={company.qualifie === true}
                             onCheckedChange={() => handleQualificationToggle(company)}
                             disabled={loading}
                           />
-                          {company.qualifie && (
+                          {company.qualifie === true && (
                             <CheckCircle className="h-4 w-4 text-green-600" />
                           )}
                         </div>
@@ -926,8 +991,12 @@ export const QualificationPage: React.FC = () => {
                 <div>
                   <label className="text-sm font-medium">Statut de qualification</label>
                   <div className="mt-1">
-                    <Badge variant={selectedCompany.qualifie ? 'default' : 'secondary'}>
-                      {selectedCompany.qualifie ? 'Qualifiée' : 'En attente'}
+                    <Badge variant={selectedCompany.qualifie === true ? 'default' : 'secondary'}>
+                      {selectedCompany.qualifie === true
+                        ? 'Qualifiée'
+                        : selectedCompany.qualifie === false
+                          ? 'Non qualifiée'
+                          : 'Non renseignée'}
                     </Badge>
                   </div>
                 </div>
@@ -1027,14 +1096,14 @@ export const QualificationPage: React.FC = () => {
                   Enrichir les données
                 </Button>
                 <Button 
-                  variant={selectedCompany.qualifie ? "destructive" : "default"}
+                  variant={selectedCompany.qualifie === true ? "destructive" : "default"}
                   onClick={() => {
                     handleQualificationToggle(selectedCompany);
                     setSelectedCompany(null);
                   }}
                   className="flex-1"
                 >
-                  {selectedCompany.qualifie ? 'Déqualifier' : 'Qualifier'}
+                  {selectedCompany.qualifie === true ? 'Déqualifier' : 'Qualifier'}
                 </Button>
               </div>
             </div>

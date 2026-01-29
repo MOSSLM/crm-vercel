@@ -37,7 +37,7 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
   const [currentPage, setCurrentPage] = useState(1);
 
   // Entreprises qualifiées
-  const qualifiedCompanies = companies.filter((c) => c.qualifie);
+  const qualifiedCompanies = companies.filter((c) => c.qualifie === true);
 
   const companyEmployees = React.useMemo(() => {
     const employeesMap: Record<number, Employee[]> = {};
