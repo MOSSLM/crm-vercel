@@ -22,6 +22,7 @@ import {
   LayoutGrid,
   List,
   Eye,
+  EyeOff,
   CheckCircle,
   Edit3,
   Phone,
@@ -56,6 +57,7 @@ export const QualificationPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showHiddenCompanies, setShowHiddenCompanies] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -91,7 +93,10 @@ export const QualificationPage: React.FC = () => {
       !showDuplicates &&
       (isDuplicate(company.id) || isCompanyBlacklisted(company));
 
-    return matchesSearch && matchesSource && matchesQualification && !hideByDuplicate;
+    const hideByManual =
+      !showHiddenCompanies && company.hidden_in_qualification;
+
+    return matchesSearch && matchesSource && matchesQualification && !hideByDuplicate && !hideByManual;
   });
 
   // Pagination logic
@@ -103,7 +108,7 @@ export const QualificationPage: React.FC = () => {
   // Reset to first page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, sourceFilter, qualificationFilter]);
+  }, [searchTerm, sourceFilter, qualificationFilter, showHiddenCompanies]);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR');
@@ -164,6 +169,24 @@ export const QualificationPage: React.FC = () => {
 
   const handleBlacklistClick = (company: Company) => {
     setCompanyToBlacklist(company);
+  };
+
+  const handleToggleHidden = async (company: Company) => {
+    if (company.qualifie) return;
+    try {
+      await updateCompany(company.id, {
+        hidden_in_qualification: !company.hidden_in_qualification,
+      });
+      const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+      toast.success(
+        company.hidden_in_qualification
+          ? `${displayName} réaffichée`
+          : `${displayName} masquée`
+      );
+    } catch (error) {
+      logger.error('Erreur lors du masquage:', error);
+      toast.error('Erreur lors du masquage de l’entreprise');
+    }
   };
 
   const handleBlacklistExact = async () => {
@@ -351,6 +374,21 @@ export const QualificationPage: React.FC = () => {
                   <ExternalLink className="h-3 w-3" />
                 </Button>
               )}
+              {!company.qualifie && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleToggleHidden(company)}
+                  className="px-2"
+                  title={company.hidden_in_qualification ? "Réafficher" : "Masquer"}
+                >
+                  {company.hidden_in_qualification ? (
+                    <Eye className="h-3 w-3" />
+                  ) : (
+                    <EyeOff className="h-3 w-3" />
+                  )}
+                </Button>
+              )}
               <Button 
                 size="sm" 
                 variant="outline"
@@ -514,6 +552,13 @@ export const QualificationPage: React.FC = () => {
             />
             <Label>Afficher les duplicats</Label>
           </div>
+          <div className="flex items-center gap-2">
+            <Switch
+              checked={showHiddenCompanies}
+              onCheckedChange={setShowHiddenCompanies}
+            />
+            <Label>Afficher les masquées</Label>
+          </div>
         </div>
 
         {/* Toggle grille/liste unifié */}
@@ -643,6 +688,20 @@ export const QualificationPage: React.FC = () => {
                           >
                             <ExternalLink className="h-3 w-3" />
                           </Button>
+                          {!company.qualifie && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleHidden(company)}
+                              title={company.hidden_in_qualification ? "Réafficher" : "Masquer"}
+                            >
+                              {company.hidden_in_qualification ? (
+                                <Eye className="h-3 w-3" />
+                              ) : (
+                                <EyeOff className="h-3 w-3" />
+                              )}
+                            </Button>
+                          )}
                           <Button 
                             size="sm" 
                             variant="outline"

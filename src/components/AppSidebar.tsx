@@ -32,6 +32,9 @@ import {
   Copy,
   Share2,
   Ban,
+  Sparkles,
+  PenLine,
+  Magnet,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 
@@ -54,11 +57,18 @@ export const AppSidebar = () => {
     { title: "Contacts", icon: Users, href: "/contacts" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
-    { title: "Objectifs & Progression", icon: Award, href: "/objectifs" },  ];
+    { title: "Objectifs & Progression", icon: Award, href: "/objectifs" },
+  ];
 
   const actionItems = [
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
     { title: "Créer", icon: Plus, href: "/create" },
+  ];
+
+  const productionItems = [
+    { title: "Enrichissement", icon: Sparkles, href: "/production/enrichissement" },
+    { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
+    { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
   ];
 
   const isActive = (href: string) =>
@@ -98,6 +108,24 @@ export const AppSidebar = () => {
           <SidebarGroupContent>
             <SidebarMenu>
               {crmItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                    <Link href={item.href}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Production</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {productionItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton asChild isActive={isActive(item.href)}>
                     <Link href={item.href}>
