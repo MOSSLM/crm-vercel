@@ -551,6 +551,7 @@ export const OpportunitiesPage: React.FC = () => {
                       opportunite_id={selectedOpportunity.id}
                       entreprise_id={selectedOpportunity.entreprise_id}
                       companyName={getDisplayNameForOpportunity(selectedOpportunity)}
+                      recipientEmail={selectedOpportunity.email}
                       size="sm"
                       variant="outline"
                       showLabels={true}
@@ -571,6 +572,8 @@ export const OpportunitiesPage: React.FC = () => {
                 <JournalStatsWidget
                   opportunite_id={selectedOpportunity.id}
                   entreprise_id={selectedOpportunity.entreprise_id}
+                  recipientEmail={selectedOpportunity.email}
+                  companyName={getDisplayNameForOpportunity(selectedOpportunity)}
                   showAddActions={false}
                 />
                 

@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { journalApi } from "../utils/journalApi";
+import { sendPaymentReceiptEmail } from "../utils/paymentEmailClient";
 import {
   Phone,
   RotateCcw,
@@ -37,6 +38,7 @@ interface JournalActionButtonsProps {
   opportunite_id?: string;
   entreprise_id?: number;
   companyName?: string;
+  recipientEmail?: string;
   onActionCompleted?: () => void;
   size?: "sm" | "default" | "lg";
   variant?: "default" | "outline" | "ghost";
@@ -65,6 +67,7 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
   opportunite_id,
   entreprise_id,
   companyName,
+  recipientEmail,
   onActionCompleted,
   size = "sm",
   variant = "outline",
@@ -162,8 +165,16 @@ export const JournalActionButtons: React.FC<JournalActionButtonsProps> = ({
       color: "text-emerald-600",
       action: async ({ description: desc, channel }) => {
         await journalApi.logAcompte(opportunite_id, entreprise_id, desc, channel);
+        await sendPaymentReceiptEmail({
+          to: recipientEmail,
+          companyName,
+          description: desc,
+          amount: 0,
+          paymentDate: new Date().toISOString(),
+          qrPayload: `Paiement validé|${companyName ?? 'Entreprise'}|${new Date().toISOString()}`
+        });
         toast.success(
-          `Acompte enregistré ${companyName ? `pour ${companyName}` : ""}`
+          `Acompte enregistré et email envoyé ${companyName ? `pour ${companyName}` : ""}`
         );
       },
     },
