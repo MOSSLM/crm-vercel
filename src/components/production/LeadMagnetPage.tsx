@@ -5,6 +5,7 @@ import { ProductionDataTable, ProductionColumn } from "@/components/production/P
 
 const columns: ProductionColumn[] = [
   { key: "id", label: "ID", type: "text", readOnly: true },
+  { key: "lead_magnet_content_id", label: "Lead Magnet Content ID", type: "text", readOnly: true },
   { key: "entreprise_id", label: "Entreprise ID", type: "number" },
   { key: "created_at", label: "Créé le", type: "timestamp", readOnly: true },
   { key: "updated_at", label: "Mis à jour le", type: "timestamp", readOnly: true },
@@ -19,6 +20,21 @@ const columns: ProductionColumn[] = [
   { key: "key_stat_2", label: "Stat clé 2", type: "text" },
   { key: "key_stat_3", label: "Stat clé 3", type: "text" },
   { key: "cta_long_title", label: "CTA long", type: "text", isLong: true },
+  { key: "entreprise_name", label: "Entreprise", type: "text" },
+  { key: "adresse", label: "Adresse", type: "text", isLong: true },
+  { key: "telephone", label: "Téléphone", type: "text" },
+  { key: "email", label: "Email", type: "text" },
+  { key: "facebook_url", label: "Facebook", type: "text", isLong: true },
+  { key: "instagram_url", label: "Instagram", type: "text", isLong: true },
+  { key: "linkedin_url", label: "LinkedIn", type: "text", isLong: true },
+  { key: "avis_1_nom", label: "Avis 1 - Nom", type: "text" },
+  { key: "avis_1_texte", label: "Avis 1 - Texte", type: "text", isLong: true },
+  { key: "avis_2_nom", label: "Avis 2 - Nom", type: "text" },
+  { key: "avis_2_texte", label: "Avis 2 - Texte", type: "text", isLong: true },
+  { key: "avis_3_nom", label: "Avis 3 - Nom", type: "text" },
+  { key: "avis_3_texte", label: "Avis 3 - Texte", type: "text", isLong: true },
+  { key: "avis_4_nom", label: "Avis 4 - Nom", type: "text" },
+  { key: "avis_4_texte", label: "Avis 4 - Texte", type: "text", isLong: true },
 ];
 
 export const LeadMagnetPage: React.FC = () => {
@@ -26,8 +42,10 @@ export const LeadMagnetPage: React.FC = () => {
     <ProductionDataTable
       title="Lead magnet"
       description="Consultez et modifiez les contenus de lead magnet."
-      tableName="lead_magnet_content"
+      tableName="lead_magnets"
       columns={columns}
+      enableEntrepriseCsvExport
+      csvExcludedColumns={["id", "entreprise_id", "created_at", "updated_at", "lead_magnet_content_id"]}
     />
   );
 };

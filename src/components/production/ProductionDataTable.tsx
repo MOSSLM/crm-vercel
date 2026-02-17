@@ -24,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ExternalLink, Edit3, Save } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/utils/supabase/client";
@@ -47,6 +48,8 @@ type ProductionDataTableProps = {
   tableName: string;
   columns: ProductionColumn[];
   getWebsiteUrl?: (row: RowData) => string | null;
+  enableEntrepriseCsvExport?: boolean;
+  csvExcludedColumns?: string[];
 };
 
 const formatValue = (value: unknown, type: ColumnType): string => {
@@ -126,6 +129,8 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
   tableName,
   columns,
   getWebsiteUrl,
+  enableEntrepriseCsvExport = false,
+  csvExcludedColumns = [],
 }) => {
   const supabase = createClient();
   const [rows, setRows] = useState<RowData[]>([]);
@@ -137,6 +142,7 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
   const [editingRow, setEditingRow] = useState<RowData | null>(null);
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -157,6 +163,10 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm]);
+
+  useEffect(() => {
+    setSelectedRowIds(new Set());
+  }, [tableName]);
 
   const filteredRows = useMemo(() => {
     if (!searchTerm.trim()) return rows;
@@ -228,6 +238,91 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
     .sort()
     .at(-1);
 
+  const csvColumns = useMemo(() => {
+    const excluded = new Set(csvExcludedColumns);
+    return columns.filter((column) => !excluded.has(column.key));
+  }, [columns, csvExcludedColumns]);
+
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedRowIds.has(row.id)),
+    [rows, selectedRowIds]
+  );
+
+  const toCsvCell = (value: unknown): string => {
+    if (value === null || value === undefined) return '""';
+    const raw =
+      typeof value === "string"
+        ? value
+        : typeof value === "object"
+          ? JSON.stringify(value)
+          : String(value);
+    const escaped = raw.replace(/"/g, '""');
+    return `"${escaped}"`;
+  };
+
+  const downloadSelectedRowsAsCsv = () => {
+    if (!selectedRows.length) {
+      toast.error("Aucune ligne sélectionnée.");
+      return;
+    }
+
+    const header = csvColumns.map((column) => toCsvCell(column.key)).join(",");
+    const dataLines = selectedRows.map((row) =>
+      csvColumns.map((column) => toCsvCell(row[column.key])).join(",")
+    );
+    const csvContent = [header, ...dataLines].join("\r\n");
+    const blob = new Blob([`\uFEFF${csvContent}`], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const firstEntrepriseId =
+      typeof selectedRows[0]?.entreprise_id === "number" || typeof selectedRows[0]?.entreprise_id === "string"
+        ? String(selectedRows[0].entreprise_id)
+        : "unknown";
+
+    const fileName = `lead_magnets_entreprise_${firstEntrepriseId}_${new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace(/[:T]/g, "-")}.csv`;
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const getEntrepriseId = (row: RowData): string | null => {
+    const value = row.entreprise_id;
+    if (typeof value === "number" || typeof value === "string") return String(value);
+    return null;
+  };
+
+  const toggleEntrepriseSelection = (row: RowData, checked: boolean) => {
+    const entrepriseId = getEntrepriseId(row);
+    if (!entrepriseId) {
+      toast.error("Entreprise ID introuvable sur cette ligne.");
+      return;
+    }
+
+    const sameEntrepriseRows = rows.filter(
+      (candidate) => getEntrepriseId(candidate) === entrepriseId
+    );
+
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        sameEntrepriseRows.forEach((candidate) => next.add(candidate.id));
+      } else {
+        sameEntrepriseRows.forEach((candidate) => next.delete(candidate.id));
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -276,6 +371,23 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
             onChange={(event) => setSearchTerm(event.target.value)}
           />
         </div>
+        {enableEntrepriseCsvExport && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setSelectedRowIds(new Set())}
+              disabled={selectedRowIds.size === 0}
+            >
+              Réinitialiser la sélection
+            </Button>
+            <Button
+              onClick={downloadSelectedRowsAsCsv}
+              disabled={selectedRowIds.size === 0}
+            >
+              Download .csv ({selectedRowIds.size})
+            </Button>
+          </div>
+        )}
       </div>
 
       <Card>
@@ -292,6 +404,7 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
             <Table>
               <TableHeader>
                 <TableRow>
+                  {enableEntrepriseCsvExport && <TableHead>Sélection</TableHead>}
                   {columns.map((column) => (
                     <TableHead key={column.key}>{column.label}</TableHead>
                   ))}
@@ -301,6 +414,19 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
               <TableBody>
                 {paginatedRows.map((row) => (
                   <TableRow key={row.id}>
+                    {enableEntrepriseCsvExport && (
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedRowIds.has(row.id)}
+                          onCheckedChange={(checked) =>
+                            toggleEntrepriseSelection(row, checked === true)
+                          }
+                          aria-label={`Sélectionner les lignes de l'entreprise ${String(
+                            row.entreprise_id ?? ""
+                          )}`}
+                        />
+                      </TableCell>
+                    )}
                     {columns.map((column) => {
                       const displayValue = formatValue(row[column.key], column.type);
                       return (
