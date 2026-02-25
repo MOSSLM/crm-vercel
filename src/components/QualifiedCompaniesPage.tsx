@@ -23,6 +23,7 @@ import { Employee, QualifiedCompaniesPageProps, QUALIFIED_COMPANIES_CONSTANTS } 
 import { CompanyCard } from "./qualified/CompanyCard";
 import { CompanyRow } from "./qualified/CompanyRow";
 import { calculateMetrics, filterCompanies } from "./qualified/utils";
+import { QualifiedColdCallWorkspace } from "./QualifiedColdCallWorkspace";
 import logger from "../utils/logger";
 
 export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ onContactClick }) => {
@@ -32,6 +33,7 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBy, setFilterBy] = useState("all");
   const [showEditEmployeeModal, setShowEditEmployeeModal] = useState(false);
+  const [qualifiedMode, setQualifiedMode] = useState<"standard" | "cold_call">("standard");
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedCompanyName, setSelectedCompanyName] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -111,6 +113,16 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
         <h1>Entreprises Qualifiées</h1>
         <p className="text-muted-foreground">Gestion de vos entreprises qualifiées</p>
       </div>
+
+      <div className="flex items-center gap-2">
+        <Button variant={qualifiedMode === "standard" ? "default" : "outline"} onClick={() => setQualifiedMode("standard")}>Vue standard</Button>
+        <Button variant={qualifiedMode === "cold_call" ? "default" : "outline"} onClick={() => setQualifiedMode("cold_call")}>Mode Cold Call CRM</Button>
+      </div>
+
+      {qualifiedMode === "cold_call" && <QualifiedColdCallWorkspace />}
+
+      {qualifiedMode === "standard" && (
+        <>
 
       {/* Métriques */}
       <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
@@ -325,6 +337,8 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
         companyName={selectedCompanyName}
         onEmployeeUpdated={handleEmployeeUpdated}
       />
+        </>
+      )}
     </div>
   );
 };
