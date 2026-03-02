@@ -71,6 +71,7 @@ export const AppSidebar = () => {
   ];
 
   const qualificationItems: SidebarNavItem[] = [
+    { title: "Dashboard qualification", icon: BarChart3, href: "/qualification/dashboard" },
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
     { title: "Réseaux", icon: Share2, href: "/networks" },
@@ -79,6 +80,7 @@ export const AppSidebar = () => {
   ];
 
   const prospectionItems: SidebarNavItem[] = [
+    { title: "Dashboard prospection", icon: BarChart3, href: "/prospection/dashboard" },
     { title: "Qualifiés (appel)", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },

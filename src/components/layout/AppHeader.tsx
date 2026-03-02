@@ -45,6 +45,8 @@ function usePageTitle() {
   const map: Record<string, string> = {
     "/": "Accueil",
     "/dashboard": "Dashboard",
+    "/prospection/dashboard": "Dashboard prospection",
+    "/qualification/dashboard": "Dashboard qualification",
     "/results": "Results",
     "/companies": "Toutes les entreprises",
     "/contacts": "Contacts",
@@ -109,7 +111,7 @@ export function AppHeader() {
         {view === "prospection" && (
           <>
             <Button variant="ghost" size="icon" asChild>
-              <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir à la vue complète">
+              <Link href="/prospection/dashboard" onClick={() => setView("prospection")} aria-label="Ouvrir le dashboard prospection">
                 <LayoutDashboard className="h-4 w-4" />
               </Link>
             </Button>
@@ -124,7 +126,7 @@ export function AppHeader() {
         {view === "qualification" && (
           <>
             <Button variant="ghost" size="icon" asChild>
-              <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir à la vue complète">
+              <Link href="/qualification/dashboard" onClick={() => setView("qualification")} aria-label="Ouvrir le dashboard qualification">
                 <LayoutDashboard className="h-4 w-4" />
               </Link>
             </Button>
