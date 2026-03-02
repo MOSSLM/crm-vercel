@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useSearchParams } from "next/navigation";
 import { useAppData, Contact } from "./AppDataContext";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -23,7 +22,7 @@ import { LayoutGrid, List, Search, Filter, CheckCircle } from "lucide-react";
 import { Employee, QualifiedCompaniesPageProps, QUALIFIED_COMPANIES_CONSTANTS } from "./qualified/types";
 import { CompanyCard } from "./qualified/CompanyCard";
 import { CompanyRow } from "./qualified/CompanyRow";
-import { calculateMetrics, filterCompanies } from "./qualified/utils";
+import { filterCompanies } from "./qualified/utils";
 import { QualifiedColdCallWorkspace } from "./QualifiedColdCallWorkspace";
 import logger from "../utils/logger";
 
@@ -86,11 +85,6 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
     setQualifiedMode(searchParams.get("mode") === "cold_call" ? "cold_call" : "standard");
   }, [searchParams]);
 
-  const { withEmailCount, withPhoneCount, withBothCount, withEmployeesCount } = React.useMemo(
-    () => calculateMetrics(qualifiedCompanies, companyEmployees),
-    [qualifiedCompanies, companyEmployees]
-  );
-
   // Clic sur un employé dans la ligne (empêche la navigation de la ligne)
   const handleEmployeeClick = (employee: Employee, e: React.MouseEvent) => {
     e.preventDefault();
@@ -131,43 +125,6 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
 
       {qualifiedMode === "standard" && (
         <>
-
-      {/* Métriques */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Total</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold">{qualifiedCompanies.length}</div>
-            <p className="text-xs text-muted-foreground">Entreprises qualifiées</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Avec Email</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-green-600">{withEmailCount}</div>
-            <p className="text-xs text-muted-foreground">
-              {qualifiedCompanies.length > 0 ? Math.round((withEmailCount / qualifiedCompanies.length) * 100) : 0}% du total
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Avec Téléphone</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-blue-600">{withPhoneCount}</div>
-            <p className="text-xs text-muted-foreground">Téléphone disponible</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Avec Employés</CardTitle></CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-purple-600">{withEmployeesCount}</div>
-            <p className="text-xs text-muted-foreground">Contacts renseignés</p>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Filtres */}
       <div className="space-y-3 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-wrap">
