@@ -15,17 +15,10 @@ import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { supabase } from "@/utils/supabase/client";
 import { journalApi } from "@/utils/journalApi";
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
   Building2,
   ExternalLink,
+  Eye,
+  EyeOff,
   FileText,
   Link as LinkIcon,
   MapPinned,
@@ -83,6 +76,8 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
   const qualifiedCompanies = useMemo(() => companies.filter((c) => c.qualifie), [companies]);
 
   const [search, setSearch] = useState("");
+  const [hiddenCompanyIds, setHiddenCompanyIds] = useState<Set<number>>(new Set());
+  const [showHiddenCompanies, setShowHiddenCompanies] = useState(false);
   const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(qualifiedCompanies[0]?.id ?? null);
   const [enrichment, setEnrichment] = useState<AutomatedEnrichmentRecord | null>(null);
   const [history, setHistory] = useState<JournalEntry[]>([]);
@@ -96,12 +91,13 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
 
   const filteredCompanies = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return qualifiedCompanies;
     return qualifiedCompanies.filter((c) => {
+      if (!showHiddenCompanies && hiddenCompanyIds.has(c.id)) return false;
+      if (!q) return true;
       const name = getCompanyDisplayName(c.name, c.canonical_url).toLowerCase();
       return name.includes(q) || (c.ville || "").toLowerCase().includes(q);
     });
-  }, [qualifiedCompanies, search]);
+  }, [qualifiedCompanies, search, hiddenCompanyIds, showHiddenCompanies]);
 
   useEffect(() => {
     if (!selectedCompanyId && filteredCompanies.length > 0) {
@@ -123,6 +119,19 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
     () => opportunities.filter((opp) => opp.entreprise_id === selectedCompanyId),
     [opportunities, selectedCompanyId]
   );
+
+  const toggleCompanyVisibility = (companyId: number) => {
+    setHiddenCompanyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(companyId)) next.delete(companyId);
+      else next.add(companyId);
+      return next;
+    });
+
+    if (selectedCompanyId === companyId) {
+      setSelectedCompanyId(null);
+    }
+  };
 
   const loadCompanyData = async (companyId: number) => {
     setIsLoading(true);
@@ -198,31 +207,6 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
 
   const aiMeta = extractAiMeta(enrichment?.ai_meta);
 
-  const callTrendData = useMemo(() => {
-    const points = 8;
-    const labels: string[] = [];
-
-    for (let i = points - 1; i >= 0; i -= 1) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      labels.push(date.toISOString().slice(0, 10));
-    }
-
-    return labels.map((isoDate) => {
-      const calls = history.filter((item) => {
-        const type = item.type_evenement.toLowerCase();
-        return item.date.slice(0, 10) === isoDate && (type === "cold_call" || type === "appel");
-      }).length;
-
-      const meetings = history.filter((item) => item.date.slice(0, 10) === isoDate && item.type_evenement.startsWith("rdv_")).length;
-
-      return {
-        label: new Date(isoDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" }),
-        calls,
-        meetings,
-      };
-    });
-  }, [history]);
 
   const quickLinks: Array<{ label: string; url: string }> = [
     { label: "Site web", url: enrichment?.website_url || selectedCompany?.site_web_canonique || "" },
@@ -263,55 +247,21 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-4">
-        <Card className="bg-gradient-to-br from-background to-muted/30">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Entreprises qualifiées</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-semibold">{qualifiedCompanies.length}</p></CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-background to-muted/30">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Avec téléphone direct</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-semibold text-indigo-600">{qualifiedCompanies.filter((c) => Boolean(c.telephone)).length}</p></CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-background to-muted/30">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">Appels (historique)</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-semibold text-orange-600">{metrics.calls}</p></CardContent>
-        </Card>
-        <Card className="bg-gradient-to-br from-background to-muted/30">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">RDV pris</CardTitle></CardHeader>
-          <CardContent><p className="text-2xl font-semibold text-emerald-600">{metrics.rdvs}</p></CardContent>
-        </Card>
-      </div>
-
-      <Card className="border-0 shadow-md bg-gradient-to-br from-background via-background to-muted/30">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Pulse prospection téléphone</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-56">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={callTrendData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="phoneCallsGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.9} />
-                    <stop offset="20%" stopColor="#fb923c" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#ea580c" stopOpacity={0.08} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis dataKey="label" />
-                <YAxis allowDecimals={false} />
-                <RechartsTooltip />
-                <Area type="monotone" dataKey="calls" stroke="#ea580c" strokeWidth={3} fill="url(#phoneCallsGradient)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
 
     <div className="grid gap-4 lg:grid-cols-[280px_1fr_340px] min-h-[70vh]">
       <Card className="overflow-hidden">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4" /> Entreprises qualifiées</CardTitle>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowHiddenCompanies((prev) => !prev)}
+            className="w-fit"
+          >
+            {showHiddenCompanies ? <Eye className="h-4 w-4 mr-1" /> : <EyeOff className="h-4 w-4 mr-1" />}
+            {showHiddenCompanies ? "Masquer les entreprises cachées" : "Afficher les entreprises cachées"}
+          </Button>
           <div className="relative">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" placeholder="Filtrer..." />
@@ -327,8 +277,25 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
                 onClick={() => setSelectedCompanyId(company.id)}
                 className={`w-full text-left rounded-md border p-2 transition ${isActive ? "border-primary bg-primary/5" : "hover:bg-muted/60"}`}
               >
-                <div className="font-medium text-sm truncate">{getCompanyDisplayName(company.name, company.canonical_url)}</div>
-                <div className="text-xs text-muted-foreground">{company.ville || "Ville inconnue"}</div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-sm truncate">{getCompanyDisplayName(company.name, company.canonical_url)}</div>
+                    <div className="text-xs text-muted-foreground">{company.ville || "Ville inconnue"}</div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleCompanyVisibility(company.id);
+                    }}
+                    title="Masquer cette entreprise"
+                  >
+                    <EyeOff className="h-4 w-4" />
+                  </Button>
+                </div>
                 <div className="mt-2"><Badge variant="secondary">{oppCount} opportunité(s)</Badge></div>
               </button>
             );

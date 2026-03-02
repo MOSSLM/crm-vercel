@@ -34,15 +34,6 @@ import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip as RechartsTooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 export const QualificationPage: React.FC = () => {
   const {
     companies,
@@ -122,32 +113,6 @@ export const QualificationPage: React.FC = () => {
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
 
-  const qualificationTrendData = React.useMemo(() => {
-    const days = 10;
-    const labels: string[] = [];
-    for (let i = days - 1; i >= 0; i -= 1) {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      labels.push(date.toISOString().slice(0, 10));
-    }
-
-    return labels.map((isoDate) => {
-      const total = companies.filter((company) => company.created_at.slice(0, 10) <= isoDate).length;
-      const qualified = companies.filter((company) => company.qualifie && company.created_at.slice(0, 10) <= isoDate).length;
-      const phoneReachable = companies.filter(
-        (company) => company.qualifie && Boolean(company.telephone) && company.created_at.slice(0, 10) <= isoDate
-      ).length;
-      const label = new Date(isoDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-
-      return {
-        label,
-        total,
-        qualified,
-        phoneReachable,
-        conversion: total > 0 ? Math.round((qualified / total) * 100) : 0,
-      };
-    });
-  }, [companies]);
 
   const handleQualificationToggle = async (company: Company) => {
     const displayName = getCompanyDisplayName(company.name, company.canonical_url);
@@ -493,89 +458,6 @@ export const QualificationPage: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-
-      <Card className="border-0 shadow-md bg-gradient-to-br from-background via-background to-muted/30">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="h-4 w-4 text-primary" />
-            Cockpit qualification cible
-          </CardTitle>
-          <CardDescription>
-            Vision rapide des leads qualifiés et joignables sur les 10 derniers jours.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={qualificationTrendData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="qualificationGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.85} />
-                    <stop offset="25%" stopColor="#60a5fa" stopOpacity={0.55} />
-                    <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.08} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis dataKey="label" />
-                <YAxis />
-                <RechartsTooltip />
-                <Area type="monotone" dataKey="qualified" stroke="#1d4ed8" strokeWidth={3} fill="url(#qualificationGradient)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Métriques rapides - optimisées pour mobile */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total entreprises</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{companies.length}</div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Qualifiées</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {companies.filter(c => c.qualifie).length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {companies.length > 0 ? Math.round((companies.filter(c => c.qualifie).length / companies.length) * 100) : 0}% du total
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Google Search</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {companies.filter(c => c.sources.includes('google_search')).length}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Téléphone disponible</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600">
-              {companies.filter(c => c.telephone).length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {companies.length > 0 ? Math.round((companies.filter(c => c.telephone).length / companies.length) * 100) : 0}% du total
-            </p>
-          </CardContent>
-        </Card>
-      </div>
 
       {/* Filtres et recherche - optimisés pour mobile */}
       <div className="space-y-4 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
