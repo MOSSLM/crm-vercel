@@ -54,8 +54,8 @@ export const AppSidebar = () => {
 
   const navigationItems: SidebarNavItem[] = [
     { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
-    { title: "Results", icon: FileText, href: "/results" },
     { title: "Toutes les entreprises", icon: Building, href: "/companies" },
+    { title: "Résultats", icon: FileText, href: "/results" },
   ];
 
   const crmItems: SidebarNavItem[] = [
@@ -109,19 +109,19 @@ export const AppSidebar = () => {
         : null;
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4">
+    <Sidebar collapsible="icon" className="border-r border-blue-100/80 bg-[#0f2747] text-slate-100">
+      <SidebarHeader className="p-4 border-b border-white/10">
         <div className="flex items-center gap-2">
-          <Building2 className="h-6 w-6" />
-          <h2 className="truncate">Sama CRM</h2>
+          <Building2 className="h-6 w-6 text-blue-200" />
+          <h2 className="truncate text-base font-semibold tracking-wide">Sama CRM</h2>
         </div>
-        <div className="text-sm text-muted-foreground truncate">{user?.name}</div>
+        <div className="text-xs text-blue-100/80 truncate">{user?.name}</div>
       </SidebarHeader>
 
       <SidebarContent>
         {focusItems ? (
           <SidebarGroup>
-            <SidebarGroupLabel>{view === "prospection" ? "Prospection" : "Qualification"}</SidebarGroupLabel>
+            <SidebarGroupLabel className="text-blue-100/70">{view === "prospection" ? "Prospection" : "Qualification"}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {focusItems.map((item) => (
@@ -140,7 +140,7 @@ export const AppSidebar = () => {
         ) : (
           <>
             <SidebarGroup>
-              <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-blue-100/70">Navigation</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {navigationItems.map((item) => (
@@ -158,7 +158,7 @@ export const AppSidebar = () => {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>CRM</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-blue-100/70">CRM</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {crmItems.map((item) => (
@@ -176,7 +176,7 @@ export const AppSidebar = () => {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>Production</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-blue-100/70">Production</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {productionItems.map((item) => (
@@ -194,7 +194,7 @@ export const AppSidebar = () => {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>Actions</SidebarGroupLabel>
+              <SidebarGroupLabel className="text-blue-100/70">Actions</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {actionItems.map((item) => (
@@ -214,7 +214,7 @@ export const AppSidebar = () => {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="p-4 space-y-2">
+      <SidebarFooter className="p-4 space-y-2 border-t border-white/10">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild isActive={isActive("/settings")}>
