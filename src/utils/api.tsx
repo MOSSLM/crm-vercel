@@ -1267,13 +1267,13 @@ export const contactsApi = {
     }
   },
 
-  updateNote: async (noteId: number, note: string) => {
+  updateNote: async (_noteId: number, _note: string) => {
     // For simplicity, we'll just add this as a new note
     // In a real implementation, we'd need a more complex note management system
     throw new Error('Note editing not supported in simplified implementation');
   },
 
-  deleteNote: async (noteId: number) => {
+  deleteNote: async (_noteId: number) => {
     // For simplicity, we'll not support note deletion
     // In a real implementation, we'd need a more complex note management system
     throw new Error('Note deletion not supported in simplified implementation');

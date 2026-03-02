@@ -18,7 +18,7 @@ export const extractDomainFromUrl = (url: string): string => {
     }
     
     return domain;
-  } catch (error) {
+  } catch {
     // Si l'URL n'est pas valide, essayer de nettoyer manuellement
     let cleaned = url.replace(/^https?:\/\//, ''); // Supprimer protocole
     cleaned = cleaned.replace(/^www\./, ''); // Supprimer www
