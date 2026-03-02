@@ -109,18 +109,20 @@ export const AppSidebar = () => {
         : null;
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-6 w-6" />
-          <h2 className="truncate">Sama CRM</h2>
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border/70">
+      <SidebarHeader className="p-3">
+        <div className="surface-gradient flex items-center gap-2 rounded-xl px-3 py-2.5">
+          <div className="rounded-lg bg-white/80 p-1.5 text-primary shadow-sm">
+            <Building2 className="h-4 w-4" />
+          </div>
+          <h2 className="truncate text-sm font-semibold">Sama CRM</h2>
         </div>
-        <div className="text-sm text-muted-foreground truncate">{user?.name}</div>
+        <div className="truncate px-1 pt-2 text-xs text-muted-foreground">Connecté: {user?.name}</div>
       </SidebarHeader>
 
       <SidebarContent>
         {focusItems ? (
-          <SidebarGroup>
+          <SidebarGroup className="surface-soft mx-2 mb-2 rounded-xl px-2 py-1">
             <SidebarGroupLabel>{view === "prospection" ? "Prospection" : "Qualification"}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
@@ -139,7 +141,7 @@ export const AppSidebar = () => {
           </SidebarGroup>
         ) : (
           <>
-            <SidebarGroup>
+            <SidebarGroup className="surface-soft mx-2 mb-2 rounded-xl px-2 py-1">
               <SidebarGroupLabel>Navigation</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -157,7 +159,7 @@ export const AppSidebar = () => {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <SidebarGroup>
+            <SidebarGroup className="surface-soft mx-2 mb-2 rounded-xl px-2 py-1">
               <SidebarGroupLabel>CRM</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -175,7 +177,7 @@ export const AppSidebar = () => {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <SidebarGroup>
+            <SidebarGroup className="surface-soft mx-2 mb-2 rounded-xl px-2 py-1">
               <SidebarGroupLabel>Production</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -193,7 +195,7 @@ export const AppSidebar = () => {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            <SidebarGroup>
+            <SidebarGroup className="surface-soft mx-2 mb-2 rounded-xl px-2 py-1">
               <SidebarGroupLabel>Actions</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -214,7 +216,7 @@ export const AppSidebar = () => {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="p-4 space-y-2">
+      <SidebarFooter className="space-y-2 p-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild isActive={isActive("/settings")}>
@@ -225,7 +227,7 @@ export const AppSidebar = () => {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={logout}>
+            <SidebarMenuButton onClick={logout} className="text-destructive hover:bg-destructive/10 hover:text-destructive">
               <LogOut className="h-4 w-4" />
               <span>Déconnexion</span>
             </SidebarMenuButton>

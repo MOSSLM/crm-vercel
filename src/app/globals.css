@@ -19,40 +19,40 @@
   --font-weight-normal: 400;
 
   /* Color system - Light mode */
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
+  --background: #fcfcff;
+  --foreground: oklch(0.21 0.02 262);
   --card: #ffffff;
   --card-foreground: oklch(0.145 0 0);
   --popover: #ffffff;
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
+  --primary: oklch(0.56 0.18 262);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
+  --secondary: oklch(0.975 0.01 258);
+  --secondary-foreground: oklch(0.28 0.03 262);
+  --muted: oklch(0.97 0.01 260);
+  --muted-foreground: oklch(0.5 0.03 258);
+  --accent: oklch(0.95 0.03 248);
+  --accent-foreground: oklch(0.28 0.03 262);
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
+  --border: oklch(0.9 0.01 260);
   --input: transparent;
   --input-background: #ffffff;
   --switch-background: #cbced4;
-  --ring: oklch(0.708 0 0);
+  --ring: oklch(0.72 0.1 256);
 
   /* Layout */
   --radius: 0.625rem;
 
   /* Sidebar colors */
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
+  --sidebar: oklch(0.98 0.01 260);
+  --sidebar-foreground: oklch(0.24 0.025 262);
+  --sidebar-primary: oklch(0.56 0.18 262);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-accent: oklch(0.95 0.03 248);
+  --sidebar-accent-foreground: oklch(0.23 0.03 262);
+  --sidebar-border: oklch(0.9 0.01 260);
+  --sidebar-ring: oklch(0.72 0.1 256);
 
   /* Success, warning, info colors pour light mode */
   --success: oklch(0.55 0.15 160);
@@ -185,6 +185,10 @@
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     transition: background-color var(--animation-normal) var(--easing-smooth), color var(--animation-normal) var(--easing-smooth);
+    background-image:
+      radial-gradient(circle at 8% 10%, color-mix(in oklab, var(--primary) 16%, white) 0%, transparent 34%),
+      radial-gradient(circle at 92% 14%, color-mix(in oklab, var(--accent) 60%, white) 0%, transparent 30%);
+    background-attachment: fixed;
   }
 
   *:focus-visible {
@@ -416,6 +420,14 @@
   .card-info {
     background: var(--color-info);
     color: var(--color-info-foreground);
+  }
+
+  .surface-soft {
+    @apply border border-border/70 bg-white/90 shadow-[0_10px_30px_-22px_rgba(79,70,229,0.55)] backdrop-blur;
+  }
+
+  .surface-gradient {
+    background: linear-gradient(120deg, color-mix(in oklab, var(--primary) 12%, white), color-mix(in oklab, var(--accent) 34%, white));
   }
   /* Amélioration des badges et petits éléments colorés */
   .badge-success {

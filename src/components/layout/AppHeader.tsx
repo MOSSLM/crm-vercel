@@ -79,7 +79,7 @@ export function AppHeader() {
   const { view, setView } = useWorkspaceView();
 
   return (
-    <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12 bg-muted/30 border-b border-border/50">
+    <header className="surface-soft sticky top-0 z-20 mx-2 mt-2 flex h-16 shrink-0 items-center gap-2 rounded-xl px-1 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
       <div className="flex items-center gap-2 px-4">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mr-2 h-4" />
@@ -95,14 +95,16 @@ export function AppHeader() {
       <div className="ml-auto flex items-center gap-2 px-4">
         {view === "base" && (
           <>
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="sm" className="gap-1.5 rounded-full" asChild>
               <Link href="/qualified?mode=cold_call" onClick={() => setView("prospection")} aria-label="Basculer en vue prospection">
                 <Phone className="h-4 w-4" />
+                <span className="hidden md:inline">Prospection</span>
               </Link>
             </Button>
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="sm" className="gap-1.5 rounded-full" asChild>
               <Link href="/qualification" onClick={() => setView("qualification")} aria-label="Basculer en vue qualification">
                 <Target className="h-4 w-4" />
+                <span className="hidden md:inline">Qualification</span>
               </Link>
             </Button>
           </>
@@ -110,14 +112,16 @@ export function AppHeader() {
 
         {view === "prospection" && (
           <>
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="sm" className="gap-1.5 rounded-full" asChild>
               <Link href="/prospection/dashboard" onClick={() => setView("prospection")} aria-label="Ouvrir le dashboard prospection">
                 <LayoutDashboard className="h-4 w-4" />
+                <span className="hidden md:inline">Dashboard</span>
               </Link>
             </Button>
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="sm" className="gap-1.5 rounded-full" asChild>
               <Link href="/qualification" onClick={() => setView("qualification")} aria-label="Basculer en vue qualification">
                 <Target className="h-4 w-4" />
+                <span className="hidden md:inline">Qualification</span>
               </Link>
             </Button>
           </>
@@ -125,14 +129,16 @@ export function AppHeader() {
 
         {view === "qualification" && (
           <>
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="sm" className="gap-1.5 rounded-full" asChild>
               <Link href="/qualification/dashboard" onClick={() => setView("qualification")} aria-label="Ouvrir le dashboard qualification">
                 <LayoutDashboard className="h-4 w-4" />
+                <span className="hidden md:inline">Dashboard</span>
               </Link>
             </Button>
-            <Button variant="ghost" size="icon" asChild>
+            <Button variant="ghost" size="sm" className="gap-1.5 rounded-full" asChild>
               <Link href="/qualified?mode=cold_call" onClick={() => setView("prospection")} aria-label="Basculer en vue prospection">
                 <Phone className="h-4 w-4" />
+                <span className="hidden md:inline">Prospection</span>
               </Link>
             </Button>
           </>
