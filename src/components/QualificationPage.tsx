@@ -28,13 +28,19 @@ import {
   Save,
   X,
   Trash2,
-  Ban
+  Ban,
+  ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
 export const QualificationPage: React.FC = () => {
+  const sourceOptions = [
+    { value: 'google_search', label: 'Google Search' },
+    { value: 'google_maps', label: 'Google Maps' },
+  ];
+
   const {
     companies,
     qualifyCompany,
@@ -51,8 +57,9 @@ export const QualificationPage: React.FC = () => {
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
-  const [sourceFilter, setSourceFilter] = useState('all');
-  const [qualificationFilter, setQualificationFilter] = useState('all');
+  const [selectedSources, setSelectedSources] = useState<string[]>(() => sourceOptions.map((option) => option.value));
+  const [showQualified, setShowQualified] = useState(false);
+  const [showOnlyWithUrl, setShowOnlyWithUrl] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -80,13 +87,13 @@ export const QualificationPage: React.FC = () => {
       (company.adresse && company.adresse.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (company.premiers_tags && company.premiers_tags.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    const matchesSource = sourceFilter === 'all' || 
-      (sourceFilter === 'google_search' && company.sources.includes('google_search')) ||
-      (sourceFilter === 'google_maps' && company.sources.includes('google_maps'));
-    
-    const matchesQualification = qualificationFilter === 'all' ||
-      (qualificationFilter === 'qualified' && company.qualifie) ||
-      (qualificationFilter === 'not_qualified' && !company.qualifie);
+    const matchesSource =
+      selectedSources.length === 0 ||
+      selectedSources.some((source) => company.sources.includes(source));
+
+    const matchesQualification = showQualified ? company.qualifie : !company.qualifie;
+
+    const matchesUrl = !showOnlyWithUrl || Boolean(company.canonical_url?.trim());
     
     const hideByDuplicate =
       !showDuplicates &&
@@ -95,7 +102,7 @@ export const QualificationPage: React.FC = () => {
     const hideByManual =
       !showHiddenCompanies && company.hidden_in_qualification;
 
-    return matchesSearch && matchesSource && matchesQualification && !hideByDuplicate && !hideByManual;
+    return matchesSearch && matchesSource && matchesQualification && matchesUrl && !hideByDuplicate && !hideByManual;
   });
 
   // Pagination logic
@@ -107,7 +114,20 @@ export const QualificationPage: React.FC = () => {
   // Reset to first page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, sourceFilter, qualificationFilter, showHiddenCompanies]);
+  }, [searchTerm, selectedSources, showQualified, showOnlyWithUrl, showHiddenCompanies]);
+
+  const toggleSource = (source: string) => {
+    setSelectedSources((previous) =>
+      previous.includes(source)
+        ? previous.filter((value) => value !== source)
+        : [...previous, source]
+    );
+  };
+
+  const sourceFilterLabel =
+    selectedSources.length === 0 || selectedSources.length === sourceOptions.length
+      ? 'Toutes les sources'
+      : `${selectedSources.length} source${selectedSources.length > 1 ? 's' : ''}`;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR');
@@ -472,26 +492,45 @@ export const QualificationPage: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2 md:flex md:gap-4">
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="px-3 py-2 border border-border rounded-md bg-card text-card-foreground text-sm"
-            >
-              <option value="all">Toutes les sources</option>
-              <option value="google_search">Google Search</option>
-              <option value="google_maps">Google Maps</option>
-            </select>
+          <div className="grid grid-cols-1 gap-2 md:flex md:gap-4 md:items-center">
+            <details className="relative">
+              <summary className="list-none cursor-pointer select-none px-3 py-2 border border-border rounded-md bg-card text-card-foreground text-sm flex items-center justify-between gap-3 min-w-[200px]">
+                <span>{sourceFilterLabel}</span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </summary>
+              <div className="absolute z-20 mt-2 w-56 rounded-md border bg-card p-3 shadow-lg space-y-2">
+                {sourceOptions.map((option) => (
+                  <label key={option.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedSources.includes(option.value)}
+                      onChange={() => toggleSource(option.value)}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
 
-            <select
-              value={qualificationFilter}
-              onChange={(e) => setQualificationFilter(e.target.value)}
-              className="px-3 py-2 border border-border rounded-md bg-card text-card-foreground text-sm"
-            >
-              <option value="all">Toutes</option>
-              <option value="qualified">Qualifiées</option>
-              <option value="not_qualified">Non qualifiées</option>
-            </select>
+            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-md bg-card">
+              <Label htmlFor="url-filter" className="text-sm">Avec URL uniquement</Label>
+              <Switch
+                id="url-filter"
+                checked={showOnlyWithUrl}
+                onCheckedChange={setShowOnlyWithUrl}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-md bg-card">
+              <Label htmlFor="qualification-toggle" className="text-sm">
+                {showQualified ? 'Qualifiées' : 'Non qualifiées'}
+              </Label>
+              <Switch
+                id="qualification-toggle"
+                checked={showQualified}
+                onCheckedChange={setShowQualified}
+              />
+            </div>
           </div>
 
           <div className="flex items-center gap-2">
@@ -802,7 +841,7 @@ export const QualificationPage: React.FC = () => {
             <Target className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="font-medium mb-2">Aucune entreprise trouvée</h3>
             <p className="text-muted-foreground">
-              {searchTerm || sourceFilter !== 'all' || qualificationFilter !== 'all' 
+              {searchTerm || showOnlyWithUrl || selectedSources.length !== sourceOptions.length || showQualified 
                 ? 'Modifiez vos filtres pour voir plus d\'entreprises'
                 : 'Lancez une recherche pour découvrir des entreprises'
               }
