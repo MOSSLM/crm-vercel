@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
@@ -12,6 +13,9 @@ import {
 } from "@/components/ui/breadcrumb";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppData } from "@/components/AppDataContext";
+import { Button } from "@/components/ui/button";
+import { LayoutDashboard, Phone, Target } from "lucide-react";
+import { useWorkspaceView } from "./useWorkspaceView";
 
 /**
  * Déduit un titre lisible depuis le pathname.
@@ -70,6 +74,7 @@ function usePageTitle() {
 
 export function AppHeader() {
   const title = usePageTitle();
+  const { view, setView } = useWorkspaceView();
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12 bg-muted/30 border-b border-border/50">
@@ -86,6 +91,50 @@ export function AppHeader() {
       </div>
 
       <div className="ml-auto flex items-center gap-2 px-4">
+        {view === "base" && (
+          <>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/qualified?mode=cold_call" onClick={() => setView("prospection")} aria-label="Basculer en vue prospection">
+                <Phone className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/qualification" onClick={() => setView("qualification")} aria-label="Basculer en vue qualification">
+                <Target className="h-4 w-4" />
+              </Link>
+            </Button>
+          </>
+        )}
+
+        {view === "prospection" && (
+          <>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir à la vue complète">
+                <LayoutDashboard className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/qualification" onClick={() => setView("qualification")} aria-label="Basculer en vue qualification">
+                <Target className="h-4 w-4" />
+              </Link>
+            </Button>
+          </>
+        )}
+
+        {view === "qualification" && (
+          <>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir à la vue complète">
+                <LayoutDashboard className="h-4 w-4" />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="icon" asChild>
+              <Link href="/qualified?mode=cold_call" onClick={() => setView("prospection")} aria-label="Basculer en vue prospection">
+                <Phone className="h-4 w-4" />
+              </Link>
+            </Button>
+          </>
+        )}
         <ThemeToggle />
       </div>
     </header>

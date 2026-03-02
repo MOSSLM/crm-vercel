@@ -37,10 +37,12 @@ import {
   Magnet,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
+import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
 
 export const AppSidebar = () => {
   const { logout, user } = useAuth();
   const pathname = usePathname();
+  const { view } = useWorkspaceView();
 
   const navigationItems = [
     { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
@@ -60,6 +62,21 @@ export const AppSidebar = () => {
     { title: "Objectifs & Progression", icon: Award, href: "/objectifs" },
   ];
 
+  const qualificationItems = [
+    { title: "Qualification", icon: CheckSquare, href: "/qualification" },
+    { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
+    { title: "Réseaux", icon: Share2, href: "/networks" },
+    { title: "Blacklist", icon: Ban, href: "/blacklist" },
+    { title: "Duplicats", icon: Copy, href: "/duplicates" },
+  ];
+
+  const prospectionItems = [
+    { title: "Qualifiés (appel)", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
+    { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
+    { title: "Opportunités", icon: Target, href: "/opportunities" },
+    { title: "Contacts", icon: Users, href: "/contacts" },
+  ];
+
   const actionItems = [
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
     { title: "Créer", icon: Plus, href: "/create" },
@@ -74,6 +91,13 @@ export const AppSidebar = () => {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
 
+  const focusItems =
+    view === "prospection"
+      ? prospectionItems
+      : view === "qualification"
+        ? qualificationItems
+        : null;
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
@@ -85,77 +109,99 @@ export const AppSidebar = () => {
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {navigationItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                    <Link href={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {focusItems ? (
+          <SidebarGroup>
+            <SidebarGroupLabel>{view === "prospection" ? "Prospection" : "Qualification"}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {focusItems.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={isActive("activeHref" in item ? item.activeHref : item.href)}>
+                      <Link href={item.href}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : (
+          <>
+            <SidebarGroup>
+              <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {navigationItems.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                        <Link href={item.href}>
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>CRM</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {crmItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                    <Link href={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>CRM</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {crmItems.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                        <Link href={item.href}>
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Production</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {productionItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                    <Link href={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Production</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {productionItems.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                        <Link href={item.href}>
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
 
-        <SidebarGroup>
-          <SidebarGroupLabel>Actions</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {actionItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                    <Link href={item.href}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Actions</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {actionItems.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={isActive(item.href)}>
+                        <Link href={item.href}>
+                          <item.icon className="h-4 w-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4 space-y-2">
