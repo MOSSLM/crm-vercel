@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useAppData, Contact } from "./AppDataContext";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Input } from "./ui/input";
@@ -28,12 +29,15 @@ import logger from "../utils/logger";
 
 export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ onContactClick }) => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { companies, contacts, refreshData } = useAppData();
   const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBy, setFilterBy] = useState("all");
   const [showEditEmployeeModal, setShowEditEmployeeModal] = useState(false);
-  const [qualifiedMode, setQualifiedMode] = useState<"standard" | "cold_call">("standard");
+  const [qualifiedMode, setQualifiedMode] = useState<"standard" | "cold_call">(
+    searchParams.get("mode") === "cold_call" ? "cold_call" : "standard"
+  );
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedCompanyName, setSelectedCompanyName] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -77,6 +81,10 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
   React.useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filterBy]);
+
+  React.useEffect(() => {
+    setQualifiedMode(searchParams.get("mode") === "cold_call" ? "cold_call" : "standard");
+  }, [searchParams]);
 
   const { withEmailCount, withPhoneCount, withBothCount, withEmployeesCount } = React.useMemo(
     () => calculateMetrics(qualifiedCompanies, companyEmployees),
