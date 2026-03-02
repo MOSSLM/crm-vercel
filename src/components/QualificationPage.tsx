@@ -14,7 +14,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from './ui/pagination';
 import { 
   Search, 
-  Filter, 
   ExternalLink, 
   MapPin, 
   Calendar,
@@ -35,6 +34,15 @@ import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
+import {
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 export const QualificationPage: React.FC = () => {
   const {
     companies,
@@ -113,6 +121,33 @@ export const QualificationPage: React.FC = () => {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
+
+  const qualificationTrendData = React.useMemo(() => {
+    const days = 10;
+    const labels: string[] = [];
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      labels.push(date.toISOString().slice(0, 10));
+    }
+
+    return labels.map((isoDate) => {
+      const total = companies.filter((company) => company.created_at.slice(0, 10) <= isoDate).length;
+      const qualified = companies.filter((company) => company.qualifie && company.created_at.slice(0, 10) <= isoDate).length;
+      const phoneReachable = companies.filter(
+        (company) => company.qualifie && Boolean(company.telephone) && company.created_at.slice(0, 10) <= isoDate
+      ).length;
+      const label = new Date(isoDate).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+
+      return {
+        label,
+        total,
+        qualified,
+        phoneReachable,
+        conversion: total > 0 ? Math.round((qualified / total) * 100) : 0,
+      };
+    });
+  }, [companies]);
 
   const handleQualificationToggle = async (company: Company) => {
     const displayName = getCompanyDisplayName(company.name, company.canonical_url);
@@ -455,6 +490,38 @@ export const QualificationPage: React.FC = () => {
               onBlur={handleAutoOpportunityAmountBlur}
               className="pl-7"
             />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-0 shadow-md bg-gradient-to-br from-background via-background to-muted/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-4 w-4 text-primary" />
+            Cockpit qualification cible
+          </CardTitle>
+          <CardDescription>
+            Vision rapide des leads qualifiés et joignables sur les 10 derniers jours.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={qualificationTrendData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="qualificationGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ffffff" stopOpacity={0.85} />
+                    <stop offset="25%" stopColor="#60a5fa" stopOpacity={0.55} />
+                    <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.08} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <RechartsTooltip />
+                <Area type="monotone" dataKey="qualified" stroke="#1d4ed8" strokeWidth={3} fill="url(#qualificationGradient)" />
+              </AreaChart>
+            </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
