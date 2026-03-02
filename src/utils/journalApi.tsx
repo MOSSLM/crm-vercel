@@ -695,7 +695,7 @@ export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
     let error;
     try {
       error = JSON.parse(errorText);
-    } catch (e) {
+    } catch {
       error = { error: errorText };
     }
     throw new Error(error.error || `HTTP ${response.status}: Failed to get journal KPI totals`);
