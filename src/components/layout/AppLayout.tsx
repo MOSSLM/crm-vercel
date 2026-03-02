@@ -12,11 +12,11 @@ export default function AppLayout({ children }: Props) {
   return (
     <TooltipProvider>
       <SidebarProvider>
-        <div className="flex h-screen w-full">
+        <div className="flex h-screen w-full bg-gradient-to-br from-slate-50 via-white to-blue-50/40">
           <AppSidebar />
-          <SidebarInset className="flex-1 overflow-auto">
+          <SidebarInset className="flex-1 overflow-auto bg-transparent">
             <AppHeader />
-            <div className="flex flex-1 flex-col gap-4 overflow-auto">
+            <div className="flex flex-1 flex-col gap-4 overflow-auto p-1 md:p-2">
               {children}
             </div>
           </SidebarInset>

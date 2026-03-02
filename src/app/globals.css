@@ -25,33 +25,33 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: #ffffff;
   --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
+  --primary: #1d4ed8;
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
+  --secondary: #eff6ff;
   --secondary-foreground: #030213;
-  --muted: #ececf0;
+  --muted: #f1f5f9;
   --muted-foreground: #717182;
-  --accent: #e9ebef;
+  --accent: #dbeafe;
   --accent-foreground: #030213;
   --destructive: #d4183d;
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
+  --border: #dbe5f2;
   --input: transparent;
   --input-background: #ffffff;
   --switch-background: #cbced4;
-  --ring: oklch(0.708 0 0);
+  --ring: #2563eb;
 
   /* Layout */
   --radius: 0.625rem;
 
   /* Sidebar colors */
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
+  --sidebar: #0f2747;
+  --sidebar-foreground: #eff6ff;
+  --sidebar-primary: #1d4ed8;
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent: #1e3a5f;
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-border: #28476d;
   --sidebar-ring: oklch(0.708 0 0);
 
   /* Success, warning, info colors pour light mode */
@@ -72,27 +72,27 @@
 /* Dark mode overrides - VS Code Dark+ Theme inspiré */
 .dark {
   /* Palette principale basée sur VS Code Dark+ - Moderne et confortable */
-  --background: oklch(0.16 0.005 240);    /* #1e1e1e - Fond principal VS Code */
-  --foreground: oklch(0.92 0.008 240);    /* #cccccc - Texte principal clair */
-  --card: oklch(0.19 0.008 240);          /* #252526 - Cartes VS Code */
+  --background: #0b1120;    /* #1e1e1e - Fond principal VS Code */
+  --foreground: #e2e8f0;    /* #cccccc - Texte principal clair */
+  --card: #0f172a;          /* #252526 - Cartes VS Code */
   --card-foreground: oklch(0.94 0.005 240); /* #e6e6e6 - Texte cartes lisible */
-  --popover: oklch(0.19 0.008 240);
+  --popover: #0f172a;
   --popover-foreground: oklch(0.94 0.005 240);
   
   /* Couleurs système VS Code Dark+ */
-  --primary: oklch(0.92 0.008 240);       /* Texte principal */
-  --primary-foreground: oklch(0.16 0.005 240); /* Fond pour contraste */
-  --secondary: oklch(0.24 0.012 240);     /* #3c3c3c - Sections secondaires */
+  --primary: #60a5fa;       /* Texte principal */
+  --primary-foreground: #0b1120; /* Fond pour contraste */
+  --secondary: #17233b;     /* #3c3c3c - Sections secondaires */
   --secondary-foreground: oklch(0.86 0.010 240);
-  --muted: oklch(0.22 0.010 240);         /* #383838 - Zones muted */
+  --muted: #1e293b;         /* #383838 - Zones muted */
   --muted-foreground: oklch(0.68 0.015 240); /* #9d9d9d - Texte muted VS Code */
-  --accent: oklch(0.26 0.015 240);        /* #404040 - Accents subtils */
+  --accent: #1d3557;        /* #404040 - Accents subtils */
   --accent-foreground: oklch(0.88 0.008 240);
   
   /* Couleurs fonctionnelles VS Code Dark+ */
   --destructive: oklch(0.65 0.20 15);     /* #f44747 - Rouge VS Code */
   --destructive-foreground: oklch(0.95 0.005 240);
-  --border: oklch(0.32 0.015 240);        /* #464647 - Bordures VS Code */
+  --border: #223552;        /* #464647 - Bordures VS Code */
   --input: oklch(0.19 0.008 240);         /* Même que card pour cohérence */
   --input-background: oklch(0.17 0.006 240);
   --switch-background: oklch(0.35 0.020 240);
@@ -107,13 +107,13 @@
   --info-foreground: oklch(0.95 0.005 240);
   
   /* Sidebar VS Code Dark+ */
-  --sidebar: oklch(0.18 0.006 240);      /* Légèrement plus clair que background */
+  --sidebar: #081a32;      /* Légèrement plus clair que background */
   --sidebar-foreground: oklch(0.88 0.008 240);
   --sidebar-primary: oklch(0.58 0.15 220); /* Bleu VS Code */
   --sidebar-primary-foreground: oklch(0.95 0.005 240);
-  --sidebar-accent: oklch(0.22 0.010 240); /* #383838 */
+  --sidebar-accent: #163054; /* #383838 */
   --sidebar-accent-foreground: oklch(0.84 0.010 240);
-  --sidebar-border: oklch(0.32 0.015 240); /* #464647 - Bordures VS Code */
+  --sidebar-border: #1f3a5c; /* #464647 - Bordures VS Code */
   --sidebar-ring: oklch(0.58 0.15 220);
 }
 
