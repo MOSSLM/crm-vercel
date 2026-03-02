@@ -35,22 +35,30 @@ import {
   Sparkles,
   PenLine,
   Magnet,
+  type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
+
+type SidebarNavItem = {
+  title: string;
+  icon: LucideIcon;
+  href: string;
+  activeHref?: string;
+};
 
 export const AppSidebar = () => {
   const { logout, user } = useAuth();
   const pathname = usePathname();
   const { view } = useWorkspaceView();
 
-  const navigationItems = [
+  const navigationItems: SidebarNavItem[] = [
     { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
     { title: "Results", icon: FileText, href: "/results" },
     { title: "Toutes les entreprises", icon: Building, href: "/companies" },
   ];
 
-  const crmItems = [
+  const crmItems: SidebarNavItem[] = [
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
     { title: "Duplicats", icon: Copy, href: "/duplicates" },
@@ -62,7 +70,7 @@ export const AppSidebar = () => {
     { title: "Objectifs & Progression", icon: Award, href: "/objectifs" },
   ];
 
-  const qualificationItems = [
+  const qualificationItems: SidebarNavItem[] = [
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
     { title: "Réseaux", icon: Share2, href: "/networks" },
@@ -70,19 +78,19 @@ export const AppSidebar = () => {
     { title: "Duplicats", icon: Copy, href: "/duplicates" },
   ];
 
-  const prospectionItems = [
+  const prospectionItems: SidebarNavItem[] = [
     { title: "Qualifiés (appel)", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
     { title: "Contacts", icon: Users, href: "/contacts" },
   ];
 
-  const actionItems = [
+  const actionItems: SidebarNavItem[] = [
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
     { title: "Créer", icon: Plus, href: "/create" },
   ];
 
-  const productionItems = [
+  const productionItems: SidebarNavItem[] = [
     { title: "Enrichissement", icon: Sparkles, href: "/production/enrichissement" },
     { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
@@ -116,7 +124,7 @@ export const AppSidebar = () => {
               <SidebarMenu>
                 {focusItems.map((item) => (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive("activeHref" in item ? item.activeHref : item.href)}>
+                    <SidebarMenuButton asChild isActive={isActive(item.activeHref ?? item.href)}>
                       <Link href={item.href}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
