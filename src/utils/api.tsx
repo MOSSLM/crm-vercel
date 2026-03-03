@@ -193,6 +193,8 @@ const OFFER_COLUMNS = [
   'slug',
   'tags',
   'metadata',
+  'package_discount_type',
+  'package_discount_value',
   'created_at',
   'updated_at',
 ] as const;
@@ -1726,6 +1728,12 @@ export const offersApi = {
           ? offer.tags.filter((tag): tag is string => typeof tag === 'string')
           : [],
         metadata: isRecord(offer.metadata) ? offer.metadata : {},
+        package_discount_type:
+          offer.package_discount_type === 'percent' || offer.package_discount_type === 'fixed'
+            ? offer.package_discount_type
+            : undefined,
+        package_discount_value:
+          typeof offer.package_discount_value === 'number' ? offer.package_discount_value : undefined,
         created_at: typeof offer.created_at === 'string' ? offer.created_at : new Date().toISOString(),
         updated_at: typeof offer.updated_at === 'string' ? offer.updated_at : new Date().toISOString(),
         included_items: includedByParent.get(offer.id) ?? [],
@@ -1761,6 +1769,8 @@ export const offersApi = {
       slug: payload.slug,
       tags: payload.tags ?? [],
       metadata: payload.metadata ?? {},
+      package_discount_type: payload.package_discount_type,
+      package_discount_value: payload.package_discount_value,
     };
 
     const { data, error } = await supabase.from('offres').insert([basePayload]).select().single();
@@ -1802,6 +1812,12 @@ export const offersApi = {
       slug: typeof data.slug === 'string' ? data.slug : undefined,
       tags: Array.isArray(data.tags) ? data.tags.filter((tag): tag is string => typeof tag === 'string') : [],
       metadata: isRecord(data.metadata) ? data.metadata : {},
+      package_discount_type:
+        data.package_discount_type === 'percent' || data.package_discount_type === 'fixed'
+          ? data.package_discount_type
+          : undefined,
+      package_discount_value:
+        typeof data.package_discount_value === 'number' ? data.package_discount_value : undefined,
       created_at: typeof data.created_at === 'string' ? data.created_at : now,
       updated_at: typeof data.updated_at === 'string' ? data.updated_at : now,
       included_items: [],
@@ -1824,6 +1840,8 @@ export const offersApi = {
       'slug',
       'tags',
       'metadata',
+      'package_discount_type',
+      'package_discount_value',
     ].forEach((key) => {
       const value = updates[key as keyof Offer];
       if (value !== undefined) payload[key] = value;
@@ -1855,6 +1873,12 @@ export const offersApi = {
       slug: typeof data.slug === 'string' ? data.slug : undefined,
       tags: Array.isArray(data.tags) ? data.tags.filter((tag): tag is string => typeof tag === 'string') : [],
       metadata: isRecord(data.metadata) ? data.metadata : {},
+      package_discount_type:
+        data.package_discount_type === 'percent' || data.package_discount_type === 'fixed'
+          ? data.package_discount_type
+          : undefined,
+      package_discount_value:
+        typeof data.package_discount_value === 'number' ? data.package_discount_value : undefined,
       created_at: typeof data.created_at === 'string' ? data.created_at : new Date().toISOString(),
       updated_at: typeof data.updated_at === 'string' ? data.updated_at : new Date().toISOString(),
       included_items: [],

@@ -177,6 +177,8 @@ export interface Offer {
   slug?: string;
   tags: string[];
   metadata: Record<string, unknown>;
+  package_discount_type?: 'percent' | 'fixed';
+  package_discount_value?: number;
   created_at: string;
   updated_at: string;
   included_items: OfferIncludedItem[];
