@@ -7,6 +7,7 @@ import {
   companiesApi,
   contactsApi,
   opportunitiesApi,
+  offersApi,
   pipelineStagesApi,
   notesApi,
   achievementsApi,
@@ -36,6 +37,7 @@ import {
   Objectives,
   Opportunity,
   OpportunityNote,
+  Offer,
   PipelineStage,
   SearchResult,
   SupabaseObjectives,
@@ -55,6 +57,7 @@ export type AnnualObjectives = Objectives;
 export const VALID_OPPORTUNITY_COLUMNS = [
   'contact_id',
   'entreprise_id',
+  'offre_id',
   'montant',
   'priorite',
   'stage_id',
@@ -93,6 +96,7 @@ interface AppDataContextType {
   contacts: Contact[];
   opportunities: Opportunity[];
   pipelineStages: PipelineStage[];
+  offers: Offer[];
 
   // Computed values
   totalCompanies: number;
@@ -123,6 +127,8 @@ interface AppDataContextType {
   // Qualification configuration
   autoOpportunityAmount: number;
   setAutoOpportunityAmount: (amount: number) => void;
+  selectedQualificationOfferId: string | null;
+  setSelectedQualificationOfferId: (offerId: string | null) => void;
 
   // Methods
   addSearchResult: (result: Omit<SearchResult, 'id' | 'created_at'>) => Promise<void>;
@@ -135,6 +141,8 @@ interface AppDataContextType {
   updateContact: (id: string, updates: Partial<Contact>) => Promise<void>;
   addOpportunity: (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   updateOpportunity: (id: string, updates: Partial<Opportunity>) => Promise<void>;
+  addOffer: (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string }[] }) => Promise<void>;
+  updateOffer: (id: string, updates: Partial<Offer>) => Promise<void>;
   moveOpportunityToStage: (opportunityId: string, stageId: number) => Promise<void>;
   getOpportunitiesByStage: (stageId: number) => Opportunity[];
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
@@ -355,6 +363,7 @@ const [companies, setCompanies] = useState<Company[]>([]);
 const [contacts, setContacts] = useState<Contact[]>([]);
 const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
 const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
+const [offers, setOffers] = useState<Offer[]>([]);
 const [networks, setNetworks] = useState<CompanyNetwork[]>([]);
 const [urlBlacklist, setUrlBlacklist] = useState<UrlBlacklist[]>([]);
 const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaultObjectives(getCurrentMonth()));
@@ -365,6 +374,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const [keywordStats, setKeywordStats] = useState<Record<string, number>>({});
   const [locationStats, setLocationStats] = useState<Record<string, number>>({});
   const [autoOpportunityAmountState, setAutoOpportunityAmountState] = useState<number>(2500);
+  const [selectedQualificationOfferIdState, setSelectedQualificationOfferIdState] = useState<string | null>(null);
 
   const setAutoOpportunityAmount = (amount: number) => {
     const sanitized = Number.isFinite(amount) && amount >= 0 ? amount : 0;
@@ -386,6 +396,28 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     window.localStorage.setItem('autoOpportunityAmount', String(autoOpportunityAmountState));
   }, [autoOpportunityAmountState]);
 
+
+  const setSelectedQualificationOfferId = (offerId: string | null) => {
+    setSelectedQualificationOfferIdState(offerId);
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedOfferId = window.localStorage.getItem('selectedQualificationOfferId');
+    if (storedOfferId) {
+      setSelectedQualificationOfferIdState(storedOfferId);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (selectedQualificationOfferIdState) {
+      window.localStorage.setItem('selectedQualificationOfferId', selectedQualificationOfferIdState);
+    } else {
+      window.localStorage.removeItem('selectedQualificationOfferId');
+    }
+  }, [selectedQualificationOfferIdState]);
+
   // Load data from API when authenticated
   useEffect(() => {
     if (isAuthenticated && !authLoading) {
@@ -401,6 +433,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         companiesData,
         qualifiedCompaniesData,
         opportunitiesData,
+        offersData,
         pipelineStagesData,
         achievementsData,
         keywordStatsData,
@@ -412,6 +445,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         companiesApi.getAll(),
         companiesApi.getQualifiedOnly(),
         opportunitiesApi.getAll(),
+        offersApi.getAll(),
         pipelineStagesApi.getAll(),
         achievementsApi.getAll(),
         statisticsApi.getKeywordStats(),
@@ -483,12 +517,25 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       setCompanies(normalizedCompanies);
       setContacts(contactsData);
       setOpportunities(safeOpportunities);
+      setOffers(offersData);
       setPipelineStages(pipelineStagesData);
       setAchievements(safeAchievements);
       setKeywordStats(keywordStatsData);
       setLocationStats(locationStatsData);
       setNetworks(networksData);
       setUrlBlacklist(urlBlacklistData);
+
+      if (offersData.length > 0) {
+        const preferredOffer = selectedQualificationOfferIdState
+          ? offersData.find((offer) => offer.id === selectedQualificationOfferIdState)
+          : undefined;
+        const defaultOffer = preferredOffer
+          ?? offersData.find((offer) => offer.actif && offer.visible_in_qualification)
+          ?? offersData[0];
+        if (defaultOffer && defaultOffer.id !== selectedQualificationOfferIdState) {
+          setSelectedQualificationOfferIdState(defaultOffer.id);
+        }
+      }
 
       // Backward compatibility: objectifs par défaut
       setCurrentObjectives(getDefaultObjectives(getCurrentMonth()));
@@ -835,23 +882,38 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         logger.error('Error creating achievement:', achievementError);
       }
 
-      const opportunityName = generateOpportunityName(company);
+      const selectedOffer = selectedQualificationOfferIdState
+        ? offers.find((offer) => offer.id === selectedQualificationOfferIdState)
+        : undefined;
+      const defaultOffer = selectedOffer
+        ?? offers.find((offer) => offer.actif && offer.visible_in_qualification)
+        ?? offers[0];
+
+      const opportunityName = defaultOffer?.nom || generateOpportunityName(company);
       const defaultStage = pipelineStages.find((stage) => stage.ordre === 1) || pipelineStages[0];
 
       const hasMobilePhone = !!company.telephone && isMobilePhone(company.telephone);
+      const offerAmount = typeof defaultOffer?.prix_ht === 'number' ? defaultOffer.prix_ht : autoOpportunityAmountState;
+      const isMrrOffer = defaultOffer?.billing_period === 'monthly';
 
       const opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'> = {
         entreprise_id: company.id,
-        montant: autoOpportunityAmountState,
+        offre_id: defaultOffer?.id,
+        offre_nom_snapshot: defaultOffer?.nom,
+        offre_prix_ht_snapshot: typeof defaultOffer?.prix_ht === 'number' ? defaultOffer.prix_ht : undefined,
+        offre_devise_snapshot: defaultOffer?.devise,
+        montant: offerAmount,
         priorite: hasMobilePhone ? 'haute' : 'moyenne',
         stage_id: defaultStage?.id,
         lead_magnet: false,
         note_base: `Opportunité créée automatiquement pour ${getCompanyDisplayName(
           company.name,
           company.canonical_url
-        )}.${hasMobilePhone ? ' Numéro mobile disponible (' + company.telephone + ').' : ''}`,
+        )}.${defaultOffer ? ` Offre associée: ${defaultOffer.nom} (${isMrrOffer ? 'MRR' : 'Ponctuel'}).` : ''}${hasMobilePhone ? ' Numéro mobile disponible (' + company.telephone + ').' : ''}`,
         name: opportunityName,
-        type: 'one_shot',
+        type: isMrrOffer ? 'mrr' : 'one_shot',
+        mrr: isMrrOffer ? offerAmount : undefined,
+        recurrence_months: isMrrOffer ? 12 : undefined,
       };
 
       try {
@@ -1078,6 +1140,31 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
+
+  const addOffer = async (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string }[] }) => {
+    try {
+      const createdOffer = await offersApi.create(offer);
+      setOffers((prev) => [createdOffer, ...prev]);
+      toast.success('Offre créée avec succès');
+    } catch (error) {
+      logger.error('Error creating offer:', error);
+      toast.error("Erreur lors de la création de l'offre");
+      throw error;
+    }
+  };
+
+  const updateOffer = async (id: string, updates: Partial<Offer>) => {
+    try {
+      const updatedOffer = await offersApi.update(id, updates);
+      setOffers((prev) => prev.map((offer) => (offer.id === id ? { ...offer, ...updatedOffer } : offer)));
+      toast.success('Offre mise à jour');
+    } catch (error) {
+      logger.error('Error updating offer:', error);
+      toast.error("Erreur lors de la mise à jour de l'offre");
+      throw error;
+    }
+  };
+
   const updateObjectives = async (objectives: Partial<Objectives>) => {
     const updatedObjectives = { ...currentObjectives, ...objectives };
     setCurrentObjectives(updatedObjectives);
@@ -1108,6 +1195,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     contacts,
     opportunities,
     pipelineStages,
+    offers,
     totalCompanies,
     totalQualifiedCompanies,
     keywordStats,
@@ -1128,6 +1216,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     loading,
     autoOpportunityAmount: autoOpportunityAmountState,
     setAutoOpportunityAmount,
+    selectedQualificationOfferId: selectedQualificationOfferIdState,
+    setSelectedQualificationOfferId,
     addSearchResult,
     addCompany,
     updateCompany,
@@ -1142,6 +1232,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     deleteContactNote,
     addOpportunity,
     updateOpportunity,
+    addOffer,
+    updateOffer,
     moveOpportunityToStage,
     getOpportunitiesByStage,
     addOpportunityNote,

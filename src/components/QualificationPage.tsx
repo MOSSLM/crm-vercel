@@ -10,6 +10,7 @@ import { Input } from './ui/input';
 import { Switch } from './ui/switch';
 import { Label } from './ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from './ui/pagination';
 import { 
@@ -53,7 +54,10 @@ export const QualificationPage: React.FC = () => {
     blacklistDomain,
     isCompanyBlacklisted,
     autoOpportunityAmount,
-    setAutoOpportunityAmount
+    setAutoOpportunityAmount,
+    offers,
+    selectedQualificationOfferId,
+    setSelectedQualificationOfferId
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -171,6 +175,17 @@ export const QualificationPage: React.FC = () => {
   React.useEffect(() => {
     setAutoAmountInput(autoOpportunityAmount.toString());
   }, [autoOpportunityAmount]);
+
+
+  React.useEffect(() => {
+    if (!selectedQualificationOfferId) return;
+    const selectedOffer = offers.find((offer) => offer.id === selectedQualificationOfferId);
+    if (selectedOffer && typeof selectedOffer.prix_ht === 'number') {
+      setAutoOpportunityAmount(selectedOffer.prix_ht);
+    }
+  }, [selectedQualificationOfferId, offers, setAutoOpportunityAmount]);
+
+  const qualificationOffers = offers.filter((offer) => offer.actif && offer.visible_in_qualification);
 
   const handleAutoOpportunityAmountChange = (value: string) => {
     setAutoAmountInput(value);
@@ -450,9 +465,38 @@ export const QualificationPage: React.FC = () => {
       <div>
         <h1>Qualification des Entreprises</h1>
         <p className="text-muted-foreground">
-          Qualifiez les entreprises trouvées pour créer automatiquement des opportunités (création ou refonte de site)
+          Qualifiez les entreprises trouvées pour créer automatiquement des opportunités liées à vos offres/services.
         </p>
       </div>
+
+
+      <Card className="max-w-xl">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Offre / package pour la qualification</CardTitle>
+          <CardDescription>
+            Choisissez l'offre utilisée pour nommer l'opportunité et pré-remplir son montant.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="qualification-offer" className="text-xs text-muted-foreground">Offre visible en qualification</Label>
+          <Select
+            value={selectedQualificationOfferId ?? 'none'}
+            onValueChange={(value) => setSelectedQualificationOfferId(value === 'none' ? null : value)}
+          >
+            <SelectTrigger id="qualification-offer">
+              <SelectValue placeholder="Aucune offre sélectionnée" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Aucune (nom automatique)</SelectItem>
+              {qualificationOffers.map((offer) => (
+                <SelectItem key={offer.id} value={offer.id}>
+                  {offer.nom} {typeof offer.prix_ht === 'number' ? `• ${offer.prix_ht.toLocaleString('fr-FR')}€` : ''} {offer.billing_period === 'monthly' ? '• MRR' : '• Ponctuel'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
       <Card className="max-w-sm">
         <CardHeader className="pb-2">

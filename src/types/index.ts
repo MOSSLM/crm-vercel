@@ -113,6 +113,9 @@ export interface Opportunity {
   id: string;
   contact_id?: string;
   entreprise_id?: number;
+  offre_id?: string;
+  offre_prix_ht_snapshot?: number;
+  offre_devise_snapshot?: string;
   montant?: number;
   priorite: 'haute' | 'moyenne' | 'basse';
   stage_id?: number;
@@ -144,6 +147,41 @@ export interface Opportunity {
   email?: string;
   linkedin_url?: string;
   contact_name?: string;
+  offre_nom_snapshot?: string;
+}
+
+export interface OfferIncludedItem {
+  id: string;
+  parent_offre_id: string;
+  included_offre_id: string;
+  quantite: number;
+  is_optional: boolean;
+  sort_order: number;
+  notes?: string;
+  nom?: string;
+  type?: 'service' | 'package';
+}
+
+export interface Offer {
+  id: string;
+  type: 'service' | 'package';
+  code?: string;
+  nom: string;
+  description?: string;
+  prix_ht?: number;
+  devise: string;
+  billing_period?: string;
+  actif: boolean;
+  visible_in_qualification: boolean;
+  qualification_order: number;
+  slug?: string;
+  tags: string[];
+  metadata: Record<string, unknown>;
+  package_discount_type?: 'percent' | 'fixed';
+  package_discount_value?: number;
+  created_at: string;
+  updated_at: string;
+  included_items: OfferIncludedItem[];
 }
 
 export interface CompanyNetwork {
