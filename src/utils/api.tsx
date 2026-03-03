@@ -1824,7 +1824,17 @@ export const offersApi = {
     } as Offer;
   },
 
-  update: async (id: string, updates: Partial<Offer>) => {
+  update: async (
+    id: string,
+    updates: Omit<Partial<Offer>, 'included_items'> & {
+      included_items?: {
+        included_offre_id: string;
+        quantite?: number;
+        is_optional?: boolean;
+        notes?: string;
+      }[];
+    }
+  ) => {
     const payload: Record<string, unknown> = {};
     [
       'type',
@@ -1856,6 +1866,31 @@ export const offersApi = {
 
     if (error) throw error;
     if (!isOfferRow(data)) throw new Error('Invalid offer payload');
+
+    if (updates.included_items !== undefined) {
+      const { error: deleteError } = await supabase
+        .from('offres_included_items')
+        .delete()
+        .eq('parent_offre_id', id);
+
+      if (deleteError) throw deleteError;
+
+      const rows = updates.included_items
+        .map((item, index) => ({
+          parent_offre_id: id,
+          included_offre_id: item.included_offre_id,
+          quantite: item.quantite ?? 1,
+          is_optional: item.is_optional ?? false,
+          sort_order: index + 1,
+          notes: item.notes ?? null,
+        }))
+        .filter((row) => typeof row.included_offre_id === 'string' && row.included_offre_id.length > 0);
+
+      if (rows.length > 0) {
+        const { error: insertError } = await supabase.from('offres_included_items').insert(rows);
+        if (insertError) throw insertError;
+      }
+    }
 
     return {
       id: data.id,
