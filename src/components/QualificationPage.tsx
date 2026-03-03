@@ -53,8 +53,6 @@ export const QualificationPage: React.FC = () => {
     blacklistCompany,
     blacklistDomain,
     isCompanyBlacklisted,
-    autoOpportunityAmount,
-    setAutoOpportunityAmount,
     offers,
     selectedQualificationOfferId,
     setSelectedQualificationOfferId
@@ -170,37 +168,7 @@ export const QualificationPage: React.FC = () => {
   const [companyToBlacklist, setCompanyToBlacklist] = useState<Company | null>(null);
   const [isProcessingBlacklist, setIsProcessingBlacklist] = useState(false);
 
-  const [autoAmountInput, setAutoAmountInput] = useState<string>(() => autoOpportunityAmount.toString());
-
-  React.useEffect(() => {
-    setAutoAmountInput(autoOpportunityAmount.toString());
-  }, [autoOpportunityAmount]);
-
-
-  React.useEffect(() => {
-    if (!selectedQualificationOfferId) return;
-    const selectedOffer = offers.find((offer) => offer.id === selectedQualificationOfferId);
-    if (selectedOffer && typeof selectedOffer.prix_ht === 'number') {
-      setAutoOpportunityAmount(selectedOffer.prix_ht);
-    }
-  }, [selectedQualificationOfferId, offers, setAutoOpportunityAmount]);
-
   const qualificationOffers = offers.filter((offer) => offer.actif && offer.visible_in_qualification);
-
-  const handleAutoOpportunityAmountChange = (value: string) => {
-    setAutoAmountInput(value);
-    const parsed = Number.parseFloat(value);
-    if (Number.isFinite(parsed)) {
-      setAutoOpportunityAmount(parsed);
-    }
-  };
-
-  const handleAutoOpportunityAmountBlur = () => {
-    if (autoAmountInput.trim() === '') {
-      setAutoOpportunityAmount(0);
-      setAutoAmountInput('0');
-    }
-  };
 
   const handleBlacklistClick = (company: Company) => {
     setCompanyToBlacklist(company);
@@ -474,20 +442,19 @@ export const QualificationPage: React.FC = () => {
         <CardHeader className="pb-2">
           <CardTitle className="text-sm">Offre / package pour la qualification</CardTitle>
           <CardDescription>
-            Choisissez l'offre utilisée pour nommer l'opportunité et pré-remplir son montant.
+            Choisissez l'offre utilisée pour créer les opportunités lors de la qualification.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
           <Label htmlFor="qualification-offer" className="text-xs text-muted-foreground">Offre visible en qualification</Label>
           <Select
-            value={selectedQualificationOfferId ?? 'none'}
-            onValueChange={(value) => setSelectedQualificationOfferId(value === 'none' ? null : value)}
+            value={selectedQualificationOfferId ?? undefined}
+            onValueChange={setSelectedQualificationOfferId}
           >
             <SelectTrigger id="qualification-offer">
-              <SelectValue placeholder="Aucune offre sélectionnée" />
+              <SelectValue placeholder="Sélectionnez une offre" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">Aucune (nom automatique)</SelectItem>
               {qualificationOffers.map((offer) => (
                 <SelectItem key={offer.id} value={offer.id}>
                   {offer.nom} {typeof offer.prix_ht === 'number' ? `• ${offer.prix_ht.toLocaleString('fr-FR')}€` : ''} {offer.billing_period === 'monthly' ? '• MRR' : '• Ponctuel'}
@@ -495,31 +462,6 @@ export const QualificationPage: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
-
-      <Card className="max-w-sm">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Montant automatique des opportunités</CardTitle>
-          <CardDescription>
-            Définit le montant attribué aux opportunités créées lors de la qualification.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Label htmlFor="auto-amount" className="text-xs text-muted-foreground">Montant en euros</Label>
-          <div className="relative mt-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">€</span>
-            <Input
-              id="auto-amount"
-              type="number"
-              min={0}
-              step={50}
-              value={autoAmountInput}
-              onChange={(event) => handleAutoOpportunityAmountChange(event.target.value)}
-              onBlur={handleAutoOpportunityAmountBlur}
-              className="pl-7"
-            />
-          </div>
         </CardContent>
       </Card>
 
