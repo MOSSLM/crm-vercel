@@ -125,8 +125,6 @@ interface AppDataContextType {
   loading: boolean;
 
   // Qualification configuration
-  autoOpportunityAmount: number;
-  setAutoOpportunityAmount: (amount: number) => void;
   selectedQualificationOfferId: string | null;
   setSelectedQualificationOfferId: (offerId: string | null) => void;
 
@@ -373,28 +371,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const [loading, setLoading] = useState(false);
   const [keywordStats, setKeywordStats] = useState<Record<string, number>>({});
   const [locationStats, setLocationStats] = useState<Record<string, number>>({});
-  const [autoOpportunityAmountState, setAutoOpportunityAmountState] = useState<number>(2500);
   const [selectedQualificationOfferIdState, setSelectedQualificationOfferIdState] = useState<string | null>(null);
-
-  const setAutoOpportunityAmount = (amount: number) => {
-    const sanitized = Number.isFinite(amount) && amount >= 0 ? amount : 0;
-    setAutoOpportunityAmountState(sanitized);
-  };
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const storedAmount = window.localStorage.getItem('autoOpportunityAmount');
-    if (!storedAmount) return;
-    const parsed = Number.parseFloat(storedAmount);
-    if (Number.isFinite(parsed) && parsed >= 0) {
-      setAutoOpportunityAmountState(parsed);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    window.localStorage.setItem('autoOpportunityAmount', String(autoOpportunityAmountState));
-  }, [autoOpportunityAmountState]);
 
 
   const setSelectedQualificationOfferId = (offerId: string | null) => {
@@ -889,19 +866,24 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         ?? offers.find((offer) => offer.actif && offer.visible_in_qualification)
         ?? offers[0];
 
-      const opportunityName = defaultOffer?.nom || generateOpportunityName(company);
+      if (!defaultOffer) {
+        toast.error('Aucune offre disponible : créez d\'abord une offre pour générer une opportunité.');
+        return;
+      }
+
+      const opportunityName = defaultOffer.nom || generateOpportunityName(company);
       const defaultStage = pipelineStages.find((stage) => stage.ordre === 1) || pipelineStages[0];
 
       const hasMobilePhone = !!company.telephone && isMobilePhone(company.telephone);
-      const offerAmount = typeof defaultOffer?.prix_ht === 'number' ? defaultOffer.prix_ht : autoOpportunityAmountState;
-      const isMrrOffer = defaultOffer?.billing_period === 'monthly';
+      const offerAmount = typeof defaultOffer.prix_ht === 'number' ? defaultOffer.prix_ht : 0;
+      const isMrrOffer = defaultOffer.billing_period === 'monthly';
 
       const opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'> = {
         entreprise_id: company.id,
-        offre_id: defaultOffer?.id,
-        offre_nom_snapshot: defaultOffer?.nom,
-        offre_prix_ht_snapshot: typeof defaultOffer?.prix_ht === 'number' ? defaultOffer.prix_ht : undefined,
-        offre_devise_snapshot: defaultOffer?.devise,
+        offre_id: defaultOffer.id,
+        offre_nom_snapshot: defaultOffer.nom,
+        offre_prix_ht_snapshot: typeof defaultOffer.prix_ht === 'number' ? defaultOffer.prix_ht : undefined,
+        offre_devise_snapshot: defaultOffer.devise,
         montant: offerAmount,
         priorite: hasMobilePhone ? 'haute' : 'moyenne',
         stage_id: defaultStage?.id,
@@ -909,7 +891,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         note_base: `Opportunité créée automatiquement pour ${getCompanyDisplayName(
           company.name,
           company.canonical_url
-        )}.${defaultOffer ? ` Offre associée: ${defaultOffer.nom} (${isMrrOffer ? 'MRR' : 'Ponctuel'}).` : ''}${hasMobilePhone ? ' Numéro mobile disponible (' + company.telephone + ').' : ''}`,
+        )}. Offre associée: ${defaultOffer.nom} (${isMrrOffer ? 'MRR' : 'Ponctuel'}).${hasMobilePhone ? ' Numéro mobile disponible (' + company.telephone + ').' : ''}`,
         name: opportunityName,
         type: isMrrOffer ? 'mrr' : 'one_shot',
         mrr: isMrrOffer ? offerAmount : undefined,
@@ -1214,8 +1196,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     getTotalSignatures,
     getTotalAcomptes,
     loading,
-    autoOpportunityAmount: autoOpportunityAmountState,
-    setAutoOpportunityAmount,
     selectedQualificationOfferId: selectedQualificationOfferIdState,
     setSelectedQualificationOfferId,
     addSearchResult,
