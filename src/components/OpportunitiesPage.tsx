@@ -200,12 +200,17 @@ export const OpportunitiesPage: React.FC = () => {
           {/* Titre avec badge en-dessous */}
           <div className="space-y-2">
             <CardTitle className="text-sm md:text-base leading-tight break-words pr-1">
-              {displayName}
+              {opportunity.name || opportunity.offre_nom_snapshot || displayName}
             </CardTitle>
             <div className="flex flex-wrap gap-2 items-center">
               <Badge variant="outline" className="text-xs">
                 {stageInfo.nom}
               </Badge>
+              {opportunity.offre_nom_snapshot && (
+                <Badge variant="secondary" className="text-xs">
+                  {opportunity.offre_nom_snapshot}
+                </Badge>
+              )}
               <div className="flex items-center gap-1">
                 {getPriorityIcon(opportunity.priorite)}
                 <span className="text-xs text-muted-foreground">
