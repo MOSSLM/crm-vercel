@@ -26,6 +26,7 @@ import {
   CheckSquare,
   Users,
   Target,
+  Package,
   GitBranch,
   Award,
   CheckCircle,
@@ -66,6 +67,7 @@ export const AppSidebar = () => {
     { title: "Blacklist", icon: Ban, href: "/blacklist" },
     { title: "Contacts", icon: Users, href: "/contacts" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
+    { title: "Offres", icon: Package, href: "/offres" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
     { title: "Objectifs & Progression", icon: Award, href: "/objectifs" },
   ];
@@ -84,6 +86,7 @@ export const AppSidebar = () => {
     { title: "Qualifiés (appel)", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
+    { title: "Offres", icon: Package, href: "/offres" },
     { title: "Contacts", icon: Users, href: "/contacts" },
   ];
 

@@ -5,6 +5,8 @@ import {
   CompanyNetwork,
   Contact,
   EmployeeBand,
+  Offer,
+  OfferIncludedItem,
   Opportunity,
   OpportunityNote,
   PipelineStage,
@@ -51,6 +53,15 @@ export const isOpportunityNoteRow = (row: unknown): row is OpportunityNote =>
   typeof row.opportunite_id === 'string' &&
   typeof row.theme === 'string' &&
   typeof row.created_at === 'string';
+
+const isOfferSubServiceRow = (row: unknown): row is OfferIncludedItem =>
+  isRecord(row) &&
+  typeof row.id === 'string' &&
+  typeof row.parent_offre_id === 'string' &&
+  typeof row.included_offre_id === 'string';
+
+const isOfferRow = (row: unknown): row is Omit<Offer, 'included_items'> =>
+  isRecord(row) && typeof row.id === 'string' && typeof row.nom === 'string';
 
 const SEARCH_RESULTS_COLUMNS = [
   'id',
@@ -146,6 +157,10 @@ const OPPORTUNITY_COLUMNS = [
   'id',
   'contact_id',
   'entreprise_id',
+  'offre_id',
+  'offre_nom_snapshot',
+  'offre_prix_ht_snapshot',
+  'offre_devise_snapshot',
   'montant',
   'priorite',
   'stage_id',
@@ -161,6 +176,38 @@ const OPPORTUNITY_COLUMNS = [
   'recurrence_months'
 ] as const;
 const OPPORTUNITY_SELECT = OPPORTUNITY_COLUMNS.join(',');
+
+
+const OFFER_COLUMNS = [
+  'id',
+  'type',
+  'code',
+  'nom',
+  'description',
+  'prix_ht',
+  'devise',
+  'billing_period',
+  'actif',
+  'visible_in_qualification',
+  'qualification_order',
+  'slug',
+  'tags',
+  'metadata',
+  'created_at',
+  'updated_at',
+] as const;
+const OFFER_SELECT = OFFER_COLUMNS.join(',');
+
+const OFFER_SUB_SERVICE_COLUMNS = [
+  'id',
+  'parent_offre_id',
+  'included_offre_id',
+  'quantite',
+  'is_optional',
+  'sort_order',
+  'notes',
+] as const;
+const OFFER_SUB_SERVICE_SELECT = OFFER_SUB_SERVICE_COLUMNS.join(',');
 
 const COMPANIES_PAGE_SIZE = 500;
 
@@ -269,6 +316,10 @@ const buildOpportunityFromPartial = (
     updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
     contact_id: toOptionalString(partial.contact_id),
     entreprise_id: toOptionalNumber(partial.entreprise_id),
+    offre_id: toOptionalString((partial as { offre_id?: unknown }).offre_id),
+    offre_nom_snapshot: toOptionalString((partial as { offre_nom_snapshot?: unknown }).offre_nom_snapshot),
+    offre_prix_ht_snapshot: toOptionalNumber((partial as { offre_prix_ht_snapshot?: unknown }).offre_prix_ht_snapshot),
+    offre_devise_snapshot: toOptionalString((partial as { offre_devise_snapshot?: unknown }).offre_devise_snapshot),
     montant: toOptionalNumber(partial.montant),
     stage_id: toOptionalNumber(partial.stage_id),
     note_base: toOptionalString(partial.note_base),
@@ -1437,6 +1488,7 @@ export const opportunitiesApi = {
           pipelineHistory: [],
           telephone,
           linkedin_url,
+          offre_nom_snapshot: typeof (opp as { offre_nom_snapshot?: unknown }).offre_nom_snapshot === 'string' ? (opp as { offre_nom_snapshot: string }).offre_nom_snapshot : undefined,
         };
       });
 
@@ -1453,7 +1505,11 @@ export const opportunitiesApi = {
       const validColumns = [
         'contact_id',
         'entreprise_id', 
-        'montant',
+        'offre_id',
+        'offre_nom_snapshot',
+  'offre_prix_ht_snapshot',
+  'offre_devise_snapshot',
+  'montant',
         'priorite',
         'stage_id',
         'lead_magnet',
@@ -1517,7 +1573,11 @@ export const opportunitiesApi = {
       const validColumns = [
         'contact_id',
         'entreprise_id', 
-        'montant',
+        'offre_id',
+        'offre_nom_snapshot',
+  'offre_prix_ht_snapshot',
+  'offre_devise_snapshot',
+  'montant',
         'priorite',
         'stage_id',
         'lead_magnet',
@@ -1565,6 +1625,241 @@ export const opportunitiesApi = {
       logger.error('Error deleting opportunity:', error);
     }
   }
+};
+
+
+export const offersApi = {
+  getAll: async (): Promise<Offer[]> => {
+    try {
+      const { data: offersData, error: offersError } = await supabase
+        .from('offres')
+        .select(OFFER_SELECT)
+        .order('qualification_order', { ascending: true })
+        .order('nom', { ascending: true });
+
+      if (offersError) {
+        logger.error('Error fetching offers:', offersError);
+        return [];
+      }
+
+      const offerRows = Array.isArray(offersData) ? (offersData as unknown[]) : [];
+      const offers = offerRows.filter(isOfferRow);
+      if (offers.length === 0) return [];
+
+      const offerIds = offers.map((offer) => offer.id);
+      const { data: includedRows, error: includedError } = await supabase
+        .from('offres_included_items')
+        .select(OFFER_SUB_SERVICE_SELECT)
+        .in('parent_offre_id', offerIds)
+        .order('sort_order', { ascending: true });
+
+      if (includedError) {
+        logger.error('Error fetching offer included items:', includedError);
+      }
+
+      const rawIncluded = (Array.isArray(includedRows) ? includedRows : []) as unknown[];
+      const includedOfferIds = Array.from(
+        new Set(
+          rawIncluded
+            .filter((row): row is { included_offre_id: string } =>
+              isRecord(row) && typeof row.included_offre_id === 'string'
+            )
+            .map((row) => row.included_offre_id)
+        )
+      );
+
+      const includedOfferMap = new Map<string, { nom?: string; type?: 'service' | 'package' }>();
+      if (includedOfferIds.length > 0) {
+        const { data: linkedOffers } = await supabase
+          .from('offres')
+          .select('id,nom,type')
+          .in('id', includedOfferIds);
+        (Array.isArray(linkedOffers) ? linkedOffers : []).forEach((row) => {
+          if (!isRecord(row) || typeof row.id !== 'string') return;
+          includedOfferMap.set(row.id, {
+            nom: typeof row.nom === 'string' ? row.nom : undefined,
+            type: row.type === 'service' || row.type === 'package' ? row.type : undefined,
+          });
+        });
+      }
+
+      const normalizedIncluded = rawIncluded
+        .filter((row): row is Record<string, unknown> => isRecord(row))
+        .map((row) => {
+          const linked = includedOfferMap.get(String(row.included_offre_id)) ?? {};
+          return {
+            id: typeof row.id === 'string' ? row.id : '',
+            parent_offre_id: typeof row.parent_offre_id === 'string' ? row.parent_offre_id : '',
+            included_offre_id: typeof row.included_offre_id === 'string' ? row.included_offre_id : '',
+            quantite: typeof row.quantite === 'number' ? row.quantite : 1,
+            is_optional: typeof row.is_optional === 'boolean' ? row.is_optional : false,
+            sort_order: typeof row.sort_order === 'number' ? row.sort_order : 100,
+            notes: typeof row.notes === 'string' ? row.notes : undefined,
+            nom: linked.nom,
+            type: linked.type,
+          } satisfies OfferIncludedItem;
+        });
+
+      const includedByParent = new Map<string, OfferIncludedItem[]>();
+      normalizedIncluded.forEach((item) => {
+        const arr = includedByParent.get(item.parent_offre_id) ?? [];
+        arr.push(item);
+        includedByParent.set(item.parent_offre_id, arr);
+      });
+
+      return offers.map((offer) => ({
+        id: offer.id,
+        type: offer.type === 'service' || offer.type === 'package' ? offer.type : 'service',
+        code: typeof offer.code === 'string' ? offer.code : undefined,
+        nom: offer.nom,
+        description: typeof offer.description === 'string' ? offer.description : undefined,
+        prix_ht: typeof offer.prix_ht === 'number' ? offer.prix_ht : undefined,
+        devise: typeof offer.devise === 'string' ? offer.devise : 'EUR',
+        billing_period: typeof offer.billing_period === 'string' ? offer.billing_period : undefined,
+        actif: typeof offer.actif === 'boolean' ? offer.actif : true,
+        visible_in_qualification:
+          typeof offer.visible_in_qualification === 'boolean' ? offer.visible_in_qualification : true,
+        qualification_order:
+          typeof offer.qualification_order === 'number' ? offer.qualification_order : 100,
+        slug: typeof offer.slug === 'string' ? offer.slug : undefined,
+        tags: Array.isArray(offer.tags)
+          ? offer.tags.filter((tag): tag is string => typeof tag === 'string')
+          : [],
+        metadata: isRecord(offer.metadata) ? offer.metadata : {},
+        created_at: typeof offer.created_at === 'string' ? offer.created_at : new Date().toISOString(),
+        updated_at: typeof offer.updated_at === 'string' ? offer.updated_at : new Date().toISOString(),
+        included_items: includedByParent.get(offer.id) ?? [],
+      }));
+    } catch (error) {
+      logger.error('API error fetching offers:', error);
+      return [];
+    }
+  },
+
+  create: async (
+    payload: Omit<Partial<Offer>, 'included_items'> & {
+      included_items?: {
+        included_offre_id: string;
+        quantite?: number;
+        is_optional?: boolean;
+        notes?: string;
+      }[];
+    }
+  ) => {
+    const now = new Date().toISOString();
+    const basePayload = {
+      type: payload.type ?? 'service',
+      code: payload.code,
+      nom: payload.nom,
+      description: payload.description,
+      prix_ht: payload.prix_ht,
+      devise: payload.devise ?? 'EUR',
+      billing_period: payload.billing_period,
+      actif: payload.actif ?? true,
+      visible_in_qualification: payload.visible_in_qualification ?? true,
+      qualification_order: payload.qualification_order ?? 100,
+      slug: payload.slug,
+      tags: payload.tags ?? [],
+      metadata: payload.metadata ?? {},
+    };
+
+    const { data, error } = await supabase.from('offres').insert([basePayload]).select().single();
+    if (error) throw error;
+    if (!isOfferRow(data)) throw new Error('Invalid offer payload');
+
+    const includedInput = payload.included_items ?? [];
+    if (includedInput.length > 0) {
+      const rows = includedInput
+        .map((item, index) => ({
+          parent_offre_id: data.id,
+          included_offre_id: item.included_offre_id,
+          quantite: item.quantite ?? 1,
+          is_optional: item.is_optional ?? false,
+          sort_order: index + 1,
+          notes: item.notes ?? null,
+        }))
+        .filter((row) => typeof row.included_offre_id === 'string' && row.included_offre_id.length > 0);
+
+      if (rows.length > 0) {
+        const { error: incError } = await supabase.from('offres_included_items').insert(rows);
+        if (incError) logger.error('Error creating included offer items:', incError);
+      }
+    }
+
+    return {
+      id: data.id,
+      type: data.type === 'service' || data.type === 'package' ? data.type : 'service',
+      code: typeof data.code === 'string' ? data.code : undefined,
+      nom: data.nom,
+      description: typeof data.description === 'string' ? data.description : undefined,
+      prix_ht: typeof data.prix_ht === 'number' ? data.prix_ht : undefined,
+      devise: typeof data.devise === 'string' ? data.devise : 'EUR',
+      billing_period: typeof data.billing_period === 'string' ? data.billing_period : undefined,
+      actif: typeof data.actif === 'boolean' ? data.actif : true,
+      visible_in_qualification:
+        typeof data.visible_in_qualification === 'boolean' ? data.visible_in_qualification : true,
+      qualification_order: typeof data.qualification_order === 'number' ? data.qualification_order : 100,
+      slug: typeof data.slug === 'string' ? data.slug : undefined,
+      tags: Array.isArray(data.tags) ? data.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      metadata: isRecord(data.metadata) ? data.metadata : {},
+      created_at: typeof data.created_at === 'string' ? data.created_at : now,
+      updated_at: typeof data.updated_at === 'string' ? data.updated_at : now,
+      included_items: [],
+    } as Offer;
+  },
+
+  update: async (id: string, updates: Partial<Offer>) => {
+    const payload: Record<string, unknown> = {};
+    [
+      'type',
+      'code',
+      'nom',
+      'description',
+      'prix_ht',
+      'devise',
+      'billing_period',
+      'actif',
+      'visible_in_qualification',
+      'qualification_order',
+      'slug',
+      'tags',
+      'metadata',
+    ].forEach((key) => {
+      const value = updates[key as keyof Offer];
+      if (value !== undefined) payload[key] = value;
+    });
+
+    const { data, error } = await supabase
+      .from('offres')
+      .update(payload)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    if (!isOfferRow(data)) throw new Error('Invalid offer payload');
+
+    return {
+      id: data.id,
+      type: data.type === 'service' || data.type === 'package' ? data.type : 'service',
+      code: typeof data.code === 'string' ? data.code : undefined,
+      nom: data.nom,
+      description: typeof data.description === 'string' ? data.description : undefined,
+      prix_ht: typeof data.prix_ht === 'number' ? data.prix_ht : undefined,
+      devise: typeof data.devise === 'string' ? data.devise : 'EUR',
+      billing_period: typeof data.billing_period === 'string' ? data.billing_period : undefined,
+      actif: typeof data.actif === 'boolean' ? data.actif : true,
+      visible_in_qualification:
+        typeof data.visible_in_qualification === 'boolean' ? data.visible_in_qualification : true,
+      qualification_order: typeof data.qualification_order === 'number' ? data.qualification_order : 100,
+      slug: typeof data.slug === 'string' ? data.slug : undefined,
+      tags: Array.isArray(data.tags) ? data.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+      metadata: isRecord(data.metadata) ? data.metadata : {},
+      created_at: typeof data.created_at === 'string' ? data.created_at : new Date().toISOString(),
+      updated_at: typeof data.updated_at === 'string' ? data.updated_at : new Date().toISOString(),
+      included_items: [],
+    } as Offer;
+  },
 };
 
 // Pipeline Stages API (table: etapes_pipeline)
