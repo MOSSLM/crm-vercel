@@ -88,6 +88,23 @@ const frToEnPriority = (p?: FrPriority): EnPriority | undefined =>
 const enToFrPriority = (p?: EnPriority): FrPriority | undefined =>
   p === 'high' ? 'haute' : p === 'low' ? 'basse' : p === 'medium' ? 'moyenne' : undefined;
 
+const OPPORTUNITY_NAME_COMPANY_SEPARATOR = ' — ';
+
+const appendCompanyToOpportunityName = (opportunityName?: string, companyName?: string): string | undefined => {
+  const normalizedName = opportunityName?.trim();
+  const normalizedCompanyName = companyName?.trim();
+
+  if (!normalizedName) return normalizedName;
+  if (!normalizedCompanyName) return normalizedName;
+
+  const suffix = `${OPPORTUNITY_NAME_COMPANY_SEPARATOR}${normalizedCompanyName}`;
+  if (normalizedName.endsWith(suffix)) {
+    return normalizedName;
+  }
+
+  return `${normalizedName}${suffix}`;
+};
+
 interface AppDataContextType {
   // Existing data
   searchResults: SearchResult[];
@@ -1010,9 +1027,18 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   ------------------------------------------------------------- */
   const addOpportunity = async (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      const associatedCompany = companies.find((company) => company.id === opportunity.entreprise_id);
+      const companyDisplayName = associatedCompany
+        ? getCompanyDisplayName(associatedCompany.name, associatedCompany.canonical_url)
+        : undefined;
+      const opportunityWithCompanyName = {
+        ...opportunity,
+        name: appendCompanyToOpportunityName(opportunity.name, companyDisplayName),
+      };
+
       const filteredOpportunity: OpportunityInsert = {};
       for (const key of VALID_OPPORTUNITY_COLUMNS) {
-        const value = (opportunity as OpportunityWritable)[key as keyof OpportunityWritable];
+        const value = (opportunityWithCompanyName as OpportunityWritable)[key as keyof OpportunityWritable];
         if (value !== undefined) {
           (filteredOpportunity as Record<ValidOpportunityColumn, unknown>)[key] = value;
         }
