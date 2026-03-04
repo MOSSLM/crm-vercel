@@ -193,8 +193,6 @@ const OFFER_COLUMNS = [
   'slug',
   'tags',
   'metadata',
-  'package_discount_type',
-  'package_discount_value',
   'created_at',
   'updated_at',
 ] as const;
@@ -1769,8 +1767,6 @@ export const offersApi = {
       slug: payload.slug,
       tags: payload.tags ?? [],
       metadata: payload.metadata ?? {},
-      package_discount_type: payload.package_discount_type,
-      package_discount_value: payload.package_discount_value,
     };
 
     const { data, error } = await supabase.from('offres').insert([basePayload]).select().single();
@@ -1850,8 +1846,6 @@ export const offersApi = {
       'slug',
       'tags',
       'metadata',
-      'package_discount_type',
-      'package_discount_value',
     ].forEach((key) => {
       const value = updates[key as keyof Offer];
       if (value !== undefined) payload[key] = value;
