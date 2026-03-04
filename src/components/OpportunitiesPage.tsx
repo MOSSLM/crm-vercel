@@ -459,8 +459,11 @@ export const OpportunitiesPage: React.FC = () => {
       }),
     });
 
+    const dragRef = React.useRef<HTMLDivElement>(null);
+    drag(dragRef);
+
     return (
-      <div ref={drag} style={{ opacity: isDragging ? 0.5 : 1 }}>
+      <div ref={dragRef} style={{ opacity: isDragging ? 0.5 : 1 }}>
         <OpportunityCard opportunity={opportunity} />
       </div>
     );
@@ -485,9 +488,12 @@ export const OpportunitiesPage: React.FC = () => {
       }),
     });
 
+    const dropRef = React.useRef<HTMLDivElement>(null);
+    drop(dropRef);
+
     return (
       <div
-        ref={drop}
+        ref={dropRef}
         className={`w-80 flex-shrink-0 rounded-lg border p-3 ${isOver ? 'border-blue-500 bg-blue-50/30' : ''}`}
       >
         <div className="mb-3 flex items-center justify-between">
