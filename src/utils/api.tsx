@@ -167,6 +167,7 @@ const OPPORTUNITY_COLUMNS = [
   'lead_magnet',
   'note_base',
   'tags',
+  'flags',
   'date_prochain_suivi',
   'created_at',
   'updated_at',
@@ -400,6 +401,9 @@ const buildOpportunityFromPartial = (
     stage_id: toOptionalNumber(partial.stage_id),
     note_base: toOptionalString(partial.note_base),
     tags: toOptionalString(partial.tags),
+    flags: Array.isArray(partial.flags)
+      ? partial.flags.filter((flag): flag is string => typeof flag === 'string')
+      : [],
     date_prochain_suivi: toOptionalString(partial.date_prochain_suivi),
     name: toOptionalString(partial.name),
     type:
@@ -1591,6 +1595,7 @@ export const opportunitiesApi = {
         'lead_magnet',
         'note_base',
         'tags',
+        'flags',
         'date_prochain_suivi',
         'name',
         'type',
@@ -1659,6 +1664,7 @@ export const opportunitiesApi = {
         'lead_magnet',
         'note_base',
         'tags',
+        'flags',
         'date_prochain_suivi'
       ];
       

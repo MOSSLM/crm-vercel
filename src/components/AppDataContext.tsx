@@ -64,6 +64,7 @@ export const VALID_OPPORTUNITY_COLUMNS = [
   'lead_magnet',
   'note_base',
   'tags',
+  'flags',
   'date_prochain_suivi',
   'name',
   'type',

@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useAppData } from './AppDataContext';
 import { Opportunity } from '../types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -37,6 +37,23 @@ import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
 
 import logger from '../utils/logger';
+
+const OPPORTUNITY_FLAGS = [
+  { value: 'site_merdique', label: 'Site merdique / inutilisable' },
+  { value: 'site_tres_ancien', label: 'Site très ancien' },
+  { value: 'a_revoir_plus_tard', label: 'À revoir plus tard' },
+] as const;
+
+const parseTags = (tags?: string) =>
+  tags
+    ? tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(Boolean)
+    : [];
+
+const parseFlags = (flags?: string[]) =>
+  Array.isArray(flags) ? flags.filter((flag): flag is string => typeof flag === 'string' && flag.length > 0) : [];
 export const OpportunitiesPage: React.FC = () => {
   const { 
     opportunities, 
@@ -50,6 +67,7 @@ export const OpportunitiesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [flagFilter, setFlagFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
@@ -58,7 +76,8 @@ export const OpportunitiesPage: React.FC = () => {
 
   const filteredOpportunities = opportunities.filter(opportunity => {
     const companyName = opportunity.companyName || '';
-    const tags = opportunity.tags ? opportunity.tags.split(',').map(t => t.trim()) : [];
+    const tags = parseTags(opportunity.tags);
+    const flags = parseFlags(opportunity.flags);
     const notes = opportunity.notes || '';
     
     const searchLower = searchTerm.toLowerCase();
@@ -69,8 +88,9 @@ export const OpportunitiesPage: React.FC = () => {
     
     const matchesStage = stageFilter === 'all' || opportunity.stage_id?.toString() === stageFilter;
     const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
-    
-    return matchesSearch && matchesStage && matchesPriority;
+    const matchesFlag = flagFilter === 'all' || flags.includes(flagFilter);
+
+    return matchesSearch && matchesStage && matchesPriority && matchesFlag;
   });
 
   const formatDate = (dateString?: string) => {
@@ -191,7 +211,7 @@ export const OpportunitiesPage: React.FC = () => {
 
   const OpportunityCard = ({ opportunity }: { opportunity: Opportunity }) => {
     const stageInfo = getStageInfo(opportunity.stage_id);
-    const tags = opportunity.tags ? opportunity.tags.split(',').map(t => t.trim()).filter(t => t) : [];
+    const tags = parseTags(opportunity.tags);
     const displayName = getDisplayNameForOpportunity(opportunity);
     
     return (
@@ -262,6 +282,17 @@ export const OpportunitiesPage: React.FC = () => {
                   +{tags.length - 2}
                 </Badge>
               )}
+            </div>
+          )}
+
+          {parseFlags(opportunity.flags).length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {parseFlags(opportunity.flags).map((flag) => {
+                const found = OPPORTUNITY_FLAGS.find((item) => item.value === flag);
+                return (
+                  <Badge key={flag} variant="destructive" className="text-xs px-1 py-0.5">{found?.label || flag}</Badge>
+                );
+              })}
             </div>
           )}
 
@@ -418,6 +449,19 @@ export const OpportunitiesPage: React.FC = () => {
                 <SelectItem value="basse">Basse</SelectItem>
               </SelectContent>
             </Select>
+
+
+            <Select value={flagFilter} onValueChange={setFlagFilter}>
+              <SelectTrigger className="w-40 md:w-56">
+                <SelectValue placeholder="Flags" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les flags</SelectItem>
+                {OPPORTUNITY_FLAGS.map((flag) => (
+                  <SelectItem key={flag.value} value={flag.value}>{flag.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -455,7 +499,7 @@ export const OpportunitiesPage: React.FC = () => {
             <Target className="h-8 w-8 md:h-12 md:w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="font-medium mb-2 text-sm md:text-base">Aucune opportunité trouvée</h3>
             <p className="text-muted-foreground text-xs md:text-sm">
-              {searchTerm || stageFilter !== 'all' || priorityFilter !== 'all' 
+              {searchTerm || stageFilter !== 'all' || priorityFilter !== 'all' || flagFilter !== 'all' 
                 ? 'Modifiez vos filtres ou créez une nouvelle opportunité'
                 : 'Qualifiez des entreprises pour créer des opportunités'
               }
@@ -534,7 +578,7 @@ export const OpportunitiesPage: React.FC = () => {
                   <label className="text-sm font-medium">Tags</label>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {selectedOpportunity.tags ? 
-                      selectedOpportunity.tags.split(',').map(t => t.trim()).filter(t => t).map((tag, index) => (
+                      parseTags(selectedOpportunity.tags).map((tag, index) => (
                         <Badge key={index} variant="outline">{tag}</Badge>
                       )) : 
                       <span className="text-sm text-muted-foreground">Aucun tag</span>
@@ -707,6 +751,31 @@ export const OpportunitiesPage: React.FC = () => {
                 </div>
               </div>
               
+              <div>
+                <Label>Flags</Label>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  {OPPORTUNITY_FLAGS.map((flag) => {
+                    const activeFlags = parseFlags(editingOpportunity.flags);
+                    const isActive = activeFlags.includes(flag.value);
+                    return (
+                      <label key={flag.value} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={isActive}
+                          onCheckedChange={(checked) => {
+                            const shouldEnable = checked === true;
+                            const next = shouldEnable
+                              ? Array.from(new Set([...activeFlags, flag.value]))
+                              : activeFlags.filter((current) => current !== flag.value);
+                            setEditingOpportunity({ ...editingOpportunity, flags: next });
+                          }}
+                        />
+                        {flag.label}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div>
                 <Label htmlFor="tags">Tags (séparés par des virgules)</Label>
                 <Input
