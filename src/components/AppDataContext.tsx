@@ -139,8 +139,8 @@ interface AppDataContextType {
   updateContact: (id: string, updates: Partial<Contact>) => Promise<void>;
   addOpportunity: (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   updateOpportunity: (id: string, updates: Partial<Opportunity>) => Promise<void>;
-  addOffer: (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string }[] }) => Promise<void>;
-  updateOffer: (id: string, updates: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string }[] }) => Promise<void>;
+  addOffer: (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
+  updateOffer: (id: string, updates: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
   moveOpportunityToStage: (opportunityId: string, stageId: number) => Promise<void>;
   getOpportunitiesByStage: (stageId: number) => Opportunity[];
   addOpportunityNote: (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => Promise<void>;
@@ -1123,7 +1123,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
 
-  const addOffer = async (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string }[] }) => {
+  const addOffer = async (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => {
     try {
       const createdOffer = await offersApi.create(offer);
       setOffers((prev) => [createdOffer, ...prev]);
@@ -1135,7 +1135,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
-  const updateOffer = async (id: string, updates: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string }[] }) => {
+  const updateOffer = async (id: string, updates: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => {
     try {
       const updatedOffer = await offersApi.update(id, updates);
       setOffers((prev) => prev.map((offer) => (offer.id === id ? { ...offer, ...updatedOffer } : offer)));
