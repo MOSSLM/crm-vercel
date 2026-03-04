@@ -158,6 +158,8 @@ export interface OfferIncludedItem {
   is_optional: boolean;
   sort_order: number;
   notes?: string;
+  discount_type?: 'percent' | 'fixed';
+  discount_value?: number;
   nom?: string;
   type?: 'service' | 'package';
 }

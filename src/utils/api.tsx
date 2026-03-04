@@ -193,6 +193,8 @@ const OFFER_COLUMNS = [
   'slug',
   'tags',
   'metadata',
+  'package_discount_type',
+  'package_discount_value',
   'created_at',
   'updated_at',
 ] as const;
@@ -206,8 +208,82 @@ const OFFER_SUB_SERVICE_COLUMNS = [
   'is_optional',
   'sort_order',
   'notes',
+  'discount_type',
+  'discount_value',
 ] as const;
 const OFFER_SUB_SERVICE_SELECT = OFFER_SUB_SERVICE_COLUMNS.join(',');
+
+const fetchIncludedItemsByParent = async (parentOfferIds: string[]): Promise<Map<string, OfferIncludedItem[]>> => {
+  if (parentOfferIds.length === 0) return new Map<string, OfferIncludedItem[]>();
+
+  const { data: includedRows, error: includedError } = await supabase
+    .from('offres_included_items')
+    .select(OFFER_SUB_SERVICE_SELECT)
+    .in('parent_offre_id', parentOfferIds)
+    .order('sort_order', { ascending: true });
+
+  if (includedError) {
+    logger.error('Error fetching offer included items:', includedError);
+    return new Map<string, OfferIncludedItem[]>();
+  }
+
+  const rawIncluded = (Array.isArray(includedRows) ? includedRows : []) as unknown[];
+  const includedOfferIds = Array.from(
+    new Set(
+      rawIncluded
+        .filter((row): row is { included_offre_id: string } =>
+          isRecord(row) && typeof row.included_offre_id === 'string'
+        )
+        .map((row) => row.included_offre_id)
+    )
+  );
+
+  const includedOfferMap = new Map<string, { nom?: string; type?: 'service' | 'package' }>();
+  if (includedOfferIds.length > 0) {
+    const { data: linkedOffers } = await supabase
+      .from('offres')
+      .select('id,nom,type')
+      .in('id', includedOfferIds);
+    (Array.isArray(linkedOffers) ? linkedOffers : []).forEach((row) => {
+      if (!isRecord(row) || typeof row.id !== 'string') return;
+      includedOfferMap.set(row.id, {
+        nom: typeof row.nom === 'string' ? row.nom : undefined,
+        type: row.type === 'service' || row.type === 'package' ? row.type : undefined,
+      });
+    });
+  }
+
+  const normalizedIncluded = rawIncluded
+    .filter((row): row is Record<string, unknown> => isRecord(row))
+    .map((row) => {
+      const linked = includedOfferMap.get(String(row.included_offre_id)) ?? {};
+      return {
+        id: typeof row.id === 'string' ? row.id : '',
+        parent_offre_id: typeof row.parent_offre_id === 'string' ? row.parent_offre_id : '',
+        included_offre_id: typeof row.included_offre_id === 'string' ? row.included_offre_id : '',
+        quantite: typeof row.quantite === 'number' ? row.quantite : 1,
+        is_optional: typeof row.is_optional === 'boolean' ? row.is_optional : false,
+        sort_order: typeof row.sort_order === 'number' ? row.sort_order : 100,
+        notes: typeof row.notes === 'string' ? row.notes : undefined,
+        discount_type:
+          row.discount_type === 'percent' || row.discount_type === 'fixed'
+            ? row.discount_type
+            : undefined,
+        discount_value: typeof row.discount_value === 'number' ? row.discount_value : undefined,
+        nom: linked.nom,
+        type: linked.type,
+      } satisfies OfferIncludedItem;
+    });
+
+  const includedByParent = new Map<string, OfferIncludedItem[]>();
+  normalizedIncluded.forEach((item) => {
+    const arr = includedByParent.get(item.parent_offre_id) ?? [];
+    arr.push(item);
+    includedByParent.set(item.parent_offre_id, arr);
+  });
+
+  return includedByParent;
+};
 
 const COMPANIES_PAGE_SIZE = 500;
 
@@ -1646,66 +1722,7 @@ export const offersApi = {
       const offers = offerRows.filter(isOfferRow);
       if (offers.length === 0) return [];
 
-      const offerIds = offers.map((offer) => offer.id);
-      const { data: includedRows, error: includedError } = await supabase
-        .from('offres_included_items')
-        .select(OFFER_SUB_SERVICE_SELECT)
-        .in('parent_offre_id', offerIds)
-        .order('sort_order', { ascending: true });
-
-      if (includedError) {
-        logger.error('Error fetching offer included items:', includedError);
-      }
-
-      const rawIncluded = (Array.isArray(includedRows) ? includedRows : []) as unknown[];
-      const includedOfferIds = Array.from(
-        new Set(
-          rawIncluded
-            .filter((row): row is { included_offre_id: string } =>
-              isRecord(row) && typeof row.included_offre_id === 'string'
-            )
-            .map((row) => row.included_offre_id)
-        )
-      );
-
-      const includedOfferMap = new Map<string, { nom?: string; type?: 'service' | 'package' }>();
-      if (includedOfferIds.length > 0) {
-        const { data: linkedOffers } = await supabase
-          .from('offres')
-          .select('id,nom,type')
-          .in('id', includedOfferIds);
-        (Array.isArray(linkedOffers) ? linkedOffers : []).forEach((row) => {
-          if (!isRecord(row) || typeof row.id !== 'string') return;
-          includedOfferMap.set(row.id, {
-            nom: typeof row.nom === 'string' ? row.nom : undefined,
-            type: row.type === 'service' || row.type === 'package' ? row.type : undefined,
-          });
-        });
-      }
-
-      const normalizedIncluded = rawIncluded
-        .filter((row): row is Record<string, unknown> => isRecord(row))
-        .map((row) => {
-          const linked = includedOfferMap.get(String(row.included_offre_id)) ?? {};
-          return {
-            id: typeof row.id === 'string' ? row.id : '',
-            parent_offre_id: typeof row.parent_offre_id === 'string' ? row.parent_offre_id : '',
-            included_offre_id: typeof row.included_offre_id === 'string' ? row.included_offre_id : '',
-            quantite: typeof row.quantite === 'number' ? row.quantite : 1,
-            is_optional: typeof row.is_optional === 'boolean' ? row.is_optional : false,
-            sort_order: typeof row.sort_order === 'number' ? row.sort_order : 100,
-            notes: typeof row.notes === 'string' ? row.notes : undefined,
-            nom: linked.nom,
-            type: linked.type,
-          } satisfies OfferIncludedItem;
-        });
-
-      const includedByParent = new Map<string, OfferIncludedItem[]>();
-      normalizedIncluded.forEach((item) => {
-        const arr = includedByParent.get(item.parent_offre_id) ?? [];
-        arr.push(item);
-        includedByParent.set(item.parent_offre_id, arr);
-      });
+      const includedByParent = await fetchIncludedItemsByParent(offers.map((offer) => offer.id));
 
       return offers.map((offer) => ({
         id: offer.id,
@@ -1749,6 +1766,8 @@ export const offersApi = {
         quantite?: number;
         is_optional?: boolean;
         notes?: string;
+        discount_type?: 'percent' | 'fixed';
+        discount_value?: number;
       }[];
     }
   ) => {
@@ -1767,6 +1786,8 @@ export const offersApi = {
       slug: payload.slug,
       tags: payload.tags ?? [],
       metadata: payload.metadata ?? {},
+      package_discount_type: payload.package_discount_type,
+      package_discount_value: payload.package_discount_value,
     };
 
     const { data, error } = await supabase.from('offres').insert([basePayload]).select().single();
@@ -1783,6 +1804,8 @@ export const offersApi = {
           is_optional: item.is_optional ?? false,
           sort_order: index + 1,
           notes: item.notes ?? null,
+          discount_type: item.discount_type ?? null,
+          discount_value: item.discount_value ?? null,
         }))
         .filter((row) => typeof row.included_offre_id === 'string' && row.included_offre_id.length > 0);
 
@@ -1791,6 +1814,8 @@ export const offersApi = {
         if (incError) logger.error('Error creating included offer items:', incError);
       }
     }
+
+    const includedByParent = await fetchIncludedItemsByParent([data.id]);
 
     return {
       id: data.id,
@@ -1816,7 +1841,7 @@ export const offersApi = {
         typeof data.package_discount_value === 'number' ? data.package_discount_value : undefined,
       created_at: typeof data.created_at === 'string' ? data.created_at : now,
       updated_at: typeof data.updated_at === 'string' ? data.updated_at : now,
-      included_items: [],
+      included_items: includedByParent.get(data.id) ?? [],
     } as Offer;
   },
 
@@ -1828,6 +1853,8 @@ export const offersApi = {
         quantite?: number;
         is_optional?: boolean;
         notes?: string;
+        discount_type?: 'percent' | 'fixed';
+        discount_value?: number;
       }[];
     }
   ) => {
@@ -1846,6 +1873,8 @@ export const offersApi = {
       'slug',
       'tags',
       'metadata',
+      'package_discount_type',
+      'package_discount_value',
     ].forEach((key) => {
       const value = updates[key as keyof Offer];
       if (value !== undefined) payload[key] = value;
@@ -1877,6 +1906,8 @@ export const offersApi = {
           is_optional: item.is_optional ?? false,
           sort_order: index + 1,
           notes: item.notes ?? null,
+          discount_type: item.discount_type ?? null,
+          discount_value: item.discount_value ?? null,
         }))
         .filter((row) => typeof row.included_offre_id === 'string' && row.included_offre_id.length > 0);
 
@@ -1885,6 +1916,8 @@ export const offersApi = {
         if (insertError) throw insertError;
       }
     }
+
+    const includedByParent = await fetchIncludedItemsByParent([id]);
 
     return {
       id: data.id,
@@ -1910,7 +1943,7 @@ export const offersApi = {
         typeof data.package_discount_value === 'number' ? data.package_discount_value : undefined,
       created_at: typeof data.created_at === 'string' ? data.created_at : new Date().toISOString(),
       updated_at: typeof data.updated_at === 'string' ? data.updated_at : new Date().toISOString(),
-      included_items: [],
+      included_items: includedByParent.get(id) ?? [],
     } as Offer;
   },
 };

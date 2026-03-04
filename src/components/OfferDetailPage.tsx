@@ -32,7 +32,8 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
     package_discount_type: 'percent' as 'percent' | 'fixed',
     package_discount_value: '0',
   });
-  const [selectedServiceIds, setSelectedServiceIds] = useState<string[]>([]);
+  const [selectedServices, setSelectedServices] = useState<Record<string, { discountType: 'percent' | 'fixed'; discountValue: string }>>({});
+  const formatCurrency = (value: number) => `${value.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}€`;
 
   useEffect(() => {
     if (!offer) return;
@@ -49,7 +50,14 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
       package_discount_type: offer.package_discount_type || 'percent',
       package_discount_value: String(offer.package_discount_value ?? 0),
     });
-    setSelectedServiceIds((offer.included_items || []).map((item) => item.included_offre_id));
+    const entries = (offer.included_items || []).map((item) => [
+      item.included_offre_id,
+      {
+        discountType: item.discount_type || 'percent',
+        discountValue: String(item.discount_value ?? 0),
+      },
+    ] as const);
+    setSelectedServices(Object.fromEntries(entries));
   }, [offer]);
 
   const availableServices = useMemo(
@@ -57,32 +65,54 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
     [offers, offerId],
   );
 
-  const packageBaseTotal = useMemo(
-    () => selectedServiceIds.reduce((sum, id) => {
-      const service = availableServices.find((s) => s.id === id);
-      return sum + (service?.prix_ht || 0);
-    }, 0),
-    [selectedServiceIds, availableServices],
-  );
+  const packageCalculation = useMemo(() => {
+    const lines = Object.entries(selectedServices)
+      .map(([serviceId, discountConfig]) => {
+        const service = availableServices.find((s) => s.id === serviceId);
+        if (!service) return null;
+        const basePrice = service.prix_ht || 0;
+        const rawDiscountValue = Number.parseFloat(discountConfig.discountValue || '0');
+        const normalizedDiscountValue = Number.isFinite(rawDiscountValue) ? Math.max(0, rawDiscountValue) : 0;
+        const discountAmount = discountConfig.discountType === 'percent'
+          ? (basePrice * normalizedDiscountValue) / 100
+          : normalizedDiscountValue;
+        const finalPrice = Math.max(0, basePrice - discountAmount);
+        return { serviceId, service, basePrice, discountConfig, discountAmount: Math.min(basePrice, discountAmount), finalPrice };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
 
-  const packageDiscountValueNumber = Number.parseFloat(form.package_discount_value || '0');
-  const packageDiscountAmount =
-    form.package_discount_type === 'percent'
-      ? (Number.isFinite(packageDiscountValueNumber) ? (packageBaseTotal * packageDiscountValueNumber) / 100 : 0)
-      : (Number.isFinite(packageDiscountValueNumber) ? packageDiscountValueNumber : 0);
-  const packageFinalTotal = Math.max(0, packageBaseTotal - packageDiscountAmount);
+    return {
+      lines,
+      baseTotal: lines.reduce((sum, line) => sum + line.basePrice, 0),
+      totalDiscount: lines.reduce((sum, line) => sum + line.discountAmount, 0),
+      finalTotal: lines.reduce((sum, line) => sum + line.finalPrice, 0),
+    };
+  }, [selectedServices, availableServices]);
 
   const toggleService = (serviceId: string) => {
-    setSelectedServiceIds((prev) =>
-      prev.includes(serviceId) ? prev.filter((id) => id !== serviceId) : [...prev, serviceId]
-    );
+    setSelectedServices((prev) => {
+      if (prev[serviceId]) {
+        const clone = { ...prev };
+        delete clone[serviceId];
+        return clone;
+      }
+      return { ...prev, [serviceId]: { discountType: 'percent', discountValue: '0' } };
+    });
+  };
+
+  const updateServiceDiscount = (serviceId: string, updates: Partial<{ discountType: 'percent' | 'fixed'; discountValue: string }>) => {
+    setSelectedServices((prev) => {
+      const current = prev[serviceId];
+      if (!current) return prev;
+      return { ...prev, [serviceId]: { ...current, ...updates } };
+    });
   };
 
   const handleSave = async () => {
     if (!offer) return;
 
     const isPackage = form.type === 'package';
-    const computedPrice = isPackage ? packageFinalTotal : Number.parseFloat(form.prix_ht);
+    const computedPrice = isPackage ? packageCalculation.finalTotal : Number.parseFloat(form.prix_ht);
 
     await updateOffer(offer.id, {
       type: form.type,
@@ -94,10 +124,13 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
       qualification_order: Number.parseInt(form.qualification_order, 10) || 100,
       visible_in_qualification: form.visible_in_qualification,
       actif: form.actif,
-      package_discount_type: isPackage ? form.package_discount_type : undefined,
-      package_discount_value: isPackage ? packageDiscountValueNumber : undefined,
       included_items: isPackage
-        ? selectedServiceIds.map((id) => ({ included_offre_id: id, quantite: 1 }))
+        ? Object.entries(selectedServices).map(([id, config]) => ({
+          included_offre_id: id,
+          quantite: 1,
+          discount_type: config.discountType,
+          discount_value: Number.parseFloat(config.discountValue || '0') || 0,
+        }))
         : [],
     });
 
@@ -160,7 +193,7 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
                 {availableServices.map((service) => (
                   <label key={service.id} className="flex items-center gap-2 text-sm">
                     <Checkbox
-                      checked={selectedServiceIds.includes(service.id)}
+                      checked={Boolean(selectedServices[service.id])}
                       onCheckedChange={() => toggleService(service.id)}
                     />
                     <span>{service.nom}</span>
@@ -171,33 +204,40 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
 
               <div className="grid md:grid-cols-2 gap-3 mt-3">
                 <div className="space-y-2">
-                  <Label>Type de réduction</Label>
-                  <Select
-                    value={form.package_discount_type}
-                    onValueChange={(v) => setForm((p) => ({ ...p, package_discount_type: v as 'percent' | 'fixed' }))}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="percent">%</SelectItem>
-                      <SelectItem value="fixed">€</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Valeur réduction</Label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={form.package_discount_value}
-                    onChange={(e) => setForm((p) => ({ ...p, package_discount_value: e.target.value }))}
-                  />
+                  <Label>Détail par service</Label>
+                  <div className="space-y-2 max-h-56 overflow-auto pr-1">
+                    {packageCalculation.lines.map((line) => (
+                      <div key={line.serviceId} className="rounded border p-2 space-y-2 bg-background/80">
+                        <p className="text-xs font-medium">{line.service.nom}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Select
+                            value={line.discountConfig.discountType}
+                            onValueChange={(v) => updateServiceDiscount(line.serviceId, { discountType: v as 'percent' | 'fixed' })}
+                          >
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="percent">%</SelectItem>
+                              <SelectItem value="fixed">€</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            type="number"
+                            min={0}
+                            value={line.discountConfig.discountValue}
+                            onChange={(e) => updateServiceDiscount(line.serviceId, { discountValue: e.target.value })}
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">{formatCurrency(line.basePrice)} - {formatCurrency(line.discountAmount)} = <strong>{formatCurrency(line.finalPrice)}</strong></p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
               <div className="text-sm mt-2 space-y-1">
-                <p>Total services: <strong>{packageBaseTotal.toLocaleString('fr-FR')}€</strong></p>
-                <p>Réduction: <strong>-{packageDiscountAmount.toLocaleString('fr-FR')}€</strong></p>
-                <p>Prix package final: <strong>{packageFinalTotal.toLocaleString('fr-FR')}€</strong></p>
+                <p>Total services: <strong>{formatCurrency(packageCalculation.baseTotal)}</strong></p>
+                <p>Réduction totale: <strong>-{formatCurrency(packageCalculation.totalDiscount)}</strong></p>
+                <p>Prix package final: <strong>{formatCurrency(packageCalculation.finalTotal)}</strong></p>
               </div>
             </div>
           )}
