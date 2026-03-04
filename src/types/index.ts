@@ -122,6 +122,7 @@ export interface Opportunity {
   lead_magnet: boolean;
   note_base?: string;
   tags?: string;
+  flags?: string[];
   date_prochain_suivi?: string;
   created_at: string;
   updated_at: string;
