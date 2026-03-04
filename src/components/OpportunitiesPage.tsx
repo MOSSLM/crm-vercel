@@ -295,6 +295,12 @@ export const OpportunitiesPage: React.FC = () => {
     const stageInfo = getStageInfo(opportunity.stage_id);
     const tags = parseTags(opportunity.tags);
     const displayName = getDisplayNameForOpportunity(opportunity);
+    const title = opportunity.name || opportunity.offre_nom_snapshot || displayName;
+    const companyAlreadyInTitle = Boolean(
+      title &&
+      displayName &&
+      title.toLowerCase().includes(displayName.toLowerCase())
+    );
     const associatedCompany = companies.find((company) => company.id === opportunity.entreprise_id);
     const websiteUrl = normalizeWebsiteUrl(opportunity.companyUrl || associatedCompany?.canonical_url);
     
@@ -304,8 +310,11 @@ export const OpportunitiesPage: React.FC = () => {
           {/* Titre avec badge en-dessous */}
           <div className="space-y-2">
             <CardTitle className="text-sm md:text-base leading-tight break-words pr-1">
-              {opportunity.name || opportunity.offre_nom_snapshot || displayName}
+              {title}
             </CardTitle>
+            {displayName && !companyAlreadyInTitle && (
+              <p className="text-xs text-muted-foreground">Entreprise : {displayName}</p>
+            )}
             <div className="flex flex-wrap gap-2 items-center">
               <Badge variant="outline" className="text-xs">
                 {stageInfo.nom}
