@@ -58,6 +58,16 @@ const normalizeWebsiteUrl = (url?: string | null) => {
 
 const ItemType = 'OPPORTUNITY';
 
+
+const OPPORTUNITY_FLAGS = [
+  { value: 'site_merdique', label: 'Site merdique / inutilisable' },
+  { value: 'site_tres_ancien', label: 'Site très ancien' },
+  { value: 'a_revoir_plus_tard', label: 'À revoir plus tard' },
+] as const;
+
+const parseFlags = (flags?: string[]) =>
+  Array.isArray(flags) ? flags.filter((flag): flag is string => typeof flag === 'string' && flag.length > 0) : [];
+
 interface DragItem {
   id: string;
   originalStage: number;
@@ -274,6 +284,17 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
           </div>
         </div>
 
+        {parseFlags(opportunity.flags).length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1">
+            {parseFlags(opportunity.flags).map((flag) => {
+              const found = OPPORTUNITY_FLAGS.find((item) => item.value === flag);
+              return (
+                <Badge key={flag} variant="destructive" className="text-[10px] px-1 py-0">{found?.label || flag}</Badge>
+              );
+            })}
+          </div>
+        )}
+
         <div className="space-y-2">
           <div className="text-xs text-muted-foreground">
             <div className="flex items-center gap-1">
@@ -488,6 +509,7 @@ export const PipelinePage: React.FC = () => {
   const [requireMobilePhone, setRequireMobilePhone] = useState(false);
   const [requireEmployees, setRequireEmployees] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('recent');
+  const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
 
   const companiesById = React.useMemo(() => {
     const map = new Map<number, (typeof companies)[number]>();
@@ -559,6 +581,8 @@ export const PipelinePage: React.FC = () => {
         doesPhoneLookMobile(opportunity.telephone) ||
         doesPhoneLookMobile(company?.telephone ?? undefined);
       const matchesEmployees = !requireEmployees || companyHasEmployees(company);
+      const opportunityFlags = parseFlags(opportunity.flags);
+      const matchesFlags = selectedFlags.length === 0 || selectedFlags.some((flag) => opportunityFlags.includes(flag));
 
       const matchesSearch =
         !normalizedSearch ||
@@ -575,9 +599,9 @@ export const PipelinePage: React.FC = () => {
           .filter(Boolean)
           .some(value => value!.toString().toLowerCase().includes(normalizedSearch));
 
-      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesSearch;
+      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesSearch;
     });
-  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm]);
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags]);
 
   const sortedOpportunities = React.useMemo(() => {
     const priorityOrderHighFirst: Record<string, number> = {
@@ -637,6 +661,7 @@ export const PipelinePage: React.FC = () => {
     setRequireMobilePhone(false);
     setRequireEmployees(false);
     setSortOption('recent');
+    setSelectedFlags([]);
   };
 
   const selectedCompany = selectedOpportunity
@@ -966,6 +991,28 @@ export const PipelinePage: React.FC = () => {
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div>
+                <Label>Flags opportunité</Label>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  {OPPORTUNITY_FLAGS.map((flag) => (
+                    <label key={flag.value} className="flex items-center gap-2 text-sm">
+                      <Checkbox
+                        checked={selectedFlags.includes(flag.value)}
+                        onCheckedChange={(checked) => {
+                          const isChecked = checked === true;
+                          setSelectedFlags((previous) =>
+                            isChecked
+                              ? Array.from(new Set([...previous, flag.value]))
+                              : previous.filter((value) => value !== flag.value)
+                          );
+                        }}
+                      />
+                      {flag.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
                 <Label>Priorité</Label>
                 <div className="mt-2 flex flex-wrap gap-3">
                   {[
@@ -1013,13 +1060,14 @@ export const PipelinePage: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3 justify-end">
-              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || requireMobilePhone || requireEmployees || sortOption !== 'recent') && (
+              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || sortOption !== 'recent') && (
                 <Badge variant="outline" className="h-7 px-3 text-xs">
                   {[
                     searchTerm ? 'Recherche active' : null,
                     minPrice ? `Min ${minPrice}€` : null,
                     maxPrice ? `Max ${maxPrice}€` : null,
                     selectedPriorities.length ? `${selectedPriorities.length} priorité(s)` : null,
+                    selectedFlags.length ? `${selectedFlags.length} flag(s)` : null,
                     requireMobilePhone ? 'Téléphone mobile' : null,
                     requireEmployees ? 'Avec employés' : null,
                     sortOption !== 'recent' ? 'Tri personnalisé' : null,
@@ -1468,6 +1516,31 @@ export const PipelinePage: React.FC = () => {
                 <div>
                   <h3 className="font-medium mb-3">Autres informations</h3>
                   <div className="space-y-4">
+                    <div>
+                      <Label>Flags</Label>
+                      <div className="mt-2 flex flex-wrap gap-3">
+                        {OPPORTUNITY_FLAGS.map((flag) => {
+                          const activeFlags = parseFlags(editingOpportunity.flags);
+                          const isActive = activeFlags.includes(flag.value);
+                          return (
+                            <label key={flag.value} className="flex items-center gap-2 text-sm">
+                              <Checkbox
+                                checked={isActive}
+                                onCheckedChange={(checked) => {
+                                  const shouldEnable = checked === true;
+                                  const next = shouldEnable
+                                    ? Array.from(new Set([...activeFlags, flag.value]))
+                                    : activeFlags.filter((current) => current !== flag.value);
+                                  setEditingOpportunity({ ...editingOpportunity, flags: next });
+                                }}
+                              />
+                              {flag.label}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div>
                       <Label htmlFor="tags">Tags (séparés par des virgules)</Label>
                       <Input

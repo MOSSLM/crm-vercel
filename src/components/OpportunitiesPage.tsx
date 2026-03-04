@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useAppData } from './AppDataContext';
 import { Opportunity } from '../types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -29,14 +29,52 @@ import {
   Plus,
   LayoutGrid,
   List,
-  MagnetIcon
+  MagnetIcon,
+  Columns3,
+  Globe,
 } from 'lucide-react';
+import { DndProvider, useDrag, useDrop } from 'react-dnd';
+import { HTML5Backend } from 'react-dnd-html5-backend';
 import { toast } from 'sonner';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
 
 import logger from '../utils/logger';
+
+const OPPORTUNITY_FLAGS = [
+  { value: 'site_merdique', label: 'Site merdique / inutilisable' },
+  { value: 'site_tres_ancien', label: 'Site très ancien' },
+  { value: 'a_revoir_plus_tard', label: 'À revoir plus tard' },
+] as const;
+
+const parseTags = (tags?: string) =>
+  tags
+    ? tags
+        .split(',')
+        .map(tag => tag.trim())
+        .filter(Boolean)
+    : [];
+
+const parseFlags = (flags?: string[]) =>
+  Array.isArray(flags) ? flags.filter((flag): flag is string => typeof flag === 'string' && flag.length > 0) : [];
+
+const normalizeWebsiteUrl = (url?: string | null) => {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed.replace(/^\/+/, '')}`;
+};
+
+const KANBAN_ITEM_TYPE = 'OPPORTUNITY_TAG_OR_FLAG';
+
+type KanbanGroupingMode = 'tags' | 'flags';
+
+interface KanbanDragItem {
+  id: string;
+  sourceValue: string;
+}
 export const OpportunitiesPage: React.FC = () => {
   const { 
     opportunities, 
@@ -50,7 +88,12 @@ export const OpportunitiesPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [flagFilter, setFlagFilter] = useState('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban'>('grid');
+  const [kanbanMode, setKanbanMode] = useState<KanbanGroupingMode>('flags');
+  const [newTagName, setNewTagName] = useState('');
+  const [newFlagName, setNewFlagName] = useState('');
+  const [newEditFlagName, setNewEditFlagName] = useState('');
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
   const [noteType, setNoteType] = useState<'appel' | 'email' | 'linkedin' | 'whatsapp' | 'autre'>('appel');
@@ -58,7 +101,8 @@ export const OpportunitiesPage: React.FC = () => {
 
   const filteredOpportunities = opportunities.filter(opportunity => {
     const companyName = opportunity.companyName || '';
-    const tags = opportunity.tags ? opportunity.tags.split(',').map(t => t.trim()) : [];
+    const tags = parseTags(opportunity.tags);
+    const flags = parseFlags(opportunity.flags);
     const notes = opportunity.notes || '';
     
     const searchLower = searchTerm.toLowerCase();
@@ -69,8 +113,9 @@ export const OpportunitiesPage: React.FC = () => {
     
     const matchesStage = stageFilter === 'all' || opportunity.stage_id?.toString() === stageFilter;
     const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
-    
-    return matchesSearch && matchesStage && matchesPriority;
+    const matchesFlag = flagFilter === 'all' || flags.includes(flagFilter);
+
+    return matchesSearch && matchesStage && matchesPriority && matchesFlag;
   });
 
   const formatDate = (dateString?: string) => {
@@ -189,10 +234,69 @@ export const OpportunitiesPage: React.FC = () => {
     return getCompanyDisplayName(opportunity.companyName, associatedCompany?.canonical_url);
   };
 
+  const allKnownTags = React.useMemo(() => {
+    const fromData = opportunities.flatMap((opportunity) => parseTags(opportunity.tags));
+    return Array.from(new Set(fromData)).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [opportunities]);
+
+  const allKnownFlags = React.useMemo(() => {
+    const fromData = opportunities.flatMap((opportunity) => parseFlags(opportunity.flags));
+    const defaultFlags = OPPORTUNITY_FLAGS.map((flag) => flag.value);
+    return Array.from(new Set([...defaultFlags, ...fromData])).sort((a, b) => a.localeCompare(b, 'fr'));
+  }, [opportunities]);
+
+  const getLabelForFlag = (flag: string) => OPPORTUNITY_FLAGS.find((item) => item.value === flag)?.label || flag;
+
+  const addTokenToOpportunity = async (type: KanbanGroupingMode, token: string) => {
+    if (!selectedOpportunity) return;
+    const cleaned = token.trim();
+    if (!cleaned) return;
+
+    if (type === 'flags') {
+      const currentFlags = parseFlags(selectedOpportunity.flags);
+      if (currentFlags.includes(cleaned)) return;
+      await updateOpportunity(selectedOpportunity.id, { flags: [...currentFlags, cleaned] });
+      return;
+    }
+
+    const currentTags = parseTags(selectedOpportunity.tags);
+    if (currentTags.includes(cleaned)) return;
+    await updateOpportunity(selectedOpportunity.id, { tags: [...currentTags, cleaned].join(', ') });
+  };
+
+  const moveOpportunityInKanban = async (item: KanbanDragItem, targetValue: string) => {
+    const opportunity = opportunities.find((opp) => opp.id === item.id);
+    if (!opportunity) return;
+    if (item.sourceValue === targetValue) return;
+
+    try {
+      if (kanbanMode === 'flags') {
+        const source = item.sourceValue;
+        const nextFlags = parseFlags(opportunity.flags).filter((flag) => source === '__none__' || flag !== source);
+        if (targetValue !== '__none__' && !nextFlags.includes(targetValue)) {
+          nextFlags.push(targetValue);
+        }
+        await updateOpportunity(opportunity.id, { flags: nextFlags });
+      } else {
+        const source = item.sourceValue;
+        const nextTags = parseTags(opportunity.tags).filter((tag) => source === '__none__' || tag !== source);
+        if (targetValue !== '__none__' && !nextTags.includes(targetValue)) {
+          nextTags.push(targetValue);
+        }
+        await updateOpportunity(opportunity.id, { tags: nextTags.join(', ') });
+      }
+    } catch (error) {
+      logger.error('Erreur déplacement kanban:', error);
+      toast.error('Erreur lors du déplacement en kanban');
+    }
+  };
+
   const OpportunityCard = ({ opportunity }: { opportunity: Opportunity }) => {
     const stageInfo = getStageInfo(opportunity.stage_id);
-    const tags = opportunity.tags ? opportunity.tags.split(',').map(t => t.trim()).filter(t => t) : [];
+    const tags = parseTags(opportunity.tags);
     const displayName = getDisplayNameForOpportunity(opportunity);
+    const associatedCompany = companies.find((company) => company.id === opportunity.entreprise_id);
+    const websiteUrl = normalizeWebsiteUrl(opportunity.companyUrl || associatedCompany?.canonical_url);
     
     return (
       <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
@@ -265,6 +369,17 @@ export const OpportunitiesPage: React.FC = () => {
             </div>
           )}
 
+          {parseFlags(opportunity.flags).length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {parseFlags(opportunity.flags).map((flag) => {
+                const found = OPPORTUNITY_FLAGS.find((item) => item.value === flag);
+                return (
+                  <Badge key={flag} variant="destructive" className="text-xs px-1 py-0.5">{found?.label || flag}</Badge>
+                );
+              })}
+            </div>
+          )}
+
           {/* Dates */}
           <div className="text-xs text-muted-foreground space-y-1">
             <div className="flex items-center gap-1">
@@ -298,6 +413,20 @@ export const OpportunitiesPage: React.FC = () => {
 
           {/* Boutons d'actions */}
           <div className="flex gap-2 pt-2">
+            {websiteUrl && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs"
+                asChild
+                onClick={(event) => event.stopPropagation()}
+              >
+                <a href={websiteUrl} target="_blank" rel="noopener noreferrer">
+                  <Globe className="h-3 w-3 mr-1" />
+                  Site
+                </a>
+              </Button>
+            )}
             <Button 
               size="sm" 
               variant="outline"
@@ -320,6 +449,81 @@ export const OpportunitiesPage: React.FC = () => {
       </Card>
     );
   };
+
+  const KanbanCard = ({ opportunity, columnValue }: { opportunity: Opportunity; columnValue: string }) => {
+    const [{ isDragging }, drag] = useDrag({
+      type: KANBAN_ITEM_TYPE,
+      item: { id: opportunity.id, sourceValue: columnValue } as KanbanDragItem,
+      collect: (monitor) => ({
+        isDragging: monitor.isDragging(),
+      }),
+    });
+
+    return (
+      <div ref={drag} style={{ opacity: isDragging ? 0.5 : 1 }}>
+        <OpportunityCard opportunity={opportunity} />
+      </div>
+    );
+  };
+
+  const KanbanColumn = ({
+    title,
+    value,
+    items,
+  }: {
+    title: string;
+    value: string;
+    items: Opportunity[];
+  }) => {
+    const [{ isOver }, drop] = useDrop({
+      accept: KANBAN_ITEM_TYPE,
+      drop: (item: KanbanDragItem) => {
+        void moveOpportunityInKanban(item, value);
+      },
+      collect: (monitor) => ({
+        isOver: monitor.isOver(),
+      }),
+    });
+
+    return (
+      <div
+        ref={drop}
+        className={`w-80 flex-shrink-0 rounded-lg border p-3 ${isOver ? 'border-blue-500 bg-blue-50/30' : ''}`}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-medium">{title}</h3>
+          <Badge variant="secondary">{items.length}</Badge>
+        </div>
+        <div className="space-y-3 min-h-20">
+          {items.map((opportunity) => (
+            <KanbanCard key={opportunity.id} opportunity={opportunity} columnValue={value} />
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const kanbanColumns = React.useMemo(() => {
+    const baseValues = kanbanMode === 'flags' ? allKnownFlags : allKnownTags;
+    const columns = [
+      {
+        value: '__none__',
+        title: kanbanMode === 'flags' ? 'Sans flag' : 'Sans tag',
+        items: filteredOpportunities.filter((opportunity) =>
+          kanbanMode === 'flags' ? parseFlags(opportunity.flags).length === 0 : parseTags(opportunity.tags).length === 0
+        ),
+      },
+      ...baseValues.map((value) => ({
+        value,
+        title: kanbanMode === 'flags' ? getLabelForFlag(value) : value,
+        items: filteredOpportunities.filter((opportunity) =>
+          kanbanMode === 'flags' ? parseFlags(opportunity.flags).includes(value) : parseTags(opportunity.tags).includes(value)
+        ),
+      })),
+    ];
+
+    return columns;
+  }, [allKnownFlags, allKnownTags, filteredOpportunities, kanbanMode]);
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
@@ -391,7 +595,7 @@ export const OpportunitiesPage: React.FC = () => {
             />
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <Select value={stageFilter} onValueChange={setStageFilter}>
               <SelectTrigger className="w-40 md:w-48">
                 <Filter className="h-4 w-4 mr-2" />
@@ -418,10 +622,69 @@ export const OpportunitiesPage: React.FC = () => {
                 <SelectItem value="basse">Basse</SelectItem>
               </SelectContent>
             </Select>
+
+
+            <Select value={flagFilter} onValueChange={setFlagFilter}>
+              <SelectTrigger className="w-40 md:w-56">
+                <SelectValue placeholder="Flags" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les flags</SelectItem>
+                {OPPORTUNITY_FLAGS.map((flag) => (
+                  <SelectItem key={flag.value} value={flag.value}>{flag.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {viewMode === 'kanban' && (
+              <>
+                <Select value={kanbanMode} onValueChange={(value: KanbanGroupingMode) => setKanbanMode(value)}>
+                  <SelectTrigger className="w-40">
+                    <SelectValue placeholder="Mode kanban" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="flags">Kanban par flags</SelectItem>
+                    <SelectItem value="tags">Kanban par tags</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <div className="flex items-center gap-2">
+                  <Input
+                    placeholder={kanbanMode === 'flags' ? 'Nouveau flag...' : 'Nouveau tag...'}
+                    value={kanbanMode === 'flags' ? newFlagName : newTagName}
+                    onChange={(event) => {
+                      if (kanbanMode === 'flags') {
+                        setNewFlagName(event.target.value);
+                        return;
+                      }
+                      setNewTagName(event.target.value);
+                    }}
+                    className="w-44"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      if (kanbanMode === 'flags') {
+                        await addTokenToOpportunity('flags', newFlagName);
+                        setNewFlagName('');
+                        return;
+                      }
+                      await addTokenToOpportunity('tags', newTagName);
+                      setNewTagName('');
+                    }}
+                    disabled={!selectedOpportunity || !(kanbanMode === 'flags' ? newFlagName.trim() : newTagName.trim())}
+                  >
+                    <Plus className="h-4 w-4 mr-1" />
+                    Ajouter
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        {/* Toggle grille/liste */}
+        {/* Toggle grille/liste/kanban */}
         <div className="flex border rounded-lg">
           <Button
             variant={viewMode === 'grid' ? 'default' : 'ghost'}
@@ -435,19 +698,39 @@ export const OpportunitiesPage: React.FC = () => {
             variant={viewMode === 'list' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setViewMode('list')}
-            className="rounded-l-none"
+            className="rounded-none"
           >
             <List className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'kanban' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('kanban')}
+            className="rounded-l-none"
+          >
+            <Columns3 className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
       {/* Liste des opportunités */}
-      <div className={viewMode === 'grid' ? 'grid gap-3 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
-        {filteredOpportunities.map((opportunity) => (
-          <OpportunityCard key={opportunity.id} opportunity={opportunity} />
-        ))}
-      </div>
+      {viewMode !== 'kanban' ? (
+        <div className={viewMode === 'grid' ? 'grid gap-3 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
+          {filteredOpportunities.map((opportunity) => (
+            <OpportunityCard key={opportunity.id} opportunity={opportunity} />
+          ))}
+        </div>
+      ) : (
+        <DndProvider backend={HTML5Backend}>
+          <div className="overflow-x-auto">
+            <div className="flex gap-4 pb-4" style={{ minWidth: `${Math.max(kanbanColumns.length, 3) * 320}px` }}>
+              {kanbanColumns.map((column) => (
+                <KanbanColumn key={column.value} title={column.title} value={column.value} items={column.items} />
+              ))}
+            </div>
+          </div>
+        </DndProvider>
+      )}
 
       {filteredOpportunities.length === 0 && (
         <Card>
@@ -455,7 +738,7 @@ export const OpportunitiesPage: React.FC = () => {
             <Target className="h-8 w-8 md:h-12 md:w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="font-medium mb-2 text-sm md:text-base">Aucune opportunité trouvée</h3>
             <p className="text-muted-foreground text-xs md:text-sm">
-              {searchTerm || stageFilter !== 'all' || priorityFilter !== 'all' 
+              {searchTerm || stageFilter !== 'all' || priorityFilter !== 'all' || flagFilter !== 'all' 
                 ? 'Modifiez vos filtres ou créez une nouvelle opportunité'
                 : 'Qualifiez des entreprises pour créer des opportunités'
               }
@@ -534,7 +817,7 @@ export const OpportunitiesPage: React.FC = () => {
                   <label className="text-sm font-medium">Tags</label>
                   <div className="flex flex-wrap gap-1 mt-1">
                     {selectedOpportunity.tags ? 
-                      selectedOpportunity.tags.split(',').map(t => t.trim()).filter(t => t).map((tag, index) => (
+                      parseTags(selectedOpportunity.tags).map((tag, index) => (
                         <Badge key={index} variant="outline">{tag}</Badge>
                       )) : 
                       <span className="text-sm text-muted-foreground">Aucun tag</span>
@@ -707,6 +990,54 @@ export const OpportunitiesPage: React.FC = () => {
                 </div>
               </div>
               
+              <div>
+                <Label>Flags</Label>
+                <div className="mt-2 flex flex-wrap gap-3">
+                  {allKnownFlags.map((flag) => {
+                    const activeFlags = parseFlags(editingOpportunity.flags);
+                    const isActive = activeFlags.includes(flag);
+                    return (
+                      <label key={flag} className="flex items-center gap-2 text-sm">
+                        <Checkbox
+                          checked={isActive}
+                          onCheckedChange={(checked) => {
+                            const shouldEnable = checked === true;
+                            const next = shouldEnable
+                              ? Array.from(new Set([...activeFlags, flag]))
+                              : activeFlags.filter((current) => current !== flag);
+                            setEditingOpportunity({ ...editingOpportunity, flags: next });
+                          }}
+                        />
+                        {getLabelForFlag(flag)}
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    placeholder="Ajouter un nouveau flag..."
+                    value={newEditFlagName}
+                    onChange={(event) => setNewEditFlagName(event.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      const cleaned = newEditFlagName.trim();
+                      if (!cleaned) return;
+                      const activeFlags = parseFlags(editingOpportunity.flags);
+                      setEditingOpportunity({
+                        ...editingOpportunity,
+                        flags: Array.from(new Set([...activeFlags, cleaned])),
+                      });
+                      setNewEditFlagName('');
+                    }}
+                  >
+                    Ajouter
+                  </Button>
+                </div>
+              </div>
+
               <div>
                 <Label htmlFor="tags">Tags (séparés par des virgules)</Label>
                 <Input
