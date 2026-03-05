@@ -38,10 +38,12 @@ import {
   Plus,
   Target,
   Edit2,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 
 import logger from '../utils/logger';
+import { formatServiceTag, normalizeServiceTags } from '../utils/serviceTags';
 interface CompanyDetailPageProps {
   companyId: number;
   onBack: () => void;
@@ -131,6 +133,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     canonical_url: '',
     adresse: '',
     premiers_tags: '',
+    service_tags: [] as string[],
     lat: 0,
     lng: 0,
     qualifie: false,
@@ -140,6 +143,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     linkedin_url: '',
     manually_enriched: false
   });
+  const [newServiceTag, setNewServiceTag] = useState('');
 
   useEffect(() => {
     const foundCompany = companies.find(c => c.id === companyId);
@@ -150,6 +154,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         canonical_url: foundCompany.canonical_url || '',
         adresse: foundCompany.adresse || '',
         premiers_tags: foundCompany.premiers_tags || '',
+        service_tags: normalizeServiceTags(foundCompany.service_tags, foundCompany.premiers_tags),
         lat: foundCompany.lat || 0,
         lng: foundCompany.lng || 0,
         qualifie: foundCompany.qualifie || false,
@@ -213,6 +218,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
         canonical_url: company.canonical_url || '',
         adresse: company.adresse || '',
         premiers_tags: company.premiers_tags || '',
+        service_tags: normalizeServiceTags(company.service_tags, company.premiers_tags),
         lat: company.lat || 0,
         lng: company.lng || 0,
         qualifie: company.qualifie || false,
@@ -230,6 +236,30 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
     setFormData(prev => ({
       ...prev,
       [field]: value
+    }));
+  };
+
+  const addServiceTag = (tagValue: string) => {
+    const trimmed = tagValue.trim();
+    if (!trimmed) return;
+    const normalized = formatServiceTag(trimmed);
+
+    setFormData((prev) => {
+      const hasTag = prev.service_tags.some((tag) => formatServiceTag(tag) === normalized);
+      if (hasTag) return prev;
+      return {
+        ...prev,
+        service_tags: [...prev.service_tags, trimmed],
+      };
+    });
+    setNewServiceTag('');
+  };
+
+  const removeServiceTag = (tagToRemove: string) => {
+    const normalizedToRemove = formatServiceTag(tagToRemove);
+    setFormData((prev) => ({
+      ...prev,
+      service_tags: prev.service_tags.filter((tag) => formatServiceTag(tag) !== normalizedToRemove),
     }));
   };
 
@@ -351,15 +381,19 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
   }
 
   const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-  const tags = company.premiers_tags 
-    ? company.premiers_tags.split(',').map((tag: string) => tag.trim()).filter((tag: string) => tag)
-    : [];
+  const serviceTags = normalizeServiceTags(company.service_tags, company.premiers_tags);
+  const allServiceTags = Array.from(
+    new Set(
+      companies.flatMap((item) => normalizeServiceTags(item.service_tags, item.premiers_tags))
+    )
+  ).sort((a, b) => a.localeCompare(b, 'fr'));
 
   const currentData = isEditing ? formData : {
     name: company.name,
     canonical_url: company.canonical_url,
     adresse: company.adresse,
     premiers_tags: company.premiers_tags,
+    service_tags,
     lat: company.lat,
     lng: company.lng,
     qualifie: company.qualifie,
@@ -506,20 +540,71 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
               </div>
 
               <div>
-                <Label htmlFor="premiers_tags">Tags (séparés par des virgules)</Label>
+                <Label>Tags de services</Label>
                 {isEditing ? (
-                  <Textarea
-                    id="premiers_tags"
-                    value={currentData.premiers_tags || ''}
-                    onChange={(e) => handleInputChange('premiers_tags', e.target.value)}
-                    placeholder="restaurant, gastronomie, cuisine française"
-                    rows={2}
-                  />
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-1 p-2 bg-muted rounded min-h-10">
+                      {currentData.service_tags.length > 0 ? (
+                        currentData.service_tags.map((tag: string) => (
+                          <Badge key={tag} variant="outline" className="text-xs flex items-center gap-1">
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => removeServiceTag(tag)}
+                              className="hover:text-red-600"
+                              aria-label={`Retirer ${tag}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Badge>
+                        ))
+                      ) : (
+                        <span className="text-sm text-muted-foreground">Aucun tag</span>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        value={newServiceTag}
+                        onChange={(e) => setNewServiceTag(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addServiceTag(newServiceTag);
+                          }
+                        }}
+                        placeholder="Ex: climatisation, photovoltaïque..."
+                      />
+                      <Button type="button" variant="outline" onClick={() => addServiceTag(newServiceTag)}>
+                        <Plus className="h-4 w-4 mr-1" /> Ajouter
+                      </Button>
+                    </div>
+
+                    {allServiceTags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {allServiceTags
+                          .filter((tag) => !currentData.service_tags.some((selectedTag) => formatServiceTag(selectedTag) === formatServiceTag(tag)))
+                          .slice(0, 12)
+                          .map((tag) => (
+                            <Button
+                              key={tag}
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => addServiceTag(tag)}
+                            >
+                              + {tag}
+                            </Button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex flex-wrap gap-1 p-2 bg-muted rounded">
-                    {tags.length > 0 ? (
-                      tags.map((tag: string, index: number) => (
-                        <Badge key={index} variant="outline" className="text-xs">
+                    {serviceTags.length > 0 ? (
+                      serviceTags.map((tag: string) => (
+                        <Badge key={tag} variant="outline" className="text-xs">
                           {tag}
                         </Badge>
                       ))

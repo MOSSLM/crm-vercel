@@ -5,6 +5,7 @@ import { Building, MapPin, Globe, Users, Calendar } from 'lucide-react';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../../utils/displayHelpers';
 import { Employee, QUALIFIED_COMPANIES_CONSTANTS } from './types';
 import { Company } from '../../types';
+import { normalizeServiceTags } from '../../utils/serviceTags';
 
 interface CompanyCardProps {
   company: Company;
@@ -18,6 +19,7 @@ export const CompanyCard: React.FC<CompanyCardProps> = React.memo(({
   onContactClick 
 }) => {
   const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+  const serviceTags = normalizeServiceTags(company.service_tags, company.premiers_tags);
 
   return (
     <div 
@@ -79,6 +81,16 @@ export const CompanyCard: React.FC<CompanyCardProps> = React.memo(({
             >
               Site web
             </a>
+          </div>
+        )}
+
+        {serviceTags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {serviceTags.slice(0, QUALIFIED_COMPANIES_CONSTANTS.MAX_VISIBLE_TAGS).map((tag) => (
+              <span key={tag} className="text-xs bg-secondary text-secondary-foreground px-2 py-1 rounded">
+                {tag}
+              </span>
+            ))}
           </div>
         )}
 

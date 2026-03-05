@@ -43,6 +43,7 @@ export interface Company {
   lat?: number;
   lng?: number;
   premiers_tags?: string;
+  service_tags?: string[];
   sources: string[];
   raw_ids?: string[];
   qualifie: boolean;

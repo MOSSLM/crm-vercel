@@ -6,6 +6,7 @@ import { Badge } from '../ui/badge';
 import { getCompanyDisplayName } from '../../utils/displayHelpers';
 import { Employee, QUALIFIED_COMPANIES_CONSTANTS } from './types';
 import { Company } from '../../types';
+import { normalizeServiceTags } from '../../utils/serviceTags';
 
 interface CompanyRowProps {
   company: Company;
@@ -21,6 +22,7 @@ export const CompanyRow: React.FC<CompanyRowProps> = React.memo(({
   onEmployeeClick 
 }) => {
   const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+  const serviceTags = normalizeServiceTags(company.service_tags, company.premiers_tags);
 
   return (
     <div 
@@ -87,11 +89,11 @@ export const CompanyRow: React.FC<CompanyRowProps> = React.memo(({
             </div>
           )}
 
-          {company.premiers_tags && (
+          {serviceTags.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-1">
-              {company.premiers_tags.split(',').slice(0, QUALIFIED_COMPANIES_CONSTANTS.MAX_VISIBLE_TAGS).map((tag: string, index: number) => (
+              {serviceTags.slice(0, QUALIFIED_COMPANIES_CONSTANTS.MAX_VISIBLE_TAGS).map((tag: string, index: number) => (
                 <Badge key={index} variant="outline" className="text-xs">
-                  {tag.trim()}
+                  {tag}
                 </Badge>
               ))}
             </div>
