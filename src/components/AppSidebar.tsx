@@ -116,9 +116,9 @@ export const AppSidebar = () => {
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
           <Building2 className="h-6 w-6" />
-          <h2 className="truncate">Sama CRM</h2>
+          <h2 className="truncate group-data-[collapsible=icon]:hidden">Sama CRM</h2>
         </div>
-        <div className="text-sm text-muted-foreground truncate">{user?.name}</div>
+        <div className="text-sm text-muted-foreground truncate group-data-[collapsible=icon]:hidden">{user?.name}</div>
       </SidebarHeader>
 
       <SidebarContent>
