@@ -142,7 +142,7 @@ export const ObjectivesProgressPage: React.FC = () => {
         <div>
           <h1>Objectifs & Progression</h1>
           <p className="text-muted-foreground">
-            Définissez vos objectifs et suivez vos performances basées sur la vue v_kpi_totals_from_journal
+            Définissez vos objectifs et suivez vos performances à partir de kpi_daily_facts, pipeline_events et kpi_targets
           </p>
         </div>
         <div className="flex items-center gap-3">

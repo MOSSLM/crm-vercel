@@ -1,9 +1,9 @@
-import { projectId, publicAnonKey } from './supabase/info';
+import { publicAnonKey } from './supabase/info';
 
 import { ContactChannel, ContactDirection, ContactOutcome } from '../types';
 
 import logger from './logger';
-const baseUrl = `https://${projectId}.supabase.co/functions/v1/make-server-5c06d9e7`;
+const baseUrl = '/api/make-server-5c06d9e7';
 
 const handleFetchError = async (
   response: Response,
