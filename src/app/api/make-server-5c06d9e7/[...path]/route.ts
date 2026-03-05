@@ -67,6 +67,26 @@ type JournalEntry = {
   entreprise_id?: number | null;
 };
 
+const resolveActivityType = (eventType: string): string => {
+  if (eventType === "cold_call" || eventType === "appel") return "appel";
+  if (eventType.startsWith("relance")) return "relance";
+  if (eventType.startsWith("rdv")) return "rdv";
+  if (eventType === "devis") return "devis";
+  if (eventType === "signature") return "signature";
+  if (eventType === "acompte" || eventType === "deposit") return "encaissement";
+  return "note";
+};
+
+const resolvePipelineStage = (eventType: string): string | null => {
+  if (eventType === "cold_call" || eventType === "appel") return "appel";
+  if (eventType === "qualified") return "lead_qualifie";
+  if (eventType.startsWith("rdv")) return "rdv";
+  if (eventType === "devis") return "devis";
+  if (eventType === "signature") return "signe";
+  if (eventType === "acompte" || eventType === "deposit") return "acompte";
+  return null;
+};
+
 type TouchpointPayload = {
   opportunite_id?: string | null;
   entreprise_id?: number | null;
@@ -160,8 +180,10 @@ async function logEvent(
   },
 ) {
   const payload: Record<string, any> = {
-    date: new Date().toISOString(),
-    type_evenement: entry.type_evenement,
+    occurred_at: new Date().toISOString(),
+    activity_type: resolveActivityType(entry.type_evenement),
+    status: "faite",
+    title: entry.type_evenement,
     description: entry.description ?? null,
     opportunite_id: entry.opportunite_id ?? null,
     entreprise_id: entry.entreprise_id ?? null,
@@ -174,29 +196,22 @@ async function logEvent(
     payload.channel = entry.channel;
   }
 
-  const { error } = await supabase.from("journal_succes").insert(payload);
-  if (error) {
-    const missingChannel = !!entry.channel && error.message?.includes('column "channel"');
-    const missingDetails = !!entry.details && error.message?.includes('column "details"');
+  const { error } = await supabase.from("activity_log").insert(payload);
+  if (error) throw error;
 
-    if (missingChannel || missingDetails) {
-      const fallback = { ...payload };
-      if (missingChannel) {
-        delete fallback.channel;
-        const channelInfo = `Canal: ${entry.channel}`;
-        fallback.description = [entry.description, channelInfo]
-          .filter(Boolean)
-          .join(' - ');
-      }
-      if (missingDetails) {
-        delete fallback.details;
-      }
-
-      const retry = await supabase.from("journal_succes").insert(fallback);
-      if (retry.error) throw retry.error;
-    } else {
-      throw error;
-    }
+  const stage = resolvePipelineStage(entry.type_evenement);
+  if (stage) {
+    const { error: pipelineError } = await supabase.from("pipeline_events").insert({
+      event_at: new Date().toISOString(),
+      stage,
+      opportunite_id: entry.opportunite_id ?? null,
+      entreprise_id: entry.entreprise_id ?? null,
+      metadata: {
+        type_evenement: entry.type_evenement,
+        channel: entry.channel ?? null,
+      },
+    });
+    if (pipelineError) throw pipelineError;
   }
 }
 
@@ -205,29 +220,30 @@ async function getNextSequenceNumber(
   opportunite_id?: string,
   entreprise_id?: number
 ): Promise<number> {
+  const requestedType =
+    type_prefix === "relance" ? "relance" :
+    type_prefix === "rdv" ? "rdv" :
+    type_prefix === "cold_call" || type_prefix === "appel" ? "appel" :
+    type_prefix === "devis" ? "devis" :
+    type_prefix === "signature" ? "signature" :
+    type_prefix === "acompte" ? "encaissement" :
+    "note";
+
   let query = supabase
-    .from("journal_succes")
-    .select("type_evenement")
-    .like("type_evenement", `${type_prefix}_%`);
+    .from("activity_log")
+    .select("id")
+    .eq("activity_type", requestedType);
 
   if (opportunite_id) query = query.eq("opportunite_id", opportunite_id);
   else if (entreprise_id) query = query.eq("entreprise_id", entreprise_id);
 
   const { data, error } = await query;
   if (error) return 1;
-  if (!data || data.length === 0) return 1;
-
-  const existing = data
-    .map((r) => {
-      const m = r.type_evenement?.match(new RegExp(`^${type_prefix}_(\\d+)$`));
-      return m ? parseInt(m[1], 10) : 0;
-    })
-    .filter((n) => n > 0);
-  return Math.max(...existing, 0) + 1;
+  return (data?.length ?? 0) + 1;
 }
 
 async function getJournalStats(opportunite_id?: string, entreprise_id?: number) {
-  let query = supabase.from("journal_succes").select("type_evenement");
+  let query = supabase.from("activity_log").select("activity_type");
   if (opportunite_id) query = query.eq("opportunite_id", opportunite_id);
   else if (entreprise_id) query = query.eq("entreprise_id", entreprise_id);
 
@@ -251,17 +267,17 @@ async function getJournalStats(opportunite_id?: string, entreprise_id?: number) 
     acomptes: 0,
   };
   (data || []).forEach((row) => {
-    const t = row.type_evenement || "";
-    if (t === "cold_call" || t === "appel") stats.appels++;
-    else if (t.startsWith("relance_")) stats.relances++;
-    else if (t.startsWith("rdv_")) stats.rdvs++;
+    const t = row.activity_type || "";
+    if (t === "appel") stats.appels++;
+    else if (t === "relance") stats.relances++;
+    else if (t === "rdv") stats.rdvs++;
     else if (t === "devis") stats.devis++;
     else if (t === "signature") stats.signatures++;
-    else if (t === "acompte") stats.acomptes++;
+    else if (t === "encaissement") stats.acomptes++;
   });
   return stats;
 }
-const JOURNAL_HISTORY_COLUMNS = "date,type_evenement,description,opportunite_id,entreprise_id";
+const JOURNAL_HISTORY_COLUMNS = "occurred_at,activity_type,description,opportunite_id,entreprise_id";
 
 async function getJournalHistory(
   opportunite_id?: string,
@@ -270,16 +286,22 @@ async function getJournalHistory(
 ) {
   const safeLimit = Number.isFinite(limit) && limit > 0 ? limit : 10;
   let query = supabase
-    .from("journal_succes")
+    .from("activity_log")
     .select(JOURNAL_HISTORY_COLUMNS)
-    .order("date", { ascending: false })
+    .order("occurred_at", { ascending: false })
     .limit(safeLimit);
   if (opportunite_id) query = query.eq("opportunite_id", opportunite_id);
   else if (entreprise_id) query = query.eq("entreprise_id", entreprise_id);
 
   const { data, error } = await query;
   if (error) throw error;
-  return data || [];
+  return (data || []).map((row: any) => ({
+    date: row.occurred_at,
+    type_evenement: row.activity_type,
+    description: row.description,
+    opportunite_id: row.opportunite_id,
+    entreprise_id: row.entreprise_id,
+  }));
 }
 type LogOptions = {
   description?: string | null;
@@ -603,22 +625,11 @@ async function getHistoricalDataFromJournal(type: string, limit: number) {
   for (let i = limit - 1; i >= 0; i--) {
     const period = genHistoricalPeriod(now, type, i);
     const { data, error } = await supabase
-      .from("journal_succes")
-      .select("type_evenement, description, date")
-      .gte("date", period.startDate.toISOString())
-      .lt("date", period.endDate.toISOString());
-    if (error) {
-      out.push({
-        period_start: period.startDate.toISOString().split("T")[0],
-        period_end: period.endDate.toISOString().split("T")[0],
-        period_type: type,
-        period_label: period.label,
-        leads_trouves: 0, leads_qualifies: 0, appels: 0, rdv: 0, devis: 0,
-        relances: 0, signatures: 0, acomptes: 0, leadmagnets: 0, relances_total: 0,
-        ca: 0, mrr: 0,
-      });
-      continue;
-    }
+      .from("kpi_daily_facts")
+      .select("leads_trouves, leads_qualifies, appels, rdv, devis, relances, signatures, acomptes, ca, mrr")
+      .gte("fact_date", period.startDate.toISOString().split("T")[0])
+      .lte("fact_date", period.endDate.toISOString().split("T")[0]);
+
     const metrics = {
       leads_trouves: 0,
       leads_qualifies: 0,
@@ -633,27 +644,23 @@ async function getHistoricalDataFromJournal(type: string, limit: number) {
       ca: 0,
       mrr: 0,
     };
-    (data || []).forEach((e) => {
-      const t = e.type_evenement || "";
-      if (t === "cold_call") metrics.appels++;
-      else if (t.startsWith("relance_")) {
-        metrics.relances++;
-        metrics.relances_total++;
-      } else if (t.startsWith("rdv_")) metrics.rdv++;
-      else if (t === "devis") metrics.devis++;
-      else if (t === "signature") metrics.signatures++;
-      else if (t === "deposit") metrics.acomptes++; // compat
-      else if (t === "acompte") metrics.acomptes++;
-      else if (t === "lead_magnet") metrics.leadmagnets++;
-      else if (t === "qualified") metrics.leads_qualifies++;
 
-      if (e.description && (t.includes("ca") || t.includes("chiffre"))) {
-        metrics.ca += extractAmountFromDescription(e.description) || 0;
-      }
-      if (e.description && t.includes("mrr")) {
-        metrics.mrr += extractAmountFromDescription(e.description) || 0;
-      }
-    });
+    if (!error) {
+      (data || []).forEach((row: any) => {
+        metrics.leads_trouves += Number(row.leads_trouves ?? 0);
+        metrics.leads_qualifies += Number(row.leads_qualifies ?? 0);
+        metrics.appels += Number(row.appels ?? 0);
+        metrics.rdv += Number(row.rdv ?? 0);
+        metrics.devis += Number(row.devis ?? 0);
+        metrics.relances += Number(row.relances ?? 0);
+        metrics.signatures += Number(row.signatures ?? 0);
+        metrics.acomptes += Number(row.acomptes ?? 0);
+        metrics.ca += Number(row.ca ?? 0);
+        metrics.mrr += Number(row.mrr ?? 0);
+      });
+      metrics.relances_total = metrics.relances;
+    }
+
     out.push({
       period_start: period.startDate.toISOString().split("T")[0],
       period_end: period.endDate.toISOString().split("T")[0],
@@ -664,43 +671,12 @@ async function getHistoricalDataFromJournal(type: string, limit: number) {
   }
   return out;
 }
+
 async function getRecentPeriodsDataFromJournal(type: string, count: number) {
-  const now = new Date();
-  const arr: any[] = [];
-  for (let i = 0; i < count; i++) {
-    const period = genHistoricalPeriod(now, type, i);
-    const { data } = await supabase
-      .from("journal_succes")
-      .select("type_evenement, description")
-      .gte("date", period.startDate.toISOString())
-      .lt("date", period.endDate.toISOString());
-    const metrics = {
-      leads_trouves: 0, leads_qualifies: 0, appels: 0, rdv: 0, devis: 0,
-      relances: 0, signatures: 0, acomptes: 0, leadmagnets: 0, relances_total: 0,
-      ca: 0, mrr: 0,
-    };
-    (data || []).forEach((e) => {
-      const t = e.type_evenement || "";
-      if (t === "cold_call") metrics.appels++;
-      else if (t.startsWith("relance_")) { metrics.relances++; metrics.relances_total++; }
-      else if (t.startsWith("rdv_")) metrics.rdv++;
-      else if (t === "devis") metrics.devis++;
-      else if (t === "signature") metrics.signatures++;
-      else if (t === "deposit") metrics.acomptes++;
-      else if (t === "acompte") metrics.acomptes++;
-      else if (t === "lead_magnet") metrics.leadmagnets++;
-      else if (t === "qualified") metrics.leads_qualifies++;
-    });
-    arr.push({
-      period_start: period.startDate.toISOString().split("T")[0],
-      period_end: period.endDate.toISOString().split("T")[0],
-      period_type: type,
-      period_label: period.label,
-      ...metrics,
-    });
-  }
-  return arr.reverse();
+  const data = await getHistoricalDataFromJournal(type, count);
+  return data.slice(-count);
 }
+
 function transformRealKpiDataByPeriod(kpiData: any[], periodType: string) {
   const now = new Date();
   const current = getCurrentPeriod(now, periodType);
@@ -895,24 +871,16 @@ export async function GET(
     // KPI progress by period (current)
     const kpiProgressMatch = path.match(/^\/kpi\/progress\/([^/]+)$/);
     if (kpiProgressMatch) {
-      const periode = kpiProgressMatch[1];
-      const { data, error } = await supabase
-        .from("v_kpi_totals_from_journal")
-        .select("metric, total, total_week, total_month, total_quarter, total_year");
-      if (error) return json({ error: "Erreur lors de la récupération des données KPI" }, 500);
-      const periodData = transformRealKpiDataByPeriod(data || [], periode);
-      return json(periodData);
+      const periode = kpiProgressMatch[1] || "month";
+      const current = await getHistoricalDataFromJournal(periode, 1);
+      return json(current);
     }
 
     // KPI by-period (alias)
     if (path === "/kpi/by-period") {
       const type = url.searchParams.get("type") || "month";
-      const { data, error } = await supabase
-        .from("v_kpi_totals_from_journal")
-        .select("metric, total, total_week, total_month, total_quarter, total_year");
-      if (error) return json({ error: "Erreur lors de la récupération des données KPI" }, 500);
-      const periodData = transformRealKpiDataByPeriod(data || [], type);
-      return json(periodData);
+      const current = await getHistoricalDataFromJournal(type, 1);
+      return json(current);
     }
 
     // KPI historical
@@ -964,117 +932,80 @@ export async function GET(
       return json({ nextNumber });
     }
 
-    // KPI totals from journal (view with fallback)
+    // KPI totals from daily facts
     if (path === "/kpi/journal-totals") {
       const { data, error } = await supabase
-        .from("v_kpi_totals_from_journal")
-        .select("metric, total, total_week, total_month, total_quarter, total_year");
+        .from("kpi_daily_facts")
+        .select("fact_date, appels, relances, rdv, devis, signatures, acomptes, leads_qualifies");
 
       if (error) {
-        const { data: jdata, error: jerr } = await supabase
-          .from("journal_succes")
-          .select("type_evenement, created_at");
-        if (jerr) return json({ error: "Failed to fetch KPI totals" }, 500);
-
-        const now = new Date();
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-        const quarterAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
-        const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-        const f = (arr: any[], d: Date) => arr.filter((r) => new Date(r.created_at) >= d);
-
-        const all = (t: string | ((x: any) => boolean)) =>
-          (jdata || []).filter((r) => (typeof t === "string" ? r.type_evenement === t : t(r)));
-
-        const res = {
-          total_appels: all("cold_call").length,
-          total_relances: all((r) => r.type_evenement?.startsWith("relance_")).length,
-          total_rdvs: all((r) => r.type_evenement?.startsWith("rdv_")).length,
-          total_devis: all("devis").length,
-          total_signatures: all("signature").length,
-          total_acomptes: all("deposit").length + all("acompte").length,
-          total_lead_magnets: all("lead_magnet").length,
-          total_qualified: all("qualified").length,
-          week: {
-            total_appels: f(all("cold_call"), weekAgo).length,
-            total_relances: f(all((r) => r.type_evenement?.startsWith("relance_")), weekAgo).length,
-            total_rdvs: f(all((r) => r.type_evenement?.startsWith("rdv_")), weekAgo).length,
-            total_devis: f(all("devis"), weekAgo).length,
-            total_signatures: f(all("signature"), weekAgo).length,
-            total_acomptes: f(all("deposit").concat(all("acompte")), weekAgo).length,
-            total_lead_magnets: f(all("lead_magnet"), weekAgo).length,
-            total_qualified: f(all("qualified"), weekAgo).length,
-          },
-          month: {
-            total_appels: f(all("cold_call"), monthAgo).length,
-            total_relances: f(all((r) => r.type_evenement?.startsWith("relance_")), monthAgo).length,
-            total_rdvs: f(all((r) => r.type_evenement?.startsWith("rdv_")), monthAgo).length,
-            total_devis: f(all("devis"), monthAgo).length,
-            total_signatures: f(all("signature"), monthAgo).length,
-            total_acomptes: f(all("deposit").concat(all("acompte")), monthAgo).length,
-            total_lead_magnets: f(all("lead_magnet"), monthAgo).length,
-            total_qualified: f(all("qualified"), monthAgo).length,
-          },
-          quarter: {
-            total_appels: f(all("cold_call"), quarterAgo).length,
-            total_relances: f(all((r) => r.type_evenement?.startsWith("relance_")), quarterAgo).length,
-            total_rdvs: f(all((r) => r.type_evenement?.startsWith("rdv_")), quarterAgo).length,
-            total_devis: f(all("devis"), quarterAgo).length,
-            total_signatures: f(all("signature"), quarterAgo).length,
-            total_acomptes: f(all("deposit").concat(all("acompte")), quarterAgo).length,
-            total_lead_magnets: f(all("lead_magnet"), quarterAgo).length,
-            total_qualified: f(all("qualified"), quarterAgo).length,
-          },
-          year: {
-            total_appels: f(all("cold_call"), yearAgo).length,
-            total_relances: f(all((r) => r.type_evenement?.startsWith("relance_")), yearAgo).length,
-            total_rdvs: f(all((r) => r.type_evenement?.startsWith("rdv_")), yearAgo).length,
-            total_devis: f(all("devis"), yearAgo).length,
-            total_signatures: f(all("signature"), yearAgo).length,
-            total_acomptes: f(all("deposit").concat(all("acompte")), yearAgo).length,
-            total_lead_magnets: f(all("lead_magnet"), yearAgo).length,
-            total_qualified: f(all("qualified"), yearAgo).length,
-          },
-        };
-        return json(res);
+        return json({ error: "Failed to fetch KPI totals" }, 500);
       }
 
-      const totals: any = {
-        total_appels: 0, total_relances: 0, total_rdvs: 0, total_devis: 0,
-        total_signatures: 0, total_acomptes: 0, total_lead_magnets: 0, total_qualified: 0,
-        week: {}, month: {}, quarter: {}, year: {},
-      };
-      const setAll = (k: string, t: any) => {
-        totals[k] = t.total || 0;
-        (totals.week as any)[k] = t.total_week || 0;
-        (totals.month as any)[k] = t.total_month || 0;
-        (totals.quarter as any)[k] = t.total_quarter || 0;
-        (totals.year as any)[k] = t.total_year || 0;
-      };
+      const now = new Date();
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+      const quarterAgo = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+      const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
 
-      (data || []).forEach((row) => {
-        const map = (m: string) => {
-          switch (m) {
-            case "cold_call":
-            case "appels": return "total_appels";
-            case "relances": return "total_relances";
-            case "rdv":
-            case "rdvs": return "total_rdvs";
-            case "devis": return "total_devis";
-            case "signature":
-            case "signatures": return "total_signatures";
-            case "deposit":
-            case "acomptes": return "total_acomptes";
-            case "lead_magnet":
-            case "lead_magnets":
-            case "leadmagnets": return "total_lead_magnets";
-            case "qualified": return "total_qualified";
-            default: return null;
-          }
-        };
-        const key = map(row.metric);
-        if (key) setAll(key, row);
-      });
+      const toDate = (value: string) => new Date(`${value}T00:00:00Z`);
+      const sumByDate = (rows: any[], fromDate: Date, key: string) => rows
+        .filter((row) => toDate(row.fact_date) >= fromDate)
+        .reduce((acc, row) => acc + Number(row[key] ?? 0), 0);
+      const sumAll = (rows: any[], key: string) => rows
+        .reduce((acc, row) => acc + Number(row[key] ?? 0), 0);
+
+      const rows = data || [];
+      const totals = {
+        total_appels: sumAll(rows, "appels"),
+        total_relances: sumAll(rows, "relances"),
+        total_rdvs: sumAll(rows, "rdv"),
+        total_devis: sumAll(rows, "devis"),
+        total_signatures: sumAll(rows, "signatures"),
+        total_acomptes: sumAll(rows, "acomptes"),
+        total_lead_magnets: 0,
+        total_qualified: sumAll(rows, "leads_qualifies"),
+        week: {
+          total_appels: sumByDate(rows, weekAgo, "appels"),
+          total_relances: sumByDate(rows, weekAgo, "relances"),
+          total_rdvs: sumByDate(rows, weekAgo, "rdv"),
+          total_devis: sumByDate(rows, weekAgo, "devis"),
+          total_signatures: sumByDate(rows, weekAgo, "signatures"),
+          total_acomptes: sumByDate(rows, weekAgo, "acomptes"),
+          total_lead_magnets: 0,
+          total_qualified: sumByDate(rows, weekAgo, "leads_qualifies"),
+        },
+        month: {
+          total_appels: sumByDate(rows, monthAgo, "appels"),
+          total_relances: sumByDate(rows, monthAgo, "relances"),
+          total_rdvs: sumByDate(rows, monthAgo, "rdv"),
+          total_devis: sumByDate(rows, monthAgo, "devis"),
+          total_signatures: sumByDate(rows, monthAgo, "signatures"),
+          total_acomptes: sumByDate(rows, monthAgo, "acomptes"),
+          total_lead_magnets: 0,
+          total_qualified: sumByDate(rows, monthAgo, "leads_qualifies"),
+        },
+        quarter: {
+          total_appels: sumByDate(rows, quarterAgo, "appels"),
+          total_relances: sumByDate(rows, quarterAgo, "relances"),
+          total_rdvs: sumByDate(rows, quarterAgo, "rdv"),
+          total_devis: sumByDate(rows, quarterAgo, "devis"),
+          total_signatures: sumByDate(rows, quarterAgo, "signatures"),
+          total_acomptes: sumByDate(rows, quarterAgo, "acomptes"),
+          total_lead_magnets: 0,
+          total_qualified: sumByDate(rows, quarterAgo, "leads_qualifies"),
+        },
+        year: {
+          total_appels: sumByDate(rows, yearAgo, "appels"),
+          total_relances: sumByDate(rows, yearAgo, "relances"),
+          total_rdvs: sumByDate(rows, yearAgo, "rdv"),
+          total_devis: sumByDate(rows, yearAgo, "devis"),
+          total_signatures: sumByDate(rows, yearAgo, "signatures"),
+          total_acomptes: sumByDate(rows, yearAgo, "acomptes"),
+          total_lead_magnets: 0,
+          total_qualified: sumByDate(rows, yearAgo, "leads_qualifies"),
+        },
+      };
 
       return json(totals);
     }
@@ -1160,17 +1091,14 @@ export async function POST(
     // Objectives upsert (array)
     if (path === "/objectives") {
       const { objectives } = body || {};
-      if (!Array.isArray(objectives))
+      if (!Array.isArray(objectives)) {
         return json({ error: "Format invalide: objectives doit être un tableau" }, 400);
+      }
 
       for (const o of objectives) {
-        await supabase
-          .from("kpi_objectives")
-          .delete()
-          .eq("period_unit", o.period_unit)
-          .eq("period_start", o.period_start);
-
-        const { error } = await supabase.from("kpi_objectives").insert([{
+        const payload = {
+          scope: "global",
+          owner_id: null,
           period_unit: o.period_unit,
           period_start: o.period_start,
           period_end: o.period_end,
@@ -1182,14 +1110,18 @@ export async function POST(
           relances: o.relances || 0,
           signatures: o.signatures || 0,
           acomptes: o.acomptes || 0,
-          leadmagnets: o.leadmagnets || 0,
-          relances_total: o.relances_total || 0,
           ca: o.ca || 0,
           mrr: o.mrr || 0,
           label: o.label || null,
-        }]);
+        };
+
+        const { error } = await supabase
+          .from("kpi_targets")
+          .upsert(payload, { onConflict: "scope,owner_id,period_unit,period_start" });
+
         if (error) return json({ error: "Erreur lors de la sauvegarde" }, 500);
       }
+
       return json({ success: true, count: objectives.length });
     }
 
