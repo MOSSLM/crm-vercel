@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
+import { normalizeServiceTags } from '../utils/serviceTags';
 export const QualificationPage: React.FC = () => {
   const sourceOptions = [
     { value: 'google_search', label: 'Google Search' },
@@ -87,7 +88,8 @@ export const QualificationPage: React.FC = () => {
     const matchesSearch =
       displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (company.adresse && company.adresse.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (company.premiers_tags && company.premiers_tags.toLowerCase().includes(searchTerm.toLowerCase()));
+      normalizeServiceTags(company.service_tags, company.premiers_tags)
+        .some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesSource =
       selectedSources.length === 0 ||
@@ -295,7 +297,7 @@ export const QualificationPage: React.FC = () => {
 
   const CompanyCard = ({ company }: { company: Company }) => {
     const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-    const tags = company.premiers_tags ? company.premiers_tags.split(',').map(t => t.trim()) : [];
+    const tags = normalizeServiceTags(company.service_tags, company.premiers_tags);
     
     return (
       <Card className={`hover:shadow-md transition-shadow ${company.qualifie ? 'bg-green-50 border-green-200' : ''}`}>
@@ -582,7 +584,7 @@ export const QualificationPage: React.FC = () => {
               <TableBody>
                 {paginatedCompanies.map((company) => {
                   const displayName = getCompanyDisplayName(company.name, company.canonical_url);
-                  const tags = company.premiers_tags ? company.premiers_tags.split(',').map(t => t.trim()) : [];
+                  const tags = normalizeServiceTags(company.service_tags, company.premiers_tags);
                   
                   return (
                     <TableRow 

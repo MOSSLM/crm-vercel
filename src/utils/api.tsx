@@ -85,6 +85,7 @@ const COMPANY_COLUMNS = [
   'lat',
   'lng',
   'premiers_tags',
+  'service_tags',
   'sources',
   'raw_ids',
   'qualifie',
@@ -147,6 +148,7 @@ const COMPANY_METADATA_COLUMNS = [
   'note_moyenne',
   'nombre_avis',
   'sources',
+  'service_tags',
 ] as const;
 const COMPANY_METADATA_SELECT = COMPANY_METADATA_COLUMNS.join(',');
 

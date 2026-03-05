@@ -43,6 +43,7 @@ import { toast } from 'sonner';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { journalApi } from '../utils/journalApi';
 import { ContactChannel } from '../types';
+import { normalizeServiceTags } from '../utils/serviceTags';
 
 const normalizeWebsiteUrl = (url?: string | null) => {
   if (!url) return undefined;
@@ -670,6 +671,7 @@ export const PipelinePage: React.FC = () => {
   const selectedOpportunityWebsiteUrl = selectedOpportunity
     ? normalizeWebsiteUrl(selectedOpportunity.companyUrl || selectedCompany?.canonical_url)
     : undefined;
+  const selectedCompanyServiceTags = normalizeServiceTags(selectedCompany?.service_tags, selectedCompany?.premiers_tags);
 
   // Configuration des étapes (visibilité et taille)
   const [stageConfigs, setStageConfigs] = useState<StageConfiguration[]>(
@@ -1156,6 +1158,19 @@ export const PipelinePage: React.FC = () => {
                         {selectedOpportunity.name || selectedOpportunity.tags || 'Opportunité sans nom'}
                       </div>
                     </div>
+
+                    {selectedCompanyServiceTags.length > 0 && (
+                      <div className="col-span-2">
+                        <label className="text-sm font-medium">Services</label>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {selectedCompanyServiceTags.map((tag) => (
+                            <Badge key={tag} variant="secondary">
+                              {tag}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div>
                       <label className="text-sm font-medium">Type</label>
