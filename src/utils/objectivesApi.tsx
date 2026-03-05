@@ -93,35 +93,125 @@ const aggregateFacts = async (
   count: number,
 ): Promise<KPIActual[]> => {
   const periods = Array.from({ length: count }, (_, i) => emptyActual(periodType, i)).reverse();
-  const minDate = periods[0]?.period_start;
-  const maxDate = periods[periods.length - 1]?.period_end;
 
-  if (!minDate || !maxDate) return [];
+  const normalizeStageName = (value: string): string =>
+    value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
 
-  const { data, error } = await supabase
-    .from('kpi_daily_facts')
-    .select('fact_date, leads_trouves, leads_qualifies, appels, rdv, devis, relances, signatures, acomptes, ca, mrr')
-    .gte('fact_date', minDate)
-    .lte('fact_date', maxDate);
+  const [{ data: stageRows, error: stageError }, { count: stockCount, error: stockError }] = await Promise.all([
+    supabase.from('etapes_pipeline').select('id, nom, ordre'),
+    supabase
+      .from('entreprises')
+      .select('id', { count: 'exact', head: true })
+      .eq('qualifie', false)
+      .or('hidden_in_qualification.is.null,hidden_in_qualification.eq.false'),
+  ]);
 
-  if (error) {
-    throw new Error(`Erreur lors de la récupération des KPI: ${error.message}`);
+  if (stageError) {
+    throw new Error(`Erreur lors de la récupération des étapes: ${stageError.message}`);
   }
 
+  if (stockError) {
+    throw new Error(`Erreur lors de la récupération du stock d'entreprises: ${stockError.message}`);
+  }
+
+  type StageMetadata = { id: number; nom: string; ordre: number };
+  const stages = (stageRows ?? []) as StageMetadata[];
+  const stageById = new Map<number, StageMetadata>();
+  for (const stage of stages) {
+    stageById.set(stage.id, stage);
+  }
+
+  const findStage = (matcher: (normalizedName: string) => boolean): StageMetadata | undefined =>
+    stages.find((stage) => matcher(normalizeStageName(stage.nom)));
+
+  const callStage = findStage((name) => name === 'approche');
+  const rdvStages = stages
+    .filter((stage) => normalizeStageName(stage.nom).startsWith('rdv'))
+    .sort((a, b) => a.ordre - b.ordre);
+  const devisStage = findStage((name) => name === 'devis');
+  const signatureStage = findStage((name) => name === 'signature');
+  const acompteStage = findStage((name) => name === 'acompte');
+  const relanceStages = stages
+    .filter((stage) => normalizeStageName(stage.nom).startsWith('relance'))
+    .sort((a, b) => a.ordre - b.ordre);
+  const maxRelanceOrder = relanceStages[relanceStages.length - 1]?.ordre ?? Number.NEGATIVE_INFINITY;
+
   for (const period of periods) {
-    const rows = (data ?? []).filter((row) => row.fact_date >= period.period_start && row.fact_date <= period.period_end);
-    rows.forEach((row) => {
-      period.leads_trouves += Number(row.leads_trouves ?? 0);
-      period.leads_qualifies += Number(row.leads_qualifies ?? 0);
-      period.appels += Number(row.appels ?? 0);
-      period.rdv += Number(row.rdv ?? 0);
-      period.devis += Number(row.devis ?? 0);
-      period.relances += Number(row.relances ?? 0);
-      period.signatures += Number(row.signatures ?? 0);
-      period.acomptes += Number(row.acomptes ?? 0);
-      period.ca += Number(row.ca ?? 0);
-      period.mrr += Number(row.mrr ?? 0);
-    });
+    const startDateTime = `${period.period_start}T00:00:00.000Z`;
+    const endDateTime = `${period.period_end}T23:59:59.999Z`;
+
+    const [{ data: qualifiedRows, error: qualifiedError }, { data: opportunities, error: opportunitiesError }] = await Promise.all([
+      supabase
+        .from('entreprises')
+        .select('id')
+        .eq('qualifie', true)
+        .gte('updated_at', startDateTime)
+        .lte('updated_at', endDateTime),
+      supabase
+        .from('opportunites')
+        .select('stage_id, montant, lead_magnet, type, mrr, updated_at')
+        .gte('updated_at', startDateTime)
+        .lte('updated_at', endDateTime),
+    ]);
+
+    if (qualifiedError) {
+      throw new Error(`Erreur lors de la récupération des entreprises qualifiées: ${qualifiedError.message}`);
+    }
+    if (opportunitiesError) {
+      throw new Error(`Erreur lors de la récupération des opportunités: ${opportunitiesError.message}`);
+    }
+
+    period.leads_trouves = Number(stockCount ?? 0);
+    period.leads_qualifies = (qualifiedRows ?? []).length;
+
+    for (const opportunity of opportunities ?? []) {
+      const stageId = Number(opportunity.stage_id ?? 0);
+      const stage = stageById.get(stageId);
+      const order = stage?.ordre ?? Number.NEGATIVE_INFINITY;
+
+      if (callStage && order >= callStage.ordre) {
+        period.appels += 1;
+      }
+
+      const rdvPoints = rdvStages.reduce((acc, rdvStage) => acc + (order >= rdvStage.ordre ? 1 : 0), 0);
+      period.rdv += rdvPoints;
+
+      if (devisStage && order >= devisStage.ordre) {
+        period.devis += 1;
+      }
+
+      if (signatureStage && order >= signatureStage.ordre) {
+        period.signatures += 1;
+      }
+
+      if (acompteStage && order >= acompteStage.ordre) {
+        period.acomptes += 1;
+      }
+
+      if (opportunity.lead_magnet) {
+        period.leadmagnets += 1;
+      }
+
+      if (relanceStages.length > 0) {
+        if (order >= maxRelanceOrder) {
+          period.relances += relanceStages.length;
+        } else {
+          period.relances += relanceStages.reduce((acc, relanceStage) => acc + (order >= relanceStage.ordre ? 1 : 0), 0);
+        }
+      }
+
+      if (signatureStage && order >= signatureStage.ordre) {
+        period.ca += Number(opportunity.montant ?? 0);
+        if (opportunity.type === 'mrr') {
+          period.mrr += Number(opportunity.mrr ?? 0);
+        }
+      }
+    }
+
     period.relances_total = period.relances;
   }
 
