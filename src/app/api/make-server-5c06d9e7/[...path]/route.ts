@@ -934,12 +934,25 @@ export async function GET(
 
     // KPI totals from daily facts
     if (path === "/kpi/journal-totals") {
-      const { data, error } = await supabase
+      let data: any[] | null = null;
+
+      const { data: dailyFactsData, error: dailyFactsError } = await supabase
         .from("kpi_daily_facts")
         .select("fact_date, appels, relances, rdv, devis, signatures, acomptes, leads_qualifies");
 
-      if (error) {
-        return json({ error: "Failed to fetch KPI totals" }, 500);
+      if (dailyFactsError) {
+        // Fallback compatible avec la refonte SQL: vue v_kpi_daily
+        const { data: viewData, error: viewError } = await supabase
+          .from("v_kpi_daily")
+          .select("fact_date, appels, relances, rdv, devis, signatures, acomptes, leads_qualifies");
+
+        if (viewError) {
+          return json({ error: "Failed to fetch KPI totals" }, 500);
+        }
+
+        data = viewData;
+      } else {
+        data = dailyFactsData;
       }
 
       const now = new Date();
