@@ -27,6 +27,7 @@ import {
   Sparkles,
   Target,
 } from "lucide-react";
+import { PipelineStage } from "@/types";
 
 interface JournalEntry {
   date: string;
@@ -71,17 +72,85 @@ const formatDate = (raw?: string) => {
   return d.toLocaleString("fr-FR");
 };
 
-export const QualifiedColdCallWorkspace: React.FC = () => {
-  const { companies, contacts, opportunities } = useAppData();
-  const qualifiedCompanies = useMemo(() => companies.filter((c) => c.qualifie), [companies]);
+interface QualifiedColdCallWorkspaceProps {
+  includeOnlyQualified?: boolean;
+  scopedCompanyIds?: number[];
+}
+
+const parseOpportunityTags = (tags?: string) =>
+  tags
+    ? tags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean)
+    : [];
+
+const parseOpportunityFlags = (flags?: string[]) =>
+  Array.isArray(flags) ? flags.filter((flag): flag is string => typeof flag === "string" && flag.length > 0) : [];
+
+const getStageName = (stages: PipelineStage[], stageId?: number) => {
+  if (!stageId) return "Sans étape";
+  return stages.find((stage) => stage.id === stageId)?.nom || "Sans étape";
+};
+
+export const QualifiedColdCallWorkspace: React.FC<QualifiedColdCallWorkspaceProps> = ({
+  includeOnlyQualified = true,
+  scopedCompanyIds,
+}) => {
+  const { companies, contacts, opportunities, pipelineStages } = useAppData();
+  const companyScope = useMemo(() => {
+    const scopedSet = scopedCompanyIds ? new Set(scopedCompanyIds) : null;
+    return companies.filter((company) => {
+      if (includeOnlyQualified && !company.qualifie) return false;
+      if (scopedSet && !scopedSet.has(company.id)) return false;
+      return true;
+    });
+  }, [companies, includeOnlyQualified, scopedCompanyIds]);
+
+  const scopedOpportunities = useMemo(() => {
+    const companyIdSet = new Set(companyScope.map((company) => company.id));
+    return opportunities.filter((opportunity) => opportunity.entreprise_id && companyIdSet.has(opportunity.entreprise_id));
+  }, [companyScope, opportunities]);
 
   const [search, setSearch] = useState("");
   const [hiddenCompanyIds, setHiddenCompanyIds] = useState<Set<number>>(new Set());
   const [showHiddenCompanies, setShowHiddenCompanies] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(qualifiedCompanies[0]?.id ?? null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<number | null>(companyScope[0]?.id ?? null);
   const [enrichment, setEnrichment] = useState<AutomatedEnrichmentRecord | null>(null);
   const [history, setHistory] = useState<JournalEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [stageFilter, setStageFilter] = useState("all");
+  const [tagFilter, setTagFilter] = useState("all");
+  const [flagFilter, setFlagFilter] = useState("all");
+
+  const availableTags = useMemo(() => {
+    const tags = scopedOpportunities.flatMap((opportunity) => parseOpportunityTags(opportunity.tags));
+    return Array.from(new Set(tags)).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [scopedOpportunities]);
+
+  const availableFlags = useMemo(() => {
+    const flags = scopedOpportunities.flatMap((opportunity) => parseOpportunityFlags(opportunity.flags));
+    return Array.from(new Set(flags)).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [scopedOpportunities]);
+
+  const filteredOpportunityCompanyIds = useMemo(() => {
+    const matchedCompanyIds = new Set<number>();
+
+    scopedOpportunities.forEach((opportunity) => {
+      if (!opportunity.entreprise_id) return;
+      const tags = parseOpportunityTags(opportunity.tags);
+      const flags = parseOpportunityFlags(opportunity.flags);
+      const matchesStage = stageFilter === "all" || opportunity.stage_id?.toString() === stageFilter;
+      const matchesTag = tagFilter === "all" || tags.includes(tagFilter);
+      const matchesFlag = flagFilter === "all" || flags.includes(flagFilter);
+
+      if (matchesStage && matchesTag && matchesFlag) {
+        matchedCompanyIds.add(opportunity.entreprise_id);
+      }
+    });
+
+    return matchedCompanyIds;
+  }, [flagFilter, scopedOpportunities, stageFilter, tagFilter]);
 
   const [callOutcome, setCallOutcome] = useState("a_rappeler");
   const [clientFeedback, setClientFeedback] = useState("");
@@ -91,13 +160,14 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
 
   const filteredCompanies = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return qualifiedCompanies.filter((c) => {
+    return companyScope.filter((c) => {
+      if (scopedOpportunities.length > 0 && !filteredOpportunityCompanyIds.has(c.id)) return false;
       if (!showHiddenCompanies && hiddenCompanyIds.has(c.id)) return false;
       if (!q) return true;
       const name = getCompanyDisplayName(c.name, c.canonical_url).toLowerCase();
       return name.includes(q) || (c.ville || "").toLowerCase().includes(q);
     });
-  }, [qualifiedCompanies, search, hiddenCompanyIds, showHiddenCompanies]);
+  }, [companyScope, filteredOpportunityCompanyIds, hiddenCompanyIds, scopedOpportunities.length, search, showHiddenCompanies]);
 
   useEffect(() => {
     if (!selectedCompanyId && filteredCompanies.length > 0) {
@@ -106,8 +176,8 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
   }, [filteredCompanies, selectedCompanyId]);
 
   const selectedCompany = useMemo(
-    () => qualifiedCompanies.find((c) => c.id === selectedCompanyId) ?? null,
-    [qualifiedCompanies, selectedCompanyId]
+    () => companyScope.find((c) => c.id === selectedCompanyId) ?? null,
+    [companyScope, selectedCompanyId]
   );
 
   const companyContacts = useMemo(
@@ -116,8 +186,8 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
   );
 
   const companyOpportunities = useMemo(
-    () => opportunities.filter((opp) => opp.entreprise_id === selectedCompanyId),
-    [opportunities, selectedCompanyId]
+    () => scopedOpportunities.filter((opp) => opp.entreprise_id === selectedCompanyId),
+    [scopedOpportunities, selectedCompanyId]
   );
 
   const toggleCompanyVisibility = (companyId: number) => {
@@ -136,7 +206,7 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
   const loadCompanyData = async (companyId: number) => {
     setIsLoading(true);
     try {
-      const [{ data: enrichmentRow, error: enrichmentError }, historyData] = await Promise.all([
+      const [enrichmentResult, historyResult] = await Promise.allSettled([
         supabase
           .from("automated_enrichment")
           .select("entreprise_id, website_url, google_maps_url, google_url, contact_page_url, site_summary, services_list, ai_meta")
@@ -145,16 +215,27 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
         journalApi.getJournalHistory(undefined, companyId, { limit: 50 }),
       ]);
 
-      if (enrichmentError) {
-        throw enrichmentError;
+      if (enrichmentResult.status === "fulfilled") {
+        const { data, error } = enrichmentResult.value;
+        if (error) {
+          toast.error("Données enrichies indisponibles pour cette entreprise");
+          setEnrichment(null);
+        } else {
+          setEnrichment((data as AutomatedEnrichmentRecord | null) ?? null);
+        }
+      } else {
+        toast.error("Données enrichies indisponibles pour cette entreprise");
+        setEnrichment(null);
       }
 
-      setEnrichment((enrichmentRow as AutomatedEnrichmentRecord | null) ?? null);
-      setHistory(historyData as JournalEntry[]);
+      if (historyResult.status === "fulfilled") {
+        setHistory(historyResult.value as JournalEntry[]);
+      } else {
+        toast.error("Historique cold call indisponible");
+        setHistory([]);
+      }
     } catch {
       toast.error("Impossible de charger les données cold call");
-      setEnrichment(null);
-      setHistory([]);
     } finally {
       setIsLoading(false);
     }
@@ -252,6 +333,45 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
       <Card className="overflow-hidden">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4" /> Entreprises qualifiées</CardTitle>
+          {scopedOpportunities.length > 0 && (
+            <div className="grid gap-2">
+              <Select value={stageFilter} onValueChange={setStageFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrer par étape" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les étapes</SelectItem>
+                  {pipelineStages.map((stage) => (
+                    <SelectItem key={stage.id} value={stage.id.toString()}>{stage.nom}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="grid gap-2 grid-cols-2">
+                <Select value={tagFilter} onValueChange={setTagFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Tag" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les tags</SelectItem>
+                    {availableTags.map((tag) => (
+                      <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={flagFilter} onValueChange={setFlagFilter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Flag" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les flags</SelectItem>
+                    {availableFlags.map((flag) => (
+                      <SelectItem key={flag} value={flag}>{flag}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
           <Button
             type="button"
             variant="outline"
@@ -270,7 +390,8 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
         <CardContent className="space-y-2 max-h-[72vh] overflow-auto">
           {filteredCompanies.map((company) => {
             const isActive = company.id === selectedCompanyId;
-            const oppCount = opportunities.filter((o) => o.entreprise_id === company.id).length;
+            const companyOpps = scopedOpportunities.filter((o) => o.entreprise_id === company.id);
+            const oppCount = companyOpps.length;
             return (
               <button
                 key={company.id}
@@ -280,7 +401,10 @@ export const QualifiedColdCallWorkspace: React.FC = () => {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-medium text-sm truncate">{getCompanyDisplayName(company.name, company.canonical_url)}</div>
-                    <div className="text-xs text-muted-foreground">{company.ville || "Ville inconnue"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {company.ville || "Ville inconnue"}
+                      {companyOpps.length > 0 && ` · ${getStageName(pipelineStages, companyOpps[0]?.stage_id)}`}
+                    </div>
                   </div>
                   <Button
                     type="button"

@@ -44,6 +44,7 @@ import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { journalApi } from '../utils/journalApi';
 import { ContactChannel } from '../types';
 import { normalizeServiceTags } from '../utils/serviceTags';
+import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
 
 const normalizeWebsiteUrl = (url?: string | null) => {
   if (!url) return undefined;
@@ -511,6 +512,7 @@ export const PipelinePage: React.FC = () => {
   const [requireEmployees, setRequireEmployees] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('recent');
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
+  const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
 
   const companiesById = React.useMemo(() => {
     const map = new Map<number, (typeof companies)[number]>();
@@ -831,6 +833,17 @@ export const PipelinePage: React.FC = () => {
 
   const totalValue = sortedOpportunities.reduce((sum, opp) => sum + calculateOpportunityValue(opp), 0);
   const averageValue = sortedOpportunities.length > 0 ? totalValue / sortedOpportunities.length : 0;
+  const filteredOpportunityCompanyIds = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          sortedOpportunities
+            .map((opportunity) => opportunity.entreprise_id)
+            .filter((companyId): companyId is number => typeof companyId === 'number')
+        )
+      ),
+    [sortedOpportunities]
+  );
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -842,15 +855,32 @@ export const PipelinePage: React.FC = () => {
               Suivez vos opportunités à travers les différentes étapes du processus de vente
             </p>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => setShowSettings(!showSettings)}
-            className="flex items-center gap-2"
-          >
-            <Settings className="h-4 w-4" />
-            Configuration
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
+              Vue pipeline
+            </Button>
+            <Button variant={pipelineMode === 'cold_call' ? 'default' : 'outline'} onClick={() => setPipelineMode('cold_call')}>
+              Mode Cold Call
+            </Button>
+            {pipelineMode === 'standard' && (
+              <Button
+                variant="outline"
+                onClick={() => setShowSettings(!showSettings)}
+                className="flex items-center gap-2"
+              >
+                <Settings className="h-4 w-4" />
+                Configuration
+              </Button>
+            )}
+          </div>
         </div>
+
+        {pipelineMode === 'cold_call' && (
+          <QualifiedColdCallWorkspace includeOnlyQualified={false} scopedCompanyIds={filteredOpportunityCompanyIds} />
+        )}
+
+        {pipelineMode === 'standard' && (
+          <>
 
         {/* Configuration des étapes */}
         {showSettings && (
@@ -1611,6 +1641,8 @@ export const PipelinePage: React.FC = () => {
             )}
           </DialogContent>
         </Dialog>
+          </>
+        )}
       </div>
     </DndProvider>
   );
