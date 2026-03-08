@@ -31,11 +31,11 @@ function deriveViewFromPathname(pathname: string | null): WorkspaceView | null {
     return null;
   }
 
-  if (pathname.startsWith("/prospection")) {
+  if (pathname === "/prospection/dashboard") {
     return "prospection";
   }
 
-  if (pathname.startsWith("/qualification")) {
+  if (pathname === "/qualification/dashboard") {
     return "qualification";
   }
 
