@@ -111,7 +111,7 @@ export function AppHeader() {
         {view === "prospection" && (
           <>
             <Button variant="ghost" size="icon" asChild>
-              <Link href="/prospection/dashboard" onClick={() => setView("prospection")} aria-label="Ouvrir le dashboard prospection">
+              <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir au dashboard principal">
                 <LayoutDashboard className="h-4 w-4" />
               </Link>
             </Button>
@@ -126,7 +126,7 @@ export function AppHeader() {
         {view === "qualification" && (
           <>
             <Button variant="ghost" size="icon" asChild>
-              <Link href="/qualification/dashboard" onClick={() => setView("qualification")} aria-label="Ouvrir le dashboard qualification">
+              <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir au dashboard principal">
                 <LayoutDashboard className="h-4 w-4" />
               </Link>
             </Button>
