@@ -32,6 +32,7 @@ import {
   MagnetIcon,
   Columns3,
   Globe,
+  Phone,
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -39,6 +40,7 @@ import { toast } from 'sonner';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
+import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
 
 import logger from '../utils/logger';
 
@@ -89,7 +91,7 @@ export const OpportunitiesPage: React.FC = () => {
   const [stageFilter, setStageFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [flagFilter, setFlagFilter] = useState('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban' | 'cold_call'>('grid');
   const [kanbanMode, setKanbanMode] = useState<KanbanGroupingMode>('flags');
   const [newTagName, setNewTagName] = useState('');
   const [newFlagName, setNewFlagName] = useState('');
@@ -540,6 +542,16 @@ export const OpportunitiesPage: React.FC = () => {
     return columns;
   }, [allKnownFlags, allKnownTags, filteredOpportunities, kanbanMode]);
 
+  const filteredOpportunityCompanyIds = React.useMemo(() => {
+    return Array.from(
+      new Set(
+        filteredOpportunities
+          .map((opportunity) => opportunity.entreprise_id)
+          .filter((companyId): companyId is number => typeof companyId === 'number')
+      )
+    );
+  }, [filteredOpportunities]);
+
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div>
@@ -721,15 +733,26 @@ export const OpportunitiesPage: React.FC = () => {
             variant={viewMode === 'kanban' ? 'default' : 'ghost'}
             size="sm"
             onClick={() => setViewMode('kanban')}
-            className="rounded-l-none"
+            className="rounded-none"
           >
             <Columns3 className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'cold_call' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('cold_call')}
+            className="rounded-l-none"
+            title="Mode cold call"
+          >
+            <Phone className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
       {/* Liste des opportunités */}
-      {viewMode !== 'kanban' ? (
+      {viewMode === 'cold_call' ? (
+        <QualifiedColdCallWorkspace includeOnlyQualified={false} scopedCompanyIds={filteredOpportunityCompanyIds} />
+      ) : viewMode !== 'kanban' ? (
         <div className={viewMode === 'grid' ? 'grid gap-3 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
           {filteredOpportunities.map((opportunity) => (
             <OpportunityCard key={opportunity.id} opportunity={opportunity} />
@@ -747,7 +770,7 @@ export const OpportunitiesPage: React.FC = () => {
         </DndProvider>
       )}
 
-      {filteredOpportunities.length === 0 && (
+      {viewMode !== 'cold_call' && filteredOpportunities.length === 0 && (
         <Card>
           <CardContent className="text-center py-8 md:py-12">
             <Target className="h-8 w-8 md:h-12 md:w-12 mx-auto mb-4 text-muted-foreground" />
