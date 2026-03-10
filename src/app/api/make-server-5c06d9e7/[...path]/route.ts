@@ -237,9 +237,27 @@ async function getNextSequenceNumber(
   if (opportunite_id) query = query.eq("opportunite_id", opportunite_id);
   else if (entreprise_id) query = query.eq("entreprise_id", entreprise_id);
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+  if (error && shouldUseLegacyJournalTable(error)) {
+    let legacyQuery = supabase
+      .from("journal_succes")
+      .select("id")
+      .eq("type_evenement", type_prefix);
+    if (opportunite_id) legacyQuery = legacyQuery.eq("opportunite_id", opportunite_id);
+    else if (entreprise_id) legacyQuery = legacyQuery.eq("entreprise_id", entreprise_id);
+    const legacy = await legacyQuery;
+    data = legacy.data;
+    error = legacy.error;
+  }
+
   if (error) return 1;
   return (data?.length ?? 0) + 1;
+}
+
+function shouldUseLegacyJournalTable(error: any): boolean {
+  const code = String(error?.code || "");
+  const message = String(error?.message || "").toLowerCase();
+  return code === "42P01" || code === "PGRST205" || message.includes("activity_log");
 }
 
 async function getJournalStats(opportunite_id?: string, entreprise_id?: number) {
@@ -247,7 +265,16 @@ async function getJournalStats(opportunite_id?: string, entreprise_id?: number) 
   if (opportunite_id) query = query.eq("opportunite_id", opportunite_id);
   else if (entreprise_id) query = query.eq("entreprise_id", entreprise_id);
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+  if (error && shouldUseLegacyJournalTable(error)) {
+    let legacyQuery = supabase.from("journal_succes").select("type_evenement");
+    if (opportunite_id) legacyQuery = legacyQuery.eq("opportunite_id", opportunite_id);
+    else if (entreprise_id) legacyQuery = legacyQuery.eq("entreprise_id", entreprise_id);
+    const legacy = await legacyQuery;
+    data = legacy.data?.map((row: any) => ({ activity_type: row.type_evenement })) ?? [];
+    error = legacy.error;
+  }
+
   if (error) {
     return {
       appels: 0,
@@ -294,6 +321,25 @@ async function getJournalHistory(
   else if (entreprise_id) query = query.eq("entreprise_id", entreprise_id);
 
   const { data, error } = await query;
+  if (error && shouldUseLegacyJournalTable(error)) {
+    let legacyQuery = supabase
+      .from("journal_succes")
+      .select("date,type_evenement,description,opportunite_id,entreprise_id")
+      .order("date", { ascending: false })
+      .limit(safeLimit);
+    if (opportunite_id) legacyQuery = legacyQuery.eq("opportunite_id", opportunite_id);
+    else if (entreprise_id) legacyQuery = legacyQuery.eq("entreprise_id", entreprise_id);
+    const legacy = await legacyQuery;
+    if (legacy.error) throw legacy.error;
+    return (legacy.data || []).map((row: any) => ({
+      date: row.date,
+      type_evenement: row.type_evenement,
+      description: row.description,
+      opportunite_id: row.opportunite_id,
+      entreprise_id: row.entreprise_id,
+    }));
+  }
+
   if (error) throw error;
   return (data || []).map((row: any) => ({
     date: row.occurred_at,
