@@ -179,6 +179,16 @@ async function logEvent(
     details?: string | null;
   },
 ) {
+  const metadata: Record<string, any> = {
+    type_evenement: entry.type_evenement,
+  };
+  if (entry.channel) {
+    metadata.channel = entry.channel;
+  }
+  if (entry.details) {
+    metadata.details = entry.details;
+  }
+
   const payload: Record<string, any> = {
     occurred_at: new Date().toISOString(),
     activity_type: resolveActivityType(entry.type_evenement),
@@ -187,14 +197,8 @@ async function logEvent(
     description: entry.description ?? null,
     opportunite_id: entry.opportunite_id ?? null,
     entreprise_id: entry.entreprise_id ?? null,
+    metadata,
   };
-
-  if (entry.details) {
-    payload.details = entry.details;
-  }
-  if (entry.channel) {
-    payload.channel = entry.channel;
-  }
 
   const { error } = await supabase.from("activity_log").insert(payload);
   if (error) throw error;

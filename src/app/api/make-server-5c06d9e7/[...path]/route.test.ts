@@ -2,7 +2,8 @@ import { POST } from './route';
 
 const mockFrom = jest.fn();
 const mockInsertTouchpoints = jest.fn();
-const mockInsertJournal = jest.fn();
+const mockInsertActivityLog = jest.fn();
+const mockInsertPipelineEvents = jest.fn();
 let touchpointSelect: any;
 let touchpointSelectMock: jest.Mock;
 
@@ -22,7 +23,8 @@ describe('make-server journal routes', () => {
     touchpointSelectMock = jest.fn().mockReturnValue(touchpointSelect);
 
     mockInsertTouchpoints.mockResolvedValue({ error: null });
-    mockInsertJournal.mockResolvedValue({ error: null });
+    mockInsertActivityLog.mockResolvedValue({ error: null });
+    mockInsertPipelineEvents.mockResolvedValue({ error: null });
 
     mockFrom.mockImplementation((table: string) => {
       if (table === 'opportunity_touchpoints') {
@@ -31,9 +33,14 @@ describe('make-server journal routes', () => {
           insert: mockInsertTouchpoints,
         };
       }
-      if (table === 'journal_succes') {
+      if (table === 'activity_log') {
         return {
-          insert: mockInsertJournal,
+          insert: mockInsertActivityLog,
+        };
+      }
+      if (table === 'pipeline_events') {
+        return {
+          insert: mockInsertPipelineEvents,
         };
       }
       return {
@@ -118,28 +125,33 @@ describe('make-server journal routes', () => {
     expect(touchpointSelectMock).not.toHaveBeenCalled();
   });
 
-  it('logs call with channel fallback when journal table lacks column', async () => {
-    mockInsertJournal
-      .mockResolvedValueOnce({ error: { message: 'column "channel" of relation "journal_succes" does not exist' } })
-      .mockResolvedValueOnce({ error: null });
-
+  it('logs call metadata in activity_log payload', async () => {
     const response = await executePost(['journal', 'call'], {
       opportunite_id: 'opp-2',
       entreprise_id: 10,
       description: 'Essai',
       channel: 'email',
+      details: 'appel initial',
       skipTouchpoint: true,
     });
 
     expect(response.status).toBe(200);
     expect(mockInsertTouchpoints).not.toHaveBeenCalled();
-    expect(mockInsertJournal).toHaveBeenCalledTimes(2);
+    expect(mockInsertActivityLog).toHaveBeenCalledTimes(1);
+    expect(mockInsertPipelineEvents).toHaveBeenCalledTimes(1);
 
-    const firstCall = mockInsertJournal.mock.calls[0][0];
-    expect(firstCall).toMatchObject({ channel: 'email' });
-
-    const secondCall = mockInsertJournal.mock.calls[1][0];
-    expect(secondCall.channel).toBeUndefined();
-    expect(secondCall.description).toBe('Essai - Canal: email');
+    const activityPayload = mockInsertActivityLog.mock.calls[0][0];
+    expect(activityPayload).toMatchObject({
+      activity_type: 'appel',
+      title: 'cold_call',
+      description: 'Essai',
+      metadata: {
+        type_evenement: 'cold_call',
+        channel: 'email',
+        details: 'appel initial',
+      },
+    });
+    expect(activityPayload.channel).toBeUndefined();
+    expect(activityPayload.details).toBeUndefined();
   });
 });
