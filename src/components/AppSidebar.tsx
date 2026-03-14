@@ -41,6 +41,7 @@ import {
   Sparkles,
   PenLine,
   Magnet,
+  CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
@@ -62,7 +63,10 @@ export const AppSidebar = () => {
   const [productionOpen, setProductionOpen] = React.useState(true);
   const [actionsOpen, setActionsOpen] = React.useState(true);
 
-  const navigationItems: SidebarNavItem[] = [{ title: "Dashboard", icon: BarChart3, href: "/dashboard" }];
+  const navigationItems: SidebarNavItem[] = [
+    { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
+    { title: "Calendrier", icon: CalendarDays, href: "/calendar" },
+  ];
 
   const crmItems: SidebarNavItem[] = [
     { title: "Entreprises", icon: Building, href: "/companies" },
