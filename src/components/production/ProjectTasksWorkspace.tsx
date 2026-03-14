@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
-import { CalendarCheck2, CalendarDays, CheckCircle2, Columns2, ListTodo, MoreHorizontal, Plus, RectangleHorizontal } from "lucide-react";
+import { CalendarCheck2, CalendarDays, CheckCircle2, Columns2, EllipsisVertical, ListTodo, Plus, RectangleHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,9 @@ type ProjectRow = {
   status: ItemStatus;
   priority: Priority;
   due_date: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
+  background_color?: string | null;
   entreprise_id: number | null;
   offre_id: string | null;
   entreprises?: { id: number; name: string | null } | null;
@@ -93,7 +96,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
   const [scopeFilter, setScopeFilter] = useState<ProjectScope>(scope === "all" ? "client" : scope);
   const [menuOpenProjectId, setMenuOpenProjectId] = useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectRow | null>(null);
-  const [editForm, setEditForm] = useState({ nom: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, dueDate: "", color: "#4f46e5" });
+  const [editForm, setEditForm] = useState({ nom: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, dueDate: "", startAt: "", endAt: "", color: "#4f46e5", backgroundColor: "#eef2ff" });
 
   const [projectForm, setProjectForm] = useState({
     nom: "",
@@ -105,6 +108,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     offreQuery: "",
     offreId: "",
     color: "#4f46e5",
+    backgroundColor: "#eef2ff",
+    startAt: "",
+    endAt: "",
   });
 
   const currentScope = scopeFilter === "client" ? "entreprise" : "interne";
@@ -116,11 +122,11 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         (scope === "all"
           ? supabase
               .from("crm_projects")
-              .select("id,nom,scope,status,priority,due_date,entreprise_id,offre_id,color,entreprises(id,name),offres(id,nom)")
+              .select("id,nom,scope,status,priority,due_date,start_at,end_at,entreprise_id,offre_id,color,background_color,entreprises(id,name),offres(id,nom)")
               .order("created_at", { ascending: false })
           : supabase
               .from("crm_projects")
-              .select("id,nom,scope,status,priority,due_date,entreprise_id,offre_id,color,entreprises(id,name),offres(id,nom)")
+              .select("id,nom,scope,status,priority,due_date,start_at,end_at,entreprise_id,offre_id,color,background_color,entreprises(id,name),offres(id,nom)")
               .eq("scope", currentScope)
               .order("created_at", { ascending: false })),
         supabase.from("v_crm_project_progress").select("project_id,computed_project_progress"),
@@ -159,6 +165,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         offres: project.offres?.[0] ?? null,
         computed_project_progress: progressMap.get(project.id) ?? 0,
         color: project.color ?? "#4f46e5",
+        background_color: project.background_color ?? "#eef2ff",
+        start_at: project.start_at ?? null,
+        end_at: project.end_at ?? null,
         total_tasks: taskStats.get(project.id)?.total ?? 0,
         completed_tasks: taskStats.get(project.id)?.completed ?? 0,
         remaining_tasks: Math.max((taskStats.get(project.id)?.total ?? 0) - (taskStats.get(project.id)?.completed ?? 0), 0),
@@ -222,12 +231,15 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         status: projectForm.status,
         priority: projectForm.priority,
         due_date: projectForm.dueDate || null,
+        start_at: projectForm.startAt || null,
+        end_at: projectForm.endAt || null,
         entreprise_id: projectForm.entrepriseId ? Number(projectForm.entrepriseId) : null,
         offre_id: projectForm.offreId || null,
         color: projectForm.color || "#4f46e5",
+        background_color: projectForm.backgroundColor || "#eef2ff",
         progress: 0,
       })
-      .select("id,nom,scope,status,priority,due_date,entreprise_id,offre_id,color,entreprises(id,name),offres(id,nom)")
+      .select("id,nom,scope,status,priority,due_date,start_at,end_at,entreprise_id,offre_id,color,background_color,entreprises(id,name),offres(id,nom)")
       .single();
 
     if (data) {
@@ -245,6 +257,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         offres: inserted.offres?.[0] ?? null,
         computed_project_progress: 0,
         color: inserted.color ?? "#4f46e5",
+        background_color: inserted.background_color ?? "#eef2ff",
+        start_at: inserted.start_at ?? null,
+        end_at: inserted.end_at ?? null,
         total_tasks: 0,
         completed_tasks: 0,
         remaining_tasks: 0,
@@ -260,6 +275,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         offreQuery: "",
         offreId: "",
         color: "#4f46e5",
+        backgroundColor: "#eef2ff",
+        startAt: "",
+        endAt: "",
       });
     }
   };
@@ -271,7 +289,10 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
       status: project.status,
       priority: project.priority,
       dueDate: project.due_date ?? "",
+      startAt: project.start_at ? project.start_at.slice(0,16) : "",
+      endAt: project.end_at ? project.end_at.slice(0,16) : "",
       color: project.color ?? "#4f46e5",
+      backgroundColor: project.background_color ?? "#eef2ff",
     });
     setMenuOpenProjectId(null);
   };
@@ -283,7 +304,10 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
       status: editForm.status,
       priority: editForm.priority,
       due_date: editForm.dueDate || null,
+      start_at: editForm.startAt || null,
+      end_at: editForm.endAt || null,
       color: editForm.color,
+      background_color: editForm.backgroundColor,
     };
     if (!payload.nom) return;
     await supabase.from("crm_projects").update(payload).eq("id", editingProject.id);
@@ -444,8 +468,20 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
               <Input type="date" value={projectForm.dueDate} onChange={(e) => setProjectForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
-              <Label>Couleur</Label>
+              <Label>Début (date + heure)</Label>
+              <Input type="datetime-local" value={projectForm.startAt} onChange={(e) => setProjectForm((prev) => ({ ...prev, startAt: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Fin (date + heure)</Label>
+              <Input type="datetime-local" value={projectForm.endAt} onChange={(e) => setProjectForm((prev) => ({ ...prev, endAt: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Couleur SVG</Label>
               <Input type="color" value={projectForm.color} onChange={(e) => setProjectForm((prev) => ({ ...prev, color: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Couleur de fond</Label>
+              <Input type="color" value={projectForm.backgroundColor} onChange={(e) => setProjectForm((prev) => ({ ...prev, backgroundColor: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>
@@ -481,8 +517,20 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
               <Input type="date" value={editForm.dueDate} onChange={(e) => setEditForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
-              <Label>Couleur</Label>
+              <Label>Début (date + heure)</Label>
+              <Input type="datetime-local" value={editForm.startAt} onChange={(e) => setEditForm((prev) => ({ ...prev, startAt: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Fin (date + heure)</Label>
+              <Input type="datetime-local" value={editForm.endAt} onChange={(e) => setEditForm((prev) => ({ ...prev, endAt: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Couleur SVG</Label>
               <Input type="color" value={editForm.color} onChange={(e) => setEditForm((prev) => ({ ...prev, color: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Couleur de fond</Label>
+              <Input type="color" value={editForm.backgroundColor} onChange={(e) => setEditForm((prev) => ({ ...prev, backgroundColor: e.target.value }))} />
             </div>
           </div>
           <DialogFooter>
@@ -531,13 +579,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
               className="group relative cursor-pointer overflow-hidden border-white/40"
               onClick={() => router.push(`/production/projets/${project.id}`)}
               style={{
-                backgroundColor: `${project.color ?? "#4f46e5"}1A`,
-                backgroundImage: `
-                radial-gradient(120px 95px at 18% 22%, ${project.color ?? "#4f46e5"}4A 0 35%, transparent 62%),
-                radial-gradient(180px 140px at 95% 5%, ${project.color ?? "#4f46e5"}33 0 42%, transparent 70%),
-                radial-gradient(140px 110px at 74% 100%, ${project.color ?? "#4f46e5"}30 0 38%, transparent 66%),
-                radial-gradient(100px 90px at 50% 45%, ${project.color ?? "#4f46e5"}0D 0 45%, transparent 78%)
-                `,
+                backgroundColor: project.background_color ?? "#eef2ff",
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'%3E%3Cpath fill='${encodeURIComponent(project.color ?? "#4f46e5")}' fill-opacity='0.18' d='M30 30h80v80H30zM130 30h80v80h-80zM30 130h80v80H30zM130 130h80v80h-80z'/%3E%3Ccircle cx='120' cy='120' r='28' fill='${encodeURIComponent(project.color ?? "#4f46e5")}' fill-opacity='0.28'/%3E%3C/svg%3E")`,
+                backgroundSize: "220px 220px",
               }}
             >
               <CardContent className="space-y-4 p-4">
@@ -559,7 +603,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
                         setMenuOpenProjectId((prev) => (prev === project.id ? null : project.id));
                       }}
                     >
-                      <MoreHorizontal className="h-4 w-4" />
+                      <EllipsisVertical className="h-4 w-4" />
                     </Button>
                     {menuOpenProjectId === project.id ? (
                       <div className="absolute right-0 top-9 z-10 w-32 rounded-md border bg-background p-1 shadow">

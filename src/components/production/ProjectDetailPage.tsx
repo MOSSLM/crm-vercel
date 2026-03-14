@@ -23,6 +23,8 @@ type Subtask = {
   status: ItemStatus;
   priority: Priority;
   due_date: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
 };
 
 type Task = {
@@ -32,6 +34,8 @@ type Task = {
   status: ItemStatus;
   priority: Priority;
   due_date: string | null;
+  start_at?: string | null;
+  end_at?: string | null;
   subtasks: Subtask[];
 };
 
@@ -106,12 +110,14 @@ export function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
+  const [taskStartAt, setTaskStartAt] = useState("");
+  const [taskEndAt, setTaskEndAt] = useState("");
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
   const [showSubtaskForm, setShowSubtaskForm] = useState<Record<string, boolean>>({});
   const [showAllTasks, setShowAllTasks] = useState(true);
   const [showAllSubtasks, setShowAllSubtasks] = useState(true);
-  const [subtaskForms, setSubtaskForms] = useState<Record<string, { titre: string; dueDate: string }>>({});
+  const [subtaskForms, setSubtaskForms] = useState<Record<string, { titre: string; dueDate: string; startAt: string; endAt: string }>>({});
 
   const load = async () => {
     setLoading(true);
@@ -123,7 +129,7 @@ export function ProjectDetailPage() {
 
     const { data: taskRows } = await supabase
       .from("crm_tasks")
-      .select("id,project_id,titre,status,priority,due_date")
+      .select("id,project_id,titre,status,priority,due_date,start_at,end_at")
       .eq("project_id", projectId)
       .order("created_at");
 
@@ -132,7 +138,7 @@ export function ProjectDetailPage() {
     const { data: subtaskRows } = taskIds.length
       ? await supabase
           .from("crm_subtasks")
-          .select("id,task_id,titre,status,priority,due_date")
+          .select("id,task_id,titre,status,priority,due_date,start_at,end_at")
           .in("task_id", taskIds)
           .order("created_at")
       : { data: [] as Subtask[] };
@@ -186,17 +192,21 @@ export function ProjectDetailPage() {
         project_id: projectId,
         titre: taskTitle.trim(),
         due_date: taskDueDate || null,
+        start_at: taskStartAt || null,
+        end_at: taskEndAt || null,
         status: "a_faire",
         priority: "moyenne",
         progress: 0,
       })
-      .select("id,project_id,titre,status,priority,due_date")
+      .select("id,project_id,titre,status,priority,due_date,start_at,end_at")
       .single();
 
     if (data) {
       setTasks((prev) => [...prev, { ...(data as Task), subtasks: [] }]);
       setTaskTitle("");
       setTaskDueDate("");
+    setTaskStartAt("");
+    setTaskEndAt("");
       setShowTaskForm(false);
     }
   };
@@ -210,18 +220,20 @@ export function ProjectDetailPage() {
         task_id: taskId,
         titre: form.titre.trim(),
         due_date: form.dueDate || null,
+        start_at: form.startAt || null,
+        end_at: form.endAt || null,
         status: "a_faire",
         priority: "moyenne",
         progress: 0,
       })
-      .select("id,task_id,titre,status,priority,due_date")
+      .select("id,task_id,titre,status,priority,due_date,start_at,end_at")
       .single();
 
     if (data) {
       setTasks((prev) =>
         prev.map((task) => (task.id === taskId ? { ...task, subtasks: [...task.subtasks, data as Subtask] } : task))
       );
-      setSubtaskForms((prev) => ({ ...prev, [taskId]: { titre: "", dueDate: "" } }));
+      setSubtaskForms((prev) => ({ ...prev, [taskId]: { titre: "", dueDate: "", startAt: "", endAt: "" } }));
       setShowSubtaskForm((prev) => ({ ...prev, [taskId]: false }));
     }
   };
@@ -315,6 +327,8 @@ export function ProjectDetailPage() {
               <CardContent className="grid gap-2 p-4 md:grid-cols-3">
                 <Input placeholder="Titre de la tâche" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
                 <Input type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} />
+                <Input type="datetime-local" value={taskStartAt} onChange={(e) => setTaskStartAt(e.target.value)} />
+                <Input type="datetime-local" value={taskEndAt} onChange={(e) => setTaskEndAt(e.target.value)} />
                 <Button onClick={addTask}>
                   <Plus className="mr-2 h-4 w-4" /> Confirmer
                 </Button>
@@ -359,7 +373,7 @@ export function ProjectDetailPage() {
                               onChange={(e) =>
                                 setSubtaskForms((prev) => ({
                                   ...prev,
-                                  [task.id]: { titre: e.target.value, dueDate: prev[task.id]?.dueDate ?? "" },
+                                  [task.id]: { titre: e.target.value, dueDate: prev[task.id]?.dueDate ?? "", startAt: prev[task.id]?.startAt ?? "", endAt: prev[task.id]?.endAt ?? "" },
                                 }))
                               }
                             />
@@ -372,7 +386,33 @@ export function ProjectDetailPage() {
                               onChange={(e) =>
                                 setSubtaskForms((prev) => ({
                                   ...prev,
-                                  [task.id]: { titre: prev[task.id]?.titre ?? "", dueDate: e.target.value },
+                                  [task.id]: { titre: prev[task.id]?.titre ?? "", dueDate: e.target.value, startAt: prev[task.id]?.startAt ?? "", endAt: prev[task.id]?.endAt ?? "" },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label>Début</Label>
+                            <Input
+                              type="datetime-local"
+                              value={subtaskForms[task.id]?.startAt ?? ""}
+                              onChange={(e) =>
+                                setSubtaskForms((prev) => ({
+                                  ...prev,
+                                  [task.id]: { titre: prev[task.id]?.titre ?? "", dueDate: prev[task.id]?.dueDate ?? "", startAt: e.target.value, endAt: prev[task.id]?.endAt ?? "" },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label>Fin</Label>
+                            <Input
+                              type="datetime-local"
+                              value={subtaskForms[task.id]?.endAt ?? ""}
+                              onChange={(e) =>
+                                setSubtaskForms((prev) => ({
+                                  ...prev,
+                                  [task.id]: { titre: prev[task.id]?.titre ?? "", dueDate: prev[task.id]?.dueDate ?? "", startAt: prev[task.id]?.startAt ?? "", endAt: e.target.value },
                                 }))
                               }
                             />
