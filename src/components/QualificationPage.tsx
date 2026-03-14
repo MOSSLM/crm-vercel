@@ -24,9 +24,7 @@ import {
   Eye,
   EyeOff,
   CheckCircle,
-  Edit3,
   Phone,
-  Save,
   X,
   Trash2,
   Ban,
@@ -72,13 +70,6 @@ export const QualificationPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12; // 12 items per page
   
-  // Quick edit state
-  const [editingCompany, setEditingCompany] = useState<Company | null>(null);
-  const [showQuickEditModal, setShowQuickEditModal] = useState(false);
-  const [quickEditForm, setQuickEditForm] = useState({
-    telephone: ''
-  });
-
   // Delete confirmation state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
@@ -238,46 +229,6 @@ export const QualificationPage: React.FC = () => {
     }
   };
 
-  const handleQuickEdit = (company: Company) => {
-    setEditingCompany(company);
-    // Reset form with current company data if any
-    setQuickEditForm({
-      telephone: company.telephone || ''
-    });
-    setShowQuickEditModal(true);
-  };
-
-  const handleSaveQuickEdit = async () => {
-    if (!editingCompany) return;
-
-    try {
-      // Prepare updates - only include non-empty values
-      const updates: Partial<Company> = {};
-      
-      if (quickEditForm.telephone.trim()) {
-        updates.telephone = quickEditForm.telephone.trim();
-      } else if (editingCompany.telephone) {
-        updates.telephone = null;
-      }
-      // If no updates, just close the modal
-      if (Object.keys(updates).length === 0) {
-        setShowQuickEditModal(false);
-        return;
-      }
-
-      await updateCompany(editingCompany.id, updates);
-      
-      const displayName = getCompanyDisplayName(editingCompany.name, editingCompany.canonical_url);
-      toast.success(`Informations de contact mises à jour pour ${displayName}`);
-      
-      setShowQuickEditModal(false);
-      setEditingCompany(null);
-    } catch (error) {
-      logger.error('Error updating company contact info:', error);
-      toast.error('Erreur lors de la mise à jour des informations de contact');
-    }
-  };
-
   const handleDeleteClick = (company: Company) => {
     setCompanyToDelete(company);
     setShowDeleteModal(true);
@@ -394,15 +345,6 @@ export const QualificationPage: React.FC = () => {
                   )}
                 </Button>
               )}
-              <Button 
-                size="sm" 
-                variant="outline"
-                onClick={() => handleQuickEdit(company)}
-                className="px-2"
-                title="Enrichir les données"
-              >
-                <Edit3 className="h-3 w-3" />
-              </Button>
               <Button 
                 size="sm" 
                 variant="outline"
@@ -678,14 +620,6 @@ export const QualificationPage: React.FC = () => {
                               )}
                             </Button>
                           )}
-                          <Button 
-                            size="sm" 
-                            variant="outline"
-                            onClick={() => handleQuickEdit(company)}
-                            title="Enrichir les données"
-                          >
-                            <Edit3 className="h-3 w-3" />
-                          </Button>
                           <Button
                             size="sm"
                             variant="outline"
@@ -902,49 +836,6 @@ export const QualificationPage: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Modal d'édition rapide */}
-      <Dialog open={showQuickEditModal} onOpenChange={setShowQuickEditModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Edit3 className="h-5 w-5" />
-              Enrichir les données
-            </DialogTitle>
-            <DialogDescription>
-              {editingCompany ? 
-                `Ajoutez un numéro de téléphone pour ${getCompanyDisplayName(editingCompany.name, editingCompany.canonical_url)}` :
-                'Ajoutez un numéro de téléphone pour cette entreprise'
-              }
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="quick-phone" className="flex items-center gap-2">
-                <Phone className="h-4 w-4" />
-                Téléphone
-              </Label>
-              <Input
-                id="quick-phone"
-                value={quickEditForm.telephone}
-                onChange={(e) => setQuickEditForm(prev => ({ ...prev, telephone: e.target.value }))}
-                placeholder="Ex: 01 23 45 67 89 ou 06 12 34 56 78"
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button variant="outline" onClick={() => setShowQuickEditModal(false)}>
-              Annuler
-            </Button>
-            <Button onClick={handleSaveQuickEdit}>
-              <Save className="h-4 w-4 mr-2" />
-              Sauvegarder
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Modal de détail */}
       <Dialog open={!!selectedCompany} onOpenChange={() => setSelectedCompany(null)}>
         <DialogContent className="max-w-2xl">
@@ -1049,17 +940,6 @@ export const QualificationPage: React.FC = () => {
                 >
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Visiter le site
-                </Button>
-                <Button 
-                  variant="outline"
-                  onClick={() => {
-                    setSelectedCompany(null);
-                    handleQuickEdit(selectedCompany);
-                  }}
-                  className="flex-1"
-                >
-                  <Edit3 className="h-4 w-4 mr-2" />
-                  Enrichir les données
                 </Button>
                 <Button 
                   variant={selectedCompany.qualifie ? "destructive" : "default"}

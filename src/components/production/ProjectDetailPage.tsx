@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, CirclePlus, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/components/ui/utils";
 import { supabase } from "@/utils/supabase/client";
 
@@ -41,6 +41,7 @@ type Project = {
   status: ItemStatus;
   priority: Priority;
   due_date: string | null;
+  color?: string | null;
   entreprises?: { name: string | null } | null;
   offres?: { nom: string } | null;
 };
@@ -68,6 +69,33 @@ const taskProgress = (task: Task): number => {
   return Math.round((done / task.subtasks.length) * 100);
 };
 
+function ProgressCircle({ value, color }: { value: number; color?: string | null }) {
+  const safe = Math.max(0, Math.min(100, Math.round(value)));
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const dash = circumference - (safe / 100) * circumference;
+
+  return (
+    <div className="relative h-12 w-12 shrink-0">
+      <svg viewBox="0 0 48 48" className="h-12 w-12 -rotate-90">
+        <circle cx="24" cy="24" r={radius} stroke="currentColor" strokeWidth="5" className="text-slate-200" fill="none" />
+        <circle
+          cx="24"
+          cy="24"
+          r={radius}
+          stroke={color ?? "#4f46e5"}
+          strokeWidth="5"
+          strokeLinecap="round"
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={dash}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold">{safe}%</span>
+    </div>
+  );
+}
+
 export function ProjectDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -78,13 +106,18 @@ export function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueDate, setTaskDueDate] = useState("");
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<Record<string, boolean>>({});
+  const [showSubtaskForm, setShowSubtaskForm] = useState<Record<string, boolean>>({});
+  const [showAllTasks, setShowAllTasks] = useState(true);
+  const [showAllSubtasks, setShowAllSubtasks] = useState(true);
   const [subtaskForms, setSubtaskForms] = useState<Record<string, { titre: string; dueDate: string }>>({});
 
   const load = async () => {
     setLoading(true);
     const { data: projectData } = await supabase
       .from("crm_projects")
-      .select("id,nom,status,priority,due_date,entreprises(name),offres(nom)")
+      .select("id,nom,status,priority,due_date,color,entreprises(name),offres(nom)")
       .eq("id", projectId)
       .single();
 
@@ -125,6 +158,7 @@ export function ProjectDetailPage() {
             status: projectRow.status,
             priority: projectRow.priority,
             due_date: projectRow.due_date,
+            color: projectRow.color ?? "#4f46e5",
             entreprises: projectRow.entreprises?.[0] ?? null,
             offres: projectRow.offres?.[0] ?? null,
           }
@@ -163,6 +197,7 @@ export function ProjectDetailPage() {
       setTasks((prev) => [...prev, { ...(data as Task), subtasks: [] }]);
       setTaskTitle("");
       setTaskDueDate("");
+      setShowTaskForm(false);
     }
   };
 
@@ -187,6 +222,7 @@ export function ProjectDetailPage() {
         prev.map((task) => (task.id === taskId ? { ...task, subtasks: [...task.subtasks, data as Subtask] } : task))
       );
       setSubtaskForms((prev) => ({ ...prev, [taskId]: { titre: "", dueDate: "" } }));
+      setShowSubtaskForm((prev) => ({ ...prev, [taskId]: false }));
     }
   };
 
@@ -211,6 +247,15 @@ export function ProjectDetailPage() {
     );
   };
 
+  const toggleTaskExpanded = (taskId: string) => {
+    setExpandedTaskIds((prev) => ({ ...prev, [taskId]: !(prev[taskId] ?? showAllSubtasks) }));
+  };
+
+  const isTaskExpanded = (taskId: string) => {
+    if (expandedTaskIds[taskId] !== undefined) return expandedTaskIds[taskId];
+    return showAllSubtasks;
+  };
+
   if (loading) {
     return <div className="p-6 text-sm text-muted-foreground">Chargement du projet...</div>;
   }
@@ -225,105 +270,173 @@ export function ProjectDetailPage() {
         <ArrowLeft className="mr-2 h-4 w-4" /> Retour
       </Button>
 
-      <Card>
+      <Card style={{ backgroundColor: `${project.color ?? "#4f46e5"}12` }} className="relative overflow-hidden">
+        <svg className="pointer-events-none absolute -right-8 -top-10 h-44 w-44 opacity-35 mix-blend-multiply" viewBox="0 0 200 200" aria-hidden="true">
+          <path fill={project.color ?? "#4f46e5"} d="M45.2,-68.5C57.8,-60.2,67,-47.8,73.1,-33.7C79.2,-19.5,82.2,-3.6,79,11.2C75.7,26,66.3,39.7,54.6,50.6C42.9,61.5,28.9,69.7,13.3,74.3C-2.3,79,-19.5,80,-34.4,74.5C-49.2,69,-61.8,57.1,-70.5,42.8C-79.1,28.6,-83.7,12,-82.2,-4.2C-80.6,-20.4,-73,-36.2,-61.6,-46.8C-50.3,-57.4,-35.1,-62.8,-20.5,-69.4C-5.9,-75.9,8.1,-83.6,21.9,-82.4C35.8,-81.2,49.6,-71.1,45.2,-68.5Z" transform="translate(100 100)" />
+        </svg>
         <CardHeader>
-          <CardTitle>{project.nom}</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            {project.entreprises?.name ? `Entreprise: ${project.entreprises.name} • ` : ""}
-            {project.offres?.nom ? `Offre: ${project.offres.nom} • ` : ""}
-            {project.due_date ? `Échéance: ${project.due_date}` : "Pas d'échéance"}
-          </p>
-          <div className="flex items-center gap-2">
-            <Badge className={cn("border", getStatusTone(project.status))}>{statusLabel[project.status]}</Badge>
-            <span className="text-sm text-muted-foreground">Progression automatique: {projectProgress}%</span>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>{project.nom}</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {project.entreprises?.name ? `Entreprise: ${project.entreprises.name} • ` : ""}
+                {project.offres?.nom ? `Offre: ${project.offres.nom} • ` : ""}
+                {project.due_date ? `Échéance: ${project.due_date}` : "Pas d'échéance"}
+              </p>
+              <Badge className={cn("mt-2 border", getStatusTone(project.status))}>{statusLabel[project.status]}</Badge>
+            </div>
+            <ProgressCircle value={projectProgress} color={project.color} />
           </div>
         </CardHeader>
-        <CardContent>
-          <Progress value={projectProgress} />
-        </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Ajouter une tâche</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-2 md:grid-cols-3">
-          <Input placeholder="Titre de la tâche" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
-          <Input type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} />
-          <Button onClick={addTask}>
-            <Plus className="mr-2 h-4 w-4" /> Ajouter tâche
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant={showAllTasks ? "default" : "outline"} size="sm" onClick={() => setShowAllTasks((v) => !v)}>
+          {showAllTasks ? "Masquer tâches" : "Étendre aux tâches"}
+        </Button>
+        <Button variant={showAllSubtasks ? "default" : "outline"} size="sm" onClick={() => setShowAllSubtasks((v) => !v)}>
+          {showAllSubtasks ? "Masquer sous-tâches" : "Étendre aux sous-tâches"}
+        </Button>
+      </div>
+
+      <Tabs defaultValue="cartes" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-3 md:w-auto">
+          <TabsTrigger value="cartes">Cartes</TabsTrigger>
+          <TabsTrigger value="liste">Liste</TabsTrigger>
+          <TabsTrigger value="tableau">Tableau</TabsTrigger>
+        </TabsList>
+
+        <div>
+          <Button variant="outline" onClick={() => setShowTaskForm((v) => !v)}>
+            <CirclePlus className="mr-2 h-4 w-4" /> Ajouter une tâche
           </Button>
-        </CardContent>
-      </Card>
+          {showTaskForm && (
+            <Card className="mt-3">
+              <CardContent className="grid gap-2 p-4 md:grid-cols-3">
+                <Input placeholder="Titre de la tâche" value={taskTitle} onChange={(e) => setTaskTitle(e.target.value)} />
+                <Input type="date" value={taskDueDate} onChange={(e) => setTaskDueDate(e.target.value)} />
+                <Button onClick={addTask}>
+                  <Plus className="mr-2 h-4 w-4" /> Confirmer
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
-      {tasks.map((task) => (
-        <Card key={task.id}>
-          <CardHeader>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
-                <CardTitle className="text-lg">{task.titre}</CardTitle>
-              </div>
-              <span className="text-xs text-muted-foreground">{taskProgress(task)}%</span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Progress value={taskProgress(task)} />
+        <TabsContent value="cartes">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {tasks.map((task) => {
+              const expanded = isTaskExpanded(task.id);
+              return (
+                <Card key={task.id}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
+                        <CardTitle className="text-lg">{task.titre}</CardTitle>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <ProgressCircle value={taskProgress(task)} color={project.color} />
+                        <Button variant="ghost" size="icon" onClick={() => toggleTaskExpanded(task.id)}>
+                          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  {expanded && showAllTasks && (
+                    <CardContent className="space-y-3">
+                      <Button variant="secondary" size="sm" onClick={() => setShowSubtaskForm((prev) => ({ ...prev, [task.id]: !(prev[task.id] ?? false) }))}>
+                        <CirclePlus className="mr-2 h-4 w-4" /> Ajouter sous-tâche
+                      </Button>
 
-            <div className="grid gap-2 md:grid-cols-3">
-              <div className="md:col-span-2">
-                <Label>Nouvelle sous-tâche</Label>
-                <Input
-                  placeholder="Titre sous-tâche"
-                  value={subtaskForms[task.id]?.titre ?? ""}
-                  onChange={(e) =>
-                    setSubtaskForms((prev) => ({
-                      ...prev,
-                      [task.id]: {
-                        titre: e.target.value,
-                        dueDate: prev[task.id]?.dueDate ?? "",
-                      },
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Échéance</Label>
-                <Input
-                  type="date"
-                  value={subtaskForms[task.id]?.dueDate ?? ""}
-                  onChange={(e) =>
-                    setSubtaskForms((prev) => ({
-                      ...prev,
-                      [task.id]: {
-                        titre: prev[task.id]?.titre ?? "",
-                        dueDate: e.target.value,
-                      },
-                    }))
-                  }
-                />
-              </div>
-            </div>
-            <Button variant="secondary" onClick={() => addSubtask(task.id)}>Ajouter sous-tâche</Button>
+                      {showSubtaskForm[task.id] && (
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <div className="md:col-span-2">
+                            <Label>Nouvelle sous-tâche</Label>
+                            <Input
+                              placeholder="Titre sous-tâche"
+                              value={subtaskForms[task.id]?.titre ?? ""}
+                              onChange={(e) =>
+                                setSubtaskForms((prev) => ({
+                                  ...prev,
+                                  [task.id]: { titre: e.target.value, dueDate: prev[task.id]?.dueDate ?? "" },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label>Échéance</Label>
+                            <Input
+                              type="date"
+                              value={subtaskForms[task.id]?.dueDate ?? ""}
+                              onChange={(e) =>
+                                setSubtaskForms((prev) => ({
+                                  ...prev,
+                                  [task.id]: { titre: prev[task.id]?.titre ?? "", dueDate: e.target.value },
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <Button variant="outline" onClick={() => addSubtask(task.id)}>Créer sous-tâche</Button>
+                          </div>
+                        </div>
+                      )}
 
-            <div className="space-y-2">
-              {task.subtasks.map((subtask) => (
-                <div key={subtask.id} className="flex items-center justify-between rounded-md border p-2">
+                      <div className="space-y-2">
+                        {task.subtasks.map((subtask) => (
+                          <div key={subtask.id} className="flex items-center justify-between rounded-md border p-2">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={subtask.status === "termine"}
+                                onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))}
+                              />
+                              <span>{subtask.titre}</span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">{subtask.due_date ?? "Sans échéance"}</span>
+                          </div>
+                        ))}
+                        {task.subtasks.length === 0 ? <p className="text-sm text-muted-foreground">Aucune sous-tâche.</p> : null}
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })}
+          </div>
+        </TabsContent>
+
+        <TabsContent value="liste" className="space-y-3">
+          {tasks.map((task) => (
+            <Card key={task.id}>
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Checkbox
-                      checked={subtask.status === "termine"}
-                      onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))}
-                    />
-                    <span>{subtask.titre}</span>
+                    <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
+                    <span className="font-medium">{task.titre}</span>
                   </div>
-                  <span className="text-xs text-muted-foreground">{subtask.due_date ?? "Sans échéance"}</span>
+                  <ProgressCircle value={taskProgress(task)} color={project.color} />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </TabsContent>
+
+        <TabsContent value="tableau">
+          <Card>
+            <CardContent className="p-4 space-y-2">
+              {tasks.map((task) => (
+                <div key={task.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded border p-2">
+                  <span>{task.titre}</span>
+                  <span className="text-xs text-muted-foreground">{task.due_date ?? "-"}</span>
+                  <ProgressCircle value={taskProgress(task)} color={project.color} />
                 </div>
               ))}
-              {task.subtasks.length === 0 ? <p className="text-sm text-muted-foreground">Aucune sous-tâche.</p> : null}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
       {tasks.length === 0 ? <p className="text-sm text-muted-foreground">Aucune tâche pour ce projet.</p> : null}
     </div>
   );
