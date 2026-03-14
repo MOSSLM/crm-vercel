@@ -58,6 +58,7 @@ function usePageTitle() {
     "/qualified-companies": "Qualifiés",
     "/opportunities": "Opportunités",
     "/pipeline": "Pipeline",
+    "/offres": "Offres",
     // ton dossier est `app/objectifs`, pas `/objectives`
     "/objectifs": "Objectifs & Progression",
     "/production/enrichissement": "Enrichissement",
