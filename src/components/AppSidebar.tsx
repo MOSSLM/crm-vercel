@@ -113,12 +113,12 @@ export const AppSidebar = () => {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-6 w-6" />
-          <h2 className="truncate">Sama CRM</h2>
+      <SidebarHeader className="p-4 pb-2">
+        <div className="flex items-center gap-2 rounded-xl bg-sidebar-accent/80 px-3 py-2">
+          <Building2 className="h-6 w-6 text-primary" />
+          <h2 className="truncate font-semibold tracking-tight">Sama CRM</h2>
         </div>
-        <div className="text-sm text-muted-foreground truncate">{user?.name}</div>
+        <div className="px-1 pt-2 text-sm text-muted-foreground truncate">{user?.name}</div>
       </SidebarHeader>
 
       <SidebarContent>
