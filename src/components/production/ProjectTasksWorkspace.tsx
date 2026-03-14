@@ -580,8 +580,10 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
               onClick={() => router.push(`/production/projets/${project.id}`)}
               style={{
                 backgroundColor: project.background_color ?? "#eef2ff",
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240' viewBox='0 0 240 240'%3E%3Cpath fill='${encodeURIComponent(project.color ?? "#4f46e5")}' fill-opacity='0.18' d='M30 30h80v80H30zM130 30h80v80h-80zM30 130h80v80H30zM130 130h80v80h-80z'/%3E%3Ccircle cx='120' cy='120' r='28' fill='${encodeURIComponent(project.color ?? "#4f46e5")}' fill-opacity='0.28'/%3E%3C/svg%3E")`,
-                backgroundSize: "220px 220px",
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='sw-gradient' x1='0' x2='1' y1='1' y2='0'%3E%3Cstop stop-color='${encodeURIComponent(project.color ?? "#4f46e5")}' stop-opacity='0.35' offset='0%25'/%3E%3Cstop stop-color='${encodeURIComponent(project.color ?? "#4f46e5")}' stop-opacity='0.18' offset='100%25'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath fill='url(%23sw-gradient)' d='M14,-21.5C18,-19.2,21.1,-15.1,24.2,-10.4C27.3,-5.7,30.4,-0.5,32.7,6.8C34.9,14.1,36.2,23.3,32.1,27.5C28,31.7,18.4,30.9,10.2,31.9C2.1,33,-4.7,36,-8.7,33.2C-12.7,30.4,-14,21.8,-17.1,16C-20.3,10.2,-25.4,7.3,-26,3.7C-26.6,0,-22.8,-4.3,-21.6,-11C-20.3,-17.7,-21.6,-26.7,-18.5,-29.4C-15.3,-32,-7.7,-28.3,-1.3,-26.2C5,-24.1,10,-23.7,14,-21.5Z' transform='translate(50 50)'/%3E%3C/svg%3E")`,
+                backgroundSize: "180px 180px",
+                backgroundPosition: "right -40px top -40px",
+                backgroundRepeat: "no-repeat",
               }}
             >
               <CardContent className="space-y-4 p-4">
