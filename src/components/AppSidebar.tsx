@@ -34,7 +34,6 @@ import {
   Share2,
   Ban,
   ChevronDown,
-  Briefcase,
   FolderKanban,
   LayoutTemplate,
   AppWindow,
@@ -101,13 +100,12 @@ export const AppSidebar = () => {
   ];
 
   const productionItems: SidebarNavItem[] = [
-    { title: "Offres", icon: Package, href: "/offres" },
-    { title: "Objectifs", icon: Target, href: "/objectifs" },
-    { title: "Projets Clients", icon: Briefcase, href: "/production/projets-clients" },
-    { title: "Projets Internes", icon: FolderKanban, href: "/production/projets-internes" },
+    { title: "Projets", icon: FolderKanban, href: "/production/projets" },
     { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
     { title: "Templates", icon: LayoutTemplate, href: "/production/templates" },
     { title: "Apps", icon: AppWindow, href: "/production/apps" },
+    { title: "Offres", icon: Package, href: "/offres" },
+    { title: "Objectifs", icon: Target, href: "/objectifs" },
   ];
 
   const isActive = (href: string) =>

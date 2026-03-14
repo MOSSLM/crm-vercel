@@ -65,6 +65,14 @@ import { calculateDashboardMetrics } from './dashboard/calculations';
 
 type ViewMode = 'overview' | 'commercial' | 'funnel';
 type PerformanceMetric = 'revenue' | 'customers' | 'appointments' | 'calls';
+type DashboardWidgetType = 'calls' | 'appointments' | 'quotes' | 'signed';
+type DashboardWidgetSize = 'sm' | 'md' | 'lg';
+
+type DashboardWidget = {
+  id: string;
+  type: DashboardWidgetType;
+  size: DashboardWidgetSize;
+};
 
 export const DashboardPage: React.FC = () => {
   const { 
@@ -132,6 +140,14 @@ export const DashboardPage: React.FC = () => {
   const [kpiError, setKpiError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('week');
   const [selectedPerformanceMetric, setSelectedPerformanceMetric] = useState<PerformanceMetric>('revenue');
+  const [isEditingWidgets, setIsEditingWidgets] = useState(false);
+  const [widgets, setWidgets] = useState<DashboardWidget[]>([
+    { id: 'w-calls', type: 'calls', size: 'sm' },
+    { id: 'w-appointments', type: 'appointments', size: 'sm' },
+    { id: 'w-quotes', type: 'quotes', size: 'sm' },
+    { id: 'w-signed', type: 'signed', size: 'sm' },
+  ]);
+  const [widgetToAdd, setWidgetToAdd] = useState<DashboardWidgetType>('calls');
 
   // Charger les KPI du journal
   useEffect(() => {
@@ -220,6 +236,24 @@ export const DashboardPage: React.FC = () => {
     recentActivity
   } = calculations;
 
+  const widgetCatalog: Record<DashboardWidgetType, { title: string; value: number; icon: React.ReactElement }> = {
+    calls: { title: 'Appels', value: totalAppels, icon: <Phone className="h-4 w-4" /> },
+    appointments: { title: 'RDV', value: totalRdv, icon: <Calendar className="h-4 w-4" /> },
+    quotes: { title: 'Devis', value: totalDevis, icon: <FileText className="h-4 w-4" /> },
+    signed: { title: 'Signatures', value: totalSignatures, icon: <Handshake className="h-4 w-4" /> },
+  };
+
+  const sizeClass: Record<DashboardWidgetSize, string> = {
+    sm: 'col-span-1',
+    md: 'col-span-1 md:col-span-2',
+    lg: 'col-span-1 md:col-span-3',
+  };
+
+  const addWidget = () => {
+    const id = `w-${widgetToAdd}-${Date.now()}`;
+    setWidgets((prev) => [...prev, { id, type: widgetToAdd, size: 'sm' }]);
+  };
+
   // Données pour les graphiques
   const distributionData = showByKeywords 
     ? Object.entries(keywordStats).map(([name, value]) => ({ name, value }))
@@ -293,6 +327,69 @@ export const DashboardPage: React.FC = () => {
           Vue d'ensemble de votre activité commerciale
         </p>
       </div>
+
+      <Card>
+        <CardHeader className="gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle>Cartes personnalisables</CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="edit-dashboard">Mode édition</Label>
+              <Switch id="edit-dashboard" checked={isEditingWidgets} onCheckedChange={setIsEditingWidgets} />
+            </div>
+          </div>
+          <CardDescription>Activez le mode édition pour ajouter une carte et choisir sa taille dans la grille.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {isEditingWidgets ? (
+            <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3">
+              <div className="space-y-1">
+                <Label>Type de carte</Label>
+                <Select value={widgetToAdd} onValueChange={(value: DashboardWidgetType) => setWidgetToAdd(value)}>
+                  <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="calls">Appels</SelectItem>
+                    <SelectItem value="appointments">RDV</SelectItem>
+                    <SelectItem value="quotes">Devis</SelectItem>
+                    <SelectItem value="signed">Signatures</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={addWidget}>+ Ajouter</Button>
+            </div>
+          ) : null}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {widgets.map((widget) => (
+              <Card key={widget.id} className={sizeClass[widget.size]}>
+                <CardContent className="p-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-medium">{widgetCatalog[widget.type].title}</p>
+                    {widgetCatalog[widget.type].icon}
+                  </div>
+                  <p className="text-2xl font-semibold">{widgetCatalog[widget.type].value}</p>
+                  {isEditingWidgets ? (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Label className="text-xs">Taille</Label>
+                      <Select
+                        value={widget.size}
+                        onValueChange={(value: DashboardWidgetSize) =>
+                          setWidgets((prev) => prev.map((item) => (item.id === widget.id ? { ...item, size: value } : item)))
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sm">Petit</SelectItem>
+                          <SelectItem value="md">Moyen</SelectItem>
+                          <SelectItem value="lg">Grand</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Onglets principaux */}
       <Tabs
