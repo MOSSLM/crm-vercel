@@ -154,12 +154,12 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
 
     return (
       <Card 
-        className="h-full cursor-pointer hover:shadow-md transition-shadow" 
+        className="h-full cursor-pointer border-border/80 bg-card/95 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)]" 
         onClick={() => handleEmployeeClick(employee)}
       >
         <CardHeader className="pb-2 space-y-1">
           <div className="space-y-2">
-            <CardTitle className="text-sm md:text-base leading-tight break-words pr-1 flex items-center gap-2">
+            <CardTitle className="text-sm md:text-base leading-tight break-words pr-1 flex items-center gap-2 tracking-tight">
               <User className="h-4 w-4 flex-shrink-0" />
               {employeeName}
             </CardTitle>
@@ -222,7 +222,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
                 href={associatedCompany.canonical_url} 
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="text-blue-600 hover:underline text-xs break-all leading-relaxed"
+                className="text-blue-600 hover:underline text-xs break-all leading-relaxed font-medium"
                 onClick={(e) => e.stopPropagation()}
               >
                 Site web
@@ -241,11 +241,11 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
 
     return (
       <div 
-        className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:shadow-md transition-shadow"
+        className="flex items-center justify-between p-4 border border-border/80 rounded-[18px] cursor-pointer bg-card/95 transition-all duration-200 hover:bg-secondary/50"
         onClick={() => handleEmployeeClick(employee)}
       >
         <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
+          <div className="w-10 h-10 bg-accent rounded-full flex items-center justify-center flex-shrink-0">
             <User className="h-5 w-5 text-primary" />
           </div>
           
@@ -304,74 +304,74 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
   }
 
   return (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      <div>
-        <h1>Contacts</h1>
+    <div className="p-4 md:p-6 lg:p-8 space-y-5 md:space-y-6">
+      <div className="space-y-1">
+        <h1 className="mb-0">Contacts</h1>
         <p className="text-muted-foreground">
           Tous les contacts et employés de vos entreprises
         </p>
       </div>
 
       {/* Métriques optimisées pour mobile - 2 colonnes */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
-        <Card>
+      <div className="grid gap-4 grid-cols-2 md:grid-cols-4 md:gap-5">
+        <Card className="bg-card/96">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Total</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl md:text-2xl font-bold">{allEmployees.length}</div>
+            <div className="text-2xl md:text-3xl font-bold tracking-tight">{allEmployees.length}</div>
             <p className="text-xs text-muted-foreground">Contacts</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card/96">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Avec Email</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-green-600">{withEmailCount}</div>
+            <div className="text-2xl md:text-3xl font-bold tracking-tight text-green-600">{withEmailCount}</div>
             <p className="text-xs text-muted-foreground">
               {allEmployees.length > 0 ? Math.round((withEmailCount / allEmployees.length) * 100) : 0}% du total
             </p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card/96">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Avec Téléphone</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-blue-600">{withPhoneCount}</div>
+            <div className="text-2xl md:text-3xl font-bold tracking-tight text-blue-600">{withPhoneCount}</div>
             <p className="text-xs text-muted-foreground">Téléphone disponible</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-card/96">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Avec Poste</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-purple-600">{withPositionCount}</div>
+            <div className="text-2xl md:text-3xl font-bold tracking-tight text-teal-600">{withPositionCount}</div>
             <p className="text-xs text-muted-foreground">Poste renseigné</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Filtres et recherche optimisés pour mobile */}
-      <div className="space-y-3 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-wrap">
+      <div className="space-y-3 md:space-y-0 md:flex md:gap-3 md:items-center md:flex-wrap rounded-[24px] border border-border/80 bg-card/95 p-3 md:p-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Rechercher par nom, entreprise, email, téléphone ou poste..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
+            className="pl-10 h-11"
           />
         </div>
         
         <div className="flex gap-3 items-center">
           <Select value={filterBy} onValueChange={setFilterBy}>
-            <SelectTrigger className="w-40 md:w-48">
+            <SelectTrigger className="w-44 md:w-52 h-11">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder="Filtrer" />
             </SelectTrigger>
@@ -385,12 +385,12 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
           </Select>
 
           {/* Toggle grille/liste unifié */}
-          <div className="flex border rounded-lg">
+          <div className="flex border border-border/80 rounded-[14px] bg-secondary/40 p-0.5">
             <Button
               variant={viewMode === 'cards' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('cards')}
-              className="rounded-r-none"
+              className="rounded-r-none h-9"
             >
               <LayoutGrid className="h-4 w-4" />
             </Button>
@@ -398,7 +398,7 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
               variant={viewMode === 'list' ? 'default' : 'ghost'}
               size="sm"
               onClick={() => setViewMode('list')}
-              className="rounded-l-none"
+              className="rounded-l-none h-9"
             >
               <List className="h-4 w-4" />
             </Button>
@@ -418,13 +418,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
 
       {/* Grille de contacts optimisée pour mobile */}
       {viewMode === 'cards' ? (
-        <div className="grid gap-3 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-2 md:gap-5 md:grid-cols-2 lg:grid-cols-3">
           {filteredEmployees.map((employee) => (
             <EmployeeCard key={employee.id} employee={employee} />
           ))}
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-2 rounded-[24px] border border-border/80 bg-card/95 p-2">
           {filteredEmployees.map((employee) => (
             <EmployeeRow key={employee.id} employee={employee} />
           ))}
