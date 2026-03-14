@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,12 +14,13 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
 import {
   BarChart3,
-  FileText,
   Search,
-  Plus,
   Settings,
   LogOut,
   Building2,
@@ -28,11 +30,15 @@ import {
   Target,
   Package,
   GitBranch,
-  Award,
   CheckCircle,
   Copy,
   Share2,
   Ban,
+  ChevronDown,
+  Briefcase,
+  FolderKanban,
+  LayoutTemplate,
+  AppWindow,
   Sparkles,
   PenLine,
   Magnet,
@@ -53,23 +59,17 @@ export const AppSidebar = () => {
   const pathname = usePathname();
   const { view } = useWorkspaceView();
 
-  const navigationItems: SidebarNavItem[] = [
-    { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
-    { title: "Results", icon: FileText, href: "/results" },
-    { title: "Toutes les entreprises", icon: Building, href: "/companies" },
-  ];
+  const [crmOpen, setCrmOpen] = React.useState(true);
+  const [productionOpen, setProductionOpen] = React.useState(true);
+  const [actionsOpen, setActionsOpen] = React.useState(true);
+
+  const navigationItems: SidebarNavItem[] = [{ title: "Dashboard", icon: BarChart3, href: "/dashboard" }];
 
   const crmItems: SidebarNavItem[] = [
-    { title: "Qualification", icon: CheckSquare, href: "/qualification" },
-    { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
-    { title: "Duplicats", icon: Copy, href: "/duplicates" },
-    { title: "Réseaux", icon: Share2, href: "/networks" },
-    { title: "Blacklist", icon: Ban, href: "/blacklist" },
+    { title: "Entreprises", icon: Building, href: "/companies" },
     { title: "Contacts", icon: Users, href: "/contacts" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
-    { title: "Offres", icon: Package, href: "/offres" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
-    { title: "Objectifs & Progression", icon: Award, href: "/objectifs" },
   ];
 
   const qualificationItems: SidebarNavItem[] = [
@@ -91,14 +91,20 @@ export const AppSidebar = () => {
   ];
 
   const actionItems: SidebarNavItem[] = [
+    { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
-    { title: "Créer", icon: Plus, href: "/create" },
-  ];
-
-  const productionItems: SidebarNavItem[] = [
+    { title: "Results", icon: Package, href: "/results" },
     { title: "Enrichissement", icon: Sparkles, href: "/production/enrichissement" },
     { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
+  ];
+
+  const productionItems: SidebarNavItem[] = [
+    { title: "Projets Clients", icon: Briefcase, href: "/production/projets-clients" },
+    { title: "Projets Internes", icon: FolderKanban, href: "/production/projets-internes" },
+    { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
+    { title: "Templates", icon: LayoutTemplate, href: "/production/templates" },
+    { title: "Apps", icon: AppWindow, href: "/production/apps" },
   ];
 
   const isActive = (href: string) =>
@@ -164,16 +170,27 @@ export const AppSidebar = () => {
               <SidebarGroupLabel>CRM</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {crmItems.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                        <Link href={item.href}>
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton onClick={() => setCrmOpen((prev) => !prev)}>
+                      <Building2 className="h-4 w-4" />
+                      <span>CRM</span>
+                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${crmOpen ? "rotate-180" : ""}`} />
+                    </SidebarMenuButton>
+                    {crmOpen && (
+                      <SidebarMenuSub>
+                        {crmItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href}>
+                                <item.icon className="h-4 w-4" />
+                                <span>{item.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    )}
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -182,16 +199,27 @@ export const AppSidebar = () => {
               <SidebarGroupLabel>Production</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {productionItems.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                        <Link href={item.href}>
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton onClick={() => setProductionOpen((prev) => !prev)}>
+                      <FolderKanban className="h-4 w-4" />
+                      <span>Production</span>
+                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${productionOpen ? "rotate-180" : ""}`} />
+                    </SidebarMenuButton>
+                    {productionOpen && (
+                      <SidebarMenuSub>
+                        {productionItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href}>
+                                <item.icon className="h-4 w-4" />
+                                <span>{item.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    )}
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -200,16 +228,27 @@ export const AppSidebar = () => {
               <SidebarGroupLabel>Actions</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {actionItems.map((item) => (
-                    <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={isActive(item.href)}>
-                        <Link href={item.href}>
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton onClick={() => setActionsOpen((prev) => !prev)}>
+                      <CheckSquare className="h-4 w-4" />
+                      <span>Actions</span>
+                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${actionsOpen ? "rotate-180" : ""}`} />
+                    </SidebarMenuButton>
+                    {actionsOpen && (
+                      <SidebarMenuSub>
+                        {actionItems.map((item) => (
+                          <SidebarMenuSubItem key={item.href}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                              <Link href={item.href}>
+                                <item.icon className="h-4 w-4" />
+                                <span>{item.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        ))}
+                      </SidebarMenuSub>
+                    )}
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
