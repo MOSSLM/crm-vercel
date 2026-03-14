@@ -37,7 +37,7 @@ export function SectionTabsNav({ items }: SectionTabsNavProps) {
           onClick={() => scrollBy("left")}
           aria-label="Faire défiler vers la gauche"
         >
-          <ChevronLeft className="h-4 w-4" />
+          <ChevronLeft className="h-5 w-5" />
         </Button>
 
         <div
@@ -53,10 +53,10 @@ export function SectionTabsNav({ items }: SectionTabsNavProps) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors ${
+                className={`sage-tab whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-all ${
                   active
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                    ? "active text-foreground shadow-sm"
+                    : "bg-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {item.label}
@@ -72,7 +72,7 @@ export function SectionTabsNav({ items }: SectionTabsNavProps) {
           onClick={() => scrollBy("right")}
           aria-label="Faire défiler vers la droite"
         >
-          <ChevronRight className="h-4 w-4" />
+          <ChevronRight className="h-5 w-5" />
         </Button>
       </div>
     </div>
