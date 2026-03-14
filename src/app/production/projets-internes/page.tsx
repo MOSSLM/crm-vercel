@@ -1,12 +1,13 @@
 import AppLayout from "@/components/layout/AppLayout";
-import { ProductionWorkspacePage } from "@/components/production/ProductionWorkspacePage";
+import { ProjectTasksWorkspace } from "@/components/production/ProjectTasksWorkspace";
 
 export default function ProjetsInternesPage() {
   return (
     <AppLayout>
-      <ProductionWorkspacePage
-        title="Projets Internes"
-        description="Centralisez les projets internes de l'agence sur cet espace."
+      <ProjectTasksWorkspace
+        title="Projets internes"
+        description="Créez vos projets internes, suivez leur avancement et gérez tâches/sous-tâches en liste, kanban, tableau et agenda."
+        scope="internal"
       />
     </AppLayout>
   );

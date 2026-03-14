@@ -1,12 +1,13 @@
 import AppLayout from "@/components/layout/AppLayout";
-import { ProductionWorkspacePage } from "@/components/production/ProductionWorkspacePage";
+import { ProjectTasksWorkspace } from "@/components/production/ProjectTasksWorkspace";
 
 export default function ProjetsClientsPage() {
   return (
     <AppLayout>
-      <ProductionWorkspacePage
-        title="Projets Clients"
-        description="Pilotez ici les projets livrés pour vos clients."
+      <ProjectTasksWorkspace
+        title="Projets clients"
+        description="Pilotez les projets liés aux entreprises, offres, échéances et priorités avec un système projet > tâches > sous-tâches."
+        scope="client"
       />
     </AppLayout>
   );
