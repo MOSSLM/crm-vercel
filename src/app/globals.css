@@ -1,3 +1,4 @@
+@import url("https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap");
 @custom-variant dark (&:is(.dark *));
 @import "tailwindcss";
 @plugin "tailwindcss-animate"; /* si tu utilises les animations shadcn */
@@ -18,6 +19,12 @@
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --tracking-tight: -0.02em;
+  --font-family-base: "Clash Display", ui-sans-serif, system-ui, sans-serif;
+
+  --sage-gradient-start: #e9f1e4;
+  --sage-gradient-end: #f4f8f1;
+  --main-gradient-start: #fffdf6;
+  --main-gradient-end: #f7fbf5;
 
   /* Color system - Light mode */
   --background: #f5f7f3;
@@ -173,10 +180,12 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    font-family: var(--font-family-base), "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     min-height: 100vh;
     line-height: 1.5;
-    background-image: radial-gradient(circle at top right, color-mix(in srgb, var(--color-accent) 22%, transparent) 0%, transparent 38%);
+    background-image:
+      linear-gradient(to bottom, var(--main-gradient-start) 0%, var(--main-gradient-end) 100%),
+      radial-gradient(circle at top right, color-mix(in srgb, var(--color-accent) 22%, transparent) 0%, transparent 38%);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -191,6 +200,21 @@
   img, video {
     max-width: 100%;
     height: auto;
+  }
+
+  svg.lucide {
+    width: 1.25em;
+    height: 1.25em;
+  }
+
+  .sage-tab:hover,
+  .sage-tab.active {
+    background-image: linear-gradient(135deg, var(--sage-gradient-start), var(--sage-gradient-end));
+  }
+
+  [data-sidebar="menu-button"]:is(:hover, [data-active="true"]),
+  [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) {
+    background-image: linear-gradient(135deg, var(--sage-gradient-start), var(--sage-gradient-end));
   }
 }
 
