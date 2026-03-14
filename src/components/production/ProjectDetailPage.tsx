@@ -283,8 +283,18 @@ export function ProjectDetailPage() {
       </Button>
 
       <Card style={{ backgroundColor: `${project.color ?? "#4f46e5"}12` }} className="relative overflow-hidden">
-        <svg className="pointer-events-none absolute -right-8 -top-10 h-44 w-44 opacity-35 mix-blend-multiply" viewBox="0 0 200 200" aria-hidden="true">
-          <path fill={project.color ?? "#4f46e5"} d="M45.2,-68.5C57.8,-60.2,67,-47.8,73.1,-33.7C79.2,-19.5,82.2,-3.6,79,11.2C75.7,26,66.3,39.7,54.6,50.6C42.9,61.5,28.9,69.7,13.3,74.3C-2.3,79,-19.5,80,-34.4,74.5C-49.2,69,-61.8,57.1,-70.5,42.8C-79.1,28.6,-83.7,12,-82.2,-4.2C-80.6,-20.4,-73,-36.2,-61.6,-46.8C-50.3,-57.4,-35.1,-62.8,-20.5,-69.4C-5.9,-75.9,8.1,-83.6,21.9,-82.4C35.8,-81.2,49.6,-71.1,45.2,-68.5Z" transform="translate(100 100)" />
+        <svg className="pointer-events-none absolute -right-10 -top-12 h-48 w-48 opacity-40" viewBox="0 0 100 100" aria-hidden="true">
+          <defs>
+            <linearGradient id="project-blob-gradient" x1="0" x2="1" y1="1" y2="0">
+              <stop stopColor={project.color ?? "#4f46e5"} stopOpacity="0.35" offset="0%" />
+              <stop stopColor={project.color ?? "#4f46e5"} stopOpacity="0.18" offset="100%" />
+            </linearGradient>
+          </defs>
+          <path
+            fill="url(#project-blob-gradient)"
+            d="M14,-21.5C18,-19.2,21.1,-15.1,24.2,-10.4C27.3,-5.7,30.4,-0.5,32.7,6.8C34.9,14.1,36.2,23.3,32.1,27.5C28,31.7,18.4,30.9,10.2,31.9C2.1,33,-4.7,36,-8.7,33.2C-12.7,30.4,-14,21.8,-17.1,16C-20.3,10.2,-25.4,7.3,-26,3.7C-26.6,0,-22.8,-4.3,-21.6,-11C-20.3,-17.7,-21.6,-26.7,-18.5,-29.4C-15.3,-32,-7.7,-28.3,-1.3,-26.2C5,-24.1,10,-23.7,14,-21.5Z"
+            transform="translate(50 50)"
+          />
         </svg>
         <CardHeader>
           <div className="flex items-start justify-between gap-3">
