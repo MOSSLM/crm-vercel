@@ -38,7 +38,6 @@ import {
   FolderKanban,
   LayoutTemplate,
   AppWindow,
-  Sparkles,
   PenLine,
   Magnet,
   CalendarDays,
@@ -97,12 +96,13 @@ export const AppSidebar = () => {
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
     { title: "Results", icon: Package, href: "/results" },
-    { title: "Enrichissement", icon: Sparkles, href: "/production/enrichissement" },
     { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
   ];
 
   const productionItems: SidebarNavItem[] = [
+    { title: "Offres", icon: Package, href: "/offres" },
+    { title: "Objectifs", icon: Target, href: "/objectifs" },
     { title: "Projets Clients", icon: Briefcase, href: "/production/projets-clients" },
     { title: "Projets Internes", icon: FolderKanban, href: "/production/projets-internes" },
     { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
