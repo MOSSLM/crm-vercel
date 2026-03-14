@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
-import { CalendarDays, Plus } from "lucide-react";
+import { CalendarDays, Columns2, Plus, RectangleHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -383,8 +383,25 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
           <TabsTrigger value="agenda">Par date</TabsTrigger>
           </TabsList>
           <div className="flex items-center gap-2 self-end md:self-auto">
-            <Button variant={mobileLayout === "two" ? "default" : "outline"} size="sm" onClick={() => setMobileLayout("two")}>2/cartes mobile</Button>
-            <Button variant={mobileLayout === "one" ? "default" : "outline"} size="sm" onClick={() => setMobileLayout("one")}>1/carte mobile</Button>
+            <span className="text-xs text-muted-foreground">Vue mobile</span>
+            <Button
+              variant={mobileLayout === "two" ? "default" : "outline"}
+              size="icon"
+              onClick={() => setMobileLayout("two")}
+              aria-label="Afficher 2 cartes par ligne sur mobile"
+              title="2 cartes par ligne (mobile)"
+            >
+              <Columns2 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={mobileLayout === "one" ? "default" : "outline"}
+              size="icon"
+              onClick={() => setMobileLayout("one")}
+              aria-label="Afficher 1 carte par ligne sur mobile"
+              title="1 carte par ligne (mobile)"
+            >
+              <RectangleHorizontal className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
