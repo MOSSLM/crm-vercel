@@ -9,7 +9,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -121,7 +120,7 @@ export const AppSidebar = () => {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <Building2 className="h-6 w-6" />
+          <Building2 className="h-7 w-7" />
           <h2 className="truncate">Sama CRM</h2>
         </div>
         <div className="text-sm text-muted-foreground truncate">{user?.name}</div>
@@ -130,14 +129,13 @@ export const AppSidebar = () => {
       <SidebarContent>
         {focusItems ? (
           <SidebarGroup>
-            <SidebarGroupLabel>{view === "prospection" ? "Prospection" : "Qualification"}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {focusItems.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive(item.activeHref ?? item.href)}>
                       <Link href={item.href}>
-                        <item.icon className="h-4 w-4" />
+                        <item.icon className="h-5 w-5" />
                         <span>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -149,14 +147,13 @@ export const AppSidebar = () => {
         ) : (
           <>
             <SidebarGroup>
-              <SidebarGroupLabel>Navigation</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {navigationItems.map((item) => (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive(item.href)}>
                         <Link href={item.href}>
-                          <item.icon className="h-4 w-4" />
+                          <item.icon className="h-5 w-5" />
                           <span>{item.title}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -167,14 +164,13 @@ export const AppSidebar = () => {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>CRM</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton onClick={() => setCrmOpen((prev) => !prev)}>
-                      <Building2 className="h-4 w-4" />
+                      <Building2 className="h-5 w-5" />
                       <span>CRM</span>
-                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${crmOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`ml-auto h-5 w-5 transition-transform ${crmOpen ? "rotate-180" : ""}`} />
                     </SidebarMenuButton>
                     {crmOpen && (
                       <SidebarMenuSub>
@@ -182,7 +178,7 @@ export const AppSidebar = () => {
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
                               <Link href={item.href}>
-                                <item.icon className="h-4 w-4" />
+                                <item.icon className="h-5 w-5" />
                                 <span>{item.title}</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -196,14 +192,13 @@ export const AppSidebar = () => {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>Production</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton onClick={() => setProductionOpen((prev) => !prev)}>
-                      <FolderKanban className="h-4 w-4" />
+                      <FolderKanban className="h-5 w-5" />
                       <span>Production</span>
-                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${productionOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`ml-auto h-5 w-5 transition-transform ${productionOpen ? "rotate-180" : ""}`} />
                     </SidebarMenuButton>
                     {productionOpen && (
                       <SidebarMenuSub>
@@ -211,7 +206,7 @@ export const AppSidebar = () => {
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
                               <Link href={item.href}>
-                                <item.icon className="h-4 w-4" />
+                                <item.icon className="h-5 w-5" />
                                 <span>{item.title}</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -225,14 +220,13 @@ export const AppSidebar = () => {
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>Actions</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
                     <SidebarMenuButton onClick={() => setActionsOpen((prev) => !prev)}>
-                      <CheckSquare className="h-4 w-4" />
+                      <CheckSquare className="h-5 w-5" />
                       <span>Actions</span>
-                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${actionsOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`ml-auto h-5 w-5 transition-transform ${actionsOpen ? "rotate-180" : ""}`} />
                     </SidebarMenuButton>
                     {actionsOpen && (
                       <SidebarMenuSub>
@@ -240,7 +234,7 @@ export const AppSidebar = () => {
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
                               <Link href={item.href}>
-                                <item.icon className="h-4 w-4" />
+                                <item.icon className="h-5 w-5" />
                                 <span>{item.title}</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -261,14 +255,14 @@ export const AppSidebar = () => {
           <SidebarMenuItem>
             <SidebarMenuButton asChild isActive={isActive("/settings")}>
               <Link href="/settings">
-                <Settings className="h-4 w-4" />
+                <Settings className="h-5 w-5" />
                 <span>Paramètres</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={logout}>
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-5 w-5" />
               <span>Déconnexion</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
