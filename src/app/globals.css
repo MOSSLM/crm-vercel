@@ -4,7 +4,7 @@
 
 :root {
   /* Font system */
-  --font-size: 14px;
+  --font-size: 15px;
   --text-xs: 0.75rem;
   --text-sm: 0.875rem;
   --text-base: 1rem;
@@ -19,40 +19,40 @@
   --font-weight-normal: 400;
 
   /* Color system - Light mode */
-  --background: #ffffff;
-  --foreground: oklch(0.145 0 0);
-  --card: #ffffff;
-  --card-foreground: oklch(0.145 0 0);
-  --popover: #ffffff;
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #030213;
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.95 0.0058 264.53);
-  --secondary-foreground: #030213;
-  --muted: #ececf0;
-  --muted-foreground: #717182;
-  --accent: #e9ebef;
-  --accent-foreground: #030213;
-  --destructive: #d4183d;
+  --background: oklch(0.97 0.003 95);
+  --foreground: oklch(0.16 0.007 95);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.16 0.007 95);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.16 0.007 95);
+  --primary: oklch(0.84 0.23 110);
+  --primary-foreground: oklch(0.17 0.01 100);
+  --secondary: oklch(0.92 0.005 95);
+  --secondary-foreground: oklch(0.2 0.01 95);
+  --muted: oklch(0.93 0.004 95);
+  --muted-foreground: oklch(0.45 0.01 95);
+  --accent: oklch(0.9 0.006 95);
+  --accent-foreground: oklch(0.2 0.01 95);
+  --destructive: oklch(0.62 0.24 28);
   --destructive-foreground: #ffffff;
-  --border: rgba(0, 0, 0, 0.1);
-  --input: transparent;
-  --input-background: #ffffff;
-  --switch-background: #cbced4;
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.87 0.006 95);
+  --input: oklch(0.96 0.003 95);
+  --input-background: oklch(0.99 0.001 95);
+  --switch-background: oklch(0.86 0.004 95);
+  --ring: oklch(0.84 0.23 110);
 
   /* Layout */
-  --radius: 0.625rem;
+  --radius: 1rem;
 
   /* Sidebar colors */
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: #030213;
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.985 0.002 95);
+  --sidebar-foreground: oklch(0.17 0.007 95);
+  --sidebar-primary: oklch(0.84 0.23 110);
+  --sidebar-primary-foreground: oklch(0.17 0.01 100);
+  --sidebar-accent: oklch(0.92 0.004 95);
+  --sidebar-accent-foreground: oklch(0.2 0.01 95);
+  --sidebar-border: oklch(0.89 0.006 95);
+  --sidebar-ring: oklch(0.84 0.23 110);
 
   /* Success, warning, info colors pour light mode */
   --success: oklch(0.55 0.15 160);
@@ -72,49 +72,49 @@
 /* Dark mode overrides - VS Code Dark+ Theme inspiré */
 .dark {
   /* Palette principale basée sur VS Code Dark+ - Moderne et confortable */
-  --background: oklch(0.16 0.005 240);    /* #1e1e1e - Fond principal VS Code */
-  --foreground: oklch(0.92 0.008 240);    /* #cccccc - Texte principal clair */
-  --card: oklch(0.19 0.008 240);          /* #252526 - Cartes VS Code */
-  --card-foreground: oklch(0.94 0.005 240); /* #e6e6e6 - Texte cartes lisible */
-  --popover: oklch(0.19 0.008 240);
-  --popover-foreground: oklch(0.94 0.005 240);
+  --background: oklch(0.16 0.004 260);
+  --foreground: oklch(0.94 0.007 110);
+  --card: oklch(0.2 0.004 260);
+  --card-foreground: oklch(0.95 0.006 110);
+  --popover: oklch(0.2 0.004 260);
+  --popover-foreground: oklch(0.95 0.006 110);
   
   /* Couleurs système VS Code Dark+ */
-  --primary: oklch(0.92 0.008 240);       /* Texte principal */
-  --primary-foreground: oklch(0.16 0.005 240); /* Fond pour contraste */
-  --secondary: oklch(0.24 0.012 240);     /* #3c3c3c - Sections secondaires */
-  --secondary-foreground: oklch(0.86 0.010 240);
-  --muted: oklch(0.22 0.010 240);         /* #383838 - Zones muted */
-  --muted-foreground: oklch(0.68 0.015 240); /* #9d9d9d - Texte muted VS Code */
-  --accent: oklch(0.26 0.015 240);        /* #404040 - Accents subtils */
-  --accent-foreground: oklch(0.88 0.008 240);
+  --primary: oklch(0.84 0.23 110);
+  --primary-foreground: oklch(0.18 0.01 110);
+  --secondary: oklch(0.24 0.01 260);
+  --secondary-foreground: oklch(0.9 0.007 110);
+  --muted: oklch(0.23 0.008 260);
+  --muted-foreground: oklch(0.72 0.012 120);
+  --accent: oklch(0.28 0.012 260);
+  --accent-foreground: oklch(0.9 0.008 110);
   
   /* Couleurs fonctionnelles VS Code Dark+ */
-  --destructive: oklch(0.65 0.20 15);     /* #f44747 - Rouge VS Code */
-  --destructive-foreground: oklch(0.95 0.005 240);
-  --border: oklch(0.32 0.015 240);        /* #464647 - Bordures VS Code */
-  --input: oklch(0.19 0.008 240);         /* Même que card pour cohérence */
-  --input-background: oklch(0.17 0.006 240);
-  --switch-background: oklch(0.35 0.020 240);
-  --ring: oklch(0.58 0.15 220);           /* #007acc - Bleu VS Code pour focus */
+  --destructive: oklch(0.68 0.23 28);
+  --destructive-foreground: oklch(0.97 0.003 95);
+  --border: oklch(0.31 0.009 260);
+  --input: oklch(0.23 0.008 260);
+  --input-background: oklch(0.2 0.007 260);
+  --switch-background: oklch(0.36 0.015 260);
+  --ring: oklch(0.84 0.23 110);
   
   /* Success, warning, info colors VS Code */
-  --success: oklch(0.65 0.18 140);       /* #4ec9b0 - Vert VS Code */
-  --success-foreground: oklch(0.95 0.005 240);
-  --warning: oklch(0.72 0.20 85);        /* #dcdcaa - Jaune VS Code */
-  --warning-foreground: oklch(0.16 0.005 240);
-  --info: oklch(0.58 0.15 220);          /* #007acc - Bleu VS Code */
-  --info-foreground: oklch(0.95 0.005 240);
+  --success: oklch(0.76 0.2 145);
+  --success-foreground: oklch(0.16 0.008 145);
+  --warning: oklch(0.84 0.19 95);
+  --warning-foreground: oklch(0.18 0.008 95);
+  --info: oklch(0.72 0.16 230);
+  --info-foreground: oklch(0.18 0.008 230);
   
   /* Sidebar VS Code Dark+ */
-  --sidebar: oklch(0.18 0.006 240);      /* Légèrement plus clair que background */
-  --sidebar-foreground: oklch(0.88 0.008 240);
-  --sidebar-primary: oklch(0.58 0.15 220); /* Bleu VS Code */
-  --sidebar-primary-foreground: oklch(0.95 0.005 240);
-  --sidebar-accent: oklch(0.22 0.010 240); /* #383838 */
-  --sidebar-accent-foreground: oklch(0.84 0.010 240);
-  --sidebar-border: oklch(0.32 0.015 240); /* #464647 - Bordures VS Code */
-  --sidebar-ring: oklch(0.58 0.15 220);
+  --sidebar: oklch(0.18 0.006 260);
+  --sidebar-foreground: oklch(0.9 0.007 110);
+  --sidebar-primary: oklch(0.84 0.23 110);
+  --sidebar-primary-foreground: oklch(0.17 0.01 110);
+  --sidebar-accent: oklch(0.24 0.01 260);
+  --sidebar-accent-foreground: oklch(0.9 0.007 110);
+  --sidebar-border: oklch(0.31 0.009 260);
+  --sidebar-ring: oklch(0.84 0.23 110);
 }
 
 /* Tailwind theme integration */
@@ -178,13 +178,15 @@
 
   body {
     @apply bg-background text-foreground;
-    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     min-height: 100vh;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
     transition: background-color var(--animation-normal) var(--easing-smooth), color var(--animation-normal) var(--easing-smooth);
+    background-image: radial-gradient(circle at 50% -10%, oklch(from var(--color-primary) 0.65 c h / 0.25), transparent 45%);
+    background-attachment: fixed;
   }
 
   *:focus-visible {
