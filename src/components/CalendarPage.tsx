@@ -5,11 +5,18 @@ import { ChevronLeft, ChevronRight, CalendarDays, CalendarRange, Calendar } from
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/utils/supabase/client";
 
 type CalendarView = "month" | "week" | "quarter";
 
 const WEEK_DAYS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
-const DAY_HOURS = Array.from({ length: 11 }, (_, i) => 8 + i);
+type PlanningItem = {
+  id: string;
+  label: string;
+  kind: "projet" | "tache" | "sous-tache";
+  date: string;
+  projectId?: string;
+};
 
 const getStartOfWeek = (date: Date) => {
   const result = new Date(date);
@@ -44,6 +51,7 @@ export const CalendarPage = () => {
   const [currentDate, setCurrentDate] = React.useState(new Date());
   const [selectedDate, setSelectedDate] = React.useState(new Date());
   const [view, setView] = React.useState<CalendarView>("month");
+  const [planningItems, setPlanningItems] = React.useState<PlanningItem[]>([]);
 
   const today = React.useMemo(() => new Date(), []);
 
@@ -71,6 +79,58 @@ export const CalendarPage = () => {
     const qStartMonth = Math.floor(currentDate.getMonth() / 3) * 3;
     return Array.from({ length: 3 }, (_, index) => new Date(currentDate.getFullYear(), qStartMonth + index, 1));
   }, [currentDate]);
+
+  React.useEffect(() => {
+    const loadPlanning = async () => {
+      const [{ data: projects }, { data: tasks }, { data: subtasks }] = await Promise.all([
+        supabase.from("crm_projects").select("id,nom,due_date").not("due_date", "is", null),
+        supabase.from("crm_tasks").select("id,project_id,titre,due_date").not("due_date", "is", null),
+        supabase
+          .from("crm_subtasks")
+          .select("id,task_id,titre,due_date,crm_tasks(project_id)")
+          .not("due_date", "is", null),
+      ]);
+
+      const projectItems: PlanningItem[] = (projects ?? []).map((project) => ({
+        id: `project-${project.id}`,
+        label: project.nom as string,
+        kind: "projet",
+        date: project.due_date as string,
+        projectId: project.id as string,
+      }));
+
+      const taskItems: PlanningItem[] = (tasks ?? []).map((task) => ({
+        id: `task-${task.id}`,
+        label: task.titre as string,
+        kind: "tache",
+        date: task.due_date as string,
+        projectId: task.project_id as string,
+      }));
+
+      const subtaskItems: PlanningItem[] = (
+        (subtasks ?? []) as Array<{ id: string; titre: string; due_date: string; crm_tasks?: Array<{ project_id: string }> }>
+      ).map((subtask) => ({
+        id: `subtask-${subtask.id}`,
+        label: subtask.titre,
+        kind: "sous-tache",
+        date: subtask.due_date,
+        projectId: subtask.crm_tasks?.[0]?.project_id,
+      }));
+
+      setPlanningItems([...projectItems, ...taskItems, ...subtaskItems]);
+    };
+
+    void loadPlanning();
+  }, []);
+
+  const selectedDayItems = React.useMemo(
+    () =>
+      planningItems.filter((item: PlanningItem) => {
+        const itemDate = new Date(item.date);
+        return isSameDay(itemDate, selectedDate);
+      }),
+    [planningItems, selectedDate]
+  );
 
   const goPrevious = () => {
     setCurrentDate((prev) => {
@@ -130,7 +190,7 @@ export const CalendarPage = () => {
         <Card className="xl:col-span-2">
           <CardHeader>
             <CardTitle>Vue {view === "month" ? "mensuelle" : view === "week" ? "hebdomadaire" : "trimestrielle"}</CardTitle>
-            <CardDescription>Sélectionnez un jour pour consulter son planning horaire.</CardDescription>
+            <CardDescription>Sélectionnez un jour pour consulter les projets, tâches et sous-tâches prévues (hors horaire).</CardDescription>
           </CardHeader>
           <CardContent>
             {view === "month" && (
@@ -224,13 +284,15 @@ export const CalendarPage = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {DAY_HOURS.map((hour) => (
-                <div key={hour} className="flex items-center gap-3 rounded-lg border px-3 py-2">
-                  <span className="w-14 text-sm font-medium text-muted-foreground">{String(hour).padStart(2, "0")}:00</span>
-                  <div className="h-2 w-2 rounded-full bg-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">Aucune tâche planifiée (bientôt disponible)</p>
+              {selectedDayItems.map((item) => (
+                <div key={item.id} className="rounded-lg border px-3 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">{item.label}</p>
+                    <Badge variant="outline" className="capitalize">{item.kind}</Badge>
+                  </div>
                 </div>
               ))}
+              {selectedDayItems.length === 0 ? <p className="text-sm text-muted-foreground">Aucun élément planifié ce jour.</p> : null}
             </div>
           </CardContent>
         </Card>

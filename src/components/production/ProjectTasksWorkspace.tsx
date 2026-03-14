@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
-import { CalendarCheck2, CalendarDays, CheckCircle2, Columns2, ListTodo, Plus, RectangleHorizontal } from "lucide-react";
+import { CalendarCheck2, CalendarDays, CheckCircle2, Columns2, ListTodo, MoreHorizontal, Plus, RectangleHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/components/ui/utils";
 import { supabase } from "@/utils/supabase/client";
 
-type ProjectScope = "internal" | "client";
+type ProjectScope = "internal" | "client" | "all";
 type ItemStatus = "a_faire" | "en_cours" | "termine";
 type Priority = "haute" | "moyenne" | "basse";
 
@@ -90,6 +90,10 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [mobileLayout, setMobileLayout] = useState<"two" | "one">("two");
+  const [scopeFilter, setScopeFilter] = useState<ProjectScope>(scope === "all" ? "client" : scope);
+  const [menuOpenProjectId, setMenuOpenProjectId] = useState<string | null>(null);
+  const [editingProject, setEditingProject] = useState<ProjectRow | null>(null);
+  const [editForm, setEditForm] = useState({ nom: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, dueDate: "", color: "#4f46e5" });
 
   const [projectForm, setProjectForm] = useState({
     nom: "",
@@ -103,17 +107,22 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     color: "#4f46e5",
   });
 
-  const currentScope = scope === "client" ? "entreprise" : "interne";
+  const currentScope = scopeFilter === "client" ? "entreprise" : "interne";
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       const [{ data: projectsData }, { data: progressData }, { data: companyData }, { data: offersData }, { data: tasksData }] = await Promise.all([
-        supabase
-          .from("crm_projects")
-          .select("id,nom,scope,status,priority,due_date,entreprise_id,offre_id,color,entreprises(id,name),offres(id,nom)")
-          .eq("scope", currentScope)
-          .order("created_at", { ascending: false }),
+        (scope === "all"
+          ? supabase
+              .from("crm_projects")
+              .select("id,nom,scope,status,priority,due_date,entreprise_id,offre_id,color,entreprises(id,name),offres(id,nom)")
+              .order("created_at", { ascending: false })
+          : supabase
+              .from("crm_projects")
+              .select("id,nom,scope,status,priority,due_date,entreprise_id,offre_id,color,entreprises(id,name),offres(id,nom)")
+              .eq("scope", currentScope)
+              .order("created_at", { ascending: false })),
         supabase.from("v_crm_project_progress").select("project_id,computed_project_progress"),
         supabase.from("entreprises").select("id,name").eq("qualifie", true).is("merged_into_id", null).order("name"),
         supabase
@@ -162,7 +171,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     };
 
     void load();
-  }, [currentScope]);
+  }, [currentScope, scope]);
 
   const filteredCompanies = useMemo(() => {
     const q = projectForm.entrepriseQuery.trim().toLowerCase();
@@ -176,7 +185,13 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     return offers.filter((offer) => offer.nom.toLowerCase().includes(q)).slice(0, 10);
   }, [offers, projectForm.offreQuery]);
 
-  const dueProjects = useMemo(() => projects.filter((project) => project.due_date), [projects]);
+  const visibleProjects = useMemo(() => {
+    if (scope !== "all") return projects;
+    const expectedScope = scopeFilter === "client" ? "entreprise" : "interne";
+    return projects.filter((project) => project.scope === expectedScope);
+  }, [projects, scope, scopeFilter]);
+
+  const dueProjects = useMemo(() => visibleProjects.filter((project) => project.due_date), [visibleProjects]);
 
   const dateItems = useMemo(
     () =>
@@ -191,9 +206,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     () =>
       statusOptions.map((status) => ({
         status,
-        projects: projects.filter((project) => project.status === status),
+        projects: visibleProjects.filter((project) => project.status === status),
       })),
-    [projects]
+    [visibleProjects]
   );
 
   const createProject = async () => {
@@ -249,6 +264,33 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     }
   };
 
+  const startEditProject = (project: ProjectRow) => {
+    setEditingProject(project);
+    setEditForm({
+      nom: project.nom,
+      status: project.status,
+      priority: project.priority,
+      dueDate: project.due_date ?? "",
+      color: project.color ?? "#4f46e5",
+    });
+    setMenuOpenProjectId(null);
+  };
+
+  const saveProjectEdition = async () => {
+    if (!editingProject) return;
+    const payload = {
+      nom: editForm.nom.trim(),
+      status: editForm.status,
+      priority: editForm.priority,
+      due_date: editForm.dueDate || null,
+      color: editForm.color,
+    };
+    if (!payload.nom) return;
+    await supabase.from("crm_projects").update(payload).eq("id", editingProject.id);
+    setProjects((prev) => prev.map((project) => (project.id === editingProject.id ? { ...project, ...payload, due_date: payload.due_date } : project)));
+    setEditingProject(null);
+  };
+
   const updateProjectStatus = async (projectId: string, status: ItemStatus) => {
     await supabase.from("crm_projects").update({ status }).eq("id", projectId);
     setProjects((prev) => prev.map((project) => (project.id === projectId ? { ...project, status } : project)));
@@ -295,9 +337,19 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
             <CardTitle>{title}</CardTitle>
             <CardDescription>{description}</CardDescription>
           </div>
-          <Button onClick={() => setIsCreateOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Nouveau projet
-          </Button>
+          <div className="flex items-center gap-2">
+            {scope === "all" ? (
+              <Tabs value={scopeFilter} onValueChange={(value) => setScopeFilter(value as ProjectScope)}>
+                <TabsList>
+                  <TabsTrigger value="client">Projets clients</TabsTrigger>
+                  <TabsTrigger value="internal">Projets internes</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            ) : null}
+            <Button onClick={() => setIsCreateOpen(true)}>
+              <Plus className="mr-2 h-4 w-4" /> Nouveau projet
+            </Button>
+          </div>
         </CardHeader>
       </Card>
 
@@ -402,6 +454,43 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(editingProject)} onOpenChange={(open) => !open && setEditingProject(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Modifier le projet</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Nom du projet</Label>
+              <Input value={editForm.nom} onChange={(e) => setEditForm((prev) => ({ ...prev, nom: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Statut</Label>
+              <select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={editForm.status} onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value as ItemStatus }))}>
+                {statusOptions.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Priorité</Label>
+              <select className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={editForm.priority} onChange={(e) => setEditForm((prev) => ({ ...prev, priority: e.target.value as Priority }))}>
+                {priorityOptions.map((priority) => <option key={priority} value={priority}>{priorityLabel[priority]}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label>Date d&apos;échéance</Label>
+              <Input type="date" value={editForm.dueDate} onChange={(e) => setEditForm((prev) => ({ ...prev, dueDate: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label>Couleur</Label>
+              <Input type="color" value={editForm.color} onChange={(e) => setEditForm((prev) => ({ ...prev, color: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={saveProjectEdition}>Enregistrer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Tabs defaultValue="cartes" className="space-y-4">
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <TabsList className="grid w-full grid-cols-4 md:w-auto">
@@ -436,22 +525,21 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         <TabsContent value="cartes" className="space-y-4">
           {loading ? <p className="text-sm text-muted-foreground">Chargement...</p> : null}
           <div className={cn("grid gap-4", mobileLayout === "one" ? "grid-cols-1" : "grid-cols-2", "xl:grid-cols-4 md:grid-cols-3")}>
-            {projects.map((project) => (
+            {visibleProjects.map((project) => (
             <Card
               key={project.id}
               className="group relative cursor-pointer overflow-hidden border-white/40"
               onClick={() => router.push(`/production/projets/${project.id}`)}
-              style={{ backgroundColor: `${project.color ?? "#4f46e5"}1A` }}
+              style={{
+                backgroundColor: `${project.color ?? "#4f46e5"}1A`,
+                backgroundImage: `
+                radial-gradient(120px 95px at 18% 22%, ${project.color ?? "#4f46e5"}4A 0 35%, transparent 62%),
+                radial-gradient(180px 140px at 95% 5%, ${project.color ?? "#4f46e5"}33 0 42%, transparent 70%),
+                radial-gradient(140px 110px at 74% 100%, ${project.color ?? "#4f46e5"}30 0 38%, transparent 66%),
+                radial-gradient(100px 90px at 50% 45%, ${project.color ?? "#4f46e5"}0D 0 45%, transparent 78%)
+                `,
+              }}
             >
-              <svg className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 opacity-35" viewBox="0 0 220 220" aria-hidden="true">
-                <defs>
-                  <radialGradient id={`project-gradient-${project.id}`} cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stopColor={project.color ?? "#4f46e5"} stopOpacity="0.42" />
-                    <stop offset="100%" stopColor={project.color ?? "#4f46e5"} stopOpacity="0.08" />
-                  </radialGradient>
-                </defs>
-                <circle cx="120" cy="100" r="80" fill={`url(#project-gradient-${project.id})`} />
-              </svg>
               <CardContent className="space-y-4 p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -461,7 +549,32 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
                       {project.offres?.nom ? `Offre: ${project.offres.nom}` : "Projet interne"}
                     </p>
                   </div>
-                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="relative flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMenuOpenProjectId((prev) => (prev === project.id ? null : project.id));
+                      }}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                    {menuOpenProjectId === project.id ? (
+                      <div className="absolute right-0 top-9 z-10 w-32 rounded-md border bg-background p-1 shadow">
+                        <button
+                          type="button"
+                          className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            startEditProject(project);
+                          }}
+                        >
+                          Modifier
+                        </button>
+                      </div>
+                    ) : null}
                     <Badge className={cn("border", getStatusTone(project.status))}>{statusLabel[project.status]}</Badge>
                     <Badge className={cn("border", getPriorityTone(project.priority))}>{priorityLabel[project.priority]}</Badge>
                   </div>
@@ -488,7 +601,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
             </Card>
             ))}
           </div>
-          {!loading && projects.length === 0 ? <p className="text-sm text-muted-foreground">Aucun projet.</p> : null}
+          {!loading && visibleProjects.length === 0 ? <p className="text-sm text-muted-foreground">Aucun projet.</p> : null}
         </TabsContent>
 
         <TabsContent value="kanban">
@@ -558,7 +671,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {projects.map((project) => (
+                  {visibleProjects.map((project) => (
                     <TableRow key={project.id} className="cursor-pointer" onClick={() => router.push(`/production/projets/${project.id}`)}>
                       <TableCell className="font-medium">{project.nom}</TableCell>
                       <TableCell>{project.entreprises?.name ?? "-"}</TableCell>
