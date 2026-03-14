@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from 'react';
+import Link from 'next/link';
 import { useAppData } from './AppDataContext';
 import { journalApi, JournalKpiTotals } from '../utils/journalApi';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -53,10 +54,13 @@ import {
   PhoneCall,
   RefreshCw,
   CalendarDays,
-  CalendarRange
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 
 import logger from '../utils/logger';
+import { supabase } from '@/utils/supabase/client';
 // Local imports
 import { COLORS } from './dashboard/constants';
 import { formatCurrency, formatCompactCurrency, getPeriodLabel } from './dashboard/helpers';
@@ -65,6 +69,24 @@ import { calculateDashboardMetrics } from './dashboard/calculations';
 
 type ViewMode = 'overview' | 'commercial' | 'funnel';
 type PerformanceMetric = 'revenue' | 'customers' | 'appointments' | 'calls';
+type TaskStatus = 'a_faire' | 'en_cours' | 'termine';
+type TaskPriority = 'haute' | 'moyenne' | 'basse';
+type TaskCalendarItem = {
+  id: string;
+  titre: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  due_date: string | null;
+  start_at: string | null;
+  end_at: string | null;
+};
+
+const formatDateKey = (date: Date) => date.toISOString().slice(0, 10);
+const priorityBadgeClasses: Record<TaskPriority, string> = {
+  haute: 'bg-red-100 text-red-700 border-red-200',
+  moyenne: 'bg-orange-100 text-orange-700 border-orange-200',
+  basse: 'bg-emerald-100 text-emerald-700 border-emerald-200'
+};
 
 export const DashboardPage: React.FC = () => {
   const { 
@@ -132,6 +154,8 @@ export const DashboardPage: React.FC = () => {
   const [kpiError, setKpiError] = useState<string | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState<PeriodType>('week');
   const [selectedPerformanceMetric, setSelectedPerformanceMetric] = useState<PerformanceMetric>('revenue');
+  const [taskCalendarMonth, setTaskCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [taskCalendarItems, setTaskCalendarItems] = useState<TaskCalendarItem[]>([]);
 
   // Charger les KPI du journal
   useEffect(() => {
@@ -176,6 +200,25 @@ export const DashboardPage: React.FC = () => {
     window.addEventListener('resize', checkMobile);
     
     return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
+  useEffect(() => {
+    const loadTaskCalendarItems = async () => {
+      const { data, error } = await supabase
+        .from('crm_tasks')
+        .select('id,titre,status,priority,due_date,start_at,end_at')
+        .is('project_id', null)
+        .neq('status', 'termine');
+
+      if (error) {
+        logger.error('Erreur lors du chargement des tâches du dashboard:', error);
+        return;
+      }
+
+      setTaskCalendarItems((data as TaskCalendarItem[] | null) ?? []);
+    };
+
+    void loadTaskCalendarItems();
   }, []);
 
   // Adapter: string stageId -> number pour calculateDashboardMetrics
@@ -276,6 +319,46 @@ export const DashboardPage: React.FC = () => {
     value: step.value,
     conversion: index === 0 ? 100 : step.percentage
   }));
+
+  const todayKey = useMemo(() => formatDateKey(new Date()), []);
+
+  const tasksByDate = useMemo(() => {
+    return taskCalendarItems.reduce<Record<string, TaskCalendarItem[]>>((acc, task) => {
+      const taskDate = task.due_date ?? task.start_at?.slice(0, 10) ?? task.end_at?.slice(0, 10);
+      if (!taskDate) return acc;
+      if (!acc[taskDate]) acc[taskDate] = [];
+      acc[taskDate].push(task);
+      return acc;
+    }, {});
+  }, [taskCalendarItems]);
+
+  const todayTasks = tasksByDate[todayKey] ?? [];
+
+  const monthDays = useMemo(() => {
+    const year = taskCalendarMonth.getFullYear();
+    const month = taskCalendarMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    return Array.from({ length: startOffset + daysInMonth }, (_, index) => {
+      if (index < startOffset) return null;
+      const day = index - startOffset + 1;
+      const date = new Date(year, month, day);
+      const dateKey = formatDateKey(date);
+      return { dateKey, day, tasks: tasksByDate[dateKey] ?? [] };
+    });
+  }, [taskCalendarMonth, tasksByDate]);
+
+  const taskMonthLabel = taskCalendarMonth.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+  const goToPreviousTaskMonth = () => {
+    setTaskCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+  };
+
+  const goToNextTaskMonth = () => {
+    setTaskCalendarMonth((current) => new Date(current.getFullYear(), current.getMonth() + 1, 1));
+  };
 
   const getTrendIcon = (trend: 'up' | 'down' | 'stable'): React.ReactElement => {
     switch (trend) {
@@ -809,58 +892,144 @@ export const DashboardPage: React.FC = () => {
               <CardDescription>Résumé de votre activité commerciale</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-2 grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4">
-                {recentActivity.map((activity, index) => (
-                  <div key={index} className="flex items-center justify-between p-2 md:p-3 border rounded-lg">
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex items-center gap-1 md:gap-2">
-                        <activity.icon className="h-3 w-3 md:h-4 md:w-4 text-muted-foreground flex-shrink-0" />
-                        <p className="text-xs md:text-sm font-medium leading-tight truncate">
-                          <span className="md:hidden">{activity.shortAction}</span>
-                          <span className="hidden md:inline">{activity.action}</span>
-                        </p>
+              <div className="grid gap-4 lg:grid-cols-4">
+                <div className="space-y-4 lg:col-span-3">
+                  <div className="grid gap-2 grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 md:gap-4">
+                    {recentActivity.map((activity, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 md:p-3 border rounded-lg">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-1 md:gap-2">
+                            <activity.icon className="h-3 w-3 md:h-4 md:w-4 text-muted-foreground flex-shrink-0" />
+                            <p className="text-xs md:text-sm font-medium leading-tight truncate">
+                              <span className="md:hidden">{activity.shortAction}</span>
+                              <span className="hidden md:inline">{activity.action}</span>
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground ml-4 md:ml-6">{activity.period}</p>
+                        </div>
+                        <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+                          <span className="text-sm md:text-lg font-bold">{activity.count}</span>
+                          <div className="hidden md:block">
+                            {getTrendIcon(activity.trend)}
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground ml-4 md:ml-6">{activity.period}</p>
+                    ))}
+                  </div>
+
+                  <div className="space-y-3 md:space-y-0 md:grid md:gap-3 md:grid-cols-2">
+                    <div className="p-3 md:p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Repeat className="h-5 w-5 text-blue-600" />
+                          <span className="text-sm font-medium">Relances totales</span>
+                        </div>
+                        <span className="text-xl font-bold text-blue-600">{totalRelances}</span>
+                      </div>
+                      <p className="text-xs text-blue-600 mt-1">Total cumulé des relances</p>
                     </div>
-                    <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
-                      <span className="text-sm md:text-lg font-bold">{activity.count}</span>
-                      <div className="hidden md:block">
-                        {getTrendIcon(activity.trend)}
+
+                    <div className="p-3 md:p-3 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <DollarSign className="h-5 w-5 text-green-600" />
+                          <span className="text-sm font-medium">Taux d'encaissement</span>
+                        </div>
+                        <span className="text-xl font-bold text-green-600">
+                          {totalSigned > 0 ? Math.round((totalCollected / totalSigned) * 100) : 0}%
+                        </span>
                       </div>
+                      <p className="text-xs text-green-600 mt-1">Part encaissée du signé</p>
                     </div>
                   </div>
-                ))}
-              </div>
-              
-              {/* Métriques spéciales - Full width sur mobile */}
-              <div className="mt-3 md:mt-4 space-y-3 md:space-y-0 md:grid md:gap-3 md:grid-cols-2">
-                <div className="p-3 md:p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Repeat className="h-5 w-5 text-blue-600" />
-                      <span className="text-sm font-medium">Relances totales</span>
-                    </div>
-                    <span className="text-xl font-bold text-blue-600">{totalRelances}</span>
-                  </div>
-                  <p className="text-xs text-blue-600 mt-1">
-                    Total cumulé des relances
-                  </p>
                 </div>
 
-                <div className="p-3 md:p-3 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <DollarSign className="h-5 w-5 text-green-600" />
-                      <span className="text-sm font-medium">Taux d'encaissement</span>
+                <Card className="border-dashed">
+                  <CardHeader className="pb-3 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <CardTitle className="text-base">Tâches du jour</CardTitle>
+                        <CardDescription>{todayTasks.length} à exécuter aujourd'hui</CardDescription>
+                      </div>
+                      <Button asChild size="icon" variant="outline" className="h-8 w-8 rounded-full">
+                        <Link href="/production/taches" aria-label="Voir les tâches du jour">
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
+                      </Button>
                     </div>
-                    <span className="text-xl font-bold text-green-600">
-                      {totalSigned > 0 ? Math.round((totalCollected / totalSigned) * 100) : 0}%
-                    </span>
-                  </div>
-                  <p className="text-xs text-green-600 mt-1">
-                    Part encaissée du signé
-                  </p>
-                </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {todayTasks.length > 0 ? (
+                        todayTasks.slice(0, 3).map((task) => (
+                          <TooltipProvider key={task.id}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Badge variant="outline" className={priorityBadgeClasses[task.priority]}>{task.titre}</Badge>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>{task.titre}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        ))
+                      ) : (
+                        <Badge variant="secondary">Aucune tâche aujourd'hui</Badge>
+                      )}
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToPreviousTaskMonth}>
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      <span className="capitalize">{taskMonthLabel}</span>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToNextTaskMonth}>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] text-muted-foreground">
+                      {['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((label, index) => (
+                        <span key={`${label}-${index}`}>{label}</span>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1 text-center">
+                      {monthDays.map((day, index) => {
+                        if (!day) {
+                          return <div key={`empty-${index}`} className="h-8" />;
+                        }
+
+                        const isToday = day.dateKey === todayKey;
+                        const hasTasks = day.tasks.length > 0;
+
+                        return (
+                          <TooltipProvider key={day.dateKey}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={`h-8 rounded-md border text-xs ${isToday ? 'border-primary bg-primary/10 font-semibold' : 'border-border'} ${hasTasks ? 'text-primary' : 'text-muted-foreground'}`}
+                                >
+                                  {day.day}
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {hasTasks ? (
+                                  <div className="space-y-1">
+                                    <p className="font-medium">{day.tasks.length} tâche(s)</p>
+                                    {day.tasks.slice(0, 3).map((task) => (
+                                      <p key={task.id} className="text-xs">• {task.titre}</p>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <p>Aucune tâche</p>
+                                )}
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </CardContent>
           </Card>
