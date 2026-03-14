@@ -35,6 +35,7 @@ import {
   Ban,
   ChevronDown,
   FolderKanban,
+  ListChecks,
   LayoutTemplate,
   AppWindow,
   PenLine,
@@ -101,6 +102,7 @@ export const AppSidebar = () => {
 
   const productionItems: SidebarNavItem[] = [
     { title: "Projets", icon: FolderKanban, href: "/production/projets" },
+    { title: "Tâches", icon: ListChecks, href: "/production/taches" },
     { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
     { title: "Templates", icon: LayoutTemplate, href: "/production/templates" },
     { title: "Apps", icon: AppWindow, href: "/production/apps" },
