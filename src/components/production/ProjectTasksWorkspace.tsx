@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { addDays, format, isSameDay, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
-import { CalendarDays, Columns2, Plus, RectangleHorizontal } from "lucide-react";
+import { CalendarCheck2, CalendarDays, CheckCircle2, Columns2, ListTodo, Plus, RectangleHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,9 @@ type ProjectRow = {
   offres?: { id: string; nom: string } | null;
   computed_project_progress?: number | null;
   color?: string | null;
+  total_tasks?: number;
+  completed_tasks?: number;
+  remaining_tasks?: number;
 };
 
 type ProjectQueryRow = Omit<ProjectRow, "entreprises" | "offres"> & {
@@ -42,6 +45,7 @@ type ProjectQueryRow = Omit<ProjectRow, "entreprises" | "offres"> & {
 
 type Company = { id: number; name: string | null };
 type Offer = { id: string; nom: string };
+type TaskProgressRow = { project_id: string | null; status: ItemStatus | null };
 
 const statusLabel: Record<ItemStatus, string> = {
   a_faire: "À faire",
@@ -104,7 +108,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const [{ data: projectsData }, { data: progressData }, { data: companyData }, { data: offersData }] = await Promise.all([
+      const [{ data: projectsData }, { data: progressData }, { data: companyData }, { data: offersData }, { data: tasksData }] = await Promise.all([
         supabase
           .from("crm_projects")
           .select("id,nom,scope,status,priority,due_date,entreprise_id,offre_id,color,entreprises(id,name),offres(id,nom)")
@@ -118,9 +122,21 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
           .eq("visible_in_qualification", true)
           .eq("actif", true)
           .order("qualification_order", { ascending: true }),
+        supabase.from("crm_tasks").select("project_id,status").not("project_id", "is", null),
       ]);
 
       const progressMap = new Map((progressData ?? []).map((row) => [row.project_id as string, Number(row.computed_project_progress ?? 0)]));
+      const taskStats = new Map<string, { total: number; completed: number }>();
+      for (const task of ((tasksData ?? []) as TaskProgressRow[])) {
+        if (!task.project_id) continue;
+        const previous = taskStats.get(task.project_id) ?? { total: 0, completed: 0 };
+        const next = {
+          total: previous.total + 1,
+          completed: previous.completed + (task.status === "termine" ? 1 : 0),
+        };
+        taskStats.set(task.project_id, next);
+      }
+
       const hydrated = ((projectsData ?? []) as ProjectQueryRow[]).map((project) => ({
         id: project.id,
         nom: project.nom,
@@ -134,6 +150,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         offres: project.offres?.[0] ?? null,
         computed_project_progress: progressMap.get(project.id) ?? 0,
         color: project.color ?? "#4f46e5",
+        total_tasks: taskStats.get(project.id)?.total ?? 0,
+        completed_tasks: taskStats.get(project.id)?.completed ?? 0,
+        remaining_tasks: Math.max((taskStats.get(project.id)?.total ?? 0) - (taskStats.get(project.id)?.completed ?? 0), 0),
       }));
 
       setProjects(hydrated);
@@ -211,6 +230,9 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
         offres: inserted.offres?.[0] ?? null,
         computed_project_progress: 0,
         color: inserted.color ?? "#4f46e5",
+        total_tasks: 0,
+        completed_tasks: 0,
+        remaining_tasks: 0,
       }, ...prev]);
       setIsCreateOpen(false);
       setProjectForm({
@@ -239,24 +261,30 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     const dash = circumference - (safe / 100) * circumference;
 
     return (
-      <div className="relative h-12 w-12 shrink-0">
-        <svg viewBox="0 0 48 48" className="h-12 w-12 -rotate-90">
-          <circle cx="24" cy="24" r={radius} stroke="currentColor" strokeWidth="5" className="text-slate-200" fill="none" />
+      <div className="relative h-14 w-14 shrink-0">
+        <svg viewBox="0 0 48 48" className="h-14 w-14 -rotate-90 drop-shadow-sm">
+          <circle cx="24" cy="24" r={radius} stroke="currentColor" strokeWidth="4.5" className="text-slate-200/80" fill="none" />
           <circle
             cx="24"
             cy="24"
             r={radius}
             stroke={color ?? "#4f46e5"}
-            strokeWidth="5"
+            strokeWidth="4.5"
             strokeLinecap="round"
             fill="none"
             strokeDasharray={circumference}
             strokeDashoffset={dash}
+            className="transition-all"
           />
         </svg>
-        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold">{safe}%</span>
+        <span className="absolute inset-0 flex items-center justify-center rounded-full text-[11px] font-semibold text-slate-800">{safe}%</span>
       </div>
     );
+  };
+
+  const formatDueDate = (dueDate: string | null) => {
+    if (!dueDate) return "Sans échéance";
+    return format(parseISO(dueDate), "d MMM yyyy", { locale: fr });
   };
 
   return (
@@ -411,27 +439,49 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
             {projects.map((project) => (
             <Card
               key={project.id}
-              className="group relative cursor-pointer overflow-hidden"
+              className="group relative cursor-pointer overflow-hidden border-white/40"
               onClick={() => router.push(`/production/projets/${project.id}`)}
               style={{ backgroundColor: `${project.color ?? "#4f46e5"}1A` }}
             >
-              <svg className="pointer-events-none absolute -right-4 -top-8 h-36 w-36 opacity-40 mix-blend-multiply" viewBox="0 0 200 200" aria-hidden="true">
-                <path fill={project.color ?? "#4f46e5"} d="M45.2,-68.5C57.8,-60.2,67,-47.8,73.1,-33.7C79.2,-19.5,82.2,-3.6,79,11.2C75.7,26,66.3,39.7,54.6,50.6C42.9,61.5,28.9,69.7,13.3,74.3C-2.3,79,-19.5,80,-34.4,74.5C-49.2,69,-61.8,57.1,-70.5,42.8C-79.1,28.6,-83.7,12,-82.2,-4.2C-80.6,-20.4,-73,-36.2,-61.6,-46.8C-50.3,-57.4,-35.1,-62.8,-20.5,-69.4C-5.9,-75.9,8.1,-83.6,21.9,-82.4C35.8,-81.2,49.6,-71.1,45.2,-68.5Z" transform="translate(100 100)" />
+              <svg className="pointer-events-none absolute -right-8 -top-10 h-36 w-36 opacity-35" viewBox="0 0 220 220" aria-hidden="true">
+                <defs>
+                  <radialGradient id={`project-gradient-${project.id}`} cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor={project.color ?? "#4f46e5"} stopOpacity="0.42" />
+                    <stop offset="100%" stopColor={project.color ?? "#4f46e5"} stopOpacity="0.08" />
+                  </radialGradient>
+                </defs>
+                <circle cx="120" cy="100" r="80" fill={`url(#project-gradient-${project.id})`} />
               </svg>
-              <CardContent className="space-y-3 p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold">{project.nom}</p>
-                    <p className="text-xs text-muted-foreground">
+              <CardContent className="space-y-4 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold">{project.nom}</p>
+                    <p className="truncate text-xs text-muted-foreground">
                       {project.entreprises?.name ? `Entreprise: ${project.entreprises.name} • ` : ""}
-                      {project.offres?.nom ? `Offre: ${project.offres.nom} • ` : ""}
-                      {project.due_date ? `Échéance: ${project.due_date}` : "Pas d'échéance"}
+                      {project.offres?.nom ? `Offre: ${project.offres.nom}` : "Projet interne"}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <ProgressCircle value={project.computed_project_progress ?? 0} color={project.color} />
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <Badge className={cn("border", getStatusTone(project.status))}>{statusLabel[project.status]}</Badge>
                     <Badge className={cn("border", getPriorityTone(project.priority))}>{priorityLabel[project.priority]}</Badge>
+                  </div>
+                </div>
+
+                <div className="flex items-end justify-between gap-3">
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <p className="flex items-center gap-1.5">
+                      <CalendarCheck2 className="h-3.5 w-3.5" /> {formatDueDate(project.due_date)}
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> {project.completed_tasks ?? 0} tâche(s) complétée(s)
+                    </p>
+                    <p className="flex items-center gap-1.5">
+                      <ListTodo className="h-3.5 w-3.5" /> {project.remaining_tasks ?? 0} restante(s)
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <ProgressCircle value={project.computed_project_progress ?? 0} color={project.color} />
+                    <p className="text-[11px] font-medium text-muted-foreground">Progression</p>
                   </div>
                 </div>
               </CardContent>
@@ -467,11 +517,23 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
                       onClick={() => router.push(`/production/projets/${project.id}`)}
                       className="block w-full rounded-md border p-3 text-left hover:bg-muted"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-medium">{project.nom}</p>
-                        <ProgressCircle value={project.computed_project_progress ?? 0} color={project.color} />
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate font-medium">{project.nom}</p>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            <Badge className={cn("border", getPriorityTone(project.priority))}>{priorityLabel[project.priority]}</Badge>
+                            <Badge className={cn("border", getStatusTone(project.status))}>{statusLabel[project.status]}</Badge>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end">
+                          <ProgressCircle value={project.computed_project_progress ?? 0} color={project.color} />
+                          <span className="text-[11px] text-muted-foreground">Progression</span>
+                        </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">{project.due_date ?? "Sans échéance"}</p>
+                      <div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                        <span>{formatDueDate(project.due_date)}</span>
+                        <span>{project.completed_tasks ?? 0}/{project.total_tasks ?? 0} tâches</span>
+                      </div>
                     </button>
                   ))}
                 </CardContent>
