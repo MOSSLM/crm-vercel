@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Columns2, GripVertical, ListTodo, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCheck, ChevronDown, ChevronRight, Columns2, GripVertical, ListTodo, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +43,8 @@ export function StandaloneTasksPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragSubtask, setDragSubtask] = useState<{ taskId: string; subtaskId: string } | null>(null);
+  const [showSubtaskForm, setShowSubtaskForm] = useState<Record<string, boolean>>({});
+  const [subtaskForms, setSubtaskForms] = useState<Record<string, { titre: string; priority: Priority }>>({});
   const [form, setForm] = useState({ titre: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, startAt: "", endAt: "" });
 
   const load = async () => {
@@ -131,6 +133,128 @@ export function StandaloneTasksPage() {
     setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, subtasks: task.subtasks.filter((subtask) => subtask.id !== subtaskId) } : task)));
   };
 
+  const addSubtask = async (taskId: string) => {
+    const draft = subtaskForms[taskId];
+    if (!draft?.titre?.trim()) return;
+
+    const currentTask = tasks.find((task) => task.id === taskId);
+    const nextPosition = ((currentTask?.subtasks.length ?? 0) + 1) * 100;
+
+    await supabase.from("crm_subtasks").insert({
+      task_id: taskId,
+      titre: draft.titre.trim(),
+      status: "a_faire",
+      priority: draft.priority,
+      position: nextPosition,
+      start_at: null,
+      end_at: null,
+    });
+
+    setSubtaskForms((prev) => ({ ...prev, [taskId]: { titre: "", priority: "moyenne" } }));
+    setShowSubtaskForm((prev) => ({ ...prev, [taskId]: false }));
+    await load();
+  };
+
+  const moveTaskToStatus = async (taskId: string, status: ItemStatus) => {
+    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, status } : task)));
+    await supabase.from("crm_tasks").update({ status }).eq("id", taskId);
+  };
+
+  const totalSubtasks = useMemo(() => tasks.reduce((acc, task) => acc + task.subtasks.length, 0), [tasks]);
+  const doneCount = useMemo(
+    () => tasks.filter((task) => task.status === "termine").length + tasks.flatMap((task) => task.subtasks).filter((subtask) => subtask.status === "termine").length,
+    [tasks]
+  );
+  const totalCount = tasks.length + totalSubtasks;
+
+  const renderSubtasks = (task: Task) => {
+    const isOpen = expanded[task.id] ?? true;
+    const hasSubtasks = task.subtasks.length > 0;
+    const formIsOpen = showSubtaskForm[task.id] ?? false;
+
+    return (
+      <div className="mt-3 space-y-2 border-l pl-4">
+        {hasSubtasks ? (
+          <Button variant="ghost" className="h-7 px-1 text-xs" onClick={() => setExpanded((prev) => ({ ...prev, [task.id]: !isOpen }))}>
+            {isOpen ? <ChevronDown className="mr-1 h-3.5 w-3.5" /> : <ChevronRight className="mr-1 h-3.5 w-3.5" />}
+            {isOpen ? "Masquer" : "Voir"} les sous-tâches ({task.subtasks.length})
+          </Button>
+        ) : (
+          <p className="text-xs text-muted-foreground">Aucune sous-tâche pour le moment.</p>
+        )}
+
+        {isOpen
+          ? task.subtasks.map((subtask, subtaskIndex) => (
+              <div
+                key={subtask.id}
+                className="flex items-center justify-between rounded-md border bg-muted/30 p-2"
+                draggable
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  setDragSubtask({ taskId: task.id, subtaskId: subtask.id });
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (!dragSubtask || dragSubtask.taskId !== task.id || dragSubtask.subtaskId === subtask.id) return;
+                  const sourceIndex = task.subtasks.findIndex((entry) => entry.id === dragSubtask.subtaskId);
+                  if (sourceIndex < 0) return;
+                  const reordered = [...task.subtasks];
+                  const [moved] = reordered.splice(sourceIndex, 1);
+                  reordered.splice(subtaskIndex, 0, moved);
+                  setTasks((prev) => prev.map((entry) => (entry.id === task.id ? { ...entry, subtasks: reordered } : entry)));
+                  setDragSubtask(null);
+                  await persistSubtaskOrder(task.id, reordered);
+                }}
+                onDragEnd={() => setDragSubtask(null)}
+              >
+                <div className="flex items-center gap-2">
+                  <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
+                  <Checkbox checked={subtask.status === "termine"} onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))} />
+                  <span className="text-sm">{subtask.titre}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">{priorityLabel[subtask.priority]}</Badge>
+                  <Button variant="ghost" size="icon" onClick={() => void deleteSubtask(task.id, subtask.id)}>
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </Button>
+                </div>
+              </div>
+            ))
+          : null}
+
+        <div className="space-y-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowSubtaskForm((prev) => ({ ...prev, [task.id]: !formIsOpen }))}>
+            <Plus className="mr-2 h-4 w-4" />Ajouter une sous-tâche
+          </Button>
+          {formIsOpen ? (
+            <div className="grid gap-2 rounded-md border bg-background p-3">
+              <Input
+                placeholder="Titre de la sous-tâche"
+                value={subtaskForms[task.id]?.titre ?? ""}
+                onChange={(e) => setSubtaskForms((prev) => ({ ...prev, [task.id]: { titre: e.target.value, priority: prev[task.id]?.priority ?? "moyenne" } }))}
+              />
+              <select
+                className="h-9 w-full rounded-md border px-3"
+                value={subtaskForms[task.id]?.priority ?? "moyenne"}
+                onChange={(e) => setSubtaskForms((prev) => ({ ...prev, [task.id]: { titre: prev[task.id]?.titre ?? "", priority: e.target.value as Priority } }))}
+              >
+                {priorityOptions.map((item) => (
+                  <option key={item} value={item}>{priorityLabel[item]}</option>
+                ))}
+              </select>
+              <Button size="sm" onClick={() => void addSubtask(task.id)}>Créer la sous-tâche</Button>
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  };
+
   const kanbanColumns = useMemo(
     () => statusOptions.map((status) => ({ status, tasks: tasks.filter((task) => task.status === status) })),
     [tasks]
@@ -144,6 +268,36 @@ export function StandaloneTasksPage() {
           <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Nouvelle tâche</Button>
         </CardHeader>
       </Card>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <Card>
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Éléments total</p>
+              <p className="text-xl font-semibold">{totalCount}</p>
+            </div>
+            <ListTodo className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Terminés</p>
+              <p className="text-xl font-semibold">{doneCount}</p>
+            </div>
+            <CheckCheck className="h-5 w-5 text-emerald-500" />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="flex items-center justify-between p-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Sous-tâches</p>
+              <p className="text-xl font-semibold">{totalSubtasks}</p>
+            </div>
+            <CalendarClock className="h-5 w-5 text-muted-foreground" />
+          </CardContent>
+        </Card>
+      </div>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
@@ -172,16 +326,65 @@ export function StandaloneTasksPage() {
         <TabsContent value="kanban">
           <div className="grid gap-4 md:grid-cols-3">
             {kanbanColumns.map((col) => (
-              <Card key={col.status}>
+              <Card
+                key={col.status}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={async () => {
+                  if (!dragTaskId) return;
+                  await moveTaskToStatus(dragTaskId, col.status);
+                  setDragTaskId(null);
+                }}
+              >
                 <CardHeader><CardTitle className="text-base">{statusLabel[col.status]}</CardTitle></CardHeader>
                 <CardContent className="space-y-2">
-                  {col.tasks.map((task) => (
-                    <div key={task.id} className="rounded border p-3">
-                      <p className="font-medium">{task.titre}</p>
-                      <div className="mt-1 flex gap-2">
+                  {col.tasks.map((task, taskIndex) => (
+                    <div
+                      key={task.id}
+                      className="rounded border p-3"
+                      draggable
+                      onDragStart={() => setDragTaskId(task.id)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={async () => {
+                        if (!dragTaskId || dragTaskId === task.id) return;
+                        const scopedTasks = tasks.filter((entry) => entry.status === col.status);
+                        const sourceIndex = scopedTasks.findIndex((entry) => entry.id === dragTaskId);
+                        if (sourceIndex < 0) return;
+                        const reordered = [...scopedTasks];
+                        const [moved] = reordered.splice(sourceIndex, 1);
+                        reordered.splice(taskIndex, 0, moved);
+                        const reorderedIds = reordered.map((entry) => entry.id);
+                        const next = [...tasks];
+                        const source = next.filter((entry) => entry.status === col.status);
+                        let pointer = 0;
+                        for (let i = 0; i < next.length; i += 1) {
+                          if (next[i].status === col.status) {
+                            next[i] = source.find((entry) => entry.id === reorderedIds[pointer]) ?? next[i];
+                            pointer += 1;
+                          }
+                        }
+                        setTasks(next);
+                        setDragTaskId(null);
+                        await persistTaskOrder(next);
+                      }}
+                      onDragEnd={() => setDragTaskId(null)}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="font-medium">{task.titre}</p>
+                          <p className="text-xs text-muted-foreground">{formatDateTime(task.start_at)} → {formatDateTime(task.end_at)}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <GripVertical className="mt-0.5 h-4 w-4 cursor-grab text-muted-foreground" />
+                          <Button variant="ghost" size="icon" onClick={() => void deleteTask(task.id)}>
+                            <Trash2 className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex gap-2">
                         <Badge variant="outline">{priorityLabel[task.priority]}</Badge>
                         <Badge variant="outline">{task.subtasks.length} sous-tâches</Badge>
                       </div>
+                      {renderSubtasks(task)}
                     </div>
                   ))}
                 </CardContent>
@@ -195,8 +398,6 @@ export function StandaloneTasksPage() {
             <CardContent className="space-y-2 p-4">
               {loading ? <p className="text-sm text-muted-foreground">Chargement...</p> : null}
               {tasks.map((task, taskIndex) => {
-                const hasSubtasks = task.subtasks.length > 0;
-                const isOpen = expanded[task.id] ?? true;
                 return (
                   <div
                     key={task.id}
@@ -229,58 +430,12 @@ export function StandaloneTasksPage() {
                       <div className="flex items-center gap-2">
                         <Badge className={cn("border")}>{statusLabel[task.status]}</Badge>
                         <Badge variant="outline">{priorityLabel[task.priority]}</Badge>
-                        {hasSubtasks ? (
-                          <Button variant="ghost" size="icon" onClick={() => setExpanded((p) => ({ ...p, [task.id]: !isOpen }))}>
-                            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </Button>
-                        ) : null}
                         <Button variant="ghost" size="icon" onClick={() => void deleteTask(task.id)}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
                       </div>
                     </div>
-                    {hasSubtasks && isOpen ? (
-                      <div className="mt-2 space-y-2 border-l pl-4">
-                        {task.subtasks.map((subtask, subtaskIndex) => (
-                          <div
-                            key={subtask.id}
-                            className="flex items-center justify-between rounded-md border p-2"
-                            draggable
-                            onDragStart={(e) => {
-                              e.stopPropagation();
-                              setDragSubtask({ taskId: task.id, subtaskId: subtask.id });
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }}
-                            onDrop={async (e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (!dragSubtask || dragSubtask.taskId !== task.id || dragSubtask.subtaskId === subtask.id) return;
-                              const sourceIndex = task.subtasks.findIndex((entry) => entry.id === dragSubtask.subtaskId);
-                              if (sourceIndex < 0) return;
-                              const reordered = [...task.subtasks];
-                              const [moved] = reordered.splice(sourceIndex, 1);
-                              reordered.splice(subtaskIndex, 0, moved);
-                              setTasks((prev) => prev.map((entry) => (entry.id === task.id ? { ...entry, subtasks: reordered } : entry)));
-                              setDragSubtask(null);
-                              await persistSubtaskOrder(task.id, reordered);
-                            }}
-                            onDragEnd={() => setDragSubtask(null)}
-                          >
-                            <div className="flex items-center gap-2">
-                              <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
-                              <Checkbox checked={subtask.status === "termine"} onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))} />
-                              <span>{subtask.titre}</span>
-                            </div>
-                            <Button variant="ghost" size="icon" onClick={() => void deleteSubtask(task.id, subtask.id)}>
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
+                    {renderSubtasks(task)}
                   </div>
                 );
               })}
