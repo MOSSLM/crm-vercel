@@ -28,6 +28,7 @@ import {
 } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
+import { journalApi } from '../utils/journalApi';
 import {
   Achievement,
   Company,
@@ -1084,7 +1085,25 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
   const moveOpportunityToStage = async (opportunityId: string, stageId: number) => {
+    const opportunity = opportunities.find((opp) => opp.id === opportunityId);
+    const targetStage = pipelineStages.find((stage) => stage.id === stageId);
+
     await updateOpportunity(opportunityId, { stage_id: stageId });
+
+    if (!targetStage || opportunity?.stage_id === stageId) {
+      return;
+    }
+
+    try {
+      await journalApi.logPipelineStageChange(
+        targetStage.nom,
+        opportunityId,
+        opportunity?.entreprise_id,
+        `Passage en pipeline: ${targetStage.nom}`,
+      );
+    } catch (error) {
+      logger.error('Error logging pipeline stage change:', error);
+    }
   };
 
   const getOpportunitiesByStage = (stageId: number) => opportunities.filter((opp) => opp.stage_id === stageId);
