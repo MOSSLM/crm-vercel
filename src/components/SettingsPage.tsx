@@ -25,8 +25,6 @@ import {
   EyeOff,
   Camera,
   MapPin,
-  Search,
-  Monitor,
   Moon,
   Sun,
   Smartphone,
@@ -34,10 +32,12 @@ import {
   Phone,
   Building
 } from 'lucide-react';
+import { useTheme } from './ThemeContext';
+import { THEME_PRESETS, ThemePreset } from './themePresets';
 
 export const SettingsPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const { theme, setTheme, resolvedTheme, themePreset, setThemePreset } = useTheme();
   const [notifications, setNotifications] = useState({
     newSearchComplete: true,
     qualificationUpdates: true,
@@ -236,14 +236,65 @@ export const SettingsPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="flex items-center gap-2">
-                    {darkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    {resolvedTheme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                     Mode sombre
                   </Label>
                   <div className="text-sm text-muted-foreground">
                     Basculer vers un thème sombre pour réduire la fatigue oculaire
                   </div>
                 </div>
-                <Switch checked={darkMode} onCheckedChange={setDarkMode} />
+                <Switch
+                  checked={resolvedTheme === 'dark'}
+                  onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Mode de thème</Label>
+                <Select value={theme} onValueChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">Clair</SelectItem>
+                    <SelectItem value="dark">Sombre</SelectItem>
+                    <SelectItem value="system">Système</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <Label>Gestionnaire de thèmes visuels</Label>
+                <p className="text-sm text-muted-foreground">
+                  Chaque preset change les couleurs d'interface, les couleurs de graphiques, le radius et le style de bordure.
+                </p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {THEME_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setThemePreset(preset.id as ThemePreset)}
+                      className={`rounded-lg border p-3 text-left transition hover:shadow-sm ${
+                        themePreset === preset.id
+                          ? 'border-primary bg-accent/40'
+                          : 'border-border bg-card/60 hover:bg-accent/25'
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="font-medium">{preset.name}</span>
+                        {themePreset === preset.id ? <Badge>Actif</Badge> : null}
+                      </div>
+                      <p className="mb-3 text-sm text-muted-foreground">{preset.description}</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-1'] ?? '#3b82f6' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-2'] ?? '#ef4444' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-3'] ?? '#10b981' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-4'] ?? '#f59e0b' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-5'] ?? '#8b5cf6' }} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="space-y-2">
