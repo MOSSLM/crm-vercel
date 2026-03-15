@@ -75,18 +75,18 @@ export interface ChartKPI {
 }
 
 export const KPI_DEFINITIONS: ChartKPI[] = [
-  { key: 'leads_trouves', label: 'Leads trouvés', color: '#8884d8', enabled: true },
-  { key: 'leads_qualifies', label: 'Leads qualifiés', color: '#82ca9d', enabled: true },
-  { key: 'appels', label: 'Appels effectués', color: '#ffc658', enabled: true },
-  { key: 'rdv', label: 'RDV obtenus', color: '#ff7c7c', enabled: true },
-  { key: 'devis', label: 'Devis envoyés', color: '#8dd1e1', enabled: true },
-  { key: 'relances', label: 'Relances effectuées', color: '#d084d0', enabled: false },
-  { key: 'signatures', label: 'Signatures obtenues', color: '#87d068', enabled: true },
-  { key: 'acomptes', label: 'Acomptes reçus', color: '#ffb347', enabled: true },
-  { key: 'leadmagnets', label: 'Lead magnets créés', color: '#ff9999', enabled: false },
-  { key: 'relances_total', label: 'Total relances', color: '#87ceeb', enabled: false },
-  { key: 'ca', label: 'Chiffre d\'affaires', color: '#20b2aa', enabled: true },
-  { key: 'mrr', label: 'MRR', color: '#dda0dd', enabled: true }
+  { key: 'leads_trouves', label: 'Leads trouvés', color: 'var(--chart-1, #8884d8)', enabled: true },
+  { key: 'leads_qualifies', label: 'Leads qualifiés', color: 'var(--chart-2, #82ca9d)', enabled: true },
+  { key: 'appels', label: 'Appels effectués', color: 'var(--chart-3, #ffc658)', enabled: true },
+  { key: 'rdv', label: 'RDV obtenus', color: 'var(--chart-4, #ff7c7c)', enabled: true },
+  { key: 'devis', label: 'Devis envoyés', color: 'var(--chart-5, #8dd1e1)', enabled: true },
+  { key: 'relances', label: 'Relances effectuées', color: 'var(--chart-6, #d084d0)', enabled: false },
+  { key: 'signatures', label: 'Signatures obtenues', color: 'var(--chart-7, #87d068)', enabled: true },
+  { key: 'acomptes', label: 'Acomptes reçus', color: 'var(--chart-8, #ffb347)', enabled: true },
+  { key: 'leadmagnets', label: 'Lead magnets créés', color: 'var(--chart-9, #ff9999)', enabled: false },
+  { key: 'relances_total', label: 'Total relances', color: 'var(--chart-10, #87ceeb)', enabled: false },
+  { key: 'ca', label: 'Chiffre d\'affaires', color: 'var(--chart-11, #20b2aa)', enabled: true },
+  { key: 'mrr', label: 'MRR', color: 'var(--chart-12, #dda0dd)', enabled: true }
 ];
 
 // Interface pour les données de la vue v_kpi_totals_from_journal
