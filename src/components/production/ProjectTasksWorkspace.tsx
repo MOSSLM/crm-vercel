@@ -93,10 +93,11 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [mobileLayout, setMobileLayout] = useState<"two" | "one">("two");
-  const [scopeFilter, setScopeFilter] = useState<ProjectScope>(scope === "all" ? "client" : scope);
   const [menuOpenProjectId, setMenuOpenProjectId] = useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<ProjectRow | null>(null);
   const [editForm, setEditForm] = useState({ nom: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, dueDate: "", startAt: "", endAt: "", color: "#4f46e5", backgroundColor: "#eef2ff" });
+
+  const currentScope: "entreprise" | "interne" = scope === "client" ? "entreprise" : "interne";
 
   const [projectForm, setProjectForm] = useState({
     nom: "",
@@ -113,7 +114,6 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     endAt: "",
   });
 
-  const currentScope = scopeFilter === "client" ? "entreprise" : "interne";
 
   useEffect(() => {
     const load = async () => {
@@ -127,7 +127,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
           : supabase
               .from("crm_projects")
               .select("id,nom,scope,status,priority,due_date,start_at,end_at,entreprise_id,offre_id,color,background_color,entreprises(id,name),offres(id,nom)")
-              .eq("scope", currentScope)
+              .eq("scope", scope === "client" ? "entreprise" : "interne")
               .order("created_at", { ascending: false })),
         supabase.from("v_crm_project_progress").select("project_id,computed_project_progress"),
         supabase.from("entreprises").select("id,name").eq("qualifie", true).is("merged_into_id", null).order("name"),
@@ -180,7 +180,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
     };
 
     void load();
-  }, [currentScope, scope]);
+  }, [scope]);
 
   const filteredCompanies = useMemo(() => {
     const q = projectForm.entrepriseQuery.trim().toLowerCase();
@@ -195,10 +195,10 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
   }, [offers, projectForm.offreQuery]);
 
   const visibleProjects = useMemo(() => {
-    if (scope !== "all") return projects;
-    const expectedScope = scopeFilter === "client" ? "entreprise" : "interne";
+    if (scope === "all") return projects;
+    const expectedScope = scope === "client" ? "entreprise" : "interne";
     return projects.filter((project) => project.scope === expectedScope);
-  }, [projects, scope, scopeFilter]);
+  }, [projects, scope]);
 
   const dueProjects = useMemo(() => visibleProjects.filter((project) => project.due_date), [visibleProjects]);
 
@@ -362,14 +362,6 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
             <CardDescription>{description}</CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            {scope === "all" ? (
-              <Tabs value={scopeFilter} onValueChange={(value) => setScopeFilter(value as ProjectScope)}>
-                <TabsList>
-                  <TabsTrigger value="client">Projets clients</TabsTrigger>
-                  <TabsTrigger value="internal">Projets internes</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            ) : null}
             <Button onClick={() => setIsCreateOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Nouveau projet
             </Button>

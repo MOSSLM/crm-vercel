@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Columns2, ListTodo, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Columns2, GripVertical, ListTodo, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,7 +16,7 @@ import { supabase } from "@/utils/supabase/client";
 type ItemStatus = "a_faire" | "en_cours" | "termine";
 type Priority = "haute" | "moyenne" | "basse";
 
-type Subtask = { id: string; task_id: string; titre: string; status: ItemStatus; priority: Priority; start_at: string | null; end_at: string | null };
+type Subtask = { id: string; task_id: string; titre: string; status: ItemStatus; priority: Priority; start_at: string | null; end_at: string | null; position?: number | null };
 type Task = {
   id: string;
   titre: string;
@@ -24,6 +25,7 @@ type Task = {
   start_at: string | null;
   end_at: string | null;
   due_date: string | null;
+  position?: number | null;
   subtasks: Subtask[];
 };
 
@@ -39,19 +41,27 @@ export function StandaloneTasksPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [createOpen, setCreateOpen] = useState(false);
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  const [dragSubtask, setDragSubtask] = useState<{ taskId: string; subtaskId: string } | null>(null);
   const [form, setForm] = useState({ titre: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, startAt: "", endAt: "" });
 
   const load = async () => {
     setLoading(true);
     const { data: taskRows } = await supabase
       .from("crm_tasks")
-      .select("id,titre,status,priority,start_at,end_at,due_date")
+      .select("id,titre,status,priority,start_at,end_at,due_date,position")
       .is("project_id", null)
-      .order("created_at", { ascending: false });
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
 
     const taskIds = (taskRows ?? []).map((task) => task.id as string);
     const { data: subtaskRows } = taskIds.length
-      ? await supabase.from("crm_subtasks").select("id,task_id,titre,status,priority,start_at,end_at").in("task_id", taskIds).order("created_at")
+      ? await supabase
+          .from("crm_subtasks")
+          .select("id,task_id,titre,status,priority,start_at,end_at,position")
+          .in("task_id", taskIds)
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true })
       : { data: [] };
 
     const grouped = new Map<string, Subtask[]>();
@@ -67,8 +77,17 @@ export function StandaloneTasksPage() {
     void load();
   }, []);
 
+  const persistTaskOrder = async (next: Task[]) => {
+    await Promise.all(next.map((task, index) => supabase.from("crm_tasks").update({ position: (index + 1) * 100 }).eq("id", task.id)));
+  };
+
+  const persistSubtaskOrder = async (taskId: string, subtasks: Subtask[]) => {
+    await Promise.all(subtasks.map((subtask, index) => supabase.from("crm_subtasks").update({ position: (index + 1) * 100 }).eq("id", subtask.id).eq("task_id", taskId)));
+  };
+
   const createTask = async () => {
     if (!form.titre.trim()) return;
+    const nextPosition = (tasks.length + 1) * 100;
     await supabase.from("crm_tasks").insert({
       titre: form.titre.trim(),
       status: form.status,
@@ -77,10 +96,39 @@ export function StandaloneTasksPage() {
       start_at: form.startAt || null,
       end_at: form.endAt || null,
       due_date: form.endAt ? form.endAt.slice(0, 10) : form.startAt ? form.startAt.slice(0, 10) : null,
+      position: nextPosition,
     });
     setForm({ titre: "", status: "a_faire", priority: "moyenne", startAt: "", endAt: "" });
     setCreateOpen(false);
     await load();
+  };
+
+  const toggleTask = async (task: Task, checked: boolean) => {
+    const status: ItemStatus = checked ? "termine" : "a_faire";
+    await supabase.from("crm_tasks").update({ status, progress: checked ? 100 : 0 }).eq("id", task.id);
+    setTasks((prev) => prev.map((entry) => (entry.id === task.id ? { ...entry, status } : entry)));
+  };
+
+  const toggleSubtask = async (taskId: string, subtask: Subtask, checked: boolean) => {
+    const status: ItemStatus = checked ? "termine" : "a_faire";
+    await supabase.from("crm_subtasks").update({ status, progress: checked ? 100 : 0 }).eq("id", subtask.id);
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId
+          ? { ...task, subtasks: task.subtasks.map((entry) => (entry.id === subtask.id ? { ...entry, status } : entry)) }
+          : task
+      )
+    );
+  };
+
+  const deleteTask = async (taskId: string) => {
+    await supabase.from("crm_tasks").delete().eq("id", taskId);
+    setTasks((prev) => prev.filter((task) => task.id !== taskId));
+  };
+
+  const deleteSubtask = async (taskId: string, subtaskId: string) => {
+    await supabase.from("crm_subtasks").delete().eq("id", subtaskId);
+    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, subtasks: task.subtasks.filter((subtask) => subtask.id !== subtaskId) } : task)));
   };
 
   const kanbanColumns = useMemo(
@@ -146,15 +194,37 @@ export function StandaloneTasksPage() {
           <Card>
             <CardContent className="space-y-2 p-4">
               {loading ? <p className="text-sm text-muted-foreground">Chargement...</p> : null}
-              {tasks.map((task) => {
+              {tasks.map((task, taskIndex) => {
                 const hasSubtasks = task.subtasks.length > 0;
-                const isOpen = expanded[task.id] ?? false;
+                const isOpen = expanded[task.id] ?? true;
                 return (
-                  <div key={task.id} className="rounded-md border p-3">
+                  <div
+                    key={task.id}
+                    className="rounded-md border p-3"
+                    draggable
+                    onDragStart={() => setDragTaskId(task.id)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={async () => {
+                      if (!dragTaskId || dragTaskId === task.id) return;
+                      const sourceIndex = tasks.findIndex((entry) => entry.id === dragTaskId);
+                      if (sourceIndex < 0) return;
+                      const next = [...tasks];
+                      const [moved] = next.splice(sourceIndex, 1);
+                      next.splice(taskIndex, 0, moved);
+                      setTasks(next);
+                      setDragTaskId(null);
+                      await persistTaskOrder(next);
+                    }}
+                    onDragEnd={() => setDragTaskId(null)}
+                  >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-medium">{task.titre}</p>
-                        <p className="text-xs text-muted-foreground">{formatDateTime(task.start_at)} → {formatDateTime(task.end_at)}</p>
+                      <div className="flex min-w-0 items-start gap-2">
+                        <GripVertical className="mt-0.5 h-4 w-4 cursor-grab text-muted-foreground" />
+                        <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
+                        <div className="min-w-0">
+                          <p className="font-medium">{task.titre}</p>
+                          <p className="text-xs text-muted-foreground">{formatDateTime(task.start_at)} → {formatDateTime(task.end_at)}</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <Badge className={cn("border")}>{statusLabel[task.status]}</Badge>
@@ -164,12 +234,50 @@ export function StandaloneTasksPage() {
                             {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                           </Button>
                         ) : null}
+                        <Button variant="ghost" size="icon" onClick={() => void deleteTask(task.id)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
                       </div>
                     </div>
                     {hasSubtasks && isOpen ? (
-                      <div className="mt-2 space-y-1 border-l pl-4">
-                        {task.subtasks.map((subtask) => (
-                          <div key={subtask.id} className="text-sm">• {subtask.titre} ({statusLabel[subtask.status]})</div>
+                      <div className="mt-2 space-y-2 border-l pl-4">
+                        {task.subtasks.map((subtask, subtaskIndex) => (
+                          <div
+                            key={subtask.id}
+                            className="flex items-center justify-between rounded-md border p-2"
+                            draggable
+                            onDragStart={(e) => {
+                              e.stopPropagation();
+                              setDragSubtask({ taskId: task.id, subtaskId: subtask.id });
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            onDrop={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!dragSubtask || dragSubtask.taskId !== task.id || dragSubtask.subtaskId === subtask.id) return;
+                              const sourceIndex = task.subtasks.findIndex((entry) => entry.id === dragSubtask.subtaskId);
+                              if (sourceIndex < 0) return;
+                              const reordered = [...task.subtasks];
+                              const [moved] = reordered.splice(sourceIndex, 1);
+                              reordered.splice(subtaskIndex, 0, moved);
+                              setTasks((prev) => prev.map((entry) => (entry.id === task.id ? { ...entry, subtasks: reordered } : entry)));
+                              setDragSubtask(null);
+                              await persistSubtaskOrder(task.id, reordered);
+                            }}
+                            onDragEnd={() => setDragSubtask(null)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
+                              <Checkbox checked={subtask.status === "termine"} onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))} />
+                              <span>{subtask.titre}</span>
+                            </div>
+                            <Button variant="ghost" size="icon" onClick={() => void deleteSubtask(task.id, subtask.id)}>
+                              <Trash2 className="h-4 w-4 text-red-500" />
+                            </Button>
+                          </div>
                         ))}
                       </div>
                     ) : null}
