@@ -1,289 +1,323 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Columns2, GripVertical, ListTodo, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowRight, CalendarDays, KanbanSquare, LayoutGrid, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { cn } from "@/components/ui/utils";
 import { supabase } from "@/utils/supabase/client";
 
 type ItemStatus = "a_faire" | "en_cours" | "termine";
 type Priority = "haute" | "moyenne" | "basse";
 
-type Subtask = { id: string; task_id: string; titre: string; status: ItemStatus; priority: Priority; start_at: string | null; end_at: string | null; position?: number | null };
+type Subtask = {
+  id: string;
+  task_id: string;
+  titre: string;
+  status: ItemStatus;
+};
+
 type Task = {
   id: string;
   titre: string;
   status: ItemStatus;
   priority: Priority;
+  due_date: string | null;
   start_at: string | null;
   end_at: string | null;
-  due_date: string | null;
-  position?: number | null;
   subtasks: Subtask[];
 };
 
-const statusOptions: ItemStatus[] = ["a_faire", "en_cours", "termine"];
-const priorityOptions: Priority[] = ["haute", "moyenne", "basse"];
-const statusLabel: Record<ItemStatus, string> = { a_faire: "À faire", en_cours: "En cours", termine: "Terminé" };
-const priorityLabel: Record<Priority, string> = { haute: "Haute", moyenne: "Moyenne", basse: "Basse" };
+const statusLabel: Record<ItemStatus, string> = {
+  a_faire: "À faire",
+  en_cours: "En cours",
+  termine: "Terminé",
+};
 
-const formatDateTime = (value: string | null) => (value ? new Date(value).toLocaleString("fr-FR") : "-");
+const priorityLabel: Record<Priority, string> = {
+  haute: "Haute",
+  moyenne: "Moyenne",
+  basse: "Basse",
+};
+
+const normalizeDate = (value: string | null) => (value ? value.slice(0, 10) : null);
+
+const dateLabel = (value: string | null) => {
+  if (!value) return "Sans date";
+  return new Date(value).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+};
+
+const getProgress = (task: Task) => {
+  if (task.subtasks.length === 0) {
+    return task.status === "termine" ? 100 : task.status === "en_cours" ? 50 : 0;
+  }
+
+  const done = task.subtasks.filter((subtask) => subtask.status === "termine").length;
+  return Math.round((done / task.subtasks.length) * 100);
+};
+
+const getTaskDate = (task: Task) => normalizeDate(task.due_date ?? task.end_at ?? task.start_at);
+
+function ProgressCircle({ value }: { value: number }) {
+  const safeValue = Math.max(0, Math.min(100, value));
+
+  return (
+    <div
+      className="grid h-16 w-16 place-items-center rounded-full"
+      style={{
+        background: `conic-gradient(hsl(var(--primary)) ${safeValue * 3.6}deg, hsl(var(--muted)) 0deg)`,
+      }}
+    >
+      <div className="grid h-12 w-12 place-items-center rounded-full bg-background text-xs font-semibold">
+        {safeValue}%
+      </div>
+    </div>
+  );
+}
 
 export function StandaloneTasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [createOpen, setCreateOpen] = useState(false);
-  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
-  const [dragSubtask, setDragSubtask] = useState<{ taskId: string; subtaskId: string } | null>(null);
-  const [form, setForm] = useState({ titre: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, startAt: "", endAt: "" });
+  const [selectedDate, setSelectedDate] = useState(() => normalizeDate(new Date().toISOString()) ?? "");
+  const [startDate, setStartDate] = useState(() => {
+    const now = new Date();
+    now.setDate(now.getDate() - 3);
+    return now;
+  });
 
-  const load = async () => {
-    setLoading(true);
-    const { data: taskRows } = await supabase
-      .from("crm_tasks")
-      .select("id,titre,status,priority,start_at,end_at,due_date,position")
-      .is("project_id", null)
-      .order("position", { ascending: true })
-      .order("created_at", { ascending: true });
-
-    const taskIds = (taskRows ?? []).map((task) => task.id as string);
-    const { data: subtaskRows } = taskIds.length
-      ? await supabase
-          .from("crm_subtasks")
-          .select("id,task_id,titre,status,priority,start_at,end_at,position")
-          .in("task_id", taskIds)
-          .order("position", { ascending: true })
-          .order("created_at", { ascending: true })
-      : { data: [] };
-
-    const grouped = new Map<string, Subtask[]>();
-    ((subtaskRows as Subtask[] | null) ?? []).forEach((subtask) => {
-      grouped.set(subtask.task_id, [...(grouped.get(subtask.task_id) ?? []), subtask]);
-    });
-
-    setTasks((((taskRows as Omit<Task, "subtasks">[] | null) ?? []).map((task) => ({ ...task, subtasks: grouped.get(task.id) ?? [] }))));
-    setLoading(false);
-  };
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const { data: taskRows } = await supabase
+        .from("crm_tasks")
+        .select("id,titre,status,priority,due_date,start_at,end_at")
+        .is("project_id", null)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      const taskIds = (taskRows ?? []).map((task) => task.id as string);
+      const { data: subtaskRows } = taskIds.length
+        ? await supabase
+            .from("crm_subtasks")
+            .select("id,task_id,titre,status")
+            .in("task_id", taskIds)
+            .order("position", { ascending: true })
+            .order("created_at", { ascending: true })
+        : { data: [] };
+
+      const grouped = new Map<string, Subtask[]>();
+      ((subtaskRows as Subtask[] | null) ?? []).forEach((subtask) => {
+        grouped.set(subtask.task_id, [...(grouped.get(subtask.task_id) ?? []), subtask]);
+      });
+
+      const mapped = ((taskRows as Omit<Task, "subtasks">[] | null) ?? []).map((task) => ({
+        ...task,
+        subtasks: grouped.get(task.id) ?? [],
+      }));
+
+      setTasks(mapped);
+      setLoading(false);
+    };
+
     void load();
   }, []);
 
-  const persistTaskOrder = async (next: Task[]) => {
-    await Promise.all(next.map((task, index) => supabase.from("crm_tasks").update({ position: (index + 1) * 100 }).eq("id", task.id)));
-  };
-
-  const persistSubtaskOrder = async (taskId: string, subtasks: Subtask[]) => {
-    await Promise.all(subtasks.map((subtask, index) => supabase.from("crm_subtasks").update({ position: (index + 1) * 100 }).eq("id", subtask.id).eq("task_id", taskId)));
-  };
-
-  const createTask = async () => {
-    if (!form.titre.trim()) return;
-    const nextPosition = (tasks.length + 1) * 100;
-    await supabase.from("crm_tasks").insert({
-      titre: form.titre.trim(),
-      status: form.status,
-      priority: form.priority,
-      project_id: null,
-      start_at: form.startAt || null,
-      end_at: form.endAt || null,
-      due_date: form.endAt ? form.endAt.slice(0, 10) : form.startAt ? form.startAt.slice(0, 10) : null,
-      position: nextPosition,
+  const timelineDays = useMemo(() => {
+    return Array.from({ length: 14 }).map((_, index) => {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + index);
+      const iso = normalizeDate(date.toISOString()) ?? "";
+      return {
+        iso,
+        day: date.toLocaleDateString("fr-FR", { weekday: "short" }),
+        number: date.getDate(),
+      };
     });
-    setForm({ titre: "", status: "a_faire", priority: "moyenne", startAt: "", endAt: "" });
-    setCreateOpen(false);
-    await load();
-  };
+  }, [startDate]);
 
-  const toggleTask = async (task: Task, checked: boolean) => {
-    const status: ItemStatus = checked ? "termine" : "a_faire";
-    await supabase.from("crm_tasks").update({ status, progress: checked ? 100 : 0 }).eq("id", task.id);
-    setTasks((prev) => prev.map((entry) => (entry.id === task.id ? { ...entry, status } : entry)));
-  };
-
-  const toggleSubtask = async (taskId: string, subtask: Subtask, checked: boolean) => {
-    const status: ItemStatus = checked ? "termine" : "a_faire";
-    await supabase.from("crm_subtasks").update({ status, progress: checked ? 100 : 0 }).eq("id", subtask.id);
-    setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? { ...task, subtasks: task.subtasks.map((entry) => (entry.id === subtask.id ? { ...entry, status } : entry)) }
-          : task
-      )
-    );
-  };
-
-  const deleteTask = async (taskId: string) => {
-    await supabase.from("crm_tasks").delete().eq("id", taskId);
-    setTasks((prev) => prev.filter((task) => task.id !== taskId));
-  };
-
-  const deleteSubtask = async (taskId: string, subtaskId: string) => {
-    await supabase.from("crm_subtasks").delete().eq("id", subtaskId);
-    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, subtasks: task.subtasks.filter((subtask) => subtask.id !== subtaskId) } : task)));
-  };
-
-  const kanbanColumns = useMemo(
-    () => statusOptions.map((status) => ({ status, tasks: tasks.filter((task) => task.status === status) })),
+  const tasksWithProgress = useMemo(
+    () => tasks.map((task) => ({ ...task, progress: getProgress(task), day: getTaskDate(task) })),
     [tasks]
   );
 
-  return (
-    <div className="space-y-4 p-4 md:p-6">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Tâches</CardTitle>
-          <Button onClick={() => setCreateOpen(true)}><Plus className="mr-2 h-4 w-4" />Nouvelle tâche</Button>
-        </CardHeader>
-      </Card>
+  const orderedTasks = useMemo(
+    () => [...tasksWithProgress].sort((a, b) => a.titre.localeCompare(b.titre, "fr")),
+    [tasksWithProgress]
+  );
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>Créer une tâche sans projet</DialogTitle></DialogHeader>
-          <div className="grid gap-3">
-            <div><Label>Titre</Label><Input value={form.titre} onChange={(e) => setForm((p) => ({ ...p, titre: e.target.value }))} /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Début</Label><Input type="datetime-local" value={form.startAt} onChange={(e) => setForm((p) => ({ ...p, startAt: e.target.value }))} /></div>
-              <div><Label>Fin</Label><Input type="datetime-local" value={form.endAt} onChange={(e) => setForm((p) => ({ ...p, endAt: e.target.value }))} /></div>
+  const tasksForSelectedDate = useMemo(
+    () => orderedTasks.filter((task) => task.day === selectedDate),
+    [orderedTasks, selectedDate]
+  );
+
+  const metrics = useMemo(() => {
+    const totalTasks = tasksWithProgress.length;
+    const highPriority = tasksWithProgress.filter((task) => task.priority === "haute").length;
+    const totalSubtasks = tasksWithProgress.reduce((acc, task) => acc + task.subtasks.length, 0);
+    const averageProgress = totalTasks
+      ? Math.round(tasksWithProgress.reduce((acc, task) => acc + task.progress, 0) / totalTasks)
+      : 0;
+
+    return [
+      { label: "Projets", value: totalTasks, tone: "bg-blue-500/15 text-blue-700" },
+      { label: "Priorité élevée", value: highPriority, tone: "bg-orange-500/15 text-orange-700" },
+      { label: "Sous-tâches", value: totalSubtasks, tone: "bg-emerald-500/15 text-emerald-700" },
+      { label: "Avancement moyen", value: `${averageProgress}%`, tone: "bg-purple-500/15 text-purple-700" },
+    ];
+  }, [tasksWithProgress]);
+
+  const groupedByStatus = useMemo(
+    () => ({
+      a_faire: orderedTasks.filter((task) => task.status === "a_faire"),
+      en_cours: orderedTasks.filter((task) => task.status === "en_cours"),
+      termine: orderedTasks.filter((task) => task.status === "termine"),
+    }),
+    [orderedTasks]
+  );
+
+  const shiftTimeline = (direction: "prev" | "next") => {
+    const next = new Date(startDate);
+    next.setDate(next.getDate() + (direction === "next" ? 7 : -7));
+    setStartDate(next);
+  };
+
+  const taskCard = (task: (typeof orderedTasks)[number]) => (
+    <Link key={task.id} href={`/production/taches/${task.id}`}>
+      <Card className="h-full border-2 transition hover:border-primary/40 hover:shadow-md">
+        <CardContent className="p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 space-y-1">
+              <p className="line-clamp-2 font-semibold leading-tight">{task.titre}</p>
+              <p className="text-xs text-muted-foreground">Échéance: {dateLabel(task.day)}</p>
+              <Badge variant="outline" className="mt-1">{priorityLabel[task.priority]}</Badge>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><Label>Statut</Label><select className="h-9 w-full rounded-md border px-3" value={form.status} onChange={(e) => setForm((p) => ({ ...p, status: e.target.value as ItemStatus }))}>{statusOptions.map((s) => <option key={s} value={s}>{statusLabel[s]}</option>)}</select></div>
-              <div><Label>Priorité</Label><select className="h-9 w-full rounded-md border px-3" value={form.priority} onChange={(e) => setForm((p) => ({ ...p, priority: e.target.value as Priority }))}>{priorityOptions.map((s) => <option key={s} value={s}>{priorityLabel[s]}</option>)}</select></div>
-            </div>
+            <ProgressCircle value={task.progress} />
           </div>
-          <DialogFooter><Button onClick={createTask}>Créer</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      <Tabs defaultValue="kanban" className="space-y-3">
+          <div className="mt-4 flex items-end justify-between text-xs text-muted-foreground">
+            <span>{task.subtasks.length} tâche</span>
+            <span>{task.progress}% d&apos;avancée</span>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+
+  return (
+    <div className="space-y-6 px-4 pb-6 pt-2 lg:px-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Tâches</h1>
+        <p className="text-sm text-muted-foreground">Vue cartes par défaut, kanban et date, avec accès à la page tâche unique.</p>
+      </div>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <Card key={metric.label} className={metric.tone}>
+            <CardContent className="p-4">
+              <p className="text-3xl font-bold">{metric.value}</p>
+              <p className="text-sm font-medium">{metric.label}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </section>
+
+      <Tabs defaultValue="cartes" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="kanban"><Columns2 className="mr-2 h-4 w-4" />Kanban</TabsTrigger>
-          <TabsTrigger value="liste"><ListTodo className="mr-2 h-4 w-4" />Liste</TabsTrigger>
+          <TabsTrigger value="cartes" className="gap-2"><LayoutGrid className="h-4 w-4" />Cartes</TabsTrigger>
+          <TabsTrigger value="kanban" className="gap-2"><KanbanSquare className="h-4 w-4" />Kanban</TabsTrigger>
+          <TabsTrigger value="date" className="gap-2"><CalendarDays className="h-4 w-4" />Date</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="cartes">
+          {loading ? <p className="text-sm text-muted-foreground">Chargement des tâches...</p> : null}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{orderedTasks.map(taskCard)}</div>
+        </TabsContent>
+
         <TabsContent value="kanban">
-          <div className="grid gap-4 md:grid-cols-3">
-            {kanbanColumns.map((col) => (
-              <Card key={col.status}>
-                <CardHeader><CardTitle className="text-base">{statusLabel[col.status]}</CardTitle></CardHeader>
-                <CardContent className="space-y-2">
-                  {col.tasks.map((task) => (
-                    <div key={task.id} className="rounded border p-3">
-                      <p className="font-medium">{task.titre}</p>
-                      <div className="mt-1 flex gap-2">
-                        <Badge variant="outline">{priorityLabel[task.priority]}</Badge>
-                        <Badge variant="outline">{task.subtasks.length} sous-tâches</Badge>
-                      </div>
-                    </div>
-                  ))}
-                </CardContent>
+          {loading ? <p className="text-sm text-muted-foreground">Chargement des tâches...</p> : null}
+          <div className="grid gap-4 lg:grid-cols-3">
+            {(["a_faire", "en_cours", "termine"] as ItemStatus[]).map((status) => (
+              <Card key={status}>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between text-base">
+                    <span>{statusLabel[status]}</span>
+                    <Badge variant="secondary">{groupedByStatus[status].length}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">{groupedByStatus[status].map(taskCard)}</CardContent>
               </Card>
             ))}
           </div>
         </TabsContent>
 
-        <TabsContent value="liste">
+        <TabsContent value="date" className="space-y-4">
           <Card>
-            <CardContent className="space-y-2 p-4">
-              {loading ? <p className="text-sm text-muted-foreground">Chargement...</p> : null}
-              {tasks.map((task, taskIndex) => {
-                const hasSubtasks = task.subtasks.length > 0;
-                const isOpen = expanded[task.id] ?? true;
-                return (
-                  <div
-                    key={task.id}
-                    className="rounded-md border p-3"
-                    draggable
-                    onDragStart={() => setDragTaskId(task.id)}
-                    onDragOver={(e) => e.preventDefault()}
-                    onDrop={async () => {
-                      if (!dragTaskId || dragTaskId === task.id) return;
-                      const sourceIndex = tasks.findIndex((entry) => entry.id === dragTaskId);
-                      if (sourceIndex < 0) return;
-                      const next = [...tasks];
-                      const [moved] = next.splice(sourceIndex, 1);
-                      next.splice(taskIndex, 0, moved);
-                      setTasks(next);
-                      setDragTaskId(null);
-                      await persistTaskOrder(next);
-                    }}
-                    onDragEnd={() => setDragTaskId(null)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-2">
-                        <GripVertical className="mt-0.5 h-4 w-4 cursor-grab text-muted-foreground" />
-                        <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
-                        <div className="min-w-0">
-                          <p className="font-medium">{task.titre}</p>
-                          <p className="text-xs text-muted-foreground">{formatDateTime(task.start_at)} → {formatDateTime(task.end_at)}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge className={cn("border")}>{statusLabel[task.status]}</Badge>
-                        <Badge variant="outline">{priorityLabel[task.priority]}</Badge>
-                        {hasSubtasks ? (
-                          <Button variant="ghost" size="icon" onClick={() => setExpanded((p) => ({ ...p, [task.id]: !isOpen }))}>
-                            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </Button>
-                        ) : null}
-                        <Button variant="ghost" size="icon" onClick={() => void deleteTask(task.id)}>
-                          <Trash2 className="h-4 w-4 text-red-500" />
-                        </Button>
-                      </div>
+            <CardContent className="relative p-4">
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => shiftTimeline("prev")}
+                className="absolute left-2 top-1/2 z-10 -translate-y-1/2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+
+              <div ref={timelineRef} className="flex gap-3 overflow-x-auto px-10 pb-2">
+                {timelineDays.map((day) => {
+                  const selected = day.iso === selectedDate;
+                  return (
+                    <button
+                      key={day.iso}
+                      type="button"
+                      onClick={() => setSelectedDate(day.iso)}
+                      className={`min-w-20 rounded-xl border p-3 text-center transition ${
+                        selected ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <p className="text-3xl font-bold leading-none">{day.number}</p>
+                      <p className="mt-2 text-xs uppercase">{day.day}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => shiftTimeline("next")}
+                className="absolute right-2 top-1/2 z-10 -translate-y-1/2"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardContent>
+          </Card>
+
+          {loading ? <p className="text-sm text-muted-foreground">Chargement des tâches...</p> : null}
+
+          <Card>
+            <CardContent className="space-y-2 p-2 sm:p-4">
+              {!loading && tasksForSelectedDate.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Aucune tâche due pour la date sélectionnée.</p>
+              ) : null}
+              {tasksForSelectedDate.map((task) => (
+                <Link key={task.id} href={`/production/taches/${task.id}`}>
+                  <div className="flex flex-col gap-3 rounded-xl border p-3 transition hover:border-primary/40 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1">
+                      <p className="font-medium">{task.titre}</p>
+                      <p className="text-xs text-muted-foreground">{task.subtasks.length} tâche · {dateLabel(task.day)}</p>
                     </div>
-                    {hasSubtasks && isOpen ? (
-                      <div className="mt-2 space-y-2 border-l pl-4">
-                        {task.subtasks.map((subtask, subtaskIndex) => (
-                          <div
-                            key={subtask.id}
-                            className="flex items-center justify-between rounded-md border p-2"
-                            draggable
-                            onDragStart={(e) => {
-                              e.stopPropagation();
-                              setDragSubtask({ taskId: task.id, subtaskId: subtask.id });
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                            }}
-                            onDrop={async (e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              if (!dragSubtask || dragSubtask.taskId !== task.id || dragSubtask.subtaskId === subtask.id) return;
-                              const sourceIndex = task.subtasks.findIndex((entry) => entry.id === dragSubtask.subtaskId);
-                              if (sourceIndex < 0) return;
-                              const reordered = [...task.subtasks];
-                              const [moved] = reordered.splice(sourceIndex, 1);
-                              reordered.splice(subtaskIndex, 0, moved);
-                              setTasks((prev) => prev.map((entry) => (entry.id === task.id ? { ...entry, subtasks: reordered } : entry)));
-                              setDragSubtask(null);
-                              await persistSubtaskOrder(task.id, reordered);
-                            }}
-                            onDragEnd={() => setDragSubtask(null)}
-                          >
-                            <div className="flex items-center gap-2">
-                              <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
-                              <Checkbox checked={subtask.status === "termine"} onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))} />
-                              <span>{subtask.titre}</span>
-                            </div>
-                            <Button variant="ghost" size="icon" onClick={() => void deleteSubtask(task.id, subtask.id)}>
-                              <Trash2 className="h-4 w-4 text-red-500" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
+                    <div className="flex items-center gap-3">
+                      <Badge variant="outline">{priorityLabel[task.priority]}</Badge>
+                      <ProgressCircle value={task.progress} />
+                      <Target className="h-4 w-4 text-muted-foreground" />
+                    </div>
                   </div>
-                );
-              })}
+                </Link>
+              ))}
             </CardContent>
           </Card>
         </TabsContent>
