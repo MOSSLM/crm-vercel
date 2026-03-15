@@ -13,3 +13,8 @@ export const actionSearchTabs = [
   { label: "Copywriting", href: "/production/copywriting" },
   { label: "Lead magnet", href: "/production/lead-magnet" },
 ];
+
+export const productionProjectTabs = [
+  { label: "Projets clients", href: "/production/projets-clients" },
+  { label: "Projets internes", href: "/production/projets-internes" },
+];

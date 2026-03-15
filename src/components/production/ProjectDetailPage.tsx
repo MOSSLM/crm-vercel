@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ChevronRight, CirclePlus, Plus } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, CirclePlus, GripVertical, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,6 +25,7 @@ type Subtask = {
   due_date: string | null;
   start_at?: string | null;
   end_at?: string | null;
+  position?: number | null;
 };
 
 type Task = {
@@ -36,6 +37,7 @@ type Task = {
   due_date: string | null;
   start_at?: string | null;
   end_at?: string | null;
+  position?: number | null;
   subtasks: Subtask[];
 };
 
@@ -118,6 +120,8 @@ export function ProjectDetailPage() {
   const [showAllTasks, setShowAllTasks] = useState(true);
   const [showAllSubtasks, setShowAllSubtasks] = useState(true);
   const [subtaskForms, setSubtaskForms] = useState<Record<string, { titre: string; dueDate: string; startAt: string; endAt: string }>>({});
+  const [dragTaskId, setDragTaskId] = useState<string | null>(null);
+  const [dragSubtask, setDragSubtask] = useState<{ taskId: string; subtaskId: string } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -129,18 +133,20 @@ export function ProjectDetailPage() {
 
     const { data: taskRows } = await supabase
       .from("crm_tasks")
-      .select("id,project_id,titre,status,priority,due_date,start_at,end_at")
+      .select("id,project_id,titre,status,priority,due_date,start_at,end_at,position")
       .eq("project_id", projectId)
-      .order("created_at");
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
 
     const taskIds = (taskRows ?? []).map((task) => task.id as string);
 
     const { data: subtaskRows } = taskIds.length
       ? await supabase
           .from("crm_subtasks")
-          .select("id,task_id,titre,status,priority,due_date,start_at,end_at")
+          .select("id,task_id,titre,status,priority,due_date,start_at,end_at,position")
           .in("task_id", taskIds)
-          .order("created_at")
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true })
       : { data: [] as Subtask[] };
 
     const groupedSubtasks = new Map<string, Subtask[]>();
@@ -197,8 +203,9 @@ export function ProjectDetailPage() {
         status: "a_faire",
         priority: "moyenne",
         progress: 0,
+        position: (tasks.length + 1) * 100,
       })
-      .select("id,project_id,titre,status,priority,due_date,start_at,end_at")
+      .select("id,project_id,titre,status,priority,due_date,start_at,end_at,position")
       .single();
 
     if (data) {
@@ -225,8 +232,9 @@ export function ProjectDetailPage() {
         status: "a_faire",
         priority: "moyenne",
         progress: 0,
+        position: ((tasks.find((task) => task.id === taskId)?.subtasks.length ?? 0) + 1) * 100,
       })
-      .select("id,task_id,titre,status,priority,due_date,start_at,end_at")
+      .select("id,task_id,titre,status,priority,due_date,start_at,end_at,position")
       .single();
 
     if (data) {
@@ -257,6 +265,25 @@ export function ProjectDetailPage() {
           : task
       )
     );
+  };
+
+
+  const persistTaskOrder = async (next: Task[]) => {
+    await Promise.all(next.map((task, index) => supabase.from("crm_tasks").update({ position: (index + 1) * 100 }).eq("id", task.id)));
+  };
+
+  const persistSubtaskOrder = async (taskId: string, next: Subtask[]) => {
+    await Promise.all(next.map((subtask, index) => supabase.from("crm_subtasks").update({ position: (index + 1) * 100 }).eq("id", subtask.id).eq("task_id", taskId)));
+  };
+
+  const deleteTask = async (taskId: string) => {
+    await supabase.from("crm_tasks").delete().eq("id", taskId);
+    setTasks((prev) => prev.filter((task) => task.id !== taskId));
+  };
+
+  const deleteSubtask = async (taskId: string, subtaskId: string) => {
+    await supabase.from("crm_subtasks").delete().eq("id", subtaskId);
+    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, subtasks: task.subtasks.filter((subtask) => subtask.id !== subtaskId) } : task)));
   };
 
   const toggleTaskExpanded = (taskId: string) => {
@@ -352,15 +379,30 @@ export function ProjectDetailPage() {
             {tasks.map((task) => {
               const expanded = isTaskExpanded(task.id);
               return (
-                <Card key={task.id}>
+                <Card key={task.id} draggable onDragStart={() => setDragTaskId(task.id)} onDragOver={(e) => e.preventDefault()} onDrop={async () => {
+                      if (!dragTaskId || dragTaskId === task.id) return;
+                      const sourceIndex = tasks.findIndex((entry) => entry.id === dragTaskId);
+                      if (sourceIndex < 0) return;
+                      const next = [...tasks];
+                      const [moved] = next.splice(sourceIndex, 1);
+                      const targetIndex = tasks.findIndex((entry) => entry.id === task.id);
+                      next.splice(targetIndex, 0, moved);
+                      setTasks(next);
+                      setDragTaskId(null);
+                      await persistTaskOrder(next);
+                    }} onDragEnd={() => setDragTaskId(null)}>
                   <CardHeader>
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
+                        <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
                         <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
                         <CardTitle className="text-lg">{task.titre}</CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
                         <ProgressCircle value={taskProgress(task)} color={project.color} />
+                        <Button variant="ghost" size="icon" onClick={() => void deleteTask(task.id)}>
+                          <Trash2 className="h-4 w-4 text-red-500" />
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => toggleTaskExpanded(task.id)}>
                           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
@@ -435,15 +477,34 @@ export function ProjectDetailPage() {
 
                       <div className="space-y-2">
                         {task.subtasks.map((subtask) => (
-                          <div key={subtask.id} className="flex items-center justify-between rounded-md border p-2">
+                          <div key={subtask.id} className="flex items-center justify-between rounded-md border p-2" draggable onDragStart={(e) => { e.stopPropagation(); setDragSubtask({ taskId: task.id, subtaskId: subtask.id }); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }} onDrop={async (e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              if (!dragSubtask || dragSubtask.taskId !== task.id || dragSubtask.subtaskId === subtask.id) return;
+                              const sourceIndex = task.subtasks.findIndex((entry) => entry.id === dragSubtask.subtaskId);
+                              if (sourceIndex < 0) return;
+                              const targetIndex = task.subtasks.findIndex((entry) => entry.id === subtask.id);
+                              const reordered = [...task.subtasks];
+                              const [moved] = reordered.splice(sourceIndex, 1);
+                              reordered.splice(targetIndex, 0, moved);
+                              setTasks((prev) => prev.map((entry) => (entry.id === task.id ? { ...entry, subtasks: reordered } : entry)));
+                              setDragSubtask(null);
+                              await persistSubtaskOrder(task.id, reordered);
+                            }} onDragEnd={() => setDragSubtask(null)}>
                             <div className="flex items-center gap-2">
+                              <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
                               <Checkbox
                                 checked={subtask.status === "termine"}
                                 onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))}
                               />
                               <span>{subtask.titre}</span>
                             </div>
-                            <span className="text-xs text-muted-foreground">{subtask.due_date ?? "Sans échéance"}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-muted-foreground">{subtask.due_date ?? "Sans échéance"}</span>
+                              <Button variant="ghost" size="icon" onClick={() => void deleteSubtask(task.id, subtask.id)}>
+                                <Trash2 className="h-4 w-4 text-red-500" />
+                              </Button>
+                            </div>
                           </div>
                         ))}
                         {task.subtasks.length === 0 ? <p className="text-sm text-muted-foreground">Aucune sous-tâche.</p> : null}
@@ -458,7 +519,18 @@ export function ProjectDetailPage() {
 
         <TabsContent value="liste" className="space-y-3">
           {tasks.map((task) => (
-            <Card key={task.id}>
+            <Card key={task.id} draggable onDragStart={() => setDragTaskId(task.id)} onDragOver={(e) => e.preventDefault()} onDrop={async () => {
+                      if (!dragTaskId || dragTaskId === task.id) return;
+                      const sourceIndex = tasks.findIndex((entry) => entry.id === dragTaskId);
+                      if (sourceIndex < 0) return;
+                      const next = [...tasks];
+                      const [moved] = next.splice(sourceIndex, 1);
+                      const targetIndex = tasks.findIndex((entry) => entry.id === task.id);
+                      next.splice(targetIndex, 0, moved);
+                      setTasks(next);
+                      setDragTaskId(null);
+                      await persistTaskOrder(next);
+                    }} onDragEnd={() => setDragTaskId(null)}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
