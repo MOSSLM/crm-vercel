@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowRight, CalendarDays, KanbanSquare, LayoutGrid, List, Target } from "lucide-react";
+import { ArrowLeft, ArrowRight, CalendarDays, KanbanSquare, LayoutGrid, Target } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/utils/supabase/client";
 
@@ -60,6 +59,23 @@ const getProgress = (task: Task) => {
 };
 
 const getTaskDate = (task: Task) => normalizeDate(task.due_date ?? task.end_at ?? task.start_at);
+
+function ProgressCircle({ value }: { value: number }) {
+  const safeValue = Math.max(0, Math.min(100, value));
+
+  return (
+    <div
+      className="grid h-16 w-16 place-items-center rounded-full"
+      style={{
+        background: `conic-gradient(hsl(var(--primary)) ${safeValue * 3.6}deg, hsl(var(--muted)) 0deg)`,
+      }}
+    >
+      <div className="grid h-12 w-12 place-items-center rounded-full bg-background text-xs font-semibold">
+        {safeValue}%
+      </div>
+    </div>
+  );
+}
 
 export function StandaloneTasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -128,13 +144,15 @@ export function StandaloneTasksPage() {
     [tasks]
   );
 
-  const orderedTasks = useMemo(() => {
-    return [...tasksWithProgress].sort((a, b) => {
-      if (a.day === selectedDate && b.day !== selectedDate) return -1;
-      if (a.day !== selectedDate && b.day === selectedDate) return 1;
-      return a.titre.localeCompare(b.titre, "fr");
-    });
-  }, [selectedDate, tasksWithProgress]);
+  const orderedTasks = useMemo(
+    () => [...tasksWithProgress].sort((a, b) => a.titre.localeCompare(b.titre, "fr")),
+    [tasksWithProgress]
+  );
+
+  const tasksForSelectedDate = useMemo(
+    () => orderedTasks.filter((task) => task.day === selectedDate),
+    [orderedTasks, selectedDate]
+  );
 
   const metrics = useMemo(() => {
     const totalTasks = tasksWithProgress.length;
@@ -167,28 +185,22 @@ export function StandaloneTasksPage() {
     setStartDate(next);
   };
 
-  const scrollTimeline = (direction: "left" | "right") => {
-    if (!timelineRef.current) return;
-    timelineRef.current.scrollBy({ left: direction === "right" ? 240 : -240, behavior: "smooth" });
-  };
-
   const taskCard = (task: (typeof orderedTasks)[number]) => (
     <Link key={task.id} href={`/production/taches/${task.id}`}>
       <Card className="h-full border-2 transition hover:border-primary/40 hover:shadow-md">
-        <CardContent className="space-y-3 p-4">
+        <CardContent className="p-4">
           <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="font-semibold leading-tight">{task.titre}</p>
+            <div className="min-w-0 space-y-1">
+              <p className="line-clamp-2 font-semibold leading-tight">{task.titre}</p>
               <p className="text-xs text-muted-foreground">Échéance: {dateLabel(task.day)}</p>
+              <Badge variant="outline" className="mt-1">{priorityLabel[task.priority]}</Badge>
             </div>
-            <Badge variant="outline">{priorityLabel[task.priority]}</Badge>
+            <ProgressCircle value={task.progress} />
           </div>
 
-          <Progress value={task.progress} className="h-2" />
-
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>{task.progress}% d&apos;avancée</span>
+          <div className="mt-4 flex items-end justify-between text-xs text-muted-foreground">
             <span>{task.subtasks.length} tâche</span>
+            <span>{task.progress}% d&apos;avancée</span>
           </div>
         </CardContent>
       </Card>
@@ -196,10 +208,10 @@ export function StandaloneTasksPage() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 px-4 pb-6 pt-2 lg:px-6">
       <div>
         <h1 className="text-2xl font-semibold">Tâches</h1>
-        <p className="text-sm text-muted-foreground">Vue cartes par défaut, kanban et liste, avec accès à la page tâche unique.</p>
+        <p className="text-sm text-muted-foreground">Vue cartes par défaut, kanban et date, avec accès à la page tâche unique.</p>
       </div>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -213,54 +225,11 @@ export function StandaloneTasksPage() {
         ))}
       </section>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <CalendarDays className="h-4 w-4" />
-            Frise des jours
-          </CardTitle>
-          <div className="flex items-center gap-2">
-            <Button size="icon" variant="outline" onClick={() => shiftTimeline("prev")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="outline" onClick={() => scrollTimeline("left")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="outline" onClick={() => scrollTimeline("right")}>
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="outline" onClick={() => shiftTimeline("next")}>
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div ref={timelineRef} className="flex gap-3 overflow-x-auto pb-2">
-            {timelineDays.map((day) => {
-              const selected = day.iso === selectedDate;
-              return (
-                <button
-                  key={day.iso}
-                  type="button"
-                  onClick={() => setSelectedDate(day.iso)}
-                  className={`min-w-20 rounded-xl border p-3 text-center transition ${
-                    selected ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-primary/50"
-                  }`}
-                >
-                  <p className="text-3xl font-bold leading-none">{day.number}</p>
-                  <p className="mt-2 text-xs uppercase">{day.day}</p>
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
       <Tabs defaultValue="cartes" className="space-y-4">
         <TabsList>
           <TabsTrigger value="cartes" className="gap-2"><LayoutGrid className="h-4 w-4" />Cartes</TabsTrigger>
           <TabsTrigger value="kanban" className="gap-2"><KanbanSquare className="h-4 w-4" />Kanban</TabsTrigger>
-          <TabsTrigger value="liste" className="gap-2"><List className="h-4 w-4" />Liste</TabsTrigger>
+          <TabsTrigger value="date" className="gap-2"><CalendarDays className="h-4 w-4" />Date</TabsTrigger>
         </TabsList>
 
         <TabsContent value="cartes">
@@ -285,11 +254,56 @@ export function StandaloneTasksPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="liste">
+        <TabsContent value="date" className="space-y-4">
+          <Card>
+            <CardContent className="relative p-4">
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => shiftTimeline("prev")}
+                className="absolute left-2 top-1/2 z-10 -translate-y-1/2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+
+              <div ref={timelineRef} className="flex gap-3 overflow-x-auto px-10 pb-2">
+                {timelineDays.map((day) => {
+                  const selected = day.iso === selectedDate;
+                  return (
+                    <button
+                      key={day.iso}
+                      type="button"
+                      onClick={() => setSelectedDate(day.iso)}
+                      className={`min-w-20 rounded-xl border p-3 text-center transition ${
+                        selected ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <p className="text-3xl font-bold leading-none">{day.number}</p>
+                      <p className="mt-2 text-xs uppercase">{day.day}</p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => shiftTimeline("next")}
+                className="absolute right-2 top-1/2 z-10 -translate-y-1/2"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </CardContent>
+          </Card>
+
           {loading ? <p className="text-sm text-muted-foreground">Chargement des tâches...</p> : null}
+
           <Card>
             <CardContent className="space-y-2 p-2 sm:p-4">
-              {orderedTasks.map((task) => (
+              {!loading && tasksForSelectedDate.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Aucune tâche due pour la date sélectionnée.</p>
+              ) : null}
+              {tasksForSelectedDate.map((task) => (
                 <Link key={task.id} href={`/production/taches/${task.id}`}>
                   <div className="flex flex-col gap-3 rounded-xl border p-3 transition hover:border-primary/40 sm:flex-row sm:items-center sm:justify-between">
                     <div className="space-y-1">
@@ -298,10 +312,7 @@ export function StandaloneTasksPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <Badge variant="outline">{priorityLabel[task.priority]}</Badge>
-                      <div className="w-28">
-                        <Progress value={task.progress} className="h-2" />
-                        <p className="mt-1 text-right text-xs text-muted-foreground">{task.progress}%</p>
-                      </div>
+                      <ProgressCircle value={task.progress} />
                       <Target className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
