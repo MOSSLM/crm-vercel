@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, ChevronRight, CirclePlus, GripVertical, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Bold, ChevronDown, ChevronRight, CirclePlus, EllipsisVertical, GripVertical, List, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/components/ui/utils";
 import { supabase } from "@/utils/supabase/client";
 
@@ -26,6 +28,7 @@ type Subtask = {
   start_at?: string | null;
   end_at?: string | null;
   position?: number | null;
+  note_markdown?: string | null;
 };
 
 type Task = {
@@ -38,6 +41,7 @@ type Task = {
   start_at?: string | null;
   end_at?: string | null;
   position?: number | null;
+  note_markdown?: string | null;
   subtasks: Subtask[];
 };
 
@@ -50,6 +54,7 @@ type Project = {
   color?: string | null;
   entreprises?: { name: string | null } | null;
   offres?: { nom: string } | null;
+  note_markdown?: string | null;
 };
 
 type ProjectQueryRow = Omit<Project, "entreprises" | "offres"> & {
@@ -122,18 +127,20 @@ export function ProjectDetailPage() {
   const [subtaskForms, setSubtaskForms] = useState<Record<string, { titre: string; dueDate: string; startAt: string; endAt: string }>>({});
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragSubtask, setDragSubtask] = useState<{ taskId: string; subtaskId: string } | null>(null);
+  const [editorTarget, setEditorTarget] = useState<{ kind: "project" } | { kind: "task"; taskId: string } | { kind: "subtask"; taskId: string; subtaskId: string } | null>(null);
+  const [editorForm, setEditorForm] = useState({ titre: "", status: "a_faire" as ItemStatus, priority: "moyenne" as Priority, due_date: "", start_at: "", end_at: "", note_markdown: "" });
 
   const load = async () => {
     setLoading(true);
     const { data: projectData } = await supabase
       .from("crm_projects")
-      .select("id,nom,status,priority,due_date,color,entreprises(name),offres(nom)")
+      .select("id,nom,status,priority,due_date,color,note_markdown,entreprises(name),offres(nom)")
       .eq("id", projectId)
       .single();
 
     const { data: taskRows } = await supabase
       .from("crm_tasks")
-      .select("id,project_id,titre,status,priority,due_date,start_at,end_at,position")
+      .select("id,project_id,titre,status,priority,due_date,start_at,end_at,position,note_markdown")
       .eq("project_id", projectId)
       .order("position", { ascending: true })
       .order("created_at", { ascending: true });
@@ -143,7 +150,7 @@ export function ProjectDetailPage() {
     const { data: subtaskRows } = taskIds.length
       ? await supabase
           .from("crm_subtasks")
-          .select("id,task_id,titre,status,priority,due_date,start_at,end_at,position")
+          .select("id,task_id,titre,status,priority,due_date,start_at,end_at,position,note_markdown")
           .in("task_id", taskIds)
           .order("position", { ascending: true })
           .order("created_at", { ascending: true })
@@ -173,6 +180,7 @@ export function ProjectDetailPage() {
             color: projectRow.color ?? "#4f46e5",
             entreprises: projectRow.entreprises?.[0] ?? null,
             offres: projectRow.offres?.[0] ?? null,
+            note_markdown: projectRow.note_markdown ?? null,
           }
         : null
     );
@@ -205,7 +213,7 @@ export function ProjectDetailPage() {
         progress: 0,
         position: (tasks.length + 1) * 100,
       })
-      .select("id,project_id,titre,status,priority,due_date,start_at,end_at,position")
+      .select("id,project_id,titre,status,priority,due_date,start_at,end_at,position,note_markdown")
       .single();
 
     if (data) {
@@ -234,7 +242,7 @@ export function ProjectDetailPage() {
         progress: 0,
         position: ((tasks.find((task) => task.id === taskId)?.subtasks.length ?? 0) + 1) * 100,
       })
-      .select("id,task_id,titre,status,priority,due_date,start_at,end_at,position")
+      .select("id,task_id,titre,status,priority,due_date,start_at,end_at,position,note_markdown")
       .single();
 
     if (data) {
@@ -295,6 +303,75 @@ export function ProjectDetailPage() {
     return showAllSubtasks;
   };
 
+  const openProjectEditor = () => {
+    if (!project) return;
+    setEditorTarget({ kind: "project" });
+    setEditorForm({
+      titre: project.nom,
+      status: project.status,
+      priority: project.priority,
+      due_date: project.due_date ?? "",
+      start_at: "",
+      end_at: "",
+      note_markdown: project.note_markdown ?? "",
+    });
+  };
+
+  const openTaskEditor = (task: Task) => {
+    setEditorTarget({ kind: "task", taskId: task.id });
+    setEditorForm({
+      titre: task.titre,
+      status: task.status,
+      priority: task.priority,
+      due_date: task.due_date ?? "",
+      start_at: task.start_at?.slice(0, 16) ?? "",
+      end_at: task.end_at?.slice(0, 16) ?? "",
+      note_markdown: task.note_markdown ?? "",
+    });
+  };
+
+  const openSubtaskEditor = (taskId: string, subtask: Subtask) => {
+    setEditorTarget({ kind: "subtask", taskId, subtaskId: subtask.id });
+    setEditorForm({
+      titre: subtask.titre,
+      status: subtask.status,
+      priority: subtask.priority,
+      due_date: subtask.due_date ?? "",
+      start_at: subtask.start_at?.slice(0, 16) ?? "",
+      end_at: subtask.end_at?.slice(0, 16) ?? "",
+      note_markdown: subtask.note_markdown ?? "",
+    });
+  };
+
+  const applyMarkdown = (prefix: string, suffix = "") => {
+    setEditorForm((prev) => ({ ...prev, note_markdown: `${prev.note_markdown}${prefix}${suffix}` }));
+  };
+
+  const saveEditor = async () => {
+    if (!editorTarget) return;
+    if (editorTarget.kind === "project" && project) {
+      const payload = { nom: editorForm.titre.trim() || "Sans nom", status: editorForm.status, priority: editorForm.priority, due_date: editorForm.due_date || null, note_markdown: editorForm.note_markdown || null };
+      await supabase.from("crm_projects").update(payload).eq("id", project.id);
+      setProject((prev) => (prev ? { ...prev, ...payload } : prev));
+      setEditorTarget(null);
+      return;
+    }
+
+    const payload = { titre: editorForm.titre.trim() || "Sans titre", status: editorForm.status, priority: editorForm.priority, due_date: editorForm.due_date || null, start_at: editorForm.start_at || null, end_at: editorForm.end_at || null, note_markdown: editorForm.note_markdown || null };
+
+    if (editorTarget.kind === "task") {
+      await supabase.from("crm_tasks").update(payload).eq("id", editorTarget.taskId);
+      setTasks((prev) => prev.map((task) => (task.id === editorTarget.taskId ? { ...task, ...payload } : task)));
+    }
+
+    if (editorTarget.kind === "subtask") {
+      await supabase.from("crm_subtasks").update(payload).eq("id", editorTarget.subtaskId);
+      setTasks((prev) => prev.map((task) => task.id === editorTarget.taskId ? { ...task, subtasks: task.subtasks.map((subtask) => (subtask.id === editorTarget.subtaskId ? { ...subtask, ...payload } : subtask)) } : task));
+    }
+
+    setEditorTarget(null);
+  };
+
   if (loading) {
     return <div className="p-6 text-sm text-muted-foreground">Chargement du projet...</div>;
   }
@@ -334,7 +411,12 @@ export function ProjectDetailPage() {
               </p>
               <Badge className={cn("mt-2 border", getStatusTone(project.status))}>{statusLabel[project.status]}</Badge>
             </div>
-            <ProgressCircle value={projectProgress} color={project.color} />
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="icon" onClick={openProjectEditor}>
+                <EllipsisVertical className="h-4 w-4" />
+              </Button>
+              <ProgressCircle value={projectProgress} color={project.color} />
+            </div>
           </div>
         </CardHeader>
       </Card>
@@ -379,7 +461,7 @@ export function ProjectDetailPage() {
             {tasks.map((task) => {
               const expanded = isTaskExpanded(task.id);
               return (
-                <Card key={task.id} draggable onDragStart={() => setDragTaskId(task.id)} onDragOver={(e) => e.preventDefault()} onDrop={async () => {
+                <Card key={task.id} className="transition hover:border-primary/60" draggable onClick={() => openTaskEditor(task)} onDragStart={() => setDragTaskId(task.id)} onDragOver={(e) => e.preventDefault()} onDrop={async () => {
                       if (!dragTaskId || dragTaskId === task.id) return;
                       const sourceIndex = tasks.findIndex((entry) => entry.id === dragTaskId);
                       if (sourceIndex < 0) return;
@@ -395,15 +477,18 @@ export function ProjectDetailPage() {
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
-                        <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
+                        <Checkbox checked={task.status === "termine"} onClick={(e) => e.stopPropagation()} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
                         <CardTitle className="text-lg">{task.titre}</CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
                         <ProgressCircle value={taskProgress(task)} color={project.color} />
-                        <Button variant="ghost" size="icon" onClick={() => void deleteTask(task.id)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openTaskEditor(task); }}>
+                          <EllipsisVertical className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); void deleteTask(task.id); }}>
                           <Trash2 className="h-4 w-4 text-red-500" />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => toggleTaskExpanded(task.id)}>
+                        <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); toggleTaskExpanded(task.id); }}>
                           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                         </Button>
                       </div>
@@ -477,7 +562,7 @@ export function ProjectDetailPage() {
 
                       <div className="space-y-2">
                         {task.subtasks.map((subtask) => (
-                          <div key={subtask.id} className="flex items-center justify-between rounded-md border p-2" draggable onDragStart={(e) => { e.stopPropagation(); setDragSubtask({ taskId: task.id, subtaskId: subtask.id }); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }} onDrop={async (e) => {
+                          <div key={subtask.id} className="flex cursor-pointer items-center justify-between rounded-md border p-2 transition hover:border-primary/60 hover:bg-muted/40" onClick={() => openSubtaskEditor(task.id, subtask)} draggable onDragStart={(e) => { e.stopPropagation(); setDragSubtask({ taskId: task.id, subtaskId: subtask.id }); }} onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }} onDrop={async (e) => {
                               e.preventDefault();
                               e.stopPropagation();
                               if (!dragSubtask || dragSubtask.taskId !== task.id || dragSubtask.subtaskId === subtask.id) return;
@@ -495,13 +580,17 @@ export function ProjectDetailPage() {
                               <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
                               <Checkbox
                                 checked={subtask.status === "termine"}
+                                onClick={(e) => e.stopPropagation()}
                                 onCheckedChange={(checked) => void toggleSubtask(task.id, subtask, Boolean(checked))}
                               />
                               <span>{subtask.titre}</span>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-muted-foreground">{subtask.due_date ?? "Sans échéance"}</span>
-                              <Button variant="ghost" size="icon" onClick={() => void deleteSubtask(task.id, subtask.id)}>
+                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); openSubtaskEditor(task.id, subtask); }}>
+                                <EllipsisVertical className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); void deleteSubtask(task.id, subtask.id); }}>
                                 <Trash2 className="h-4 w-4 text-red-500" />
                               </Button>
                             </div>
@@ -534,7 +623,7 @@ export function ProjectDetailPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <Checkbox checked={task.status === "termine"} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
+                    <Checkbox checked={task.status === "termine"} onClick={(e) => e.stopPropagation()} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
                     <span className="font-medium">{task.titre}</span>
                   </div>
                   <ProgressCircle value={taskProgress(task)} color={project.color} />
@@ -558,6 +647,49 @@ export function ProjectDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={Boolean(editorTarget)} onOpenChange={(open) => !open && setEditorTarget(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Paramètres {editorTarget?.kind === "project" ? "du projet" : editorTarget?.kind === "task" ? "de la tâche" : "de la sous-tâche"}</DialogTitle>
+          </DialogHeader>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <Input className="md:col-span-2" value={editorForm.titre} onChange={(e) => setEditorForm((prev) => ({ ...prev, titre: e.target.value }))} placeholder="Titre" />
+            <Input type="date" value={editorForm.due_date} onChange={(e) => setEditorForm((prev) => ({ ...prev, due_date: e.target.value }))} />
+            <select className="h-10 rounded-md border bg-background px-3 text-sm" value={editorForm.status} onChange={(e) => setEditorForm((prev) => ({ ...prev, status: e.target.value as ItemStatus }))}>
+              <option value="a_faire">À faire</option>
+              <option value="en_cours">En cours</option>
+              <option value="termine">Terminé</option>
+            </select>
+            <select className="h-10 rounded-md border bg-background px-3 text-sm" value={editorForm.priority} onChange={(e) => setEditorForm((prev) => ({ ...prev, priority: e.target.value as Priority }))}>
+              <option value="haute">Haute</option>
+              <option value="moyenne">Moyenne</option>
+              <option value="basse">Basse</option>
+            </select>
+            {editorTarget?.kind !== "project" ? (
+              <>
+                <Input type="datetime-local" value={editorForm.start_at} onChange={(e) => setEditorForm((prev) => ({ ...prev, start_at: e.target.value }))} />
+                <Input type="datetime-local" value={editorForm.end_at} onChange={(e) => setEditorForm((prev) => ({ ...prev, end_at: e.target.value }))} />
+              </>
+            ) : null}
+          </div>
+
+          <div className="space-y-2 rounded-md border p-3">
+            <div className="flex flex-wrap gap-2 border-b pb-2">
+              <Button variant="outline" size="sm" onClick={() => applyMarkdown("\n- ")}><List className="mr-1 h-4 w-4" />Liste</Button>
+              <Button variant="outline" size="sm" onClick={() => applyMarkdown("**", "**")}><Bold className="mr-1 h-4 w-4" />Gras</Button>
+              <Button variant="outline" size="sm" onClick={() => applyMarkdown("\n## ")}>Titre</Button>
+            </div>
+            <Textarea rows={12} value={editorForm.note_markdown} onChange={(e) => setEditorForm((prev) => ({ ...prev, note_markdown: e.target.value }))} placeholder="Long texte markdown..." />
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setEditorTarget(null)}>Annuler</Button>
+            <Button onClick={() => void saveEditor()}>Enregistrer</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {tasks.length === 0 ? <p className="text-sm text-muted-foreground">Aucune tâche pour ce projet.</p> : null}
     </div>
