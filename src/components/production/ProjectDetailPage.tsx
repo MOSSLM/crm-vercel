@@ -461,7 +461,7 @@ export function ProjectDetailPage() {
             {tasks.map((task) => {
               const expanded = isTaskExpanded(task.id);
               return (
-                <Card key={task.id} className="transition hover:border-primary/60" draggable onClick={() => openTaskEditor(task)} onDragStart={() => setDragTaskId(task.id)} onDragOver={(e) => e.preventDefault()} onDrop={async () => {
+                <Card key={task.id} className="transition hover:border-primary/60" draggable onDragStart={() => setDragTaskId(task.id)} onDragOver={(e) => e.preventDefault()} onDrop={async () => {
                       if (!dragTaskId || dragTaskId === task.id) return;
                       const sourceIndex = tasks.findIndex((entry) => entry.id === dragTaskId);
                       if (sourceIndex < 0) return;
@@ -478,7 +478,15 @@ export function ProjectDetailPage() {
                       <div className="flex items-center gap-2">
                         <GripVertical className="h-4 w-4 cursor-grab text-muted-foreground" />
                         <Checkbox checked={task.status === "termine"} onClick={(e) => e.stopPropagation()} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
-                        <CardTitle className="text-lg">{task.titre}</CardTitle>
+                        <CardTitle className="text-lg">
+                          <button
+                            type="button"
+                            className="cursor-pointer text-left hover:underline"
+                            onClick={() => openTaskEditor(task)}
+                          >
+                            {task.titre}
+                          </button>
+                        </CardTitle>
                       </div>
                       <div className="flex items-center gap-2">
                         <ProgressCircle value={taskProgress(task)} color={project.color} />
