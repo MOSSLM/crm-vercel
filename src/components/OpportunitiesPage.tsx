@@ -41,6 +41,7 @@ import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
 import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
+import { PipelineCombobox } from './PipelineCombobox';
 
 import logger from '../utils/logger';
 
@@ -85,7 +86,8 @@ export const OpportunitiesPage: React.FC = () => {
     updateOpportunity, 
     addOpportunityNote,
     toggleLeadMagnet,
-    companies
+    companies,
+    addPipeline
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -686,25 +688,25 @@ export const OpportunitiesPage: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap gap-3">
-            <Select
-              value={pipelineFilter}
-              onValueChange={(value) => {
+            <PipelineCombobox
+              pipelines={pipelines}
+              selectedValue={pipelineFilter}
+              includeAllOption
+              onSelect={(value) => {
                 setPipelineFilter(value);
                 setStageFilter('all');
               }}
-            >
-              <SelectTrigger className="w-40 md:w-48">
-                <SelectValue placeholder="Pipeline" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les pipelines</SelectItem>
-                {pipelines.map((pipeline) => (
-                  <SelectItem key={pipeline.id} value={pipeline.id}>
-                    {pipeline.nom}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onCreate={async (name) => {
+                const createdPipeline = await addPipeline(name);
+                if (createdPipeline) {
+                  setPipelineFilter(createdPipeline.id);
+                  setBulkPipelineTarget(createdPipeline.id);
+                  setStageFilter('all');
+                }
+                return createdPipeline;
+              }}
+              placeholder="Filtrer / créer un pipeline"
+            />
 
             <Select value={stageFilter} onValueChange={setStageFilter}>
               <SelectTrigger className="w-40 md:w-48">

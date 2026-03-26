@@ -45,6 +45,7 @@ import { journalApi } from '../utils/journalApi';
 import { ContactChannel } from '../types';
 import { normalizeServiceTags } from '../utils/serviceTags';
 import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
+import { PipelineCombobox } from './PipelineCombobox';
 
 const normalizeWebsiteUrl = (url?: string | null) => {
   if (!url) return undefined;
@@ -498,7 +499,8 @@ export const PipelinePage: React.FC = () => {
     pipelineStages, 
     moveOpportunityToStage,
     updateOpportunity,
-    companies
+    companies,
+    addPipeline
   } = useAppData();
   
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
@@ -894,19 +896,14 @@ export const PipelinePage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
-              <SelectTrigger className="w-52">
-                <SelectValue placeholder="Choisir un pipeline" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les pipelines</SelectItem>
-                {pipelines.map((pipeline) => (
-                  <SelectItem key={pipeline.id} value={pipeline.id}>
-                    {pipeline.nom}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <PipelineCombobox
+              pipelines={pipelines}
+              selectedValue={selectedPipelineId}
+              includeAllOption
+              onSelect={setSelectedPipelineId}
+              onCreate={addPipeline}
+              placeholder="Choisir ou créer un pipeline"
+            />
             <Button variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
               Vue pipeline
             </Button>

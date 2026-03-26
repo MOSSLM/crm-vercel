@@ -161,6 +161,7 @@ interface AppDataContextType {
   addContact: (contact: Omit<Contact, 'id'>) => Promise<void>;
   updateContact: (id: string, updates: Partial<Contact>) => Promise<void>;
   addOpportunity: (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  addPipeline: (pipelineName: string) => Promise<Pipeline | null>;
   updateOpportunity: (id: string, updates: Partial<Opportunity>) => Promise<void>;
   addOffer: (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
   updateOffer: (id: string, updates: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
@@ -1070,6 +1071,34 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
+  const addPipeline = async (pipelineName: string): Promise<Pipeline | null> => {
+    const normalizedName = pipelineName.trim();
+    if (!normalizedName) {
+      toast.error('Le nom du pipeline est requis');
+      return null;
+    }
+
+    const existingPipeline = pipelines.find(
+      (pipeline) => pipeline.nom.trim().toLowerCase() === normalizedName.toLowerCase()
+    );
+    if (existingPipeline) {
+      return existingPipeline;
+    }
+
+    try {
+      const createdPipeline = await pipelinesApi.create(normalizedName);
+      setPipelines((previous) =>
+        [...previous, createdPipeline].sort((a, b) => a.ordre - b.ordre)
+      );
+      toast.success(`Pipeline "${createdPipeline.nom}" créé`);
+      return createdPipeline;
+    } catch (error) {
+      logger.error('Error adding pipeline:', error);
+      toast.error("Erreur lors de la création du pipeline");
+      return null;
+    }
+  };
+
   const updateOpportunity = async (id: string, updates: Partial<Opportunity>) => {
     const original = opportunities.find((opp) => opp.id === id);
     if (!original) return;
@@ -1272,6 +1301,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     updateContactNote,
     deleteContactNote,
     addOpportunity,
+    addPipeline,
     updateOpportunity,
     addOffer,
     updateOffer,
