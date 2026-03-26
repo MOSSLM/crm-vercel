@@ -80,6 +80,7 @@ interface KanbanDragItem {
 export const OpportunitiesPage: React.FC = () => {
   const { 
     opportunities, 
+    pipelines,
     pipelineStages, 
     updateOpportunity, 
     addOpportunityNote,
@@ -89,6 +90,7 @@ export const OpportunitiesPage: React.FC = () => {
   
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
+  const [pipelineFilter, setPipelineFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [flagFilter, setFlagFilter] = useState('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban' | 'cold_call'>('grid');
@@ -100,8 +102,17 @@ export const OpportunitiesPage: React.FC = () => {
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
   const [noteType, setNoteType] = useState<'appel' | 'email' | 'linkedin' | 'whatsapp' | 'autre'>('appel');
   const [noteContent, setNoteContent] = useState('');
+  const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([]);
+  const [bulkPipelineTarget, setBulkPipelineTarget] = useState<string>('none');
+  const [sortByPipeline, setSortByPipeline] = useState(false);
 
-  const filteredOpportunities = opportunities.filter(opportunity => {
+  const stagesForSelectedPipeline = React.useMemo(
+    () => (pipelineFilter === 'all' ? pipelineStages : pipelineStages.filter((stage) => stage.pipeline_id === pipelineFilter)),
+    [pipelineFilter, pipelineStages]
+  );
+
+  const filteredOpportunities = opportunities
+    .filter(opportunity => {
     const companyName = opportunity.companyName || '';
     const tags = parseTags(opportunity.tags);
     const flags = parseFlags(opportunity.flags);
@@ -113,12 +124,20 @@ export const OpportunitiesPage: React.FC = () => {
       tags.some(tag => tag.toLowerCase().includes(searchLower)) ||
       notes.toLowerCase().includes(searchLower);
     
+    const matchesPipeline = pipelineFilter === 'all' || opportunity.pipeline_id === pipelineFilter;
     const matchesStage = stageFilter === 'all' || opportunity.stage_id?.toString() === stageFilter;
     const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
     const matchesFlag = flagFilter === 'all' || flags.includes(flagFilter);
 
-    return matchesSearch && matchesStage && matchesPriority && matchesFlag;
-  });
+      return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag;
+    })
+    .sort((a, b) => {
+      if (!sortByPipeline) return 0;
+      const pipelineA = pipelines.find((pipeline) => pipeline.id === a.pipeline_id)?.ordre ?? Number.MAX_SAFE_INTEGER;
+      const pipelineB = pipelines.find((pipeline) => pipeline.id === b.pipeline_id)?.ordre ?? Number.MAX_SAFE_INTEGER;
+      if (pipelineA !== pipelineB) return pipelineA - pipelineB;
+      return (a.stage_id ?? Number.MAX_SAFE_INTEGER) - (b.stage_id ?? Number.MAX_SAFE_INTEGER);
+    });
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Date inconnue';
@@ -145,7 +164,7 @@ export const OpportunitiesPage: React.FC = () => {
 
   const getStageInfo = (stageId?: number) => {
     const stage = pipelineStages.find(s => s.id === stageId);
-    return stage || { nom: 'Inconnu', id: 0, ordre: 0, visible: true };
+    return stage || { nom: 'Inconnu', id: 0, ordre: 0, visible: true, pipeline_id: '' };
   };
 
   const handleEditOpportunity = (opportunity: Opportunity) => {
@@ -236,6 +255,44 @@ export const OpportunitiesPage: React.FC = () => {
     return getCompanyDisplayName(opportunity.companyName, associatedCompany?.canonical_url);
   };
 
+  const toggleOpportunitySelection = (opportunityId: string, checked: boolean) => {
+    setSelectedOpportunityIds((previous) =>
+      checked ? Array.from(new Set([...previous, opportunityId])) : previous.filter((id) => id !== opportunityId)
+    );
+  };
+
+  const handleBulkPipelineMove = async () => {
+    if (bulkPipelineTarget === 'none' || selectedOpportunityIds.length === 0) {
+      return;
+    }
+
+    const targetStage =
+      pipelineStages.find((stage) => stage.pipeline_id === bulkPipelineTarget && stage.ordre === 1) ||
+      pipelineStages.find((stage) => stage.pipeline_id === bulkPipelineTarget);
+
+    if (!targetStage) {
+      toast.error('Aucune étape trouvée pour ce pipeline');
+      return;
+    }
+
+    try {
+      await Promise.all(
+        selectedOpportunityIds.map((opportunityId) =>
+          updateOpportunity(opportunityId, {
+            pipeline_id: bulkPipelineTarget,
+            stage_id: targetStage.id,
+          })
+        )
+      );
+      toast.success(`${selectedOpportunityIds.length} opportunité(s) envoyée(s) dans le pipeline`);
+      setSelectedOpportunityIds([]);
+      setBulkPipelineTarget('none');
+    } catch (error) {
+      logger.error('Erreur déplacement groupé pipeline:', error);
+      toast.error('Impossible de déplacer les opportunités');
+    }
+  };
+
   const allKnownTags = React.useMemo(() => {
     const fromData = opportunities.flatMap((opportunity) => parseTags(opportunity.tags));
     return Array.from(new Set(fromData)).sort((a, b) => a.localeCompare(b, 'fr'));
@@ -311,6 +368,12 @@ export const OpportunitiesPage: React.FC = () => {
         <CardHeader className="pb-2 space-y-2">
           {/* Titre avec badge en-dessous */}
           <div className="space-y-2">
+            <div className="flex justify-end">
+              <Checkbox
+                checked={selectedOpportunityIds.includes(opportunity.id)}
+                onCheckedChange={(checked) => toggleOpportunitySelection(opportunity.id, checked === true)}
+              />
+            </div>
             <CardTitle className="text-sm md:text-base leading-tight break-words pr-1">
               {title}
             </CardTitle>
@@ -623,6 +686,26 @@ export const OpportunitiesPage: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap gap-3">
+            <Select
+              value={pipelineFilter}
+              onValueChange={(value) => {
+                setPipelineFilter(value);
+                setStageFilter('all');
+              }}
+            >
+              <SelectTrigger className="w-40 md:w-48">
+                <SelectValue placeholder="Pipeline" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les pipelines</SelectItem>
+                {pipelines.map((pipeline) => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                    {pipeline.nom}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
             <Select value={stageFilter} onValueChange={setStageFilter}>
               <SelectTrigger className="w-40 md:w-48">
                 <Filter className="h-4 w-4 mr-2" />
@@ -630,7 +713,7 @@ export const OpportunitiesPage: React.FC = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Toutes les étapes</SelectItem>
-                {pipelineStages.map((stage) => (
+                {stagesForSelectedPipeline.map((stage) => (
                   <SelectItem key={stage.id} value={stage.id.toString()}>
                     {stage.nom}
                   </SelectItem>
@@ -662,6 +745,14 @@ export const OpportunitiesPage: React.FC = () => {
                 ))}
               </SelectContent>
             </Select>
+
+            <Button
+              type="button"
+              variant={sortByPipeline ? 'default' : 'outline'}
+              onClick={() => setSortByPipeline((prev) => !prev)}
+            >
+              Trier par pipeline
+            </Button>
 
             {viewMode === 'kanban' && (
               <>
@@ -747,6 +838,26 @@ export const OpportunitiesPage: React.FC = () => {
             <Phone className="h-4 w-4" />
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm text-muted-foreground">{selectedOpportunityIds.length} sélectionnée(s)</span>
+        <Select value={bulkPipelineTarget} onValueChange={setBulkPipelineTarget}>
+          <SelectTrigger className="w-56">
+            <SelectValue placeholder="Envoyer dans un pipeline" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Choisir un pipeline</SelectItem>
+            {pipelines.map((pipeline) => (
+              <SelectItem key={pipeline.id} value={pipeline.id}>
+                {pipeline.nom}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button onClick={handleBulkPipelineMove} disabled={selectedOpportunityIds.length === 0 || bulkPipelineTarget === 'none'}>
+          Déplacer la sélection
+        </Button>
       </div>
 
       {/* Liste des opportunités */}

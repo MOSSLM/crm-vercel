@@ -494,6 +494,7 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
 export const PipelinePage: React.FC = () => {
   const { 
     opportunities, 
+    pipelines,
     pipelineStages, 
     moveOpportunityToStage,
     updateOpportunity,
@@ -514,6 +515,23 @@ export const PipelinePage: React.FC = () => {
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
   const [selectedService, setSelectedService] = useState('all');
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
+
+  React.useEffect(() => {
+    if (selectedPipelineId !== 'all') return;
+    const defaultPipeline = pipelines.find((pipeline) => pipeline.is_default) || pipelines[0];
+    if (defaultPipeline) {
+      setSelectedPipelineId(defaultPipeline.id);
+    }
+  }, [pipelines, selectedPipelineId]);
+
+  const stagesForPipeline = React.useMemo(
+    () =>
+      selectedPipelineId === 'all'
+        ? pipelineStages
+        : pipelineStages.filter((stage) => stage.pipeline_id === selectedPipelineId),
+    [pipelineStages, selectedPipelineId]
+  );
 
   const companiesById = React.useMemo(() => {
     const map = new Map<number, (typeof companies)[number]>();
@@ -582,6 +600,9 @@ export const PipelinePage: React.FC = () => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
     return opportunities.filter(opportunity => {
+      if (selectedPipelineId !== 'all' && opportunity.pipeline_id !== selectedPipelineId) {
+        return false;
+      }
       const company = opportunity.entreprise_id ? companiesById.get(opportunity.entreprise_id) : undefined;
       const normalizedPriority = getNormalizedPriority(opportunity);
       const opportunityValue = calculateOpportunityValue(opportunity);
@@ -617,7 +638,7 @@ export const PipelinePage: React.FC = () => {
 
       return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesService && matchesSearch;
     });
-  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService]);
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId]);
 
   const sortedOpportunities = React.useMemo(() => {
     const priorityOrderHighFirst: Record<string, number> = {
@@ -691,7 +712,7 @@ export const PipelinePage: React.FC = () => {
 
   // Configuration des étapes (visibilité et taille)
   const [stageConfigs, setStageConfigs] = useState<StageConfiguration[]>(
-    pipelineStages.map(stage => ({
+    stagesForPipeline.map(stage => ({
       id: stage.id,
       isVisible: true,
       isReduced: false
@@ -700,16 +721,19 @@ export const PipelinePage: React.FC = () => {
 
   // Synchroniser la configuration avec les étapes
   React.useEffect(() => {
-    const newConfigs = pipelineStages.map(stage => {
-      const existingConfig = stageConfigs.find(config => config.id === stage.id);
-      return existingConfig || {
-        id: stage.id,
-        isVisible: true,
-        isReduced: false
-      };
-    });
-    setStageConfigs(newConfigs);
-  }, [pipelineStages]);
+    setStageConfigs((previousConfigs) =>
+      stagesForPipeline.map((stage) => {
+        const existingConfig = previousConfigs.find((config) => config.id === stage.id);
+        return (
+          existingConfig || {
+            id: stage.id,
+            isVisible: true,
+            isReduced: false,
+          }
+        );
+      })
+    );
+  }, [stagesForPipeline]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Date inconnue';
@@ -840,7 +864,7 @@ export const PipelinePage: React.FC = () => {
     );
   };
 
-  const visibleStages = pipelineStages.filter(stage => {
+  const visibleStages = stagesForPipeline.filter(stage => {
     const config = stageConfigs.find(c => c.id === stage.id);
     return config?.isVisible !== false;
   });
@@ -870,6 +894,19 @@ export const PipelinePage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder="Choisir un pipeline" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les pipelines</SelectItem>
+                {pipelines.map((pipeline) => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                    {pipeline.nom}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Button variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
               Vue pipeline
             </Button>
@@ -901,7 +938,7 @@ export const PipelinePage: React.FC = () => {
           <Card className="p-4">
             <h3 className="font-medium mb-4">Configuration des étapes</h3>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {pipelineStages.map((stage) => {
+              {stagesForPipeline.map((stage) => {
                 const config = stageConfigs.find(c => c.id === stage.id);
                 const stageColor = getStageColor(stage.nom);
                 

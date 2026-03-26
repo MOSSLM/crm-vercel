@@ -8,6 +8,7 @@ import {
   contactsApi,
   opportunitiesApi,
   offersApi,
+  pipelinesApi,
   pipelineStagesApi,
   notesApi,
   achievementsApi,
@@ -39,6 +40,7 @@ import {
   Opportunity,
   OpportunityNote,
   Offer,
+  Pipeline,
   PipelineStage,
   SearchResult,
   SupabaseObjectives,
@@ -58,6 +60,7 @@ export type AnnualObjectives = Objectives;
 export const VALID_OPPORTUNITY_COLUMNS = [
   'contact_id',
   'entreprise_id',
+  'pipeline_id',
   'offre_id',
   'montant',
   'priorite',
@@ -114,6 +117,7 @@ interface AppDataContextType {
   urlBlacklist: UrlBlacklist[];
   contacts: Contact[];
   opportunities: Opportunity[];
+  pipelines: Pipeline[];
   pipelineStages: PipelineStage[];
   offers: Offer[];
 
@@ -379,6 +383,7 @@ const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 const [companies, setCompanies] = useState<Company[]>([]);
 const [contacts, setContacts] = useState<Contact[]>([]);
 const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+const [pipelines, setPipelines] = useState<Pipeline[]>([]);
 const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
 const [offers, setOffers] = useState<Offer[]>([]);
 const [networks, setNetworks] = useState<CompanyNetwork[]>([]);
@@ -429,6 +434,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         companiesData,
         qualifiedCompaniesData,
         opportunitiesData,
+        pipelinesData,
         offersData,
         pipelineStagesData,
         achievementsData,
@@ -441,6 +447,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         companiesApi.getAll(),
         companiesApi.getQualifiedOnly(),
         opportunitiesApi.getAll(),
+        pipelinesApi.getAll(),
         offersApi.getAll(),
         pipelineStagesApi.getAll(),
         achievementsApi.getAll(),
@@ -513,6 +520,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       setCompanies(normalizedCompanies);
       setContacts(contactsData);
       setOpportunities(safeOpportunities);
+      setPipelines(pipelinesData);
       setOffers(offersData);
       setPipelineStages(pipelineStagesData);
       setAchievements(safeAchievements);
@@ -891,7 +899,12 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       }
 
       const opportunityName = defaultOffer.nom || generateOpportunityName(company);
-      const defaultStage = pipelineStages.find((stage) => stage.ordre === 1) || pipelineStages[0];
+      const defaultPipeline = pipelines.find((pipeline) => pipeline.is_default) || pipelines[0];
+      const defaultStage =
+        pipelineStages.find((stage) => stage.pipeline_id === defaultPipeline?.id && stage.ordre === 1) ||
+        pipelineStages.find((stage) => stage.pipeline_id === defaultPipeline?.id) ||
+        pipelineStages.find((stage) => stage.ordre === 1) ||
+        pipelineStages[0];
 
       const hasMobilePhone = !!company.telephone && isMobilePhone(company.telephone);
       const offerAmount = typeof defaultOffer.prix_ht === 'number' ? defaultOffer.prix_ht : 0;
@@ -905,6 +918,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         offre_devise_snapshot: defaultOffer.devise,
         montant: offerAmount,
         priorite: hasMobilePhone ? 'haute' : 'moyenne',
+        pipeline_id: defaultStage?.pipeline_id ?? defaultPipeline?.id,
         stage_id: defaultStage?.id,
         lead_magnet: false,
         note_base: `Opportunité créée automatiquement pour ${getCompanyDisplayName(
@@ -1222,6 +1236,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     urlBlacklist,
     contacts,
     opportunities,
+    pipelines,
     pipelineStages,
     offers,
     totalCompanies,
