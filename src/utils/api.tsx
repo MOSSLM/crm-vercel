@@ -2067,6 +2067,39 @@ export const pipelinesApi = {
       return [];
     }
   },
+  create: async (nom: string): Promise<Pipeline> => {
+    const normalizedName = nom.trim();
+    if (!normalizedName) {
+      throw new Error('Le nom du pipeline est requis');
+    }
+
+    try {
+      const { data: maxOrderRow, error: maxOrderError } = await supabase
+        .from('pipelines')
+        .select('ordre')
+        .order('ordre', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (maxOrderError) throw maxOrderError;
+
+      const nextOrder = typeof maxOrderRow?.ordre === 'number' ? maxOrderRow.ordre + 1 : 1;
+      const { data, error } = await supabase
+        .from('pipelines')
+        .insert([{ nom: normalizedName, ordre: nextOrder, visible: true, is_default: false }])
+        .select('id, nom, ordre, visible, is_default')
+        .single();
+
+      if (error) throw error;
+      if (isPipelineRow(data)) {
+        return data;
+      }
+      throw new Error('Invalid pipeline payload');
+    } catch (error) {
+      logger.error('Error creating pipeline:', error);
+      throw error;
+    }
+  },
 };
 
 // Notes API (table: notes)

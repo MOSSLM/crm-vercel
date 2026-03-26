@@ -35,7 +35,8 @@ import {
   Phone,
   Mail,
   Linkedin,
-  Globe
+  Globe,
+  Plus
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -498,7 +499,8 @@ export const PipelinePage: React.FC = () => {
     pipelineStages, 
     moveOpportunityToStage,
     updateOpportunity,
-    companies
+    companies,
+    addPipeline
   } = useAppData();
   
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
@@ -516,6 +518,7 @@ export const PipelinePage: React.FC = () => {
   const [selectedService, setSelectedService] = useState('all');
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
+  const [newPipelineName, setNewPipelineName] = useState('');
 
   React.useEffect(() => {
     if (selectedPipelineId !== 'all') return;
@@ -882,6 +885,20 @@ export const PipelinePage: React.FC = () => {
       ),
     [sortedOpportunities]
   );
+  const normalizedNewPipelineName = newPipelineName.trim();
+  const matchingPipeline = pipelines.find(
+    (pipeline) => pipeline.nom.trim().toLowerCase() === normalizedNewPipelineName.toLowerCase()
+  );
+  const canCreatePipeline = normalizedNewPipelineName.length > 0 && !matchingPipeline;
+
+  const handleCreatePipeline = async () => {
+    if (!canCreatePipeline) return;
+    const createdPipeline = await addPipeline(normalizedNewPipelineName);
+    if (createdPipeline) {
+      setSelectedPipelineId(createdPipeline.id);
+      setNewPipelineName('');
+    }
+  };
 
   return (
     <DndProvider backend={HTML5Backend}>
@@ -894,19 +911,41 @@ export const PipelinePage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
-              <SelectTrigger className="w-52">
-                <SelectValue placeholder="Choisir un pipeline" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les pipelines</SelectItem>
-                {pipelines.map((pipeline) => (
-                  <SelectItem key={pipeline.id} value={pipeline.id}>
-                    {pipeline.nom}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
+                <SelectTrigger className="w-52">
+                  <SelectValue placeholder="Choisir un pipeline" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les pipelines</SelectItem>
+                  {pipelines.map((pipeline) => (
+                    <SelectItem key={pipeline.id} value={pipeline.id}>
+                      {pipeline.nom}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1">
+                <Input
+                  value={newPipelineName}
+                  onChange={(event) => setNewPipelineName(event.target.value)}
+                  placeholder="Nom pipeline"
+                  className="w-44"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      void handleCreatePipeline();
+                    }
+                  }}
+                />
+                {canCreatePipeline && (
+                  <Button variant="outline" size="sm" onClick={() => void handleCreatePipeline()}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Créer {normalizedNewPipelineName}
+                  </Button>
+                )}
+              </div>
+            </div>
             <Button variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
               Vue pipeline
             </Button>
