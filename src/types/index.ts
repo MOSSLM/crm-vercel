@@ -114,6 +114,7 @@ export interface Opportunity {
   id: string;
   contact_id?: string;
   entreprise_id?: number;
+  pipeline_id?: string;
   offre_id?: string;
   offre_prix_ht_snapshot?: number;
   offre_devise_snapshot?: string;
@@ -209,9 +210,18 @@ export interface UrlBlacklist {
 
 export interface PipelineStage {
   id: number;
+  pipeline_id: string;
   nom: string;
   ordre: number;
   visible: boolean;
+}
+
+export interface Pipeline {
+  id: string;
+  nom: string;
+  ordre: number;
+  visible: boolean;
+  is_default: boolean;
 }
 
 export interface Achievement {
