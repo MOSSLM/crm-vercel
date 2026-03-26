@@ -85,7 +85,8 @@ export const OpportunitiesPage: React.FC = () => {
     updateOpportunity, 
     addOpportunityNote,
     toggleLeadMagnet,
-    companies
+    companies,
+    addPipeline
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -105,6 +106,7 @@ export const OpportunitiesPage: React.FC = () => {
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([]);
   const [bulkPipelineTarget, setBulkPipelineTarget] = useState<string>('none');
   const [sortByPipeline, setSortByPipeline] = useState(false);
+  const [newPipelineName, setNewPipelineName] = useState('');
 
   const stagesForSelectedPipeline = React.useMemo(
     () => (pipelineFilter === 'all' ? pipelineStages : pipelineStages.filter((stage) => stage.pipeline_id === pipelineFilter)),
@@ -138,6 +140,11 @@ export const OpportunitiesPage: React.FC = () => {
       if (pipelineA !== pipelineB) return pipelineA - pipelineB;
       return (a.stage_id ?? Number.MAX_SAFE_INTEGER) - (b.stage_id ?? Number.MAX_SAFE_INTEGER);
     });
+  const normalizedNewPipelineName = newPipelineName.trim();
+  const matchingPipeline = pipelines.find(
+    (pipeline) => pipeline.nom.trim().toLowerCase() === normalizedNewPipelineName.toLowerCase()
+  );
+  const canCreatePipeline = normalizedNewPipelineName.length > 0 && !matchingPipeline;
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Date inconnue';
@@ -290,6 +297,17 @@ export const OpportunitiesPage: React.FC = () => {
     } catch (error) {
       logger.error('Erreur déplacement groupé pipeline:', error);
       toast.error('Impossible de déplacer les opportunités');
+    }
+  };
+
+  const handleCreatePipeline = async () => {
+    if (!canCreatePipeline) return;
+    const createdPipeline = await addPipeline(normalizedNewPipelineName);
+    if (createdPipeline) {
+      setPipelineFilter(createdPipeline.id);
+      setBulkPipelineTarget(createdPipeline.id);
+      setStageFilter('all');
+      setNewPipelineName('');
     }
   };
 
@@ -705,6 +723,26 @@ export const OpportunitiesPage: React.FC = () => {
                 ))}
               </SelectContent>
             </Select>
+            <div className="flex items-center gap-1">
+              <Input
+                placeholder="Nom pipeline"
+                value={newPipelineName}
+                onChange={(event) => setNewPipelineName(event.target.value)}
+                className="w-40 md:w-52"
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void handleCreatePipeline();
+                  }
+                }}
+              />
+              {canCreatePipeline && (
+                <Button variant="outline" size="sm" onClick={() => void handleCreatePipeline()}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Créer {normalizedNewPipelineName}
+                </Button>
+              )}
+            </div>
 
             <Select value={stageFilter} onValueChange={setStageFilter}>
               <SelectTrigger className="w-40 md:w-48">
