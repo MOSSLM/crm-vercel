@@ -35,7 +35,8 @@ import {
   Phone,
   Mail,
   Linkedin,
-  Globe
+  Globe,
+  Plus
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -518,6 +519,7 @@ export const PipelinePage: React.FC = () => {
   const [selectedService, setSelectedService] = useState('all');
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
+  const [newPipelineName, setNewPipelineName] = useState('');
 
   React.useEffect(() => {
     if (selectedPipelineId !== 'all') return;
@@ -884,6 +886,20 @@ export const PipelinePage: React.FC = () => {
       ),
     [sortedOpportunities]
   );
+  const normalizedNewPipelineName = newPipelineName.trim();
+  const matchingPipeline = pipelines.find(
+    (pipeline) => pipeline.nom.trim().toLowerCase() === normalizedNewPipelineName.toLowerCase()
+  );
+  const canCreatePipeline = normalizedNewPipelineName.length > 0 && !matchingPipeline;
+
+  const handleCreatePipeline = async () => {
+    if (!canCreatePipeline) return;
+    const createdPipeline = await addPipeline(normalizedNewPipelineName);
+    if (createdPipeline) {
+      setSelectedPipelineId(createdPipeline.id);
+      setNewPipelineName('');
+    }
+  };
 
   return (
     <DndProvider backend={HTML5Backend}>
