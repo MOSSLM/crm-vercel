@@ -97,6 +97,7 @@ export const AppSidebar = () => {
 
   const actionItems: SidebarNavItem[] = [
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
+    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
     { title: "Results", icon: Package, href: "/results" },
     { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
