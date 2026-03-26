@@ -46,6 +46,7 @@ import { journalApi } from '../utils/journalApi';
 import { ContactChannel } from '../types';
 import { normalizeServiceTags } from '../utils/serviceTags';
 import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
+import { PipelineCombobox } from './PipelineCombobox';
 
 const normalizeWebsiteUrl = (url?: string | null) => {
   if (!url) return undefined;
@@ -911,41 +912,14 @@ export const PipelinePage: React.FC = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
-              <Select value={selectedPipelineId} onValueChange={setSelectedPipelineId}>
-                <SelectTrigger className="w-52">
-                  <SelectValue placeholder="Choisir un pipeline" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les pipelines</SelectItem>
-                  {pipelines.map((pipeline) => (
-                    <SelectItem key={pipeline.id} value={pipeline.id}>
-                      {pipeline.nom}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="flex items-center gap-1">
-                <Input
-                  value={newPipelineName}
-                  onChange={(event) => setNewPipelineName(event.target.value)}
-                  placeholder="Nom pipeline"
-                  className="w-44"
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      event.preventDefault();
-                      void handleCreatePipeline();
-                    }
-                  }}
-                />
-                {canCreatePipeline && (
-                  <Button variant="outline" size="sm" onClick={() => void handleCreatePipeline()}>
-                    <Plus className="h-4 w-4 mr-1" />
-                    Créer {normalizedNewPipelineName}
-                  </Button>
-                )}
-              </div>
-            </div>
+            <PipelineCombobox
+              pipelines={pipelines}
+              selectedValue={selectedPipelineId}
+              includeAllOption
+              onSelect={setSelectedPipelineId}
+              onCreate={addPipeline}
+              placeholder="Choisir ou créer un pipeline"
+            />
             <Button variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
               Vue pipeline
             </Button>
