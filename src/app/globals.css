@@ -219,7 +219,11 @@
 
   .dark [data-sidebar="menu-button"]:is(:hover, [data-active="true"]),
   .dark [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) {
-    color: var(--sidebar-primary-foreground);
+    color: var(--sidebar-primary-foreground) !important;
+  }
+
+  .dark [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) > svg {
+    color: currentColor !important;
   }
 }
 
