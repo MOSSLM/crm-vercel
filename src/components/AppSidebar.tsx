@@ -69,7 +69,6 @@ export const AppSidebar = () => {
 
   const crmItems: SidebarNavItem[] = [
     { title: "Entreprises", icon: Building, href: "/companies" },
-    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Contacts", icon: Users, href: "/contacts" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },

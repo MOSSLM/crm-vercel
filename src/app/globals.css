@@ -216,6 +216,11 @@
   [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) {
     background-image: linear-gradient(135deg, var(--sage-gradient-start), var(--sage-gradient-end));
   }
+
+  .dark [data-sidebar="menu-button"]:is(:hover, [data-active="true"]),
+  .dark [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) {
+    color: var(--sidebar-primary-foreground);
+  }
 }
 
 /* Typography system */
