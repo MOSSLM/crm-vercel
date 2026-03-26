@@ -50,6 +50,7 @@ function usePageTitle() {
     "/results": "Results",
     "/companies": "Toutes les entreprises",
     "/qualified": "Qualifiés",
+    "/services-entreprises": "Services entreprises",
     "/duplicates": "Duplicats",
     "/networks": "Réseaux",
     "/blacklist": "Blacklist",

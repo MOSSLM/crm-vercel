@@ -69,6 +69,7 @@ export const AppSidebar = () => {
 
   const crmItems: SidebarNavItem[] = [
     { title: "Entreprises", icon: Building, href: "/companies" },
+    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Contacts", icon: Users, href: "/contacts" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
@@ -78,6 +79,7 @@ export const AppSidebar = () => {
     { title: "Dashboard qualification", icon: BarChart3, href: "/qualification/dashboard" },
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
+    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Réseaux", icon: Share2, href: "/networks" },
     { title: "Blacklist", icon: Ban, href: "/blacklist" },
     { title: "Duplicats", icon: Copy, href: "/duplicates" },
@@ -86,6 +88,7 @@ export const AppSidebar = () => {
   const prospectionItems: SidebarNavItem[] = [
     { title: "Dashboard prospection", icon: BarChart3, href: "/prospection/dashboard" },
     { title: "Qualifiés (appel)", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
+    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
     { title: "Offres", icon: Package, href: "/offres" },

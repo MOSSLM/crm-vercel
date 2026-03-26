@@ -512,6 +512,7 @@ export const PipelinePage: React.FC = () => {
   const [requireEmployees, setRequireEmployees] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('recent');
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
+  const [selectedService, setSelectedService] = useState('all');
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
 
   const companiesById = React.useMemo(() => {
@@ -521,6 +522,16 @@ export const PipelinePage: React.FC = () => {
     });
     return map;
   }, [companies]);
+
+  const availableServices = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          companies.flatMap((company) => normalizeServiceTags(company.service_tags, company.premiers_tags))
+        )
+      ).sort((a, b) => a.localeCompare(b, 'fr')),
+    [companies]
+  );
 
   const getNormalizedPriority = (opportunity: Opportunity): NormalizedPriority | undefined => {
     const priorityValue = (opportunity.priorite || opportunity.priority)?.toString().toLowerCase();
@@ -586,6 +597,8 @@ export const PipelinePage: React.FC = () => {
       const matchesEmployees = !requireEmployees || companyHasEmployees(company);
       const opportunityFlags = parseFlags(opportunity.flags);
       const matchesFlags = selectedFlags.length === 0 || selectedFlags.some((flag) => opportunityFlags.includes(flag));
+      const companyServiceTags = normalizeServiceTags(company?.service_tags, company?.premiers_tags);
+      const matchesService = selectedService === 'all' || companyServiceTags.includes(selectedService);
 
       const matchesSearch =
         !normalizedSearch ||
@@ -602,9 +615,9 @@ export const PipelinePage: React.FC = () => {
           .filter(Boolean)
           .some(value => value!.toString().toLowerCase().includes(normalizedSearch));
 
-      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesSearch;
+      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesService && matchesSearch;
     });
-  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags]);
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService]);
 
   const sortedOpportunities = React.useMemo(() => {
     const priorityOrderHighFirst: Record<string, number> = {
@@ -665,6 +678,7 @@ export const PipelinePage: React.FC = () => {
     setRequireEmployees(false);
     setSortOption('recent');
     setSelectedFlags([]);
+    setSelectedService('all');
   };
 
   const selectedCompany = selectedOpportunity
@@ -1089,10 +1103,27 @@ export const PipelinePage: React.FC = () => {
                   <p className="text-xs text-muted-foreground">Au moins un employé connu</p>
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label>Service offert</Label>
+                <Select value={selectedService} onValueChange={setSelectedService}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Tous les services" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les services</SelectItem>
+                    {availableServices.map((service) => (
+                      <SelectItem key={service} value={service}>
+                        {service}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-3 justify-end">
-              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || sortOption !== 'recent') && (
+              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || selectedService !== 'all' || sortOption !== 'recent') && (
                 <Badge variant="outline" className="h-7 px-3 text-xs">
                   {[
                     searchTerm ? 'Recherche active' : null,
@@ -1102,6 +1133,7 @@ export const PipelinePage: React.FC = () => {
                     selectedFlags.length ? `${selectedFlags.length} flag(s)` : null,
                     requireMobilePhone ? 'Téléphone mobile' : null,
                     requireEmployees ? 'Avec employés' : null,
+                    selectedService !== 'all' ? `Service: ${selectedService}` : null,
                     sortOption !== 'recent' ? 'Tri personnalisé' : null,
                   ]
                     .filter(Boolean)
