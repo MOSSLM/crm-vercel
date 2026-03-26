@@ -18,7 +18,7 @@ export const CompanyServicesPage: React.FC = () => {
   const [viewMode, setViewMode] = React.useState<"cards" | "list">("cards");
   const [searchTerm, setSearchTerm] = React.useState("");
   const [serviceFilter, setServiceFilter] = React.useState("");
-  const [selectedOpportunityTags, setSelectedOpportunityTags] = React.useState<string[]>([]);
+  const [selectedOpportunityFlags, setSelectedOpportunityFlags] = React.useState<string[]>([]);
   const [savingCompanyIds, setSavingCompanyIds] = React.useState<Set<number>>(new Set());
 
   const parseOpportunityTags = React.useCallback((tags?: string) => {
@@ -28,6 +28,18 @@ export const CompanyServicesPage: React.FC = () => {
       .map((tag) => tag.trim())
       .filter(Boolean);
   }, []);
+
+  const extractOpportunityFlags = React.useCallback(
+    (opportunityFlags?: string[] | null, legacyTags?: string) => {
+      if (Array.isArray(opportunityFlags)) {
+        return opportunityFlags
+          .map((flag) => flag.trim())
+          .filter(Boolean);
+      }
+      return parseOpportunityTags(legacyTags);
+    },
+    [parseOpportunityTags]
+  );
 
   const normalizeWebsiteUrl = React.useCallback((url?: string | null) => {
     if (!url) return undefined;
@@ -52,25 +64,25 @@ export const CompanyServicesPage: React.FC = () => {
     [qualifiedCompanies]
   );
 
-  const companyOpportunityTags = React.useMemo(() => {
+  const companyOpportunityFlags = React.useMemo(() => {
     const byCompany = new Map<number, string[]>();
     for (const opportunity of opportunities) {
       if (!opportunity.entreprise_id) continue;
       const current = byCompany.get(opportunity.entreprise_id) ?? [];
-      const merged = new Set([...current, ...parseOpportunityTags(opportunity.tags)]);
+      const merged = new Set([...current, ...extractOpportunityFlags(opportunity.flags, opportunity.tags)]);
       byCompany.set(opportunity.entreprise_id, Array.from(merged).sort((a, b) => a.localeCompare(b, "fr")));
     }
     return byCompany;
-  }, [opportunities, parseOpportunityTags]);
+  }, [extractOpportunityFlags, opportunities]);
 
-  const allOpportunityTags = React.useMemo(
+  const allOpportunityFlags = React.useMemo(
     () =>
       Array.from(
         new Set(
-          opportunities.flatMap((opportunity) => parseOpportunityTags(opportunity.tags))
+          opportunities.flatMap((opportunity) => extractOpportunityFlags(opportunity.flags, opportunity.tags))
         )
       ).sort((a, b) => a.localeCompare(b, "fr")),
-    [opportunities, parseOpportunityTags]
+    [extractOpportunityFlags, opportunities]
   );
 
   const filteredCompanies = React.useMemo(() => {
@@ -80,7 +92,7 @@ export const CompanyServicesPage: React.FC = () => {
     return qualifiedCompanies.filter((company) => {
       const companyName = getCompanyDisplayName(company.name, company.canonical_url).toLowerCase();
       const tags = normalizeServiceTags(company.service_tags, company.premiers_tags);
-      const opportunityTags = companyOpportunityTags.get(company.id) ?? [];
+      const opportunityFlags = companyOpportunityFlags.get(company.id) ?? [];
 
       const matchesSearch =
         !normalizedSearch ||
@@ -91,13 +103,13 @@ export const CompanyServicesPage: React.FC = () => {
         !normalizedServiceFilter ||
         tags.some((tag) => tag.toLowerCase().includes(normalizedServiceFilter));
 
-      const matchesOpportunityTags =
-        selectedOpportunityTags.length === 0 ||
-        selectedOpportunityTags.some((tag) => opportunityTags.includes(tag));
+      const matchesOpportunityFlags =
+        selectedOpportunityFlags.length === 0 ||
+        selectedOpportunityFlags.some((flag) => opportunityFlags.includes(flag));
 
-      return matchesSearch && matchesService && matchesOpportunityTags;
+      return matchesSearch && matchesService && matchesOpportunityFlags;
     });
-  }, [companyOpportunityTags, qualifiedCompanies, searchTerm, selectedOpportunityTags, serviceFilter]);
+  }, [companyOpportunityFlags, qualifiedCompanies, searchTerm, selectedOpportunityFlags, serviceFilter]);
 
   const handleServicesChange = async (companyId: number, nextServices: string[]) => {
     setSavingCompanyIds((prev) => new Set(prev).add(companyId));
@@ -143,31 +155,31 @@ export const CompanyServicesPage: React.FC = () => {
       </div>
 
       <div className="space-y-2">
-        <p className="text-sm text-muted-foreground">Filtrer par tags d&apos;opportunités</p>
+        <p className="text-sm text-muted-foreground">Filtrer par flags d&apos;opportunités</p>
         <div className="flex flex-wrap gap-2">
-          {allOpportunityTags.length === 0 ? (
-            <Badge variant="outline">Aucun tag d&apos;opportunité</Badge>
+          {allOpportunityFlags.length === 0 ? (
+            <Badge variant="outline">Aucun flag d&apos;opportunité</Badge>
           ) : (
-            allOpportunityTags.map((tag) => {
-              const isSelected = selectedOpportunityTags.includes(tag);
+            allOpportunityFlags.map((flag) => {
+              const isSelected = selectedOpportunityFlags.includes(flag);
               return (
                 <Button
-                  key={tag}
+                  key={flag}
                   variant={isSelected ? "default" : "outline"}
                   size="sm"
                   onClick={() =>
-                    setSelectedOpportunityTags((prev) =>
-                      prev.includes(tag) ? prev.filter((value) => value !== tag) : [...prev, tag]
+                    setSelectedOpportunityFlags((prev) =>
+                      prev.includes(flag) ? prev.filter((value) => value !== flag) : [...prev, flag]
                     )
                   }
                 >
-                  {tag}
+                  {flag}
                 </Button>
               );
             })
           )}
-          {selectedOpportunityTags.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={() => setSelectedOpportunityTags([])}>
+          {selectedOpportunityFlags.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={() => setSelectedOpportunityFlags([])}>
               Réinitialiser
             </Button>
           )}
@@ -184,18 +196,18 @@ export const CompanyServicesPage: React.FC = () => {
           {filteredCompanies.map((company) => {
             const services = normalizeServiceTags(company.service_tags, company.premiers_tags);
             const websiteUrl = normalizeWebsiteUrl(company.site_web_canonique ?? company.canonical_url);
-            const opportunityTags = companyOpportunityTags.get(company.id) ?? [];
+            const opportunityFlags = companyOpportunityFlags.get(company.id) ?? [];
             return (
               <Card key={company.id}>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base">{getCompanyDisplayName(company.name, company.canonical_url)}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {opportunityTags.length > 0 && (
+                  {opportunityFlags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
-                      {opportunityTags.map((tag) => (
-                        <Badge key={tag} variant="outline">
-                          {tag}
+                      {opportunityFlags.map((flag) => (
+                        <Badge key={flag} variant="outline">
+                          {flag}
                         </Badge>
                       ))}
                     </div>
@@ -224,16 +236,16 @@ export const CompanyServicesPage: React.FC = () => {
           {filteredCompanies.map((company) => {
             const services = normalizeServiceTags(company.service_tags, company.premiers_tags);
             const websiteUrl = normalizeWebsiteUrl(company.site_web_canonique ?? company.canonical_url);
-            const opportunityTags = companyOpportunityTags.get(company.id) ?? [];
+            const opportunityFlags = companyOpportunityFlags.get(company.id) ?? [];
             return (
               <Card key={company.id}>
                 <CardContent className="pt-4 space-y-3">
                   <h3 className="font-medium">{getCompanyDisplayName(company.name, company.canonical_url)}</h3>
-                  {opportunityTags.length > 0 && (
+                  {opportunityFlags.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
-                      {opportunityTags.map((tag) => (
-                        <Badge key={tag} variant="outline">
-                          {tag}
+                      {opportunityFlags.map((flag) => (
+                        <Badge key={flag} variant="outline">
+                          {flag}
                         </Badge>
                       ))}
                     </div>
