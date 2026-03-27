@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
@@ -17,6 +17,7 @@ export const ObjectivesChart: React.FC<ObjectivesChartProps> = ({
   title = "Évolution des KPI dans le temps" 
 }) => {
   const [enabledKPIs, setEnabledKPIs] = useState<ChartKPI[]>(KPI_DEFINITIONS);
+  const isMobile = useMemo(() => typeof window !== 'undefined' && window.innerWidth < 768, []);
 
   const toggleKPI = (key: ChartKPI['key']) => {
     setEnabledKPIs(prev => 
@@ -93,27 +94,27 @@ export const ObjectivesChart: React.FC<ObjectivesChartProps> = ({
         </div>
 
         {/* Graphique */}
-        <div className="h-96">
+        <div className="h-[320px] md:h-96">
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+            <LineChart data={chartData} margin={{ top: 12, right: 20, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="4 4" className="opacity-30" />
               <XAxis 
                 dataKey="period" 
-                tick={{ fontSize: 12 }}
-                angle={-45}
-                textAnchor="end"
-                height={60}
+                tick={{ fontSize: isMobile ? 10 : 12 }}
+                angle={isMobile ? 0 : -35}
+                textAnchor={isMobile ? "middle" : "end"}
+                height={isMobile ? 32 : 60}
               />
-              <YAxis tick={{ fontSize: 12 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Legend />
+              <YAxis tick={{ fontSize: isMobile ? 10 : 12 }} width={isMobile ? 28 : 40} />
+              <Tooltip content={<CustomTooltip />} cursor={{ stroke: "var(--border)", strokeDasharray: "3 3" }} />
+              <Legend wrapperStyle={{ fontSize: isMobile ? 11 : 12 }} />
               {enabledKPIKeys.map(kpi => (
                 <Line
                   key={kpi.key}
                   type="monotone"
                   dataKey={kpi.key}
                   stroke={kpi.color}
-                  strokeWidth={2}
+                  strokeWidth={2.5}
                   dot={{ fill: kpi.color, strokeWidth: 2, r: 4 }}
                   activeDot={{ r: 6, stroke: kpi.color, strokeWidth: 2 }}
                   name={kpi.label}

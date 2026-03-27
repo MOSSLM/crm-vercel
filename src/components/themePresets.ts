@@ -1,4 +1,4 @@
-export type ThemePreset = 'default' | 'ocean' | 'sunset' | 'forest' | 'midnight';
+export type ThemePreset = 'default' | 'ocean' | 'sunset' | 'forest' | 'midnight' | 'rose';
 
 export interface ThemePresetConfig {
   id: ThemePreset;
@@ -120,6 +120,37 @@ export const THEME_PRESETS: ThemePresetConfig[] = [
       '--chart-10': '#6366f1',
       '--chart-11': '#38bdf8',
       '--chart-12': '#a78bfa',
+    },
+  },
+
+  {
+    id: 'rose',
+    name: 'Rose Quartz',
+    description: 'Palette rose et blanc, élégante et lumineuse pour CRM moderne.',
+    cssVars: {
+      '--background': '#fff9fc',
+      '--card': '#ffffff',
+      '--muted': '#fff0f7',
+      '--accent': '#ffe3f1',
+      '--accent-foreground': '#be185d',
+      '--ring': 'rgba(225, 29, 72, 0.25)',
+      '--border': '#f3cfe3',
+      '--input': '#f7d8e9',
+      '--sidebar': '#fff5fa',
+      '--sidebar-accent': '#ffe5f2',
+      '--sidebar-border': '#f5d4e6',
+      '--chart-1': '#e11d48',
+      '--chart-2': '#f43f5e',
+      '--chart-3': '#fb7185',
+      '--chart-4': '#ec4899',
+      '--chart-5': '#be185d',
+      '--chart-6': '#f472b6',
+      '--chart-7': '#e11d48',
+      '--chart-8': '#f43f5e',
+      '--chart-9': '#fb7185',
+      '--chart-10': '#ec4899',
+      '--chart-11': '#be185d',
+      '--chart-12': '#f472b6',
     },
   },
 ];

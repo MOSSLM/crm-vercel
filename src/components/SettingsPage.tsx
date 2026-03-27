@@ -14,6 +14,8 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { 
+  RotateCcw,
+  Palette,
   User, 
   Settings, 
   Bell, 
@@ -37,7 +39,16 @@ import { THEME_PRESETS, ThemePreset } from './themePresets';
 
 export const SettingsPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const { theme, setTheme, resolvedTheme, themePreset, setThemePreset } = useTheme();
+  const {
+    theme,
+    setTheme,
+    resolvedTheme,
+    themePreset,
+    setThemePreset,
+    customThemeColors,
+    setCustomThemeColor,
+    resetCustomThemeColors,
+  } = useTheme();
   const [notifications, setNotifications] = useState({
     newSearchComplete: true,
     qualificationUpdates: true,
@@ -50,8 +61,19 @@ export const SettingsPage: React.FC = () => {
     setNotifications(prev => ({ ...prev, [key]: value }));
   };
 
+  const colorPickerFields = [
+    { key: '--background', label: 'Fond principal' },
+    { key: '--card', label: 'Fond cartes' },
+    { key: '--accent', label: 'Accent UI' },
+    { key: '--primary', label: 'Couleur primaire' },
+    { key: '--chart-1', label: 'Chart 1' },
+    { key: '--chart-2', label: 'Chart 2' },
+    { key: '--chart-3', label: 'Chart 3' },
+    { key: '--chart-4', label: 'Chart 4' },
+  ] as const;
+
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
+    <div className="mx-auto w-full max-w-5xl space-y-6 px-3 py-4 md:px-6 md:py-6">
       <div>
         <h1>Paramètres</h1>
         <p className="text-muted-foreground">
@@ -60,7 +82,7 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 gap-1 md:grid-cols-5">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             Profil
@@ -296,6 +318,45 @@ export const SettingsPage: React.FC = () => {
                   ))}
                 </div>
               </div>
+
+
+
+              <Separator />
+
+              <div className="space-y-3 rounded-xl border border-border/70 bg-card/60 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label className="flex items-center gap-2"><Palette className="h-4 w-4" /> Personnalisation avancée</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={resetCustomThemeColors} className="gap-1">
+                    <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Ajustez les couleurs du thème en direct avec des color pickers (bonnes pratiques shadcn: contraste et cohérence).
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {colorPickerFields.map((field) => (
+                    <div key={field.key} className="rounded-lg border border-border/70 bg-background/70 p-2">
+                      <Label htmlFor={`picker-${field.key}`} className="mb-2 block text-xs">{field.label}</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id={`picker-${field.key}`}
+                          type="color"
+                          value={customThemeColors[field.key] ?? '#ffffff'}
+                          onChange={(e) => setCustomThemeColor(field.key, e.target.value)}
+                          className="h-9 w-12 cursor-pointer p-1"
+                        />
+                        <Input
+                          value={customThemeColors[field.key] ?? ''}
+                          onChange={(e) => setCustomThemeColor(field.key, e.target.value)}
+                          placeholder="#ffffff"
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
 
               <div className="space-y-2">
                 <Label>Vue par défaut des résultats</Label>

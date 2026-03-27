@@ -277,9 +277,9 @@ export const DashboardPage: React.FC = () => {
 
   const chartMetricConfig: Record<PerformanceMetric, { label: string; color: string; gradient: string }> = {
     revenue: { label: 'Revenus (€)', color: '#16a34a', gradient: 'url(#metricGradientRevenue)' },
-    customers: { label: 'Nouveaux clients', color: '#2563eb', gradient: 'url(#metricGradientCustomers)' },
-    appointments: { label: 'RDV', color: '#7c3aed', gradient: 'url(#metricGradientAppointments)' },
-    calls: { label: 'Appels', color: '#ea580c', gradient: 'url(#metricGradientCalls)' }
+    customers: { label: 'Nouveaux clients', color: 'var(--chart-1)', gradient: 'url(#metricGradientCustomers)' },
+    appointments: { label: 'RDV', color: 'var(--chart-5)', gradient: 'url(#metricGradientAppointments)' },
+    calls: { label: 'Appels', color: 'var(--chart-8)', gradient: 'url(#metricGradientCalls)' }
   };
 
   const performanceTrendData = useMemo(() => {
@@ -369,7 +369,7 @@ export const DashboardPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="mobile-safe-pb space-y-4 px-3 py-4 md:space-y-6 md:p-6">
       <div>
         <h1>Dashboard</h1>
         <p className="text-muted-foreground">
@@ -761,26 +761,28 @@ export const DashboardPage: React.FC = () => {
                   <AreaChart data={performanceTrendData} margin={{ top: 10, right: 8, left: 8, bottom: 0 }}>
                     <defs>
                       <linearGradient id="metricGradientRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#16a34a" stopOpacity={0.45} />
-                        <stop offset="95%" stopColor="#16a34a" stopOpacity={0.05} />
+                        <stop offset="5%" stopColor="var(--chart-3)" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="var(--chart-3)" stopOpacity={0.05} />
                       </linearGradient>
                       <linearGradient id="metricGradientCustomers" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#2563eb" stopOpacity={0.45} />
-                        <stop offset="95%" stopColor="#2563eb" stopOpacity={0.05} />
+                        <stop offset="5%" stopColor="var(--chart-1)" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="var(--chart-1)" stopOpacity={0.05} />
                       </linearGradient>
                       <linearGradient id="metricGradientAppointments" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#7c3aed" stopOpacity={0.45} />
-                        <stop offset="95%" stopColor="#7c3aed" stopOpacity={0.05} />
+                        <stop offset="5%" stopColor="var(--chart-5)" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="var(--chart-5)" stopOpacity={0.05} />
                       </linearGradient>
                       <linearGradient id="metricGradientCalls" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ea580c" stopOpacity={0.45} />
-                        <stop offset="95%" stopColor="#ea580c" stopOpacity={0.05} />
+                        <stop offset="5%" stopColor="var(--chart-8)" stopOpacity={0.45} />
+                        <stop offset="95%" stopColor="var(--chart-8)" stopOpacity={0.05} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                     <XAxis dataKey="label" />
                     <YAxis />
                     <RechartsTooltip
+                      contentStyle={{ borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)' }}
+                      labelStyle={{ color: 'var(--muted-foreground)' }}
                       formatter={(value) => {
                         if (selectedPerformanceMetric === 'revenue') {
                           return [formatCurrency(Number(value)), chartMetricConfig[selectedPerformanceMetric].label];
@@ -1065,10 +1067,10 @@ export const DashboardPage: React.FC = () => {
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      label={({ name, percent }) => {
+                      label={!isMobile ? ({ name, percent }) => {
                         const p = percent ?? 0;
                         return `${name} (${Math.round(p * 100)}%)`;
-                      }}
+                      } : false}
                       outerRadius={isMobile ? 60 : 80}
                       fill="#8884d8"
                       dataKey="value"
@@ -1077,7 +1079,7 @@ export const DashboardPage: React.FC = () => {
                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                       ))}
                     </Pie>
-                    <RechartsTooltip />
+                    <RechartsTooltip contentStyle={{ borderRadius: 12, border: '1px solid var(--border)', background: 'var(--card)' }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -1197,8 +1199,8 @@ export const DashboardPage: React.FC = () => {
             <CardContent>
               <div className="h-64 md:h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={pipelineBreakdown}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                  <BarChart data={pipelineBreakdown} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="4 4" opacity={0.35} />
                     <XAxis 
                       dataKey="name" 
                       angle={-45}
@@ -1214,7 +1216,7 @@ export const DashboardPage: React.FC = () => {
                       ]}
                     />
                     <Legend />
-                    <Bar dataKey="opportunities" fill="#3b82f6" name="Opportunités" />
+                    <Bar dataKey="opportunities" fill="var(--chart-1)" radius={[6, 6, 0, 0]} name="Opportunités" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -1238,7 +1240,7 @@ export const DashboardPage: React.FC = () => {
               <div className="h-[360px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={funnelBarData} layout="vertical" margin={{ top: 12, right: 24, left: 80, bottom: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                    <CartesianGrid strokeDasharray="4 4" opacity={0.35} />
                     <XAxis type="number" />
                     <YAxis type="category" dataKey="name" width={140} tick={{ fontSize: isMobile ? 10 : 12 }} />
                     <RechartsTooltip
@@ -1247,8 +1249,8 @@ export const DashboardPage: React.FC = () => {
                         return [value, 'Volume'];
                       }}
                     />
-                    <Bar dataKey="value" fill="#4f46e5" radius={[0, 6, 6, 0]} name="Volume" />
-                    <Bar dataKey="conversion" fill="#22c55e" radius={[0, 6, 6, 0]} name="conversion" />
+                    <Bar dataKey="value" fill="var(--chart-5)" radius={[0, 8, 8, 0]} name="Volume" />
+                    <Bar dataKey="conversion" fill="var(--chart-3)" radius={[0, 8, 8, 0]} name="Conversion (%)" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

@@ -77,6 +77,20 @@
   --animation-normal: 250ms;
   --animation-slow: 350ms;
   --easing-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  --chart-1: #3b82f6;
+  --chart-2: #ef4444;
+  --chart-3: #10b981;
+  --chart-4: #f59e0b;
+  --chart-5: #8b5cf6;
+  --chart-6: #06b6d4;
+  --chart-7: #84cc16;
+  --chart-8: #f97316;
+  --chart-9: #ec4899;
+  --chart-10: #14b8a6;
+  --chart-11: #6366f1;
+  --chart-12: #fb7185;
+
 }
 
 /* Dark mode overrides - VS Code Dark+ Theme inspiré */
@@ -117,6 +131,18 @@
   --sidebar-border: #263142;
   --sidebar-ring: rgba(107, 134, 255, 0.28);
   --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.28);
+  --chart-1: #60a5fa;
+  --chart-2: #f87171;
+  --chart-3: #34d399;
+  --chart-4: #fbbf24;
+  --chart-5: #a78bfa;
+  --chart-6: #22d3ee;
+  --chart-7: #a3e635;
+  --chart-8: #fb923c;
+  --chart-9: #f472b6;
+  --chart-10: #2dd4bf;
+  --chart-11: #818cf8;
+  --chart-12: #fb7185;
 }
 
 /* Tailwind theme integration */
@@ -2016,3 +2042,32 @@
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  @media (max-width: 767px) {
+    h1 {
+      font-size: 1.5rem;
+    }
+
+    h2 {
+      font-size: 1.15rem;
+    }
+
+    .mobile-safe-pb {
+      padding-bottom: calc(env(safe-area-inset-bottom) + 5rem);
+    }
+
+    table {
+      display: block;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+  }
