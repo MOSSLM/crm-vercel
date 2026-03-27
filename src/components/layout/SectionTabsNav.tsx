@@ -55,7 +55,7 @@ export function SectionTabsNav({ items }: SectionTabsNavProps) {
                 href={item.href}
                 className={`sage-tab snap-start whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-all ${
                   active
-                    ? "active text-foreground shadow-sm"
+                    ? "active text-slate-900 dark:text-slate-900 shadow-sm"
                     : "bg-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >

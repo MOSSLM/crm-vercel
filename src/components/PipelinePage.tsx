@@ -903,15 +903,15 @@ export const PipelinePage: React.FC = () => {
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1>Pipeline des Ventes</h1>
             <p className="text-muted-foreground">
               Suivez vos opportunités à travers les différentes étapes du processus de vente
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <PipelineCombobox
               pipelines={pipelines}
               selectedValue={selectedPipelineId}
@@ -920,15 +920,16 @@ export const PipelinePage: React.FC = () => {
               onCreate={addPipeline}
               placeholder="Choisir ou créer un pipeline"
             />
-            <Button variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
+            <Button size="sm" variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
               Vue pipeline
             </Button>
-            <Button variant={pipelineMode === 'cold_call' ? 'default' : 'outline'} onClick={() => setPipelineMode('cold_call')}>
+            <Button size="sm" variant={pipelineMode === 'cold_call' ? 'default' : 'outline'} onClick={() => setPipelineMode('cold_call')}>
               Mode Cold Call
             </Button>
             {pipelineMode === 'standard' && (
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setShowSettings(!showSettings)}
                 className="flex items-center gap-2"
               >
@@ -987,47 +988,47 @@ export const PipelinePage: React.FC = () => {
           </Card>
         )}
 
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
-          <Card>
-            <CardHeader className="pb-2">
+        <div className="grid gap-2 grid-cols-2 md:grid-cols-4 md:gap-6">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Opportunités totales</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{sortedOpportunities.length}</div>
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold">{sortedOpportunities.length}</div>
               <p className="text-xs text-muted-foreground">Dans le pipeline (après filtres)</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Valeur totale</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold text-green-600">
                 {totalValue.toLocaleString()}€
               </div>
               <p className="text-xs text-muted-foreground">Pipeline filtré</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Valeur moyenne</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold text-blue-600">
                 {Math.round(averageValue).toLocaleString()}€
               </div>
               <p className="text-xs text-muted-foreground">Par opportunité filtrée</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Étapes actives</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-purple-600">
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold text-purple-600">
                 {visibleStages.filter(stage =>
                   getFilteredOpportunitiesByStage(stage.id).length > 0
                 ).length}
@@ -1037,39 +1038,42 @@ export const PipelinePage: React.FC = () => {
           </Card>
         </div>
 
-        <Card className="p-4">
-          <div className="flex flex-col gap-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="p-3 md:p-4">
+          <div className="flex flex-col gap-3">
+            <div className="grid gap-2 md:gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
-                <Label>Recherche globale</Label>
+                <Label className="text-xs md:text-sm">Recherche globale</Label>
                 <Input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   placeholder="Rechercher une opportunité, une entreprise..."
+                  className="h-9"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tarif minimum (€)</Label>
+                <Label className="text-xs md:text-sm">Tarif minimum (€)</Label>
                 <Input
                   type="number"
                   value={minPrice}
                   onChange={(event) => setMinPrice(event.target.value)}
                   placeholder="0"
                   min={0}
+                  className="h-9"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tarif maximum (€)</Label>
+                <Label className="text-xs md:text-sm">Tarif maximum (€)</Label>
                 <Input
                   type="number"
                   value={maxPrice}
                   onChange={(event) => setMaxPrice(event.target.value)}
                   placeholder="Illimité"
                   min={0}
+                  className="h-9"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tri des cartes</Label>
+                <Label className="text-xs md:text-sm">Tri des cartes</Label>
                 <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Choisir un tri" />
@@ -1085,12 +1089,12 @@ export const PipelinePage: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2 md:gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div>
-                <Label>Flags opportunité</Label>
-                <div className="mt-2 flex flex-wrap gap-3">
+                <Label className="text-xs md:text-sm">Flags opportunité</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {OPPORTUNITY_FLAGS.map((flag) => (
-                    <label key={flag.value} className="flex items-center gap-2 text-sm">
+                    <label key={flag.value} className="flex items-center gap-2 text-xs md:text-sm">
                       <Checkbox
                         checked={selectedFlags.includes(flag.value)}
                         onCheckedChange={(checked) => {
@@ -1109,14 +1113,14 @@ export const PipelinePage: React.FC = () => {
               </div>
 
               <div>
-                <Label>Priorité</Label>
-                <div className="mt-2 flex flex-wrap gap-3">
+                <Label className="text-xs md:text-sm">Priorité</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {[
                   { value: 'haute' as NormalizedPriority, label: 'Haute' },
                   { value: 'moyenne' as NormalizedPriority, label: 'Moyenne' },
                   { value: 'basse' as NormalizedPriority, label: 'Basse' },
                   ].map(priority => (
-                    <label key={priority.value} className="flex items-center gap-2 text-sm">
+                    <label key={priority.value} className="flex items-center gap-2 text-xs md:text-sm">
                       <Checkbox
                         checked={selectedPriorities.includes(priority.value)}
                         onCheckedChange={(checked) => {
@@ -1138,7 +1142,7 @@ export const PipelinePage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 border rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 border rounded-lg px-2.5 py-2">
                 <Switch checked={requireMobilePhone} onCheckedChange={setRequireMobilePhone} />
                 <div>
                   <Label className="text-sm">Téléphone mobile (06 ou 07)</Label>
@@ -1146,7 +1150,7 @@ export const PipelinePage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 border rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 border rounded-lg px-2.5 py-2">
                 <Switch checked={requireEmployees} onCheckedChange={setRequireEmployees} />
                 <div>
                   <Label className="text-sm">Entreprise avec employés</Label>
@@ -1155,7 +1159,7 @@ export const PipelinePage: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <Label>Service offert</Label>
+                <Label className="text-xs md:text-sm">Service offert</Label>
                 <Select value={selectedService} onValueChange={setSelectedService}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Tous les services" />
