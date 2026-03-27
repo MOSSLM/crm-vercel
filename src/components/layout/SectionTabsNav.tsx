@@ -28,7 +28,7 @@ export function SectionTabsNav({ items }: SectionTabsNavProps) {
   };
 
   return (
-    <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <div className="border-t border-border/60 bg-background/90 supports-[backdrop-filter]:bg-background/70">
       <div className="relative flex items-center px-2 md:px-4">
         <Button
           variant="ghost"
@@ -42,7 +42,7 @@ export function SectionTabsNav({ items }: SectionTabsNavProps) {
 
         <div
           ref={containerRef}
-          className="no-scrollbar flex flex-1 items-center gap-1 overflow-x-auto py-2"
+          className="no-scrollbar flex flex-1 snap-x items-center gap-1 overflow-x-auto py-2"
         >
           {items.map((item) => {
             const active = item.activeMatch
@@ -53,7 +53,7 @@ export function SectionTabsNav({ items }: SectionTabsNavProps) {
               <Link
                 key={item.href}
                 href={item.href}
-                className={`sage-tab whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-all ${
+                className={`sage-tab snap-start whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-all ${
                   active
                     ? "active text-foreground shadow-sm"
                     : "bg-transparent text-muted-foreground hover:text-foreground"
