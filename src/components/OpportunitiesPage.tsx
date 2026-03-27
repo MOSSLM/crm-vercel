@@ -627,32 +627,32 @@ export const OpportunitiesPage: React.FC = () => {
       </div>
 
       {/* Métriques rapides */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
-        <Card>
-          <CardHeader className="pb-2">
+      <div className="grid gap-2 grid-cols-2 md:grid-cols-4 md:gap-6">
+        <Card className="min-h-[94px]">
+          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
             <CardTitle className="text-sm">Total opportunités</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-3 pb-3 md:pb-4">
             <div className="text-xl md:text-2xl font-bold">{opportunities.length}</div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className="min-h-[94px]">
+          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
             <CardTitle className="text-sm">Valeur totale</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-3 pb-3 md:pb-4">
             <div className="text-xl md:text-2xl font-bold text-green-600">
               {opportunities.reduce((sum, opp) => sum + (opp.value || opp.montant || 0), 0).toLocaleString()}€
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className="min-h-[94px]">
+          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
             <CardTitle className="text-sm">Lead Magnets créés</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-3 pb-3 md:pb-4">
             <div className="text-xl md:text-2xl font-bold text-pink-600">
               {opportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length}
             </div>
@@ -662,11 +662,11 @@ export const OpportunitiesPage: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className="min-h-[94px]">
+          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
             <CardTitle className="text-sm">Priorité haute</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-3 pb-3 md:pb-4">
             <div className="text-xl md:text-2xl font-bold text-red-600">
               {opportunities.filter(opp => opp.priority === 'high' || opp.priorite === 'haute').length}
             </div>
@@ -675,19 +675,19 @@ export const OpportunitiesPage: React.FC = () => {
       </div>
 
       {/* Filtres et recherche */}
-      <div className="space-y-3 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
-        <div className="space-y-3 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-1">
+      <div className="space-y-2 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
+        <div className="space-y-2 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-1">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Rechercher une opportunité..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
+              className="pl-9 h-9"
             />
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-wrap gap-2">
             <PipelineCombobox
               pipelines={pipelines}
               selectedValue={pipelineFilter}
@@ -709,7 +709,7 @@ export const OpportunitiesPage: React.FC = () => {
             />
 
             <Select value={stageFilter} onValueChange={setStageFilter}>
-              <SelectTrigger className="w-40 md:w-48">
+              <SelectTrigger className="w-[46vw] max-w-[190px] md:w-48 h-9">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue placeholder="Étape" />
               </SelectTrigger>
@@ -724,7 +724,7 @@ export const OpportunitiesPage: React.FC = () => {
             </Select>
 
             <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-32 md:w-40">
+              <SelectTrigger className="w-[30vw] min-w-[120px] md:w-40 h-9">
                 <SelectValue placeholder="Priorité" />
               </SelectTrigger>
               <SelectContent>
@@ -737,7 +737,7 @@ export const OpportunitiesPage: React.FC = () => {
 
 
             <Select value={flagFilter} onValueChange={setFlagFilter}>
-              <SelectTrigger className="w-40 md:w-56">
+              <SelectTrigger className="w-[46vw] max-w-[220px] md:w-56 h-9">
                 <SelectValue placeholder="Flags" />
               </SelectTrigger>
               <SelectContent>
@@ -752,6 +752,7 @@ export const OpportunitiesPage: React.FC = () => {
               type="button"
               variant={sortByPipeline ? 'default' : 'outline'}
               onClick={() => setSortByPipeline((prev) => !prev)}
+              size="sm"
             >
               Trier par pipeline
             </Button>

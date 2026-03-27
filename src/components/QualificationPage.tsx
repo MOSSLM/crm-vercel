@@ -373,7 +373,7 @@ export const QualificationPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div>
         <h1>Qualification des Entreprises</h1>
         <p className="text-muted-foreground">
@@ -410,21 +410,21 @@ export const QualificationPage: React.FC = () => {
       </Card>
 
       {/* Filtres et recherche - optimisés pour mobile */}
-      <div className="space-y-4 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
-        <div className="space-y-3 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-1">
+      <div className="space-y-2 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
+        <div className="space-y-2 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-1">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Rechercher une entreprise..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9"
+              className="pl-9 h-9"
             />
           </div>
 
           <div className="grid grid-cols-1 gap-2 md:flex md:gap-4 md:items-center">
             <details className="relative">
-              <summary className="list-none cursor-pointer select-none px-3 py-2 border border-border rounded-md bg-card text-card-foreground text-sm flex items-center justify-between gap-3 min-w-[200px]">
+              <summary className="list-none cursor-pointer select-none px-2.5 py-2 border border-border rounded-md bg-card text-card-foreground text-sm flex items-center justify-between gap-3 min-w-[180px]">
                 <span>{sourceFilterLabel}</span>
                 <ChevronDown className="h-4 w-4 text-muted-foreground" />
               </summary>
@@ -442,8 +442,8 @@ export const QualificationPage: React.FC = () => {
               </div>
             </details>
 
-            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-md bg-card">
-              <Label htmlFor="url-filter" className="text-sm">Avec URL uniquement</Label>
+            <div className="flex items-center gap-2 px-2.5 py-2 border border-border rounded-md bg-card">
+              <Label htmlFor="url-filter" className="text-xs md:text-sm">Avec URL uniquement</Label>
               <Switch
                 id="url-filter"
                 checked={showOnlyWithUrl}
@@ -451,8 +451,8 @@ export const QualificationPage: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-md bg-card">
-              <Label htmlFor="qualification-toggle" className="text-sm">
+            <div className="flex items-center gap-2 px-2.5 py-2 border border-border rounded-md bg-card">
+              <Label htmlFor="qualification-toggle" className="text-xs md:text-sm">
                 {showQualified ? 'Qualifiées' : 'Non qualifiées'}
               </Label>
               <Switch
@@ -463,14 +463,14 @@ export const QualificationPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-xs md:text-sm">
             <Switch
               checked={showDuplicates}
               onCheckedChange={setShowDuplicates}
             />
             <Label>Afficher les duplicats</Label>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-xs md:text-sm">
             <Switch
               checked={showHiddenCompanies}
               onCheckedChange={setShowHiddenCompanies}
