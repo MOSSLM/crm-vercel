@@ -22,7 +22,7 @@ type LeadMagnetDetail = {
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
   notes: string | null;
-  opportunites?: { id: string; name: string | null; priorite: string | null; entreprises?: { name: string | null }[] }[];
+  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprises?: { name: string | null }[] }[];
   production_templates?: { id: string; nom: string | null }[];
 };
 
@@ -33,6 +33,8 @@ type Todo = {
   is_done: boolean;
   position: number;
 };
+
+type TemplateRow = { id: string; nom: string | null };
 
 const statusLabels: Record<LeadMagnetStatus, string> = {
   a_faire: "À faire",
@@ -47,15 +49,48 @@ export function ProductionLeadMagnetDetailPage() {
 
   const [detail, setDetail] = useState<LeadMagnetDetail | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
+  const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [newTodoTitle, setNewTodoTitle] = useState("");
 
+  const seedTodosForTemplate = useCallback(async (templateId: string) => {
+    const { data: templateChecklistRows } = await supabase
+      .from("production_template_checklist_items")
+      .select("id,titre,description,position")
+      .eq("template_id", templateId)
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    const templateChecklistItems = templateChecklistRows ?? [];
+    if (templateChecklistItems.length === 0) {
+      setTodos([]);
+      return;
+    }
+
+    const { data: insertedTodos } = await supabase
+      .from("production_lead_magnet_todos")
+      .insert(
+        templateChecklistItems.map((item) => ({
+          lead_magnet_id: leadMagnetId,
+          template_checklist_item_id: item.id,
+          titre: item.titre,
+          description: item.description,
+          position: item.position,
+        }))
+      )
+      .select("id,titre,description,is_done,position")
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    setTodos((insertedTodos ?? []) as Todo[]);
+  }, [leadMagnetId]);
+
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: lmRow }, { data: todoRows }] = await Promise.all([
+    const [{ data: lmRow }, { data: todoRows }, { data: templateRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,entreprises(name)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
@@ -64,44 +99,28 @@ export function ProductionLeadMagnetDetailPage() {
         .eq("lead_magnet_id", leadMagnetId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true }),
+      supabase.from("production_templates").select("id,nom").order("nom", { ascending: true }),
     ]);
 
     const detailRow = (lmRow ?? null) as LeadMagnetDetail | null;
     let leadMagnetTodos = (todoRows ?? []) as Todo[];
 
     if (detailRow && leadMagnetTodos.length === 0) {
-      const { data: templateChecklistRows } = await supabase
-        .from("production_template_checklist_items")
-        .select("id,titre,description,position")
-        .eq("template_id", detailRow.template_id)
+      await seedTodosForTemplate(detailRow.template_id);
+      const { data: seededRows } = await supabase
+        .from("production_lead_magnet_todos")
+        .select("id,titre,description,is_done,position")
+        .eq("lead_magnet_id", leadMagnetId)
         .order("position", { ascending: true })
         .order("created_at", { ascending: true });
-
-      const templateChecklistItems = templateChecklistRows ?? [];
-      if (templateChecklistItems.length > 0) {
-        const { data: insertedTodos } = await supabase
-          .from("production_lead_magnet_todos")
-          .insert(
-            templateChecklistItems.map((item) => ({
-              lead_magnet_id: leadMagnetId,
-              template_checklist_item_id: item.id,
-              titre: item.titre,
-              description: item.description,
-              position: item.position,
-            }))
-          )
-          .select("id,titre,description,is_done,position")
-          .order("position", { ascending: true })
-          .order("created_at", { ascending: true });
-
-        leadMagnetTodos = (insertedTodos ?? []) as Todo[];
-      }
+      leadMagnetTodos = (seededRows ?? []) as Todo[];
     }
 
     setDetail(detailRow);
     setTodos(leadMagnetTodos);
+    setTemplates((templateRows ?? []) as TemplateRow[]);
     setLoading(false);
-  }, [leadMagnetId]);
+  }, [leadMagnetId, seedTodosForTemplate]);
 
   useEffect(() => {
     void load();
@@ -115,6 +134,34 @@ export function ProductionLeadMagnetDetailPage() {
   const saveHeader = async (updates: Partial<LeadMagnetDetail>) => {
     await supabase.from("production_lead_magnets").update(updates).eq("id", leadMagnetId);
     setDetail((prev) => (prev ? { ...prev, ...updates } : prev));
+  };
+
+  const setOpportunityLeadMagnetState = async (ready: boolean) => {
+    const opportunityId = detail?.opportunites?.[0]?.id;
+    if (!opportunityId) return;
+    await supabase.from("opportunites").update({ lead_magnet: ready }).eq("id", opportunityId);
+    setDetail((prev) => {
+      if (!prev || !prev.opportunites?.[0]) return prev;
+      const nextOpportunites = [...prev.opportunites];
+      nextOpportunites[0] = { ...nextOpportunites[0], lead_magnet: ready };
+      return { ...prev, opportunites: nextOpportunites };
+    });
+  };
+
+  const applyTemplate = async (templateId: string) => {
+    if (!detail || templateId === detail.template_id) return;
+    await supabase.from("production_lead_magnets").update({ template_id: templateId }).eq("id", leadMagnetId);
+    await supabase.from("production_lead_magnet_todos").delete().eq("lead_magnet_id", leadMagnetId);
+    await seedTodosForTemplate(templateId);
+    const template = templates.find((item) => item.id === templateId);
+    setDetail((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        template_id: templateId,
+        production_templates: [{ id: templateId, nom: template?.nom || null }],
+      };
+    });
   };
 
   const toggleTodo = async (todo: Todo, checked: boolean) => {
@@ -165,6 +212,7 @@ export function ProductionLeadMagnetDetailPage() {
 
   const opp = detail.opportunites?.[0];
   const template = detail.production_templates?.[0];
+  const isLeadMagnetReady = detail.statut === "pret" || Boolean(opp?.lead_magnet);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -188,6 +236,7 @@ export function ProductionLeadMagnetDetailPage() {
               <Select value={detail.statut} onValueChange={(value: LeadMagnetStatus) => {
                 setDetail((p) => (p ? { ...p, statut: value } : p));
                 void saveHeader({ statut: value });
+                void setOpportunityLeadMagnetState(value === "pret");
               }}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -196,6 +245,34 @@ export function ProductionLeadMagnetDetailPage() {
                   <SelectItem value="pret">Prêt</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+
+          <div className="grid md:grid-cols-[1fr,auto] gap-2">
+            <div className="space-y-1">
+              <Label>Template</Label>
+              <Select value={detail.template_id} onValueChange={(value) => void applyTemplate(value)}>
+                <SelectTrigger><SelectValue placeholder="Choisir un template" /></SelectTrigger>
+                <SelectContent>
+                  {templates.map((templateOption) => (
+                    <SelectItem key={templateOption.id} value={templateOption.id}>{templateOption.nom || "Template"}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 h-10">
+                <Checkbox
+                  checked={isLeadMagnetReady}
+                  onCheckedChange={(checked) => {
+                    const ready = checked === true;
+                    setDetail((prev) => (prev ? { ...prev, statut: ready ? "pret" : "en_cours" } : prev));
+                    void saveHeader({ statut: ready ? "pret" : "en_cours" });
+                    void setOpportunityLeadMagnetState(ready);
+                  }}
+                />
+                Lead magnet fini
+              </label>
             </div>
           </div>
 
@@ -241,17 +318,15 @@ export function ProductionLeadMagnetDetailPage() {
             {todos.map((todo) => (
               <div key={todo.id} className="grid md:grid-cols-[auto,1fr,1fr,auto] gap-2 items-center border rounded-md p-2">
                 <Checkbox checked={todo.is_done} onCheckedChange={(checked) => void toggleTodo(todo, !!checked)} />
-                <Input value={todo.titre} onChange={(e) => updateTodo(todo.id, { titre: e.target.value })} />
-                <Input
-                  placeholder="Description"
-                  value={todo.description ?? ""}
-                  onChange={(e) => updateTodo(todo.id, { description: e.target.value || null })}
-                />
-                <Button variant="ghost" size="icon" onClick={() => deleteTodo(todo.id)}>
-                  <Trash2 className="h-4 w-4 text-red-600" />
-                </Button>
+                <Input value={todo.titre} onChange={(e) => void updateTodo(todo.id, { titre: e.target.value })} />
+                <Input value={todo.description || ""} placeholder="Description" onChange={(e) => void updateTodo(todo.id, { description: e.target.value || null })} />
+                <Button variant="ghost" size="icon" onClick={() => void deleteTodo(todo.id)}><Trash2 className="h-4 w-4" /></Button>
               </div>
             ))}
+
+            {todos.length === 0 && (
+              <p className="text-sm text-muted-foreground">Aucune todo pour ce lead magnet.</p>
+            )}
           </div>
         </CardContent>
       </Card>

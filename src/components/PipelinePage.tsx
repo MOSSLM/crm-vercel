@@ -108,6 +108,7 @@ interface StageConfiguration {
 
 type SortOption = 'recent' | 'price-asc' | 'price-desc' | 'priority-high' | 'priority-low';
 type NormalizedPriority = 'haute' | 'moyenne' | 'basse';
+type LeadMagnetFilter = 'all' | 'ready' | 'not_ready';
 
 interface OpportunityCardProps {
   opportunity: Opportunity;
@@ -517,6 +518,7 @@ export const PipelinePage: React.FC = () => {
   const [sortOption, setSortOption] = useState<SortOption>('recent');
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
   const [selectedService, setSelectedService] = useState('all');
+  const [leadMagnetFilter, setLeadMagnetFilter] = useState<LeadMagnetFilter>('all');
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
   const [newPipelineName, setNewPipelineName] = useState('');
@@ -624,6 +626,10 @@ export const PipelinePage: React.FC = () => {
       const matchesFlags = selectedFlags.length === 0 || selectedFlags.some((flag) => opportunityFlags.includes(flag));
       const companyServiceTags = normalizeServiceTags(company?.service_tags, company?.premiers_tags);
       const matchesService = selectedService === 'all' || companyServiceTags.includes(selectedService);
+      const hasLeadMagnetReady = Boolean(opportunity.lead_magnet || opportunity.leadMagnet);
+      const matchesLeadMagnet =
+        leadMagnetFilter === 'all' ||
+        (leadMagnetFilter === 'ready' ? hasLeadMagnetReady : !hasLeadMagnetReady);
 
       const matchesSearch =
         !normalizedSearch ||
@@ -640,9 +646,9 @@ export const PipelinePage: React.FC = () => {
           .filter(Boolean)
           .some(value => value!.toString().toLowerCase().includes(normalizedSearch));
 
-      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesService && matchesSearch;
+      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesService && matchesLeadMagnet && matchesSearch;
     });
-  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId]);
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId, leadMagnetFilter]);
 
   const sortedOpportunities = React.useMemo(() => {
     const priorityOrderHighFirst: Record<string, number> = {
@@ -704,6 +710,7 @@ export const PipelinePage: React.FC = () => {
     setSortOption('recent');
     setSelectedFlags([]);
     setSelectedService('all');
+    setLeadMagnetFilter('all');
   };
 
   const selectedCompany = selectedOpportunity
@@ -1174,10 +1181,25 @@ export const PipelinePage: React.FC = () => {
                   </SelectContent>
                 </Select>
               </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs md:text-sm">Lead magnet</Label>
+                <Select value={leadMagnetFilter} onValueChange={(value) => setLeadMagnetFilter(value as LeadMagnetFilter)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Tous" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    <SelectItem value="ready">Lead magnet prêt</SelectItem>
+                    <SelectItem value="not_ready">Lead magnet non prêt</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
             </div>
 
             <div className="flex flex-wrap gap-3 justify-end">
-              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || selectedService !== 'all' || sortOption !== 'recent') && (
+              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || selectedService !== 'all' || leadMagnetFilter !== 'all' || sortOption !== 'recent') && (
                 <Badge variant="outline" className="h-7 px-3 text-xs">
                   {[
                     searchTerm ? 'Recherche active' : null,
@@ -1188,6 +1210,7 @@ export const PipelinePage: React.FC = () => {
                     requireMobilePhone ? 'Téléphone mobile' : null,
                     requireEmployees ? 'Avec employés' : null,
                     selectedService !== 'all' ? `Service: ${selectedService}` : null,
+                    leadMagnetFilter !== 'all' ? (leadMagnetFilter === 'ready' ? 'LM prêts' : 'LM non prêts') : null,
                     sortOption !== 'recent' ? 'Tri personnalisé' : null,
                   ]
                     .filter(Boolean)
