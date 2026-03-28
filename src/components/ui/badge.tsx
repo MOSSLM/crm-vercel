@@ -9,7 +9,7 @@ const badgeVariants = cva("", {
   defaultVariants: { variant: "default" },
 });
 
-function Badge({ className, variant = "default", asChild = false, ...props }: React.ComponentProps<"span"> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+function Badge({ className, variant = "default", asChild = false, ...props }: React.ComponentPropsWithoutRef<"span"> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
   if (asChild) {
     const Comp = Slot;
     return <Comp className={cn(className)} {...props} />;
