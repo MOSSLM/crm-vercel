@@ -538,6 +538,10 @@ export const PipelinePage: React.FC = () => {
         : pipelineStages.filter((stage) => stage.pipeline_id === selectedPipelineId),
     [pipelineStages, selectedPipelineId]
   );
+  const stageIdsForSelectedPipeline = React.useMemo(
+    () => new Set(stagesForPipeline.map((stage) => stage.id)),
+    [stagesForPipeline]
+  );
 
   const companiesById = React.useMemo(() => {
     const map = new Map<number, (typeof companies)[number]>();
@@ -606,8 +610,13 @@ export const PipelinePage: React.FC = () => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
     return opportunities.filter(opportunity => {
-      if (selectedPipelineId !== 'all' && opportunity.pipeline_id !== selectedPipelineId) {
-        return false;
+      if (selectedPipelineId !== 'all') {
+        const matchesPipelineId = opportunity.pipeline_id === selectedPipelineId;
+        const matchesStagePipeline =
+          typeof opportunity.stage_id === 'number' && stageIdsForSelectedPipeline.has(opportunity.stage_id);
+        if (!matchesPipelineId && !matchesStagePipeline) {
+          return false;
+        }
       }
       const company = opportunity.entreprise_id ? companiesById.get(opportunity.entreprise_id) : undefined;
       const normalizedPriority = getNormalizedPriority(opportunity);
@@ -648,7 +657,7 @@ export const PipelinePage: React.FC = () => {
 
       return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesService && matchesLeadMagnet && matchesSearch;
     });
-  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId, leadMagnetFilter]);
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId, leadMagnetFilter, stageIdsForSelectedPipeline]);
 
   const sortedOpportunities = React.useMemo(() => {
     const priorityOrderHighFirst: Record<string, number> = {

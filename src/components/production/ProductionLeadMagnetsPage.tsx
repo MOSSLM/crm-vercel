@@ -51,6 +51,23 @@ type OpportunityRow = {
 type TemplateRow = { id: string; nom: string | null };
 type PipelineRow = { id: string; nom: string | null };
 
+const OPPORTUNITY_FLAGS = [
+  { value: "site_merdique", label: "Site merdique / inutilisable" },
+  { value: "site_tres_ancien", label: "Site très ancien" },
+  { value: "a_revoir_plus_tard", label: "À revoir plus tard" },
+] as const;
+
+const normalizeFlagValue = (flag: string) => flag.trim().toLowerCase().replace(/\s+/g, "_");
+const opportunityFlagByValue = new Map<string, (typeof OPPORTUNITY_FLAGS)[number]>(
+  OPPORTUNITY_FLAGS.map((flag) => [flag.value, flag] as const)
+);
+const opportunityFlagAliasToValue = new Map<string, string>(
+  OPPORTUNITY_FLAGS.flatMap((flag) => [
+    [normalizeFlagValue(flag.value), flag.value],
+    [normalizeFlagValue(flag.label), flag.value],
+  ])
+);
+
 const statusLabels: Record<LeadMagnetStatus, string> = {
   a_faire: "À faire",
   en_cours: "En cours",
@@ -61,6 +78,13 @@ const parseFlags = (flags?: string[] | null) =>
   Array.isArray(flags)
     ? flags.filter((flag): flag is string => typeof flag === "string" && flag.trim().length > 0)
     : [];
+
+const canonicalizeOpportunityFlag = (flag: string) => {
+  const normalized = normalizeFlagValue(flag);
+  return opportunityFlagAliasToValue.get(normalized) || normalized;
+};
+
+const getFlagLabel = (flag: string) => opportunityFlagByValue.get(flag)?.label || flag;
 
 export function ProductionLeadMagnetsPage() {
   const router = useRouter();
@@ -144,15 +168,15 @@ export function ProductionLeadMagnetsPage() {
     [opportunities, usedOpportunityIds]
   );
 
-  const knownFlags = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          leadMagnets.flatMap((row) => parseFlags(row.opportunites?.[0]?.flags))
-        )
-      ).sort((a, b) => a.localeCompare(b, "fr")),
-    [leadMagnets]
-  );
+  const knownFlags = useMemo(() => {
+    const discoveredFlags = leadMagnets.flatMap((row) =>
+      parseFlags(row.opportunites?.[0]?.flags).map(canonicalizeOpportunityFlag)
+    );
+    const allFlags = Array.from(
+      new Set([...OPPORTUNITY_FLAGS.map((flag) => flag.value), ...discoveredFlags])
+    );
+    return allFlags.sort((a, b) => getFlagLabel(a).localeCompare(getFlagLabel(b), "fr"));
+  }, [leadMagnets]);
 
   const visibleRows = useMemo(() => {
     let rows = leadMagnets;
@@ -163,7 +187,11 @@ export function ProductionLeadMagnetsPage() {
       rows = rows.filter((row) => row.opportunites?.[0]?.pipeline_id === pipelineFilter);
     }
     if (flagFilter !== "all") {
-      rows = rows.filter((row) => parseFlags(row.opportunites?.[0]?.flags).includes(flagFilter));
+      rows = rows.filter((row) =>
+        parseFlags(row.opportunites?.[0]?.flags).some(
+          (flag) => canonicalizeOpportunityFlag(flag) === flagFilter
+        )
+      );
     }
     if (readyFilter !== "all") {
       rows = rows.filter((row) => {
@@ -284,7 +312,7 @@ export function ProductionLeadMagnetsPage() {
               <SelectContent>
                 <SelectItem value="all">Tous flags</SelectItem>
                 {knownFlags.map((flag) => (
-                  <SelectItem key={flag} value={flag}>{flag}</SelectItem>
+                  <SelectItem key={flag} value={flag}>{getFlagLabel(flag)}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -334,7 +362,9 @@ export function ProductionLeadMagnetsPage() {
                   <p className="text-xs text-muted-foreground">Priorité: {opp?.priorite || "moyenne"} • Montant: {Number(opp?.montant ?? 0).toLocaleString()}€</p>
                   <div className="flex flex-wrap gap-1">
                     {flags.length > 0 ? flags.map((flag) => (
-                      <Badge key={flag} variant="outline" className="text-[10px]">{flag}</Badge>
+                      <Badge key={flag} variant="outline" className="text-[10px]">
+                        {getFlagLabel(canonicalizeOpportunityFlag(flag))}
+                      </Badge>
                     )) : <span className="text-xs text-muted-foreground">Aucun flag</span>}
                   </div>
                   {row.lien_livraison ? (
