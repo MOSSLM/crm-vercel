@@ -22,7 +22,17 @@ type LeadMagnetRow = {
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
   created_at: string;
-  opportunites?: { id: string; name: string | null; priorite: string | null; montant: number | null; entreprises?: { name: string | null }[] }[];
+  opportunites?: {
+    id: string;
+    name: string | null;
+    priorite: string | null;
+    montant: number | null;
+    flags: string[] | null;
+    pipeline_id: string;
+    lead_magnet: boolean;
+    entreprises?: { name: string | null }[];
+    pipelines?: { nom: string | null }[];
+  }[];
   production_templates?: { nom: string | null }[];
 };
 
@@ -31,10 +41,15 @@ type OpportunityRow = {
   name: string | null;
   priorite: string | null;
   montant: number | null;
+  flags: string[] | null;
+  pipeline_id: string;
+  lead_magnet: boolean;
   entreprises?: { name: string | null }[];
+  pipelines?: { nom: string | null }[];
 };
 
 type TemplateRow = { id: string; nom: string | null };
+type PipelineRow = { id: string; nom: string | null };
 
 const statusLabels: Record<LeadMagnetStatus, string> = {
   a_faire: "À faire",
@@ -42,36 +57,81 @@ const statusLabels: Record<LeadMagnetStatus, string> = {
   pret: "Prêt",
 };
 
+const parseFlags = (flags?: string[] | null) =>
+  Array.isArray(flags)
+    ? flags.filter((flag): flag is string => typeof flag === "string" && flag.trim().length > 0)
+    : [];
+
 export function ProductionLeadMagnetsPage() {
   const router = useRouter();
   const [leadMagnets, setLeadMagnets] = useState<LeadMagnetRow[]>([]);
   const [opportunities, setOpportunities] = useState<OpportunityRow[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
+  const [pipelines, setPipelines] = useState<PipelineRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | LeadMagnetStatus>("all");
-  const [sortBy, setSortBy] = useState<"created_at" | "priorite" | "montant">("created_at");
+  const [pipelineFilter, setPipelineFilter] = useState<string>("all");
+  const [flagFilter, setFlagFilter] = useState<string>("all");
+  const [readyFilter, setReadyFilter] = useState<"all" | "ready" | "not_ready">("all");
+  const [sortBy, setSortBy] = useState<"created_at" | "priorite" | "montant" | "pipeline">("created_at");
   const [form, setForm] = useState({ opportunite_id: "", template_id: "", nom: "" });
+
+  const ensureLeadMagnetsForEveryOpportunity = useCallback(async (oppRows: OpportunityRow[], templateRows: TemplateRow[]) => {
+    if (oppRows.length === 0 || templateRows.length === 0) return;
+
+    const oppIds = oppRows.map((opp) => opp.id);
+    const { data: linkedRows } = await supabase
+      .from("production_lead_magnets")
+      .select("opportunite_id")
+      .in("opportunite_id", oppIds);
+
+    const linkedIds = new Set((linkedRows ?? []).map((row) => row.opportunite_id as string));
+    const defaultTemplateId = templateRows[0]?.id;
+    if (!defaultTemplateId) return;
+
+    const missing = oppRows.filter((opp) => !linkedIds.has(opp.id));
+    if (missing.length === 0) return;
+
+    await supabase.from("production_lead_magnets").insert(
+      missing.map((opp) => ({
+        opportunite_id: opp.id,
+        template_id: defaultTemplateId,
+        nom: opp.name || opp.entreprises?.[0]?.name || null,
+        statut: opp.lead_magnet ? "pret" : "a_faire",
+      }))
+    );
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: lmRows }, { data: oppRows }, { data: templateRows }] = await Promise.all([
-      supabase
-        .from("production_lead_magnets")
-        .select("id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,name,priorite,montant,entreprises(name)),production_templates(nom)")
-        .order("created_at", { ascending: false }),
+    const [{ data: templateRows }, { data: oppRows }, { data: pipelineRows }] = await Promise.all([
+      supabase.from("production_templates").select("id,nom").order("nom"),
       supabase
         .from("opportunites")
-        .select("id,name,priorite,montant,entreprises(name)")
+        .select("id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
         .order("created_at", { ascending: false }),
-      supabase.from("production_templates").select("id,nom").order("nom"),
+      supabase.from("pipelines").select("id,nom").order("ordre", { ascending: true }),
     ]);
 
+    const typedTemplates = (templateRows ?? []) as TemplateRow[];
+    const typedOpportunities = (oppRows ?? []) as OpportunityRow[];
+
+    await ensureLeadMagnetsForEveryOpportunity(typedOpportunities, typedTemplates);
+
+    const { data: lmRows } = await supabase
+      .from("production_lead_magnets")
+      .select(
+        "id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)),production_templates(nom)"
+      )
+      .order("created_at", { ascending: false });
+
     setLeadMagnets((lmRows ?? []) as LeadMagnetRow[]);
-    setOpportunities((oppRows ?? []) as OpportunityRow[]);
-    setTemplates((templateRows ?? []) as TemplateRow[]);
+    setOpportunities(typedOpportunities);
+    setTemplates(typedTemplates);
+    setPipelines((pipelineRows ?? []) as PipelineRow[]);
     setLoading(false);
-  }, []);
+  }, [ensureLeadMagnetsForEveryOpportunity]);
 
   useEffect(() => {
     void load();
@@ -84,10 +144,32 @@ export function ProductionLeadMagnetsPage() {
     [opportunities, usedOpportunityIds]
   );
 
+  const knownFlags = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          leadMagnets.flatMap((row) => parseFlags(row.opportunites?.[0]?.flags))
+        )
+      ).sort((a, b) => a.localeCompare(b, "fr")),
+    [leadMagnets]
+  );
+
   const visibleRows = useMemo(() => {
     let rows = leadMagnets;
     if (statusFilter !== "all") {
       rows = rows.filter((row) => row.statut === statusFilter);
+    }
+    if (pipelineFilter !== "all") {
+      rows = rows.filter((row) => row.opportunites?.[0]?.pipeline_id === pipelineFilter);
+    }
+    if (flagFilter !== "all") {
+      rows = rows.filter((row) => parseFlags(row.opportunites?.[0]?.flags).includes(flagFilter));
+    }
+    if (readyFilter !== "all") {
+      rows = rows.filter((row) => {
+        const isReady = row.statut === "pret" || Boolean(row.opportunites?.[0]?.lead_magnet);
+        return readyFilter === "ready" ? isReady : !isReady;
+      });
     }
 
     const priorityScore = (p?: string | null) => (p === "haute" ? 0 : p === "moyenne" ? 1 : 2);
@@ -99,9 +181,14 @@ export function ProductionLeadMagnetsPage() {
       if (sortBy === "montant") {
         return Number(b.opportunites?.[0]?.montant ?? 0) - Number(a.opportunites?.[0]?.montant ?? 0);
       }
+      if (sortBy === "pipeline") {
+        const pipelineA = a.opportunites?.[0]?.pipelines?.[0]?.nom || "";
+        const pipelineB = b.opportunites?.[0]?.pipelines?.[0]?.nom || "";
+        return pipelineA.localeCompare(pipelineB, "fr");
+      }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [leadMagnets, sortBy, statusFilter]);
+  }, [flagFilter, leadMagnets, pipelineFilter, readyFilter, sortBy, statusFilter]);
 
   const createLeadMagnet = async () => {
     if (!form.opportunite_id || !form.template_id) return;
@@ -170,8 +257,8 @@ export function ProductionLeadMagnetsPage() {
             </DialogContent>
           </Dialog>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="flex gap-2">
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
             <Select value={statusFilter} onValueChange={(value: "all" | LeadMagnetStatus) => setStatusFilter(value)}>
               <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -182,12 +269,42 @@ export function ProductionLeadMagnetsPage() {
               </SelectContent>
             </Select>
 
-            <Select value={sortBy} onValueChange={(value: "created_at" | "priorite" | "montant") => setSortBy(value)}>
+            <Select value={pipelineFilter} onValueChange={setPipelineFilter}>
+              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Pipeline" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous pipelines</SelectItem>
+                {pipelines.map((pipeline) => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>{pipeline.nom || "Pipeline"}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={flagFilter} onValueChange={setFlagFilter}>
+              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Flag opportunité" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous flags</SelectItem>
+                {knownFlags.map((flag) => (
+                  <SelectItem key={flag} value={flag}>{flag}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={readyFilter} onValueChange={(value: "all" | "ready" | "not_ready") => setReadyFilter(value)}>
+              <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">LM prêts + non prêts</SelectItem>
+                <SelectItem value="ready">Lead magnet prêt</SelectItem>
+                <SelectItem value="not_ready">Lead magnet non prêt</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={sortBy} onValueChange={(value: "created_at" | "priorite" | "montant" | "pipeline") => setSortBy(value)}>
               <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="created_at">Trier: plus récent</SelectItem>
                 <SelectItem value="priorite">Trier: priorité opportunité</SelectItem>
                 <SelectItem value="montant">Trier: montant opportunité</SelectItem>
+                <SelectItem value="pipeline">Trier: pipeline</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -202,6 +319,8 @@ export function ProductionLeadMagnetsPage() {
           {visibleRows.map((row) => {
             const opp = row.opportunites?.[0];
             const templateName = row.production_templates?.[0]?.nom;
+            const pipelineName = opp?.pipelines?.[0]?.nom;
+            const flags = parseFlags(opp?.flags);
             return (
               <Card key={row.id} className="cursor-pointer hover:border-primary" onClick={() => router.push(`/production/lead-magnets/${row.id}`)}>
                 <CardHeader>
@@ -211,7 +330,13 @@ export function ProductionLeadMagnetsPage() {
                 <CardContent className="space-y-2">
                   <Badge variant={row.statut === "pret" ? "default" : "secondary"}>{statusLabels[row.statut]}</Badge>
                   <p className="text-sm text-muted-foreground">Opportunité: {opp?.name || opp?.entreprises?.[0]?.name || row.opportunite_id}</p>
+                  <p className="text-xs text-muted-foreground">Pipeline: {pipelineName || "N/A"}</p>
                   <p className="text-xs text-muted-foreground">Priorité: {opp?.priorite || "moyenne"} • Montant: {Number(opp?.montant ?? 0).toLocaleString()}€</p>
+                  <div className="flex flex-wrap gap-1">
+                    {flags.length > 0 ? flags.map((flag) => (
+                      <Badge key={flag} variant="outline" className="text-[10px]">{flag}</Badge>
+                    )) : <span className="text-xs text-muted-foreground">Aucun flag</span>}
+                  </div>
                   {row.lien_livraison ? (
                     <p className="text-xs text-emerald-700 truncate">Lien: {row.lien_livraison}</p>
                   ) : (
