@@ -2,7 +2,7 @@ import * as React from "react";
 import { TextInput } from "@mantine/core";
 import { cn } from "./utils";
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+function Input({ className, type, size: _size, ...props }: React.ComponentProps<"input">) {
   return (
     <TextInput
       type={type}
