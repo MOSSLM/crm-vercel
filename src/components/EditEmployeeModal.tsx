@@ -1,19 +1,36 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
-import { Input } from './ui/input';
-import { Button } from './ui/button';
-import { Label } from './ui/label';
-import { Textarea } from './ui/textarea';
-import { Checkbox } from './ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Separator } from './ui/separator';
+import React, { useEffect, useState } from "react";
+import {
+  Button,
+  Card,
+  Checkbox,
+  Divider,
+  Group,
+  Modal,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  Textarea,
+  ThemeIcon,
+} from "@mantine/core";
 import { toast } from "sonner";
-import { User, Loader2, Mail, Phone, Briefcase, Globe, Users, MessageSquare, Plus, Save } from 'lucide-react';
+import {
+  User,
+  Loader2,
+  Mail,
+  Phone,
+  Briefcase,
+  Globe,
+  Users,
+  MessageSquare,
+  Plus,
+  Save,
+} from "lucide-react";
+import logger from "../utils/logger";
 
-import logger from '../utils/logger';
 interface Employee {
   id: string;
   first_name?: string;
@@ -26,7 +43,6 @@ interface Employee {
   preferred_channel?: string;
   notes?: string;
   entreprise_id: number;
-  // Legacy compatibility fields
   poste?: string;
   linkedin?: string;
 }
@@ -39,55 +55,53 @@ interface EditEmployeeModalProps {
   onEmployeeUpdated: () => void;
 }
 
+const defaultFormData = {
+  first_name: "",
+  last_name: "",
+  email: "",
+  tel: "",
+  role_title: "",
+  linkedin_url: "",
+  is_decision_maker: false,
+  preferred_channel: "email",
+  notes: "",
+};
+
 export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
   open,
   onOpenChange,
   employee,
   companyName,
-  onEmployeeUpdated
+  onEmployeeUpdated,
 }) => {
-  const [formData, setFormData] = useState({
-    first_name: '',
-    last_name: '',
-    email: '',
-    tel: '',
-    role_title: '',
-    linkedin_url: '',
-    is_decision_maker: false,
-    preferred_channel: 'email',
-    notes: ''
-  });
+  const [formData, setFormData] = useState(defaultFormData);
   const [isLoading, setIsLoading] = useState(false);
-  const [newNote, setNewNote] = useState('');
+  const [newNote, setNewNote] = useState("");
   const [addingNote, setAddingNote] = useState(false);
 
-  // Initialize form with employee data when modal opens
   useEffect(() => {
     if (employee && open) {
       setFormData({
-        first_name: employee.first_name || '',
-        last_name: employee.last_name || '',
-        email: employee.email || '',
-        tel: employee.tel || '',
-        role_title: employee.role_title || employee.poste || '',
-        linkedin_url: employee.linkedin_url || employee.linkedin || '',
+        first_name: employee.first_name || "",
+        last_name: employee.last_name || "",
+        email: employee.email || "",
+        tel: employee.tel || "",
+        role_title: employee.role_title || employee.poste || "",
+        linkedin_url: employee.linkedin_url || employee.linkedin || "",
         is_decision_maker: employee.is_decision_maker || false,
-        preferred_channel: employee.preferred_channel || 'email',
-        notes: employee.notes || ''
+        preferred_channel: employee.preferred_channel || "email",
+        notes: employee.notes || "",
       });
     }
   }, [employee, open]);
 
   const handleInputChange = (field: string, value: string | boolean) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!employee) {
       toast.error("Erreur: contact non trouvé");
       return;
@@ -97,14 +111,13 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
       toast.error("Veuillez saisir au moins un prénom ou un nom");
       return;
     }
-    
+
     setIsLoading(true);
-    
+
     try {
-      // Import contactsApi here to avoid circular dependencies
-      const { contactsApi } = await import('../utils/api');
-      
-      const updatedEmployee = {
+      const { contactsApi } = await import("../utils/api");
+
+      await contactsApi.update(employee.id, {
         first_name: formData.first_name.trim() || undefined,
         last_name: formData.last_name.trim() || undefined,
         email: formData.email.trim() || undefined,
@@ -113,18 +126,14 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
         linkedin_url: formData.linkedin_url.trim() || undefined,
         is_decision_maker: formData.is_decision_maker,
         preferred_channel: formData.preferred_channel,
-        notes: formData.notes.trim() || undefined
-      };
-      
-      await contactsApi.update(employee.id, updatedEmployee);
-      
+        notes: formData.notes.trim() || undefined,
+      });
+
       toast.success("Contact modifié avec succès");
-      
       onOpenChange(false);
       onEmployeeUpdated();
-      
     } catch (error) {
-      logger.error('Error updating employee:', error);
+      logger.error("Error updating employee:", error);
       toast.error("Erreur lors de la modification du contact");
     } finally {
       setIsLoading(false);
@@ -136,295 +145,206 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
 
     setAddingNote(true);
     try {
-      const { contactsApi } = await import('../utils/api');
+      const { contactsApi } = await import("../utils/api");
       await contactsApi.addNote(employee.id, newNote.trim());
-      
-      // Update the notes field locally
-      const timestamp = new Date().toLocaleString('fr-FR');
+
+      const timestamp = new Date().toLocaleString("fr-FR");
       const noteWithTimestamp = `[${timestamp}] ${newNote}`;
-      const updatedNotes = formData.notes 
-        ? `${formData.notes}\n\n${noteWithTimestamp}`
-        : noteWithTimestamp;
-      
-      setFormData(prev => ({ ...prev, notes: updatedNotes }));
-      setNewNote('');
+      const updatedNotes = formData.notes ? `${formData.notes}\n\n${noteWithTimestamp}` : noteWithTimestamp;
+
+      setFormData((prev) => ({ ...prev, notes: updatedNotes }));
+      setNewNote("");
       toast.success("Note ajoutée avec succès");
     } catch (error) {
-      logger.error('Error adding note:', error);
+      logger.error("Error adding note:", error);
       toast.error("Erreur lors de l'ajout de la note");
     } finally {
       setAddingNote(false);
     }
   };
 
-  const handleCancel = () => {
-    onOpenChange(false);
-  };
-
   const getEmployeeDisplayName = () => {
-    if (!employee) return 'Contact';
-    
-    if (employee.first_name && employee.last_name) {
-      return `${employee.first_name} ${employee.last_name}`;
-    } else if (employee.last_name) {
-      return employee.last_name;
-    } else if (employee.first_name) {
-      return employee.first_name;
-    } else if (employee.email) {
-      return employee.email;
-    } else if (employee.tel) {
-      return employee.tel;
-    }
-    return 'Contact';
+    if (!employee) return "Contact";
+    if (employee.first_name && employee.last_name) return `${employee.first_name} ${employee.last_name}`;
+    if (employee.last_name) return employee.last_name;
+    if (employee.first_name) return employee.first_name;
+    if (employee.email) return employee.email;
+    if (employee.tel) return employee.tel;
+    return "Contact";
   };
 
-  if (!employee) {
-    return null;
-  }
+  if (!employee) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto" onPointerDownOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <User className="h-5 w-5" />
-            Détails du contact
-          </DialogTitle>
-          <DialogDescription>
-            Modifier les informations de {getEmployeeDisplayName()} chez {companyName}
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Contact Information Form */}
-          <div className="space-y-4">
-            <h3 className="font-medium">Informations du contact</h3>
-            
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="edit-first-name" className="flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    Prénom
-                  </Label>
-                  <Input
-                    id="edit-first-name"
-                    value={formData.first_name}
-                    onChange={(e) => handleInputChange('first_name', e.target.value)}
-                    placeholder="Prénom"
-                    disabled={isLoading}
-                    autoFocus
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="edit-last-name">Nom</Label>
-                  <Input
-                    id="edit-last-name"
-                    value={formData.last_name}
-                    onChange={(e) => handleInputChange('last_name', e.target.value)}
-                    placeholder="Nom"
-                    disabled={isLoading}
-                  />
-                </div>
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-email" className="flex items-center gap-2">
-                  <Mail className="h-4 w-4" />
-                  Email
-                </Label>
-                <Input
-                  id="edit-email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
-                  placeholder="email@exemple.com"
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-tel" className="flex items-center gap-2">
-                  <Phone className="h-4 w-4" />
-                  Téléphone
-                </Label>
-                <Input
-                  id="edit-tel"
-                  type="tel"
-                  value={formData.tel}
-                  onChange={(e) => handleInputChange('tel', e.target.value)}
-                  placeholder="+33 1 23 45 67 89"
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-role" className="flex items-center gap-2">
-                  <Briefcase className="h-4 w-4" />
-                  Poste
-                </Label>
-                <Input
-                  id="edit-role"
-                  value={formData.role_title}
-                  onChange={(e) => handleInputChange('role_title', e.target.value)}
-                  placeholder="Directeur, Commercial, etc."
-                  disabled={isLoading}
-                />
-              </div>
-              
-              <div className="space-y-2">
-                <Label htmlFor="edit-linkedin" className="flex items-center gap-2">
-                  <Globe className="h-4 w-4" />
-                  LinkedIn
-                </Label>
-                <Input
-                  id="edit-linkedin"
-                  type="url"
-                  value={formData.linkedin_url}
-                  onChange={(e) => handleInputChange('linkedin_url', e.target.value)}
-                  placeholder="https://linkedin.com/in/..."
-                  disabled={isLoading}
-                />
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="edit-decision-maker"
-                  checked={formData.is_decision_maker}
-                  onCheckedChange={(checked) => handleInputChange('is_decision_maker', checked as boolean)}
-                  disabled={isLoading}
-                />
-                <Label 
-                  htmlFor="edit-decision-maker" 
-                  className="flex items-center gap-2 cursor-pointer"
-                >
-                  <Users className="h-4 w-4" />
-                  Décideur
-                </Label>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="edit-channel" className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Canal préféré
-                </Label>
-                <Select 
-                  value={formData.preferred_channel} 
-                  onValueChange={(value) => handleInputChange('preferred_channel', value)}
-                  disabled={isLoading}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un canal" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="email">Email</SelectItem>
-                    <SelectItem value="phone">Téléphone</SelectItem>
-                    <SelectItem value="linkedin">LinkedIn</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                    <SelectItem value="sms">SMS</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="text-sm text-muted-foreground">
-                * Au moins un prénom ou un nom est requis
-              </div>
-            </form>
+    <Modal
+      opened={open}
+      onClose={() => onOpenChange(false)}
+      title={
+        <Group gap="xs">
+          <ThemeIcon variant="light" size="md">
+            <User size={16} />
+          </ThemeIcon>
+          <div>
+            <Text fw={600}>Détails du contact</Text>
+            <Text size="sm" c="dimmed">
+              Modifier {getEmployeeDisplayName()} chez {companyName}
+            </Text>
           </div>
+        </Group>
+      }
+      centered
+      size="xl"
+      radius="lg"
+      closeOnClickOutside={false}
+    >
+      <form onSubmit={handleSubmit}>
+        <Stack gap="md">
+          <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
+            <Stack gap="sm">
+              <Text fw={500}>Informations du contact</Text>
+              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <TextInput
+                  label="Prénom"
+                  value={formData.first_name}
+                  onChange={(event) => handleInputChange("first_name", event.currentTarget.value)}
+                  leftSection={<User size={16} />}
+                  disabled={isLoading}
+                />
+                <TextInput
+                  label="Nom"
+                  value={formData.last_name}
+                  onChange={(event) => handleInputChange("last_name", event.currentTarget.value)}
+                  disabled={isLoading}
+                />
+              </SimpleGrid>
 
-          {/* Notes Section */}
-          <div className="space-y-4">
-            <h3 className="font-medium flex items-center gap-2">
-              <MessageSquare className="h-5 w-5" />
-              Notes & Historique
-            </h3>
-            
-            {/* Current Notes Display */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Notes actuelles</CardTitle>
-              </CardHeader>
-              <CardContent>
+              <TextInput
+                label="Email"
+                type="email"
+                value={formData.email}
+                onChange={(event) => handleInputChange("email", event.currentTarget.value)}
+                leftSection={<Mail size={16} />}
+                disabled={isLoading}
+              />
+              <TextInput
+                label="Téléphone"
+                type="tel"
+                value={formData.tel}
+                onChange={(event) => handleInputChange("tel", event.currentTarget.value)}
+                leftSection={<Phone size={16} />}
+                disabled={isLoading}
+              />
+              <TextInput
+                label="Poste"
+                value={formData.role_title}
+                onChange={(event) => handleInputChange("role_title", event.currentTarget.value)}
+                leftSection={<Briefcase size={16} />}
+                disabled={isLoading}
+              />
+              <TextInput
+                label="LinkedIn"
+                type="url"
+                value={formData.linkedin_url}
+                onChange={(event) => handleInputChange("linkedin_url", event.currentTarget.value)}
+                leftSection={<Globe size={16} />}
+                disabled={isLoading}
+              />
+
+              <Checkbox
+                label={
+                  <Group gap={6}>
+                    <Users size={14} />
+                    <span>Décideur</span>
+                  </Group>
+                }
+                checked={formData.is_decision_maker}
+                onChange={(event) => handleInputChange("is_decision_maker", event.currentTarget.checked)}
+                disabled={isLoading}
+              />
+
+              <Select
+                label="Canal préféré"
+                leftSection={<MessageSquare size={16} />}
+                data={[
+                  { value: "email", label: "Email" },
+                  { value: "phone", label: "Téléphone" },
+                  { value: "linkedin", label: "LinkedIn" },
+                  { value: "whatsapp", label: "WhatsApp" },
+                  { value: "sms", label: "SMS" },
+                ]}
+                value={formData.preferred_channel}
+                onChange={(value) => handleInputChange("preferred_channel", value ?? "email")}
+                disabled={isLoading}
+              />
+
+              <Text size="sm" c="dimmed">
+                * Au moins un prénom ou un nom est requis
+              </Text>
+            </Stack>
+
+            <Stack gap="sm">
+              <Group gap="xs">
+                <MessageSquare size={16} />
+                <Text fw={500}>Notes & historique</Text>
+              </Group>
+
+              <Card withBorder radius="md" p="sm">
+                <Text size="sm" fw={500} mb="xs">
+                  Notes actuelles
+                </Text>
                 <Textarea
                   value={formData.notes}
-                  onChange={(e) => handleInputChange('notes', e.target.value)}
-                  placeholder="Notes sur ce contact..."
+                  onChange={(event) => handleInputChange("notes", event.currentTarget.value)}
+                  minRows={8}
                   disabled={isLoading}
-                  rows={8}
-                  className="resize-none"
                 />
-              </CardContent>
-            </Card>
+              </Card>
 
-            {/* Add New Note */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Ajouter une note</CardTitle>
-                <CardDescription>
-                  Ajouter une note avec horodatage automatique
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
+              <Card withBorder radius="md" p="sm">
+                <Text size="sm" fw={500}>
+                  Ajouter une note
+                </Text>
+                <Text size="xs" c="dimmed" mb="xs">
+                  Une date est ajoutée automatiquement.
+                </Text>
                 <Textarea
                   value={newNote}
-                  onChange={(e) => setNewNote(e.target.value)}
+                  onChange={(event) => setNewNote(event.currentTarget.value)}
                   placeholder="Nouvelle note..."
-                  rows={3}
+                  minRows={3}
                   disabled={addingNote}
                 />
-                <Button 
-                  onClick={handleAddNote} 
-                  disabled={!newNote.trim() || addingNote}
-                  className="w-full"
+                <Button
+                  mt="sm"
+                  fullWidth
                   size="sm"
+                  variant="light"
+                  leftSection={addingNote ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  onClick={handleAddNote}
+                  disabled={!newNote.trim() || addingNote}
                 >
-                  {addingNote ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      Ajout en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4 mr-2" />
-                      Ajouter la note
-                    </>
-                  )}
+                  {addingNote ? "Ajout en cours..." : "Ajouter la note"}
                 </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+              </Card>
+            </Stack>
+          </SimpleGrid>
 
-        <Separator />
-        
-        <DialogFooter>
-          <Button 
-            type="button" 
-            variant="outline" 
-            onClick={handleCancel}
-            disabled={isLoading}
-          >
-            Annuler
-          </Button>
-          <Button 
-            onClick={handleSubmit}
-            disabled={isLoading || (!formData.first_name.trim() && !formData.last_name.trim())}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Modification en cours...
-              </>
-            ) : (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                Modifier
-              </>
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <Divider />
+
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => onOpenChange(false)} disabled={isLoading}>
+              Annuler
+            </Button>
+            <Button
+              type="submit"
+              disabled={isLoading || (!formData.first_name.trim() && !formData.last_name.trim())}
+              leftSection={isLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            >
+              {isLoading ? "Modification..." : "Modifier"}
+            </Button>
+          </Group>
+        </Stack>
+      </form>
+    </Modal>
   );
 };
