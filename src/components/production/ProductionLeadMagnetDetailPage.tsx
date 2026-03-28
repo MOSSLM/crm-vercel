@@ -17,6 +17,7 @@ type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
 
 type LeadMagnetDetail = {
   id: string;
+  template_id: string;
   nom: string | null;
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
@@ -54,7 +55,7 @@ export function ProductionLeadMagnetDetailPage() {
     const [{ data: lmRow }, { data: todoRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,entreprises(name)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,entreprises(name)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
@@ -65,8 +66,40 @@ export function ProductionLeadMagnetDetailPage() {
         .order("created_at", { ascending: true }),
     ]);
 
-    setDetail((lmRow ?? null) as LeadMagnetDetail | null);
-    setTodos((todoRows ?? []) as Todo[]);
+    const detailRow = (lmRow ?? null) as LeadMagnetDetail | null;
+    let leadMagnetTodos = (todoRows ?? []) as Todo[];
+
+    if (detailRow && leadMagnetTodos.length === 0) {
+      const { data: templateChecklistRows } = await supabase
+        .from("production_template_checklist_items")
+        .select("id,titre,description,position")
+        .eq("template_id", detailRow.template_id)
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      const templateChecklistItems = templateChecklistRows ?? [];
+      if (templateChecklistItems.length > 0) {
+        const { data: insertedTodos } = await supabase
+          .from("production_lead_magnet_todos")
+          .insert(
+            templateChecklistItems.map((item) => ({
+              lead_magnet_id: leadMagnetId,
+              template_checklist_item_id: item.id,
+              titre: item.titre,
+              description: item.description,
+              position: item.position,
+            }))
+          )
+          .select("id,titre,description,is_done,position")
+          .order("position", { ascending: true })
+          .order("created_at", { ascending: true });
+
+        leadMagnetTodos = (insertedTodos ?? []) as Todo[];
+      }
+    }
+
+    setDetail(detailRow);
+    setTodos(leadMagnetTodos);
     setLoading(false);
   }, [leadMagnetId]);
 
