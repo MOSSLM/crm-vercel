@@ -1,19 +1,22 @@
-
 import React from "react";
+import "@mantine/core/styles.css";
 import { ThemeProvider } from "@/components/ThemeContext";
+import { MantineThemeProvider } from "@/components/MantineThemeProvider";
 import { AuthProvider } from "@/components/AuthContext";
 import { AppDataProvider } from "@/components/AppDataContext";
-import { Toaster } from "sonner"; // ✅ on garde un seul Toaster global ici
+import { Toaster } from "sonner";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <AppDataProvider>
-          {children}
-          <Toaster richColors closeButton />
-        </AppDataProvider>
-      </AuthProvider>
+      <MantineThemeProvider>
+        <AuthProvider>
+          <AppDataProvider>
+            {children}
+            <Toaster richColors closeButton />
+          </AppDataProvider>
+        </AuthProvider>
+      </MantineThemeProvider>
     </ThemeProvider>
   );
 }

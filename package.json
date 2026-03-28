@@ -63,11 +63,13 @@
     "react-hook-form": "^7.62.0",
     "react-resizable-panels": "^3.0.4",
     "recharts": "^3.1.2",
-    "shadcn-ui": "^0.9.5",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
-    "zod": "^4.0.17"
+    "zod": "^4.0.17",
+    "@mantine/core": "^7.17.8",
+    "@mantine/hooks": "^7.17.8",
+    "@emotion/react": "^11.14.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
