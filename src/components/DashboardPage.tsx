@@ -2,17 +2,20 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import {
+  Badge,
+  Button,
+  Card,
+  Group,
+  Progress,
+  Select,
+  Switch,
+  Tabs,
+  Text,
+  Tooltip
+} from '@mantine/core';
 import { useAppData } from './AppDataContext';
 import { journalApi, JournalKpiTotals } from '../utils/journalApi';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
-import { Button } from './ui/button';
-import { Switch } from './ui/switch';
-import { Label } from './ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Progress } from './ui/progress';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 import { 
   PieChart, 
   Pie, 
@@ -31,15 +34,12 @@ import {
 import {
   Building,
   Users,
-  Target,
   Phone,
   Calendar,
   DollarSign,
   TrendingUp,
-  TrendingDown,
   Award,
   Clock,
-  CheckCircle,
   AlertCircle,
   ArrowUp,
   ArrowDown,
@@ -52,9 +52,6 @@ import {
   Zap,
   Star,
   PhoneCall,
-  RefreshCw,
-  CalendarDays,
-  CalendarRange,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -87,6 +84,22 @@ const priorityBadgeClasses: Record<TaskPriority, string> = {
   moyenne: 'bg-orange-100 text-orange-700 border-orange-200',
   basse: 'bg-emerald-100 text-emerald-700 border-emerald-200'
 };
+
+const CardHeader: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
+  <div className={`p-6 ${className ?? ''}`}>{children}</div>
+);
+
+const CardContent: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
+  <div className={`px-6 pb-6 ${className ?? ''}`}>{children}</div>
+);
+
+const CardTitle: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
+  <h3 className={`text-lg font-semibold leading-none tracking-tight ${className ?? ''}`}>{children}</h3>
+);
+
+const CardDescription: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className }) => (
+  <p className={`text-sm text-muted-foreground ${className ?? ''}`}>{children}</p>
+);
 
 export const DashboardPage: React.FC = () => {
   const { 
@@ -380,27 +393,27 @@ export const DashboardPage: React.FC = () => {
       {/* Onglets principaux */}
       <Tabs
         value={viewMode}
-        onValueChange={(value) => setViewMode(value as ViewMode)}
+        onChange={(value) => setViewMode((value as ViewMode) ?? "overview")}
       >
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-3">
-          <TabsTrigger value="overview" className="text-xs md:text-sm px-1 md:px-3">
+        <Tabs.List grow>
+          <Tabs.Tab value="overview" className="text-xs md:text-sm px-1 md:px-3">
             <span className="hidden md:inline">Vue d'ensemble</span>
             <span className="md:hidden">Vue</span>
-          </TabsTrigger>
-          <TabsTrigger value="commercial" className="text-xs md:text-sm px-1 md:px-3">
+          </Tabs.Tab>
+          <Tabs.Tab value="commercial" className="text-xs md:text-sm px-1 md:px-3">
             <span className="hidden md:inline">Performance commerciale</span>
             <span className="md:hidden">Perf.</span>
-          </TabsTrigger>
-          <TabsTrigger value="funnel" className="text-xs md:text-sm px-1 md:px-3">
+          </Tabs.Tab>
+          <Tabs.Tab value="funnel" className="text-xs md:text-sm px-1 md:px-3">
             <div className="flex items-center gap-1 md:gap-2">
               <Zap className="h-3 w-3 md:h-4 md:w-4" />
               <span className="hidden md:inline">Entonnoir de conversion</span>
               <span className="md:hidden">Entonnoir</span>
             </div>
-          </TabsTrigger>
-        </TabsList>
+          </Tabs.Tab>
+        </Tabs.List>
 
-        <TabsContent value="overview" className="space-y-6">
+        <Tabs.Panel value="overview" pt="md" className="space-y-6">
           {/* KPI d'activité commerciale basés sur le journal */}
           <Card>
             <CardHeader>
@@ -413,48 +426,21 @@ export const DashboardPage: React.FC = () => {
                     Temps réel
                   </Badge>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label htmlFor="period-select" className="text-sm font-medium">
-                    Période :
-                  </Label>
-                  <Select value={selectedPeriod} onValueChange={(value: PeriodType) => setSelectedPeriod(value)}>
-                    <SelectTrigger id="period-select" className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="week">
-                        <div className="flex items-center gap-2">
-                          <CalendarDays className="h-4 w-4" />
-                          Semaine
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="month">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          Mois
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="quarter">
-                        <div className="flex items-center gap-2">
-                          <CalendarRange className="h-4 w-4" />
-                          Trimestre
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="year">
-                        <div className="flex items-center gap-2">
-                          <Calendar className="h-4 w-4" />
-                          Année
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="total">
-                        <div className="flex items-center gap-2">
-                          <TrendingUp className="h-4 w-4" />
-                          Total
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <Group gap="xs">
+                  <Text size="sm" fw={500}>Période :</Text>
+                  <Select
+                    w={140}
+                    value={selectedPeriod}
+                    onChange={(value) => setSelectedPeriod((value as PeriodType) ?? 'week')}
+                    data={[
+                      { value: 'week', label: 'Semaine' },
+                      { value: 'month', label: 'Mois' },
+                      { value: 'quarter', label: 'Trimestre' },
+                      { value: 'year', label: 'Année' },
+                      { value: 'total', label: 'Total' }
+                    ]}
+                  />
+                </Group>
               </div>
               <CardDescription>
                 Données précises extraites du journal d'activité • Affichage {getPeriodLabel(selectedPeriod)}
@@ -740,19 +726,16 @@ export const DashboardPage: React.FC = () => {
                   </CardDescription>
                 </div>
                 <Select
+                  w={{ base: '100%', md: 224 }}
                   value={selectedPerformanceMetric}
-                  onValueChange={(value: PerformanceMetric) => setSelectedPerformanceMetric(value)}
-                >
-                  <SelectTrigger className="w-full md:w-56">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="revenue">Revenus</SelectItem>
-                    <SelectItem value="customers">Nouveaux clients</SelectItem>
-                    <SelectItem value="appointments">RDV</SelectItem>
-                    <SelectItem value="calls">Appels</SelectItem>
-                  </SelectContent>
-                </Select>
+                  onChange={(value) => setSelectedPerformanceMetric((value as PerformanceMetric) ?? 'revenue')}
+                  data={[
+                    { value: 'revenue', label: 'Revenus' },
+                    { value: 'customers', label: 'Nouveaux clients' },
+                    { value: 'appointments', label: 'RDV' },
+                    { value: 'calls', label: 'Appels' }
+                  ]}
+                />
               </div>
             </CardHeader>
             <CardContent>
@@ -953,38 +936,38 @@ export const DashboardPage: React.FC = () => {
                         <CardTitle className="text-base">Tâches du jour</CardTitle>
                         <CardDescription>{todayTasks.length} à exécuter aujourd'hui</CardDescription>
                       </div>
-                      <Button asChild size="icon" variant="outline" className="h-8 w-8 rounded-full">
-                        <Link href="/production/taches" aria-label="Voir les tâches du jour">
-                          <ArrowRight className="h-4 w-4" />
-                        </Link>
+                      <Button
+                        component={Link}
+                        href="/production/taches"
+                        aria-label="Voir les tâches du jour"
+                        variant="light"
+                        radius="xl"
+                        p={0}
+                        w={32}
+                        h={32}
+                      >
+                        <ArrowRight className="h-4 w-4" />
                       </Button>
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {todayTasks.length > 0 ? (
                         todayTasks.slice(0, 3).map((task) => (
-                          <TooltipProvider key={task.id}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge variant="outline" className={priorityBadgeClasses[task.priority]}>{task.titre}</Badge>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>{task.titre}</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                          <Tooltip key={task.id} label={task.titre}>
+                            <Badge variant="outline" className={priorityBadgeClasses[task.priority]}>{task.titre}</Badge>
+                          </Tooltip>
                         ))
                       ) : (
-                        <Badge variant="secondary">Aucune tâche aujourd'hui</Badge>
+                        <Badge variant="light">Aucune tâche aujourd'hui</Badge>
                       )}
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="flex items-center justify-between text-xs font-medium text-muted-foreground">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToPreviousTaskMonth}>
+                      <Button variant="subtle" p={0} w={28} h={28} onClick={goToPreviousTaskMonth}>
                         <ChevronLeft className="h-4 w-4" />
                       </Button>
                       <span className="capitalize">{taskMonthLabel}</span>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goToNextTaskMonth}>
+                      <Button variant="subtle" p={0} w={28} h={28} onClick={goToNextTaskMonth}>
                         <ChevronRight className="h-4 w-4" />
                       </Button>
                     </div>
@@ -1003,30 +986,21 @@ export const DashboardPage: React.FC = () => {
                         const hasTasks = day.tasks.length > 0;
 
                         return (
-                          <TooltipProvider key={day.dateKey}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button
-                                  type="button"
-                                  className={`h-8 rounded-md border text-xs ${isToday ? 'border-primary bg-primary/10 font-semibold' : 'border-border'} ${hasTasks ? 'text-primary' : 'text-muted-foreground'}`}
-                                >
-                                  {day.day}
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                {hasTasks ? (
-                                  <div className="space-y-1">
-                                    <p className="font-medium">{day.tasks.length} tâche(s)</p>
-                                    {day.tasks.slice(0, 3).map((task) => (
-                                      <p key={task.id} className="text-xs">• {task.titre}</p>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <p>Aucune tâche</p>
-                                )}
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                          <Tooltip
+                            key={day.dateKey}
+                            label={
+                              hasTasks
+                                ? `${day.tasks.length} tâche(s) — ${day.tasks.slice(0, 3).map((task) => task.titre).join(', ')}`
+                                : 'Aucune tâche'
+                            }
+                          >
+                            <button
+                              type="button"
+                              className={`h-8 rounded-md border text-xs ${isToday ? 'border-primary bg-primary/10 font-semibold' : 'border-border'} ${hasTasks ? 'text-primary' : 'text-muted-foreground'}`}
+                            >
+                              {day.day}
+                            </button>
+                          </Tooltip>
                         );
                       })}
                     </div>
@@ -1046,16 +1020,16 @@ export const DashboardPage: React.FC = () => {
                     Répartition par {showByKeywords ? 'mot-clé' : 'localisation'}
                   </CardDescription>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Label htmlFor="toggle-view" className="text-sm">
+                <Group gap="xs">
+                  <Text size="sm">
                     {showByKeywords ? 'Mots-clés' : 'Localisations'}
-                  </Label>
+                  </Text>
                   <Switch 
                     id="toggle-view"
                     checked={showByKeywords}
-                    onCheckedChange={setShowByKeywords}
+                    onChange={(event) => setShowByKeywords(event.currentTarget.checked)}
                   />
-                </div>
+                </Group>
               </div>
             </CardHeader>
             <CardContent>
@@ -1085,9 +1059,9 @@ export const DashboardPage: React.FC = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </Tabs.Panel>
 
-        <TabsContent value="commercial" className="space-y-6">
+        <Tabs.Panel value="commercial" pt="md" className="space-y-6">
           {/* Résumé financier */}
           <Card>
             <CardHeader>
@@ -1222,9 +1196,9 @@ export const DashboardPage: React.FC = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </Tabs.Panel>
 
-        <TabsContent value="funnel" className="space-y-6">
+        <Tabs.Panel value="funnel" pt="md" className="space-y-6">
           {/* Entonnoir de conversion */}
           <Card>
             <CardHeader>
@@ -1290,7 +1264,7 @@ export const DashboardPage: React.FC = () => {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </Tabs.Panel>
       </Tabs>
     </div>
   );
