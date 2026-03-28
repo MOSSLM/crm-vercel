@@ -1,23 +1,9 @@
-
 import * as React from "react";
-import * as LabelPrimitive from "@radix-ui/react-label";
-
+import { Text } from "@mantine/core";
 import { cn } from "./utils";
 
-function Label({
-  className,
-  ...props
-}: React.ComponentProps<typeof LabelPrimitive.Root>) {
-  return (
-    <LabelPrimitive.Root
-      data-slot="label"
-      className={cn(
-        "flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50",
-        className,
-      )}
-      {...props}
-    />
-  );
+function Label({ className, ...props }: React.ComponentProps<"label">) {
+  return <Text component="label" fw={600} size="sm" className={cn(className)} {...props} />;
 }
 
 export { Label };
