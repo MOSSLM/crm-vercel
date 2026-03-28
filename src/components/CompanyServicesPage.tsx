@@ -416,12 +416,9 @@ export const CompanyServicesPage: React.FC = () => {
                   <TableRow>
                     <TableHead className="w-14">
                       <Checkbox
-                        checked={
-                          selectedVisibleCount === 0
-                            ? false
-                            : selectedVisibleCount === visibleCompanyIds.length
-                              ? true
-                              : "indeterminate"
+                        checked={selectedVisibleCount > 0 && selectedVisibleCount === visibleCompanyIds.length}
+                        indeterminate={
+                          selectedVisibleCount > 0 && selectedVisibleCount < visibleCompanyIds.length
                         }
                         onCheckedChange={(checked) => handleToggleAllVisibleCompanies(checked === true)}
                         aria-label="Tout sélectionner"
