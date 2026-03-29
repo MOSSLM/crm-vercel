@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { supabase } from "@/utils/supabase/client";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
+type Relation<T> = T | T[] | null | undefined;
 
 type LeadMagnetRow = {
   id: string;
@@ -30,8 +31,8 @@ type LeadMagnetRow = {
     flags: string[] | null;
     pipeline_id: string;
     lead_magnet: boolean;
-    entreprises?: { name: string | null }[];
-    pipelines?: { nom: string | null }[];
+    entreprises?: Relation<{ name: string | null }>;
+    pipelines?: Relation<{ nom: string | null }>;
   }[];
   production_templates?: { nom: string | null }[];
 };
@@ -85,6 +86,7 @@ const canonicalizeOpportunityFlag = (flag: string) => {
 };
 
 const getFlagLabel = (flag: string) => opportunityFlagByValue.get(flag)?.label || flag;
+const firstRelation = <T,>(value: Relation<T>): T | undefined => (Array.isArray(value) ? value[0] : value ?? undefined);
 
 export function ProductionLeadMagnetsPage() {
   const router = useRouter();
@@ -170,7 +172,7 @@ export function ProductionLeadMagnetsPage() {
 
   const knownFlags = useMemo(() => {
     const discoveredFlags = leadMagnets.flatMap((row) =>
-      parseFlags(row.opportunites?.[0]?.flags).map(canonicalizeOpportunityFlag)
+      parseFlags(firstRelation(row.opportunites)?.flags).map(canonicalizeOpportunityFlag)
     );
     const allFlags = Array.from(
       new Set([...OPPORTUNITY_FLAGS.map((flag) => flag.value), ...discoveredFlags])
@@ -184,18 +186,18 @@ export function ProductionLeadMagnetsPage() {
       rows = rows.filter((row) => row.statut === statusFilter);
     }
     if (pipelineFilter !== "all") {
-      rows = rows.filter((row) => row.opportunites?.[0]?.pipeline_id === pipelineFilter);
+      rows = rows.filter((row) => firstRelation(row.opportunites)?.pipeline_id === pipelineFilter);
     }
     if (flagFilter !== "all") {
       rows = rows.filter((row) =>
-        parseFlags(row.opportunites?.[0]?.flags).some(
+        parseFlags(firstRelation(row.opportunites)?.flags).some(
           (flag) => canonicalizeOpportunityFlag(flag) === flagFilter
         )
       );
     }
     if (readyFilter !== "all") {
       rows = rows.filter((row) => {
-        const isReady = row.statut === "pret" || Boolean(row.opportunites?.[0]?.lead_magnet);
+        const isReady = row.statut === "pret" || Boolean(firstRelation(row.opportunites)?.lead_magnet);
         return readyFilter === "ready" ? isReady : !isReady;
       });
     }
@@ -203,15 +205,17 @@ export function ProductionLeadMagnetsPage() {
     const priorityScore = (p?: string | null) => (p === "haute" ? 0 : p === "moyenne" ? 1 : 2);
 
     return [...rows].sort((a, b) => {
+      const aOpportunity = firstRelation(a.opportunites);
+      const bOpportunity = firstRelation(b.opportunites);
       if (sortBy === "priorite") {
-        return priorityScore(a.opportunites?.[0]?.priorite) - priorityScore(b.opportunites?.[0]?.priorite);
+        return priorityScore(aOpportunity?.priorite) - priorityScore(bOpportunity?.priorite);
       }
       if (sortBy === "montant") {
-        return Number(b.opportunites?.[0]?.montant ?? 0) - Number(a.opportunites?.[0]?.montant ?? 0);
+        return Number(bOpportunity?.montant ?? 0) - Number(aOpportunity?.montant ?? 0);
       }
       if (sortBy === "pipeline") {
-        const pipelineA = a.opportunites?.[0]?.pipelines?.[0]?.nom || "";
-        const pipelineB = b.opportunites?.[0]?.pipelines?.[0]?.nom || "";
+        const pipelineA = firstRelation(aOpportunity?.pipelines)?.nom || "";
+        const pipelineB = firstRelation(bOpportunity?.pipelines)?.nom || "";
         return pipelineA.localeCompare(pipelineB, "fr");
       }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -345,19 +349,19 @@ export function ProductionLeadMagnetsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {visibleRows.map((row) => {
-            const opp = row.opportunites?.[0];
+            const opp = firstRelation(row.opportunites);
             const templateName = row.production_templates?.[0]?.nom;
-            const pipelineName = opp?.pipelines?.[0]?.nom;
+            const pipelineName = firstRelation(opp?.pipelines)?.nom;
             const flags = parseFlags(opp?.flags);
             return (
               <Card key={row.id} className="cursor-pointer hover:border-primary" onClick={() => router.push(`/production/lead-magnets/${row.id}`)}>
                 <CardHeader>
-                  <CardTitle className="text-base">{row.nom || opp?.name || opp?.entreprises?.[0]?.name || "Lead magnet"}</CardTitle>
+                  <CardTitle className="text-base">{row.nom || opp?.name || firstRelation(opp?.entreprises)?.name || "Lead magnet"}</CardTitle>
                   <CardDescription>{templateName || "Template non défini"}</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-2">
                   <Badge variant={row.statut === "pret" ? "default" : "secondary"}>{statusLabels[row.statut]}</Badge>
-                  <p className="text-sm text-muted-foreground">Opportunité: {opp?.name || opp?.entreprises?.[0]?.name || row.opportunite_id}</p>
+                  <p className="text-sm text-muted-foreground">Opportunité: {opp?.name || firstRelation(opp?.entreprises)?.name || row.opportunite_id}</p>
                   <p className="text-xs text-muted-foreground">Pipeline: {pipelineName || "N/A"}</p>
                   <p className="text-xs text-muted-foreground">Priorité: {opp?.priorite || "moyenne"} • Montant: {Number(opp?.montant ?? 0).toLocaleString()}€</p>
                   <div className="flex flex-wrap gap-1">
