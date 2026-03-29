@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ensureHttpsUrl } from "@/utils/displayHelpers";
 import { supabase } from "@/utils/supabase/client";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
@@ -22,7 +23,7 @@ type LeadMagnetDetail = {
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
   notes: string | null;
-  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprises?: { name: string | null }[] }[];
+  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprises?: { name: string | null; canonical_url?: string | null }[] }[];
   production_templates?: { id: string; nom: string | null }[];
 };
 
@@ -90,7 +91,7 @@ export function ProductionLeadMagnetDetailPage() {
     const [{ data: lmRow }, { data: todoRows }, { data: templateRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name,canonical_url)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
@@ -211,6 +212,7 @@ export function ProductionLeadMagnetDetailPage() {
   }
 
   const opp = detail.opportunites?.[0];
+  const websiteUrl = opp?.entreprises?.[0]?.canonical_url;
   const template = detail.production_templates?.[0];
   const isLeadMagnetReady = detail.statut === "pret" || Boolean(opp?.lead_magnet);
 
@@ -285,6 +287,16 @@ export function ProductionLeadMagnetDetailPage() {
               onBlur={() => void saveHeader({ lien_livraison: detail.lien_livraison || null })}
             />
           </div>
+
+          {websiteUrl && (
+            <div>
+              <Button asChild variant="outline">
+                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            </div>
+          )}
 
           <div className="space-y-1">
             <Label>Notes</Label>
