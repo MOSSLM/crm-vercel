@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ensureHttpsUrl } from "@/utils/displayHelpers";
 import { supabase } from "@/utils/supabase/client";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
@@ -22,7 +23,7 @@ type LeadMagnetDetail = {
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
   notes: string | null;
-  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprises?: { name: string | null }[] }[];
+  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprise_id?: number | null; entreprises?: { name: string | null; canonical_url?: string | null; site_web_canonique?: string | null }[] }[];
   production_templates?: { id: string; nom: string | null }[];
 };
 
@@ -50,6 +51,7 @@ export function ProductionLeadMagnetDetailPage() {
   const [detail, setDetail] = useState<LeadMagnetDetail | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
+  const [resolvedWebsiteUrl, setResolvedWebsiteUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [newTodoTitle, setNewTodoTitle] = useState("");
 
@@ -90,7 +92,7 @@ export function ProductionLeadMagnetDetailPage() {
     const [{ data: lmRow }, { data: todoRows }, { data: templateRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprise_id,entreprises(name,canonical_url,site_web_canonique)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
@@ -116,9 +118,25 @@ export function ProductionLeadMagnetDetailPage() {
       leadMagnetTodos = (seededRows ?? []) as Todo[];
     }
 
+    let websiteUrl =
+      detailRow?.opportunites?.[0]?.entreprises?.[0]?.canonical_url ||
+      detailRow?.opportunites?.[0]?.entreprises?.[0]?.site_web_canonique ||
+      null;
+
+    const entrepriseId = detailRow?.opportunites?.[0]?.entreprise_id;
+    if (!websiteUrl && typeof entrepriseId === "number") {
+      const { data: companyRow } = await supabase
+        .from("entreprises")
+        .select("canonical_url,site_web_canonique")
+        .eq("id", entrepriseId)
+        .single();
+      websiteUrl = companyRow?.canonical_url || companyRow?.site_web_canonique || null;
+    }
+
     setDetail(detailRow);
     setTodos(leadMagnetTodos);
     setTemplates((templateRows ?? []) as TemplateRow[]);
+    setResolvedWebsiteUrl(websiteUrl);
     setLoading(false);
   }, [leadMagnetId, seedTodosForTemplate]);
 
@@ -211,6 +229,7 @@ export function ProductionLeadMagnetDetailPage() {
   }
 
   const opp = detail.opportunites?.[0];
+  const websiteUrl = resolvedWebsiteUrl;
   const template = detail.production_templates?.[0];
   const isLeadMagnetReady = detail.statut === "pret" || Boolean(opp?.lead_magnet);
 
@@ -284,6 +303,21 @@ export function ProductionLeadMagnetDetailPage() {
               onChange={(e) => setDetail((p) => (p ? { ...p, lien_livraison: e.target.value } : p))}
               onBlur={() => void saveHeader({ lien_livraison: detail.lien_livraison || null })}
             />
+          </div>
+
+          <div className="space-y-1">
+            <Label>Site web actuel</Label>
+            {websiteUrl ? (
+              <Button asChild variant="outline">
+                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            ) : (
+              <Button variant="outline" disabled>
+                Site web indisponible
+              </Button>
+            )}
           </div>
 
           <div className="space-y-1">
