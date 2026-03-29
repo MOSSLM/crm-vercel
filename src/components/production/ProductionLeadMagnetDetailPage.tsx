@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,7 +22,17 @@ type LeadMagnetDetail = {
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
   notes: string | null;
-  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprises?: { name: string | null }[] }[];
+  opportunites?: {
+    id: string;
+    name: string | null;
+    priorite: string | null;
+    lead_magnet: boolean;
+    entreprises?: {
+      name: string | null;
+      canonical_url?: string | null;
+      site_web_canonique?: string | null;
+    }[];
+  }[];
   production_templates?: { id: string; nom: string | null }[];
 };
 
@@ -40,6 +50,13 @@ const statusLabels: Record<LeadMagnetStatus, string> = {
   a_faire: "À faire",
   en_cours: "En cours",
   pret: "Prêt",
+};
+
+const normalizeWebsiteUrl = (url?: string | null) => {
+  if (!url) return null;
+  const trimmedUrl = url.trim();
+  if (!trimmedUrl) return null;
+  return /^https?:\/\//i.test(trimmedUrl) ? trimmedUrl : `https://${trimmedUrl}`;
 };
 
 export function ProductionLeadMagnetDetailPage() {
@@ -90,7 +107,7 @@ export function ProductionLeadMagnetDetailPage() {
     const [{ data: lmRow }, { data: todoRows }, { data: templateRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name,canonical_url,site_web_canonique)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
@@ -211,6 +228,8 @@ export function ProductionLeadMagnetDetailPage() {
   }
 
   const opp = detail.opportunites?.[0];
+  const company = opp?.entreprises?.[0];
+  const companyWebsiteUrl = normalizeWebsiteUrl(company?.site_web_canonique ?? company?.canonical_url);
   const template = detail.production_templates?.[0];
   const isLeadMagnetReady = detail.statut === "pret" || Boolean(opp?.lead_magnet);
 
@@ -224,6 +243,16 @@ export function ProductionLeadMagnetDetailPage() {
         <CardHeader>
           <CardTitle>{detail.nom || opp?.name || opp?.entreprises?.[0]?.name || "Production lead magnet"}</CardTitle>
           <CardDescription>Lié à l'opportunité {opp?.name || opp?.entreprises?.[0]?.name || opp?.id} • Template {template?.nom || template?.id}</CardDescription>
+          {companyWebsiteUrl && (
+            <div>
+              <Button asChild size="sm" variant="outline" className="mt-2">
+                <a href={companyWebsiteUrl} target="_blank" rel="noreferrer noopener">
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            </div>
+          )}
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid md:grid-cols-2 gap-3">
