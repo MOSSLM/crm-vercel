@@ -288,6 +288,16 @@ export function ProductionLeadMagnetDetailPage() {
             />
           </div>
 
+          {websiteUrl && (
+            <div>
+              <Button asChild variant="outline">
+                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            </div>
+          )}
+
           <div className="space-y-1">
             <Label>Site web actuel</Label>
             {websiteUrl ? (
