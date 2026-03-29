@@ -23,7 +23,7 @@ type LeadMagnetDetail = {
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
   notes: string | null;
-  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprises?: { name: string | null; canonical_url?: string | null }[] }[];
+  opportunites?: { id: string; name: string | null; priorite: string | null; lead_magnet: boolean; entreprises?: { name: string | null; canonical_url?: string | null; site_web_canonique?: string | null }[] }[];
   production_templates?: { id: string; nom: string | null }[];
 };
 
@@ -91,7 +91,7 @@ export function ProductionLeadMagnetDetailPage() {
     const [{ data: lmRow }, { data: todoRows }, { data: templateRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name,canonical_url)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name,canonical_url,site_web_canonique)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
@@ -212,7 +212,7 @@ export function ProductionLeadMagnetDetailPage() {
   }
 
   const opp = detail.opportunites?.[0];
-  const websiteUrl = opp?.entreprises?.[0]?.canonical_url;
+  const websiteUrl = opp?.entreprises?.[0]?.canonical_url || opp?.entreprises?.[0]?.site_web_canonique;
   const template = detail.production_templates?.[0];
   const isLeadMagnetReady = detail.statut === "pret" || Boolean(opp?.lead_magnet);
 
@@ -297,6 +297,21 @@ export function ProductionLeadMagnetDetailPage() {
               </Button>
             </div>
           )}
+
+          <div className="space-y-1">
+            <Label>Site web actuel</Label>
+            {websiteUrl ? (
+              <Button asChild variant="outline">
+                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            ) : (
+              <Button variant="outline" disabled>
+                Site web indisponible
+              </Button>
+            )}
+          </div>
 
           <div className="space-y-1">
             <Label>Notes</Label>
