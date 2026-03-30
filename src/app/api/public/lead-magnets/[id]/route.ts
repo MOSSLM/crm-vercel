@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "@/env";
 
 export const runtime = "nodejs";
 
@@ -77,6 +76,10 @@ export async function GET(
     .maybeSingle();
 
   if (error) {
+    if (error.message.toLowerCase().includes("invalid api key")) {
+      console.error("[public lead magnet] invalid Supabase API key configuration");
+      return response({ error: "Server configuration error." }, 500);
+    }
     return response({ error: error.message }, 500);
   }
 
