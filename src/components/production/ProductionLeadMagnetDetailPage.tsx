@@ -28,6 +28,7 @@ type LeadMagnetDetail = {
     name: string | null;
     priorite: string | null;
     lead_magnet: boolean;
+    entreprise_id?: number | null;
     entreprises?: {
       name: string | null;
       canonical_url?: string | null;
@@ -109,7 +110,7 @@ export function ProductionLeadMagnetDetailPage() {
     const [{ data: lmRow }, { data: todoRows }, { data: templateRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprises(name,canonical_url,site_web_canonique)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprise_id,entreprises(name,canonical_url,site_web_canonique)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
