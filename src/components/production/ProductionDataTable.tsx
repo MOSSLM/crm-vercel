@@ -25,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ExternalLink, Edit3, Save } from "lucide-react";
+import { Copy, ExternalLink, Edit3, Save } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/utils/supabase/client";
 import { ensureHttpsUrl } from "@/utils/displayHelpers";
@@ -48,6 +48,7 @@ type ProductionDataTableProps = {
   tableName: string;
   columns: ProductionColumn[];
   getWebsiteUrl?: (row: RowData) => string | null;
+  getPublicEndpointUrl?: (row: RowData) => string | null;
   enableEntrepriseCsvExport?: boolean;
   csvExcludedColumns?: string[];
 };
@@ -129,6 +130,7 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
   tableName,
   columns,
   getWebsiteUrl,
+  getPublicEndpointUrl,
   enableEntrepriseCsvExport = false,
   csvExcludedColumns = [],
 }) => {
@@ -439,6 +441,24 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
                     })}
                     <TableCell>
                       <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={async () => {
+                            const endpointUrl = getPublicEndpointUrl?.(row);
+                            if (!endpointUrl) return;
+                            try {
+                              await navigator.clipboard.writeText(endpointUrl);
+                              toast.success("Endpoint copié.");
+                            } catch {
+                              toast.error("Impossible de copier l'endpoint.");
+                            }
+                          }}
+                          disabled={!getPublicEndpointUrl?.(row)}
+                          title="Copier l'endpoint"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
                         <Button
                           size="sm"
                           variant="outline"
