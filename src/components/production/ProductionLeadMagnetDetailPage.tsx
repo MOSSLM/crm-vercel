@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ensureHttpsUrl } from "@/utils/displayHelpers";
+import { normalizeServiceTags } from "@/utils/serviceTags";
 import { supabase } from "@/utils/supabase/client";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
@@ -28,11 +29,23 @@ type LeadMagnetDetail = {
     name: string | null;
     priorite: string | null;
     lead_magnet: boolean;
+    flags?: string[] | null;
     entreprise_id?: number | null;
     entreprises?: {
       name: string | null;
       canonical_url?: string | null;
       site_web_canonique?: string | null;
+      service_tags?: unknown;
+      premiers_tags?: string | null;
+      adresse?: string | null;
+      ville?: string | null;
+      code_postal?: string | null;
+      pays?: string | null;
+      telephone?: string | null;
+      telephones?: string[] | null;
+      linkedin_url?: string | null;
+      note_moyenne?: number | null;
+      nombre_avis?: number | null;
     }[];
   }[];
   production_templates?: { id: string; nom: string | null }[];
@@ -110,7 +123,7 @@ export function ProductionLeadMagnetDetailPage() {
     const [{ data: lmRow }, { data: todoRows }, { data: templateRows }] = await Promise.all([
       supabase
         .from("production_lead_magnets")
-        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,entreprise_id,entreprises(name,canonical_url,site_web_canonique)),production_templates(id,nom)")
+        .select("id,template_id,nom,statut,lien_livraison,notes,opportunites(id,name,priorite,lead_magnet,flags,entreprise_id,entreprises(name,canonical_url,site_web_canonique,service_tags,premiers_tags,adresse,ville,code_postal,pays,telephone,telephones,linkedin_url,note_moyenne,nombre_avis)),production_templates(id,nom)")
         .eq("id", leadMagnetId)
         .single(),
       supabase
@@ -248,7 +261,17 @@ export function ProductionLeadMagnetDetailPage() {
 
   const opp = detail.opportunites?.[0];
   const company = opp?.entreprises?.[0];
-  const companyWebsiteUrl = normalizeWebsiteUrl(company?.site_web_canonique ?? company?.canonical_url);
+  const companyWebsiteUrl = normalizeWebsiteUrl(
+    resolvedWebsiteUrl ?? company?.site_web_canonique ?? company?.canonical_url
+  );
+  const serviceTags = normalizeServiceTags(company?.service_tags, company?.premiers_tags);
+  const opportunityFlags = (opp?.flags ?? []).map((flag) => flag.trim()).filter(Boolean);
+  const companyAddress = [company?.adresse, company?.code_postal, company?.ville, company?.pays]
+    .filter(Boolean)
+    .join(", ");
+  const companyPhones = Array.from(
+    new Set([company?.telephone, ...(company?.telephones ?? [])].map((item) => item?.trim()).filter(Boolean))
+  ) as string[];
   const template = detail.production_templates?.[0];
   const isLeadMagnetReady = detail.statut === "pret" || Boolean(opp?.lead_magnet);
 
@@ -258,138 +281,183 @@ export function ProductionLeadMagnetDetailPage() {
         <ArrowLeft className="h-4 w-4 mr-2" /> Retour lead magnets
       </Button>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{detail.nom || opp?.name || opp?.entreprises?.[0]?.name || "Production lead magnet"}</CardTitle>
-          <CardDescription>Lié à l'opportunité {opp?.name || opp?.entreprises?.[0]?.name || opp?.id} • Template {template?.nom || template?.id}</CardDescription>
-          {companyWebsiteUrl && (
-            <div>
-              <Button asChild size="sm" variant="outline" className="mt-2">
-                <a href={companyWebsiteUrl} target="_blank" rel="noreferrer noopener">
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Visiter le site web actuel
-                </a>
-              </Button>
-            </div>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid md:grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Nom interne</Label>
-              <Input value={detail.nom || ""} onChange={(e) => setDetail((p) => (p ? { ...p, nom: e.target.value } : p))} onBlur={() => void saveHeader({ nom: detail.nom || null })} />
-            </div>
-            <div className="space-y-1">
-              <Label>Statut</Label>
-              <Select value={detail.statut} onValueChange={(value: LeadMagnetStatus) => {
-                setDetail((p) => (p ? { ...p, statut: value } : p));
-                void saveHeader({ statut: value });
-                void setOpportunityLeadMagnetState(value === "pret");
-              }}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="a_faire">À faire</SelectItem>
-                  <SelectItem value="en_cours">En cours</SelectItem>
-                  <SelectItem value="pret">Prêt</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <Card>
+          <CardHeader>
+            <CardTitle>{detail.nom || opp?.name || opp?.entreprises?.[0]?.name || "Production lead magnet"}</CardTitle>
+            <CardDescription>Lié à l'opportunité {opp?.name || opp?.entreprises?.[0]?.name || opp?.id} • Template {template?.nom || template?.id}</CardDescription>
+            {companyWebsiteUrl && (
+              <div>
+                <Button asChild size="sm" variant="outline" className="mt-2">
+                  <a href={companyWebsiteUrl} target="_blank" rel="noreferrer noopener">
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Visiter le site web actuel
+                  </a>
+                </Button>
+              </div>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {(serviceTags.length > 0 || opportunityFlags.length > 0) && (
+              <div className="space-y-2">
+                {serviceTags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {serviceTags.map((tag) => (
+                      <Badge key={tag} variant="secondary">{tag}</Badge>
+                    ))}
+                  </div>
+                )}
+                {opportunityFlags.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {opportunityFlags.map((flag) => (
+                      <Badge key={flag} variant="outline">{flag}</Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
-          <div className="grid md:grid-cols-[1fr,auto] gap-2">
+            <div className="grid md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Nom interne</Label>
+                <Input value={detail.nom || ""} onChange={(e) => setDetail((p) => (p ? { ...p, nom: e.target.value } : p))} onBlur={() => void saveHeader({ nom: detail.nom || null })} />
+              </div>
+              <div className="space-y-1">
+                <Label>Statut</Label>
+                <Select value={detail.statut} onValueChange={(value: LeadMagnetStatus) => {
+                  setDetail((p) => (p ? { ...p, statut: value } : p));
+                  void saveHeader({ statut: value });
+                  void setOpportunityLeadMagnetState(value === "pret");
+                }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="a_faire">À faire</SelectItem>
+                    <SelectItem value="en_cours">En cours</SelectItem>
+                    <SelectItem value="pret">Prêt</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-[1fr,auto] gap-2">
+              <div className="space-y-1">
+                <Label>Template</Label>
+                <Select value={detail.template_id} onValueChange={(value) => void applyTemplate(value)}>
+                  <SelectTrigger><SelectValue placeholder="Choisir un template" /></SelectTrigger>
+                  <SelectContent>
+                    {templates.map((templateOption) => (
+                      <SelectItem key={templateOption.id} value={templateOption.id}>{templateOption.nom || "Template"}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end">
+                <label className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 h-10">
+                  <Checkbox
+                    checked={isLeadMagnetReady}
+                    onCheckedChange={(checked) => {
+                      const ready = checked === true;
+                      setDetail((prev) => (prev ? { ...prev, statut: ready ? "pret" : "en_cours" } : prev));
+                      void saveHeader({ statut: ready ? "pret" : "en_cours" });
+                      void setOpportunityLeadMagnetState(ready);
+                    }}
+                  />
+                  Lead magnet fini
+                </label>
+              </div>
+            </div>
+
             <div className="space-y-1">
-              <Label>Template</Label>
-              <Select value={detail.template_id} onValueChange={(value) => void applyTemplate(value)}>
-                <SelectTrigger><SelectValue placeholder="Choisir un template" /></SelectTrigger>
-                <SelectContent>
-                  {templates.map((templateOption) => (
-                    <SelectItem key={templateOption.id} value={templateOption.id}>{templateOption.nom || "Template"}</SelectItem>
+              <Label>Lien de livraison client</Label>
+              <Input
+                placeholder="https://..."
+                value={detail.lien_livraison || ""}
+                onChange={(e) => setDetail((p) => (p ? { ...p, lien_livraison: e.target.value } : p))}
+                onBlur={() => void saveHeader({ lien_livraison: detail.lien_livraison || null })}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label>Site web actuel</Label>
+              {companyWebsiteUrl ? (
+                <Button asChild variant="outline">
+                  <a href={ensureHttpsUrl(companyWebsiteUrl)} target="_blank" rel="noopener noreferrer">
+                    Visiter le site web actuel
+                  </a>
+                </Button>
+              ) : (
+                <Button variant="outline" disabled>
+                  Site web indisponible
+                </Button>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <Label>Notes</Label>
+              <Textarea
+                rows={3}
+                value={detail.notes || ""}
+                onChange={(e) => setDetail((p) => (p ? { ...p, notes: e.target.value } : p))}
+                onBlur={() => void saveHeader({ notes: detail.notes || null })}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Badge variant={detail.statut === "pret" ? "default" : "secondary"}>{statusLabels[detail.statut]}</Badge>
+              <span>Progression checklist: {progress}%</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="h-fit xl:sticky xl:top-4">
+          <CardHeader>
+            <CardTitle className="text-base">Infos entreprise</CardTitle>
+            <CardDescription>{company?.name || "Entreprise non liée"}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Adresse</p>
+              <p>{companyAddress || "Non renseignée"}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Téléphone</p>
+              {companyPhones.length > 0 ? (
+                <div className="space-y-1">
+                  {companyPhones.map((phone) => (
+                    <p key={phone}>{phone}</p>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              ) : (
+                <p>Non renseigné</p>
+              )}
             </div>
-            <div className="flex items-end">
-              <label className="flex items-center gap-2 text-sm border rounded-md px-3 py-2 h-10">
-                <Checkbox
-                  checked={isLeadMagnetReady}
-                  onCheckedChange={(checked) => {
-                    const ready = checked === true;
-                    setDetail((prev) => (prev ? { ...prev, statut: ready ? "pret" : "en_cours" } : prev));
-                    void saveHeader({ statut: ready ? "pret" : "en_cours" });
-                    void setOpportunityLeadMagnetState(ready);
-                  }}
-                />
-                Lead magnet fini
-              </label>
+            <div className="space-y-1">
+              <p className="text-muted-foreground">Avis Google</p>
+              <p>
+                {company?.note_moyenne ?? "—"} {company?.nombre_avis ? `(${company.nombre_avis} avis)` : ""}
+              </p>
             </div>
-          </div>
-
-          <div className="space-y-1">
-            <Label>Lien de livraison client</Label>
-            <Input
-              placeholder="https://..."
-              value={detail.lien_livraison || ""}
-              onChange={(e) => setDetail((p) => (p ? { ...p, lien_livraison: e.target.value } : p))}
-              onBlur={() => void saveHeader({ lien_livraison: detail.lien_livraison || null })}
-            />
-          </div>
-
-          {websiteUrl && (
-            <div>
-              <Button asChild variant="outline">
-                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
-                  Visiter le site web actuel
-                </a>
-              </Button>
+            <div className="space-y-2">
+              {companyWebsiteUrl ? (
+                <Button asChild variant="outline" className="w-full justify-start">
+                  <a href={ensureHttpsUrl(companyWebsiteUrl)} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    Site web
+                  </a>
+                </Button>
+              ) : null}
+              {company?.linkedin_url ? (
+                <Button asChild variant="outline" className="w-full justify-start">
+                  <a href={ensureHttpsUrl(company.linkedin_url)} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    LinkedIn
+                  </a>
+                </Button>
+              ) : null}
             </div>
-          )}
-
-          <div className="space-y-1">
-            <Label>Site web actuel</Label>
-            {websiteUrl ? (
-              <Button asChild variant="outline">
-                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
-                  Visiter le site web actuel
-                </a>
-              </Button>
-            ) : (
-              <Button variant="outline" disabled>
-                Site web indisponible
-              </Button>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label>Site web actuel</Label>
-            {websiteUrl ? (
-              <Button asChild variant="outline">
-                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
-                  Visiter le site web actuel
-                </a>
-              </Button>
-            ) : (
-              <Button variant="outline" disabled>
-                Site web indisponible
-              </Button>
-            )}
-          </div>
-
-          <div className="space-y-1">
-            <Label>Notes</Label>
-            <Textarea
-              rows={3}
-              value={detail.notes || ""}
-              onChange={(e) => setDetail((p) => (p ? { ...p, notes: e.target.value } : p))}
-              onBlur={() => void saveHeader({ notes: detail.notes || null })}
-            />
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Badge variant={detail.statut === "pret" ? "default" : "secondary"}>{statusLabels[detail.statut]}</Badge>
-            <span>Progression checklist: {progress}%</span>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader>
