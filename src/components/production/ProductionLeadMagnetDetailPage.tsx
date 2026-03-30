@@ -16,6 +16,24 @@ import { normalizeServiceTags } from "@/utils/serviceTags";
 import { supabase } from "@/utils/supabase/client";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
+type Relation<T> = T | T[] | null | undefined;
+
+type CompanySummary = {
+  name: string | null;
+  canonical_url?: string | null;
+  site_web_canonique?: string | null;
+  service_tags?: unknown;
+  premiers_tags?: string | null;
+  adresse?: string | null;
+  ville?: string | null;
+  code_postal?: string | null;
+  pays?: string | null;
+  telephone?: string | null;
+  telephones?: string[] | null;
+  linkedin_url?: string | null;
+  note_moyenne?: number | null;
+  nombre_avis?: number | null;
+};
 
 type LeadMagnetDetail = {
   id: string;
@@ -24,31 +42,16 @@ type LeadMagnetDetail = {
   statut: LeadMagnetStatus;
   lien_livraison: string | null;
   notes: string | null;
-  opportunites?: {
+  opportunites?: Relation<{
     id: string;
     name: string | null;
     priorite: string | null;
     lead_magnet: boolean;
     flags?: string[] | null;
     entreprise_id?: number | null;
-    entreprises?: {
-      name: string | null;
-      canonical_url?: string | null;
-      site_web_canonique?: string | null;
-      service_tags?: unknown;
-      premiers_tags?: string | null;
-      adresse?: string | null;
-      ville?: string | null;
-      code_postal?: string | null;
-      pays?: string | null;
-      telephone?: string | null;
-      telephones?: string[] | null;
-      linkedin_url?: string | null;
-      note_moyenne?: number | null;
-      nombre_avis?: number | null;
-    }[];
-  }[];
-  production_templates?: { id: string; nom: string | null }[];
+    entreprises?: Relation<CompanySummary>;
+  }>;
+  production_templates?: Relation<{ id: string; nom: string | null }>;
 };
 
 type Todo = {
@@ -67,6 +70,9 @@ const statusLabels: Record<LeadMagnetStatus, string> = {
   pret: "Prêt",
 };
 
+const firstRelation = <T,>(value: Relation<T>): T | undefined =>
+  Array.isArray(value) ? value[0] : value ?? undefined;
+
 const normalizeWebsiteUrl = (url?: string | null) => {
   if (!url) return null;
   const trimmedUrl = url.trim();
@@ -82,6 +88,7 @@ export function ProductionLeadMagnetDetailPage() {
   const [detail, setDetail] = useState<LeadMagnetDetail | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
+  const [linkedCompany, setLinkedCompany] = useState<CompanySummary | null>(null);
   const [resolvedWebsiteUrl, setResolvedWebsiteUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [newTodoTitle, setNewTodoTitle] = useState("");
@@ -149,24 +156,28 @@ export function ProductionLeadMagnetDetailPage() {
       leadMagnetTodos = (seededRows ?? []) as Todo[];
     }
 
+    const opportunity = firstRelation(detailRow?.opportunites);
+    let company = firstRelation(opportunity?.entreprises);
     let websiteUrl =
-      detailRow?.opportunites?.[0]?.entreprises?.[0]?.canonical_url ||
-      detailRow?.opportunites?.[0]?.entreprises?.[0]?.site_web_canonique ||
+      company?.site_web_canonique ||
+      company?.canonical_url ||
       null;
 
-    const entrepriseId = detailRow?.opportunites?.[0]?.entreprise_id;
+    const entrepriseId = opportunity?.entreprise_id;
     if (!websiteUrl && typeof entrepriseId === "number") {
       const { data: companyRow } = await supabase
         .from("entreprises")
-        .select("canonical_url,site_web_canonique")
+        .select("name,canonical_url,site_web_canonique,service_tags,premiers_tags,adresse,ville,code_postal,pays,telephone,telephones,linkedin_url,note_moyenne,nombre_avis")
         .eq("id", entrepriseId)
         .single();
-      websiteUrl = companyRow?.canonical_url || companyRow?.site_web_canonique || null;
+      company = (companyRow as CompanySummary | null) ?? company;
+      websiteUrl = companyRow?.site_web_canonique || companyRow?.canonical_url || websiteUrl;
     }
 
     setDetail(detailRow);
     setTodos(leadMagnetTodos);
     setTemplates((templateRows ?? []) as TemplateRow[]);
+    setLinkedCompany(company ?? null);
     setResolvedWebsiteUrl(websiteUrl);
     setLoading(false);
   }, [leadMagnetId, seedTodosForTemplate]);
@@ -186,14 +197,14 @@ export function ProductionLeadMagnetDetailPage() {
   };
 
   const setOpportunityLeadMagnetState = async (ready: boolean) => {
-    const opportunityId = detail?.opportunites?.[0]?.id;
+    const opportunityId = firstRelation(detail?.opportunites)?.id;
     if (!opportunityId) return;
     await supabase.from("opportunites").update({ lead_magnet: ready }).eq("id", opportunityId);
     setDetail((prev) => {
-      if (!prev || !prev.opportunites?.[0]) return prev;
-      const nextOpportunites = [...prev.opportunites];
-      nextOpportunites[0] = { ...nextOpportunites[0], lead_magnet: ready };
-      return { ...prev, opportunites: nextOpportunites };
+      if (!prev) return prev;
+      const currentOpportunity = firstRelation(prev.opportunites);
+      if (!currentOpportunity) return prev;
+      return { ...prev, opportunites: { ...currentOpportunity, lead_magnet: ready } };
     });
   };
 
@@ -259,8 +270,8 @@ export function ProductionLeadMagnetDetailPage() {
     );
   }
 
-  const opp = detail.opportunites?.[0];
-  const company = opp?.entreprises?.[0];
+  const opp = firstRelation(detail.opportunites);
+  const company = firstRelation(opp?.entreprises) ?? linkedCompany;
   const companyWebsiteUrl = normalizeWebsiteUrl(
     resolvedWebsiteUrl ?? company?.site_web_canonique ?? company?.canonical_url
   );
@@ -272,7 +283,7 @@ export function ProductionLeadMagnetDetailPage() {
   const companyPhones = Array.from(
     new Set([company?.telephone, ...(company?.telephones ?? [])].map((item) => item?.trim()).filter(Boolean))
   ) as string[];
-  const template = detail.production_templates?.[0];
+  const template = firstRelation(detail.production_templates);
   const isLeadMagnetReady = detail.statut === "pret" || Boolean(opp?.lead_magnet);
 
   return (
@@ -284,8 +295,8 @@ export function ProductionLeadMagnetDetailPage() {
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <Card>
           <CardHeader>
-            <CardTitle>{detail.nom || opp?.name || opp?.entreprises?.[0]?.name || "Production lead magnet"}</CardTitle>
-            <CardDescription>Lié à l'opportunité {opp?.name || opp?.entreprises?.[0]?.name || opp?.id} • Template {template?.nom || template?.id}</CardDescription>
+            <CardTitle>{detail.nom || opp?.name || company?.name || "Production lead magnet"}</CardTitle>
+            <CardDescription>Lié à l'opportunité {opp?.name || company?.name || opp?.id} • Template {template?.nom || template?.id}</CardDescription>
             {companyWebsiteUrl && (
               <div>
                 <Button asChild size="sm" variant="outline" className="mt-2">
