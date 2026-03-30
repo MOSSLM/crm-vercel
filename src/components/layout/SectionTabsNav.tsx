@@ -1,0 +1,82 @@
+"use client";
+
+import React from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+type SectionTabItem = {
+  label: string;
+  href: string;
+  activeMatch?: (pathname: string) => boolean;
+};
+
+type SectionTabsNavProps = {
+  items: SectionTabItem[];
+};
+
+export function SectionTabsNav({ items }: SectionTabsNavProps) {
+  const pathname = usePathname();
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const scrollBy = (direction: "left" | "right") => {
+    const element = containerRef.current;
+    if (!element) return;
+    const delta = direction === "left" ? -220 : 220;
+    element.scrollBy({ left: delta, behavior: "smooth" });
+  };
+
+  return (
+    <div className="border-t border-border/60 bg-background/90 supports-[backdrop-filter]:bg-background/70">
+      <div className="relative flex items-center px-2 md:px-4">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="mr-1 h-8 w-8 shrink-0 md:hidden"
+          onClick={() => scrollBy("left")}
+          aria-label="Faire défiler vers la gauche"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </Button>
+
+        <div
+          ref={containerRef}
+          className="no-scrollbar flex flex-1 snap-x items-center gap-1 overflow-x-auto py-2"
+        >
+          {items.map((item) => {
+            const active = item.activeMatch
+              ? item.activeMatch(pathname)
+              : pathname === item.href || pathname.startsWith(`${item.href}/`);
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`sage-tab snap-start whitespace-nowrap rounded-full px-3 py-1.5 text-sm transition-all ${
+                  active
+                    ? "active text-slate-900 dark:text-slate-900 shadow-sm"
+                    : "bg-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
+        </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          className="ml-1 h-8 w-8 shrink-0 md:hidden"
+          onClick={() => scrollBy("right")}
+          aria-label="Faire défiler vers la droite"
+        >
+          <ChevronRight className="h-5 w-5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export default SectionTabsNav;

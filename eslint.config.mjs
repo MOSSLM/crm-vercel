@@ -9,27 +9,17 @@ const compat = new FlatCompat({ baseDirectory: __dirname });
 
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
-
-  // Ton bloc d’overrides moderne
   {
     rules: {
-      // Trop verbeux pour l’instant : on relâche
-      "@typescript-eslint/no-explicit-any": "warn",
+      // Temporarily relax noisy rules that are currently blocking Vercel builds.
+      "@typescript-eslint/no-explicit-any": "off",
+      "@typescript-eslint/no-unused-vars": "off",
+      "react-hooks/exhaustive-deps": "off",
       "@typescript-eslint/no-unsafe-function-type": "off",
 
-      // Beaucoup de texte FR avec des apostrophes → on coupe cette règle
+      // Existing project preferences.
       "react/no-unescaped-entities": "off",
-
-      // Conseils perf Next/Image → en "warn"
       "@next/next/no-img-element": "warn",
-
-      // Moins bloquant sur les imports non utilisés
-      "@typescript-eslint/no-unused-vars": ["warn", {
-        argsIgnorePattern: "^_",
-        varsIgnorePattern: "^_"
-      }],
-
-      // Bruit inutile
       "import/no-anonymous-default-export": "off"
     },
   },

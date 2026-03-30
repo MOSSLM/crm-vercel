@@ -35,7 +35,8 @@ import {
   Phone,
   Mail,
   Linkedin,
-  Globe
+  Globe,
+  Plus
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -45,6 +46,7 @@ import { journalApi } from '../utils/journalApi';
 import { ContactChannel } from '../types';
 import { normalizeServiceTags } from '../utils/serviceTags';
 import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
+import { PipelineCombobox } from './PipelineCombobox';
 
 const normalizeWebsiteUrl = (url?: string | null) => {
   if (!url) return undefined;
@@ -106,6 +108,7 @@ interface StageConfiguration {
 
 type SortOption = 'recent' | 'price-asc' | 'price-desc' | 'priority-high' | 'priority-low';
 type NormalizedPriority = 'haute' | 'moyenne' | 'basse';
+type LeadMagnetFilter = 'all' | 'ready' | 'not_ready';
 
 interface OpportunityCardProps {
   opportunity: Opportunity;
@@ -494,10 +497,12 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
 export const PipelinePage: React.FC = () => {
   const { 
     opportunities, 
+    pipelines,
     pipelineStages, 
     moveOpportunityToStage,
     updateOpportunity,
-    companies
+    companies,
+    addPipeline
   } = useAppData();
   
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
@@ -512,7 +517,31 @@ export const PipelinePage: React.FC = () => {
   const [requireEmployees, setRequireEmployees] = useState(false);
   const [sortOption, setSortOption] = useState<SortOption>('recent');
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
+  const [selectedService, setSelectedService] = useState('all');
+  const [leadMagnetFilter, setLeadMagnetFilter] = useState<LeadMagnetFilter>('all');
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
+  const [newPipelineName, setNewPipelineName] = useState('');
+
+  React.useEffect(() => {
+    if (selectedPipelineId !== 'all') return;
+    const defaultPipeline = pipelines.find((pipeline) => pipeline.is_default) || pipelines[0];
+    if (defaultPipeline) {
+      setSelectedPipelineId(defaultPipeline.id);
+    }
+  }, [pipelines, selectedPipelineId]);
+
+  const stagesForPipeline = React.useMemo(
+    () =>
+      selectedPipelineId === 'all'
+        ? pipelineStages
+        : pipelineStages.filter((stage) => stage.pipeline_id === selectedPipelineId),
+    [pipelineStages, selectedPipelineId]
+  );
+  const stageIdsForSelectedPipeline = React.useMemo(
+    () => new Set(stagesForPipeline.map((stage) => stage.id)),
+    [stagesForPipeline]
+  );
 
   const companiesById = React.useMemo(() => {
     const map = new Map<number, (typeof companies)[number]>();
@@ -521,6 +550,16 @@ export const PipelinePage: React.FC = () => {
     });
     return map;
   }, [companies]);
+
+  const availableServices = React.useMemo(
+    () =>
+      Array.from(
+        new Set(
+          companies.flatMap((company) => normalizeServiceTags(company.service_tags, company.premiers_tags))
+        )
+      ).sort((a, b) => a.localeCompare(b, 'fr')),
+    [companies]
+  );
 
   const getNormalizedPriority = (opportunity: Opportunity): NormalizedPriority | undefined => {
     const priorityValue = (opportunity.priorite || opportunity.priority)?.toString().toLowerCase();
@@ -571,6 +610,14 @@ export const PipelinePage: React.FC = () => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
     return opportunities.filter(opportunity => {
+      if (selectedPipelineId !== 'all') {
+        const matchesPipelineId = opportunity.pipeline_id === selectedPipelineId;
+        const matchesStagePipeline =
+          typeof opportunity.stage_id === 'number' && stageIdsForSelectedPipeline.has(opportunity.stage_id);
+        if (!matchesPipelineId && !matchesStagePipeline) {
+          return false;
+        }
+      }
       const company = opportunity.entreprise_id ? companiesById.get(opportunity.entreprise_id) : undefined;
       const normalizedPriority = getNormalizedPriority(opportunity);
       const opportunityValue = calculateOpportunityValue(opportunity);
@@ -586,6 +633,12 @@ export const PipelinePage: React.FC = () => {
       const matchesEmployees = !requireEmployees || companyHasEmployees(company);
       const opportunityFlags = parseFlags(opportunity.flags);
       const matchesFlags = selectedFlags.length === 0 || selectedFlags.some((flag) => opportunityFlags.includes(flag));
+      const companyServiceTags = normalizeServiceTags(company?.service_tags, company?.premiers_tags);
+      const matchesService = selectedService === 'all' || companyServiceTags.includes(selectedService);
+      const hasLeadMagnetReady = Boolean(opportunity.lead_magnet || opportunity.leadMagnet);
+      const matchesLeadMagnet =
+        leadMagnetFilter === 'all' ||
+        (leadMagnetFilter === 'ready' ? hasLeadMagnetReady : !hasLeadMagnetReady);
 
       const matchesSearch =
         !normalizedSearch ||
@@ -602,9 +655,9 @@ export const PipelinePage: React.FC = () => {
           .filter(Boolean)
           .some(value => value!.toString().toLowerCase().includes(normalizedSearch));
 
-      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesSearch;
+      return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesService && matchesLeadMagnet && matchesSearch;
     });
-  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags]);
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId, leadMagnetFilter, stageIdsForSelectedPipeline]);
 
   const sortedOpportunities = React.useMemo(() => {
     const priorityOrderHighFirst: Record<string, number> = {
@@ -665,6 +718,8 @@ export const PipelinePage: React.FC = () => {
     setRequireEmployees(false);
     setSortOption('recent');
     setSelectedFlags([]);
+    setSelectedService('all');
+    setLeadMagnetFilter('all');
   };
 
   const selectedCompany = selectedOpportunity
@@ -677,7 +732,7 @@ export const PipelinePage: React.FC = () => {
 
   // Configuration des étapes (visibilité et taille)
   const [stageConfigs, setStageConfigs] = useState<StageConfiguration[]>(
-    pipelineStages.map(stage => ({
+    stagesForPipeline.map(stage => ({
       id: stage.id,
       isVisible: true,
       isReduced: false
@@ -686,16 +741,19 @@ export const PipelinePage: React.FC = () => {
 
   // Synchroniser la configuration avec les étapes
   React.useEffect(() => {
-    const newConfigs = pipelineStages.map(stage => {
-      const existingConfig = stageConfigs.find(config => config.id === stage.id);
-      return existingConfig || {
-        id: stage.id,
-        isVisible: true,
-        isReduced: false
-      };
-    });
-    setStageConfigs(newConfigs);
-  }, [pipelineStages]);
+    setStageConfigs((previousConfigs) =>
+      stagesForPipeline.map((stage) => {
+        const existingConfig = previousConfigs.find((config) => config.id === stage.id);
+        return (
+          existingConfig || {
+            id: stage.id,
+            isVisible: true,
+            isReduced: false,
+          }
+        );
+      })
+    );
+  }, [stagesForPipeline]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Date inconnue';
@@ -826,7 +884,7 @@ export const PipelinePage: React.FC = () => {
     );
   };
 
-  const visibleStages = pipelineStages.filter(stage => {
+  const visibleStages = stagesForPipeline.filter(stage => {
     const config = stageConfigs.find(c => c.id === stage.id);
     return config?.isVisible !== false;
   });
@@ -844,27 +902,50 @@ export const PipelinePage: React.FC = () => {
       ),
     [sortedOpportunities]
   );
+  const normalizedNewPipelineName = newPipelineName.trim();
+  const matchingPipeline = pipelines.find(
+    (pipeline) => pipeline.nom.trim().toLowerCase() === normalizedNewPipelineName.toLowerCase()
+  );
+  const canCreatePipeline = normalizedNewPipelineName.length > 0 && !matchingPipeline;
+
+  const handleCreatePipeline = async () => {
+    if (!canCreatePipeline) return;
+    const createdPipeline = await addPipeline(normalizedNewPipelineName);
+    if (createdPipeline) {
+      setSelectedPipelineId(createdPipeline.id);
+      setNewPipelineName('');
+    }
+  };
 
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1>Pipeline des Ventes</h1>
             <p className="text-muted-foreground">
               Suivez vos opportunités à travers les différentes étapes du processus de vente
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
+          <div className="flex flex-wrap items-center gap-2">
+            <PipelineCombobox
+              pipelines={pipelines}
+              selectedValue={selectedPipelineId}
+              includeAllOption
+              onSelect={setSelectedPipelineId}
+              onCreate={addPipeline}
+              placeholder="Choisir ou créer un pipeline"
+            />
+            <Button size="sm" variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
               Vue pipeline
             </Button>
-            <Button variant={pipelineMode === 'cold_call' ? 'default' : 'outline'} onClick={() => setPipelineMode('cold_call')}>
+            <Button size="sm" variant={pipelineMode === 'cold_call' ? 'default' : 'outline'} onClick={() => setPipelineMode('cold_call')}>
               Mode Cold Call
             </Button>
             {pipelineMode === 'standard' && (
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => setShowSettings(!showSettings)}
                 className="flex items-center gap-2"
               >
@@ -887,7 +968,7 @@ export const PipelinePage: React.FC = () => {
           <Card className="p-4">
             <h3 className="font-medium mb-4">Configuration des étapes</h3>
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {pipelineStages.map((stage) => {
+              {stagesForPipeline.map((stage) => {
                 const config = stageConfigs.find(c => c.id === stage.id);
                 const stageColor = getStageColor(stage.nom);
                 
@@ -923,47 +1004,47 @@ export const PipelinePage: React.FC = () => {
           </Card>
         )}
 
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
-          <Card>
-            <CardHeader className="pb-2">
+        <div className="grid gap-2 grid-cols-2 md:grid-cols-4 md:gap-6">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Opportunités totales</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{sortedOpportunities.length}</div>
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold">{sortedOpportunities.length}</div>
               <p className="text-xs text-muted-foreground">Dans le pipeline (après filtres)</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Valeur totale</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold text-green-600">
                 {totalValue.toLocaleString()}€
               </div>
               <p className="text-xs text-muted-foreground">Pipeline filtré</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Valeur moyenne</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold text-blue-600">
                 {Math.round(averageValue).toLocaleString()}€
               </div>
               <p className="text-xs text-muted-foreground">Par opportunité filtrée</p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
+          <Card className="min-h-[98px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
               <CardTitle className="text-sm">Étapes actives</CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-purple-600">
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-lg md:text-2xl font-bold text-purple-600">
                 {visibleStages.filter(stage =>
                   getFilteredOpportunitiesByStage(stage.id).length > 0
                 ).length}
@@ -973,39 +1054,42 @@ export const PipelinePage: React.FC = () => {
           </Card>
         </div>
 
-        <Card className="p-4">
-          <div className="flex flex-col gap-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card className="p-3 md:p-4">
+          <div className="flex flex-col gap-3">
+            <div className="grid gap-2 md:gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-2">
-                <Label>Recherche globale</Label>
+                <Label className="text-xs md:text-sm">Recherche globale</Label>
                 <Input
                   value={searchTerm}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   placeholder="Rechercher une opportunité, une entreprise..."
+                  className="h-9"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tarif minimum (€)</Label>
+                <Label className="text-xs md:text-sm">Tarif minimum (€)</Label>
                 <Input
                   type="number"
                   value={minPrice}
                   onChange={(event) => setMinPrice(event.target.value)}
                   placeholder="0"
                   min={0}
+                  className="h-9"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tarif maximum (€)</Label>
+                <Label className="text-xs md:text-sm">Tarif maximum (€)</Label>
                 <Input
                   type="number"
                   value={maxPrice}
                   onChange={(event) => setMaxPrice(event.target.value)}
                   placeholder="Illimité"
                   min={0}
+                  className="h-9"
                 />
               </div>
               <div className="space-y-2">
-                <Label>Tri des cartes</Label>
+                <Label className="text-xs md:text-sm">Tri des cartes</Label>
                 <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Choisir un tri" />
@@ -1021,12 +1105,12 @@ export const PipelinePage: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2 md:gap-4 md:grid-cols-2 lg:grid-cols-3">
               <div>
-                <Label>Flags opportunité</Label>
-                <div className="mt-2 flex flex-wrap gap-3">
+                <Label className="text-xs md:text-sm">Flags opportunité</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {OPPORTUNITY_FLAGS.map((flag) => (
-                    <label key={flag.value} className="flex items-center gap-2 text-sm">
+                    <label key={flag.value} className="flex items-center gap-2 text-xs md:text-sm">
                       <Checkbox
                         checked={selectedFlags.includes(flag.value)}
                         onCheckedChange={(checked) => {
@@ -1045,14 +1129,14 @@ export const PipelinePage: React.FC = () => {
               </div>
 
               <div>
-                <Label>Priorité</Label>
-                <div className="mt-2 flex flex-wrap gap-3">
+                <Label className="text-xs md:text-sm">Priorité</Label>
+                <div className="mt-2 flex flex-wrap gap-2">
                   {[
                   { value: 'haute' as NormalizedPriority, label: 'Haute' },
                   { value: 'moyenne' as NormalizedPriority, label: 'Moyenne' },
                   { value: 'basse' as NormalizedPriority, label: 'Basse' },
                   ].map(priority => (
-                    <label key={priority.value} className="flex items-center gap-2 text-sm">
+                    <label key={priority.value} className="flex items-center gap-2 text-xs md:text-sm">
                       <Checkbox
                         checked={selectedPriorities.includes(priority.value)}
                         onCheckedChange={(checked) => {
@@ -1074,7 +1158,7 @@ export const PipelinePage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 border rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 border rounded-lg px-2.5 py-2">
                 <Switch checked={requireMobilePhone} onCheckedChange={setRequireMobilePhone} />
                 <div>
                   <Label className="text-sm">Téléphone mobile (06 ou 07)</Label>
@@ -1082,17 +1166,49 @@ export const PipelinePage: React.FC = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 border rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 border rounded-lg px-2.5 py-2">
                 <Switch checked={requireEmployees} onCheckedChange={setRequireEmployees} />
                 <div>
                   <Label className="text-sm">Entreprise avec employés</Label>
                   <p className="text-xs text-muted-foreground">Au moins un employé connu</p>
                 </div>
               </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs md:text-sm">Service offert</Label>
+                <Select value={selectedService} onValueChange={setSelectedService}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Tous les services" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous les services</SelectItem>
+                    {availableServices.map((service) => (
+                      <SelectItem key={service} value={service}>
+                        {service}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-xs md:text-sm">Lead magnet</Label>
+                <Select value={leadMagnetFilter} onValueChange={(value) => setLeadMagnetFilter(value as LeadMagnetFilter)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Tous" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tous</SelectItem>
+                    <SelectItem value="ready">Lead magnet prêt</SelectItem>
+                    <SelectItem value="not_ready">Lead magnet non prêt</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
             </div>
 
             <div className="flex flex-wrap gap-3 justify-end">
-              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || sortOption !== 'recent') && (
+              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || selectedService !== 'all' || leadMagnetFilter !== 'all' || sortOption !== 'recent') && (
                 <Badge variant="outline" className="h-7 px-3 text-xs">
                   {[
                     searchTerm ? 'Recherche active' : null,
@@ -1102,6 +1218,8 @@ export const PipelinePage: React.FC = () => {
                     selectedFlags.length ? `${selectedFlags.length} flag(s)` : null,
                     requireMobilePhone ? 'Téléphone mobile' : null,
                     requireEmployees ? 'Avec employés' : null,
+                    selectedService !== 'all' ? `Service: ${selectedService}` : null,
+                    leadMagnetFilter !== 'all' ? (leadMagnetFilter === 'ready' ? 'LM prêts' : 'LM non prêts') : null,
                     sortOption !== 'recent' ? 'Tri personnalisé' : null,
                   ]
                     .filter(Boolean)

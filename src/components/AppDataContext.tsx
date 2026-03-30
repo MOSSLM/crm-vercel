@@ -8,6 +8,7 @@ import {
   contactsApi,
   opportunitiesApi,
   offersApi,
+  pipelinesApi,
   pipelineStagesApi,
   notesApi,
   achievementsApi,
@@ -28,6 +29,7 @@ import {
 } from '../utils/displayHelpers';
 
 import logger from '../utils/logger';
+import { journalApi } from '../utils/journalApi';
 import {
   Achievement,
   Company,
@@ -38,6 +40,7 @@ import {
   Opportunity,
   OpportunityNote,
   Offer,
+  Pipeline,
   PipelineStage,
   SearchResult,
   SupabaseObjectives,
@@ -57,6 +60,7 @@ export type AnnualObjectives = Objectives;
 export const VALID_OPPORTUNITY_COLUMNS = [
   'contact_id',
   'entreprise_id',
+  'pipeline_id',
   'offre_id',
   'montant',
   'priorite',
@@ -113,6 +117,7 @@ interface AppDataContextType {
   urlBlacklist: UrlBlacklist[];
   contacts: Contact[];
   opportunities: Opportunity[];
+  pipelines: Pipeline[];
   pipelineStages: PipelineStage[];
   offers: Offer[];
 
@@ -156,6 +161,7 @@ interface AppDataContextType {
   addContact: (contact: Omit<Contact, 'id'>) => Promise<void>;
   updateContact: (id: string, updates: Partial<Contact>) => Promise<void>;
   addOpportunity: (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  addPipeline: (pipelineName: string) => Promise<Pipeline | null>;
   updateOpportunity: (id: string, updates: Partial<Opportunity>) => Promise<void>;
   addOffer: (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
   updateOffer: (id: string, updates: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
@@ -378,6 +384,7 @@ const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
 const [companies, setCompanies] = useState<Company[]>([]);
 const [contacts, setContacts] = useState<Contact[]>([]);
 const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
+const [pipelines, setPipelines] = useState<Pipeline[]>([]);
 const [pipelineStages, setPipelineStages] = useState<PipelineStage[]>([]);
 const [offers, setOffers] = useState<Offer[]>([]);
 const [networks, setNetworks] = useState<CompanyNetwork[]>([]);
@@ -428,6 +435,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         companiesData,
         qualifiedCompaniesData,
         opportunitiesData,
+        pipelinesData,
         offersData,
         pipelineStagesData,
         achievementsData,
@@ -440,6 +448,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         companiesApi.getAll(),
         companiesApi.getQualifiedOnly(),
         opportunitiesApi.getAll(),
+        pipelinesApi.getAll(),
         offersApi.getAll(),
         pipelineStagesApi.getAll(),
         achievementsApi.getAll(),
@@ -512,6 +521,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       setCompanies(normalizedCompanies);
       setContacts(contactsData);
       setOpportunities(safeOpportunities);
+      setPipelines(pipelinesData);
       setOffers(offersData);
       setPipelineStages(pipelineStagesData);
       setAchievements(safeAchievements);
@@ -890,7 +900,12 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       }
 
       const opportunityName = defaultOffer.nom || generateOpportunityName(company);
-      const defaultStage = pipelineStages.find((stage) => stage.ordre === 1) || pipelineStages[0];
+      const defaultPipeline = pipelines.find((pipeline) => pipeline.is_default) || pipelines[0];
+      const defaultStage =
+        pipelineStages.find((stage) => stage.pipeline_id === defaultPipeline?.id && stage.ordre === 1) ||
+        pipelineStages.find((stage) => stage.pipeline_id === defaultPipeline?.id) ||
+        pipelineStages.find((stage) => stage.ordre === 1) ||
+        pipelineStages[0];
 
       const hasMobilePhone = !!company.telephone && isMobilePhone(company.telephone);
       const offerAmount = typeof defaultOffer.prix_ht === 'number' ? defaultOffer.prix_ht : 0;
@@ -904,6 +919,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         offre_devise_snapshot: defaultOffer.devise,
         montant: offerAmount,
         priorite: hasMobilePhone ? 'haute' : 'moyenne',
+        pipeline_id: defaultStage?.pipeline_id ?? defaultPipeline?.id,
         stage_id: defaultStage?.id,
         lead_magnet: false,
         note_base: `Opportunité créée automatiquement pour ${getCompanyDisplayName(
@@ -1055,6 +1071,34 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
+  const addPipeline = async (pipelineName: string): Promise<Pipeline | null> => {
+    const normalizedName = pipelineName.trim();
+    if (!normalizedName) {
+      toast.error('Le nom du pipeline est requis');
+      return null;
+    }
+
+    const existingPipeline = pipelines.find(
+      (pipeline) => pipeline.nom.trim().toLowerCase() === normalizedName.toLowerCase()
+    );
+    if (existingPipeline) {
+      return existingPipeline;
+    }
+
+    try {
+      const createdPipeline = await pipelinesApi.create(normalizedName);
+      setPipelines((previous) =>
+        [...previous, createdPipeline].sort((a, b) => a.ordre - b.ordre)
+      );
+      toast.success(`Pipeline "${createdPipeline.nom}" créé`);
+      return createdPipeline;
+    } catch (error) {
+      logger.error('Error adding pipeline:', error);
+      toast.error("Erreur lors de la création du pipeline");
+      return null;
+    }
+  };
+
   const updateOpportunity = async (id: string, updates: Partial<Opportunity>) => {
     const original = opportunities.find((opp) => opp.id === id);
     if (!original) return;
@@ -1084,7 +1128,25 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
   const moveOpportunityToStage = async (opportunityId: string, stageId: number) => {
+    const opportunity = opportunities.find((opp) => opp.id === opportunityId);
+    const targetStage = pipelineStages.find((stage) => stage.id === stageId);
+
     await updateOpportunity(opportunityId, { stage_id: stageId });
+
+    if (!targetStage || opportunity?.stage_id === stageId) {
+      return;
+    }
+
+    try {
+      await journalApi.logPipelineStageChange(
+        targetStage.nom,
+        opportunityId,
+        opportunity?.entreprise_id,
+        `Passage en pipeline: ${targetStage.nom}`,
+      );
+    } catch (error) {
+      logger.error('Error logging pipeline stage change:', error);
+    }
   };
 
   const getOpportunitiesByStage = (stageId: number) => opportunities.filter((opp) => opp.stage_id === stageId);
@@ -1203,6 +1265,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     urlBlacklist,
     contacts,
     opportunities,
+    pipelines,
     pipelineStages,
     offers,
     totalCompanies,
@@ -1238,6 +1301,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     updateContactNote,
     deleteContactNote,
     addOpportunity,
+    addPipeline,
     updateOpportunity,
     addOffer,
     updateOffer,

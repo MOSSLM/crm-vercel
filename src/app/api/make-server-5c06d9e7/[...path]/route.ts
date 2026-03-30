@@ -217,6 +217,49 @@ async function logEvent(
     });
     if (pipelineError) throw pipelineError;
   }
+
+  await incrementKpiDailyFact(entry);
+}
+
+const getKpiIncrementColumn = (eventType: string): string | null => {
+  if (eventType === "cold_call" || eventType === "appel") return "appels";
+  if (eventType === "qualified") return "leads_qualifies";
+  if (eventType.startsWith("relance")) return "relances";
+  if (eventType.startsWith("rdv")) return "rdv";
+  if (eventType === "devis") return "devis";
+  if (eventType === "signature") return "signatures";
+  if (eventType === "acompte" || eventType === "deposit") return "acomptes";
+  return null;
+};
+
+async function incrementKpiDailyFact(entry: { type_evenement: string }) {
+  const column = getKpiIncrementColumn(entry.type_evenement);
+  if (!column) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const zeroRow = {
+    fact_date: today,
+    leads_trouves: 0,
+    leads_qualifies: 0,
+    appels: 0,
+    rdv: 0,
+    devis: 0,
+    relances: 0,
+    signatures: 0,
+    acomptes: 0,
+    ca: 0,
+    mrr: 0,
+  } as Record<string, string | number>;
+
+  zeroRow[column] = 1;
+
+  const { error } = await supabase
+    .from("kpi_daily_facts")
+    .insert(zeroRow);
+
+  if (error) {
+    log("kpi_daily_facts increment error", error);
+  }
 }
 
 async function getNextSequenceNumber(
@@ -997,7 +1040,60 @@ export async function GET(
           .select("fact_date, appels, relances, rdv, devis, signatures, acomptes, leads_qualifies");
 
         if (viewError) {
-          return json({ error: "Failed to fetch KPI totals" }, 500);
+          log("KPI totals read error from daily facts and view", {
+            dailyFactsError,
+            viewError,
+          });
+          return json({
+            total_appels: 0,
+            total_relances: 0,
+            total_rdvs: 0,
+            total_devis: 0,
+            total_signatures: 0,
+            total_acomptes: 0,
+            total_lead_magnets: 0,
+            total_qualified: 0,
+            week: {
+              total_appels: 0,
+              total_relances: 0,
+              total_rdvs: 0,
+              total_devis: 0,
+              total_signatures: 0,
+              total_acomptes: 0,
+              total_lead_magnets: 0,
+              total_qualified: 0,
+            },
+            month: {
+              total_appels: 0,
+              total_relances: 0,
+              total_rdvs: 0,
+              total_devis: 0,
+              total_signatures: 0,
+              total_acomptes: 0,
+              total_lead_magnets: 0,
+              total_qualified: 0,
+            },
+            quarter: {
+              total_appels: 0,
+              total_relances: 0,
+              total_rdvs: 0,
+              total_devis: 0,
+              total_signatures: 0,
+              total_acomptes: 0,
+              total_lead_magnets: 0,
+              total_qualified: 0,
+            },
+            year: {
+              total_appels: 0,
+              total_relances: 0,
+              total_rdvs: 0,
+              total_devis: 0,
+              total_signatures: 0,
+              total_acomptes: 0,
+              total_lead_magnets: 0,
+              total_qualified: 0,
+            },
+          });
         }
 
         data = viewData;

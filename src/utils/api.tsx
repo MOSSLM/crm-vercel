@@ -7,6 +7,7 @@ import {
   EmployeeBand,
   Offer,
   OfferIncludedItem,
+  Pipeline,
   Opportunity,
   OpportunityNote,
   PipelineStage,
@@ -31,9 +32,18 @@ const isStageRow = (row: unknown): row is { id: number; nom?: string | null } =>
 
 const isFullStageRow = (row: unknown): row is PipelineStage =>
   isStageRow(row) &&
+  typeof (row as { pipeline_id?: unknown }).pipeline_id === 'string' &&
   typeof row.nom === 'string' &&
   typeof (row as { ordre?: unknown }).ordre === 'number' &&
   typeof (row as { visible?: unknown }).visible === 'boolean';
+
+const isPipelineRow = (row: unknown): row is Pipeline =>
+  isRecord(row) &&
+  typeof row.id === 'string' &&
+  typeof row.nom === 'string' &&
+  typeof row.ordre === 'number' &&
+  typeof row.visible === 'boolean' &&
+  typeof row.is_default === 'boolean';
 
 export const isSearchResultRow = (row: unknown): row is SearchResult =>
   isRecord(row) && typeof row.id === 'string' && typeof row.keyword === 'string';
@@ -159,6 +169,7 @@ const OPPORTUNITY_COLUMNS = [
   'id',
   'contact_id',
   'entreprise_id',
+  'pipeline_id',
   'offre_id',
   'offre_nom_snapshot',
   'offre_prix_ht_snapshot',
@@ -395,6 +406,7 @@ const buildOpportunityFromPartial = (
     updated_at: typeof partial.updated_at === 'string' ? partial.updated_at : now,
     contact_id: toOptionalString(partial.contact_id),
     entreprise_id: toOptionalNumber(partial.entreprise_id),
+    pipeline_id: toOptionalString((partial as { pipeline_id?: unknown }).pipeline_id),
     offre_id: toOptionalString((partial as { offre_id?: unknown }).offre_id),
     offre_nom_snapshot: toOptionalString((partial as { offre_nom_snapshot?: unknown }).offre_nom_snapshot),
     offre_prix_ht_snapshot: toOptionalNumber((partial as { offre_prix_ht_snapshot?: unknown }).offre_prix_ht_snapshot),
@@ -1418,6 +1430,7 @@ const createFallbackOpportunity = (): Opportunity => {
   const baseOpportunity = buildOpportunityFromPartial('1', {
     contact_id: '1',
     entreprise_id: 1,
+    pipeline_id: 'default',
     montant: 2500,
     priorite: 'moyenne',
     stage_id: 1,
@@ -1587,6 +1600,7 @@ export const opportunitiesApi = {
       const validColumns = [
         'contact_id',
         'entreprise_id', 
+        'pipeline_id',
         'offre_id',
         'offre_nom_snapshot',
   'offre_prix_ht_snapshot',
@@ -1656,6 +1670,7 @@ export const opportunitiesApi = {
       const validColumns = [
         'contact_id',
         'entreprise_id', 
+        'pipeline_id',
         'offre_id',
         'offre_nom_snapshot',
   'offre_prix_ht_snapshot',
@@ -1964,22 +1979,23 @@ export const pipelineStagesApi = {
         .from('etapes_pipeline')
         .select('*')
         .eq('visible', true)
+        .order('pipeline_id', { ascending: true })
         .order('ordre', { ascending: true });
       
       if (error) {
         logger.error('Supabase error:', error);
         // Return default pipeline stages as fallback
         return [
-          { id: 1, nom: 'Qualifié', ordre: 1, visible: true },
-          { id: 2, nom: 'Approche', ordre: 2, visible: true },
-          { id: 3, nom: 'Relance 1', ordre: 3, visible: true },
-          { id: 4, nom: 'Relance 2', ordre: 4, visible: true },
-          { id: 5, nom: 'Relance 3', ordre: 5, visible: true },
-          { id: 6, nom: 'RDV de vente 1', ordre: 6, visible: true },
-          { id: 7, nom: 'RDV de vente 2', ordre: 7, visible: true },
-          { id: 8, nom: 'Devis', ordre: 8, visible: true },
-          { id: 9, nom: 'Signature', ordre: 9, visible: true },
-          { id: 10, nom: 'Acompte', ordre: 10, visible: true }
+          { id: 1, pipeline_id: 'default', nom: 'Qualifié', ordre: 1, visible: true },
+          { id: 2, pipeline_id: 'default', nom: 'Approche', ordre: 2, visible: true },
+          { id: 3, pipeline_id: 'default', nom: 'Relance 1', ordre: 3, visible: true },
+          { id: 4, pipeline_id: 'default', nom: 'Relance 2', ordre: 4, visible: true },
+          { id: 5, pipeline_id: 'default', nom: 'Relance 3', ordre: 5, visible: true },
+          { id: 6, pipeline_id: 'default', nom: 'RDV de vente 1', ordre: 6, visible: true },
+          { id: 7, pipeline_id: 'default', nom: 'RDV de vente 2', ordre: 7, visible: true },
+          { id: 8, pipeline_id: 'default', nom: 'Devis', ordre: 8, visible: true },
+          { id: 9, pipeline_id: 'default', nom: 'Signature', ordre: 9, visible: true },
+          { id: 10, pipeline_id: 'default', nom: 'Acompte', ordre: 10, visible: true }
         ];
       }
       return Array.isArray(data) ? data.filter(isFullStageRow) : [];
@@ -2029,6 +2045,61 @@ export const pipelineStagesApi = {
       return { id, ...updates };
     }
   }
+};
+
+export const pipelinesApi = {
+  getAll: async (): Promise<Pipeline[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('pipelines')
+        .select('id, nom, ordre, visible, is_default')
+        .eq('visible', true)
+        .order('ordre', { ascending: true });
+
+      if (error) {
+        logger.error('Supabase pipelines error:', error);
+        return [{ id: 'default', nom: 'Général', ordre: 1, visible: true, is_default: true }];
+      }
+
+      return Array.isArray(data) ? (data as unknown[]).filter(isPipelineRow) : [];
+    } catch (error) {
+      logger.error('Error fetching pipelines:', error);
+      return [];
+    }
+  },
+  create: async (nom: string): Promise<Pipeline> => {
+    const normalizedName = nom.trim();
+    if (!normalizedName) {
+      throw new Error('Le nom du pipeline est requis');
+    }
+
+    try {
+      const { data: maxOrderRow, error: maxOrderError } = await supabase
+        .from('pipelines')
+        .select('ordre')
+        .order('ordre', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (maxOrderError) throw maxOrderError;
+
+      const nextOrder = typeof maxOrderRow?.ordre === 'number' ? maxOrderRow.ordre + 1 : 1;
+      const { data, error } = await supabase
+        .from('pipelines')
+        .insert([{ nom: normalizedName, ordre: nextOrder, visible: true, is_default: false }])
+        .select('id, nom, ordre, visible, is_default')
+        .single();
+
+      if (error) throw error;
+      if (isPipelineRow(data)) {
+        return data;
+      }
+      throw new Error('Invalid pipeline payload');
+    } catch (error) {
+      logger.error('Error creating pipeline:', error);
+      throw error;
+    }
+  },
 };
 
 // Notes API (table: notes)

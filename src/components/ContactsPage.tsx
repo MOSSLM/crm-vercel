@@ -1,34 +1,45 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { useAppData } from './AppDataContext';
-import { Contact } from '@/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Input } from './ui/input';
-import { Button } from './ui/button';
-import { Badge } from './ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { EditEmployeeModal } from './EditEmployeeModal';
-import { AddContactForm } from './AddContactForm';
-import { getCompanyDisplayName } from '../utils/displayHelpers';
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  ActionIcon,
+  Anchor,
+  Badge,
+  Button,
+  Card,
+  Group,
+  Loader,
+  Paper,
+  SegmentedControl,
+  Select,
+  SimpleGrid,
+  Stack,
+  Text,
+  TextInput,
+  ThemeIcon,
+} from "@mantine/core";
+import { useAppData } from "./AppDataContext";
+import { Contact } from "@/types";
+import { EditEmployeeModal } from "./EditEmployeeModal";
+import { AddContactForm } from "./AddContactForm";
+import { getCompanyDisplayName } from "../utils/displayHelpers";
 import { toast } from "sonner";
-import { 
-  LayoutGrid, 
-  List, 
-  Search, 
-  Filter, 
-  Phone, 
-  Mail, 
-  Globe, 
-  MapPin, 
+import {
+  LayoutGrid,
+  List,
+  Search,
+  Filter,
+  Phone,
+  Mail,
+  Globe,
+  MapPin,
   User,
   Users,
   Building,
   Briefcase,
-  Loader2
-} from 'lucide-react';
+} from "lucide-react";
+import logger from "../utils/logger";
 
-import logger from '../utils/logger';
 interface Employee {
   id: string;
   nom?: string;
@@ -43,28 +54,30 @@ interface ContactsPageProps {
   onEmployeeClick?: (employeeId: string) => void;
 }
 
-export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) => {
+export const ContactsPage: React.FC<ContactsPageProps> = () => {
   const { companies, contacts, refreshData, loading: appDataLoading } = useAppData();
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'cards' | 'list'>('cards');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [filterBy, setFilterBy] = useState('all');
+  const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterBy, setFilterBy] = useState("all");
   const [showEditEmployeeModal, setShowEditEmployeeModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [selectedCompanyName, setSelectedCompanyName] = useState('');
+  const [selectedCompanyName, setSelectedCompanyName] = useState("");
 
-  const mappedContacts = useMemo(() => {
-    return contacts.map((contact: Contact) => ({
-      id: contact.id,
-      entreprise_id: contact.entreprise_id,
-      nom: contact.nom ?? contact.last_name,
-      prenom: contact.prenom ?? contact.first_name,
-      email: contact.email,
-      tel: contact.tel,
-      poste: contact.poste ?? contact.role_title,
-    }));
-  }, [contacts]);
+  const mappedContacts = useMemo(
+    () =>
+      contacts.map((contact: Contact) => ({
+        id: contact.id,
+        entreprise_id: contact.entreprise_id,
+        nom: contact.nom ?? contact.last_name,
+        prenom: contact.prenom ?? contact.first_name,
+        email: contact.email,
+        tel: contact.tel,
+        poste: contact.poste ?? contact.role_title,
+      })),
+    [contacts],
+  );
 
   useEffect(() => {
     setAllEmployees(mappedContacts);
@@ -72,51 +85,45 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
   }, [mappedContacts, appDataLoading]);
 
   const getEmployeeDisplayName = (employee: Employee) => {
-    if (employee.prenom && employee.nom) {
-      return `${employee.prenom} ${employee.nom}`;
-    } else if (employee.nom) {
-      return employee.nom;
-    } else if (employee.prenom) {
-      return employee.prenom;
-    }
-    return 'Employé';
+    if (employee.prenom && employee.nom) return `${employee.prenom} ${employee.nom}`;
+    if (employee.nom) return employee.nom;
+    if (employee.prenom) return employee.prenom;
+    return "Employé";
   };
 
-  const getCompanyForEmployee = (employeeId: number) => {
-    return companies.find(c => c.id === employeeId);
-  };
+  const getCompanyForEmployee = (employeeId: number) => companies.find((company) => company.id === employeeId);
 
-  const filteredEmployees = allEmployees.filter(employee => {
+  const filteredEmployees = allEmployees.filter((employee) => {
     const associatedCompany = getCompanyForEmployee(employee.entreprise_id);
     const companyName = getCompanyDisplayName(associatedCompany?.name, associatedCompany?.canonical_url);
     const employeeName = getEmployeeDisplayName(employee);
-    
-    const matchesSearch = !searchTerm || 
+
+    const matchesSearch =
+      !searchTerm ||
       employeeName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       companyName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (employee.email && employee.email.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (employee.tel && employee.tel.includes(searchTerm)) ||
       (employee.poste && employee.poste.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesFilter = 
-      filterBy === 'all' ||
-      (filterBy === 'has-email' && employee.email) ||
-      (filterBy === 'has-phone' && employee.tel) ||
-      (filterBy === 'has-both' && employee.email && employee.tel) ||
-      (filterBy === 'has-position' && employee.poste);
-    
+
+    const matchesFilter =
+      filterBy === "all" ||
+      (filterBy === "has-email" && employee.email) ||
+      (filterBy === "has-phone" && employee.tel) ||
+      (filterBy === "has-both" && employee.email && employee.tel) ||
+      (filterBy === "has-position" && employee.poste);
+
     return matchesSearch && matchesFilter;
   });
 
-  const withEmailCount = allEmployees.filter(e => e.email).length;
-  const withPhoneCount = allEmployees.filter(e => e.tel).length;
-  const withBothCount = allEmployees.filter(e => e.email && e.tel).length;
-  const withPositionCount = allEmployees.filter(e => e.poste).length;
+  const withEmailCount = allEmployees.filter((employee) => employee.email).length;
+  const withPhoneCount = allEmployees.filter((employee) => employee.tel).length;
+  const withPositionCount = allEmployees.filter((employee) => employee.poste).length;
 
   const handleEmployeeClick = (employee: Employee) => {
     const company = getCompanyForEmployee(employee.entreprise_id);
     const companyName = getCompanyDisplayName(company?.name, company?.canonical_url);
-    
+
     setSelectedEmployee(employee);
     setSelectedCompanyName(companyName);
     setShowEditEmployeeModal(true);
@@ -124,13 +131,13 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
 
   const handleEmployeeUpdated = async () => {
     setSelectedEmployee(null);
-    setSelectedCompanyName('');
+    setSelectedCompanyName("");
     setLoading(true);
     try {
       await refreshData();
       toast.success("Contact mis à jour avec succès");
     } catch (error) {
-      logger.error('Error refreshing contacts after update:', error);
+      logger.error("Error refreshing contacts after update:", error);
     } finally {
       setLoading(false);
     }
@@ -141,310 +148,110 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
     try {
       await refreshData();
     } catch (error) {
-      logger.error('Error refreshing contacts after addition:', error);
+      logger.error("Error refreshing contacts after addition:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const EmployeeCard: React.FC<{ employee: Employee }> = ({ employee }) => {
-    const associatedCompany = getCompanyForEmployee(employee.entreprise_id);
-    const companyName = getCompanyDisplayName(associatedCompany?.name, associatedCompany?.canonical_url);
-    const employeeName = getEmployeeDisplayName(employee);
-
-    return (
-      <Card 
-        className="h-full cursor-pointer hover:shadow-md transition-shadow" 
-        onClick={() => handleEmployeeClick(employee)}
-      >
-        <CardHeader className="pb-2 space-y-1">
-          <div className="space-y-2">
-            <CardTitle className="text-sm md:text-base leading-tight break-words pr-1 flex items-center gap-2">
-              <User className="h-4 w-4 flex-shrink-0" />
-              {employeeName}
-            </CardTitle>
-            <div className="flex flex-wrap gap-1">
-              {employee.poste && (
-                <Badge variant="outline" className="text-xs">
-                  <Briefcase className="h-3 w-3 mr-1" />
-                  {employee.poste}
-                </Badge>
-              )}
-            </div>
-          </div>
-          
-          {/* Entreprise */}
-          <CardDescription className="flex items-start gap-1 mt-2">
-            <Building className="h-3 w-3 flex-shrink-0 mt-0.5" />
-            <span className="text-xs break-words leading-relaxed">
-              {companyName}
-            </span>
-          </CardDescription>
-        </CardHeader>
-        
-        <CardContent className="space-y-2 pt-2">
-          {/* Informations de contact */}
-          <div className="space-y-2">
-            {employee.email && (
-              <div className="flex items-start gap-2">
-                <Mail className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <span className="text-xs break-all leading-relaxed">
-                  {employee.email}
-                </span>
-              </div>
-            )}
-            
-            {employee.tel && (
-              <div className="flex items-center gap-2">
-                <Phone className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                <span className="text-xs">
-                  {employee.tel}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Adresse de l'entreprise */}
-          {associatedCompany?.adresse && (
-            <div className="flex items-start gap-2 pt-2 border-t">
-              <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
-              <span className="text-xs text-muted-foreground break-words leading-relaxed">
-                {associatedCompany.adresse}
-              </span>
-            </div>
-          )}
-
-          {/* Site web de l'entreprise */}
-          {associatedCompany?.canonical_url && (
-            <div className="flex items-start gap-2">
-              <Globe className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
-              <a 
-                href={associatedCompany.canonical_url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-blue-600 hover:underline text-xs break-all leading-relaxed"
-                onClick={(e) => e.stopPropagation()}
-              >
-                Site web
-              </a>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    );
-  };
-
-  const EmployeeRow: React.FC<{ employee: Employee }> = ({ employee }) => {
-    const associatedCompany = getCompanyForEmployee(employee.entreprise_id);
-    const companyName = getCompanyDisplayName(associatedCompany?.name, associatedCompany?.canonical_url);
-    const employeeName = getEmployeeDisplayName(employee);
-
-    return (
-      <div 
-        className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:shadow-md transition-shadow"
-        onClick={() => handleEmployeeClick(employee)}
-      >
-        <div className="flex items-center gap-4 flex-1 min-w-0">
-          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center flex-shrink-0">
-            <User className="h-5 w-5 text-primary" />
-          </div>
-          
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-medium truncate">{employeeName}</span>
-              {employee.poste && (
-                <Badge variant="outline" className="text-xs flex-shrink-0">
-                  <Briefcase className="h-3 w-3 mr-1" />
-                  {employee.poste}
-                </Badge>
-              )}
-            </div>
-            <div className="text-sm text-muted-foreground flex items-center gap-1">
-              <Building className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">{companyName}</span>
-            </div>
-            {associatedCompany?.adresse && (
-              <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                <MapPin className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">{associatedCompany.adresse}</span>
-              </div>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-4 flex-shrink-0">
-            <div className="flex gap-2">
-              {employee.email && <Mail className="h-4 w-4 text-muted-foreground" />}
-              {employee.tel && <Phone className="h-4 w-4 text-muted-foreground" />}
-              {associatedCompany?.canonical_url && <Globe className="h-4 w-4 text-muted-foreground" />}
-            </div>
-          </div>
-        </div>
-        
-        <div className="text-right flex-shrink-0">
-          <div className="text-sm">
-            {employee.email && <div className="truncate max-w-48">{employee.email}</div>}
-            {employee.tel && <div>{employee.tel}</div>}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
   if (loading) {
     return (
-      <div className="p-3 md:p-6">
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p className="text-muted-foreground">Chargement des contacts...</p>
-          </div>
-        </div>
-      </div>
+      <Stack p="lg" align="center" gap="sm">
+        <Loader />
+        <Text c="dimmed">Chargement des contacts...</Text>
+      </Stack>
     );
   }
 
   return (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      <div>
-        <h1>Contacts</h1>
-        <p className="text-muted-foreground">
-          Tous les contacts et employés de vos entreprises
-        </p>
-      </div>
+    <Stack p={{ base: "md", md: "lg" }} gap="md">
+      <Stack gap={2}>
+        <Text component="h1" fw={700} size="xl">
+          Contacts
+        </Text>
+        <Text c="dimmed">Tous les contacts et employés de vos entreprises</Text>
+      </Stack>
 
-      {/* Métriques optimisées pour mobile - 2 colonnes */}
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4 md:gap-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Total</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold">{allEmployees.length}</div>
-            <p className="text-xs text-muted-foreground">Contacts</p>
-          </CardContent>
-        </Card>
+      <SimpleGrid cols={{ base: 2, md: 4 }}>
+        <MetricCard label="Total" value={allEmployees.length} description="Contacts" />
+        <MetricCard
+          label="Avec Email"
+          value={withEmailCount}
+          description={`${allEmployees.length > 0 ? Math.round((withEmailCount / allEmployees.length) * 100) : 0}% du total`}
+          color="green"
+        />
+        <MetricCard label="Avec Téléphone" value={withPhoneCount} description="Téléphone disponible" color="blue" />
+        <MetricCard label="Avec Poste" value={withPositionCount} description="Poste renseigné" color="teal" />
+      </SimpleGrid>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Avec Email</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-green-600">{withEmailCount}</div>
-            <p className="text-xs text-muted-foreground">
-              {allEmployees.length > 0 ? Math.round((withEmailCount / allEmployees.length) * 100) : 0}% du total
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Avec Téléphone</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-blue-600">{withPhoneCount}</div>
-            <p className="text-xs text-muted-foreground">Téléphone disponible</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Avec Poste</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-xl md:text-2xl font-bold text-purple-600">{withPositionCount}</div>
-            <p className="text-xs text-muted-foreground">Poste renseigné</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filtres et recherche optimisés pour mobile */}
-      <div className="space-y-3 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-wrap">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
+      <Paper withBorder p="sm" radius="lg">
+        <Stack gap="sm">
+          <TextInput
             placeholder="Rechercher par nom, entreprise, email, téléphone ou poste..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
+            onChange={(event) => setSearchTerm(event.currentTarget.value)}
+            leftSection={<Search size={16} />}
           />
-        </div>
-        
-        <div className="flex gap-3 items-center">
-          <Select value={filterBy} onValueChange={setFilterBy}>
-            <SelectTrigger className="w-40 md:w-48">
-              <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filtrer" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les contacts</SelectItem>
-              <SelectItem value="has-email">Avec email</SelectItem>
-              <SelectItem value="has-phone">Avec téléphone</SelectItem>
-              <SelectItem value="has-both">Email + téléphone</SelectItem>
-              <SelectItem value="has-position">Avec poste</SelectItem>
-            </SelectContent>
-          </Select>
+          <Group justify="space-between" wrap="wrap">
+            <Select
+              data={[
+                { value: "all", label: "Tous les contacts" },
+                { value: "has-email", label: "Avec email" },
+                { value: "has-phone", label: "Avec téléphone" },
+                { value: "has-both", label: "Email + téléphone" },
+                { value: "has-position", label: "Avec poste" },
+              ]}
+              value={filterBy}
+              onChange={(value) => setFilterBy(value ?? "all")}
+              leftSection={<Filter size={16} />}
+              w={{ base: "100%", sm: 240 }}
+            />
 
-          {/* Toggle grille/liste unifié */}
-          <div className="flex border rounded-lg">
-            <Button
-              variant={viewMode === 'cards' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('cards')}
-              className="rounded-r-none"
-            >
-              <LayoutGrid className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
-              className="rounded-l-none"
-            >
-              <List className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-      </div>
+            <SegmentedControl
+              value={viewMode}
+              onChange={(value) => setViewMode(value as "cards" | "list")}
+              data={[
+                { value: "cards", label: <LayoutGrid size={16} /> },
+                { value: "list", label: <List size={16} /> },
+              ]}
+            />
+          </Group>
+        </Stack>
+      </Paper>
 
-      <div className="text-sm text-muted-foreground">
-        {filteredEmployees.length} contact{filteredEmployees.length > 1 ? 's' : ''} trouvé{filteredEmployees.length > 1 ? 's' : ''}
-      </div>
+      <Text size="sm" c="dimmed">
+        {filteredEmployees.length} contact{filteredEmployees.length > 1 ? "s" : ""} trouvé
+        {filteredEmployees.length > 1 ? "s" : ""}
+      </Text>
 
-      {/* Formulaire d'ajout rapide */}
-      <AddContactForm 
-        onContactAdded={handleContactAdded}
-        className="mb-6"
-      />
+      <AddContactForm onContactAdded={handleContactAdded} />
 
-      {/* Grille de contacts optimisée pour mobile */}
-      {viewMode === 'cards' ? (
-        <div className="grid gap-3 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {viewMode === "cards" ? (
+        <SimpleGrid cols={{ base: 1, md: 2, lg: 3 }}>
           {filteredEmployees.map((employee) => (
-            <EmployeeCard key={employee.id} employee={employee} />
+            <ContactCard key={employee.id} employee={employee} getCompany={getCompanyForEmployee} onClick={handleEmployeeClick} />
           ))}
-        </div>
+        </SimpleGrid>
       ) : (
-        <div className="space-y-2">
+        <Stack gap="xs">
           {filteredEmployees.map((employee) => (
-            <EmployeeRow key={employee.id} employee={employee} />
+            <ContactRow key={employee.id} employee={employee} getCompany={getCompanyForEmployee} onClick={handleEmployeeClick} />
           ))}
-        </div>
+        </Stack>
       )}
 
       {filteredEmployees.length === 0 && (
-        <div className="text-center py-8 md:py-12">
-          <Users className="h-8 w-8 md:h-12 md:w-12 text-muted-foreground mx-auto mb-4" />
-          <h3 className="text-sm md:text-base">Aucun contact trouvé</h3>
-          <p className="text-muted-foreground text-xs md:text-sm">
-            {allEmployees.length === 0 
-              ? "Aucun contact n'a été trouvé dans vos entreprises."
-              : "Essayez d'ajuster vos critères de recherche ou de filtrage."
-            }
-          </p>
-        </div>
+        <Stack align="center" py="xl" gap="xs">
+          <Users size={44} />
+          <Text fw={500}>Aucun contact trouvé</Text>
+          <Text c="dimmed" size="sm" ta="center">
+            {allEmployees.length === 0
+              ? "Aucun contact n&apos;a été trouvé dans vos entreprises."
+              : "Essayez d&apos;ajuster vos critères de recherche ou de filtrage."}
+          </Text>
+        </Stack>
       )}
 
-      {/* Modal d'édition d'employé */}
       <EditEmployeeModal
         open={showEditEmployeeModal}
         onOpenChange={setShowEditEmployeeModal}
@@ -452,6 +259,160 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ onEmployeeClick }) =
         companyName={selectedCompanyName}
         onEmployeeUpdated={handleEmployeeUpdated}
       />
-    </div>
+    </Stack>
   );
 };
+
+function MetricCard({
+  label,
+  value,
+  description,
+  color,
+}: {
+  label: string;
+  value: number;
+  description: string;
+  color?: string;
+}) {
+  return (
+    <Card withBorder radius="lg" p="md">
+      <Text size="sm" c="dimmed">
+        {label}
+      </Text>
+      <Text fw={700} size="xl" c={color}>
+        {value}
+      </Text>
+      <Text size="xs" c="dimmed">
+        {description}
+      </Text>
+    </Card>
+  );
+}
+
+function ContactCard({
+  employee,
+  getCompany,
+  onClick,
+}: {
+  employee: Employee;
+  getCompany: (id: number) => { name?: string | null; canonical_url?: string | null; adresse?: string | null } | undefined;
+  onClick: (employee: Employee) => void;
+}) {
+  const company = getCompany(employee.entreprise_id);
+  const employeeName = `${employee.prenom ?? ""} ${employee.nom ?? ""}`.trim() || "Employé";
+  const companyName = getCompanyDisplayName(company?.name, company?.canonical_url);
+
+  return (
+    <Card withBorder radius="lg" p="md" style={{ cursor: "pointer" }} onClick={() => onClick(employee)}>
+      <Stack gap="xs">
+        <Group gap="xs" align="center">
+          <ThemeIcon variant="light">
+            <User size={16} />
+          </ThemeIcon>
+          <Text fw={600}>{employeeName}</Text>
+          {employee.poste && (
+            <Badge variant="light" leftSection={<Briefcase size={12} />}>
+              {employee.poste}
+            </Badge>
+          )}
+        </Group>
+
+        <Group gap={6} wrap="nowrap">
+          <Building size={14} />
+          <Text size="sm" c="dimmed" truncate>
+            {companyName}
+          </Text>
+        </Group>
+
+        {employee.email && (
+          <Group gap={6} wrap="nowrap">
+            <Mail size={14} />
+            <Text size="sm" truncate>
+              {employee.email}
+            </Text>
+          </Group>
+        )}
+
+        {employee.tel && (
+          <Group gap={6}>
+            <Phone size={14} />
+            <Text size="sm">{employee.tel}</Text>
+          </Group>
+        )}
+
+        {company?.adresse && (
+          <Group gap={6} wrap="nowrap">
+            <MapPin size={14} />
+            <Text size="xs" c="dimmed" truncate>
+              {company.adresse}
+            </Text>
+          </Group>
+        )}
+
+        {company?.canonical_url && (
+          <Anchor href={company.canonical_url} target="_blank" rel="noopener noreferrer" size="sm" onClick={(event) => event.stopPropagation()}>
+            <Group gap={6}>
+              <Globe size={14} />
+              <span>Site web</span>
+            </Group>
+          </Anchor>
+        )}
+      </Stack>
+    </Card>
+  );
+}
+
+function ContactRow({
+  employee,
+  getCompany,
+  onClick,
+}: {
+  employee: Employee;
+  getCompany: (id: number) => { name?: string | null; canonical_url?: string | null; adresse?: string | null } | undefined;
+  onClick: (employee: Employee) => void;
+}) {
+  const company = getCompany(employee.entreprise_id);
+  const employeeName = `${employee.prenom ?? ""} ${employee.nom ?? ""}`.trim() || "Employé";
+  const companyName = getCompanyDisplayName(company?.name, company?.canonical_url);
+
+  return (
+    <Paper withBorder radius="md" p="sm" style={{ cursor: "pointer" }} onClick={() => onClick(employee)}>
+      <Group justify="space-between" wrap="nowrap">
+        <Group wrap="nowrap" style={{ minWidth: 0 }}>
+          <ThemeIcon variant="light">
+            <User size={16} />
+          </ThemeIcon>
+          <Stack gap={0} style={{ minWidth: 0 }}>
+            <Group gap="xs" wrap="wrap">
+              <Text fw={500} truncate>
+                {employeeName}
+              </Text>
+              {employee.poste && <Badge variant="outline">{employee.poste}</Badge>}
+            </Group>
+            <Text size="sm" c="dimmed" truncate>
+              {companyName}
+            </Text>
+          </Stack>
+        </Group>
+
+        <Group gap={4} wrap="nowrap">
+          {employee.email && (
+            <ActionIcon variant="subtle" color="gray" aria-label="a un email">
+              <Mail size={16} />
+            </ActionIcon>
+          )}
+          {employee.tel && (
+            <ActionIcon variant="subtle" color="gray" aria-label="a un téléphone">
+              <Phone size={16} />
+            </ActionIcon>
+          )}
+          {company?.canonical_url && (
+            <ActionIcon variant="subtle" color="gray" aria-label="a un site web">
+              <Globe size={16} />
+            </ActionIcon>
+          )}
+        </Group>
+      </Group>
+    </Paper>
+  );
+}

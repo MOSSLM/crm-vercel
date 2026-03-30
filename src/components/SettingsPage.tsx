@@ -14,6 +14,8 @@ import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Badge } from './ui/badge';
 import { Alert, AlertDescription } from './ui/alert';
 import { 
+  RotateCcw,
+  Palette,
   User, 
   Settings, 
   Bell, 
@@ -25,8 +27,6 @@ import {
   EyeOff,
   Camera,
   MapPin,
-  Search,
-  Monitor,
   Moon,
   Sun,
   Smartphone,
@@ -34,10 +34,21 @@ import {
   Phone,
   Building
 } from 'lucide-react';
+import { useTheme } from './ThemeContext';
+import { THEME_PRESETS, ThemePreset } from './themePresets';
 
 export const SettingsPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
-  const [darkMode, setDarkMode] = useState(false);
+  const {
+    theme,
+    setTheme,
+    resolvedTheme,
+    themePreset,
+    setThemePreset,
+    customThemeColors,
+    setCustomThemeColor,
+    resetCustomThemeColors,
+  } = useTheme();
   const [notifications, setNotifications] = useState({
     newSearchComplete: true,
     qualificationUpdates: true,
@@ -50,8 +61,19 @@ export const SettingsPage: React.FC = () => {
     setNotifications(prev => ({ ...prev, [key]: value }));
   };
 
+  const colorPickerFields = [
+    { key: '--background', label: 'Fond principal' },
+    { key: '--card', label: 'Fond cartes' },
+    { key: '--accent', label: 'Accent UI' },
+    { key: '--primary', label: 'Couleur primaire' },
+    { key: '--chart-1', label: 'Chart 1' },
+    { key: '--chart-2', label: 'Chart 2' },
+    { key: '--chart-3', label: 'Chart 3' },
+    { key: '--chart-4', label: 'Chart 4' },
+  ] as const;
+
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
+    <div className="mx-auto w-full max-w-5xl space-y-6 px-3 py-4 md:px-6 md:py-6">
       <div>
         <h1>Paramètres</h1>
         <p className="text-muted-foreground">
@@ -60,7 +82,7 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 gap-1 md:grid-cols-5">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             Profil
@@ -236,15 +258,105 @@ export const SettingsPage: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label className="flex items-center gap-2">
-                    {darkMode ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+                    {resolvedTheme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                     Mode sombre
                   </Label>
                   <div className="text-sm text-muted-foreground">
                     Basculer vers un thème sombre pour réduire la fatigue oculaire
                   </div>
                 </div>
-                <Switch checked={darkMode} onCheckedChange={setDarkMode} />
+                <Switch
+                  checked={resolvedTheme === 'dark'}
+                  onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                />
               </div>
+
+              <div className="space-y-2">
+                <Label>Mode de thème</Label>
+                <Select value={theme} onValueChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="light">Clair</SelectItem>
+                    <SelectItem value="dark">Sombre</SelectItem>
+                    <SelectItem value="system">Système</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <Label>Gestionnaire de thèmes visuels</Label>
+                <p className="text-sm text-muted-foreground">
+                  Chaque preset change les couleurs d'interface, les couleurs de graphiques, le radius et le style de bordure.
+                </p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {THEME_PRESETS.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setThemePreset(preset.id as ThemePreset)}
+                      className={`rounded-lg border p-3 text-left transition hover:shadow-sm ${
+                        themePreset === preset.id
+                          ? 'border-primary bg-accent/40'
+                          : 'border-border bg-card/60 hover:bg-accent/25'
+                      }`}
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="font-medium">{preset.name}</span>
+                        {themePreset === preset.id ? <Badge>Actif</Badge> : null}
+                      </div>
+                      <p className="mb-3 text-sm text-muted-foreground">{preset.description}</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-1'] ?? '#3b82f6' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-2'] ?? '#ef4444' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-3'] ?? '#10b981' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-4'] ?? '#f59e0b' }} />
+                        <span className="h-3 w-3 rounded-full" style={{ backgroundColor: preset.cssVars['--chart-5'] ?? '#8b5cf6' }} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+
+
+              <Separator />
+
+              <div className="space-y-3 rounded-xl border border-border/70 bg-card/60 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Label className="flex items-center gap-2"><Palette className="h-4 w-4" /> Personnalisation avancée</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={resetCustomThemeColors} className="gap-1">
+                    <RotateCcw className="h-3.5 w-3.5" /> Réinitialiser
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Ajustez les couleurs du thème en direct avec des color pickers (bonnes pratiques shadcn: contraste et cohérence).
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {colorPickerFields.map((field) => (
+                    <div key={field.key} className="rounded-lg border border-border/70 bg-background/70 p-2">
+                      <Label htmlFor={`picker-${field.key}`} className="mb-2 block text-xs">{field.label}</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          id={`picker-${field.key}`}
+                          type="color"
+                          value={customThemeColors[field.key] ?? '#ffffff'}
+                          onChange={(e) => setCustomThemeColor(field.key, e.target.value)}
+                          className="h-9 w-12 cursor-pointer p-1"
+                        />
+                        <Input
+                          value={customThemeColors[field.key] ?? ''}
+                          onChange={(e) => setCustomThemeColor(field.key, e.target.value)}
+                          placeholder="#ffffff"
+                          className="h-9"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
 
               <div className="space-y-2">
                 <Label>Vue par défaut des résultats</Label>

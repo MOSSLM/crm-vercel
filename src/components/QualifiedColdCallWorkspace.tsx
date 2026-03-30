@@ -28,6 +28,7 @@ import {
   Target,
 } from "lucide-react";
 import { PipelineStage } from "@/types";
+import { normalizeServiceTags } from "@/utils/serviceTags";
 
 interface JournalEntry {
   date: string;
@@ -122,6 +123,7 @@ export const QualifiedColdCallWorkspace: React.FC<QualifiedColdCallWorkspaceProp
   const [stageFilter, setStageFilter] = useState("all");
   const [tagFilter, setTagFilter] = useState("all");
   const [flagFilter, setFlagFilter] = useState("all");
+  const [serviceFilter, setServiceFilter] = useState("all");
 
   const availableTags = useMemo(() => {
     const tags = scopedOpportunities.flatMap((opportunity) => parseOpportunityTags(opportunity.tags));
@@ -132,6 +134,13 @@ export const QualifiedColdCallWorkspace: React.FC<QualifiedColdCallWorkspaceProp
     const flags = scopedOpportunities.flatMap((opportunity) => parseOpportunityFlags(opportunity.flags));
     return Array.from(new Set(flags)).sort((a, b) => a.localeCompare(b, "fr"));
   }, [scopedOpportunities]);
+
+  const availableServices = useMemo(() => {
+    const services = companyScope.flatMap((company) =>
+      normalizeServiceTags(company.service_tags, company.premiers_tags)
+    );
+    return Array.from(new Set(services)).sort((a, b) => a.localeCompare(b, "fr"));
+  }, [companyScope]);
 
   const filteredOpportunityCompanyIds = useMemo(() => {
     const matchedCompanyIds = new Set<number>();
@@ -163,11 +172,15 @@ export const QualifiedColdCallWorkspace: React.FC<QualifiedColdCallWorkspaceProp
     return companyScope.filter((c) => {
       if (scopedOpportunities.length > 0 && !filteredOpportunityCompanyIds.has(c.id)) return false;
       if (!showHiddenCompanies && hiddenCompanyIds.has(c.id)) return false;
+      if (serviceFilter !== "all") {
+        const services = normalizeServiceTags(c.service_tags, c.premiers_tags);
+        if (!services.includes(serviceFilter)) return false;
+      }
       if (!q) return true;
       const name = getCompanyDisplayName(c.name, c.canonical_url).toLowerCase();
       return name.includes(q) || (c.ville || "").toLowerCase().includes(q);
     });
-  }, [companyScope, filteredOpportunityCompanyIds, hiddenCompanyIds, scopedOpportunities.length, search, showHiddenCompanies]);
+  }, [companyScope, filteredOpportunityCompanyIds, hiddenCompanyIds, scopedOpportunities.length, search, serviceFilter, showHiddenCompanies]);
 
   useEffect(() => {
     if (!selectedCompanyId && filteredCompanies.length > 0) {
@@ -370,6 +383,17 @@ export const QualifiedColdCallWorkspace: React.FC<QualifiedColdCallWorkspaceProp
                   </SelectContent>
                 </Select>
               </div>
+              <Select value={serviceFilter} onValueChange={setServiceFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Service offert" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tous les services</SelectItem>
+                  {availableServices.map((service) => (
+                    <SelectItem key={service} value={service}>{service}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
           <Button

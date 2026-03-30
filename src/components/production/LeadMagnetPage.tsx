@@ -38,12 +38,21 @@ const columns: ProductionColumn[] = [
 ];
 
 export const LeadMagnetPage: React.FC = () => {
+  const getPublicEndpointUrl = (row: Record<string, unknown>): string | null => {
+    const id = row.id;
+    if (typeof id !== "string" || !id.trim()) return null;
+
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    return `${origin}/api/public/lead-magnets/${encodeURIComponent(id.trim())}`;
+  };
+
   return (
     <ProductionDataTable
       title="Lead magnet"
-      description="Consultez et modifiez les contenus de lead magnet."
+      description="Consultez/modifiez les contenus et copiez l'endpoint public pour Framer."
       tableName="lead_magnets"
       columns={columns}
+      getPublicEndpointUrl={getPublicEndpointUrl}
       enableEntrepriseCsvExport
       csvExcludedColumns={["id", "entreprise_id", "created_at", "updated_at", "lead_magnet_content_id"]}
     />
