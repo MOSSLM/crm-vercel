@@ -30,13 +30,13 @@ export async function OPTIONS() {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { pageName: string } }
+  { params }: { params: { id: string } }
 ) {
-  const { pageName } = params;
-  const normalizedPageName = decodeURIComponent(pageName).trim();
+  const { id } = params;
+  const normalizedPageName = decodeURIComponent(id).trim();
 
   if (!normalizedPageName) {
-    return response({ error: "Missing pageName." }, 400);
+    return response({ error: "Missing id." }, 400);
   }
 
   const { data, error } = await supabase
