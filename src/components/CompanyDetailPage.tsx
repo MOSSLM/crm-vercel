@@ -1003,6 +1003,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
           {/* Journal d'activité */}
           <JournalStatsWidget
             entreprise_id={company.id}
+            companyName={displayName}
             showAddActions={true}
           />
 

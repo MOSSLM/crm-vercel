@@ -9,6 +9,7 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Separator } from './ui/separator';
 import { journalApi } from '../utils/journalApi';
+import { buildPaymentQrUrl, sendPaymentReceiptEmail } from '../utils/paymentEmailClient';
 import { ContactChannel } from '../types';
 import { 
   Phone, 
@@ -20,7 +21,8 @@ import {
   Plus,
   TrendingUp,
   Clock,
-  Activity
+  Activity,
+  Printer
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -28,6 +30,8 @@ import logger from '../utils/logger';
 interface JournalStatsWidgetProps {
   opportunite_id?: string;
   entreprise_id?: number;
+  recipientEmail?: string;
+  companyName?: string;
   showAddActions?: boolean;
   onStatsUpdate?: () => void;
 }
@@ -63,6 +67,8 @@ const contactChannelOptions: { value: ContactChannel; label: string }[] = [
 export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
   opportunite_id,
   entreprise_id,
+  recipientEmail,
+  companyName,
   showAddActions = true,
   onStatsUpdate
 }) => {
@@ -84,6 +90,8 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
     ContactChannel.PasDefini
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedQrEntry, setSelectedQrEntry] = useState<JournalEntry | null>(null);
+  const [sendingEntryIndex, setSendingEntryIndex] = useState<number | null>(null);
 
   const loadData = async () => {
     try {
@@ -167,6 +175,14 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
             actionDescription,
             selectedChannel
           );
+          await sendPaymentReceiptEmail({
+            to: recipientEmail,
+            companyName,
+            description: actionDescription,
+            amount: 0,
+            paymentDate: new Date().toISOString(),
+            qrPayload: `Paiement validé|${companyName ?? 'Entreprise'}|${new Date().toISOString()}`
+          });
           break;
         case 'lead_magnet':
           await journalApi.logLeadMagnet(
@@ -180,7 +196,9 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
           throw new Error('Type d\'action non reconnu');
       }
 
-      toast.success('Action enregistrée avec succès');
+      toast.success(selectedActionType === 'acompte'
+        ? 'Paiement enregistré et email envoyé'
+        : 'Action enregistrée avec succès');
       setShowAddDialog(false);
       setSelectedActionType('');
       setActionDescription('');
@@ -192,6 +210,26 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
       toast.error('Erreur lors de l\'enregistrement');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleResendPaymentEmail = async (entry: JournalEntry, index: number) => {
+    try {
+      setSendingEntryIndex(index);
+      await sendPaymentReceiptEmail({
+        to: recipientEmail,
+        companyName,
+        description: entry.description,
+        paymentDate: entry.date,
+        amount: 0,
+        qrPayload: `Paiement validé|${companyName ?? 'Entreprise'}|${entry.date}|${entry.description ?? ''}`
+      });
+      toast.success('Email renvoyé');
+    } catch (error) {
+      logger.error('Error resending payment email:', error);
+      toast.error("Impossible de renvoyer l'email");
+    } finally {
+      setSendingEntryIndex(null);
     }
   };
 
@@ -375,12 +413,14 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm font-medium">Activité récente</span>
               </div>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div className="space-y-2 max-h-40 overflow-y-auto overflow-x-auto pr-1">
                 {history.map((entry, index) => {
                   const Icon = getEventIcon(entry.type_evenement);
                   const color = getEventColor(entry.type_evenement);
+                  const isPaymentEvent = entry.type_evenement === 'acompte';
+                  const qrPayload = `Paiement validé|${companyName ?? 'Entreprise'}|${entry.date}|${entry.description ?? ''}`;
                   return (
-                    <div key={index} className="flex items-center gap-2 text-xs">
+                    <div key={index} className="flex min-w-[650px] items-center gap-2 text-xs">
                       <Icon className={`h-3 w-3 ${color}`} />
                       <span className="font-medium">
                         {getEventLabel(entry.type_evenement)}
@@ -394,6 +434,27 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
                           month: '2-digit'
                         })}
                       </span>
+                      {isPaymentEvent && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[11px]"
+                            onClick={() => setSelectedQrEntry(entry)}
+                          >
+                            Voir QR
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 px-2 text-[11px]"
+                            disabled={sendingEntryIndex === index}
+                            onClick={() => handleResendPaymentEmail(entry, index)}
+                          >
+                            {sendingEntryIndex === index ? 'Envoi...' : 'Renvoyer le mail'}
+                          </Button>
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -402,6 +463,35 @@ export const JournalStatsWidget: React.FC<JournalStatsWidgetProps> = ({
           </>
         )}
       </CardContent>
+      <Dialog
+        open={Boolean(selectedQrEntry)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedQrEntry(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>QR code du paiement</DialogTitle>
+          </DialogHeader>
+          {selectedQrEntry && (
+            <div className="space-y-3">
+              <img
+                src={buildPaymentQrUrl(`Paiement validé|${companyName ?? 'Entreprise'}|${selectedQrEntry.date}|${selectedQrEntry.description ?? ''}`)}
+                alt="QR code du paiement"
+                className="mx-auto h-56 w-56 rounded border"
+              />
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => window.print()}
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                Imprimer
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };
