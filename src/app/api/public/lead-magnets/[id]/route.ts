@@ -32,12 +32,12 @@ const PUBLIC_COLUMNS = [
   "avis_4_texte",
 ] as const;
 
-const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-const supabaseServerKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
+const SUPABASE_URL = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
+const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
-const hasSupabaseConfig = Boolean(supabaseUrl && supabaseServerKey);
+const hasSupabaseConfig = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 const supabase = hasSupabaseConfig
-  ? createClient(supabaseUrl, supabaseServerKey, { auth: { persistSession: false } })
+  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
   : null;
 
 const corsHeaders: Record<string, string> = {
@@ -77,16 +77,16 @@ export async function GET(
 
   if (!supabase) {
     console.error("[public lead magnet] missing Supabase server config", {
-      hasUrl: Boolean(supabaseUrl),
-      hasServiceRoleKey: Boolean(supabaseServerKey),
+      hasUrl: Boolean(SUPABASE_URL),
+      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
     });
     return response({ error: "Server configuration error." }, 500);
   }
 
   if (process.env.NODE_ENV !== "production") {
     console.info("[public lead magnet] config check", {
-      hasUrl: Boolean(supabaseUrl),
-      hasServiceRoleKey: Boolean(supabaseServerKey),
+      hasUrl: Boolean(SUPABASE_URL),
+      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
     });
   }
 
