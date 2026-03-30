@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ensureHttpsUrl } from "@/utils/displayHelpers";
 import { supabase } from "@/utils/supabase/client";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
@@ -67,6 +68,7 @@ export function ProductionLeadMagnetDetailPage() {
   const [detail, setDetail] = useState<LeadMagnetDetail | null>(null);
   const [todos, setTodos] = useState<Todo[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
+  const [resolvedWebsiteUrl, setResolvedWebsiteUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [newTodoTitle, setNewTodoTitle] = useState("");
 
@@ -133,9 +135,25 @@ export function ProductionLeadMagnetDetailPage() {
       leadMagnetTodos = (seededRows ?? []) as Todo[];
     }
 
+    let websiteUrl =
+      detailRow?.opportunites?.[0]?.entreprises?.[0]?.canonical_url ||
+      detailRow?.opportunites?.[0]?.entreprises?.[0]?.site_web_canonique ||
+      null;
+
+    const entrepriseId = detailRow?.opportunites?.[0]?.entreprise_id;
+    if (!websiteUrl && typeof entrepriseId === "number") {
+      const { data: companyRow } = await supabase
+        .from("entreprises")
+        .select("canonical_url,site_web_canonique")
+        .eq("id", entrepriseId)
+        .single();
+      websiteUrl = companyRow?.canonical_url || companyRow?.site_web_canonique || null;
+    }
+
     setDetail(detailRow);
     setTodos(leadMagnetTodos);
     setTemplates((templateRows ?? []) as TemplateRow[]);
+    setResolvedWebsiteUrl(websiteUrl);
     setLoading(false);
   }, [leadMagnetId, seedTodosForTemplate]);
 
@@ -313,6 +331,46 @@ export function ProductionLeadMagnetDetailPage() {
               onChange={(e) => setDetail((p) => (p ? { ...p, lien_livraison: e.target.value } : p))}
               onBlur={() => void saveHeader({ lien_livraison: detail.lien_livraison || null })}
             />
+          </div>
+
+          {websiteUrl && (
+            <div>
+              <Button asChild variant="outline">
+                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <Label>Site web actuel</Label>
+            {websiteUrl ? (
+              <Button asChild variant="outline">
+                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            ) : (
+              <Button variant="outline" disabled>
+                Site web indisponible
+              </Button>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label>Site web actuel</Label>
+            {websiteUrl ? (
+              <Button asChild variant="outline">
+                <a href={ensureHttpsUrl(websiteUrl)} target="_blank" rel="noopener noreferrer">
+                  Visiter le site web actuel
+                </a>
+              </Button>
+            ) : (
+              <Button variant="outline" disabled>
+                Site web indisponible
+              </Button>
+            )}
           </div>
 
           <div className="space-y-1">
