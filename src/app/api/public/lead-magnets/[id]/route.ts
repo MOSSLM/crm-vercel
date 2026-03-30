@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
@@ -32,14 +32,6 @@ const PUBLIC_COLUMNS = [
   "avis_4_texte",
 ] as const;
 
-const SUPABASE_URL = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
-
-const hasSupabaseConfig = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
-const supabase = hasSupabaseConfig
-  ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false } })
-  : null;
-
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET,OPTIONS",
@@ -55,6 +47,35 @@ const response = (body: unknown, status = 200) =>
       ...corsHeaders,
     },
   });
+
+type SupabaseInitResult =
+  | { ok: true; client: SupabaseClient }
+  | { ok: false; reason: "missing_config"; errorMessage: string };
+
+let supabaseInitPromise: Promise<SupabaseInitResult> | null = null;
+
+async function getServerSupabaseClient(): Promise<SupabaseInitResult> {
+  if (!supabaseInitPromise) {
+    supabaseInitPromise = (async () => {
+      try {
+        const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = await import("@/env");
+        return {
+          ok: true,
+          client: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY),
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown env initialization error";
+        return {
+          ok: false,
+          reason: "missing_config",
+          errorMessage,
+        };
+      }
+    })();
+  }
+
+  return supabaseInitPromise;
+}
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -75,36 +96,49 @@ export async function GET(
     return response({ error: "Invalid id format. Expected UUID." }, 400);
   }
 
-  if (!supabase) {
-    console.error("[public lead magnet] missing Supabase server config", {
-      hasUrl: Boolean(SUPABASE_URL),
-      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
+  const supabaseResult = await getServerSupabaseClient();
+  if (!supabaseResult.ok) {
+    console.error("[public lead magnet] diagnostics", {
+      category: "config_missing",
+      hasClient: false,
+      message: supabaseResult.errorMessage,
     });
     return response({ error: "Server configuration error." }, 500);
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    console.info("[public lead magnet] config check", {
-      hasUrl: Boolean(SUPABASE_URL),
-      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
-    });
-  }
-
-  const { data, error } = await supabase
+  const { data, error } = await supabaseResult.client
     .from("lead_magnets")
     .select(PUBLIC_COLUMNS.join(","))
     .eq("id", id)
     .maybeSingle();
 
   if (error) {
-    if (error.message.toLowerCase().includes("invalid api key")) {
-      console.error("[public lead magnet] invalid Supabase API key configuration");
+    const normalizedError = error.message.toLowerCase();
+    if (normalizedError.includes("invalid api key")) {
+      console.error("[public lead magnet] diagnostics", {
+        category: "invalid_api_key",
+        hasClient: true,
+        isInvalidApiKey: true,
+      });
       return response({ error: "Server configuration error." }, 500);
     }
-    return response({ error: error.message }, 500);
+
+    console.error("[public lead magnet] diagnostics", {
+      category: "supabase_error",
+      hasClient: true,
+      isInvalidApiKey: false,
+      code: error.code ?? null,
+      message: error.message,
+    });
+    return response({ error: "Server error." }, 500);
   }
 
   if (!data) {
+    console.info("[public lead magnet] diagnostics", {
+      category: "row_not_found",
+      hasClient: true,
+      id,
+    });
     return response({ error: "Lead magnet not found." }, 404);
   }
 
