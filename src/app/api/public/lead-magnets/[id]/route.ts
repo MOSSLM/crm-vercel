@@ -32,13 +32,7 @@ const PUBLIC_COLUMNS = [
   "avis_4_texte",
 ] as const;
 
-const supabaseUrl = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-const supabaseServerKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
-
-const hasSupabaseConfig = Boolean(supabaseUrl && supabaseServerKey);
-const supabase = hasSupabaseConfig
-  ? createClient(supabaseUrl, supabaseServerKey, { auth: { persistSession: false } })
-  : null;
+const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 const corsHeaders: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -73,21 +67,6 @@ export async function GET(
 
   if (!id || !isUuid) {
     return response({ error: "Invalid id format. Expected UUID." }, 400);
-  }
-
-  if (!supabase) {
-    console.error("[public lead magnet] missing Supabase server config", {
-      hasUrl: Boolean(supabaseUrl),
-      hasServiceRoleKey: Boolean(supabaseServerKey),
-    });
-    return response({ error: "Server configuration error." }, 500);
-  }
-
-  if (process.env.NODE_ENV !== "production") {
-    console.info("[public lead magnet] config check", {
-      hasUrl: Boolean(supabaseUrl),
-      hasServiceRoleKey: Boolean(supabaseServerKey),
-    });
   }
 
   const { data, error } = await supabase
