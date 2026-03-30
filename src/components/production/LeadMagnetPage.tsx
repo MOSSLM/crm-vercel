@@ -39,11 +39,11 @@ const columns: ProductionColumn[] = [
 
 export const LeadMagnetPage: React.FC = () => {
   const getPublicEndpointUrl = (row: Record<string, unknown>): string | null => {
-    const pageName = row.page_name;
-    if (typeof pageName !== "string" || !pageName.trim()) return null;
+    const id = row.id;
+    if (typeof id !== "string" || !id.trim()) return null;
 
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    return `${origin}/api/public/lead-magnets/${encodeURIComponent(pageName.trim())}`;
+    return `${origin}/api/public/lead-magnets/${encodeURIComponent(id.trim())}`;
   };
 
   return (
