@@ -154,7 +154,11 @@ async function ensureLeadMagnetProjects(): Promise<void> {
 }
 
 export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
-  await ensureLeadMagnetProjects();
+  try {
+    await ensureLeadMagnetProjects();
+  } catch (error) {
+    console.warn("[lead-magnet] ensureLeadMagnetProjects failed, fallback to existing projects only", error);
+  }
 
   const { data: projects, error: projectsError } = await supabase
     .from("lead_magnet_projects")
@@ -179,30 +183,40 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
     supabase.from("lead_magnet_reviews").select("id,project_id,is_active,actif"),
   ]);
 
-  if (opportunityRes.error) throw opportunityRes.error;
-  if (pipelinesRes.error) throw pipelinesRes.error;
-  if (stagesRes.error) throw stagesRes.error;
-  if (pagesRes.error) throw pagesRes.error;
-  if (reviewsRes.error) throw reviewsRes.error;
+  if (opportunityRes.error) {
+    console.warn("[lead-magnet] opportunites query failed, continuing without opportunity data", opportunityRes.error);
+  }
+  if (pipelinesRes.error) {
+    console.warn("[lead-magnet] pipelines query failed, continuing without pipeline data", pipelinesRes.error);
+  }
+  if (stagesRes.error) {
+    console.warn("[lead-magnet] etapes_pipeline query failed, continuing without stage data", stagesRes.error);
+  }
+  if (pagesRes.error) {
+    console.warn("[lead-magnet] lead_magnet_pages query failed, continuing without page counts", pagesRes.error);
+  }
+  if (reviewsRes.error) {
+    console.warn("[lead-magnet] lead_magnet_reviews query failed, continuing without review counts", reviewsRes.error);
+  }
 
-  const opportunities = (opportunityRes.data ?? []) as OpportunityLite[];
+  const opportunities = (opportunityRes.error ? [] : opportunityRes.data ?? []) as OpportunityLite[];
   const opportunityById = new Map(opportunities.map((row) => [row.id, row]));
 
-  const pipelines = (pipelinesRes.data ?? []) as PipelineLite[];
+  const pipelines = (pipelinesRes.error ? [] : pipelinesRes.data ?? []) as PipelineLite[];
   const pipelineById = new Map(pipelines.map((row) => [row.id, row]));
 
-  const stages = (stagesRes.data ?? []) as PipelineStageLite[];
+  const stages = (stagesRes.error ? [] : stagesRes.data ?? []) as PipelineStageLite[];
   const stageById = new Map(stages.map((row) => [row.id, row]));
 
   const pageCountByProject = new Map<string, number>();
-  for (const row of pagesRes.data ?? []) {
+  for (const row of pagesRes.error ? [] : pagesRes.data ?? []) {
     const projectId = String((row as { project_id?: string }).project_id ?? "");
     if (!projectId) continue;
     pageCountByProject.set(projectId, (pageCountByProject.get(projectId) ?? 0) + 1);
   }
 
   const activeReviewCountByProject = new Map<string, number>();
-  for (const row of reviewsRes.data ?? []) {
+  for (const row of reviewsRes.error ? [] : reviewsRes.data ?? []) {
     const reviewRow = row as { project_id?: string; is_active?: boolean | null; actif?: boolean | null };
     const projectId = String(reviewRow.project_id ?? "");
     if (!projectId) continue;

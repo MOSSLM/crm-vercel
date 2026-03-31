@@ -17,6 +17,7 @@ export function LeadMagnetV2ListPage() {
   const router = useRouter();
   const [rows, setRows] = useState<LeadMagnetListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [pipelineFilter, setPipelineFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -28,9 +29,15 @@ export function LeadMagnetV2ListPage() {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
+      setLoadError(null);
       try {
         const data = await listLeadMagnetCards();
         if (!cancelled) setRows(data);
+      } catch (error) {
+        if (!cancelled) {
+          setRows([]);
+          setLoadError(error instanceof Error ? error.message : "Impossible de charger les projets Lead Magnet.");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -185,6 +192,14 @@ export function LeadMagnetV2ListPage() {
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Chargement des lead magnets…</p>
+      ) : loadError ? (
+        <Card>
+          <CardContent className="py-8">
+            <p className="text-sm text-red-600">
+              Erreur de chargement: {loadError}
+            </p>
+          </CardContent>
+        </Card>
       ) : filteredRows.length === 0 ? (
         <Card>
           <CardContent className="py-8">
