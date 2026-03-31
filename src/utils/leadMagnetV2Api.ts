@@ -174,7 +174,7 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
           .in("id", opportunityIds)
       : Promise.resolve({ data: [], error: null }),
     supabase.from("pipelines").select("id,nom"),
-    supabase.from("pipeline_stages").select("id,nom"),
+    supabase.from("etapes_pipeline").select("id,nom"),
     supabase.from("lead_magnet_pages").select("id,project_id,is_active,actif"),
     supabase.from("lead_magnet_reviews").select("id,project_id,is_active,actif"),
   ]);
@@ -282,7 +282,7 @@ export async function loadLeadMagnetBundle(projectId: string) {
 
     if (opportunity?.stage_id) {
       const { data: stageData, error: stageError } = await supabase
-        .from("pipeline_stages")
+        .from("etapes_pipeline")
         .select("id,nom")
         .eq("id", opportunity.stage_id)
         .maybeSingle();
