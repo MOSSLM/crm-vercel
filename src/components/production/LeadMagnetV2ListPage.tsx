@@ -189,6 +189,7 @@ export function LeadMagnetV2ListPage() {
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {filteredRows.map((item) => {
             const companyName = item.project.override_entreprise_name ?? item.company?.name ?? item.opportunity?.name ?? "Entreprise inconnue";
+            const opportunityName = item.opportunity?.name ?? "Opportunité inconnue";
             const city = item.project.override_city ?? item.company?.ville ?? "Ville inconnue";
             const flags = item.opportunity?.flags ?? [];
             const tags = item.opportunity?.tags ? item.opportunity.tags.split(",").map((tag) => tag.trim()) : [];
@@ -216,6 +217,9 @@ export function LeadMagnetV2ListPage() {
                     <Building2 className="h-4 w-4" />
                     <span>{item.pipeline?.nom ?? "Pipeline n/a"}</span>
                     {item.stage?.nom ? <Badge variant="outline">{item.stage.nom}</Badge> : null}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    Opportunité: <span className="font-medium text-foreground">{opportunityName}</span>
                   </div>
 
                   <div className="flex flex-wrap gap-1">
