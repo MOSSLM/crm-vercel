@@ -232,7 +232,7 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
       .order("created_at", { ascending: false });
 
     if (!opportunityRes.error) {
-      opportunities = (opportunityRes.data ?? []) as (OpportunityLite & OpportunityProjectSeed)[];
+      opportunities = ((opportunityRes.data ?? []) as unknown[]) as (OpportunityLite & OpportunityProjectSeed)[];
       finalOpportunityError = null;
       break;
     }
