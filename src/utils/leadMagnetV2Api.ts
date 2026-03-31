@@ -112,6 +112,27 @@ const readOpportunityId = (project: LeadMagnetProjectRecord): string | null => {
   return typeof value === "string" && value ? value : null;
 };
 
+const findProjectByOpportunityId = async (opportunityId: string): Promise<LeadMagnetProjectRecord | null> => {
+  const legacyAttempt = await supabase
+    .from("lead_magnet_projects")
+    .select("*")
+    .or(`opportunite_id.eq.${opportunityId},opportunity_id.eq.${opportunityId}`)
+    .maybeSingle();
+
+  if (!legacyAttempt.error) {
+    return (legacyAttempt.data ?? null) as LeadMagnetProjectRecord | null;
+  }
+
+  const canonicalAttempt = await supabase
+    .from("lead_magnet_projects")
+    .select("*")
+    .eq("opportunite_id", opportunityId)
+    .maybeSingle();
+
+  if (canonicalAttempt.error) throw canonicalAttempt.error;
+  return (canonicalAttempt.data ?? null) as LeadMagnetProjectRecord | null;
+};
+
 type OpportunityProjectSeed = {
   id: string;
   entreprise_id: number | null;
@@ -304,6 +325,28 @@ export async function loadLeadMagnetBundle(projectId: string) {
     stage,
     company,
   };
+}
+
+export async function resolveLeadMagnetProjectId(inputId: string): Promise<string | null> {
+  const id = inputId.trim();
+  if (!id) return null;
+
+  const directProjectRes = await supabase.from("lead_magnet_projects").select("id").eq("id", id).maybeSingle();
+  if (directProjectRes.error) throw directProjectRes.error;
+  if (directProjectRes.data?.id) return directProjectRes.data.id as string;
+
+  const productionRes = await supabase
+    .from("production_lead_magnets")
+    .select("opportunite_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (productionRes.error) throw productionRes.error;
+
+  const opportunityId = (productionRes.data?.opportunite_id ?? null) as string | null;
+  if (!opportunityId) return null;
+
+  const project = await findProjectByOpportunityId(opportunityId);
+  return project?.id ?? null;
 }
 
 export async function updateLeadMagnetProject(projectId: string, updates: Partial<LeadMagnetProjectRecord>) {

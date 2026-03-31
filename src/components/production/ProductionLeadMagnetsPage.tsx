@@ -295,7 +295,8 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
 
     const projectId = projectIdByOpportunityId.get(row.opportunite_id);
     if (!projectId) {
-      toast.error("Projet Lead Magnet V2 introuvable pour cette opportunité.");
+      toast.message("Lien V2 absent, ouverture via résolution automatique…");
+      router.push(`/production/lead-magnet/${row.id}`);
       return;
     }
     router.push(`/production/lead-magnet/${projectId}`);
