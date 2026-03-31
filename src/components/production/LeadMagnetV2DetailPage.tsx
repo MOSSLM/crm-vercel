@@ -1,16 +1,30 @@
 "use client";
 
-import { type DragEvent, useEffect, useMemo, useState } from "react";
+import { type DragEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, GripVertical, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  CircleDashed,
+  ExternalLink,
+  GripVertical,
+  Layers,
+  Plus,
+  RefreshCcw,
+  SkipForward,
+  Trash2,
+} from "lucide-react";
+import { toast } from "sonner";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/components/ui/utils";
 import {
   createLeadMagnetPage,
   createLeadMagnetReview,
@@ -24,40 +38,79 @@ import {
   updateLeadMagnetProject,
   updateLeadMagnetReview,
 } from "@/utils/leadMagnetV2Api";
-import { toast } from "sonner";
 
-const parseJsonInput = (value: string) => {
-  if (!value.trim()) return {};
-  try {
-    return JSON.parse(value);
-  } catch {
-    return null;
-  }
+type Props = { projectId: string };
+type CardStatus = "todo" | "review" | "validated";
+type WorkflowCardId = "sources" | "branding" | "texts" | "diff" | "reviews" | "pages" | "cta" | "meta";
+
+type WorkflowState = {
+  statuses: Record<WorkflowCardId, CardStatus>;
+  activeCardId: WorkflowCardId;
+  noReviewReason: string;
 };
 
-const firstString = (value: unknown) => (typeof value === "string" ? value : "");
-
-type Props = {
-  projectId: string;
+const cardIds: WorkflowCardId[] = ["sources", "branding", "texts", "diff", "reviews", "pages", "cta", "meta"];
+const defaultState: WorkflowState = {
+  statuses: Object.fromEntries(cardIds.map((id) => [id, "todo"])) as Record<WorkflowCardId, CardStatus>,
+  activeCardId: "sources",
+  noReviewReason: "",
 };
+
+const asString = (value: unknown) => (typeof value === "string" ? value : "");
+const isTruthyText = (value: unknown) => asString(value).trim().length > 0;
+
+function WorkflowPill({ status }: { status: CardStatus }) {
+  const map: Record<CardStatus, { label: string; tone: string }> = {
+    todo: { label: "À faire", tone: "bg-slate-100 text-slate-700" },
+    review: { label: "À revoir", tone: "bg-amber-100 text-amber-800" },
+    validated: { label: "Validée", tone: "bg-emerald-100 text-emerald-800" },
+  };
+  return <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", map[status].tone)}>{map[status].label}</span>;
+}
 
 export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const router = useRouter();
   const [project, setProject] = useState<LeadMagnetProjectRecord | null>(null);
   const [pages, setPages] = useState<LeadMagnetPageRecord[]>([]);
   const [reviews, setReviews] = useState<LeadMagnetReviewRecord[]>([]);
-  const [opportunitySummary, setOpportunitySummary] = useState({ companyName: "", city: "", opportunityName: "", pipeline: "", stage: "", tags: [] as string[], flags: [] as string[] });
+  const [opportunitySummary, setOpportunitySummary] = useState({ companyName: "", city: "", opportunityName: "", pipeline: "", stage: "", tags: [] as string[] });
+  const [workflow, setWorkflow] = useState<WorkflowState>(defaultState);
   const [loading, setLoading] = useState(true);
+  const [showOverview, setShowOverview] = useState(false);
+
+  const [dragStartX, setDragStartX] = useState<number | null>(null);
+  const [dragOffsetX, setDragOffsetX] = useState(0);
+
+  const dirtyProject = useRef(false);
+  const dirtyPages = useRef(new Set<string>());
+  const dirtyReviews = useRef(new Set<string>());
+
+  const localStorageKey = `lead-magnet-workflow-${projectId}`;
+
+  const projectSources = useMemo(() => {
+    if (!project) return [] as Array<{ label: string; value: string; href?: string }>;
+    const site = asString(project.website_url ?? project.site_url ?? project.override_website);
+    const gmb = asString(project.google_business_url ?? project.google_maps_url);
+    const phone = asString(project.override_phone);
+    const address = asString(project.override_address);
+    const email = asString(project.override_email);
+    const links = [
+      { label: "Site web", value: site, href: site },
+      { label: "Google Business", value: gmb, href: gmb },
+      { label: "Téléphone", value: phone },
+      { label: "Adresse", value: address },
+      { label: "Email", value: email },
+    ];
+    return links.filter((entry) => entry.value.trim().length > 0);
+  }, [project]);
 
   useEffect(() => {
     let cancelled = false;
-
     const load = async () => {
       setLoading(true);
       try {
         const bundle = await loadLeadMagnetBundle(projectId);
         if (cancelled) return;
-
         setProject(bundle.project);
         setPages(bundle.pages);
         setReviews(bundle.reviews);
@@ -68,288 +121,406 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
           pipeline: bundle.pipeline?.nom ?? "",
           stage: bundle.stage?.nom ?? "",
           tags: bundle.opportunity?.tags ? bundle.opportunity.tags.split(",").map((tag) => tag.trim()).filter(Boolean) : [],
-          flags: bundle.opportunity?.flags ?? [],
         });
+
+        const localRaw = window.localStorage.getItem(localStorageKey);
+        if (localRaw) {
+          const parsed = JSON.parse(localRaw) as WorkflowState;
+          setWorkflow((prev) => ({ ...prev, ...parsed }));
+        }
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Erreur de chargement");
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
-
     void load();
-
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectId, localStorageKey]);
 
-  const isReady = Boolean(project?.pret_pour_lm);
+  useEffect(() => {
+    window.localStorage.setItem(localStorageKey, JSON.stringify(workflow));
+  }, [workflow, localStorageKey]);
 
-  const saveProject = async (updates: Partial<LeadMagnetProjectRecord>) => {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        markCard("validated");
+      }
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        markCard("review");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  useEffect(() => {
+    const t = setInterval(async () => {
+      if (!project) return;
+      try {
+        if (dirtyProject.current) {
+          dirtyProject.current = false;
+          await updateLeadMagnetProject(project.id, project);
+        }
+
+        if (dirtyPages.current.size > 0) {
+          const ids = [...dirtyPages.current];
+          dirtyPages.current.clear();
+          await Promise.all(ids.map((id) => {
+            const row = pages.find((entry) => entry.id === id);
+            return row ? updateLeadMagnetPage(row.id, row) : Promise.resolve();
+          }));
+        }
+
+        if (dirtyReviews.current.size > 0) {
+          const ids = [...dirtyReviews.current];
+          dirtyReviews.current.clear();
+          await Promise.all(ids.map((id) => {
+            const row = reviews.find((entry) => entry.id === id);
+            return row ? updateLeadMagnetReview(row.id, row) : Promise.resolve();
+          }));
+        }
+      } catch {
+        toast.error("Autosave en échec. Réessayez.");
+      }
+    }, 1200);
+
+    return () => clearInterval(t);
+  }, [project, pages, reviews]);
+
+  const completion = useMemo(() => {
+    const hasSources = projectSources.length > 0;
+    const hasBranding = Boolean(project?.logo_url || project?.hero_image_url || project?.favicon_url);
+    const hasTexts = [project?.hero_title, project?.hero_subtitle, project?.hero_description].filter(isTruthyText).length >= 2;
+    const hasDiff = [project?.differentiator_1, project?.differentiator_2, project?.differentiator_3, project?.key_stat_1, project?.key_stat_2].filter(isTruthyText).length >= 3;
+    const activeReviewCount = reviews.filter((row) => row.is_active ?? row.actif ?? true).length;
+    const hasReviews = activeReviewCount > 0 || workflow.noReviewReason.trim().length > 0;
+    const hasPages = pages.length > 0 && pages.some((row) => row.is_active ?? row.actif ?? true);
+    const hasCta = [project?.cta_primary_text, project?.cta_primary_target, project?.override_phone, project?.override_email].filter(isTruthyText).length >= 2;
+    const hasMeta = [project?.meta_title_default, project?.meta_description_default].filter(isTruthyText).length >= 1;
+
+    return { hasSources, hasBranding, hasTexts, hasDiff, hasReviews, hasPages, hasCta, hasMeta, activeReviewCount };
+  }, [project, pages, reviews, projectSources.length, workflow.noReviewReason]);
+
+  const requiredFailures = [
+    !completion.hasSources ? "Sources & accès" : null,
+    !completion.hasBranding ? "Logo & assets" : null,
+    !completion.hasTexts ? "Textes principaux" : null,
+    !completion.hasCta ? "CTA / conversion" : null,
+    !completion.hasReviews ? "Reviews (ou raison d'absence)" : null,
+  ].filter((x): x is string => Boolean(x));
+
+  const readyForPublish = requiredFailures.length === 0;
+
+  const orderedDeck = useMemo(() => {
+    const review = cardIds.filter((id) => workflow.statuses[id] === "review");
+    const nonReview = cardIds.filter((id) => workflow.statuses[id] !== "review");
+    return [...nonReview, ...review];
+  }, [workflow.statuses]);
+
+  const activeCardId = workflow.activeCardId;
+  const activeCardIndex = Math.max(0, orderedDeck.indexOf(activeCardId));
+
+  const goToCard = (id: WorkflowCardId) => setWorkflow((prev) => ({ ...prev, activeCardId: id }));
+
+  const moveToNextCard = (fromId: WorkflowCardId) => {
+    const i = orderedDeck.indexOf(fromId);
+    const next = orderedDeck[Math.min(orderedDeck.length - 1, i + 1)] ?? fromId;
+    setWorkflow((prev) => ({ ...prev, activeCardId: next }));
+  };
+
+  const markCard = (status: CardStatus) => {
+    setWorkflow((prev) => {
+      const updated = { ...prev, statuses: { ...prev.statuses, [prev.activeCardId]: status } };
+      return updated;
+    });
+    moveToNextCard(activeCardId);
+  };
+
+  const startDrag = (x: number) => {
+    setDragStartX(x);
+    setDragOffsetX(0);
+  };
+
+  const endDrag = () => {
+    if (dragOffsetX > 90) markCard("validated");
+    if (dragOffsetX < -90) markCard("review");
+    setDragStartX(null);
+    setDragOffsetX(0);
+  };
+
+  const updateProjectField = (field: string, value: unknown) => {
+    setProject((prev) => (prev ? { ...prev, [field]: value } : prev));
+    dirtyProject.current = true;
+  };
+
+  const updatePageField = (pageId: string, field: keyof LeadMagnetPageRecord, value: unknown) => {
+    setPages((prev) => prev.map((row) => (row.id === pageId ? { ...row, [field]: value } : row)));
+    dirtyPages.current.add(pageId);
+  };
+
+  const updateReviewField = (reviewId: string, field: keyof LeadMagnetReviewRecord, value: unknown) => {
+    setReviews((prev) => prev.map((row) => (row.id === reviewId ? { ...row, [field]: value } : row)));
+    dirtyReviews.current.add(reviewId);
+  };
+
+  const saveAsReady = async () => {
     if (!project) return;
-    try {
-      await updateLeadMagnetProject(project.id, updates);
-      setProject((prev) => (prev ? { ...prev, ...updates } : prev));
-      toast.success("Projet sauvegardé");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Erreur projet");
+    if (!readyForPublish) {
+      toast.error(`Blocs requis manquants: ${requiredFailures.join(", ")}`);
+      return;
     }
+    await updateLeadMagnetProject(project.id, { pret_pour_lm: true, statut: "ready" });
+    setProject((prev) => (prev ? { ...prev, pret_pour_lm: true, statut: "ready" } : prev));
+    toast.success("Lead magnet marqué prêt ✅");
   };
 
-  const updatePageField = (pageId: string, key: keyof LeadMagnetPageRecord, value: unknown) => {
-    setPages((prev) => prev.map((page) => (page.id === pageId ? { ...page, [key]: value } : page)));
-  };
-
-  const updateReviewField = (reviewId: string, key: keyof LeadMagnetReviewRecord, value: unknown) => {
-    setReviews((prev) => prev.map((review) => (review.id === reviewId ? { ...review, [key]: value } : review)));
-  };
-
-  const moveReview = async (index: number, direction: -1 | 1) => {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= reviews.length) return;
-
-    const reordered = [...reviews];
-    const [moved] = reordered.splice(index, 1);
-    reordered.splice(nextIndex, 0, moved);
-
-    setReviews(reordered.map((row, i) => ({ ...row, display_order: i + 1 })));
-    await Promise.all(reordered.map((row, i) => updateLeadMagnetReview(row.id, { display_order: i + 1 })));
-  };
-
-  const dropAssetFile = async (
-    event: DragEvent<HTMLDivElement>,
-    field: "logo_url" | "favicon_url" | "hero_image_url"
-  ) => {
-    event.preventDefault();
-    if (!project) return;
-
-    const firstFile = event.dataTransfer.files[0];
-    if (!firstFile) return;
-
-    const localPreview = URL.createObjectURL(firstFile);
-    setProject((prev) => (prev ? { ...prev, [field]: localPreview } : prev));
-    toast.info("Preview locale générée. Ajoutez une URL finale persistante si nécessaire.");
-  };
-
-  const totalActiveReviews = useMemo(
-    () => reviews.filter((review) => (review.is_active ?? review.actif ?? true) === true).length,
-    [reviews]
-  );
+  const currentStatus = workflow.statuses[activeCardId];
+  const validatedCount = cardIds.filter((id) => workflow.statuses[id] === "validated").length;
 
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Chargement…</div>;
   if (!project) return <div className="p-6 text-sm text-muted-foreground">Projet introuvable.</div>;
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <Button variant="ghost" onClick={() => router.push("/production/lead-magnet")}> 
-        <ArrowLeft className="mr-2 h-4 w-4" /> Retour à la liste
-      </Button>
+      <Card className="border-slate-200 bg-white/90">
+        <CardContent className="space-y-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-lg font-semibold">{opportunitySummary.companyName || "Lead magnet"}</p>
+              <p className="text-sm text-muted-foreground">{opportunitySummary.city || "Ville inconnue"} • {opportunitySummary.opportunityName || "Opportunité"}</p>
+            </div>
+            <Badge variant={project.pret_pour_lm ? "default" : "secondary"}>{project.pret_pour_lm ? "LM prêt" : "LM en préparation"}</Badge>
+          </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{opportunitySummary.companyName || "Lead Magnet"}</CardTitle>
-          <CardDescription>
-            {opportunitySummary.city || "Ville inconnue"} • {opportunitySummary.opportunityName || "Opportunité"}
-          </CardDescription>
+          <div className="h-2 rounded-full bg-slate-100">
+            <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${(validatedCount / cardIds.length) * 100}%` }} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">Progression: {validatedCount}/{cardIds.length} blocs validés</span>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={() => router.push("/production/lead-magnet")}><ArrowLeft className="mr-2 h-4 w-4" /> Retour opportunité</Button>
+              <Button variant="outline" size="sm" onClick={() => window.open(`/api/public/lead-magnets/${project.id}`, "_blank", "noopener,noreferrer")}>Voir aperçu</Button>
+              <Button size="sm" onClick={() => void saveAsReady()} disabled={!readyForPublish}>LM prêt</Button>
+            </div>
+          </div>
+
           <div className="flex flex-wrap gap-2">
-            <Badge variant="outline">Pipeline: {opportunitySummary.pipeline || "n/a"}</Badge>
-            <Badge variant="outline">Stage: {opportunitySummary.stage || "n/a"}</Badge>
-            <Badge variant={isReady ? "default" : "secondary"}>Prêt pour LM: {isReady ? "Oui" : "Non"}</Badge>
-            <Badge variant="secondary">Statut: {firstString(project.statut ?? project.status ?? "draft")}</Badge>
+            {projectSources.map((source) => (
+              <Button key={source.label} size="sm" variant="ghost" className="h-8 border" onClick={() => source.href && window.open(source.href, "_blank", "noopener,noreferrer")} disabled={!source.href}>
+                {source.label} <ExternalLink className="ml-1 h-3.5 w-3.5" />
+              </Button>
+            ))}
+            <Button size="sm" variant="ghost" className="h-8 border" onClick={() => setShowOverview((prev) => !prev)}><Layers className="mr-1 h-3.5 w-3.5" /> Vue globale</Button>
           </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Switch checked={isReady} onCheckedChange={(checked) => void saveProject({ pret_pour_lm: checked })} />
-            <span>Basculer “prêt pour LM”</span>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {opportunitySummary.tags.map((tag) => <Badge key={`tag-${tag}`} variant="outline">{tag}</Badge>)}
-            {opportunitySummary.flags.map((flag) => <Badge key={`flag-${flag}`} variant="secondary">{flag}</Badge>)}
-          </div>
-        </CardHeader>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Projet</CardTitle>
-          <CardDescription>Édition de <code>lead_magnet_projects</code>.</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2">
-          {[
-            ["override_entreprise_name", "Nom entreprise"],
-            ["override_city", "Ville"],
-            ["override_phone", "Téléphone"],
-            ["override_email", "Email"],
-            ["override_address", "Adresse"],
-            ["meta_title_default", "Meta title défaut"],
-            ["meta_description_default", "Meta description défaut"],
-          ].map(([field, label]) => (
-            <div key={field} className="space-y-1">
-              <Label>{label}</Label>
-              <Input
-                value={firstString(project[field])}
-                onChange={(event) => setProject((prev) => (prev ? { ...prev, [field]: event.target.value } : prev))}
-                onBlur={() => void saveProject({ [field]: project[field] } as Partial<LeadMagnetProjectRecord>)}
-              />
-            </div>
-          ))}
-
-          {([
-            ["logo_url", "Logo"],
-            ["favicon_url", "Favicon"],
-            ["hero_image_url", "Hero image"],
-          ] as const).map(([field, label]) => (
-            <div key={field} className="space-y-2 rounded-lg border p-3" onDragOver={(event) => event.preventDefault()} onDrop={(event) => void dropAssetFile(event, field)}>
-              <Label>{label} (drag & drop + URL)</Label>
-              <Input
-                value={firstString(project[field])}
-                placeholder="https://..."
-                onChange={(event) => setProject((prev) => (prev ? { ...prev, [field]: event.target.value } : prev))}
-                onBlur={() => void saveProject({ [field]: project[field] } as Partial<LeadMagnetProjectRecord>)}
-              />
-              {firstString(project[field]) ? (
-                <div className="flex items-center gap-2">
-                  <img src={firstString(project[field])} alt={label} className="h-14 w-14 rounded-md border object-cover" />
-                  <Button variant="outline" size="sm" onClick={() => void saveProject({ [field]: null } as Partial<LeadMagnetProjectRecord>)}>
-                    Supprimer
-                  </Button>
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">Déposez une image ici pour prévisualiser immédiatement.</p>
-              )}
-            </div>
-          ))}
+          {!readyForPublish ? <p className="text-xs text-amber-700">Blocs requis avant “LM prêt”: {requiredFailures.join(", ")}.</p> : null}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Pages</CardTitle>
-            <CardDescription>CRUD complet sur <code>lead_magnet_pages</code>.</CardDescription>
-          </div>
-          <Button size="sm" onClick={async () => {
-            const created = await createLeadMagnetPage({ project_id: project.id, page_name: "Nouvelle page", page_key: `page_${pages.length + 1}`, slug: `page-${pages.length + 1}`, is_active: true, display_order: pages.length + 1, body_json: {} });
-            setPages((prev) => [...prev, created]);
-          }}><Plus className="mr-2 h-4 w-4" /> Ajouter</Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {pages.map((page) => (
-            <div key={page.id} className="space-y-2 rounded-lg border p-3">
-              <div className="grid gap-2 md:grid-cols-3">
-                {([
-                  ["page_key", "page_key"],
-                  ["page_name", "page_name"],
-                  ["slug", "slug"],
-                  ["service_key", "service_key"],
-                  ["headline", "headline"],
-                  ["subheadline", "subheadline"],
-                  ["meta_title", "meta_title"],
-                  ["meta_description", "meta_description"],
-                ] as const).map(([field, label]) => (
-                  <div key={`${page.id}-${field}`} className="space-y-1">
-                    <Label>{label}</Label>
-                    <Input value={firstString(page[field])} onChange={(event) => updatePageField(page.id, field, event.target.value)} />
+      <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Deck workflow</CardTitle>
+            <CardDescription>Swipe droite = validée, gauche = à revoir.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {orderedDeck.map((id, index) => (
+              <button key={id} className={cn("w-full rounded-md border px-3 py-2 text-left text-sm", activeCardId === id && "border-primary bg-primary/5")} onClick={() => goToCard(id)}>
+                <div className="flex items-center justify-between gap-2">
+                  <span>{index + 1}. {id === "diff" ? "Différenciateurs & stats" : id === "cta" ? "CTA / conversion" : id === "meta" ? "Métadonnées" : id === "texts" ? "Textes principaux" : id === "sources" ? "Sources & accès" : id === "branding" ? "Logo & assets" : id === "reviews" ? "Reviews" : "Pages / contenu"}</span>
+                  <WorkflowPill status={workflow.statuses[id]} />
+                </div>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card
+          className="relative overflow-hidden border-2 border-slate-200"
+          onMouseDown={(event) => startDrag(event.clientX)}
+          onMouseMove={(event) => {
+            if (dragStartX !== null) setDragOffsetX(event.clientX - dragStartX);
+          }}
+          onMouseUp={endDrag}
+          onMouseLeave={() => dragStartX !== null && endDrag()}
+          onTouchStart={(event) => startDrag(event.touches[0]?.clientX ?? 0)}
+          onTouchMove={(event) => {
+            if (dragStartX !== null) setDragOffsetX((event.touches[0]?.clientX ?? 0) - dragStartX);
+          }}
+          onTouchEnd={endDrag}
+        >
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between gap-2">
+              <span>{activeCardIndex + 1}/{cardIds.length} • {activeCardId === "diff" ? "Différenciateurs & stats" : activeCardId === "cta" ? "CTA / conversion" : activeCardId === "meta" ? "Métadonnées utiles" : activeCardId === "texts" ? "Textes principaux" : activeCardId === "sources" ? "Sources & accès" : activeCardId === "branding" ? "Logo & assets" : activeCardId === "reviews" ? "Reviews" : "Pages / contenu"}</span>
+              <WorkflowPill status={currentStatus} />
+            </CardTitle>
+            <CardDescription>Autosave actif • flèche droite/gauche clavier disponible.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 transition-transform duration-150" style={{ transform: `translateX(${dragOffsetX}px)` }}>
+            {activeCardId === "sources" && (
+              <div className="grid gap-2 md:grid-cols-2">
+                {(projectSources.length > 0 ? projectSources : [{ label: "Aucune source", value: "Ajoutez des infos dans le projet." }]).map((item) => (
+                  <div key={item.label} className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">{item.label}</p>
+                    <p className="text-sm font-medium break-all">{item.value}</p>
                   </div>
                 ))}
-                <div className="space-y-2">
-                  <Label>Actif</Label>
-                  <Switch checked={Boolean(page.is_active ?? page.actif ?? true)} onCheckedChange={(checked) => updatePageField(page.id, "is_active", checked)} />
+              </div>
+            )}
+
+            {activeCardId === "branding" && (
+              <div className="grid gap-3 md:grid-cols-3">
+                {(["logo_url", "hero_image_url", "favicon_url"] as const).map((field) => (
+                  <div key={field} className="space-y-2 rounded-md border p-3" onDragOver={(event) => event.preventDefault()} onDrop={(event: DragEvent<HTMLDivElement>) => {
+                    const file = event.dataTransfer.files[0];
+                    if (!file) return;
+                    updateProjectField(field, URL.createObjectURL(file));
+                  }}>
+                    <Label>{field}</Label>
+                    <Input value={asString(project[field])} onChange={(event) => updateProjectField(field, event.target.value)} placeholder="https://..." />
+                    {asString(project[field]) ? <img src={asString(project[field])} alt={field} className="h-16 w-16 rounded border object-cover" /> : <p className="text-xs text-muted-foreground">Drag & drop image</p>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeCardId === "texts" && (
+              <div className="space-y-3">
+                <div className="space-y-1"><Label>Slogan</Label><Input value={asString(project.hero_title)} onChange={(event) => updateProjectField("hero_title", event.target.value)} /></div>
+                <div className="space-y-1"><Label>Sous-slogan</Label><Input value={asString(project.hero_subtitle)} onChange={(event) => updateProjectField("hero_subtitle", event.target.value)} /></div>
+                <div className="space-y-1"><Label>Paragraphe de présentation</Label><Textarea value={asString(project.hero_description)} onChange={(event) => updateProjectField("hero_description", event.target.value)} /></div>
+              </div>
+            )}
+
+            {activeCardId === "diff" && (
+              <div className="grid gap-3 md:grid-cols-2">
+                {["differentiator_1", "differentiator_2", "differentiator_3", "key_stat_1", "key_stat_2"].map((field) => (
+                  <div className="space-y-1" key={field}><Label>{field}</Label><Input value={asString(project[field])} onChange={(event) => updateProjectField(field, event.target.value)} /></div>
+                ))}
+              </div>
+            )}
+
+            {activeCardId === "reviews" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">{completion.activeReviewCount} review(s) active(s)</p>
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    const created = await createLeadMagnetReview({ project_id: project.id, author_name: "Nouveau client", review_text: "", rating: 5, is_manual: true, is_active: true, display_order: reviews.length + 1, source: "manual" });
+                    setReviews((prev) => [...prev, created]);
+                  }}><Plus className="mr-2 h-4 w-4" /> Ajouter</Button>
                 </div>
-              </div>
 
-              <div className="space-y-1">
-                <Label>body_json</Label>
-                <Textarea
-                  className="min-h-36 font-mono text-xs"
-                  value={JSON.stringify(page.body_json ?? {}, null, 2)}
-                  onChange={(event) => {
-                    const parsed = parseJsonInput(event.target.value);
-                    if (parsed !== null) {
-                      updatePageField(page.id, "body_json", parsed);
-                    }
-                  }}
-                />
-              </div>
+                <div className="space-y-1">
+                  <Label>Raison d'absence de reviews (optionnel)</Label>
+                  <Textarea value={workflow.noReviewReason} onChange={(event) => setWorkflow((prev) => ({ ...prev, noReviewReason: event.target.value }))} />
+                </div>
 
+                {reviews.map((review, i) => (
+                  <div key={review.id} className="rounded-md border p-3 space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="inline-flex items-center gap-1"><GripVertical className="h-3.5 w-3.5" />#{i + 1}</span><Button size="sm" variant="ghost" onClick={async () => { await deleteLeadMagnetReview(review.id); setReviews((prev) => prev.filter((x) => x.id !== review.id)); }}><Trash2 className="h-4 w-4" /></Button></div>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <Input value={asString(review.author_name)} onChange={(event) => updateReviewField(review.id, "author_name", event.target.value)} placeholder="Auteur" />
+                      <Input type="number" min={1} max={5} value={String(review.rating ?? 5)} onChange={(event) => updateReviewField(review.id, "rating", Number(event.target.value))} />
+                    </div>
+                    <Textarea value={asString(review.review_text)} onChange={(event) => updateReviewField(review.id, "review_text", event.target.value)} placeholder="Texte review" />
+                    <div className="flex gap-4 text-sm">
+                      <label className="inline-flex items-center gap-2"><Switch checked={Boolean(review.is_active ?? true)} onCheckedChange={(checked) => updateReviewField(review.id, "is_active", checked)} /> Active</label>
+                      <label className="inline-flex items-center gap-2"><Switch checked={Boolean(review.is_manual ?? true)} onCheckedChange={(checked) => updateReviewField(review.id, "is_manual", checked)} /> Manuelle</label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeCardId === "pages" && (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <Button size="sm" variant="outline" onClick={async () => {
+                    const created = await createLeadMagnetPage({ project_id: project.id, page_name: `Page ${pages.length + 1}`, page_key: `page_${pages.length + 1}`, slug: `page-${pages.length + 1}`, is_active: true, display_order: pages.length + 1, body_json: {} });
+                    setPages((prev) => [...prev, created]);
+                  }}><Plus className="mr-2 h-4 w-4" /> Ajouter une page</Button>
+                </div>
+
+                {pages.map((page) => (
+                  <div key={page.id} className="rounded-md border p-3 space-y-2">
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <Input value={asString(page.page_name)} onChange={(event) => updatePageField(page.id, "page_name", event.target.value)} placeholder="Titre" />
+                      <Input value={asString(page.slug)} onChange={(event) => updatePageField(page.id, "slug", event.target.value)} placeholder="Slug" />
+                      <Input value={asString(page.headline)} onChange={(event) => updatePageField(page.id, "headline", event.target.value)} placeholder="Headline" />
+                    </div>
+                    <Textarea value={asString(page.subheadline)} onChange={(event) => updatePageField(page.id, "subheadline", event.target.value)} placeholder="Contenu rapide" />
+                    <div className="flex items-center justify-between">
+                      <label className="inline-flex items-center gap-2 text-sm"><Switch checked={Boolean(page.is_active ?? true)} onCheckedChange={(checked) => updatePageField(page.id, "is_active", checked)} /> Active</label>
+                      <Button size="sm" variant="ghost" onClick={async () => { await deleteLeadMagnetPage(page.id); setPages((prev) => prev.filter((x) => x.id !== page.id)); }}><Trash2 className="h-4 w-4" /></Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeCardId === "cta" && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1"><Label>CTA principal</Label><Input value={asString(project.cta_primary_text)} onChange={(event) => updateProjectField("cta_primary_text", event.target.value)} /></div>
+                <div className="space-y-1"><Label>Destination CTA principal</Label><Input value={asString(project.cta_primary_target)} onChange={(event) => updateProjectField("cta_primary_target", event.target.value)} /></div>
+                <div className="space-y-1"><Label>CTA secondaire</Label><Input value={asString(project.cta_secondary_text)} onChange={(event) => updateProjectField("cta_secondary_text", event.target.value)} /></div>
+                <div className="space-y-1"><Label>Email</Label><Input value={asString(project.override_email)} onChange={(event) => updateProjectField("override_email", event.target.value)} /></div>
+                <div className="space-y-1"><Label>Téléphone</Label><Input value={asString(project.override_phone)} onChange={(event) => updateProjectField("override_phone", event.target.value)} /></div>
+              </div>
+            )}
+
+            {activeCardId === "meta" && (
+              <div className="space-y-3">
+                <div className="space-y-1"><Label>Meta title</Label><Input value={asString(project.meta_title_default)} onChange={(event) => updateProjectField("meta_title_default", event.target.value)} /></div>
+                <div className="space-y-1"><Label>Meta description</Label><Textarea value={asString(project.meta_description_default)} onChange={(event) => updateProjectField("meta_description_default", event.target.value)} /></div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+              <div className="text-xs text-muted-foreground">Swipe droite ou <kbd>→</kbd> pour valider • Swipe gauche ou <kbd>←</kbd> pour revoir.</div>
               <div className="flex gap-2">
-                <Button size="sm" onClick={() => void updateLeadMagnetPage(page.id, page)}>Sauvegarder</Button>
-                <Button size="sm" variant="destructive" onClick={async () => {
-                  await deleteLeadMagnetPage(page.id);
-                  setPages((prev) => prev.filter((entry) => entry.id !== page.id));
-                }}>
-                  <Trash2 className="mr-2 h-4 w-4" /> Supprimer
-                </Button>
+                <Button variant="outline" onClick={() => markCard("review")}><ArrowLeft className="mr-1 h-4 w-4" /> Revoir</Button>
+                <Button variant="outline" onClick={() => moveToNextCard(activeCardId)}><SkipForward className="mr-1 h-4 w-4" /> Passer</Button>
+                <Button onClick={() => markCard("validated")}><ArrowRight className="mr-1 h-4 w-4" /> Valider</Button>
               </div>
             </div>
-          ))}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Reviews</CardTitle>
-            <CardDescription>{totalActiveReviews} review(s) actives.</CardDescription>
-          </div>
-          <Button size="sm" onClick={async () => {
-            const created = await createLeadMagnetReview({ project_id: project.id, author_name: "Nouveau client", review_text: "", rating: 5, is_manual: true, is_active: true, display_order: reviews.length + 1, source: "manual" });
-            setReviews((prev) => [...prev, created]);
-          }}><Plus className="mr-2 h-4 w-4" /> Ajouter</Button>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {reviews.map((review, index) => (
-            <div key={review.id} className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="inline-flex items-center gap-2 text-xs text-muted-foreground"><GripVertical className="h-4 w-4" /> Ordre: {review.display_order ?? review.ordre ?? index + 1}</div>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="outline" onClick={() => void moveReview(index, -1)}>↑</Button>
-                  <Button size="sm" variant="outline" onClick={() => void moveReview(index, 1)}>↓</Button>
+      {showOverview && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Récap global</CardTitle>
+            <CardDescription>Retour rapide sur l’état de chaque bloc.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            {cardIds.map((id) => (
+              <div key={id} className="rounded-md border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-medium">{id}</p>
+                  <WorkflowPill status={workflow.statuses[id]} />
                 </div>
+                <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => goToCard(id)}>Éditer ce bloc</Button>
               </div>
-
-              <div className="grid gap-2 md:grid-cols-2">
-                <div className="space-y-1">
-                  <Label>Auteur</Label>
-                  <Input value={firstString(review.author_name)} onChange={(event) => updateReviewField(review.id, "author_name", event.target.value)} />
-                </div>
-                <div className="space-y-1">
-                  <Label>Rating</Label>
-                  <Input type="number" min={1} max={5} value={String(review.rating ?? 5)} onChange={(event) => updateReviewField(review.id, "rating", Number(event.target.value))} />
-                </div>
+            ))}
+            <div className="rounded-md border p-3">
+              <p className="mb-2 text-sm font-medium">Checklist requise</p>
+              <div className="space-y-1 text-xs">
+                {[completion.hasSources, completion.hasBranding, completion.hasTexts, completion.hasCta, completion.hasReviews].map((ok, idx) => (
+                  <div key={idx} className="inline-flex w-full items-center gap-1">{ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <CircleDashed className="h-3.5 w-3.5 text-amber-700" />} {ok ? "OK" : "Manquant"}</div>
+                ))}
               </div>
-
-              <div className="space-y-1">
-                <Label>Texte</Label>
-                <Textarea value={firstString(review.review_text)} onChange={(event) => updateReviewField(review.id, "review_text", event.target.value)} />
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <Switch checked={Boolean(review.is_manual ?? true)} onCheckedChange={(checked) => updateReviewField(review.id, "is_manual", checked)} /> Manuelle
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <Switch checked={Boolean(review.is_active ?? review.actif ?? true)} onCheckedChange={(checked) => updateReviewField(review.id, "is_active", checked)} /> Active
-                </label>
-                <Badge variant="outline">Source: {review.source ?? (review.is_manual ? "manual" : "google")}</Badge>
-              </div>
-
-              <div className="flex gap-2">
-                <Button size="sm" onClick={() => void updateLeadMagnetReview(review.id, review)}>Sauvegarder</Button>
-                <Button size="sm" variant="destructive" onClick={async () => {
-                  await deleteLeadMagnetReview(review.id);
-                  setReviews((prev) => prev.filter((entry) => entry.id !== review.id));
-                }}>
-                  <Trash2 className="mr-2 h-4 w-4" /> Supprimer
-                </Button>
-              </div>
+              <Button size="sm" className="mt-3" disabled={!readyForPublish} onClick={() => void saveAsReady()}><RefreshCcw className="mr-1 h-3.5 w-3.5" /> Confirmer LM prêt</Button>
             </div>
-          ))}
-        </CardContent>
-      </Card>
-
-      <Separator />
-      <p className="text-xs text-muted-foreground">Legacy <code>public.lead_magnets</code> non utilisée en écriture.</p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
