@@ -111,7 +111,51 @@ const readOpportunityId = (project: LeadMagnetProjectRecord): string | null => {
   return typeof value === "string" && value ? value : null;
 };
 
+type OpportunityProjectSeed = {
+  id: string;
+  entreprise_id: number | null;
+  lead_magnet?: boolean | null;
+};
+
+async function ensureLeadMagnetProjects(): Promise<void> {
+  const [projectRes, opportunityRes] = await Promise.all([
+    supabase.from("lead_magnet_projects").select("opportunite_id"),
+    supabase.from("opportunites").select("id,entreprise_id,lead_magnet").eq("lead_magnet", true),
+  ]);
+
+  if (projectRes.error) throw projectRes.error;
+  if (opportunityRes.error) throw opportunityRes.error;
+
+  const existingOpportunityIds = new Set(
+    ((projectRes.data ?? []) as Array<{ opportunite_id?: string | null }>)
+      .map((row) => row.opportunite_id)
+      .filter((value): value is string => typeof value === "string" && value.length > 0)
+  );
+
+  const missingProjects = ((opportunityRes.data ?? []) as OpportunityProjectSeed[])
+    .filter((row) => typeof row.id === "string" && row.id.length > 0)
+    .filter((row) => !existingOpportunityIds.has(row.id))
+    .filter((row) => Number.isFinite(row.entreprise_id));
+
+  if (missingProjects.length === 0) return;
+
+  const { error: insertError } = await supabase.from("lead_magnet_projects").insert(
+    missingProjects.map((row) => ({
+      opportunite_id: row.id,
+      entreprise_id: Number(row.entreprise_id),
+      pret_pour_lm: Boolean(row.lead_magnet),
+      statut: "draft",
+    }))
+  );
+
+  if (insertError && insertError.code !== "23505") {
+    throw insertError;
+  }
+}
+
 export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
+  await ensureLeadMagnetProjects();
+
   const { data: projects, error: projectsError } = await supabase
     .from("lead_magnet_projects")
     .select("*")
