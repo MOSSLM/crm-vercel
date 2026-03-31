@@ -54,6 +54,7 @@ type TemplateRow = { id: string; nom: string | null };
 type PipelineRow = { id: string; nom: string | null };
 type LeadMagnetProjectLinkRow = { id: string; opportunite_id: string | null; opportunity_id: string | null };
 type PageMode = "production" | "tinder";
+type SupabaseProjectLinkRow = { id: string; opportunite_id?: string | null; opportunity_id?: string | null };
 
 const OPPORTUNITY_FLAGS = [
   { value: "site_merdique", label: "Site merdique / inutilisable" },
@@ -134,6 +135,28 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
     );
   }, []);
 
+  const fetchLeadMagnetProjectLinks = useCallback(async () => {
+    const legacyColumnsAttempt = await supabase.from("lead_magnet_projects").select("id,opportunite_id,opportunity_id");
+    if (!legacyColumnsAttempt.error) {
+      return {
+        data: (legacyColumnsAttempt.data ?? []) as LeadMagnetProjectLinkRow[],
+        error: null,
+      };
+    }
+
+    const canonicalColumnsAttempt = await supabase.from("lead_magnet_projects").select("id,opportunite_id");
+    if (canonicalColumnsAttempt.error) {
+      return { data: [] as LeadMagnetProjectLinkRow[], error: canonicalColumnsAttempt.error };
+    }
+
+    const normalizedRows = ((canonicalColumnsAttempt.data ?? []) as SupabaseProjectLinkRow[]).map((row) => ({
+      id: row.id,
+      opportunite_id: row.opportunite_id ?? null,
+      opportunity_id: null,
+    }));
+    return { data: normalizedRows, error: null };
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -144,9 +167,7 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
           .select("id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
           .order("created_at", { ascending: false }),
         supabase.from("pipelines").select("id,nom").order("ordre", { ascending: true }),
-        mode === "tinder"
-          ? supabase.from("lead_magnet_projects").select("id,opportunite_id,opportunity_id")
-          : Promise.resolve({ data: [] as LeadMagnetProjectLinkRow[], error: null }),
+        mode === "tinder" ? fetchLeadMagnetProjectLinks() : Promise.resolve({ data: [] as LeadMagnetProjectLinkRow[], error: null }),
       ]);
 
       const typedTemplates = (templateRows ?? []) as TemplateRow[];
@@ -186,7 +207,7 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
     } finally {
       setLoading(false);
     }
-  }, [ensureLeadMagnetsForEveryOpportunity, mode]);
+  }, [ensureLeadMagnetsForEveryOpportunity, fetchLeadMagnetProjectLinks, mode]);
 
   useEffect(() => {
     void load();
