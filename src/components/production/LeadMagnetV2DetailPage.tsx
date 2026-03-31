@@ -81,6 +81,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [dragOffsetX, setDragOffsetX] = useState(0);
+  const [isDraggingCard, setIsDraggingCard] = useState(false);
+  const [isAnimatingSwipe, setIsAnimatingSwipe] = useState(false);
+  const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
 
   const dirtyProject = useRef(false);
   const dirtyPages = useRef(new Set<string>());
@@ -104,6 +107,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     ];
     return links.filter((entry) => entry.value.trim().length > 0);
   }, [project]);
+  const websiteUrl = asString(project?.website_url ?? project?.site_url ?? project?.override_website);
+  const googleBusinessUrl = asString(project?.google_business_url ?? project?.google_maps_url);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,15 +259,32 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   };
 
   const startDrag = (x: number) => {
+    if (isAnimatingSwipe) return;
+    setIsDraggingCard(true);
     setDragStartX(x);
     setDragOffsetX(0);
   };
 
   const endDrag = () => {
-    if (dragOffsetX > 90) markCard("validated");
-    if (dragOffsetX < -90) markCard("review");
+    if (dragStartX === null) return;
+    const width = cardSurfaceRef.current?.offsetWidth ?? 360;
+    const threshold = Math.min(160, width * 0.25);
+    const direction = dragOffsetX > threshold ? 1 : dragOffsetX < -threshold ? -1 : 0;
+
+    if (direction !== 0) {
+      setIsAnimatingSwipe(true);
+      setDragOffsetX(direction * (width + 180));
+      window.setTimeout(() => {
+        markCard(direction > 0 ? "validated" : "review");
+        setDragOffsetX(0);
+        setIsAnimatingSwipe(false);
+      }, 180);
+    } else {
+      setDragOffsetX(0);
+    }
+
+    setIsDraggingCard(false);
     setDragStartX(null);
-    setDragOffsetX(0);
   };
 
   const updateProjectField = (field: string, value: unknown) => {
@@ -335,7 +357,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <Card>
+        <Card className="hidden xl:block">
           <CardHeader>
             <CardTitle className="text-base">Deck workflow</CardTitle>
             <CardDescription>Swipe droite = validée, gauche = à revoir.</CardDescription>
@@ -352,8 +374,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
           </CardContent>
         </Card>
 
-        <Card
-          className="relative overflow-hidden border-2 border-slate-200"
+        <div
+          ref={cardSurfaceRef}
+          className="relative"
           onMouseDown={(event) => startDrag(event.clientX)}
           onMouseMove={(event) => {
             if (dragStartX !== null) setDragOffsetX(event.clientX - dragStartX);
@@ -366,22 +389,39 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
           }}
           onTouchEnd={endDrag}
         >
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between gap-2">
-              <span>{activeCardIndex + 1}/{cardIds.length} • {activeCardId === "diff" ? "Différenciateurs & stats" : activeCardId === "cta" ? "CTA / conversion" : activeCardId === "meta" ? "Métadonnées utiles" : activeCardId === "texts" ? "Textes principaux" : activeCardId === "sources" ? "Sources & accès" : activeCardId === "branding" ? "Logo & assets" : activeCardId === "reviews" ? "Reviews" : "Pages / contenu"}</span>
-              <WorkflowPill status={currentStatus} />
-            </CardTitle>
-            <CardDescription>Autosave actif • flèche droite/gauche clavier disponible.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 transition-transform duration-150" style={{ transform: `translateX(${dragOffsetX}px)` }}>
+          <Card
+            className={cn("relative overflow-hidden border-2 border-slate-200", isDraggingCard && "cursor-grabbing", isAnimatingSwipe && "pointer-events-none")}
+            style={{
+              transform: `translateX(${dragOffsetX}px) rotate(${Math.max(-18, Math.min(18, dragOffsetX / 16))}deg)`,
+              transition: isDraggingCard ? "none" : "transform 180ms cubic-bezier(.22,.61,.36,1)",
+            }}
+          >
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between gap-2">
+                <span>{activeCardIndex + 1}/{cardIds.length} • {activeCardId === "diff" ? "Différenciateurs & stats" : activeCardId === "cta" ? "CTA / conversion" : activeCardId === "meta" ? "Métadonnées utiles" : activeCardId === "texts" ? "Textes principaux" : activeCardId === "sources" ? "Sources & accès" : activeCardId === "branding" ? "Logo & assets" : activeCardId === "reviews" ? "Reviews" : "Pages / contenu"}</span>
+                <WorkflowPill status={currentStatus} />
+              </CardTitle>
+              <CardDescription>Glissez la carte comme sur Tinder : elle suit le doigt et part entièrement.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
             {activeCardId === "sources" && (
-              <div className="grid gap-2 md:grid-cols-2">
+              <div className="space-y-3">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <Button size="sm" variant="outline" onClick={() => websiteUrl && window.open(websiteUrl, "_blank", "noopener,noreferrer")} disabled={!websiteUrl}>
+                    Site web <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => googleBusinessUrl && window.open(googleBusinessUrl, "_blank", "noopener,noreferrer")} disabled={!googleBusinessUrl}>
+                    Page Google <ExternalLink className="ml-1 h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
                 {(projectSources.length > 0 ? projectSources : [{ label: "Aucune source", value: "Ajoutez des infos dans le projet." }]).map((item) => (
                   <div key={item.label} className="rounded-md border p-3">
                     <p className="text-xs text-muted-foreground">{item.label}</p>
                     <p className="text-sm font-medium break-all">{item.value}</p>
                   </div>
                 ))}
+                </div>
               </div>
             )}
 
@@ -500,8 +540,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                 <Button onClick={() => markCard("validated")}><ArrowRight className="mr-1 h-4 w-4" /> Valider</Button>
               </div>
             </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {showOverview && (
