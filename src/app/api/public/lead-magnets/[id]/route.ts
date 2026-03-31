@@ -2,36 +2,6 @@ import { createClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
-const PUBLIC_COLUMNS = [
-  "id",
-  "page_name",
-  "slogan",
-  "sub_slogan_text",
-  "presentation_paragraph",
-  "differentiator_1",
-  "differentiator_2",
-  "differentiator_3",
-  "key_stat_1",
-  "key_stat_2",
-  "key_stat_3",
-  "cta_long_title",
-  "entreprise_name",
-  "adresse",
-  "telephone",
-  "email",
-  "facebook_url",
-  "instagram_url",
-  "linkedin_url",
-  "avis_1_nom",
-  "avis_1_texte",
-  "avis_2_nom",
-  "avis_2_texte",
-  "avis_3_nom",
-  "avis_3_texte",
-  "avis_4_nom",
-  "avis_4_texte",
-] as const;
-
 const SUPABASE_URL = (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
 const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
 
@@ -67,8 +37,7 @@ export async function GET(
   _request: Request,
   { params }: { params: { id: string } }
 ) {
-  const { id: rawId } = params;
-  const id = decodeURIComponent(rawId).trim();
+  const id = decodeURIComponent(params.id).trim();
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 
   if (!id || !isUuid) {
@@ -83,29 +52,18 @@ export async function GET(
     return response({ error: "Server configuration error." }, 500);
   }
 
-  if (process.env.NODE_ENV !== "production") {
-    console.info("[public lead magnet] config check", {
-      hasUrl: Boolean(SUPABASE_URL),
-      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
-    });
-  }
-
   const { data, error } = await supabase
-    .from("lead_magnets")
-    .select(PUBLIC_COLUMNS.join(","))
-    .eq("id", id)
+    .from("vw_lead_magnet_plugin_ready")
+    .select("*")
+    .eq("project_id", id)
     .maybeSingle();
 
   if (error) {
-    if (error.message.toLowerCase().includes("invalid api key")) {
-      console.error("[public lead magnet] invalid Supabase API key configuration");
-      return response({ error: "Server configuration error." }, 500);
-    }
     return response({ error: error.message }, 500);
   }
 
   if (!data) {
-    return response({ error: "Lead magnet not found." }, 404);
+    return response({ error: "Lead magnet project not found." }, 404);
   }
 
   return response(data, 200);
