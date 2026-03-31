@@ -118,14 +118,11 @@ type OpportunityProjectSeed = {
   lead_magnet?: boolean | null;
 };
 
-async function ensureLeadMagnetProjects(): Promise<void> {
-  const [projectRes, opportunityRes] = await Promise.all([
-    supabase.from("lead_magnet_projects").select("opportunite_id"),
-    supabase.from("opportunites").select("id,entreprise_id,lead_magnet").eq("lead_magnet", true),
-  ]);
+async function ensureLeadMagnetProjects(opportunityRows: OpportunityProjectSeed[]): Promise<void> {
+  if (opportunityRows.length === 0) return;
 
+  const projectRes = await supabase.from("lead_magnet_projects").select("opportunite_id");
   if (projectRes.error) throw projectRes.error;
-  if (opportunityRes.error) throw opportunityRes.error;
 
   const existingOpportunityIds = new Set(
     ((projectRes.data ?? []) as Array<{ opportunite_id?: string | null }>)
@@ -133,17 +130,16 @@ async function ensureLeadMagnetProjects(): Promise<void> {
       .filter((value): value is string => typeof value === "string" && value.length > 0)
   );
 
-  const missingProjects = ((opportunityRes.data ?? []) as OpportunityProjectSeed[])
+  const missingProjects = opportunityRows
     .filter((row) => typeof row.id === "string" && row.id.length > 0)
-    .filter((row) => !existingOpportunityIds.has(row.id))
-    .filter((row) => Number.isFinite(row.entreprise_id));
+    .filter((row) => !existingOpportunityIds.has(row.id));
 
   if (missingProjects.length === 0) return;
 
   const { error: insertError } = await supabase.from("lead_magnet_projects").insert(
     missingProjects.map((row) => ({
       opportunite_id: row.id,
-      entreprise_id: Number(row.entreprise_id),
+      entreprise_id: typeof row.entreprise_id === "number" ? row.entreprise_id : null,
       pret_pour_lm: Boolean(row.lead_magnet),
       statut: "draft",
     }))
@@ -155,7 +151,15 @@ async function ensureLeadMagnetProjects(): Promise<void> {
 }
 
 export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
-  await ensureLeadMagnetProjects();
+  const opportunityRes = await supabase
+    .from("opportunites")
+    .select("id,name,pipeline_id,stage_id,tags,flags,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)")
+    .order("created_at", { ascending: false });
+
+  if (opportunityRes.error) throw opportunityRes.error;
+
+  const opportunities = (opportunityRes.data ?? []) as (OpportunityLite & OpportunityProjectSeed)[];
+  await ensureLeadMagnetProjects(opportunities);
 
   const { data: projects, error: projectsError } = await supabase
     .from("lead_magnet_projects")
@@ -165,29 +169,24 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
   if (projectsError) throw projectsError;
 
   const projectRows = (projects ?? []) as LeadMagnetProjectRecord[];
-  const opportunityIds = Array.from(new Set(projectRows.map(readOpportunityId).filter((value): value is string => Boolean(value))));
-
-  const [opportunityRes, pipelinesRes, stagesRes, pagesRes, reviewsRes] = await Promise.all([
-    opportunityIds.length > 0
-      ? supabase
-          .from("opportunites")
-          .select("id,name,pipeline_id,stage_id,tags,flags,entreprises(id,name,ville,logo_url)")
-          .in("id", opportunityIds)
-      : Promise.resolve({ data: [], error: null }),
+  const [pipelinesRes, stagesRes, pagesRes, reviewsRes] = await Promise.all([
     supabase.from("pipelines").select("id,nom"),
     supabase.from("etapes_pipeline").select("id,nom"),
     supabase.from("lead_magnet_pages").select("id,project_id,is_active,actif"),
     supabase.from("lead_magnet_reviews").select("id,project_id,is_active,actif"),
   ]);
 
-  if (opportunityRes.error) throw opportunityRes.error;
   if (pipelinesRes.error) throw pipelinesRes.error;
   if (stagesRes.error) throw stagesRes.error;
   if (pagesRes.error) throw pagesRes.error;
   if (reviewsRes.error) throw reviewsRes.error;
 
-  const opportunities = (opportunityRes.data ?? []) as OpportunityLite[];
-  const opportunityById = new Map(opportunities.map((row) => [row.id, row]));
+  const projectByOpportunityId = new Map(
+    projectRows
+      .map((project) => ({ project, opportunityId: readOpportunityId(project) }))
+      .filter((row): row is { project: LeadMagnetProjectRecord; opportunityId: string } => Boolean(row.opportunityId))
+      .map((row) => [row.opportunityId, row.project])
+  );
 
   const pipelines = (pipelinesRes.data ?? []) as PipelineLite[];
   const pipelineById = new Map(pipelines.map((row) => [row.id, row]));
@@ -213,21 +212,25 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
     }
   }
 
-  return projectRows.map((project) => {
-    const opportunityId = readOpportunityId(project);
-    const opportunity = opportunityId ? opportunityById.get(opportunityId) ?? null : null;
-    const company = asArray(opportunity?.entreprises)[0] ?? null;
+  const items = opportunities
+    .map((opportunity): LeadMagnetListItem | null => {
+      const project = projectByOpportunityId.get(opportunity.id);
+      if (!project) return null;
 
-    return {
-      project,
-      opportunity,
-      company,
-      pipeline: opportunity?.pipeline_id ? pipelineById.get(opportunity.pipeline_id) ?? null : null,
-      stage: opportunity?.stage_id ? stageById.get(opportunity.stage_id) ?? null : null,
-      pageCount: pageCountByProject.get(project.id) ?? 0,
-      activeReviewCount: activeReviewCountByProject.get(project.id) ?? 0,
-    };
-  });
+      const company = asArray(opportunity?.entreprises)[0] ?? null;
+
+      return {
+        project,
+        opportunity: opportunity as OpportunityLite,
+        company,
+        pipeline: opportunity.pipeline_id ? pipelineById.get(opportunity.pipeline_id) ?? null : null,
+        stage: opportunity.stage_id ? stageById.get(opportunity.stage_id) ?? null : null,
+        pageCount: pageCountByProject.get(project.id) ?? 0,
+        activeReviewCount: activeReviewCountByProject.get(project.id) ?? 0,
+      };
+    });
+
+  return items.filter((item): item is LeadMagnetListItem => item !== null);
 }
 
 export async function loadLeadMagnetBundle(projectId: string) {
