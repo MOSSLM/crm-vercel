@@ -136,25 +136,25 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
   }, []);
 
   const fetchLeadMagnetProjectLinks = useCallback(async () => {
-    const legacyColumnsAttempt = await supabase.from("lead_magnet_projects").select("id,opportunite_id,opportunity_id");
-    if (!legacyColumnsAttempt.error) {
-      return {
-        data: (legacyColumnsAttempt.data ?? []) as LeadMagnetProjectLinkRow[],
-        error: null,
-      };
+    const canonicalColumnsAttempt = await supabase.from("lead_magnet_projects").select("id,opportunite_id");
+    if (!canonicalColumnsAttempt.error) {
+      const normalizedRows = ((canonicalColumnsAttempt.data ?? []) as SupabaseProjectLinkRow[]).map((row) => ({
+        id: row.id,
+        opportunite_id: row.opportunite_id ?? null,
+        opportunity_id: null,
+      }));
+      return { data: normalizedRows, error: null };
     }
 
-    const canonicalColumnsAttempt = await supabase.from("lead_magnet_projects").select("id,opportunite_id");
-    if (canonicalColumnsAttempt.error) {
+    const legacyColumnsAttempt = await supabase.from("lead_magnet_projects").select("id,opportunite_id,opportunity_id");
+    if (legacyColumnsAttempt.error) {
       return { data: [] as LeadMagnetProjectLinkRow[], error: canonicalColumnsAttempt.error };
     }
 
-    const normalizedRows = ((canonicalColumnsAttempt.data ?? []) as SupabaseProjectLinkRow[]).map((row) => ({
-      id: row.id,
-      opportunite_id: row.opportunite_id ?? null,
-      opportunity_id: null,
-    }));
-    return { data: normalizedRows, error: null };
+    return {
+      data: (legacyColumnsAttempt.data ?? []) as LeadMagnetProjectLinkRow[],
+      error: null,
+    };
   }, []);
 
   const load = useCallback(async () => {

@@ -129,6 +129,24 @@ async function selectRowsByProjectRef<T>(table: string, projectId: string): Prom
   return [];
 }
 
+async function selectMaybeSingleWithFallback<T>(
+  table: string,
+  selectClauses: string[],
+  filterColumn: string,
+  filterValue: string | number
+): Promise<T | null> {
+  let lastError: { code?: string; message?: string } | null = null;
+  for (const clause of selectClauses) {
+    const res = await supabase.from(table).select(clause).eq(filterColumn, filterValue).maybeSingle();
+    if (!res.error) return (res.data ?? null) as T | null;
+    if (!isMissingSchemaError(res.error)) throw res.error;
+    lastError = res.error;
+  }
+
+  if (lastError && !isMissingSchemaError(lastError)) throw lastError;
+  return null;
+}
+
 const sortByDisplayOrder = <T extends { display_order?: number | null; ordre?: number | null }>(rows: T[]) => {
   return [...rows].sort((a, b) => Number(a.display_order ?? a.ordre ?? 0) - Number(b.display_order ?? b.ordre ?? 0));
 };
@@ -198,10 +216,24 @@ async function ensureLeadMagnetProjects(opportunityRows: OpportunityProjectSeed[
 }
 
 export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
-  const opportunityRes = await supabase
+  let opportunityRes = await supabase
     .from("opportunites")
     .select("id,name,pipeline_id,stage_id,tags,flags,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)")
     .order("created_at", { ascending: false });
+
+  if (opportunityRes.error && isMissingSchemaError(opportunityRes.error)) {
+    opportunityRes = await supabase
+      .from("opportunites")
+      .select("id,name,pipeline_id,stage_id,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)")
+      .order("created_at", { ascending: false });
+  }
+
+  if (opportunityRes.error && isMissingSchemaError(opportunityRes.error)) {
+    opportunityRes = await supabase
+      .from("opportunites")
+      .select("id,name,pipeline_id,stage_id,lead_magnet,entreprise_id")
+      .order("created_at", { ascending: false });
+  }
 
   if (opportunityRes.error) throw opportunityRes.error;
 
@@ -311,14 +343,18 @@ export async function loadLeadMagnetBundle(projectId: string) {
   let company: CompanyLite | null = null;
 
   if (opportunityId) {
-    const { data: opportunityData, error: opportunityError } = await supabase
-      .from("opportunites")
-      .select("id,name,pipeline_id,stage_id,tags,flags,entreprises(id,name,ville,logo_url)")
-      .eq("id", opportunityId)
-      .maybeSingle();
-    if (opportunityError) throw opportunityError;
-
-    opportunity = (opportunityData ?? null) as OpportunityLite | null;
+    opportunity = await selectMaybeSingleWithFallback<OpportunityLite>(
+      "opportunites",
+      [
+        "id,name,pipeline_id,stage_id,tags,flags,entreprises(id,name,ville,logo_url)",
+        "id,name,pipeline_id,stage_id,tags,entreprises(id,name,ville,logo_url)",
+        "id,name,pipeline_id,stage_id,entreprises(id,name,ville,logo_url)",
+        "id,name,pipeline_id,stage_id,tags,flags",
+        "id,name,pipeline_id,stage_id",
+      ],
+      "id",
+      opportunityId
+    );
     company = asArray(opportunity?.entreprises)[0] ?? null;
 
     if (opportunity?.pipeline_id) {
