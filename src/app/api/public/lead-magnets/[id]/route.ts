@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 
@@ -26,6 +26,35 @@ const response = (body: unknown, status = 200) =>
     },
   });
 
+type SupabaseInitResult =
+  | { ok: true; client: SupabaseClient }
+  | { ok: false; reason: "missing_config"; errorMessage: string };
+
+let supabaseInitPromise: Promise<SupabaseInitResult> | null = null;
+
+async function getServerSupabaseClient(): Promise<SupabaseInitResult> {
+  if (!supabaseInitPromise) {
+    supabaseInitPromise = (async () => {
+      try {
+        const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = await import("@/env");
+        return {
+          ok: true,
+          client: createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY),
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : "Unknown env initialization error";
+        return {
+          ok: false,
+          reason: "missing_config",
+          errorMessage,
+        };
+      }
+    })();
+  }
+
+  return supabaseInitPromise;
+}
+
 export async function OPTIONS() {
   return new Response(null, {
     status: 204,
@@ -44,10 +73,12 @@ export async function GET(
     return response({ error: "Invalid id format. Expected UUID." }, 400);
   }
 
-  if (!supabase) {
-    console.error("[public lead magnet] missing Supabase server config", {
-      hasUrl: Boolean(SUPABASE_URL),
-      hasServiceRoleKey: Boolean(SUPABASE_SERVICE_ROLE_KEY),
+  const supabaseResult = await getServerSupabaseClient();
+  if (!supabaseResult.ok) {
+    console.error("[public lead magnet] diagnostics", {
+      category: "config_missing",
+      hasClient: false,
+      message: supabaseResult.errorMessage,
     });
     return response({ error: "Server configuration error." }, 500);
   }
