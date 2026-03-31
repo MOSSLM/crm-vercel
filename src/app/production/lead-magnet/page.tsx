@@ -1,10 +1,10 @@
 import AppLayout from "@/components/layout/AppLayout";
-import { LeadMagnetV2ListPage } from "@/components/production/LeadMagnetV2ListPage";
+import { ProductionLeadMagnetsPage } from "@/components/production/ProductionLeadMagnetsPage";
 
 export default function LeadMagnetRoutePage() {
   return (
     <AppLayout>
-      <LeadMagnetV2ListPage />
+      <ProductionLeadMagnetsPage mode="tinder" />
     </AppLayout>
   );
 }

@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/utils/supabase/client";
+import { toast } from "sonner";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
 type Relation<T> = T | T[] | null | undefined;
@@ -51,6 +52,8 @@ type OpportunityRow = {
 
 type TemplateRow = { id: string; nom: string | null };
 type PipelineRow = { id: string; nom: string | null };
+type LeadMagnetProjectLinkRow = { id: string; opportunite_id: string | null; opportunity_id: string | null };
+type PageMode = "production" | "tinder";
 
 const OPPORTUNITY_FLAGS = [
   { value: "site_merdique", label: "Site merdique / inutilisable" },
@@ -88,12 +91,13 @@ const canonicalizeOpportunityFlag = (flag: string) => {
 const getFlagLabel = (flag: string) => opportunityFlagByValue.get(flag)?.label || flag;
 const firstRelation = <T,>(value: Relation<T>): T | undefined => (Array.isArray(value) ? value[0] : value ?? undefined);
 
-export function ProductionLeadMagnetsPage() {
+export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: PageMode }) {
   const router = useRouter();
   const [leadMagnets, setLeadMagnets] = useState<LeadMagnetRow[]>([]);
   const [opportunities, setOpportunities] = useState<OpportunityRow[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [pipelines, setPipelines] = useState<PipelineRow[]>([]);
+  const [projectIdByOpportunityId, setProjectIdByOpportunityId] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | LeadMagnetStatus>("all");
@@ -131,13 +135,16 @@ export function ProductionLeadMagnetsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: templateRows }, { data: oppRows }, { data: pipelineRows }] = await Promise.all([
+    const [{ data: templateRows }, { data: oppRows }, { data: pipelineRows }, projectLinksRes] = await Promise.all([
       supabase.from("production_templates").select("id,nom").order("nom"),
       supabase
         .from("opportunites")
         .select("id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
         .order("created_at", { ascending: false }),
       supabase.from("pipelines").select("id,nom").order("ordre", { ascending: true }),
+      mode === "tinder"
+        ? supabase.from("lead_magnet_projects").select("id,opportunite_id,opportunity_id")
+        : Promise.resolve({ data: [] as LeadMagnetProjectLinkRow[], error: null }),
     ]);
 
     const typedTemplates = (templateRows ?? []) as TemplateRow[];
@@ -156,8 +163,19 @@ export function ProductionLeadMagnetsPage() {
     setOpportunities(typedOpportunities);
     setTemplates(typedTemplates);
     setPipelines((pipelineRows ?? []) as PipelineRow[]);
+    if (mode === "tinder") {
+      if (projectLinksRes.error) throw projectLinksRes.error;
+      const links = (projectLinksRes.data ?? []) as LeadMagnetProjectLinkRow[];
+      const mapping = new Map<string, string>();
+      for (const link of links) {
+        const opportunityId = link.opportunite_id ?? link.opportunity_id;
+        if (!opportunityId) continue;
+        mapping.set(opportunityId, link.id);
+      }
+      setProjectIdByOpportunityId(mapping);
+    }
     setLoading(false);
-  }, [ensureLeadMagnetsForEveryOpportunity]);
+  }, [ensureLeadMagnetsForEveryOpportunity, mode]);
 
   useEffect(() => {
     void load();
@@ -236,6 +254,20 @@ export function ProductionLeadMagnetsPage() {
     setOpen(false);
     await load();
   };
+
+  const openCard = useCallback((row: LeadMagnetRow) => {
+    if (mode === "production") {
+      router.push(`/production/lead-magnets/${row.id}`);
+      return;
+    }
+
+    const projectId = projectIdByOpportunityId.get(row.opportunite_id);
+    if (!projectId) {
+      toast.error("Projet Lead Magnet V2 introuvable pour cette opportunité.");
+      return;
+    }
+    router.push(`/production/lead-magnet/${projectId}`);
+  }, [mode, projectIdByOpportunityId, router]);
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -354,7 +386,7 @@ export function ProductionLeadMagnetsPage() {
             const pipelineName = firstRelation(opp?.pipelines)?.nom;
             const flags = parseFlags(opp?.flags);
             return (
-              <Card key={row.id} className="cursor-pointer hover:border-primary" onClick={() => router.push(`/production/lead-magnets/${row.id}`)}>
+              <Card key={row.id} className="cursor-pointer hover:border-primary" onClick={() => openCard(row)}>
                 <CardHeader>
                   <CardTitle className="text-base">{row.nom || opp?.name || firstRelation(opp?.entreprises)?.name || "Lead magnet"}</CardTitle>
                   <CardDescription>{templateName || "Template non défini"}</CardDescription>
