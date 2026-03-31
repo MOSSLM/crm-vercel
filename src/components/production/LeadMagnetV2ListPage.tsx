@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, Building2, MapPin, Search } from "lucide-react";
+import { BadgeCheck, Building2, Landmark, MapPin, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,6 +17,7 @@ export function LeadMagnetV2ListPage() {
   const router = useRouter();
   const [rows, setRows] = useState<LeadMagnetListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [pipelineFilter, setPipelineFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -28,9 +29,15 @@ export function LeadMagnetV2ListPage() {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
+      setLoadError(null);
       try {
         const data = await listLeadMagnetCards();
         if (!cancelled) setRows(data);
+      } catch (error) {
+        if (!cancelled) {
+          setRows([]);
+          setLoadError(error instanceof Error ? error.message : "Impossible de charger les projets Lead Magnet.");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -185,6 +192,22 @@ export function LeadMagnetV2ListPage() {
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Chargement des lead magnets…</p>
+      ) : loadError ? (
+        <Card>
+          <CardContent className="py-8">
+            <p className="text-sm text-red-600">
+              Erreur de chargement: {loadError}
+            </p>
+          </CardContent>
+        </Card>
+      ) : filteredRows.length === 0 ? (
+        <Card>
+          <CardContent className="py-8">
+            <p className="text-sm text-muted-foreground">
+              Aucun projet ne correspond aux filtres. Modifiez la recherche pour afficher les rows de <code>lead_magnet_projects</code>.
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
           {filteredRows.map((item) => {
@@ -213,6 +236,15 @@ export function LeadMagnetV2ListPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
+                  <div className="grid gap-2 rounded-md border p-2 text-xs text-muted-foreground">
+                    <div className="inline-flex items-center gap-1">
+                      <Landmark className="h-3.5 w-3.5" />
+                      <span>Row ID: <span className="font-mono text-foreground">{item.project.id}</span></span>
+                    </div>
+                    <div>opportunite_id: <span className="font-mono text-foreground">{item.project.opportunite_id ?? "n/a"}</span></div>
+                    <div>entreprise_id: <span className="font-mono text-foreground">{item.project.entreprise_id ?? "n/a"}</span></div>
+                  </div>
+
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Building2 className="h-4 w-4" />
                     <span>{item.pipeline?.nom ?? "Pipeline n/a"}</span>
