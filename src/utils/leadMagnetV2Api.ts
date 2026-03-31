@@ -34,6 +34,7 @@ export type PipelineStageLite = {
 export type LeadMagnetProjectRecord = {
   id: string;
   opportunite_id?: string | null;
+  entreprise_id?: number | null;
   opportunity_id?: string | null;
   pret_pour_lm?: boolean | null;
   statut?: string | null;
