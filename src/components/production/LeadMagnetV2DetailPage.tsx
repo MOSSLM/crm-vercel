@@ -5,13 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
-  CircleDashed,
   ExternalLink,
+  Globe,
   GripVertical,
-  Layers,
+  MapPinned,
   Plus,
-  RefreshCcw,
   SkipForward,
   Trash2,
 } from "lucide-react";
@@ -19,7 +17,7 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -31,6 +29,7 @@ import {
   deleteLeadMagnetPage,
   deleteLeadMagnetReview,
   loadLeadMagnetBundle,
+  listLeadMagnetCards,
   resolveLeadMagnetProjectId,
   type LeadMagnetPageRecord,
   type LeadMagnetProjectRecord,
@@ -77,7 +76,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const [opportunitySummary, setOpportunitySummary] = useState({ companyName: "", city: "", opportunityName: "", pipeline: "", stage: "", tags: [] as string[] });
   const [workflow, setWorkflow] = useState<WorkflowState>(defaultState);
   const [loading, setLoading] = useState(true);
-  const [showOverview, setShowOverview] = useState(false);
+  const [navProjectIds, setNavProjectIds] = useState<string[]>([]);
 
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [dragOffsetX, setDragOffsetX] = useState(0);
@@ -90,6 +89,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const dirtyReviews = useRef(new Set<string>());
 
   const localStorageKey = `lead-magnet-workflow-${projectId}`;
+  const resolvedProjectId = project?.id ?? null;
 
   const projectSources = useMemo(() => {
     if (!project) return [] as Array<{ label: string; value: string; href?: string }>;
@@ -144,6 +144,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
           const parsed = JSON.parse(localRaw) as WorkflowState;
           setWorkflow((prev) => ({ ...prev, ...parsed }));
         }
+
+        const navCards = await listLeadMagnetCards();
+        setNavProjectIds(navCards.map((item) => item.project.id));
       } catch (error) {
         toast.error(error instanceof Error ? error.message : "Erreur de chargement");
       } finally {
@@ -223,13 +226,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     return { hasSources, hasBranding, hasTexts, hasDiff, hasReviews, hasPages, hasCta, hasMeta, activeReviewCount };
   }, [project, pages, reviews, projectSources.length, workflow.noReviewReason]);
 
-  const requiredFailures = [
-    !completion.hasSources ? "Sources & accès" : null,
-    !completion.hasBranding ? "Logo & assets" : null,
-    !completion.hasTexts ? "Textes principaux" : null,
-    !completion.hasCta ? "CTA / conversion" : null,
-    !completion.hasReviews ? "Reviews (ou raison d'absence)" : null,
-  ].filter((x): x is string => Boolean(x));
+  const requiredFailures = [!completion.hasSources, !completion.hasBranding, !completion.hasTexts, !completion.hasCta, !completion.hasReviews].filter(Boolean);
 
   const readyForPublish = requiredFailures.length === 0;
 
@@ -241,6 +238,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const activeCardId = workflow.activeCardId;
   const activeCardIndex = Math.max(0, orderedDeck.indexOf(activeCardId));
+  const activeNavIndex = resolvedProjectId ? navProjectIds.indexOf(resolvedProjectId) : -1;
+  const previousProjectId = activeNavIndex > 0 ? navProjectIds[activeNavIndex - 1] : null;
+  const nextProjectId = activeNavIndex >= 0 && activeNavIndex < navProjectIds.length - 1 ? navProjectIds[activeNavIndex + 1] : null;
 
   const goToCard = (id: WorkflowCardId) => setWorkflow((prev) => ({ ...prev, activeCardId: id }));
 
@@ -302,15 +302,15 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     dirtyReviews.current.add(reviewId);
   };
 
-  const saveAsReady = async () => {
+  const saveAsReady = async (checked: boolean) => {
     if (!project) return;
-    if (!readyForPublish) {
-      toast.error(`Blocs requis manquants: ${requiredFailures.join(", ")}`);
+    if (checked && !readyForPublish) {
+      toast.error("Blocs requis manquants pour activer LM prêt.");
       return;
     }
-    await updateLeadMagnetProject(project.id, { pret_pour_lm: true, statut: "ready" });
-    setProject((prev) => (prev ? { ...prev, pret_pour_lm: true, statut: "ready" } : prev));
-    toast.success("Lead magnet marqué prêt ✅");
+    await updateLeadMagnetProject(project.id, { pret_pour_lm: checked, statut: checked ? "ready" : "in_progress" });
+    setProject((prev) => (prev ? { ...prev, pret_pour_lm: checked, statut: checked ? "ready" : "in_progress" } : prev));
+    toast.success(checked ? "Lead magnet marqué prêt ✅" : "Lead magnet repassé en préparation.");
   };
 
   const currentStatus = workflow.statuses[activeCardId];
@@ -321,58 +321,55 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <Card className="border-slate-200 bg-white/90">
-        <CardContent className="space-y-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <p className="text-lg font-semibold">{opportunitySummary.companyName || "Lead magnet"}</p>
-              <p className="text-sm text-muted-foreground">{opportunitySummary.city || "Ville inconnue"} • {opportunitySummary.opportunityName || "Opportunité"}</p>
-            </div>
-            <Badge variant={project.pret_pour_lm ? "default" : "secondary"}>{project.pret_pour_lm ? "LM prêt" : "LM en préparation"}</Badge>
-          </div>
-
-          <div className="h-2 rounded-full bg-slate-100">
-            <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${(validatedCount / cardIds.length) * 100}%` }} />
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="text-muted-foreground">Progression: {validatedCount}/{cardIds.length} blocs validés</span>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" onClick={() => router.push("/production/lead-magnet")}><ArrowLeft className="mr-2 h-4 w-4" /> Retour opportunité</Button>
-              <Button variant="outline" size="sm" onClick={() => window.open(`/api/public/lead-magnets/${project.id}`, "_blank", "noopener,noreferrer")}>Voir aperçu</Button>
-              <Button size="sm" onClick={() => void saveAsReady()} disabled={!readyForPublish}>LM prêt</Button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {projectSources.map((source) => (
-              <Button key={source.label} size="sm" variant="ghost" className="h-8 border" onClick={() => source.href && window.open(source.href, "_blank", "noopener,noreferrer")} disabled={!source.href}>
-                {source.label} <ExternalLink className="ml-1 h-3.5 w-3.5" />
+      <section className="-mx-4 border-y bg-white md:-mx-6">
+        <div className="space-y-0 px-4 py-2 md:px-6">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => previousProjectId && router.push(`/production/lead-magnet/${previousProjectId}`)} disabled={!previousProjectId} aria-label="Entreprise précédente">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <p className="min-w-0 truncate text-sm font-semibold">{opportunitySummary.companyName || "Lead magnet"}<span className="text-muted-foreground"> • {opportunitySummary.city || "Ville inconnue"} • {opportunitySummary.opportunityName || "Opportunité"}</span></p>
+            <Badge variant={project.pret_pour_lm ? "default" : "secondary"} className="shrink-0">{validatedCount}/{cardIds.length}</Badge>
+            <div className="ml-auto flex items-center gap-1">
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => websiteUrl && window.open(websiteUrl, "_blank", "noopener,noreferrer")} disabled={!websiteUrl} aria-label="Ouvrir le site web">
+                <Globe className="h-4 w-4" />
               </Button>
-            ))}
-            <Button size="sm" variant="ghost" className="h-8 border" onClick={() => setShowOverview((prev) => !prev)}><Layers className="mr-1 h-3.5 w-3.5" /> Vue globale</Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => googleBusinessUrl && window.open(googleBusinessUrl, "_blank", "noopener,noreferrer")} disabled={!googleBusinessUrl} aria-label="Ouvrir la page Google Business">
+                <MapPinned className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => window.open(`/api/public/lead-magnets/${project.id}`, "_blank", "noopener,noreferrer")} aria-label="Ouvrir l'aperçu public">
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+              <label className="ml-2 inline-flex shrink-0 items-center gap-2 text-xs font-medium">
+                LM prêt
+                <Switch checked={Boolean(project.pret_pour_lm)} onCheckedChange={(checked) => void saveAsReady(checked)} />
+              </label>
+            </div>
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => nextProjectId && router.push(`/production/lead-magnet/${nextProjectId}`)} disabled={!nextProjectId} aria-label="Entreprise suivante">
+              <ArrowRight className="h-4 w-4" />
+            </Button>
           </div>
+          <div className="-mb-2 mt-2 h-0.5 w-full bg-slate-200">
+            <div className="h-0.5 bg-emerald-500 transition-all" style={{ width: `${(validatedCount / cardIds.length) * 100}%` }} />
+          </div>
+        </div>
+      </section>
 
-          {!readyForPublish ? <p className="text-xs text-amber-700">Blocs requis avant “LM prêt”: {requiredFailures.join(", ")}.</p> : null}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)]">
-        <Card className="hidden xl:block">
-          <CardHeader>
-            <CardTitle className="text-base">Deck workflow</CardTitle>
-            <CardDescription>Swipe droite = validée, gauche = à revoir.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
+      <div className="space-y-4">
+        <section className="-mx-4 border-y bg-white px-4 py-2 md:-mx-6 md:px-6">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Deck workflow</div>
+          <div className="overflow-x-auto">
+            <div className="flex min-w-max gap-2 pb-1">
             {orderedDeck.map((id, index) => (
-              <button key={id} className={cn("w-full rounded-md border px-3 py-2 text-left text-sm", activeCardId === id && "border-primary bg-primary/5")} onClick={() => goToCard(id)}>
+              <button key={id} className={cn("rounded-md border bg-white px-3 py-2 text-left text-sm whitespace-nowrap", activeCardId === id && "border-primary bg-primary/5")} onClick={() => goToCard(id)}>
                 <div className="flex items-center justify-between gap-2">
                   <span>{index + 1}. {id === "diff" ? "Différenciateurs & stats" : id === "cta" ? "CTA / conversion" : id === "meta" ? "Métadonnées" : id === "texts" ? "Textes principaux" : id === "sources" ? "Sources & accès" : id === "branding" ? "Logo & assets" : id === "reviews" ? "Reviews" : "Pages / contenu"}</span>
                   <WorkflowPill status={workflow.statuses[id]} />
                 </div>
               </button>
             ))}
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+        </section>
 
         <div
           ref={cardSurfaceRef}
@@ -401,19 +398,10 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                 <span>{activeCardIndex + 1}/{cardIds.length} • {activeCardId === "diff" ? "Différenciateurs & stats" : activeCardId === "cta" ? "CTA / conversion" : activeCardId === "meta" ? "Métadonnées utiles" : activeCardId === "texts" ? "Textes principaux" : activeCardId === "sources" ? "Sources & accès" : activeCardId === "branding" ? "Logo & assets" : activeCardId === "reviews" ? "Reviews" : "Pages / contenu"}</span>
                 <WorkflowPill status={currentStatus} />
               </CardTitle>
-              <CardDescription>Glissez la carte comme sur Tinder : elle suit le doigt et part entièrement.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
             {activeCardId === "sources" && (
               <div className="space-y-3">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <Button size="sm" variant="outline" onClick={() => websiteUrl && window.open(websiteUrl, "_blank", "noopener,noreferrer")} disabled={!websiteUrl}>
-                    Site web <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={() => googleBusinessUrl && window.open(googleBusinessUrl, "_blank", "noopener,noreferrer")} disabled={!googleBusinessUrl}>
-                    Page Google <ExternalLink className="ml-1 h-3.5 w-3.5" />
-                  </Button>
-                </div>
                 <div className="grid gap-2 md:grid-cols-2">
                 {(projectSources.length > 0 ? projectSources : [{ label: "Aucune source", value: "Ajoutez des infos dans le projet." }]).map((item) => (
                   <div key={item.label} className="rounded-md border p-3">
@@ -544,35 +532,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
           </Card>
         </div>
       </div>
-
-      {showOverview && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Récap global</CardTitle>
-            <CardDescription>Retour rapide sur l’état de chaque bloc.</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-            {cardIds.map((id) => (
-              <div key={id} className="rounded-md border p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-medium">{id}</p>
-                  <WorkflowPill status={workflow.statuses[id]} />
-                </div>
-                <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => goToCard(id)}>Éditer ce bloc</Button>
-              </div>
-            ))}
-            <div className="rounded-md border p-3">
-              <p className="mb-2 text-sm font-medium">Checklist requise</p>
-              <div className="space-y-1 text-xs">
-                {[completion.hasSources, completion.hasBranding, completion.hasTexts, completion.hasCta, completion.hasReviews].map((ok, idx) => (
-                  <div key={idx} className="inline-flex w-full items-center gap-1">{ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <CircleDashed className="h-3.5 w-3.5 text-amber-700" />} {ok ? "OK" : "Manquant"}</div>
-                ))}
-              </div>
-              <Button size="sm" className="mt-3" disabled={!readyForPublish} onClick={() => void saveAsReady()}><RefreshCcw className="mr-1 h-3.5 w-3.5" /> Confirmer LM prêt</Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
