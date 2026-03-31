@@ -31,6 +31,7 @@ import {
   deleteLeadMagnetPage,
   deleteLeadMagnetReview,
   loadLeadMagnetBundle,
+  resolveLeadMagnetProjectId,
   type LeadMagnetPageRecord,
   type LeadMagnetProjectRecord,
   type LeadMagnetReviewRecord,
@@ -109,7 +110,17 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const load = async () => {
       setLoading(true);
       try {
-        const bundle = await loadLeadMagnetBundle(projectId);
+        const resolvedProjectId = await resolveLeadMagnetProjectId(projectId);
+        if (!resolvedProjectId) {
+          if (!cancelled) {
+            setProject(null);
+            setPages([]);
+            setReviews([]);
+          }
+          return;
+        }
+
+        const bundle = await loadLeadMagnetBundle(resolvedProjectId);
         if (cancelled) return;
         setProject(bundle.project);
         setPages(bundle.pages);
