@@ -107,9 +107,8 @@ export const LeadMagnetPage = () => {
 
   const savePage = async (page: LeadMagnetPageV2) => {
     try {
-      const payload = { ...page };
-      delete payload.id;
-      await updateLeadMagnetPage(page.id, payload);
+      const { id, ...payload } = page;
+      await updateLeadMagnetPage(id, payload);
       toast.success("Page mise à jour.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erreur page");
@@ -148,9 +147,8 @@ export const LeadMagnetPage = () => {
 
   const saveReview = async (review: LeadMagnetReviewV2) => {
     try {
-      const payload = { ...review };
-      delete payload.id;
-      await updateLeadMagnetReview(review.id, payload);
+      const { id, ...payload } = review;
+      await updateLeadMagnetReview(id, payload);
       toast.success("Avis mis à jour.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erreur avis");
