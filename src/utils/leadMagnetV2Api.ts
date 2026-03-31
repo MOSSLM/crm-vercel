@@ -108,9 +108,12 @@ const isMissingSchemaError = (error: { code?: string; message?: string } | null 
   const message = String(error.message ?? "").toLowerCase();
   return (
     error.code === "PGRST205" ||
+    error.code === "PGRST204" ||
     error.code === "42P01" ||
     message.includes("does not exist") ||
-    message.includes("schema cache")
+    message.includes("schema cache") ||
+    message.includes("could not find") ||
+    message.includes("column")
   );
 };
 
@@ -165,6 +168,10 @@ const findProjectByOpportunityId = async (opportunityId: string): Promise<LeadMa
 
   if (!legacyAttempt.error) {
     return (legacyAttempt.data ?? null) as LeadMagnetProjectRecord | null;
+  }
+
+  if (!isMissingSchemaError(legacyAttempt.error)) {
+    throw legacyAttempt.error;
   }
 
   const canonicalAttempt = await supabase
@@ -256,12 +263,13 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
   if (projectsError) throw projectsError;
 
   const projectRows = (projects ?? []) as LeadMagnetProjectRecord[];
-  const [pipelinesRes, stagesRes, pagesRes, reviewsRes] = await Promise.all([
+  const [pipelinesRes, stagesRes] = await Promise.all([
     supabase.from("pipelines").select("id,nom"),
     supabase.from("etapes_pipeline").select("id,nom"),
-    supabase.from("lead_magnet_pages").select("id,project_id,lead_magnet_project_id,lead_magnet_id,is_active,actif"),
-    supabase.from("lead_magnet_reviews").select("id,project_id,lead_magnet_project_id,lead_magnet_id,is_active,actif"),
   ]);
+
+  const pagesRes = await supabase.from("lead_magnet_pages").select("*");
+  const reviewsRes = await supabase.from("lead_magnet_reviews").select("*");
 
   if (pipelinesRes.error) throw pipelinesRes.error;
   if (stagesRes.error) throw stagesRes.error;
