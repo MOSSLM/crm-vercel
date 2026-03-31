@@ -90,6 +90,7 @@ const canonicalizeOpportunityFlag = (flag: string) => {
 
 const getFlagLabel = (flag: string) => opportunityFlagByValue.get(flag)?.label || flag;
 const firstRelation = <T,>(value: Relation<T>): T | undefined => (Array.isArray(value) ? value[0] : value ?? undefined);
+const loadingSkeletonKeys = Array.from({ length: 6 }, (_, index) => `lead-magnet-skeleton-${index}`);
 
 export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: PageMode }) {
   const router = useRouter();
@@ -135,46 +136,56 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: templateRows }, { data: oppRows }, { data: pipelineRows }, projectLinksRes] = await Promise.all([
-      supabase.from("production_templates").select("id,nom").order("nom"),
-      supabase
-        .from("opportunites")
-        .select("id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
-        .order("created_at", { ascending: false }),
-      supabase.from("pipelines").select("id,nom").order("ordre", { ascending: true }),
-      mode === "tinder"
-        ? supabase.from("lead_magnet_projects").select("id,opportunite_id,opportunity_id")
-        : Promise.resolve({ data: [] as LeadMagnetProjectLinkRow[], error: null }),
-    ]);
+    try {
+      const [{ data: templateRows }, { data: oppRows }, { data: pipelineRows }, projectLinksRes] = await Promise.all([
+        supabase.from("production_templates").select("id,nom").order("nom"),
+        supabase
+          .from("opportunites")
+          .select("id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
+          .order("created_at", { ascending: false }),
+        supabase.from("pipelines").select("id,nom").order("ordre", { ascending: true }),
+        mode === "tinder"
+          ? supabase.from("lead_magnet_projects").select("id,opportunite_id,opportunity_id")
+          : Promise.resolve({ data: [] as LeadMagnetProjectLinkRow[], error: null }),
+      ]);
 
-    const typedTemplates = (templateRows ?? []) as TemplateRow[];
-    const typedOpportunities = (oppRows ?? []) as OpportunityRow[];
+      const typedTemplates = (templateRows ?? []) as TemplateRow[];
+      const typedOpportunities = (oppRows ?? []) as OpportunityRow[];
 
-    await ensureLeadMagnetsForEveryOpportunity(typedOpportunities, typedTemplates);
+      await ensureLeadMagnetsForEveryOpportunity(typedOpportunities, typedTemplates);
 
-    const { data: lmRows } = await supabase
-      .from("production_lead_magnets")
-      .select(
-        "id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)),production_templates(nom)"
-      )
-      .order("created_at", { ascending: false });
+      const { data: lmRows } = await supabase
+        .from("production_lead_magnets")
+        .select(
+          "id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)),production_templates(nom)"
+        )
+        .order("created_at", { ascending: false });
 
-    setLeadMagnets((lmRows ?? []) as LeadMagnetRow[]);
-    setOpportunities(typedOpportunities);
-    setTemplates(typedTemplates);
-    setPipelines((pipelineRows ?? []) as PipelineRow[]);
-    if (mode === "tinder") {
-      if (projectLinksRes.error) throw projectLinksRes.error;
-      const links = (projectLinksRes.data ?? []) as LeadMagnetProjectLinkRow[];
-      const mapping = new Map<string, string>();
-      for (const link of links) {
-        const opportunityId = link.opportunite_id ?? link.opportunity_id;
-        if (!opportunityId) continue;
-        mapping.set(opportunityId, link.id);
+      setLeadMagnets((lmRows ?? []) as LeadMagnetRow[]);
+      setOpportunities(typedOpportunities);
+      setTemplates(typedTemplates);
+      setPipelines((pipelineRows ?? []) as PipelineRow[]);
+      if (mode === "tinder") {
+        if (projectLinksRes.error) {
+          toast.error("Impossible de charger les liens Lead Magnet V2.");
+          setProjectIdByOpportunityId(new Map());
+        } else {
+          const links = (projectLinksRes.data ?? []) as LeadMagnetProjectLinkRow[];
+          const mapping = new Map<string, string>();
+          for (const link of links) {
+            const opportunityId = link.opportunite_id ?? link.opportunity_id;
+            if (!opportunityId) continue;
+            mapping.set(opportunityId, link.id);
+          }
+          setProjectIdByOpportunityId(mapping);
+        }
       }
-      setProjectIdByOpportunityId(mapping);
+    } catch (error) {
+      console.error("Erreur de chargement des lead magnets:", error);
+      toast.error("Erreur lors du chargement des lead magnets.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, [ensureLeadMagnetsForEveryOpportunity, mode]);
 
   useEffect(() => {
@@ -377,7 +388,27 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
       </Card>
 
       {loading ? (
-        <Card><CardContent className="py-6 text-sm text-muted-foreground">Chargement…</CardContent></Card>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {loadingSkeletonKeys.map((skeletonKey) => (
+            <Card key={skeletonKey}>
+              <CardHeader className="space-y-2">
+                <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="h-5 w-20 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-full animate-pulse rounded bg-muted" />
+                <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+                <div className="h-4 w-5/6 animate-pulse rounded bg-muted" />
+                <div className="flex gap-1">
+                  <div className="h-5 w-16 animate-pulse rounded bg-muted" />
+                  <div className="h-5 w-20 animate-pulse rounded bg-muted" />
+                  <div className="h-5 w-14 animate-pulse rounded bg-muted" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {visibleRows.map((row) => {
