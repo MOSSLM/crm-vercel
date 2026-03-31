@@ -6,7 +6,9 @@ import {
   ArrowLeft,
   ArrowRight,
   ExternalLink,
+  Globe,
   GripVertical,
+  MapPinned,
   Plus,
   SkipForward,
   Trash2,
@@ -325,13 +327,16 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
             <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => previousProjectId && router.push(`/production/lead-magnet/${previousProjectId}`)} disabled={!previousProjectId} aria-label="Entreprise précédente">
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <p className="min-w-0 truncate text-sm font-semibold">{opportunitySummary.companyName || "Lead magnet"}<span className="text-muted-foreground"> • {opportunitySummary.city || "Ville inconnue"}</span></p>
+            <p className="min-w-0 truncate text-sm font-semibold">{opportunitySummary.companyName || "Lead magnet"}<span className="text-muted-foreground"> • {opportunitySummary.city || "Ville inconnue"} • {opportunitySummary.opportunityName || "Opportunité"}</span></p>
             <Badge variant={project.pret_pour_lm ? "default" : "secondary"} className="shrink-0">{validatedCount}/{cardIds.length}</Badge>
             <div className="ml-auto flex items-center gap-1">
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => websiteUrl && window.open(websiteUrl, "_blank", "noopener,noreferrer")} disabled={!websiteUrl} aria-label="Ouvrir le site web">
-                <ExternalLink className="h-4 w-4" />
+                <Globe className="h-4 w-4" />
               </Button>
               <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => googleBusinessUrl && window.open(googleBusinessUrl, "_blank", "noopener,noreferrer")} disabled={!googleBusinessUrl} aria-label="Ouvrir la page Google Business">
+                <MapPinned className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => window.open(`/api/public/lead-magnets/${project.id}`, "_blank", "noopener,noreferrer")} aria-label="Ouvrir l'aperçu public">
                 <ExternalLink className="h-4 w-4" />
               </Button>
               <label className="ml-2 inline-flex shrink-0 items-center gap-2 text-xs font-medium">
@@ -350,14 +355,12 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       </section>
 
       <div className="space-y-4">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Deck workflow</CardTitle>
-          </CardHeader>
-          <CardContent className="overflow-x-auto pb-4">
-            <div className="flex min-w-max gap-2">
+        <section className="-mx-4 border-y bg-white px-4 py-2 md:-mx-6 md:px-6">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Deck workflow</div>
+          <div className="overflow-x-auto">
+            <div className="flex min-w-max gap-2 pb-1">
             {orderedDeck.map((id, index) => (
-              <button key={id} className={cn("rounded-md border px-3 py-2 text-left text-sm whitespace-nowrap", activeCardId === id && "border-primary bg-primary/5")} onClick={() => goToCard(id)}>
+              <button key={id} className={cn("rounded-md border bg-white px-3 py-2 text-left text-sm whitespace-nowrap", activeCardId === id && "border-primary bg-primary/5")} onClick={() => goToCard(id)}>
                 <div className="flex items-center justify-between gap-2">
                   <span>{index + 1}. {id === "diff" ? "Différenciateurs & stats" : id === "cta" ? "CTA / conversion" : id === "meta" ? "Métadonnées" : id === "texts" ? "Textes principaux" : id === "sources" ? "Sources & accès" : id === "branding" ? "Logo & assets" : id === "reviews" ? "Reviews" : "Pages / contenu"}</span>
                   <WorkflowPill status={workflow.statuses[id]} />
@@ -365,8 +368,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
               </button>
             ))}
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </section>
 
         <div
           ref={cardSurfaceRef}
