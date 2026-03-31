@@ -103,6 +103,50 @@ const asArray = <T,>(value: T[] | T | null | undefined): T[] => {
   return Array.isArray(value) ? value : [value];
 };
 
+const isMissingSchemaError = (error: { code?: string; message?: string } | null | undefined) => {
+  if (!error) return false;
+  const message = String(error.message ?? "").toLowerCase();
+  return (
+    error.code === "PGRST205" ||
+    error.code === "42P01" ||
+    message.includes("does not exist") ||
+    message.includes("schema cache")
+  );
+};
+
+async function selectRowsByProjectRef<T>(table: string, projectId: string): Promise<T[]> {
+  const filters = ["project_id", "lead_magnet_project_id", "lead_magnet_id"] as const;
+  let lastError: { code?: string; message?: string } | null = null;
+
+  for (const filterColumn of filters) {
+    const res = await supabase.from(table).select("*").eq(filterColumn, projectId);
+    if (!res.error) return (res.data ?? []) as T[];
+    if (!isMissingSchemaError(res.error)) throw res.error;
+    lastError = res.error;
+  }
+
+  if (lastError && !isMissingSchemaError(lastError)) throw lastError;
+  return [];
+}
+
+async function selectMaybeSingleWithFallback<T>(
+  table: string,
+  selectClauses: string[],
+  filterColumn: string,
+  filterValue: string | number
+): Promise<T | null> {
+  let lastError: { code?: string; message?: string } | null = null;
+  for (const clause of selectClauses) {
+    const res = await supabase.from(table).select(clause).eq(filterColumn, filterValue).maybeSingle();
+    if (!res.error) return (res.data ?? null) as T | null;
+    if (!isMissingSchemaError(res.error)) throw res.error;
+    lastError = res.error;
+  }
+
+  if (lastError && !isMissingSchemaError(lastError)) throw lastError;
+  return null;
+}
+
 const sortByDisplayOrder = <T extends { display_order?: number | null; ordre?: number | null }>(rows: T[]) => {
   return [...rows].sort((a, b) => Number(a.display_order ?? a.ordre ?? 0) - Number(b.display_order ?? b.ordre ?? 0));
 };
@@ -172,10 +216,24 @@ async function ensureLeadMagnetProjects(opportunityRows: OpportunityProjectSeed[
 }
 
 export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
-  const opportunityRes = await supabase
+  let opportunityRes = await supabase
     .from("opportunites")
     .select("id,name,pipeline_id,stage_id,tags,flags,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)")
     .order("created_at", { ascending: false });
+
+  if (opportunityRes.error && isMissingSchemaError(opportunityRes.error)) {
+    opportunityRes = await supabase
+      .from("opportunites")
+      .select("id,name,pipeline_id,stage_id,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)")
+      .order("created_at", { ascending: false });
+  }
+
+  if (opportunityRes.error && isMissingSchemaError(opportunityRes.error)) {
+    opportunityRes = await supabase
+      .from("opportunites")
+      .select("id,name,pipeline_id,stage_id,lead_magnet,entreprise_id")
+      .order("created_at", { ascending: false });
+  }
 
   if (opportunityRes.error) throw opportunityRes.error;
 
@@ -193,14 +251,14 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
   const [pipelinesRes, stagesRes, pagesRes, reviewsRes] = await Promise.all([
     supabase.from("pipelines").select("id,nom"),
     supabase.from("etapes_pipeline").select("id,nom"),
-    supabase.from("lead_magnet_pages").select("id,project_id,is_active,actif"),
-    supabase.from("lead_magnet_reviews").select("id,project_id,is_active,actif"),
+    supabase.from("lead_magnet_pages").select("id,project_id,lead_magnet_project_id,lead_magnet_id,is_active,actif"),
+    supabase.from("lead_magnet_reviews").select("id,project_id,lead_magnet_project_id,lead_magnet_id,is_active,actif"),
   ]);
 
   if (pipelinesRes.error) throw pipelinesRes.error;
   if (stagesRes.error) throw stagesRes.error;
-  if (pagesRes.error) throw pagesRes.error;
-  if (reviewsRes.error) throw reviewsRes.error;
+  if (pagesRes.error && !isMissingSchemaError(pagesRes.error)) throw pagesRes.error;
+  if (reviewsRes.error && !isMissingSchemaError(reviewsRes.error)) throw reviewsRes.error;
 
   const projectByOpportunityId = new Map(
     projectRows
@@ -217,15 +275,16 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
 
   const pageCountByProject = new Map<string, number>();
   for (const row of pagesRes.data ?? []) {
-    const projectId = String((row as { project_id?: string }).project_id ?? "");
+    const pageRow = row as { project_id?: string; lead_magnet_project_id?: string; lead_magnet_id?: string };
+    const projectId = String(pageRow.project_id ?? pageRow.lead_magnet_project_id ?? pageRow.lead_magnet_id ?? "");
     if (!projectId) continue;
     pageCountByProject.set(projectId, (pageCountByProject.get(projectId) ?? 0) + 1);
   }
 
   const activeReviewCountByProject = new Map<string, number>();
   for (const row of reviewsRes.data ?? []) {
-    const reviewRow = row as { project_id?: string; is_active?: boolean | null; actif?: boolean | null };
-    const projectId = String(reviewRow.project_id ?? "");
+    const reviewRow = row as { project_id?: string; lead_magnet_project_id?: string; lead_magnet_id?: string; is_active?: boolean | null; actif?: boolean | null };
+    const projectId = String(reviewRow.project_id ?? reviewRow.lead_magnet_project_id ?? reviewRow.lead_magnet_id ?? "");
     if (!projectId) continue;
     const isActive = reviewRow.is_active ?? reviewRow.actif ?? true;
     if (isActive) {
@@ -255,15 +314,9 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
 }
 
 export async function loadLeadMagnetBundle(projectId: string) {
-  const [projectRes, pagesRes, reviewsRes] = await Promise.all([
-    supabase.from("lead_magnet_projects").select("*").eq("id", projectId).maybeSingle(),
-    supabase.from("lead_magnet_pages").select("*").eq("project_id", projectId),
-    supabase.from("lead_magnet_reviews").select("*").eq("project_id", projectId),
-  ]);
+  const projectRes = await supabase.from("lead_magnet_projects").select("*").eq("id", projectId).maybeSingle();
 
   if (projectRes.error) throw projectRes.error;
-  if (pagesRes.error) throw pagesRes.error;
-  if (reviewsRes.error) throw reviewsRes.error;
 
   const project = (projectRes.data ?? null) as LeadMagnetProjectRecord | null;
   if (!project) {
@@ -278,6 +331,11 @@ export async function loadLeadMagnetBundle(projectId: string) {
     };
   }
 
+  const [pages, reviews] = await Promise.all([
+    selectRowsByProjectRef<LeadMagnetPageRecord>("lead_magnet_pages", projectId),
+    selectRowsByProjectRef<LeadMagnetReviewRecord>("lead_magnet_reviews", projectId),
+  ]);
+
   const opportunityId = readOpportunityId(project);
   let opportunity: OpportunityLite | null = null;
   let pipeline: PipelineLite | null = null;
@@ -285,14 +343,18 @@ export async function loadLeadMagnetBundle(projectId: string) {
   let company: CompanyLite | null = null;
 
   if (opportunityId) {
-    const { data: opportunityData, error: opportunityError } = await supabase
-      .from("opportunites")
-      .select("id,name,pipeline_id,stage_id,tags,flags,entreprises(id,name,ville,logo_url)")
-      .eq("id", opportunityId)
-      .maybeSingle();
-    if (opportunityError) throw opportunityError;
-
-    opportunity = (opportunityData ?? null) as OpportunityLite | null;
+    opportunity = await selectMaybeSingleWithFallback<OpportunityLite>(
+      "opportunites",
+      [
+        "id,name,pipeline_id,stage_id,tags,flags,entreprises(id,name,ville,logo_url)",
+        "id,name,pipeline_id,stage_id,tags,entreprises(id,name,ville,logo_url)",
+        "id,name,pipeline_id,stage_id,entreprises(id,name,ville,logo_url)",
+        "id,name,pipeline_id,stage_id,tags,flags",
+        "id,name,pipeline_id,stage_id",
+      ],
+      "id",
+      opportunityId
+    );
     company = asArray(opportunity?.entreprises)[0] ?? null;
 
     if (opportunity?.pipeline_id) {
@@ -318,8 +380,8 @@ export async function loadLeadMagnetBundle(projectId: string) {
 
   return {
     project,
-    pages: sortByDisplayOrder((pagesRes.data ?? []) as LeadMagnetPageRecord[]),
-    reviews: sortByDisplayOrder((reviewsRes.data ?? []) as LeadMagnetReviewRecord[]),
+    pages: sortByDisplayOrder(pages),
+    reviews: sortByDisplayOrder(reviews),
     opportunity,
     pipeline,
     stage,
