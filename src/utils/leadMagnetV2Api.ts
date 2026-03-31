@@ -216,28 +216,36 @@ async function ensureLeadMagnetProjects(opportunityRows: OpportunityProjectSeed[
 }
 
 export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
-  let opportunityRes = await supabase
-    .from("opportunites")
-    .select("id,name,pipeline_id,stage_id,tags,flags,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)")
-    .order("created_at", { ascending: false });
+  const opportunityQueries = [
+    "id,name,pipeline_id,stage_id,tags,flags,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)",
+    "id,name,pipeline_id,stage_id,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)",
+    "id,name,pipeline_id,stage_id,lead_magnet,entreprise_id",
+  ] as const;
 
-  if (opportunityRes.error && isMissingSchemaError(opportunityRes.error)) {
-    opportunityRes = await supabase
+  let opportunities: (OpportunityLite & OpportunityProjectSeed)[] = [];
+  let finalOpportunityError: { code?: string; message?: string } | null = null;
+
+  for (const selectClause of opportunityQueries) {
+    const opportunityRes = await supabase
       .from("opportunites")
-      .select("id,name,pipeline_id,stage_id,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)")
+      .select(selectClause)
       .order("created_at", { ascending: false });
+
+    if (!opportunityRes.error) {
+      opportunities = (opportunityRes.data ?? []) as (OpportunityLite & OpportunityProjectSeed)[];
+      finalOpportunityError = null;
+      break;
+    }
+
+    if (!isMissingSchemaError(opportunityRes.error)) {
+      throw opportunityRes.error;
+    }
+
+    finalOpportunityError = opportunityRes.error;
   }
 
-  if (opportunityRes.error && isMissingSchemaError(opportunityRes.error)) {
-    opportunityRes = await supabase
-      .from("opportunites")
-      .select("id,name,pipeline_id,stage_id,lead_magnet,entreprise_id")
-      .order("created_at", { ascending: false });
-  }
+  if (finalOpportunityError) throw finalOpportunityError;
 
-  if (opportunityRes.error) throw opportunityRes.error;
-
-  const opportunities = (opportunityRes.data ?? []) as (OpportunityLite & OpportunityProjectSeed)[];
   await ensureLeadMagnetProjects(opportunities);
 
   const { data: projects, error: projectsError } = await supabase
