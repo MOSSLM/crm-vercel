@@ -216,11 +216,11 @@ async function ensureLeadMagnetProjects(opportunityRows: OpportunityProjectSeed[
 }
 
 export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
-  const opportunityQueries = [
+  const opportunityQueries: string[] = [
     "id,name,pipeline_id,stage_id,tags,flags,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)",
     "id,name,pipeline_id,stage_id,lead_magnet,entreprise_id,entreprises(id,name,ville,logo_url)",
     "id,name,pipeline_id,stage_id,lead_magnet,entreprise_id",
-  ] as const;
+  ];
 
   let opportunities: (OpportunityLite & OpportunityProjectSeed)[] = [];
   let finalOpportunityError: { code?: string; message?: string } | null = null;
@@ -228,7 +228,7 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
   for (const selectClause of opportunityQueries) {
     const opportunityRes = await supabase
       .from("opportunites")
-      .select(selectClause)
+      .select(selectClause as string)
       .order("created_at", { ascending: false });
 
     if (!opportunityRes.error) {
