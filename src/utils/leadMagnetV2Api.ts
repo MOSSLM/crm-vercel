@@ -216,12 +216,13 @@ const pickAllowed = <T extends Record<string, unknown>>(obj: T, allowed: Set<str
     Object.entries(obj).filter(([key, value]) => allowed.has(key) && value !== undefined),
   );
 
-const toErrorMessage = (error: unknown, fallback: string) => {
-  if (!error) return fallback;
-  if (typeof error === "object" && error && "message" in error) {
-    return String((error as { message?: unknown }).message ?? fallback);
+const pickString = (...values: unknown[]): string | undefined => {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
   }
-  return fallback;
+  return undefined;
 };
 
 const isMissingTableOrColumnError = (error: { code?: string; message?: string } | null | undefined) => {
@@ -271,9 +272,9 @@ const sortByDisplayOrder = <T extends { display_order?: number | null }>(rows: T
 
 function normalizePagePayload(payload: Partial<LeadMagnetPageRecord>): Record<string, unknown> {
   const source = payload as Record<string, unknown>;
-  const leadMagnetProjectId = source.lead_magnet_project_id ?? source.project_id;
+  const leadMagnetProjectId = pickString(source.lead_magnet_project_id, source.project_id);
 
-  if (!leadMagnetProjectId || typeof leadMagnetProjectId !== "string") {
+  if (!leadMagnetProjectId) {
     throw new Error("lead_magnet_project_id manquant pour la page.");
   }
 
@@ -288,9 +289,9 @@ function normalizePagePayload(payload: Partial<LeadMagnetPageRecord>): Record<st
 
 function normalizeReviewPayload(payload: Partial<LeadMagnetReviewRecord>): Record<string, unknown> {
   const source = payload as Record<string, unknown>;
-  const leadMagnetProjectId = source.lead_magnet_project_id ?? source.project_id;
+  const leadMagnetProjectId = pickString(source.lead_magnet_project_id, source.project_id);
 
-  if (!leadMagnetProjectId || typeof leadMagnetProjectId !== "string") {
+  if (!leadMagnetProjectId) {
     throw new Error("lead_magnet_project_id manquant pour la review.");
   }
 
@@ -655,17 +656,7 @@ export async function createLeadMagnetPage(payload: Partial<LeadMagnetPageRecord
 }
 
 export async function updateLeadMagnetPage(pageId: string, updates: Partial<LeadMagnetPageRecord>) {
-  const normalized = pickAllowed(
-    normalizePagePayload({
-      ...updates,
-      lead_magnet_project_id:
-        (updates as Record<string, unknown>).lead_magnet_project_id ??
-        (updates as Record<string, unknown>).project_id ??
-        "",
-    }),
-    PAGE_COLUMNS,
-  );
-
+  const normalized = pickAllowed(updates as Record<string, unknown>, PAGE_COLUMNS);
   delete normalized.lead_magnet_project_id;
 
   const { data, error } = await supabase
@@ -698,17 +689,7 @@ export async function createLeadMagnetReview(payload: Partial<LeadMagnetReviewRe
 }
 
 export async function updateLeadMagnetReview(reviewId: string, updates: Partial<LeadMagnetReviewRecord>) {
-  const normalized = pickAllowed(
-    normalizeReviewPayload({
-      ...updates,
-      lead_magnet_project_id:
-        (updates as Record<string, unknown>).lead_magnet_project_id ??
-        (updates as Record<string, unknown>).project_id ??
-        "",
-    }),
-    REVIEW_COLUMNS,
-  );
-
+  const normalized = pickAllowed(updates as Record<string, unknown>, REVIEW_COLUMNS);
   delete normalized.lead_magnet_project_id;
 
   const { data, error } = await supabase
