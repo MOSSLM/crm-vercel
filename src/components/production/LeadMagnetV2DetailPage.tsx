@@ -343,7 +343,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const projectVariables = useMemo(() => parseVariables(project?.variables), [project?.variables]);
 
-  const previewVars = useMemo(() => {
+  const previewVars = useMemo<Record<string, string>>(() => {
     const name = asString(project?.override_entreprise_name) || opportunitySummary.companyName;
     const city = asString(project?.override_city) || opportunitySummary.city;
     const location = asString(project?.override_location) || city;
@@ -433,7 +433,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       ]);
       const initialServicesList = buildServicesList(initialTags);
 
-      const variables = {
+      const variables: Record<string, string> = {
         ...parseVariables(base.variables),
         name: asString(base.override_entreprise_name) || asString(company.name),
         location: asString(base.override_location) || asString(base.override_city) || asString(company.ville),
@@ -837,7 +837,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   };
 
   const buildServicePreviewVars = (serviceLabel: string) => {
-    const vars = { ...previewVars, service_label: serviceLabel };
+    const vars: Record<string, string> = { ...previewVars, service_label: serviceLabel };
     const index = serviceTags.findIndex((entry) => entry.toLowerCase() === serviceLabel.toLowerCase());
     if (index >= 0) vars[`service_label_${index + 1}`] = serviceLabel;
     return vars;
