@@ -90,6 +90,8 @@ type FocusedField =
   | { scope: "page"; id: string; field: keyof LeadMagnetPageRecord }
   | null;
 
+type CompanyLoose = Record<string, unknown>;
+
 const cardIds: WorkflowCardId[] = ["setup", "branding", "home", "services", "reviews", "pages", "cta", "meta"];
 
 const defaultState: WorkflowState = {
@@ -418,21 +420,22 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     let cancelled = false;
 
     const hydrateProject = (bundle: any): ProjectModel => {
-      const company = bundle?.company ?? {};
+      const company = ((bundle?.company ?? {}) as CompanyLoose);
       const base = (bundle?.project ?? {}) as ProjectModel;
-      const companyTags = uniqNormalizedServices(parseServiceTags(company.service_tags));
+
+      const companyTags = uniqNormalizedServices(parseServiceTags(company["service_tags"]));
       const snapshotTags = uniqNormalizedServices(parseServiceTags(base.service_tags_snapshot));
       const effectiveTags = snapshotTags.length > 0 ? snapshotTags : companyTags;
       const initialServicesList = buildServicesList(effectiveTags);
 
       const variables: Record<string, string> = {
         ...parseVariables(base.variables),
-        name: asString(base.override_entreprise_name) || asString(company.name),
-        location: asString(base.override_location) || asString(base.override_city) || asString(company.ville),
-        city: asString(base.override_city) || asString(company.ville),
-        phone: asString(base.override_phone) || asString(company.telephone),
+        name: asString(base.override_entreprise_name) || asString(company["name"]),
+        location: asString(base.override_location) || asString(base.override_city) || asString(company["ville"]),
+        city: asString(base.override_city) || asString(company["ville"]),
+        phone: asString(base.override_phone) || asString(company["telephone"]),
         email: asString(base.override_email),
-        address: asString(base.override_address) || asString(company.adresse),
+        address: asString(base.override_address) || asString(company["adresse"]),
         services_list: initialServicesList,
         service_label: effectiveTags[0] ?? "",
       };
@@ -443,11 +446,11 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
       return {
         ...base,
-        override_entreprise_name: asString(base.override_entreprise_name) || asString(company.name),
-        override_city: asString(base.override_city) || asString(company.ville),
-        override_location: asString(base.override_location) || asString(base.override_city) || asString(company.ville),
-        override_phone: asString(base.override_phone) || asString(company.telephone),
-        override_address: asString(base.override_address) || asString(company.adresse),
+        override_entreprise_name: asString(base.override_entreprise_name) || asString(company["name"]),
+        override_city: asString(base.override_city) || asString(company["ville"]),
+        override_location: asString(base.override_location) || asString(base.override_city) || asString(company["ville"]),
+        override_phone: asString(base.override_phone) || asString(company["telephone"]),
+        override_address: asString(base.override_address) || asString(company["adresse"]),
         service_tags_snapshot: snapshotTags.length > 0 ? snapshotTags : companyTags,
         variables,
         home_slogan_template:
@@ -492,7 +495,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         const bundle = await loadLeadMagnetBundle(resolved);
         if (cancelled) return;
 
-        const companyTags = uniqNormalizedServices(parseServiceTags(bundle?.company?.service_tags));
+        const company = ((bundle?.company ?? {}) as CompanyLoose);
+        const companyTags = uniqNormalizedServices(parseServiceTags(company["service_tags"]));
         setCompanyServiceTags(companyTags);
 
         const hydrated = hydrateProject(bundle);
@@ -501,8 +505,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         setPages(bundle.pages);
         setReviews(bundle.reviews);
         setOpportunitySummary({
-          companyName: hydrated.override_entreprise_name ?? bundle.company?.name ?? "",
-          city: hydrated.override_location ?? hydrated.override_city ?? bundle.company?.ville ?? "",
+          companyName: hydrated.override_entreprise_name ?? asString(company["name"]),
+          city: hydrated.override_location ?? hydrated.override_city ?? asString(company["ville"]),
           opportunityName: bundle.opportunity?.name ?? "",
           pipeline: bundle.pipeline?.nom ?? "",
           stage: bundle.stage?.nom ?? "",
