@@ -775,16 +775,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     };
   }, [project, reviews, workflow.noReviewReason, serviceTags, servicePages, contactPage]);
 
-  const requiredFailures = [
-    !completion.hasSetup,
-    !completion.hasHome,
-    !completion.hasServices,
-    !completion.hasCta,
-    !completion.hasReviews,
-  ].filter(Boolean);
-
-  const readyForPublish = requiredFailures.length === 0;
-
   const orderedDeck = useMemo(() => {
     const review = cardIds.filter((id) => workflow.statuses[id] === "review");
     const nonReview = cardIds.filter((id) => workflow.statuses[id] !== "review");
@@ -924,10 +914,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const saveAsReady = async (checked: boolean) => {
     if (!project) return;
-    if (checked && !readyForPublish) {
-      toast.error("Blocs requis manquants pour activer LM prêt.");
-      return;
-    }
     await updateLeadMagnetProject(project.id, { pret_pour_lm: checked, statut: checked ? "ready" : "draft" });
     setProject((prev) => (prev ? { ...prev, pret_pour_lm: checked, statut: checked ? "ready" : "draft" } : prev));
     toast.success(checked ? "Lead magnet marqué prêt ✅" : "Lead magnet repassé en préparation.");
