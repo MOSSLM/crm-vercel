@@ -11,6 +11,7 @@ import {
   Plus,
   SkipForward,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -90,6 +91,7 @@ type FocusedField =
   | null;
 
 const cardIds: WorkflowCardId[] = ["setup", "branding", "home", "services", "reviews", "pages", "cta", "meta"];
+
 const defaultState: WorkflowState = {
   statuses: Object.fromEntries(cardIds.map((id) => [id, "todo"])) as Record<WorkflowCardId, CardStatus>,
   activeCardId: "setup",
@@ -102,7 +104,7 @@ const cardLabels: Record<WorkflowCardId, string> = {
   home: "Home page",
   services: "Pages services",
   reviews: "Reviews",
-  pages: "Pages / contenu",
+  pages: "Pages générales / homepage",
   cta: "CTA / contact",
   meta: "Métadonnées",
 };
@@ -168,6 +170,7 @@ function normalizeServiceLabel(value: string) {
     plomberie: "plomberie",
     photovoltaique: "photovoltaïque",
     photovoltaïque: "photovoltaïque",
+    solaire: "solaire",
     chauffage: "chauffage",
     electricite: "électricité",
     électricité: "électricité",
@@ -175,16 +178,21 @@ function normalizeServiceLabel(value: string) {
   return map[raw] ?? raw;
 }
 
-function joinWithEt(items: string[]) {
-  if (items.length === 0) return "";
-  if (items.length === 1) return items[0];
-  if (items.length === 2) return `${items[0]} et ${items[1]}`;
-  return `${items.slice(0, -1).join(", ")} et ${items[items.length - 1]}`;
+function uniqNormalizedServices(values: string[]) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values.map(normalizeServiceLabel).filter(Boolean)) {
+    const key = value.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(value);
+    }
+  }
+  return result;
 }
 
 function buildServicesList(tags: string[]) {
-  const normalized = Array.from(new Set(tags.map(normalizeServiceLabel).filter(Boolean)));
-  return joinWithEt(normalized);
+  return uniqNormalizedServices(tags).join(", ");
 }
 
 function renderTemplate(template: string, vars: Record<string, string>) {
@@ -198,6 +206,69 @@ function appendTokenToText(current: string, token: string) {
   return `${base} ${token}`;
 }
 
+function slugify(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function toTitleCase(value: string) {
+  const v = value.trim();
+  if (!v) return "";
+  return v.charAt(0).toUpperCase() + v.slice(1);
+}
+
+function isInteractiveTarget(target: EventTarget | null) {
+  const el = target as HTMLElement | null;
+  if (!el) return false;
+  return Boolean(
+    el.closest(
+      'input, textarea, button, a, select, option, label, [role="button"], [contenteditable="true"], [data-no-swipe="true"]',
+    ),
+  );
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(asString(reader.result));
+    reader.onerror = () => reject(new Error("Impossible de lire le fichier"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function generateFaviconFromDataUrl(src: string, size = 64) {
+  return new Promise<string>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas indisponible");
+
+        ctx.clearRect(0, 0, size, size);
+        const ratio = Math.min(size / img.width, size / img.height);
+        const drawWidth = img.width * ratio;
+        const drawHeight = img.height * ratio;
+        const x = (size - drawWidth) / 2;
+        const y = (size - drawHeight) / 2;
+        ctx.drawImage(img, x, y, drawWidth, drawHeight);
+        resolve(canvas.toDataURL("image/png", 0.92));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    img.onerror = () => reject(new Error("Impossible de générer le favicon"));
+    img.src = src;
+  });
+}
+
 function TokenBar({
   tokens,
   onInsert,
@@ -206,7 +277,7 @@ function TokenBar({
   onInsert: (token: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2" data-no-swipe="true">
       {tokens.map((item) => (
         <button
           key={item.token}
@@ -243,7 +314,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const [isDraggingCard, setIsDraggingCard] = useState(false);
   const [isAnimatingSwipe, setIsAnimatingSwipe] = useState(false);
   const [focusedField, setFocusedField] = useState<FocusedField>(null);
+  const [newServiceName, setNewServiceName] = useState("");
   const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
+  const fileInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
 
   const dirtyProject = useRef(false);
   const dirtyPages = useRef(new Set<string>());
@@ -252,12 +325,21 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const localStorageKey = `lead-magnet-workflow-${projectId}`;
   const resolvedProjectId = project?.id ?? null;
 
-  const serviceTags = useMemo(() => parseServiceTags(project?.service_tags_snapshot), [project?.service_tags_snapshot]);
-  const servicesList = useMemo(() => buildServicesList(serviceTags), [serviceTags]);
-  const firstServiceLabel = useMemo(
-    () => normalizeServiceLabel(serviceTags[0] ?? "climatisation"),
-    [serviceTags],
+  const pageServiceLabels = useMemo(
+    () =>
+      pages
+        .map((page) => asString((page as any).service_key) || asString(page.page_name))
+        .map(normalizeServiceLabel)
+        .filter(Boolean),
+    [pages],
   );
+
+  const serviceTags = useMemo(
+    () => uniqNormalizedServices([...parseServiceTags(project?.service_tags_snapshot), ...pageServiceLabels]),
+    [project?.service_tags_snapshot, pageServiceLabels],
+  );
+
+  const servicesList = useMemo(() => buildServicesList(serviceTags), [serviceTags]);
 
   const projectVariables = useMemo(() => parseVariables(project?.variables), [project?.variables]);
 
@@ -269,7 +351,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const email = asString(project?.override_email);
     const address = asString(project?.override_address);
 
-    return {
+    const vars: Record<string, string> = {
       ...projectVariables,
       name,
       city,
@@ -278,12 +360,18 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       email,
       address,
       services_list: servicesList,
-      service_label: firstServiceLabel,
+      service_label: serviceTags[0] ?? "",
     };
-  }, [project, opportunitySummary, projectVariables, servicesList, firstServiceLabel]);
 
-  const setupTokens = useMemo(
-    () => [
+    serviceTags.forEach((label, index) => {
+      vars[`service_label_${index + 1}`] = label;
+    });
+
+    return vars;
+  }, [project, opportunitySummary, projectVariables, servicesList, serviceTags]);
+
+  const setupTokens = useMemo(() => {
+    const base = [
       { label: "Name", token: "{{name}}" },
       { label: "Location", token: "{{location}}" },
       { label: "City", token: "{{city}}" },
@@ -292,9 +380,13 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       { label: "Address", token: "{{address}}" },
       { label: "Services list", token: "{{services_list}}" },
       { label: "Service label", token: "{{service_label}}" },
-    ],
-    [],
-  );
+    ];
+    const serviceTokens = serviceTags.map((_, index) => ({
+      label: `Service label ${index + 1}`,
+      token: `{{service_label_${index + 1}}}`,
+    }));
+    return [...base, ...serviceTokens];
+  }, [serviceTags]);
 
   const projectSources = useMemo(() => {
     if (!project) return [] as Array<{ label: string; value: string; href?: string }>;
@@ -316,14 +408,31 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const websiteUrl = asString(project?.website_url ?? project?.site_url ?? project?.override_website);
   const googleBusinessUrl = asString(project?.google_business_url ?? project?.google_maps_url);
 
+  const servicePages = useMemo(
+    () =>
+      pages.filter(
+        (page) => isTruthyText((page as any).service_key) || asString(page.page_key).startsWith("service_"),
+      ),
+    [pages],
+  );
+
+  const genericPages = useMemo(() => {
+    const servicePageIds = new Set(servicePages.map((page) => page.id));
+    return pages.filter((page) => !servicePageIds.has(page.id));
+  }, [pages, servicePages]);
+
   useEffect(() => {
     let cancelled = false;
 
     const hydrateProject = (bundle: any): ProjectModel => {
       const company = bundle?.company ?? {};
       const base = (bundle?.project ?? {}) as ProjectModel;
-      const initialTags = parseServiceTags(base.service_tags_snapshot ?? company.service_tags);
+      const initialTags = uniqNormalizedServices([
+        ...parseServiceTags(company.service_tags),
+        ...parseServiceTags(base.service_tags_snapshot),
+      ]);
       const initialServicesList = buildServicesList(initialTags);
+
       const variables = {
         ...parseVariables(base.variables),
         name: asString(base.override_entreprise_name) || asString(company.name),
@@ -332,7 +441,13 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         phone: asString(base.override_phone) || asString(company.telephone),
         email: asString(base.override_email),
         address: asString(base.override_address) || asString(company.adresse),
+        services_list: initialServicesList,
+        service_label: initialTags[0] ?? "",
       };
+
+      initialTags.forEach((label, index) => {
+        variables[`service_label_${index + 1}`] = label;
+      });
 
       return {
         ...base,
@@ -364,7 +479,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         meta_title_default: asString(base.meta_title_default) || "{{name}} | {{location}}",
         meta_description_default:
           asString(base.meta_description_default) ||
-          `Entreprise ${initialServicesList || "{{services_list}}"} à {{location}}. Contactez {{name}} pour votre projet.`,
+          "Entreprise {{services_list}} à {{location}}. Contactez {{name}} pour votre projet.",
       };
     };
 
@@ -490,7 +605,12 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const completion = useMemo(() => {
     const hasSetup =
-      [project?.override_entreprise_name, project?.override_location || project?.override_city, project?.override_phone, project?.override_address].filter(isTruthyText).length >= 3;
+      [
+        project?.override_entreprise_name,
+        project?.override_location || project?.override_city,
+        project?.override_phone,
+        project?.override_address,
+      ].filter(isTruthyText).length >= 3;
 
     const hasBranding = Boolean(project?.logo_url || project?.hero_image_url || project?.favicon_url);
 
@@ -512,10 +632,16 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const activeReviewCount = reviews.filter((row) => row.is_active ?? (row as any).actif ?? true).length;
     const hasReviews = activeReviewCount > 0 || workflow.noReviewReason.trim().length > 0;
 
-    const hasPages = pages.length > 0 && pages.some((row) => row.is_active ?? (row as any).actif ?? true);
+    const hasPages = genericPages.length > 0 && genericPages.some((row) => row.is_active ?? (row as any).actif ?? true);
 
     const hasCta =
-      [project?.cta_primary_text, project?.cta_primary_target, project?.override_phone, project?.override_email, project?.opening_hours].filter(isTruthyText).length >= 3;
+      [
+        project?.cta_primary_text,
+        project?.cta_primary_target,
+        project?.override_phone,
+        project?.override_email,
+        project?.opening_hours,
+      ].filter(isTruthyText).length >= 3;
 
     const hasMeta = [project?.meta_title_default, project?.meta_description_default].filter(isTruthyText).length >= 1;
 
@@ -530,7 +656,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       hasMeta,
       activeReviewCount,
     };
-  }, [project, pages, reviews, workflow.noReviewReason, serviceTags.length]);
+  }, [project, reviews, workflow.noReviewReason, serviceTags.length, genericPages]);
 
   const requiredFailures = [
     !completion.hasSetup,
@@ -579,6 +705,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const endDrag = () => {
     if (dragStartX === null) return;
+
     const width = cardSurfaceRef.current?.offsetWidth ?? 360;
     const threshold = Math.min(160, width * 0.25);
     const direction = dragOffsetX > threshold ? 1 : dragOffsetX < -threshold ? -1 : 0;
@@ -599,26 +726,36 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     setDragStartX(null);
   };
 
+  const rebuildProjectVariables = (next: ProjectModel) => {
+    const existing = parseVariables(next.variables);
+    const cleaned: Record<string, string> = Object.fromEntries(
+      Object.entries(existing).filter(
+        ([key]) => key !== "service_label" && key !== "services_list" && !/^service_label_\d+$/.test(key),
+      ),
+    );
+
+    cleaned.name = asString(next.override_entreprise_name);
+    cleaned.location = asString(next.override_location);
+    cleaned.city = asString(next.override_city);
+    cleaned.phone = asString(next.override_phone);
+    cleaned.email = asString(next.override_email);
+    cleaned.address = asString(next.override_address);
+
+    const normalized = uniqNormalizedServices(parseServiceTags(next.service_tags_snapshot));
+    cleaned.services_list = buildServicesList(normalized);
+    cleaned.service_label = normalized[0] ?? "";
+    normalized.forEach((label, index) => {
+      cleaned[`service_label_${index + 1}`] = label;
+    });
+
+    return cleaned;
+  };
+
   const updateProjectField = (field: EditableProjectField, value: unknown) => {
     setProject((prev) => {
       if (!prev) return prev;
       const next: ProjectModel = { ...prev, [field]: value } as ProjectModel;
-
-      const vars = {
-        ...parseVariables(next.variables),
-      };
-
-      if (field === "override_entreprise_name") vars.name = asString(value);
-      if (field === "override_location") vars.location = asString(value);
-      if (field === "override_city") vars.city = asString(value);
-      if (field === "override_phone") vars.phone = asString(value);
-      if (field === "override_email") vars.email = asString(value);
-      if (field === "override_address") vars.address = asString(value);
-      if (field === "service_tags_snapshot") {
-        vars.services_list = buildServicesList(parseServiceTags(value));
-      }
-
-      next.variables = vars;
+      next.variables = rebuildProjectVariables(next);
       return next;
     });
     dirtyProject.current = true;
@@ -626,6 +763,23 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const updatePageField = (pageId: string, field: keyof LeadMagnetPageRecord, value: unknown) => {
     setPages((prev) => prev.map((row) => (row.id === pageId ? { ...row, [field]: value } : row)));
+    dirtyPages.current.add(pageId);
+  };
+
+  const updatePageBodyField = (pageId: string, key: string, value: unknown) => {
+    setPages((prev) =>
+      prev.map((row) =>
+        row.id === pageId
+          ? {
+              ...row,
+              body_json: {
+                ...(((row as any).body_json ?? {}) as Record<string, unknown>),
+                [key]: value,
+              },
+            }
+          : row,
+      ),
+    );
     dirtyPages.current.add(pageId);
   };
 
@@ -662,6 +816,82 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     toast.success(checked ? "Lead magnet marqué prêt ✅" : "Lead magnet repassé en préparation.");
   };
 
+  const handleBrowseImage = (field: "logo_url" | "hero_image_url" | "favicon_url") => {
+    fileInputsRef.current[field]?.click();
+  };
+
+  const handleImagePicked = async (field: "logo_url" | "hero_image_url" | "favicon_url", file: File) => {
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      updateProjectField(field, dataUrl);
+
+      if (field === "logo_url") {
+        const generatedFavicon = await generateFaviconFromDataUrl(dataUrl);
+        updateProjectField("favicon_url", generatedFavicon);
+      }
+
+      toast.success(field === "logo_url" ? "Logo importé, favicon généré." : "Image importée.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Import impossible");
+    }
+  };
+
+  const buildServicePreviewVars = (serviceLabel: string) => {
+    const vars = { ...previewVars, service_label: serviceLabel };
+    const index = serviceTags.findIndex((entry) => entry.toLowerCase() === serviceLabel.toLowerCase());
+    if (index >= 0) vars[`service_label_${index + 1}`] = serviceLabel;
+    return vars;
+  };
+
+  const createServicePage = async (serviceLabelRaw: string) => {
+    if (!project) return;
+    const serviceLabel = normalizeServiceLabel(serviceLabelRaw);
+    if (!serviceLabel) return;
+
+    const serviceKey = slugify(serviceLabel);
+    const existing = servicePages.find(
+      (page) =>
+        slugify(asString((page as any).service_key)) === serviceKey ||
+        slugify(asString(page.page_name)) === serviceKey,
+    );
+    if (existing) {
+      toast.error("Cette page service existe déjà.");
+      return;
+    }
+
+    const vars = buildServicePreviewVars(serviceLabel);
+    const metaTitle = renderTemplate("{{service_label}} {{location}} | {{name}}", vars);
+    const metaDescription = renderTemplate(
+      "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
+      vars,
+    );
+    const trustTitle = renderTemplate(asString(project.service_page_trust_title_template), vars);
+
+    const created = await createLeadMagnetPage({
+      project_id: project.id,
+      page_name: toTitleCase(serviceLabel),
+      page_key: `service_${serviceKey}`,
+      slug: serviceKey,
+      service_key: serviceKey,
+      headline: renderTemplate(asString(project.service_page_headline_template), vars),
+      subheadline: renderTemplate(asString(project.service_page_subheadline_template), vars),
+      meta_title: metaTitle,
+      meta_description: metaDescription,
+      is_active: true,
+      display_order: pages.length + 1,
+      body_json: {
+        service_label: serviceLabel,
+        trust_title: trustTitle,
+      },
+    });
+
+    setPages((prev) => [...prev, created]);
+
+    const merged = uniqNormalizedServices([...serviceTags, serviceLabel]);
+    updateProjectField("service_tags_snapshot", merged);
+    setNewServiceName("");
+  };
+
   const currentStatus = workflow.statuses[activeCardId];
   const validatedCount = cardIds.filter((id) => workflow.statuses[id] === "validated").length;
 
@@ -670,9 +900,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const homeSloganPreview = renderTemplate(asString(project?.home_slogan_template), previewVars);
   const homeAboutPreview = renderTemplate(asString(project?.home_about_services_template), previewVars);
   const homeWhyPreview = renderTemplate(asString(project?.home_why_choose_title_template), previewVars);
-  const serviceHeadlinePreview = renderTemplate(asString(project?.service_page_headline_template), previewVars);
-  const serviceSubheadlinePreview = renderTemplate(asString(project?.service_page_subheadline_template), previewVars);
-  const serviceTrustPreview = renderTemplate(asString(project?.service_page_trust_title_template), previewVars);
 
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Chargement…</div>;
   if (!project) return <div className="p-6 text-sm text-muted-foreground">Projet introuvable.</div>;
@@ -791,13 +1018,19 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         <div
           ref={cardSurfaceRef}
           className="relative"
-          onMouseDown={(event) => startDrag(event.clientX)}
+          onMouseDown={(event) => {
+            if (isInteractiveTarget(event.target)) return;
+            startDrag(event.clientX);
+          }}
           onMouseMove={(event) => {
             if (dragStartX !== null) setDragOffsetX(event.clientX - dragStartX);
           }}
           onMouseUp={endDrag}
           onMouseLeave={() => dragStartX !== null && endDrag()}
-          onTouchStart={(event) => startDrag(event.touches[0]?.clientX ?? 0)}
+          onTouchStart={(event) => {
+            if (isInteractiveTarget(event.target)) return;
+            startDrag(event.touches[0]?.clientX ?? 0);
+          }}
           onTouchMove={(event) => {
             if (dragStartX !== null) setDragOffsetX((event.touches[0]?.clientX ?? 0) - dragStartX);
           }}
@@ -821,7 +1054,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
             <CardContent className="space-y-4">
               {activeCardId === "setup" && (
-                <div className="space-y-4">
+                <div className="space-y-4" data-no-swipe="true">
                   <div className="grid gap-2 md:grid-cols-2">
                     {(projectSources.length > 0
                       ? projectSources
@@ -912,7 +1145,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
               )}
 
               {activeCardId === "branding" && (
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-3 md:grid-cols-3" data-no-swipe="true">
                   {(["logo_url", "hero_image_url", "favicon_url"] as const).map((field) => (
                     <div
                       key={field}
@@ -921,18 +1154,50 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onDrop={(event: DragEvent<HTMLDivElement>) => {
                         const file = event.dataTransfer.files[0];
                         if (!file) return;
-                        updateProjectField(field, URL.createObjectURL(file));
+                        void handleImagePicked(field, file);
                       }}
                     >
                       <Label>{field}</Label>
+
                       <Input
                         value={asString(project[field])}
                         onChange={(event) => updateProjectField(field, event.target.value)}
                       />
+
+                      <input
+                        ref={(node) => {
+                          fileInputsRef.current[field] = node;
+                        }}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          void handleImagePicked(field, file);
+                          event.currentTarget.value = "";
+                        }}
+                      />
+
+                      <div className="flex gap-2">
+                        <Button type="button" variant="outline" size="sm" onClick={() => handleBrowseImage(field)}>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Choisir un fichier
+                        </Button>
+                      </div>
+
                       {asString(project[field]) ? (
-                        <img src={asString(project[field])} alt={field} className="h-16 w-16 rounded border object-cover" />
+                        <img src={asString(project[field])} alt={field} className="h-20 w-20 rounded border object-cover" />
                       ) : (
-                        <p className="text-xs text-muted-foreground">Drag & drop image</p>
+                        <p className="text-xs text-muted-foreground">
+                          Clique pour choisir une image ou glisse-dépose ici.
+                        </p>
+                      )}
+
+                      {field === "logo_url" && (
+                        <p className="text-xs text-muted-foreground">
+                          Le favicon est généré automatiquement depuis le logo. Tu peux ensuite l’écraser en important ton propre favicon.
+                        </p>
                       )}
                     </div>
                   ))}
@@ -940,7 +1205,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
               )}
 
               {activeCardId === "home" && (
-                <div className="space-y-4">
+                <div className="space-y-4" data-no-swipe="true">
                   <TokenBar tokens={setupTokens} onInsert={insertToken} />
 
                   <div className="space-y-1">
@@ -1014,7 +1279,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
               )}
 
               {activeCardId === "services" && (
-                <div className="space-y-4">
+                <div className="space-y-4" data-no-swipe="true">
                   <div className="space-y-1">
                     <Label>Services entreprise (service_tags)</Label>
                     <Textarea
@@ -1028,52 +1293,226 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                             .filter(Boolean),
                         )
                       }
-                      placeholder="climatisation, plomberie, pompe à chaleur"
+                      placeholder="climatisation, pompe à chaleur, ventilation, solaire, plomberie"
                     />
                     <p className="text-xs text-muted-foreground">
-                      Détectés : {servicesList || "aucun"}
+                      Services list : {servicesList || "aucun"}
                     </p>
                   </div>
 
                   <TokenBar tokens={setupTokens} onInsert={insertToken} />
 
-                  <div className="space-y-1">
-                    <Label>Slogan page service</Label>
-                    <Input
-                      value={asString(project.service_page_headline_template)}
-                      onChange={(event) => updateProjectField("service_page_headline_template", event.target.value)}
-                      onFocus={() => setFocusedField({ scope: "project", field: "service_page_headline_template" })}
-                      placeholder="{{service_label}} {{location}}"
-                    />
-                    <p className="text-xs text-muted-foreground">Aperçu : {serviceHeadlinePreview || "—"}</p>
+                  <div className="rounded-md border p-3">
+                    <p className="mb-2 text-sm font-medium">Templates par défaut des pages services</p>
+
+                    <div className="space-y-3">
+                      <div className="space-y-1">
+                        <Label>Slogan page service</Label>
+                        <Input
+                          value={asString(project.service_page_headline_template)}
+                          onChange={(event) => updateProjectField("service_page_headline_template", event.target.value)}
+                          onFocus={() => setFocusedField({ scope: "project", field: "service_page_headline_template" })}
+                          placeholder="{{service_label}} {{location}}"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label>Sous-slogan page service</Label>
+                        <Textarea
+                          value={asString(project.service_page_subheadline_template)}
+                          onChange={(event) => updateProjectField("service_page_subheadline_template", event.target.value)}
+                          onFocus={() => setFocusedField({ scope: "project", field: "service_page_subheadline_template" })}
+                          placeholder="Spécialiste de la {{service_label}} à {{location}} ..."
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label>Petit titre plus bas</Label>
+                        <Input
+                          value={asString(project.service_page_trust_title_template)}
+                          onChange={(event) => updateProjectField("service_page_trust_title_template", event.target.value)}
+                          onFocus={() => setFocusedField({ scope: "project", field: "service_page_trust_title_template" })}
+                          placeholder="{{name}}, votre expert {{service_label}} de confiance."
+                        />
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <Label>Sous-slogan page service</Label>
-                    <Textarea
-                      value={asString(project.service_page_subheadline_template)}
-                      onChange={(event) => updateProjectField("service_page_subheadline_template", event.target.value)}
-                      onFocus={() => setFocusedField({ scope: "project", field: "service_page_subheadline_template" })}
-                      placeholder="Spécialiste de la {{service_label}} à {{location}} ..."
-                    />
-                    <p className="text-xs text-muted-foreground">Aperçu : {serviceSubheadlinePreview || "—"}</p>
+                  <div className="rounded-md border p-3">
+                    <p className="mb-2 text-sm font-medium">Ajouter une page service</p>
+                    <div className="flex gap-2">
+                      <Input
+                        value={newServiceName}
+                        onChange={(event) => setNewServiceName(event.target.value)}
+                        placeholder="ex: ventilation"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void createServicePage(newServiceName)}
+                        disabled={!newServiceName.trim()}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Ajouter
+                      </Button>
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
-                    <Label>Petit titre plus bas</Label>
-                    <Input
-                      value={asString(project.service_page_trust_title_template)}
-                      onChange={(event) => updateProjectField("service_page_trust_title_template", event.target.value)}
-                      onFocus={() => setFocusedField({ scope: "project", field: "service_page_trust_title_template" })}
-                      placeholder="{{name}}, votre expert {{service_label}} de confiance."
-                    />
-                    <p className="text-xs text-muted-foreground">Aperçu : {serviceTrustPreview || "—"}</p>
-                  </div>
+                  {serviceTags.length > 0 && (
+                    <div className="rounded-md border p-3">
+                      <p className="mb-2 text-sm font-medium">Services détectés</p>
+                      <div className="flex flex-wrap gap-2">
+                        {serviceTags.map((serviceLabel) => {
+                          const page = servicePages.find(
+                            (entry) =>
+                              slugify(asString((entry as any).service_key)) === slugify(serviceLabel) ||
+                              slugify(asString(entry.page_name)) === slugify(serviceLabel),
+                          );
+                          return (
+                            <div key={serviceLabel} className="flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
+                              <span>{serviceLabel}</span>
+                              {!page && (
+                                <button
+                                  type="button"
+                                  className="text-xs font-medium text-primary"
+                                  onClick={() => void createServicePage(serviceLabel)}
+                                >
+                                  Créer la page
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {servicePages.map((page, index) => {
+                    const body = (((page as any).body_json ?? {}) as Record<string, unknown>);
+                    const serviceLabel =
+                      normalizeServiceLabel(asString(body.service_label) || asString((page as any).service_key) || asString(page.page_name));
+                    const vars = buildServicePreviewVars(serviceLabel);
+                    const trustTitle = asString(body.trust_title) || renderTemplate(asString(project.service_page_trust_title_template), vars);
+
+                    return (
+                      <div key={page.id} className="space-y-3 rounded-md border p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium">Service #{index + 1}</p>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={async () => {
+                              await deleteLeadMagnetPage(page.id);
+                              setPages((prev) => prev.filter((x) => x.id !== page.id));
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-2 md:grid-cols-3">
+                          <div className="space-y-1">
+                            <Label>Nom du service</Label>
+                            <Input
+                              value={serviceLabel}
+                              onChange={(event) => {
+                                const label = normalizeServiceLabel(event.target.value);
+                                const serviceKey = slugify(label);
+                                updatePageField(page.id, "page_name", toTitleCase(label));
+                                updatePageField(page.id, "service_key" as keyof LeadMagnetPageRecord, serviceKey);
+                                updatePageField(page.id, "page_key", `service_${serviceKey}`);
+                                updatePageField(page.id, "slug", serviceKey);
+                                updatePageBodyField(page.id, "service_label", label);
+                              }}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label>Slug</Label>
+                            <Input
+                              value={asString(page.slug)}
+                              onChange={(event) => updatePageField(page.id, "slug", event.target.value)}
+                              onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "slug" })}
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label>Active</Label>
+                            <div className="flex h-10 items-center rounded-md border px-3">
+                              <Switch
+                                checked={Boolean(page.is_active ?? true)}
+                                onCheckedChange={(checked) => updatePageField(page.id, "is_active", checked)}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label>Slogan</Label>
+                          <Input
+                            value={asString(page.headline)}
+                            onChange={(event) => updatePageField(page.id, "headline", event.target.value)}
+                            onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "headline" })}
+                            placeholder={renderTemplate(asString(project.service_page_headline_template), vars)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Défaut : {renderTemplate(asString(project.service_page_headline_template), vars) || "—"}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label>Sous-slogan</Label>
+                          <Textarea
+                            value={asString(page.subheadline)}
+                            onChange={(event) => updatePageField(page.id, "subheadline", event.target.value)}
+                            onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "subheadline" })}
+                            placeholder={renderTemplate(asString(project.service_page_subheadline_template), vars)}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Défaut : {renderTemplate(asString(project.service_page_subheadline_template), vars) || "—"}
+                          </p>
+                        </div>
+
+                        <div className="space-y-1">
+                          <Label>Petit titre plus bas</Label>
+                          <Input
+                            value={trustTitle}
+                            onChange={(event) => updatePageBodyField(page.id, "trust_title", event.target.value)}
+                            placeholder={renderTemplate(asString(project.service_page_trust_title_template), vars)}
+                          />
+                        </div>
+
+                        <div className="grid gap-2 md:grid-cols-2">
+                          <div className="space-y-1">
+                            <Label>Meta title</Label>
+                            <Input
+                              value={asString(page.meta_title)}
+                              onChange={(event) => updatePageField(page.id, "meta_title", event.target.value)}
+                              onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "meta_title" })}
+                              placeholder={renderTemplate("{{service_label}} {{location}} | {{name}}", vars)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label>Meta description</Label>
+                            <Input
+                              value={asString(page.meta_description)}
+                              onChange={(event) => updatePageField(page.id, "meta_description", event.target.value)}
+                              onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "meta_description" })}
+                              placeholder={renderTemplate(
+                                "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
+                                vars,
+                              )}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
               {activeCardId === "reviews" && (
-                <div className="space-y-3">
+                <div className="space-y-3" data-no-swipe="true">
                   <div className="flex items-center justify-between">
                     <p className="text-sm text-muted-foreground">{completion.activeReviewCount} review(s) active(s)</p>
                     <Button
@@ -1082,7 +1521,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onClick={async () => {
                         const created = await createLeadMagnetReview({
                           project_id: project.id,
-                          author_name: "Nouveau client",
+                          author_name: "",
                           review_text: "",
                           rating: 5,
                           is_manual: true,
@@ -1093,7 +1532,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         setReviews((prev) => [...prev, created]);
                       }}
                     >
-                      <Plus className="mr-2 h-4 w-4" /> Ajouter
+                      <Plus className="mr-2 h-4 w-4" /> Ajouter une review
                     </Button>
                   </div>
 
@@ -1104,6 +1543,12 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onChange={(event) => setWorkflow((prev) => ({ ...prev, noReviewReason: event.target.value }))}
                     />
                   </div>
+
+                  {reviews.length === 0 && (
+                    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                      Aucune review pour le moment. Ajoute-en une manuellement.
+                    </div>
+                  )}
 
                   {reviews.map((review, i) => (
                     <div key={review.id} className="space-y-2 rounded-md border p-3">
@@ -1120,25 +1565,30 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
+
                       <div className="grid gap-2 md:grid-cols-2">
                         <Input
                           value={asString(review.author_name)}
                           onChange={(event) => updateReviewField(review.id, "author_name", event.target.value)}
-                          placeholder="Auteur"
+                          placeholder="Nom de l'auteur"
                         />
                         <Input
                           type="number"
                           min={1}
                           max={5}
+                          step={0.5}
                           value={String(review.rating ?? 5)}
                           onChange={(event) => updateReviewField(review.id, "rating", Number(event.target.value))}
+                          placeholder="Note"
                         />
                       </div>
+
                       <Textarea
                         value={asString(review.review_text)}
                         onChange={(event) => updateReviewField(review.id, "review_text", event.target.value)}
-                        placeholder="Texte review"
+                        placeholder="Commentaire"
                       />
+
                       <div className="flex gap-4 text-sm">
                         <label className="inline-flex items-center gap-2">
                           <Switch
@@ -1161,7 +1611,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
               )}
 
               {activeCardId === "pages" && (
-                <div className="space-y-3">
+                <div className="space-y-3" data-no-swipe="true">
                   <div className="flex justify-between gap-2">
                     <TokenBar tokens={setupTokens} onInsert={insertToken} />
                     <Button
@@ -1170,7 +1620,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onClick={async () => {
                         const created = await createLeadMagnetPage({
                           project_id: project.id,
-                          page_name: `Page ${pages.length + 1}`,
+                          page_name: `Page ${genericPages.length + 1}`,
                           page_key: `page_${pages.length + 1}`,
                           slug: `page-${pages.length + 1}`,
                           is_active: true,
@@ -1180,13 +1630,13 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         setPages((prev) => [...prev, created]);
                       }}
                     >
-                      <Plus className="mr-2 h-4 w-4" /> Ajouter une page
+                      <Plus className="mr-2 h-4 w-4" /> Ajouter une page générale
                     </Button>
                   </div>
 
-                  {pages.map((page) => (
+                  {genericPages.map((page) => (
                     <div key={page.id} className="space-y-2 rounded-md border p-3">
-                      <div className="grid gap-2 md:grid-cols-4">
+                      <div className="grid gap-2 md:grid-cols-3">
                         <Input
                           value={asString(page.page_name)}
                           onChange={(event) => updatePageField(page.id, "page_name", event.target.value)}
@@ -1205,12 +1655,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                           placeholder="Slug"
                           onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "slug" })}
                         />
-                        <Input
-                          value={asString(page.service_key)}
-                          onChange={(event) => updatePageField(page.id, "service_key", event.target.value)}
-                          placeholder="service_key"
-                          onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "service_key" })}
-                        />
                       </div>
 
                       <Input
@@ -1223,7 +1667,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       <Textarea
                         value={asString(page.subheadline)}
                         onChange={(event) => updatePageField(page.id, "subheadline", event.target.value)}
-                        placeholder="Subheadline"
+                        placeholder="Subheadline / contenu rapide"
                         onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "subheadline" })}
                       />
 
@@ -1263,11 +1707,17 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       </div>
                     </div>
                   ))}
+
+                  {genericPages.length === 0 && (
+                    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
+                      Aucune page générale pour le moment.
+                    </div>
+                  )}
                 </div>
               )}
 
               {activeCardId === "cta" && (
-                <div className="space-y-4">
+                <div className="space-y-4" data-no-swipe="true">
                   <TokenBar tokens={setupTokens} onInsert={insertToken} />
 
                   <div className="grid gap-3 md:grid-cols-2">
@@ -1330,7 +1780,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
               )}
 
               {activeCardId === "meta" && (
-                <div className="space-y-3">
+                <div className="space-y-3" data-no-swipe="true">
                   <TokenBar tokens={setupTokens} onInsert={insertToken} />
 
                   <div className="space-y-1">
