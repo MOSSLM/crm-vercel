@@ -106,7 +106,7 @@ const cardLabels: Record<WorkflowCardId, string> = {
   home: "Home page",
   services: "Pages services",
   reviews: "Reviews",
-  pages: "Pages générales / homepage",
+  pages: "Page contact",
   cta: "CTA / contact",
   meta: "Métadonnées",
 };
@@ -121,6 +121,10 @@ function WorkflowPill({ status }: { status: CardStatus }) {
     validated: { label: "Validée", tone: "bg-emerald-100 text-emerald-800" },
   };
   return <span className={cn("rounded-full px-2 py-0.5 text-xs font-medium", map[status].tone)}>{map[status].label}</span>;
+}
+
+function PreviewLine({ value }: { value: string }) {
+  return <p className="text-xs text-muted-foreground">Rendu : {value || "—"}</p>;
 }
 
 function parseVariables(value: unknown): Record<string, string> {
@@ -294,6 +298,27 @@ function TokenBar({
   );
 }
 
+function isContactPage(page: LeadMagnetPageRecord) {
+  const keys = [asString(page.page_key), asString(page.slug), asString(page.page_name)];
+  return keys.some((value) => {
+    const normalized = slugify(value);
+    return normalized === "contact" || normalized.includes("contact");
+  });
+}
+
+function getServicePageMatch(page: LeadMagnetPageRecord, serviceLabel: string) {
+  const body = (((page as any).body_json ?? {}) as Record<string, unknown>);
+  const candidates = [
+    asString(body.service_label),
+    asString((page as any).service_key),
+    asString(page.page_name),
+    asString(page.slug),
+    asString(page.page_key),
+  ];
+  const expected = slugify(normalizeServiceLabel(serviceLabel));
+  return candidates.some((value) => slugify(normalizeServiceLabel(value)) === expected);
+}
+
 export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const router = useRouter();
   const [project, setProject] = useState<ProjectModel | null>(null);
@@ -318,6 +343,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const [isAnimatingSwipe, setIsAnimatingSwipe] = useState(false);
   const [focusedField, setFocusedField] = useState<FocusedField>(null);
   const [newServiceName, setNewServiceName] = useState("");
+  const [activeServiceTab, setActiveServiceTab] = useState("");
   const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
   const fileInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -333,6 +359,16 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     if (snapshot.length > 0) return snapshot;
     return uniqNormalizedServices(companyServiceTags);
   }, [project?.service_tags_snapshot, companyServiceTags]);
+
+  useEffect(() => {
+    if (serviceTags.length === 0) {
+      setActiveServiceTab("");
+      return;
+    }
+    if (!activeServiceTab || !serviceTags.includes(activeServiceTab)) {
+      setActiveServiceTab(serviceTags[0]);
+    }
+  }, [serviceTags, activeServiceTab]);
 
   const servicesList = useMemo(() => buildServicesList(serviceTags), [serviceTags]);
 
@@ -415,6 +451,17 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const servicePageIds = new Set(servicePages.map((page) => page.id));
     return pages.filter((page) => !servicePageIds.has(page.id));
   }, [pages, servicePages]);
+
+  const contactPage = useMemo(
+    () => genericPages.find((page) => isContactPage(page)) ?? null,
+    [genericPages],
+  );
+
+  const activeServiceLabel = activeServiceTab || serviceTags[0] || "";
+  const activeServicePage = useMemo(
+    () => servicePages.find((page) => getServicePageMatch(page, activeServiceLabel)) ?? null,
+    [servicePages, activeServiceLabel],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -632,7 +679,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const activeReviewCount = reviews.filter((row) => row.is_active ?? (row as any).actif ?? true).length;
     const hasReviews = activeReviewCount > 0 || workflow.noReviewReason.trim().length > 0;
 
-    const hasPages = genericPages.length > 0 && genericPages.some((row) => row.is_active ?? (row as any).actif ?? true);
+    const hasPages = Boolean(contactPage && (contactPage.is_active ?? true));
 
     const hasCta =
       [
@@ -656,7 +703,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       hasMeta,
       activeReviewCount,
     };
-  }, [project, reviews, workflow.noReviewReason, serviceTags.length, genericPages]);
+  }, [project, reviews, workflow.noReviewReason, serviceTags.length, contactPage]);
 
   const requiredFailures = [
     !completion.hasSetup,
@@ -849,11 +896,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     if (!serviceLabel) return;
 
     const serviceKey = slugify(serviceLabel);
-    const existing = servicePages.find(
-      (page) =>
-        slugify(asString((page as any).service_key)) === serviceKey ||
-        slugify(asString(page.page_name)) === serviceKey,
-    );
+    const existing = servicePages.find((page) => getServicePageMatch(page, serviceLabel));
     if (existing) {
       toast.error("Cette page service existe déjà.");
       return;
@@ -890,6 +933,31 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const merged = uniqNormalizedServices([...(parseServiceTags(project.service_tags_snapshot)), serviceLabel]);
     updateProjectField("service_tags_snapshot", merged);
     setNewServiceName("");
+    setActiveServiceTab(serviceLabel);
+  };
+
+  const createContactPage = async () => {
+    if (!project) return;
+    if (contactPage) {
+      toast.error("La page contact existe déjà.");
+      return;
+    }
+
+    const created = await createLeadMagnetPage({
+      project_id: project.id,
+      page_name: "Contact",
+      page_key: "contact",
+      slug: "contact",
+      headline: "Contactez {{name}}",
+      subheadline: "Obtenez votre devis ou votre rappel rapidement.",
+      meta_title: "Contact | {{name}}",
+      meta_description: "Contactez {{name}} à {{location}} pour votre projet.",
+      is_active: true,
+      display_order: pages.length + 1,
+      body_json: {},
+    });
+
+    setPages((prev) => [...prev, created]);
   };
 
   const currentStatus = workflow.statuses[activeCardId];
@@ -897,9 +965,46 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const serviceTagsInput = serviceTags.join(", ");
 
+  const activeServiceVars = buildServicePreviewVars(activeServiceLabel || serviceTags[0] || "");
+  const defaultServiceHeadlineRendered = renderTemplate(asString(project?.service_page_headline_template), activeServiceVars);
+  const defaultServiceSubheadlineRendered = renderTemplate(asString(project?.service_page_subheadline_template), activeServiceVars);
+  const defaultServiceTrustRendered = renderTemplate(asString(project?.service_page_trust_title_template), activeServiceVars);
+
   const homeSloganPreview = renderTemplate(asString(project?.home_slogan_template), previewVars);
   const homeAboutPreview = renderTemplate(asString(project?.home_about_services_template), previewVars);
   const homeWhyPreview = renderTemplate(asString(project?.home_why_choose_title_template), previewVars);
+
+  const contactHeadlineRendered = contactPage
+    ? renderTemplate(asString(contactPage.headline), previewVars)
+    : "";
+  const contactSubheadlineRendered = contactPage
+    ? renderTemplate(asString(contactPage.subheadline), previewVars)
+    : "";
+  const contactMetaTitleRendered = contactPage
+    ? renderTemplate(asString(contactPage.meta_title), previewVars)
+    : "";
+  const contactMetaDescriptionRendered = contactPage
+    ? renderTemplate(asString(contactPage.meta_description), previewVars)
+    : "";
+
+  const activeServiceBody = (((activeServicePage as any)?.body_json ?? {}) as Record<string, unknown>);
+  const activeServiceTrust = asString(activeServiceBody.trust_title) || defaultServiceTrustRendered;
+  const activeServiceHeadlineRendered = activeServicePage
+    ? renderTemplate(asString(activeServicePage.headline), activeServiceVars)
+    : defaultServiceHeadlineRendered;
+  const activeServiceSubheadlineRendered = activeServicePage
+    ? renderTemplate(asString(activeServicePage.subheadline), activeServiceVars)
+    : defaultServiceSubheadlineRendered;
+  const activeServiceTrustRendered = renderTemplate(activeServiceTrust, activeServiceVars);
+  const activeServiceMetaTitleRendered = activeServicePage
+    ? renderTemplate(asString(activeServicePage.meta_title), activeServiceVars)
+    : renderTemplate("{{service_label}} {{location}} | {{name}}", activeServiceVars);
+  const activeServiceMetaDescriptionRendered = activeServicePage
+    ? renderTemplate(asString(activeServicePage.meta_description), activeServiceVars)
+    : renderTemplate(
+        "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
+        activeServiceVars,
+      );
 
   if (loading) return <div className="p-6 text-sm text-muted-foreground">Chargement…</div>;
   if (!project) return <div className="p-6 text-sm text-muted-foreground">Projet introuvable.</div>;
@@ -1077,6 +1182,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("override_entreprise_name", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_entreprise_name" })}
                       />
+                      <PreviewLine value={asString(project.override_entreprise_name)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1087,6 +1193,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onFocus={() => setFocusedField({ scope: "project", field: "override_location" })}
                         placeholder="ex: La Rochelle"
                       />
+                      <PreviewLine value={asString(project.override_location)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1096,6 +1203,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("override_city", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_city" })}
                       />
+                      <PreviewLine value={asString(project.override_city)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1105,6 +1213,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("override_phone", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_phone" })}
                       />
+                      <PreviewLine value={asString(project.override_phone)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1114,6 +1223,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("override_email", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_email" })}
                       />
+                      <PreviewLine value={asString(project.override_email)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1123,6 +1233,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("override_address", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_address" })}
                       />
+                      <PreviewLine value={asString(project.override_address)} />
                     </div>
                   </div>
                 </div>
@@ -1178,6 +1289,10 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         </p>
                       )}
 
+                      {field === "favicon_url" && asString(project.favicon_url) && (
+                        <p className="text-xs text-muted-foreground">Aperçu du favicon généré ou personnalisé.</p>
+                      )}
+
                       {field === "logo_url" && (
                         <p className="text-xs text-muted-foreground">
                           Le favicon est généré automatiquement depuis le logo. Tu peux ensuite l’écraser en important ton propre favicon.
@@ -1200,7 +1315,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onFocus={() => setFocusedField({ scope: "project", field: "home_slogan_template" })}
                       placeholder="{{name}}, La qualité à votre service."
                     />
-                    <p className="text-xs text-muted-foreground">Aperçu : {homeSloganPreview || "—"}</p>
+                    <PreviewLine value={homeSloganPreview} />
                   </div>
 
                   <div className="space-y-1">
@@ -1211,7 +1326,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onFocus={() => setFocusedField({ scope: "project", field: "home_about_services_template" })}
                       placeholder="Votre spécialiste en {{services_list}}"
                     />
-                    <p className="text-xs text-muted-foreground">Aperçu : {homeAboutPreview || "—"}</p>
+                    <PreviewLine value={homeAboutPreview} />
                   </div>
 
                   <div className="space-y-1">
@@ -1222,7 +1337,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onFocus={() => setFocusedField({ scope: "project", field: "home_why_choose_title_template" })}
                       placeholder="Pourquoi {{name}} est le meilleur choix pour votre projet ?"
                     />
-                    <p className="text-xs text-muted-foreground">Aperçu : {homeWhyPreview || "—"}</p>
+                    <PreviewLine value={homeWhyPreview} />
                   </div>
 
                   <div className="grid gap-3 md:grid-cols-2">
@@ -1233,6 +1348,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("stat_years_experience", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "stat_years_experience" })}
                       />
+                      <PreviewLine value={asString(project.stat_years_experience)} />
                     </div>
                     <div className="space-y-1">
                       <Label>Clients satisfaits</Label>
@@ -1241,6 +1357,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("stat_satisfied_clients", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "stat_satisfied_clients" })}
                       />
+                      <PreviewLine value={asString(project.stat_satisfied_clients)} />
                     </div>
                     <div className="space-y-1">
                       <Label>Installations réalisées</Label>
@@ -1249,6 +1366,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("stat_installations_completed", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "stat_installations_completed" })}
                       />
+                      <PreviewLine value={asString(project.stat_installations_completed)} />
                     </div>
                     <div className="space-y-1">
                       <Label>Nombre de qualifications RGE</Label>
@@ -1257,6 +1375,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("stat_rge_count", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "stat_rge_count" })}
                       />
+                      <PreviewLine value={asString(project.stat_rge_count)} />
                     </div>
                   </div>
                 </div>
@@ -1279,9 +1398,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       }
                       placeholder="climatisation, pompe à chaleur, ventilation, solaire, plomberie"
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Services list : {servicesList || "aucun"}
-                    </p>
+                    <PreviewLine value={servicesList} />
                   </div>
 
                   <TokenBar tokens={setupTokens} onInsert={insertToken} />
@@ -1298,6 +1415,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                           onFocus={() => setFocusedField({ scope: "project", field: "service_page_headline_template" })}
                           placeholder="{{service_label}} {{location}}"
                         />
+                        <PreviewLine value={defaultServiceHeadlineRendered} />
                       </div>
 
                       <div className="space-y-1">
@@ -1308,6 +1426,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                           onFocus={() => setFocusedField({ scope: "project", field: "service_page_subheadline_template" })}
                           placeholder="Spécialiste de la {{service_label}} à {{location}} ..."
                         />
+                        <PreviewLine value={defaultServiceSubheadlineRendered} />
                       </div>
 
                       <div className="space-y-1">
@@ -1318,6 +1437,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                           onFocus={() => setFocusedField({ scope: "project", field: "service_page_trust_title_template" })}
                           placeholder="{{name}}, votre expert {{service_label}} de confiance."
                         />
+                        <PreviewLine value={defaultServiceTrustRendered} />
                       </div>
                     </div>
                   </div>
@@ -1343,149 +1463,160 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                   </div>
 
                   {serviceTags.length > 0 && (
-                    <div className="rounded-md border p-3">
-                      <p className="mb-2 text-sm font-medium">Services détectés</p>
-                      <div className="flex flex-wrap gap-2">
-                        {serviceTags.map((serviceLabel) => {
-                          const page = servicePages.find(
-                            (entry) =>
-                              slugify(asString((entry as any).service_key)) === slugify(serviceLabel) ||
-                              slugify(asString(entry.page_name)) === slugify(serviceLabel),
-                          );
-                          return (
-                            <div key={serviceLabel} className="flex items-center gap-2 rounded-full border px-3 py-1 text-sm">
-                              <span>{serviceLabel}</span>
-                              {!page && (
-                                <button
-                                  type="button"
-                                  className="text-xs font-medium text-primary"
-                                  onClick={() => void createServicePage(serviceLabel)}
-                                >
-                                  Créer la page
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
+                    <div className="space-y-3">
+                      <div className="overflow-x-auto">
+                        <div className="flex min-w-max gap-2">
+                          {serviceTags.map((serviceLabel) => {
+                            const hasPage = servicePages.some((page) => getServicePageMatch(page, serviceLabel));
+                            return (
+                              <button
+                                key={serviceLabel}
+                                type="button"
+                                className={cn(
+                                  "rounded-full border px-3 py-1.5 text-sm",
+                                  activeServiceLabel === serviceLabel
+                                    ? "border-primary bg-primary/5 text-primary"
+                                    : "bg-white text-slate-700",
+                                )}
+                                onClick={() => setActiveServiceTab(serviceLabel)}
+                              >
+                                {serviceLabel}
+                                <span className="ml-2 text-xs text-muted-foreground">{hasPage ? "• page OK" : "• à créer"}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  )}
 
-                  {servicePages.map((page, index) => {
-                    const body = (((page as any).body_json ?? {}) as Record<string, unknown>);
-                    const serviceLabel =
-                      normalizeServiceLabel(asString(body.service_label) || asString((page as any).service_key) || asString(page.page_name));
-                    const vars = buildServicePreviewVars(serviceLabel);
-                    const trustTitle = asString(body.trust_title) || renderTemplate(asString(project.service_page_trust_title_template), vars);
-
-                    return (
-                      <div key={page.id} className="space-y-3 rounded-md border p-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-sm font-medium">Service #{index + 1}</p>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={async () => {
-                              await deleteLeadMagnetPage(page.id);
-                              setPages((prev) => prev.filter((x) => x.id !== page.id));
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
+                      {activeServiceLabel && !activeServicePage && (
+                        <div className="rounded-md border p-4">
+                          <p className="mb-3 text-sm">
+                            Aucune page service n’existe encore pour <strong>{activeServiceLabel}</strong>.
+                          </p>
+                          <Button type="button" variant="outline" onClick={() => void createServicePage(activeServiceLabel)}>
+                            <Plus className="mr-2 h-4 w-4" />
+                            Créer la page {activeServiceLabel}
                           </Button>
                         </div>
+                      )}
 
-                        <div className="grid gap-2 md:grid-cols-3">
-                          <div className="space-y-1">
-                            <Label>Nom du service</Label>
-                            <Input
-                              value={serviceLabel}
-                              onChange={(event) => {
-                                const label = normalizeServiceLabel(event.target.value);
-                                const serviceKey = slugify(label);
-                                updatePageField(page.id, "page_name", toTitleCase(label));
-                                updatePageField(page.id, "service_key" as keyof LeadMagnetPageRecord, serviceKey);
-                                updatePageField(page.id, "page_key", `service_${serviceKey}`);
-                                updatePageField(page.id, "slug", serviceKey);
-                                updatePageBodyField(page.id, "service_label", label);
+                      {activeServiceLabel && activeServicePage && (
+                        <div className="space-y-3 rounded-md border p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-medium">{activeServiceLabel}</p>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={async () => {
+                                await deleteLeadMagnetPage(activeServicePage.id);
+                                setPages((prev) => prev.filter((x) => x.id !== activeServicePage.id));
                               }}
-                            />
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
 
-                          <div className="space-y-1">
-                            <Label>Slug</Label>
-                            <Input
-                              value={asString(page.slug)}
-                              onChange={(event) => updatePageField(page.id, "slug", event.target.value)}
-                              onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "slug" })}
-                            />
-                          </div>
-
-                          <div className="space-y-1">
-                            <Label>Active</Label>
-                            <div className="flex h-10 items-center rounded-md border px-3">
-                              <Switch
-                                checked={Boolean(page.is_active ?? true)}
-                                onCheckedChange={(checked) => updatePageField(page.id, "is_active", checked)}
+                          <div className="grid gap-2 md:grid-cols-3">
+                            <div className="space-y-1">
+                              <Label>Nom du service</Label>
+                              <Input
+                                value={activeServiceLabel}
+                                onChange={(event) => {
+                                  const label = normalizeServiceLabel(event.target.value);
+                                  const serviceKey = slugify(label);
+                                  updatePageField(activeServicePage.id, "page_name", toTitleCase(label));
+                                  updatePageField(activeServicePage.id, "service_key" as keyof LeadMagnetPageRecord, serviceKey);
+                                  updatePageField(activeServicePage.id, "page_key", `service_${serviceKey}`);
+                                  updatePageField(activeServicePage.id, "slug", serviceKey);
+                                  updatePageBodyField(activeServicePage.id, "service_label", label);
+                                  setActiveServiceTab(label);
+                                }}
                               />
+                              <PreviewLine value={activeServiceLabel} />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label>Slug</Label>
+                              <Input
+                                value={asString(activeServicePage.slug)}
+                                onChange={(event) => updatePageField(activeServicePage.id, "slug", event.target.value)}
+                                onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "slug" })}
+                              />
+                              <PreviewLine value={asString(activeServicePage.slug)} />
+                            </div>
+
+                            <div className="space-y-1">
+                              <Label>Active</Label>
+                              <div className="flex h-10 items-center rounded-md border px-3">
+                                <Switch
+                                  checked={Boolean(activeServicePage.is_active ?? true)}
+                                  onCheckedChange={(checked) => updatePageField(activeServicePage.id, "is_active", checked)}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label>Slogan</Label>
+                            <Input
+                              value={asString(activeServicePage.headline)}
+                              onChange={(event) => updatePageField(activeServicePage.id, "headline", event.target.value)}
+                              onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "headline" })}
+                              placeholder={defaultServiceHeadlineRendered}
+                            />
+                            <PreviewLine value={activeServiceHeadlineRendered} />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label>Sous-slogan</Label>
+                            <Textarea
+                              value={asString(activeServicePage.subheadline)}
+                              onChange={(event) => updatePageField(activeServicePage.id, "subheadline", event.target.value)}
+                              onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "subheadline" })}
+                              placeholder={defaultServiceSubheadlineRendered}
+                            />
+                            <PreviewLine value={activeServiceSubheadlineRendered} />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label>Petit titre plus bas</Label>
+                            <Input
+                              value={activeServiceTrust}
+                              onChange={(event) => updatePageBodyField(activeServicePage.id, "trust_title", event.target.value)}
+                              placeholder={defaultServiceTrustRendered}
+                            />
+                            <PreviewLine value={activeServiceTrustRendered} />
+                          </div>
+
+                          <div className="grid gap-2 md:grid-cols-2">
+                            <div className="space-y-1">
+                              <Label>Meta title</Label>
+                              <Input
+                                value={asString(activeServicePage.meta_title)}
+                                onChange={(event) => updatePageField(activeServicePage.id, "meta_title", event.target.value)}
+                                onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "meta_title" })}
+                                placeholder={renderTemplate("{{service_label}} {{location}} | {{name}}", activeServiceVars)}
+                              />
+                              <PreviewLine value={activeServiceMetaTitleRendered} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label>Meta description</Label>
+                              <Input
+                                value={asString(activeServicePage.meta_description)}
+                                onChange={(event) => updatePageField(activeServicePage.id, "meta_description", event.target.value)}
+                                onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "meta_description" })}
+                                placeholder={renderTemplate(
+                                  "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
+                                  activeServiceVars,
+                                )}
+                              />
+                              <PreviewLine value={activeServiceMetaDescriptionRendered} />
                             </div>
                           </div>
                         </div>
-
-                        <div className="space-y-1">
-                          <Label>Slogan</Label>
-                          <Input
-                            value={asString(page.headline)}
-                            onChange={(event) => updatePageField(page.id, "headline", event.target.value)}
-                            onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "headline" })}
-                            placeholder={renderTemplate(asString(project.service_page_headline_template), vars)}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label>Sous-slogan</Label>
-                          <Textarea
-                            value={asString(page.subheadline)}
-                            onChange={(event) => updatePageField(page.id, "subheadline", event.target.value)}
-                            onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "subheadline" })}
-                            placeholder={renderTemplate(asString(project.service_page_subheadline_template), vars)}
-                          />
-                        </div>
-
-                        <div className="space-y-1">
-                          <Label>Petit titre plus bas</Label>
-                          <Input
-                            value={trustTitle}
-                            onChange={(event) => updatePageBodyField(page.id, "trust_title", event.target.value)}
-                            placeholder={renderTemplate(asString(project.service_page_trust_title_template), vars)}
-                          />
-                        </div>
-
-                        <div className="grid gap-2 md:grid-cols-2">
-                          <div className="space-y-1">
-                            <Label>Meta title</Label>
-                            <Input
-                              value={asString(page.meta_title)}
-                              onChange={(event) => updatePageField(page.id, "meta_title", event.target.value)}
-                              onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "meta_title" })}
-                              placeholder={renderTemplate("{{service_label}} {{location}} | {{name}}", vars)}
-                            />
-                          </div>
-                          <div className="space-y-1">
-                            <Label>Meta description</Label>
-                            <Input
-                              value={asString(page.meta_description)}
-                              onChange={(event) => updatePageField(page.id, "meta_description", event.target.value)}
-                              onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "meta_description" })}
-                              placeholder={renderTemplate(
-                                "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
-                                vars,
-                              )}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1520,6 +1651,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       value={workflow.noReviewReason}
                       onChange={(event) => setWorkflow((prev) => ({ ...prev, noReviewReason: event.target.value }))}
                     />
+                    <PreviewLine value={workflow.noReviewReason} />
                   </div>
 
                   {reviews.length === 0 && (
@@ -1545,27 +1677,36 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       </div>
 
                       <div className="grid gap-2 md:grid-cols-2">
-                        <Input
-                          value={asString(review.author_name)}
-                          onChange={(event) => updateReviewField(review.id, "author_name", event.target.value)}
-                          placeholder="Nom de l'auteur"
-                        />
-                        <Input
-                          type="number"
-                          min={1}
-                          max={5}
-                          step={0.5}
-                          value={String(review.rating ?? 5)}
-                          onChange={(event) => updateReviewField(review.id, "rating", Number(event.target.value))}
-                          placeholder="Note"
-                        />
+                        <div className="space-y-1">
+                          <Input
+                            value={asString(review.author_name)}
+                            onChange={(event) => updateReviewField(review.id, "author_name", event.target.value)}
+                            placeholder="Nom de l'auteur"
+                          />
+                          <PreviewLine value={asString(review.author_name)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={5}
+                            step={0.5}
+                            value={String(review.rating ?? 5)}
+                            onChange={(event) => updateReviewField(review.id, "rating", Number(event.target.value))}
+                            placeholder="Note"
+                          />
+                          <PreviewLine value={String(review.rating ?? 5)} />
+                        </div>
                       </div>
 
-                      <Textarea
-                        value={asString(review.review_text)}
-                        onChange={(event) => updateReviewField(review.id, "review_text", event.target.value)}
-                        placeholder="Commentaire"
-                      />
+                      <div className="space-y-1">
+                        <Textarea
+                          value={asString(review.review_text)}
+                          onChange={(event) => updateReviewField(review.id, "review_text", event.target.value)}
+                          placeholder="Commentaire"
+                        />
+                        <PreviewLine value={asString(review.review_text)} />
+                      </div>
 
                       <div className="flex gap-4 text-sm">
                         <label className="inline-flex items-center gap-2">
@@ -1590,105 +1731,114 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
               {activeCardId === "pages" && (
                 <div className="space-y-3" data-no-swipe="true">
-                  <div className="flex justify-between gap-2">
-                    <TokenBar tokens={setupTokens} onInsert={insertToken} />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={async () => {
-                        const created = await createLeadMagnetPage({
-                          project_id: project.id,
-                          page_name: `Page ${genericPages.length + 1}`,
-                          page_key: `page_${pages.length + 1}`,
-                          slug: `page-${pages.length + 1}`,
-                          is_active: true,
-                          display_order: pages.length + 1,
-                          body_json: {},
-                        });
-                        setPages((prev) => [...prev, created]);
-                      }}
-                    >
-                      <Plus className="mr-2 h-4 w-4" /> Ajouter une page générale
-                    </Button>
-                  </div>
+                  {!contactPage && (
+                    <div className="rounded-md border p-4">
+                      <p className="mb-3 text-sm">Aucune page contact pour le moment.</p>
+                      <Button size="sm" variant="outline" onClick={() => void createContactPage()}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Créer la page contact
+                      </Button>
+                    </div>
+                  )}
 
-                  {genericPages.map((page) => (
-                    <div key={page.id} className="space-y-2 rounded-md border p-3">
-                      <div className="grid gap-2 md:grid-cols-3">
-                        <Input
-                          value={asString(page.page_name)}
-                          onChange={(event) => updatePageField(page.id, "page_name", event.target.value)}
-                          placeholder="Titre"
-                          onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "page_name" })}
-                        />
-                        <Input
-                          value={asString(page.page_key)}
-                          onChange={(event) => updatePageField(page.id, "page_key", event.target.value)}
-                          placeholder="page_key"
-                          onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "page_key" })}
-                        />
-                        <Input
-                          value={asString(page.slug)}
-                          onChange={(event) => updatePageField(page.id, "slug", event.target.value)}
-                          placeholder="Slug"
-                          onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "slug" })}
-                        />
-                      </div>
-
-                      <Input
-                        value={asString(page.headline)}
-                        onChange={(event) => updatePageField(page.id, "headline", event.target.value)}
-                        placeholder="Headline"
-                        onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "headline" })}
-                      />
-
-                      <Textarea
-                        value={asString(page.subheadline)}
-                        onChange={(event) => updatePageField(page.id, "subheadline", event.target.value)}
-                        placeholder="Subheadline / contenu rapide"
-                        onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "subheadline" })}
-                      />
-
-                      <div className="grid gap-2 md:grid-cols-2">
-                        <Input
-                          value={asString(page.meta_title)}
-                          onChange={(event) => updatePageField(page.id, "meta_title", event.target.value)}
-                          placeholder="Meta title"
-                          onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "meta_title" })}
-                        />
-                        <Input
-                          value={asString(page.meta_description)}
-                          onChange={(event) => updatePageField(page.id, "meta_description", event.target.value)}
-                          placeholder="Meta description"
-                          onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "meta_description" })}
-                        />
-                      </div>
-
+                  {contactPage && (
+                    <div key={contactPage.id} className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center justify-between">
-                        <label className="inline-flex items-center gap-2 text-sm">
-                          <Switch
-                            checked={Boolean(page.is_active ?? true)}
-                            onCheckedChange={(checked) => updatePageField(page.id, "is_active", checked)}
-                          />
-                          Active
-                        </label>
+                        <p className="text-sm font-medium">Page contact</p>
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={async () => {
-                            await deleteLeadMagnetPage(page.id);
-                            setPages((prev) => prev.filter((x) => x.id !== page.id));
+                            await deleteLeadMagnetPage(contactPage.id);
+                            setPages((prev) => prev.filter((x) => x.id !== contactPage.id));
                           }}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    </div>
-                  ))}
 
-                  {genericPages.length === 0 && (
-                    <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">
-                      Aucune page générale pour le moment.
+                      <TokenBar tokens={setupTokens} onInsert={insertToken} />
+
+                      <div className="grid gap-2 md:grid-cols-3">
+                        <div className="space-y-1">
+                          <Input
+                            value={asString(contactPage.page_name)}
+                            onChange={(event) => updatePageField(contactPage.id, "page_name", event.target.value)}
+                            placeholder="Titre"
+                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "page_name" })}
+                          />
+                          <PreviewLine value={asString(contactPage.page_name)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Input
+                            value={asString(contactPage.page_key)}
+                            onChange={(event) => updatePageField(contactPage.id, "page_key", event.target.value)}
+                            placeholder="page_key"
+                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "page_key" })}
+                          />
+                          <PreviewLine value={asString(contactPage.page_key)} />
+                        </div>
+                        <div className="space-y-1">
+                          <Input
+                            value={asString(contactPage.slug)}
+                            onChange={(event) => updatePageField(contactPage.id, "slug", event.target.value)}
+                            placeholder="Slug"
+                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "slug" })}
+                          />
+                          <PreviewLine value={asString(contactPage.slug)} />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <Input
+                          value={asString(contactPage.headline)}
+                          onChange={(event) => updatePageField(contactPage.id, "headline", event.target.value)}
+                          placeholder="Headline"
+                          onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "headline" })}
+                        />
+                        <PreviewLine value={contactHeadlineRendered} />
+                      </div>
+
+                      <div className="space-y-1">
+                        <Textarea
+                          value={asString(contactPage.subheadline)}
+                          onChange={(event) => updatePageField(contactPage.id, "subheadline", event.target.value)}
+                          placeholder="Subheadline / contenu rapide"
+                          onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "subheadline" })}
+                        />
+                        <PreviewLine value={contactSubheadlineRendered} />
+                      </div>
+
+                      <div className="grid gap-2 md:grid-cols-2">
+                        <div className="space-y-1">
+                          <Input
+                            value={asString(contactPage.meta_title)}
+                            onChange={(event) => updatePageField(contactPage.id, "meta_title", event.target.value)}
+                            placeholder="Meta title"
+                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "meta_title" })}
+                          />
+                          <PreviewLine value={contactMetaTitleRendered} />
+                        </div>
+                        <div className="space-y-1">
+                          <Input
+                            value={asString(contactPage.meta_description)}
+                            onChange={(event) => updatePageField(contactPage.id, "meta_description", event.target.value)}
+                            placeholder="Meta description"
+                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "meta_description" })}
+                          />
+                          <PreviewLine value={contactMetaDescriptionRendered} />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <label className="inline-flex items-center gap-2 text-sm">
+                          <Switch
+                            checked={Boolean(contactPage.is_active ?? true)}
+                            onCheckedChange={(checked) => updatePageField(contactPage.id, "is_active", checked)}
+                          />
+                          Active
+                        </label>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1706,6 +1856,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("cta_primary_text", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "cta_primary_text" })}
                       />
+                      <PreviewLine value={asString(project.cta_primary_text)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1715,6 +1866,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("cta_primary_target", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "cta_primary_target" })}
                       />
+                      <PreviewLine value={asString(project.cta_primary_target)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1724,6 +1876,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("cta_secondary_text", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "cta_secondary_text" })}
                       />
+                      <PreviewLine value={asString(project.cta_secondary_text)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1733,6 +1886,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("override_email", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_email" })}
                       />
+                      <PreviewLine value={asString(project.override_email)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1742,6 +1896,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onChange={(event) => updateProjectField("override_phone", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_phone" })}
                       />
+                      <PreviewLine value={asString(project.override_phone)} />
                     </div>
 
                     <div className="space-y-1">
@@ -1752,6 +1907,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onFocus={() => setFocusedField({ scope: "project", field: "opening_hours" })}
                         placeholder="Lun-Ven 8h-18h"
                       />
+                      <PreviewLine value={asString(project.opening_hours)} />
                     </div>
                   </div>
                 </div>
@@ -1768,6 +1924,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onChange={(event) => updateProjectField("meta_title_default", event.target.value)}
                       onFocus={() => setFocusedField({ scope: "project", field: "meta_title_default" })}
                     />
+                    <PreviewLine value={renderTemplate(asString(project.meta_title_default), previewVars)} />
                   </div>
 
                   <div className="space-y-1">
@@ -1777,6 +1934,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       onChange={(event) => updateProjectField("meta_description_default", event.target.value)}
                       onFocus={() => setFocusedField({ scope: "project", field: "meta_description_default" })}
                     />
+                    <PreviewLine value={renderTemplate(asString(project.meta_description_default), previewVars)} />
                   </div>
                 </div>
               )}
