@@ -297,6 +297,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const [project, setProject] = useState<ProjectModel | null>(null);
   const [pages, setPages] = useState<LeadMagnetPageRecord[]>([]);
   const [reviews, setReviews] = useState<LeadMagnetReviewRecord[]>([]);
+  const [companyServiceTags, setCompanyServiceTags] = useState<string[]>([]);
   const [opportunitySummary, setOpportunitySummary] = useState({
     companyName: "",
     city: "",
@@ -325,19 +326,11 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const localStorageKey = `lead-magnet-workflow-${projectId}`;
   const resolvedProjectId = project?.id ?? null;
 
-  const pageServiceLabels = useMemo(
-    () =>
-      pages
-        .map((page) => asString((page as any).service_key) || asString(page.page_name))
-        .map(normalizeServiceLabel)
-        .filter(Boolean),
-    [pages],
-  );
-
-  const serviceTags = useMemo(
-    () => uniqNormalizedServices([...parseServiceTags(project?.service_tags_snapshot), ...pageServiceLabels]),
-    [project?.service_tags_snapshot, pageServiceLabels],
-  );
+  const serviceTags = useMemo(() => {
+    const snapshot = uniqNormalizedServices(parseServiceTags(project?.service_tags_snapshot));
+    if (snapshot.length > 0) return snapshot;
+    return uniqNormalizedServices(companyServiceTags);
+  }, [project?.service_tags_snapshot, companyServiceTags]);
 
   const servicesList = useMemo(() => buildServicesList(serviceTags), [serviceTags]);
 
@@ -427,11 +420,10 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const hydrateProject = (bundle: any): ProjectModel => {
       const company = bundle?.company ?? {};
       const base = (bundle?.project ?? {}) as ProjectModel;
-      const initialTags = uniqNormalizedServices([
-        ...parseServiceTags(company.service_tags),
-        ...parseServiceTags(base.service_tags_snapshot),
-      ]);
-      const initialServicesList = buildServicesList(initialTags);
+      const companyTags = uniqNormalizedServices(parseServiceTags(company.service_tags));
+      const snapshotTags = uniqNormalizedServices(parseServiceTags(base.service_tags_snapshot));
+      const effectiveTags = snapshotTags.length > 0 ? snapshotTags : companyTags;
+      const initialServicesList = buildServicesList(effectiveTags);
 
       const variables: Record<string, string> = {
         ...parseVariables(base.variables),
@@ -442,10 +434,10 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         email: asString(base.override_email),
         address: asString(base.override_address) || asString(company.adresse),
         services_list: initialServicesList,
-        service_label: initialTags[0] ?? "",
+        service_label: effectiveTags[0] ?? "",
       };
 
-      initialTags.forEach((label, index) => {
+      effectiveTags.forEach((label, index) => {
         variables[`service_label_${index + 1}`] = label;
       });
 
@@ -456,7 +448,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         override_location: asString(base.override_location) || asString(base.override_city) || asString(company.ville),
         override_phone: asString(base.override_phone) || asString(company.telephone),
         override_address: asString(base.override_address) || asString(company.adresse),
-        service_tags_snapshot: initialTags,
+        service_tags_snapshot: snapshotTags.length > 0 ? snapshotTags : companyTags,
         variables,
         home_slogan_template:
           asString(base.home_slogan_template) || "{{name}}, La qualité à votre service.",
@@ -492,12 +484,16 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
             setProject(null);
             setPages([]);
             setReviews([]);
+            setCompanyServiceTags([]);
           }
           return;
         }
 
         const bundle = await loadLeadMagnetBundle(resolved);
         if (cancelled) return;
+
+        const companyTags = uniqNormalizedServices(parseServiceTags(bundle?.company?.service_tags));
+        setCompanyServiceTags(companyTags);
 
         const hydrated = hydrateProject(bundle);
 
@@ -887,7 +883,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
     setPages((prev) => [...prev, created]);
 
-    const merged = uniqNormalizedServices([...serviceTags, serviceLabel]);
+    const merged = uniqNormalizedServices([...(parseServiceTags(project.service_tags_snapshot)), serviceLabel]);
     updateProjectField("service_tags_snapshot", merged);
     setNewServiceName("");
   };
@@ -1125,22 +1121,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       />
                     </div>
                   </div>
-
-                  <div className="rounded-md border p-3">
-                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                      Variables réutilisables
-                    </p>
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {Object.entries(previewVars)
-                        .filter(([, value]) => isTruthyText(value))
-                        .map(([key, value]) => (
-                          <div key={key} className="rounded border bg-slate-50 px-3 py-2">
-                            <p className="text-[11px] uppercase tracking-wide text-muted-foreground">{key}</p>
-                            <p className="text-sm">{value}</p>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
                 </div>
               )}
 
@@ -1281,7 +1261,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
               {activeCardId === "services" && (
                 <div className="space-y-4" data-no-swipe="true">
                   <div className="space-y-1">
-                    <Label>Services entreprise (service_tags)</Label>
+                    <Label>Services entreprise (issus de service_tags)</Label>
                     <Textarea
                       value={serviceTagsInput}
                       onChange={(event) =>
@@ -1455,9 +1435,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                             onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "headline" })}
                             placeholder={renderTemplate(asString(project.service_page_headline_template), vars)}
                           />
-                          <p className="text-xs text-muted-foreground">
-                            Défaut : {renderTemplate(asString(project.service_page_headline_template), vars) || "—"}
-                          </p>
                         </div>
 
                         <div className="space-y-1">
@@ -1468,9 +1445,6 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                             onFocus={() => setFocusedField({ scope: "page", id: page.id, field: "subheadline" })}
                             placeholder={renderTemplate(asString(project.service_page_subheadline_template), vars)}
                           />
-                          <p className="text-xs text-muted-foreground">
-                            Défaut : {renderTemplate(asString(project.service_page_subheadline_template), vars) || "—"}
-                          </p>
                         </div>
 
                         <div className="space-y-1">
