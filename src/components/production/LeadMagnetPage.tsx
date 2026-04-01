@@ -32,18 +32,29 @@ const asNumber = (value: unknown, fallback = 0): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const asRecord = (value: unknown): GenericMap =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as GenericMap) : {};
+
 const reorderWithPersist = async (
   items: LeadMagnetReviewV2[],
   fromIndex: number,
   toIndex: number,
-  onPersist: (id: string, index: number) => Promise<void>
-) => {
+  onPersist: (id: string, index: number) => Promise<unknown>
+): Promise<LeadMagnetReviewV2[]> => {
   const next = [...items];
   const [moved] = next.splice(fromIndex, 1);
   if (!moved) return items;
+
   next.splice(toIndex, 0, moved);
-  await Promise.all(next.map((review, index) => onPersist(review.id, index + 1)));
-  return next.map((review, index) => ({ ...review, ordre: index + 1 }));
+
+  await Promise.all(
+    next.map((review, index) => onPersist(review.id, index + 1))
+  );
+
+  return next.map((review, index) => ({
+    ...review,
+    display_order: index + 1,
+  }));
 };
 
 export const LeadMagnetPage = () => {
@@ -70,8 +81,12 @@ export const LeadMagnetPage = () => {
       const bundle = await loadLeadMagnetBundle(projectId.trim());
       if (!bundle.project) {
         toast.error("Projet introuvable.");
+        setProject(null);
+        setPages([]);
+        setReviews([]);
         return;
       }
+
       setProject(bundle.project);
       setPages(bundle.pages);
       setReviews(bundle.reviews);
@@ -90,13 +105,20 @@ export const LeadMagnetPage = () => {
 
   const saveProject = async () => {
     if (!project) return;
+
     setSavingProject(true);
     try {
       await updateLeadMagnetProject(project.id, {
         pret_pour_lm: asBool(project.pret_pour_lm),
-        overrides: (project.overrides ?? {}) as Record<string, unknown>,
-        assets: (project.assets ?? {}) as Record<string, unknown>,
+        statut: asText(project.statut) || "draft",
+        variables: asRecord(project.variables),
+        logo_url: asText(project.logo_url) || null,
+        favicon_url: asText(project.favicon_url) || null,
+        hero_image_url: asText(project.hero_image_url) || null,
+        meta_title_default: asText(project.meta_title_default) || null,
+        meta_description_default: asText(project.meta_description_default) || null,
       });
+
       toast.success("Projet sauvegardé.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Erreur sauvegarde projet");
@@ -117,14 +139,22 @@ export const LeadMagnetPage = () => {
 
   const addPage = async () => {
     if (!project?.id) return;
+
     try {
       const created = await createLeadMagnetPage({
-        project_id: project.id,
-        ordre: pages.length + 1,
-        actif: true,
+        lead_magnet_project_id: project.id,
+        display_order: pages.length + 1,
+        is_active: true,
         slug: `page-${pages.length + 1}`,
-        titre: "Nouvelle page",
+        page_key: `page_${pages.length + 1}`,
+        page_name: "Nouvelle page",
+        headline: "",
+        subheadline: "",
+        meta_title: "",
+        meta_description: "",
+        body_json: {},
       });
+
       setPages((prev) => [...prev, created]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Impossible d'ajouter la page");
@@ -142,7 +172,9 @@ export const LeadMagnetPage = () => {
   };
 
   const upsertReview = (reviewId: string, updates: Partial<LeadMagnetReviewV2>) => {
-    setReviews((prev) => prev.map((review) => (review.id === reviewId ? { ...review, ...updates } : review)));
+    setReviews((prev) =>
+      prev.map((review) => (review.id === reviewId ? { ...review, ...updates } : review))
+    );
   };
 
   const saveReview = async (review: LeadMagnetReviewV2) => {
@@ -157,14 +189,19 @@ export const LeadMagnetPage = () => {
 
   const addReview = async () => {
     if (!project?.id) return;
+
     try {
       const created = await createLeadMagnetReview({
-        project_id: project.id,
-        ordre: reviews.length + 1,
-        actif: true,
-        nom: "Nouveau client",
-        texte: "Votre avis ici",
+        lead_magnet_project_id: project.id,
+        display_order: reviews.length + 1,
+        is_active: true,
+        is_manual: true,
+        author_name: "Nouveau client",
+        review_text: "Votre avis ici",
+        source: "manual",
+        rating: 5,
       });
+
       setReviews((prev) => [...prev, created]);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Impossible d'ajouter l'avis");
@@ -186,7 +223,14 @@ export const LeadMagnetPage = () => {
     if (target < 0 || target >= reviews.length) return;
 
     try {
-      const next = await reorderWithPersist(reviews, index, target, (id, order) => updateLeadMagnetReview(id, { ordre: order }));
+      const next = await reorderWithPersist(
+        reviews,
+        index,
+        target,
+        async (id, order) => {
+          await updateLeadMagnetReview(id, { display_order: order });
+        }
+      );
       setReviews(next);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Impossible de réordonner");
@@ -197,13 +241,19 @@ export const LeadMagnetPage = () => {
     event.preventDefault();
     if (!project) return;
 
-    const droppedUrl = event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain");
+    const droppedUrl =
+      event.dataTransfer.getData("text/uri-list") || event.dataTransfer.getData("text/plain");
+
+    const currentVariables = asRecord(project.variables);
+    const currentDroppedAssets = Array.isArray(currentVariables.dropped_assets)
+      ? (currentVariables.dropped_assets as string[])
+      : [];
+
     if (droppedUrl) {
-      const nextAssets = {
-        ...(project.assets ?? {}),
-        dropped_images: [...(((project.assets as GenericMap)?.dropped_images as string[] | undefined) ?? []), droppedUrl],
-      };
-      updateProjectField("assets", nextAssets);
+      updateProjectField("variables", {
+        ...currentVariables,
+        dropped_assets: [...currentDroppedAssets, droppedUrl],
+      });
       return;
     }
 
@@ -211,11 +261,10 @@ export const LeadMagnetPage = () => {
     if (!firstFile) return;
 
     const content = await firstFile.text();
-    const nextAssets = {
-      ...(project.assets ?? {}),
-      dropped_files: [...(((project.assets as GenericMap)?.dropped_files as string[] | undefined) ?? []), content.slice(0, 1000)],
-    };
-    updateProjectField("assets", nextAssets);
+    updateProjectField("variables", {
+      ...currentVariables,
+      dropped_assets: [...currentDroppedAssets, content.slice(0, 1000)],
+    });
   };
 
   return (
@@ -223,7 +272,9 @@ export const LeadMagnetPage = () => {
       <Card>
         <CardHeader>
           <CardTitle>Lead Magnet V2</CardTitle>
-          <CardDescription>Édition centralisée du projet, des pages et des reviews (source Supabase V2).</CardDescription>
+          <CardDescription>
+            Édition centralisée du projet, des pages et des reviews (source Supabase V2).
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 md:grid-cols-[1fr_auto]">
@@ -232,9 +283,15 @@ export const LeadMagnetPage = () => {
               value={projectId}
               onChange={(event) => setProjectId(event.target.value)}
             />
-            <Button onClick={loadProject} disabled={loading}>{loading ? "Chargement..." : "Charger"}</Button>
+            <Button onClick={loadProject} disabled={loading}>
+              {loading ? "Chargement..." : "Charger"}
+            </Button>
           </div>
-          {publicEndpoint && <p className="text-xs text-muted-foreground">Endpoint plugin (read-only): {publicEndpoint}</p>}
+          {publicEndpoint && (
+            <p className="text-xs text-muted-foreground">
+              Endpoint plugin (read-only): {publicEndpoint}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -243,7 +300,9 @@ export const LeadMagnetPage = () => {
           <Card>
             <CardHeader>
               <CardTitle>Projet LM</CardTitle>
-              <CardDescription>Overrides, assets et état "prêt pour LM".</CardDescription>
+              <CardDescription>
+                Variables projet, branding et état "prêt pour LM".
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-2">
@@ -254,40 +313,70 @@ export const LeadMagnetPage = () => {
                 <Label>Prêt pour LM</Label>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-2">
-                  <Label>Overrides (JSON)</Label>
-                  <Textarea
-                    className="min-h-40 font-mono"
-                    value={JSON.stringify(project.overrides ?? {}, null, 2)}
-                    onChange={(event) => {
-                      try {
-                        updateProjectField("overrides", JSON.parse(event.target.value || "{}"));
-                      } catch {
-                        // keep editing without breaking UI
-                      }
-                    }}
+                  <Label>Logo URL</Label>
+                  <Input
+                    value={asText(project.logo_url)}
+                    onChange={(event) => updateProjectField("logo_url", event.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Assets (JSON) - glisser déposer une URL/image</Label>
-                  <Textarea
-                    className="min-h-40 font-mono"
-                    value={JSON.stringify(project.assets ?? {}, null, 2)}
-                    onDrop={onAssetDrop}
-                    onDragOver={(event) => event.preventDefault()}
-                    onChange={(event) => {
-                      try {
-                        updateProjectField("assets", JSON.parse(event.target.value || "{}"));
-                      } catch {
-                        // keep editing without breaking UI
-                      }
-                    }}
+                  <Label>Favicon URL</Label>
+                  <Input
+                    value={asText(project.favicon_url)}
+                    onChange={(event) => updateProjectField("favicon_url", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Hero image URL</Label>
+                  <Input
+                    value={asText(project.hero_image_url)}
+                    onChange={(event) => updateProjectField("hero_image_url", event.target.value)}
                   />
                 </div>
               </div>
 
-              <Button onClick={saveProject} disabled={savingProject}><Save className="mr-2 h-4 w-4" />Sauvegarder le projet</Button>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Meta title par défaut</Label>
+                  <Input
+                    value={asText(project.meta_title_default)}
+                    onChange={(event) => updateProjectField("meta_title_default", event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Meta description par défaut</Label>
+                  <Textarea
+                    value={asText(project.meta_description_default)}
+                    onChange={(event) =>
+                      updateProjectField("meta_description_default", event.target.value)
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Variables (JSON) — drag & drop URL/fichier accepté</Label>
+                <Textarea
+                  className="min-h-40 font-mono"
+                  value={JSON.stringify(asRecord(project.variables), null, 2)}
+                  onDrop={onAssetDrop}
+                  onDragOver={(event) => event.preventDefault()}
+                  onChange={(event) => {
+                    try {
+                      updateProjectField("variables", JSON.parse(event.target.value || "{}"));
+                    } catch {
+                      // keep editing without breaking UI
+                    }
+                  }}
+                />
+              </div>
+
+              <Button onClick={saveProject} disabled={savingProject}>
+                <Save className="mr-2 h-4 w-4" />
+                Sauvegarder le projet
+              </Button>
             </CardContent>
           </Card>
 
@@ -295,48 +384,187 @@ export const LeadMagnetPage = () => {
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle>Pages</CardTitle>
-                <CardDescription>Édition des enregistrements lead_magnet_pages.</CardDescription>
+                <CardDescription>
+                  Édition des enregistrements lead_magnet_pages.
+                </CardDescription>
               </div>
-              <Button onClick={addPage}><Plus className="mr-2 h-4 w-4" />Ajouter une page</Button>
+              <Button onClick={addPage}>
+                <Plus className="mr-2 h-4 w-4" />
+                Ajouter une page
+              </Button>
             </CardHeader>
             <CardContent className="space-y-4">
               {pages.map((page) => (
-                <div key={page.id} className="rounded-md border p-4 space-y-3">
-                  <div className="grid gap-3 md:grid-cols-3">
+                <div key={page.id} className="space-y-3 rounded-md border p-4">
+                  <div className="grid gap-3 md:grid-cols-4">
                     <div>
                       <Label>Slug</Label>
-                      <Input value={asText(page.slug)} onChange={(event) => setPages((prev) => prev.map((item) => item.id === page.id ? { ...item, slug: event.target.value } : item))} />
+                      <Input
+                        value={asText(page.slug)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id ? { ...item, slug: event.target.value } : item
+                            )
+                          )
+                        }
+                      />
                     </div>
                     <div>
-                      <Label>Titre</Label>
-                      <Input value={asText(page.titre)} onChange={(event) => setPages((prev) => prev.map((item) => item.id === page.id ? { ...item, titre: event.target.value } : item))} />
+                      <Label>Nom page</Label>
+                      <Input
+                        value={asText(page.page_name)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id ? { ...item, page_name: event.target.value } : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>Page key</Label>
+                      <Input
+                        value={asText(page.page_key)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id ? { ...item, page_key: event.target.value } : item
+                            )
+                          )
+                        }
+                      />
                     </div>
                     <div>
                       <Label>Ordre</Label>
-                      <Input type="number" value={asNumber(page.ordre, 1)} onChange={(event) => setPages((prev) => prev.map((item) => item.id === page.id ? { ...item, ordre: Number(event.target.value) } : item))} />
+                      <Input
+                        type="number"
+                        value={asNumber(page.display_order, 1)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id
+                                ? { ...item, display_order: Number(event.target.value) }
+                                : item
+                            )
+                          )
+                        }
+                      />
                     </div>
                   </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <Label>Headline</Label>
+                      <Input
+                        value={asText(page.headline)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id ? { ...item, headline: event.target.value } : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>Subheadline</Label>
+                      <Input
+                        value={asText(page.subheadline)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id
+                                ? { ...item, subheadline: event.target.value }
+                                : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <Label>Meta title</Label>
+                      <Input
+                        value={asText(page.meta_title)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id ? { ...item, meta_title: event.target.value } : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>Meta description</Label>
+                      <Input
+                        value={asText(page.meta_description)}
+                        onChange={(event) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id
+                                ? { ...item, meta_description: event.target.value }
+                                : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+
                   <div>
-                    <Label>Contenu / body (JSON ou texte)</Label>
+                    <Label>Body JSON</Label>
                     <Textarea
                       className="min-h-32"
-                      value={typeof page.body === "string" ? page.body : JSON.stringify(page.body ?? {}, null, 2)}
-                      onChange={(event) => setPages((prev) => prev.map((item) => item.id === page.id ? { ...item, body: event.target.value } : item))}
+                      value={
+                        typeof page.body_json === "string"
+                          ? page.body_json
+                          : JSON.stringify(page.body_json ?? {}, null, 2)
+                      }
+                      onChange={(event) =>
+                        setPages((prev) =>
+                          prev.map((item) =>
+                            item.id === page.id ? { ...item, body_json: event.target.value } : item
+                          )
+                        )
+                      }
                     />
                   </div>
+
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Checkbox checked={asBool(page.actif)} onCheckedChange={(value) => setPages((prev) => prev.map((item) => item.id === page.id ? { ...item, actif: value === true } : item))} />
+                      <Checkbox
+                        checked={asBool(page.is_active)}
+                        onCheckedChange={(value) =>
+                          setPages((prev) =>
+                            prev.map((item) =>
+                              item.id === page.id ? { ...item, is_active: value === true } : item
+                            )
+                          )
+                        }
+                      />
                       <Label>Active</Label>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => void savePage(page)}><Save className="mr-2 h-4 w-4" />Sauvegarder</Button>
-                      <Button variant="destructive" onClick={() => void removePage(page.id)}><Trash2 className="mr-2 h-4 w-4" />Supprimer</Button>
+                      <Button variant="outline" onClick={() => void savePage(page)}>
+                        <Save className="mr-2 h-4 w-4" />
+                        Sauvegarder
+                      </Button>
+                      <Button variant="destructive" onClick={() => void removePage(page.id)}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Supprimer
+                      </Button>
                     </div>
                   </div>
                 </div>
               ))}
-              {pages.length === 0 && <p className="text-sm text-muted-foreground">Aucune page pour ce projet.</p>}
+              {pages.length === 0 && (
+                <p className="text-sm text-muted-foreground">Aucune page pour ce projet.</p>
+              )}
             </CardContent>
           </Card>
 
@@ -344,47 +572,114 @@ export const LeadMagnetPage = () => {
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle>Reviews</CardTitle>
-                <CardDescription>Ajout manuel, édition, suppression, ordre et état actif/inactif.</CardDescription>
+                <CardDescription>
+                  Ajout manuel, édition, suppression, ordre et état actif/inactif.
+                </CardDescription>
               </div>
-              <Button onClick={addReview}><Plus className="mr-2 h-4 w-4" />Ajouter un avis</Button>
+              <Button onClick={addReview}>
+                <Plus className="mr-2 h-4 w-4" />
+                Ajouter un avis
+              </Button>
             </CardHeader>
             <CardContent className="space-y-4">
               {reviews.map((review, index) => (
-                <div key={review.id} className="rounded-md border p-4 space-y-3" draggable>
+                <div key={review.id} className="space-y-3 rounded-md border p-4" draggable>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground"><GripVertical className="h-4 w-4" /> Ordre #{asNumber(review.ordre, index + 1)}</div>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <GripVertical className="h-4 w-4" />
+                      Ordre #{asNumber(review.display_order, index + 1)}
+                    </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => void moveReview(index, -1)}><ArrowUp className="h-4 w-4" /></Button>
-                      <Button variant="outline" size="sm" onClick={() => void moveReview(index, 1)}><ArrowDown className="h-4 w-4" /></Button>
+                      <Button variant="outline" size="sm" onClick={() => void moveReview(index, -1)}>
+                        <ArrowUp className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => void moveReview(index, 1)}>
+                        <ArrowDown className="h-4 w-4" />
+                      </Button>
                     </div>
                   </div>
-                  <div className="grid gap-3 md:grid-cols-2">
+
+                  <div className="grid gap-3 md:grid-cols-3">
                     <div>
                       <Label>Nom</Label>
-                      <Input value={asText(review.nom)} onChange={(event) => upsertReview(review.id, { nom: event.target.value })} />
+                      <Input
+                        value={asText(review.author_name)}
+                        onChange={(event) =>
+                          upsertReview(review.id, { author_name: event.target.value })
+                        }
+                      />
                     </div>
                     <div>
                       <Label>Source / rôle</Label>
-                      <Input value={asText(review.source)} onChange={(event) => upsertReview(review.id, { source: event.target.value })} />
+                      <Input
+                        value={asText(review.source)}
+                        onChange={(event) =>
+                          upsertReview(review.id, { source: event.target.value })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>Note</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={5}
+                        step={0.5}
+                        value={asNumber(review.rating, 5)}
+                        onChange={(event) =>
+                          upsertReview(review.id, { rating: Number(event.target.value) })
+                        }
+                      />
                     </div>
                   </div>
+
                   <div>
                     <Label>Texte</Label>
-                    <Textarea value={asText(review.texte)} onChange={(event) => upsertReview(review.id, { texte: event.target.value })} />
+                    <Textarea
+                      value={asText(review.review_text)}
+                      onChange={(event) =>
+                        upsertReview(review.id, { review_text: event.target.value })
+                      }
+                    />
                   </div>
+
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Checkbox checked={asBool(review.actif)} onCheckedChange={(value) => upsertReview(review.id, { actif: value === true })} />
-                      <Label>Actif</Label>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={asBool(review.is_active)}
+                          onCheckedChange={(value) =>
+                            upsertReview(review.id, { is_active: value === true })
+                          }
+                        />
+                        <Label>Actif</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={asBool(review.is_manual)}
+                          onCheckedChange={(value) =>
+                            upsertReview(review.id, { is_manual: value === true })
+                          }
+                        />
+                        <Label>Manuel</Label>
+                      </div>
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" onClick={() => void saveReview(review)}><Save className="mr-2 h-4 w-4" />Sauvegarder</Button>
-                      <Button variant="destructive" onClick={() => void removeReview(review.id)}><Trash2 className="mr-2 h-4 w-4" />Supprimer</Button>
+                      <Button variant="outline" onClick={() => void saveReview(review)}>
+                        <Save className="mr-2 h-4 w-4" />
+                        Sauvegarder
+                      </Button>
+                      <Button variant="destructive" onClick={() => void removeReview(review.id)}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Supprimer
+                      </Button>
                     </div>
                   </div>
                 </div>
               ))}
-              {reviews.length === 0 && <p className="text-sm text-muted-foreground">Aucun avis pour ce projet.</p>}
+              {reviews.length === 0 && (
+                <p className="text-sm text-muted-foreground">Aucun avis pour ce projet.</p>
+              )}
             </CardContent>
           </Card>
         </>
@@ -393,11 +688,19 @@ export const LeadMagnetPage = () => {
       <Card>
         <CardHeader>
           <CardTitle>Legacy (lecture seule temporaire)</CardTitle>
-          <CardDescription>La table legacy <code>lead_magnets</code> ne doit plus être utilisée en écriture.</CardDescription>
+          <CardDescription>
+            La table legacy <code>lead_magnets</code> ne doit plus être utilisée en écriture.
+          </CardDescription>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">Le CRM écrit uniquement dans lead_magnet_projects/pages/reviews. Le plugin reste strictement en lecture via l'API publique.</p>
-          <div className="pt-2 text-xs text-muted-foreground flex items-center gap-2"><Upload className="h-4 w-4" />Drag & drop support activé sur le champ Assets du projet.</div>
+          <p className="text-sm text-muted-foreground">
+            Le CRM écrit uniquement dans lead_magnet_projects / pages / reviews. Le plugin reste
+            strictement en lecture via l'API publique.
+          </p>
+          <div className="flex items-center gap-2 pt-2 text-xs text-muted-foreground">
+            <Upload className="h-4 w-4" />
+            Drag & drop support activé sur le champ Variables du projet.
+          </div>
         </CardContent>
       </Card>
     </div>
