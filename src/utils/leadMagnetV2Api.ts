@@ -182,10 +182,6 @@ const PAGE_COLUMNS = new Set([
   "page_name",
   "slug",
   "service_key",
-  "headline",
-  "subheadline",
-  "meta_title",
-  "meta_description",
   "body_json",
   "is_active",
   "display_order",
@@ -225,6 +221,13 @@ const pickString = (...values: unknown[]): string | undefined => {
   return undefined;
 };
 
+const readTextField = (source: Record<string, unknown>, key: string, fallback: Record<string, unknown>) => {
+  const value = source[key];
+  if (typeof value === "string") return value;
+  const fallbackValue = fallback[key];
+  return typeof fallbackValue === "string" ? fallbackValue : undefined;
+};
+
 const isMissingTableOrColumnError = (error: { code?: string; message?: string } | null | undefined) => {
   if (!error) return false;
   const message = String(error.message ?? "").toLowerCase();
@@ -246,10 +249,24 @@ const normalizeProjectRow = (row: Record<string, unknown>): LeadMagnetProjectRec
 
 const normalizePageRow = (row: Record<string, unknown>): LeadMagnetPageRecord => {
   const leadMagnetProjectId = String(row.lead_magnet_project_id ?? "");
+  const bodyJson = (row.body_json && typeof row.body_json === "object" && !Array.isArray(row.body_json)
+    ? (row.body_json as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+
+  const headline = pickString(row.headline, bodyJson.headline);
+  const subheadline = pickString(row.subheadline, bodyJson.subheadline);
+  const metaTitle = pickString(row.meta_title, bodyJson.meta_title);
+  const metaDescription = pickString(row.meta_description, bodyJson.meta_description);
+
   return {
     ...(row as LeadMagnetPageRecord),
     lead_magnet_project_id: leadMagnetProjectId,
     project_id: leadMagnetProjectId,
+    body_json: bodyJson,
+    headline: headline ?? null,
+    subheadline: subheadline ?? null,
+    meta_title: metaTitle ?? null,
+    meta_description: metaDescription ?? null,
   };
 };
 
@@ -278,10 +295,23 @@ function normalizePagePayload(payload: Partial<LeadMagnetPageRecord>): Record<st
     throw new Error("lead_magnet_project_id manquant pour la page.");
   }
 
+  const inputBody = (source.body_json && typeof source.body_json === "object" && !Array.isArray(source.body_json)
+    ? (source.body_json as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+
+  const mergedBody = cleanUndefined({
+    ...inputBody,
+    headline: readTextField(source, "headline", inputBody),
+    subheadline: readTextField(source, "subheadline", inputBody),
+    meta_title: readTextField(source, "meta_title", inputBody),
+    meta_description: readTextField(source, "meta_description", inputBody),
+  });
+
   return pickAllowed(
     {
       ...source,
       lead_magnet_project_id: leadMagnetProjectId,
+      body_json: mergedBody,
     },
     PAGE_COLUMNS,
   );
@@ -656,7 +686,26 @@ export async function createLeadMagnetPage(payload: Partial<LeadMagnetPageRecord
 }
 
 export async function updateLeadMagnetPage(pageId: string, updates: Partial<LeadMagnetPageRecord>) {
-  const normalized = pickAllowed(updates as Record<string, unknown>, PAGE_COLUMNS);
+  const source = updates as Record<string, unknown>;
+  const inputBody = (source.body_json && typeof source.body_json === "object" && !Array.isArray(source.body_json)
+    ? (source.body_json as Record<string, unknown>)
+    : {}) as Record<string, unknown>;
+
+  const mergedBody = cleanUndefined({
+    ...inputBody,
+    headline: readTextField(source, "headline", inputBody),
+    subheadline: readTextField(source, "subheadline", inputBody),
+    meta_title: readTextField(source, "meta_title", inputBody),
+    meta_description: readTextField(source, "meta_description", inputBody),
+  });
+
+  const normalized = pickAllowed(
+    {
+      ...source,
+      body_json: mergedBody,
+    },
+    PAGE_COLUMNS,
+  );
   delete normalized.lead_magnet_project_id;
 
   const { data, error } = await supabase
