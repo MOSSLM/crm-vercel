@@ -598,6 +598,19 @@ export async function loadLeadMagnetBundle(projectId: string) {
     company = (companyRes.data ?? null) as CompanyLite | null;
   }
 
+  if (!company && typeof opportunity?.entreprise_id === "number") {
+    const companyRes = await supabase
+      .from("entreprises")
+      .select(
+        "id,name,ville,adresse,telephone,canonical_url,site_web_canonique,google_maps_url,google_url,service_tags,google_reviews_5star,note_moyenne,nombre_avis",
+      )
+      .eq("id", opportunity.entreprise_id)
+      .maybeSingle();
+
+    if (companyRes.error) throw companyRes.error;
+    company = (companyRes.data ?? null) as CompanyLite | null;
+  }
+
   return {
     project,
     pages,

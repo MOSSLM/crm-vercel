@@ -212,6 +212,37 @@ function appendTokenToText(current: string, token: string) {
   return `${base} ${token}`;
 }
 
+function normalizeExternalUrl(value: unknown) {
+  const raw = asString(value).trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  if (/^[a-z]+:\/\//i.test(raw)) return raw;
+  return `https://${raw}`;
+}
+
+function replaceLegacyLocationMentions(value: string) {
+  return value
+    .replace(/\b([aà])\s+ville\b/gi, "à {{location}}")
+    .replace(/\b([aà])\s+votre\s+ville\b/gi, "à {{location}}")
+    .replace(/\b([aà])\s+la\s+ville\b/gi, "à {{location}}")
+    .replace(/\bdans\s+votre\s+ville\b/gi, "à {{location}}");
+}
+
+function normalizeTemplateValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return replaceLegacyLocationMentions(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeTemplateValue(entry));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, normalizeTemplateValue(entry)]),
+    );
+  }
+  return value;
+}
+
 function slugify(value: string) {
   return value
     .normalize("NFD")
@@ -283,12 +314,15 @@ function TokenBar({
   onInsert: (token: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2" data-no-swipe="true">
+    <div
+      className="flex w-full items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      data-no-swipe="true"
+    >
       {tokens.map((item) => (
         <button
           key={item.token}
           type="button"
-          className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          className="shrink-0 rounded-full border bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
           onClick={() => onInsert(item.token)}
         >
           {item.label}
@@ -420,8 +454,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const projectSources = useMemo(() => {
     if (!project) return [] as Array<{ label: string; value: string; href?: string }>;
-    const site = asString(project.website_url ?? project.site_url ?? project.override_website);
-    const gmb = asString(project.google_business_url ?? project.google_maps_url);
+    const site = normalizeExternalUrl(project.website_url ?? project.site_url ?? project.override_website);
+    const gmb = normalizeExternalUrl(project.google_business_url ?? project.google_maps_url);
     const phone = asString(project.override_phone);
     const address = asString(project.override_address);
     const email = asString(project.override_email);
@@ -435,8 +469,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     return links.filter((entry) => entry.value.trim().length > 0);
   }, [project]);
 
-  const websiteUrl = asString(project?.website_url ?? project?.site_url ?? project?.override_website);
-  const googleBusinessUrl = asString(project?.google_business_url ?? project?.google_maps_url);
+  const websiteUrl = normalizeExternalUrl(project?.website_url ?? project?.site_url ?? project?.override_website);
+  const googleBusinessUrl = normalizeExternalUrl(project?.google_business_url ?? project?.google_maps_url);
 
   const servicePages = useMemo(
     () =>
@@ -543,6 +577,17 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
       return {
         ...base,
+        website_url:
+          normalizeExternalUrl(base.website_url) ||
+          normalizeExternalUrl(base.site_url) ||
+          normalizeExternalUrl(base.override_website) ||
+          normalizeExternalUrl(company["site_web_canonique"]) ||
+          normalizeExternalUrl(company["canonical_url"]),
+        google_business_url:
+          normalizeExternalUrl(base.google_business_url) ||
+          normalizeExternalUrl(base.google_maps_url) ||
+          normalizeExternalUrl(company["google_url"]) ||
+          normalizeExternalUrl(company["google_maps_url"]),
         override_entreprise_name: asString(base.override_entreprise_name) || asString(company["name"]),
         override_city: asString(base.override_city) || asString(company["ville"]),
         override_location: asString(base.override_location) || asString(base.override_city) || asString(company["ville"]),
@@ -551,26 +596,28 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         service_tags_snapshot: snapshotTags.length > 0 ? snapshotTags : companyTags,
         variables,
         home_slogan_template:
-          asString(base.home_slogan_template) || "{{name}}, La qualité à votre service.",
+          replaceLegacyLocationMentions(asString(base.home_slogan_template)) || "{{name}}, La qualité à votre service.",
         home_about_services_template:
-          asString(base.home_about_services_template) || "Votre spécialiste en {{services_list}}",
+          replaceLegacyLocationMentions(asString(base.home_about_services_template)) ||
+          "Votre spécialiste en {{services_list}}",
         home_why_choose_title_template:
-          asString(base.home_why_choose_title_template) ||
+          replaceLegacyLocationMentions(asString(base.home_why_choose_title_template)) ||
           "Pourquoi {{name}} est le meilleur choix pour votre projet ?",
         service_page_headline_template:
-          asString(base.service_page_headline_template) || "{{service_label}} {{location}}",
+          replaceLegacyLocationMentions(asString(base.service_page_headline_template)) || "{{service_label}} {{location}}",
         service_page_subheadline_template:
-          asString(base.service_page_subheadline_template) ||
+          replaceLegacyLocationMentions(asString(base.service_page_subheadline_template)) ||
           "Spécialiste de la {{service_label}} à {{location}}. Nous installons, entretenons et dépannons vos systèmes pour un confort optimal toute l'année.",
         service_page_trust_title_template:
-          asString(base.service_page_trust_title_template) ||
+          replaceLegacyLocationMentions(asString(base.service_page_trust_title_template)) ||
           "{{name}}, votre expert {{service_label}} de confiance.",
         cta_primary_text: asString(base.cta_primary_text) || "Demander un devis",
         cta_primary_target: asString(base.cta_primary_target) || "contact",
         cta_secondary_text: asString(base.cta_secondary_text) || "Être rappelé",
-        meta_title_default: asString(base.meta_title_default) || "{{name}} | {{location}}",
+        meta_title_default:
+          replaceLegacyLocationMentions(asString(base.meta_title_default)) || "{{name}} | {{location}}",
         meta_description_default:
-          asString(base.meta_description_default) ||
+          replaceLegacyLocationMentions(asString(base.meta_description_default)) ||
           "Entreprise {{services_list}} à {{location}}. Contactez {{name}} pour votre projet.",
       };
     };
@@ -597,13 +644,32 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         setCompanyServiceTags(companyTags);
 
         const hydrated = hydrateProject(bundle);
+        const normalizedHydrated = normalizeTemplateValue(hydrated) as ProjectModel;
+        const normalizedPages = bundle.pages.map((page) => ({
+          ...page,
+          headline: asString(normalizeTemplateValue(page.headline)),
+          subheadline: asString(normalizeTemplateValue(page.subheadline)),
+          meta_title: asString(normalizeTemplateValue(page.meta_title)),
+          meta_description: asString(normalizeTemplateValue(page.meta_description)),
+          body_json: normalizeTemplateValue(page.body_json),
+        }));
 
-        setProject(hydrated);
-        setPages(bundle.pages);
+        if (JSON.stringify(hydrated) !== JSON.stringify(normalizedHydrated)) {
+          dirtyProject.current = true;
+        }
+        normalizedPages.forEach((page, index) => {
+          const source = bundle.pages[index];
+          if (JSON.stringify(source) !== JSON.stringify(page)) {
+            dirtyPages.current.add(page.id);
+          }
+        });
+
+        setProject(normalizedHydrated);
+        setPages(normalizedPages);
         setReviews(bundle.reviews);
         setOpportunitySummary({
-          companyName: hydrated.override_entreprise_name ?? asString(company["name"]),
-          city: hydrated.override_location ?? hydrated.override_city ?? asString(company["ville"]),
+          companyName: normalizedHydrated.override_entreprise_name ?? asString(company["name"]),
+          city: normalizedHydrated.override_location ?? normalizedHydrated.override_city ?? asString(company["ville"]),
           opportunityName: bundle.opportunity?.name ?? "",
           pipeline: bundle.pipeline?.nom ?? "",
           stage: bundle.stage?.nom ?? "",
