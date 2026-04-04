@@ -222,7 +222,9 @@ function normalizeExternalUrl(value: unknown) {
 
 function replaceLegacyLocationMentions(value: string) {
   return value
+    .replace(/\b([aà])\s+ville\b/gi, "à {{location}}")
     .replace(/\b([aà])\s+votre\s+ville\b/gi, "à {{location}}")
+    .replace(/\b([aà])\s+la\s+ville\b/gi, "à {{location}}")
     .replace(/\bdans\s+votre\s+ville\b/gi, "à {{location}}");
 }
 
@@ -312,12 +314,15 @@ function TokenBar({
   onInsert: (token: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2" data-no-swipe="true">
+    <div
+      className="flex w-full items-center gap-2 overflow-x-auto whitespace-nowrap pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      data-no-swipe="true"
+    >
       {tokens.map((item) => (
         <button
           key={item.token}
           type="button"
-          className="rounded-full border bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          className="shrink-0 rounded-full border bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
           onClick={() => onInsert(item.token)}
         >
           {item.label}
