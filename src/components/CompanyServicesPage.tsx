@@ -127,6 +127,14 @@ export const CompanyServicesPage: React.FC = () => {
     });
   }, [companyOpportunityFlags, qualifiedCompanies, searchTerm, selectedOpportunityFlags, serviceFilter]);
 
+  const servicesProgress = React.useMemo(() => {
+    if (!sprintFlow?.companyIds?.length) return { current: 0, target: 0 };
+    const sprintCompanySet = new Set(sprintFlow.companyIds);
+    const sprintCompanies = companies.filter((company) => sprintCompanySet.has(company.id));
+    const done = sprintCompanies.filter((company) => normalizeServiceTags(company.service_tags, company.premiers_tags).length > 0).length;
+    return { current: done, target: sprintCompanies.length };
+  }, [companies, sprintFlow?.companyIds]);
+
   const visibleCompanyIds = React.useMemo(() => filteredCompanies.map((company) => company.id), [filteredCompanies]);
 
   const companyOpportunitiesCount = React.useMemo(() => {
@@ -231,7 +239,12 @@ export const CompanyServicesPage: React.FC = () => {
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      <SprintFlowBanner currentStep="services" />
+      <SprintFlowBanner
+        currentStep="services"
+        progressLabel="Ajoute les services sur les entreprises du sprint."
+        progressCurrent={servicesProgress.current}
+        progressTarget={servicesProgress.target}
+      />
       <div>
         <h1>Services entreprises</h1>
         <p className="text-muted-foreground">Définissez les services proposés par chaque entreprise qualifiée.</p>

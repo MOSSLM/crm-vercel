@@ -236,11 +236,10 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
 
   const visibleRows = useMemo(() => {
     let rows = leadMagnets;
-    if (sprintFlow?.companyIds.length) {
-      const sprintCompanyIds = new Set(sprintFlow.companyIds);
+    if (sprintFlow?.opportunityIds.length) {
+      const sprintOpportunityIds = new Set(sprintFlow.opportunityIds);
       rows = rows.filter((row) => {
-        const opportunity = firstRelation(row.opportunites);
-        return typeof opportunity?.entreprise_id === "number" && sprintCompanyIds.has(opportunity.entreprise_id);
+        return sprintOpportunityIds.has(row.opportunite_id);
       });
     }
     if (statusFilter !== "all") {
@@ -281,7 +280,15 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
       }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [flagFilter, leadMagnets, pipelineFilter, readyFilter, sortBy, sprintFlow?.companyIds, statusFilter]);
+  }, [flagFilter, leadMagnets, pipelineFilter, readyFilter, sortBy, sprintFlow?.opportunityIds, statusFilter]);
+
+  const leadMagnetProgress = useMemo(() => {
+    if (!sprintFlow?.opportunityIds.length) return { current: 0, target: 0 };
+    const sprintOpportunityIds = new Set(sprintFlow.opportunityIds);
+    const sprintRows = leadMagnets.filter((row) => sprintOpportunityIds.has(row.opportunite_id));
+    const readyCount = sprintRows.filter((row) => row.statut === "pret" || Boolean(firstRelation(row.opportunites)?.lead_magnet)).length;
+    return { current: readyCount, target: sprintRows.length };
+  }, [leadMagnets, sprintFlow?.opportunityIds]);
 
   const createLeadMagnet = async () => {
     if (!form.opportunite_id || !form.template_id) return;
@@ -315,7 +322,12 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <SprintFlowBanner currentStep="lead_magnet" />
+      <SprintFlowBanner
+        currentStep="lead_magnet"
+        progressLabel="Passe les lead magnets du sprint en prêt."
+        progressCurrent={leadMagnetProgress.current}
+        progressTarget={leadMagnetProgress.target}
+      />
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>

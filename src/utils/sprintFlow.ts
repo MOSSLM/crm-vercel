@@ -2,10 +2,9 @@
 
 export const SPRINT_FLOW_KEY = "crm_sprint_flow_v1";
 
-export type SprintFlowStep = "qualification" | "opportunities" | "services" | "lead_magnet";
+export type SprintFlowStep = "opportunities" | "services" | "lead_magnet";
 
 export const SPRINT_FLOW_STEPS: Array<{ id: SprintFlowStep; label: string; href: string }> = [
-  { id: "qualification", label: "Qualification", href: "/qualification" },
   { id: "opportunities", label: "Opportunités", href: "/opportunities" },
   { id: "services", label: "Services entreprises", href: "/services-entreprises" },
   { id: "lead_magnet", label: "Lead magnet", href: "/production/lead-magnet" },
@@ -13,6 +12,7 @@ export const SPRINT_FLOW_STEPS: Array<{ id: SprintFlowStep; label: string; href:
 
 export type SprintFlowState = {
   targetCount: number;
+  opportunityIds: string[];
   companyIds: number[];
   startedAt: string;
 };
@@ -28,6 +28,9 @@ export const readSprintFlow = (): SprintFlowState | null => {
     if (!parsed || typeof parsed !== "object") return null;
 
     const targetCount = Number(parsed.targetCount);
+    const opportunityIds = Array.isArray(parsed.opportunityIds)
+      ? parsed.opportunityIds.map((value) => String(value)).filter((value) => value.length > 0)
+      : [];
     const companyIds = Array.isArray(parsed.companyIds)
       ? parsed.companyIds.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0)
       : [];
@@ -36,6 +39,7 @@ export const readSprintFlow = (): SprintFlowState | null => {
 
     return {
       targetCount,
+      opportunityIds: Array.from(new Set(opportunityIds)),
       companyIds: Array.from(new Set(companyIds)),
       startedAt: typeof parsed.startedAt === "string" ? parsed.startedAt : new Date().toISOString(),
     };

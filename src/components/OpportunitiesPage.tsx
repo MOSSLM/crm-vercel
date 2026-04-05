@@ -43,6 +43,7 @@ import { JournalActionButtons } from './JournalActionButtons';
 import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
 import { PipelineCombobox } from './PipelineCombobox';
 import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
+import { saveSprintFlow } from '@/utils/sprintFlow';
 
 import logger from '../utils/logger';
 
@@ -115,9 +116,9 @@ export const OpportunitiesPage: React.FC = () => {
     [pipelineFilter, pipelineStages]
   );
 
-  const sprintCompanyIds = React.useMemo(
-    () => new Set(sprintFlow?.companyIds ?? []),
-    [sprintFlow?.companyIds]
+  const sprintOpportunityIds = React.useMemo(
+    () => new Set(sprintFlow?.opportunityIds ?? []),
+    [sprintFlow?.opportunityIds]
   );
 
   const filteredOpportunities = opportunities
@@ -139,8 +140,8 @@ export const OpportunitiesPage: React.FC = () => {
     const matchesFlag = flagFilter === 'all' || flags.includes(flagFilter);
     const matchesSprint =
       !sprintFlow ||
-      sprintCompanyIds.size === 0 ||
-      (typeof opportunity.entreprise_id === 'number' && sprintCompanyIds.has(opportunity.entreprise_id));
+      sprintOpportunityIds.size === 0 ||
+      sprintOpportunityIds.has(opportunity.id);
 
       return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag && matchesSprint;
     })
@@ -628,9 +629,42 @@ export const OpportunitiesPage: React.FC = () => {
     );
   }, [filteredOpportunities]);
 
+  const startSprintFromSelection = React.useCallback((targetCount: number) => {
+    const selectedSet = new Set(selectedOpportunityIds);
+    const selectedOpportunities = opportunities.filter((opportunity) => selectedSet.has(opportunity.id));
+    const cappedSelection = selectedOpportunities.slice(0, targetCount);
+    if (cappedSelection.length === 0) {
+      toast.error("Sélectionnez au moins une opportunité");
+      return;
+    }
+
+    const finalTarget = Math.max(1, Math.min(targetCount, cappedSelection.length));
+    const finalSelection = cappedSelection.slice(0, finalTarget);
+    const finalCompanyIds = Array.from(
+      new Set(
+        finalSelection
+          .map((opportunity) => opportunity.entreprise_id)
+          .filter((companyId): companyId is number => typeof companyId === 'number')
+      )
+    );
+
+    const state = {
+      targetCount: finalTarget,
+      opportunityIds: finalSelection.map((opportunity) => opportunity.id),
+      companyIds: finalCompanyIds,
+      startedAt: new Date().toISOString(),
+    };
+    saveSprintFlow(state);
+    toast.success(`Sprint démarré avec ${finalSelection.length} opportunité(s)`);
+  }, [opportunities, selectedOpportunityIds]);
+
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      <SprintFlowBanner currentStep="opportunities" />
+      <SprintFlowBanner
+        currentStep="opportunities"
+        selectionCount={selectedOpportunityIds.length}
+        onStartFromSelection={startSprintFromSelection}
+      />
       <div>
         <h1>Opportunités</h1>
         <p className="text-muted-foreground">

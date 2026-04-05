@@ -40,7 +40,7 @@ export const AppSidebar = () => {
 
   const qualificationItems: SidebarNavItem[] = [
     { title: "Dashboard qualification", icon: BarChart3, href: "/qualification/dashboard" },
-    { title: "Qualification", icon: CheckSquare, href: "/qualification" },
+    { title: "Sprint CRM", icon: CheckSquare, href: "/opportunities" },
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
     { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Réseaux", icon: Share2, href: "/networks" },
@@ -50,6 +50,7 @@ export const AppSidebar = () => {
 
   const prospectionItems: SidebarNavItem[] = [
     { title: "Dashboard prospection", icon: BarChart3, href: "/prospection/dashboard" },
+    { title: "Sprint CRM", icon: CheckSquare, href: "/opportunities" },
     { title: "Qualifiés (appel)", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
     { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
@@ -59,7 +60,7 @@ export const AppSidebar = () => {
   ];
 
   const actionItems: SidebarNavItem[] = [
-    { title: "Qualification", icon: CheckSquare, href: "/qualification" },
+    { title: "Sprint CRM", icon: CheckSquare, href: "/opportunities" },
     { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
     { title: "Results", icon: Package, href: "/results" },
