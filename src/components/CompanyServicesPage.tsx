@@ -17,7 +17,7 @@ import { toast } from "sonner";
 import logger from "@/utils/logger";
 import { SprintFlowBanner, useSprintFlowState } from "@/components/SprintFlowBanner";
 
-export const CompanyServicesPage: React.FC = () => {
+export const CompanyServicesPage: React.FC<{ sprintModule?: boolean }> = ({ sprintModule = false }) => {
   const { companies, opportunities, pipelines, pipelineStages, updateCompany, updateOpportunity } = useAppData();
   const { sprintFlow } = useSprintFlowState();
   const [viewMode, setViewMode] = React.useState<"cards" | "list" | "table">("cards");
@@ -63,11 +63,11 @@ export const CompanyServicesPage: React.FC = () => {
       const sprintCompanyIds = new Set(sprintFlow?.companyIds ?? []);
       return companies.filter((company) => {
         if (!company.qualifie) return false;
-        if (!sprintFlow || sprintCompanyIds.size === 0) return true;
+        if (!sprintModule || !sprintFlow || sprintCompanyIds.size === 0) return true;
         return sprintCompanyIds.has(company.id);
       });
     },
-    [companies, sprintFlow]
+    [companies, sprintFlow, sprintModule]
   );
 
   const allServiceTags = React.useMemo(
@@ -239,12 +239,14 @@ export const CompanyServicesPage: React.FC = () => {
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      <SprintFlowBanner
-        currentStep="services"
-        progressLabel="Ajoute les services sur les entreprises du sprint."
-        progressCurrent={servicesProgress.current}
-        progressTarget={servicesProgress.target}
-      />
+      {sprintModule && (
+        <SprintFlowBanner
+          currentStep="services"
+          progressLabel="Ajoute les services sur les entreprises du sprint."
+          progressCurrent={servicesProgress.current}
+          progressTarget={servicesProgress.target}
+        />
+      )}
       <div>
         <h1>Services entreprises</h1>
         <p className="text-muted-foreground">Définissez les services proposés par chaque entreprise qualifiée.</p>

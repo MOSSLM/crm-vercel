@@ -18,8 +18,7 @@ import {
 } from "@/utils/sprintFlow";
 
 const NEXT_STEP_BY_STEP: Record<SprintFlowStep, SprintFlowStep | null> = {
-  opportunities: "qualification",
-  qualification: "services",
+  opportunities: "services",
   services: "lead_magnet",
   lead_magnet: null,
 };

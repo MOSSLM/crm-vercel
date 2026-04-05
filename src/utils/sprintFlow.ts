@@ -2,13 +2,12 @@
 
 export const SPRINT_FLOW_KEY = "crm_sprint_flow_v1";
 
-export type SprintFlowStep = "opportunities" | "qualification" | "services" | "lead_magnet";
+export type SprintFlowStep = "opportunities" | "services" | "lead_magnet";
 
 export const SPRINT_FLOW_STEPS: Array<{ id: SprintFlowStep; label: string; href: string }> = [
-  { id: "opportunities", label: "Opportunités", href: "/opportunities" },
-  { id: "qualification", label: "Qualification", href: "/qualification" },
-  { id: "services", label: "Services entreprises", href: "/services-entreprises" },
-  { id: "lead_magnet", label: "Lead magnet", href: "/production/lead-magnet" },
+  { id: "opportunities", label: "Opportunités", href: "/actions/sprint" },
+  { id: "services", label: "Services entreprises", href: "/actions/sprint/services" },
+  { id: "lead_magnet", label: "Lead magnet", href: "/actions/sprint/lead-magnet" },
 ];
 
 export type SprintFlowState = {

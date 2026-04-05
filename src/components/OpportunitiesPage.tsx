@@ -80,7 +80,7 @@ interface KanbanDragItem {
   id: string;
   sourceValue: string;
 }
-export const OpportunitiesPage: React.FC = () => {
+export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprintModule = false }) => {
   const { 
     opportunities, 
     pipelines,
@@ -139,6 +139,7 @@ export const OpportunitiesPage: React.FC = () => {
     const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
     const matchesFlag = flagFilter === 'all' || flags.includes(flagFilter);
     const matchesSprint =
+      !sprintModule ||
       !sprintFlow ||
       sprintOpportunityIds.size === 0 ||
       sprintOpportunityIds.has(opportunity.id);
@@ -660,11 +661,14 @@ export const OpportunitiesPage: React.FC = () => {
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      <SprintFlowBanner
-        currentStep="opportunities"
-        selectionCount={selectedOpportunityIds.length}
-        onStartFromSelection={startSprintFromSelection}
-      />
+      {sprintModule && (
+        <SprintFlowBanner
+          currentStep="opportunities"
+          selectionCount={selectedOpportunityIds.length}
+          onStartFromSelection={startSprintFromSelection}
+          progressLabel="Sélectionne ton lot d'opportunités puis traite-les en série."
+        />
+      )}
       <div>
         <h1>Opportunités</h1>
         <p className="text-muted-foreground">
