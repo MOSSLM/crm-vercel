@@ -42,6 +42,8 @@ import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
 import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
 import { PipelineCombobox } from './PipelineCombobox';
+import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
+import { saveSprintFlow } from '@/utils/sprintFlow';
 
 import logger from '../utils/logger';
 
@@ -78,7 +80,7 @@ interface KanbanDragItem {
   id: string;
   sourceValue: string;
 }
-export const OpportunitiesPage: React.FC = () => {
+export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprintModule = false }) => {
   const { 
     opportunities, 
     pipelines,
@@ -107,10 +109,16 @@ export const OpportunitiesPage: React.FC = () => {
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([]);
   const [bulkPipelineTarget, setBulkPipelineTarget] = useState<string>('none');
   const [sortByPipeline, setSortByPipeline] = useState(false);
+  const { sprintFlow } = useSprintFlowState();
 
   const stagesForSelectedPipeline = React.useMemo(
     () => (pipelineFilter === 'all' ? pipelineStages : pipelineStages.filter((stage) => stage.pipeline_id === pipelineFilter)),
     [pipelineFilter, pipelineStages]
+  );
+
+  const sprintOpportunityIds = React.useMemo(
+    () => new Set(sprintFlow?.opportunityIds ?? []),
+    [sprintFlow?.opportunityIds]
   );
 
   const filteredOpportunities = opportunities
@@ -130,8 +138,13 @@ export const OpportunitiesPage: React.FC = () => {
     const matchesStage = stageFilter === 'all' || opportunity.stage_id?.toString() === stageFilter;
     const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
     const matchesFlag = flagFilter === 'all' || flags.includes(flagFilter);
+    const matchesSprint =
+      !sprintModule ||
+      !sprintFlow ||
+      sprintOpportunityIds.size === 0 ||
+      sprintOpportunityIds.has(opportunity.id);
 
-      return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag;
+      return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag && matchesSprint;
     })
     .sort((a, b) => {
       if (!sortByPipeline) return 0;
@@ -617,8 +630,45 @@ export const OpportunitiesPage: React.FC = () => {
     );
   }, [filteredOpportunities]);
 
+  const startSprintFromSelection = React.useCallback((targetCount: number) => {
+    const selectedSet = new Set(selectedOpportunityIds);
+    const selectedOpportunities = opportunities.filter((opportunity) => selectedSet.has(opportunity.id));
+    const cappedSelection = selectedOpportunities.slice(0, targetCount);
+    if (cappedSelection.length === 0) {
+      toast.error("Sélectionnez au moins une opportunité");
+      return;
+    }
+
+    const finalTarget = Math.max(1, Math.min(targetCount, cappedSelection.length));
+    const finalSelection = cappedSelection.slice(0, finalTarget);
+    const finalCompanyIds = Array.from(
+      new Set(
+        finalSelection
+          .map((opportunity) => opportunity.entreprise_id)
+          .filter((companyId): companyId is number => typeof companyId === 'number')
+      )
+    );
+
+    const state = {
+      targetCount: finalTarget,
+      opportunityIds: finalSelection.map((opportunity) => opportunity.id),
+      companyIds: finalCompanyIds,
+      startedAt: new Date().toISOString(),
+    };
+    saveSprintFlow(state);
+    toast.success(`Sprint démarré avec ${finalSelection.length} opportunité(s)`);
+  }, [opportunities, selectedOpportunityIds]);
+
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+      {sprintModule && (
+        <SprintFlowBanner
+          currentStep="opportunities"
+          selectionCount={selectedOpportunityIds.length}
+          onStartFromSelection={startSprintFromSelection}
+          progressLabel="Sélectionne ton lot d'opportunités puis traite-les en série."
+        />
+      )}
       <div>
         <h1>Opportunités</h1>
         <p className="text-muted-foreground">

@@ -57,6 +57,7 @@ export const PRODUCTION_ITEMS: NavItem[] = [
 ];
 
 export const ACTION_ITEMS: NavItem[] = [
+  { title: "Sprint CRM", icon: CheckSquare, href: "/actions/sprint" },
   { title: "Qualification", icon: CheckSquare, href: "/qualification" },
   { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
   { title: "Services", icon: Package, href: "/services-entreprises" },
@@ -92,6 +93,7 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
   }
 
   if (
+    pathname.startsWith("/actions/sprint") ||
     pathname.startsWith("/qualification") ||
     pathname.startsWith("/qualified") ||
     pathname.startsWith("/services-entreprises") ||

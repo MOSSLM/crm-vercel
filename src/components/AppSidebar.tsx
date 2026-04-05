@@ -59,6 +59,7 @@ export const AppSidebar = () => {
   ];
 
   const actionItems: SidebarNavItem[] = [
+    { title: "Sprint CRM", icon: CheckSquare, href: "/actions/sprint" },
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
