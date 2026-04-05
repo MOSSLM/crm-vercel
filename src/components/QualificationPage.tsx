@@ -388,7 +388,7 @@ export const QualificationPage: React.FC = () => {
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      <SprintFlowBanner currentStep="qualification" />
+      <SprintFlowBanner currentStep="opportunities" />
       <div>
         <h1>Qualification des Entreprises</h1>
         <p className="text-muted-foreground">
