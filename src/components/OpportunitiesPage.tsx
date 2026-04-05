@@ -42,6 +42,7 @@ import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
 import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
 import { PipelineCombobox } from './PipelineCombobox';
+import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
 
 import logger from '../utils/logger';
 
@@ -107,10 +108,16 @@ export const OpportunitiesPage: React.FC = () => {
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([]);
   const [bulkPipelineTarget, setBulkPipelineTarget] = useState<string>('none');
   const [sortByPipeline, setSortByPipeline] = useState(false);
+  const { sprintFlow } = useSprintFlowState();
 
   const stagesForSelectedPipeline = React.useMemo(
     () => (pipelineFilter === 'all' ? pipelineStages : pipelineStages.filter((stage) => stage.pipeline_id === pipelineFilter)),
     [pipelineFilter, pipelineStages]
+  );
+
+  const sprintCompanyIds = React.useMemo(
+    () => new Set(sprintFlow?.companyIds ?? []),
+    [sprintFlow?.companyIds]
   );
 
   const filteredOpportunities = opportunities
@@ -130,8 +137,12 @@ export const OpportunitiesPage: React.FC = () => {
     const matchesStage = stageFilter === 'all' || opportunity.stage_id?.toString() === stageFilter;
     const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
     const matchesFlag = flagFilter === 'all' || flags.includes(flagFilter);
+    const matchesSprint =
+      !sprintFlow ||
+      sprintCompanyIds.size === 0 ||
+      (typeof opportunity.entreprise_id === 'number' && sprintCompanyIds.has(opportunity.entreprise_id));
 
-      return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag;
+      return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag && matchesSprint;
     })
     .sort((a, b) => {
       if (!sortByPipeline) return 0;
@@ -619,6 +630,7 @@ export const OpportunitiesPage: React.FC = () => {
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+      <SprintFlowBanner currentStep="opportunities" />
       <div>
         <h1>Opportunités</h1>
         <p className="text-muted-foreground">
