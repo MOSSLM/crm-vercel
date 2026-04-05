@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
+import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
 
 import logger from '../utils/logger';
 import { normalizeServiceTags } from '../utils/serviceTags';
@@ -73,6 +74,7 @@ export const QualificationPage: React.FC = () => {
   // Delete confirmation state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
+  const { sprintFlow, save } = useSprintFlowState();
 
   const filteredCompanies = companies.filter(company => {
     const displayName = getCompanyDisplayName(company.name, company.canonical_url);
@@ -135,9 +137,21 @@ export const QualificationPage: React.FC = () => {
     try {
       if (company.qualifie) {
         await unqualifyCompany(company.id);
+        if (sprintFlow?.companyIds.includes(company.id)) {
+          save({
+            ...sprintFlow,
+            companyIds: sprintFlow.companyIds.filter((companyId) => companyId !== company.id),
+          });
+        }
         toast.success(`${displayName} déqualifiée`);
       } else {
         await qualifyCompany(company.id);
+        if (sprintFlow && sprintFlow.companyIds.length < sprintFlow.targetCount && !sprintFlow.companyIds.includes(company.id)) {
+          save({
+            ...sprintFlow,
+            companyIds: [...sprintFlow.companyIds, company.id],
+          });
+        }
         toast.success(`${displayName} qualifiée avec succès !`);
       }
     } catch (error) {
@@ -374,6 +388,7 @@ export const QualificationPage: React.FC = () => {
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+      <SprintFlowBanner currentStep="qualification" />
       <div>
         <h1>Qualification des Entreprises</h1>
         <p className="text-muted-foreground">
