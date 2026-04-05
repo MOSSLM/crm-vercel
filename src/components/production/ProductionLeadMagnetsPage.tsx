@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { supabase } from "@/utils/supabase/client";
 import { toast } from "sonner";
+import { SprintFlowBanner, useSprintFlowState } from "@/components/SprintFlowBanner";
 
 type LeadMagnetStatus = "a_faire" | "en_cours" | "pret";
 type Relation<T> = T | T[] | null | undefined;
@@ -26,6 +27,7 @@ type LeadMagnetRow = {
   created_at: string;
   opportunites?: {
     id: string;
+    entreprise_id: number | null;
     name: string | null;
     priorite: string | null;
     montant: number | null;
@@ -40,6 +42,7 @@ type LeadMagnetRow = {
 
 type OpportunityRow = {
   id: string;
+  entreprise_id: number | null;
   name: string | null;
   priorite: string | null;
   montant: number | null;
@@ -95,6 +98,7 @@ const loadingSkeletonKeys = Array.from({ length: 6 }, (_, index) => `lead-magnet
 
 export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: PageMode }) {
   const router = useRouter();
+  const { sprintFlow } = useSprintFlowState();
   const [leadMagnets, setLeadMagnets] = useState<LeadMagnetRow[]>([]);
   const [opportunities, setOpportunities] = useState<OpportunityRow[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
@@ -164,7 +168,7 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
         supabase.from("production_templates").select("id,nom").order("nom"),
         supabase
           .from("opportunites")
-          .select("id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
+          .select("id,entreprise_id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
           .order("created_at", { ascending: false }),
         supabase.from("pipelines").select("id,nom").order("ordre", { ascending: true }),
         mode === "tinder" ? fetchLeadMagnetProjectLinks() : Promise.resolve({ data: [] as LeadMagnetProjectLinkRow[], error: null }),
@@ -178,7 +182,7 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
       const { data: lmRows } = await supabase
         .from("production_lead_magnets")
         .select(
-          "id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)),production_templates(nom)"
+          "id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,entreprise_id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)),production_templates(nom)"
         )
         .order("created_at", { ascending: false });
 
@@ -232,6 +236,12 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
 
   const visibleRows = useMemo(() => {
     let rows = leadMagnets;
+    if (sprintFlow?.opportunityIds.length) {
+      const sprintOpportunityIds = new Set(sprintFlow.opportunityIds);
+      rows = rows.filter((row) => {
+        return sprintOpportunityIds.has(row.opportunite_id);
+      });
+    }
     if (statusFilter !== "all") {
       rows = rows.filter((row) => row.statut === statusFilter);
     }
@@ -270,7 +280,15 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
       }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [flagFilter, leadMagnets, pipelineFilter, readyFilter, sortBy, statusFilter]);
+  }, [flagFilter, leadMagnets, pipelineFilter, readyFilter, sortBy, sprintFlow?.opportunityIds, statusFilter]);
+
+  const leadMagnetProgress = useMemo(() => {
+    if (!sprintFlow?.opportunityIds.length) return { current: 0, target: 0 };
+    const sprintOpportunityIds = new Set(sprintFlow.opportunityIds);
+    const sprintRows = leadMagnets.filter((row) => sprintOpportunityIds.has(row.opportunite_id));
+    const readyCount = sprintRows.filter((row) => row.statut === "pret" || Boolean(firstRelation(row.opportunites)?.lead_magnet)).length;
+    return { current: readyCount, target: sprintRows.length };
+  }, [leadMagnets, sprintFlow?.opportunityIds]);
 
   const createLeadMagnet = async () => {
     if (!form.opportunite_id || !form.template_id) return;
@@ -304,6 +322,12 @@ export function ProductionLeadMagnetsPage({ mode = "production" }: { mode?: Page
 
   return (
     <div className="p-4 md:p-6 space-y-4">
+      <SprintFlowBanner
+        currentStep="lead_magnet"
+        progressLabel="Passe les lead magnets du sprint en prêt."
+        progressCurrent={leadMagnetProgress.current}
+        progressTarget={leadMagnetProgress.target}
+      />
       <Card>
         <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>

@@ -57,6 +57,7 @@ export const PRODUCTION_ITEMS: NavItem[] = [
 ];
 
 export const ACTION_ITEMS: NavItem[] = [
+  { title: "Sprint CRM", icon: CheckSquare, href: "/opportunities" },
   { title: "Qualification", icon: CheckSquare, href: "/qualification" },
   { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
   { title: "Services", icon: Package, href: "/services-entreprises" },
