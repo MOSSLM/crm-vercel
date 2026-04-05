@@ -15,9 +15,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { LayoutGrid, List, Search, Table2 } from "lucide-react";
 import { toast } from "sonner";
 import logger from "@/utils/logger";
+import { SprintFlowBanner, useSprintFlowState } from "@/components/SprintFlowBanner";
 
 export const CompanyServicesPage: React.FC = () => {
   const { companies, opportunities, pipelines, pipelineStages, updateCompany, updateOpportunity } = useAppData();
+  const { sprintFlow } = useSprintFlowState();
   const [viewMode, setViewMode] = React.useState<"cards" | "list" | "table">("cards");
   const [searchTerm, setSearchTerm] = React.useState("");
   const [serviceFilter, setServiceFilter] = React.useState("");
@@ -57,8 +59,15 @@ export const CompanyServicesPage: React.FC = () => {
   }, []);
 
   const qualifiedCompanies = React.useMemo(
-    () => companies.filter((company) => company.qualifie),
-    [companies]
+    () => {
+      const sprintCompanyIds = new Set(sprintFlow?.companyIds ?? []);
+      return companies.filter((company) => {
+        if (!company.qualifie) return false;
+        if (!sprintFlow || sprintCompanyIds.size === 0) return true;
+        return sprintCompanyIds.has(company.id);
+      });
+    },
+    [companies, sprintFlow]
   );
 
   const allServiceTags = React.useMemo(
@@ -222,6 +231,7 @@ export const CompanyServicesPage: React.FC = () => {
 
   return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+      <SprintFlowBanner currentStep="services" />
       <div>
         <h1>Services entreprises</h1>
         <p className="text-muted-foreground">Définissez les services proposés par chaque entreprise qualifiée.</p>
