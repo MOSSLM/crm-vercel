@@ -21,6 +21,7 @@ import { Building2, ChevronDown, CheckSquare, FolderKanban, Search, Settings, Lo
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
 import { TOP_CATEGORIES, CRM_ITEMS, PRODUCTION_ITEMS } from "@/components/layout/navigation";
+import { ColdCallPlaybookModal } from "@/components/ColdCallPlaybookModal";
 
 type SidebarNavItem = {
   title: string;
@@ -210,6 +211,9 @@ export const AppSidebar = () => {
 
       <SidebarFooter className="space-y-2 p-4">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <ColdCallPlaybookModal />
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild isActive={isActive("/settings")}>
               <Link href="/settings">
