@@ -1,23 +1,22 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  Button,
-  Card,
-  Checkbox,
-  Group,
-  Select,
-  SimpleGrid,
-  Stack,
-  Text,
-  TextInput,
-  Textarea,
-  ThemeIcon,
-} from "@mantine/core";
 import { useAppData } from "./AppDataContext";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
 import { contactsApi } from "../utils/api";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Plus,
   Loader2,
@@ -29,6 +28,7 @@ import {
   Globe,
   Users,
   MessageSquare,
+  ChevronDown,
 } from "lucide-react";
 import logger from "../utils/logger";
 
@@ -56,31 +56,20 @@ export const AddContactForm: React.FC<AddContactFormProps> = ({ onContactAdded, 
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
+  const set = (field: string, value: string | boolean) =>
+    setFormData((prev) => ({ ...prev, [field]: value }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!formData.entreprise_id) {
-      toast.error("Veuillez sélectionner une entreprise");
-      return;
-    }
-
+    if (!formData.entreprise_id) { toast.error("Veuillez sélectionner une entreprise"); return; }
     if (!formData.first_name.trim() && !formData.last_name.trim()) {
       toast.error("Veuillez saisir au moins un prénom ou un nom");
       return;
     }
-
     setIsLoading(true);
-
     try {
       await contactsApi.create({
-        entreprise_id: Number.parseInt(formData.entreprise_id, 10),
+        entreprise_id: parseInt(formData.entreprise_id, 10),
         first_name: formData.first_name.trim() || undefined,
         last_name: formData.last_name.trim() || undefined,
         email: formData.email.trim() || undefined,
@@ -91,7 +80,6 @@ export const AddContactForm: React.FC<AddContactFormProps> = ({ onContactAdded, 
         preferred_channel: formData.preferred_channel || "email",
         notes: formData.notes.trim() || undefined,
       });
-
       toast.success("Contact ajouté avec succès");
       setFormData(defaultFormData);
       setIsExpanded(false);
@@ -104,162 +92,166 @@ export const AddContactForm: React.FC<AddContactFormProps> = ({ onContactAdded, 
     }
   };
 
-  const handleCancel = () => {
-    setFormData(defaultFormData);
-    setIsExpanded(false);
-  };
-
   if (!isExpanded) {
     return (
-      <Card className={className} withBorder radius="lg" p="md">
-        <Button variant="light" fullWidth leftSection={<Plus size={16} />} onClick={() => setIsExpanded(true)}>
+      <div className={`rounded-xl border bg-card p-4 ${className ?? ""}`}>
+        <Button variant="outline" className="w-full" onClick={() => setIsExpanded(true)}>
+          <Plus className="h-4 w-4 mr-2" />
           Ajouter un nouveau contact
+          <ChevronDown className="h-4 w-4 ml-auto" />
         </Button>
-      </Card>
+      </div>
     );
   }
 
   return (
-    <Card className={className} withBorder radius="lg" p="lg">
-      <Stack gap="md">
-        <Group gap="xs">
-          <ThemeIcon variant="light" size="md">
-            <User size={16} />
-          </ThemeIcon>
-          <div>
-            <Text fw={600}>Ajouter un contact</Text>
-            <Text size="sm" c="dimmed">
-              Créer un nouveau contact dans l&apos;une de vos entreprises
-            </Text>
+    <div className={`rounded-xl border bg-card p-5 space-y-5 ${className ?? ""}`}>
+      {/* Header */}
+      <div className="flex items-center gap-2">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent">
+          <User className="h-4 w-4" />
+        </div>
+        <div>
+          <p className="font-semibold">Ajouter un contact</p>
+          <p className="text-sm text-muted-foreground">
+            Créer un nouveau contact dans l&apos;une de vos entreprises
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Company select */}
+        <div className="space-y-1.5">
+          <Label className="flex items-center gap-1.5">
+            <Building className="h-4 w-4" />
+            Entreprise *
+          </Label>
+          <Select value={formData.entreprise_id} onValueChange={(v) => set("entreprise_id", v)} disabled={isLoading} required>
+            <SelectTrigger>
+              <SelectValue placeholder="Sélectionner une entreprise" />
+            </SelectTrigger>
+            <SelectContent>
+              {companies.map((company) => (
+                <SelectItem key={company.id} value={company.id.toString()}>
+                  {getCompanyDisplayName(company.name, company.canonical_url)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Name row */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="add_first_name">Prénom</Label>
+            <Input
+              id="add_first_name"
+              value={formData.first_name}
+              onChange={(e) => set("first_name", e.target.value)}
+              disabled={isLoading}
+            />
           </div>
-        </Group>
-
-        <form onSubmit={handleSubmit}>
-          <Stack gap="sm">
-            <Select
-              label="Entreprise *"
-              data={companies.map((company) => ({
-                value: company.id.toString(),
-                label: getCompanyDisplayName(company.name, company.canonical_url),
-              }))}
-              searchable
-              leftSection={<Building size={16} />}
-              placeholder="Sélectionner une entreprise"
-              value={formData.entreprise_id}
-              onChange={(value) => handleInputChange("entreprise_id", value ?? "")}
+          <div className="space-y-1.5">
+            <Label htmlFor="add_last_name">Nom</Label>
+            <Input
+              id="add_last_name"
+              value={formData.last_name}
+              onChange={(e) => set("last_name", e.target.value)}
               disabled={isLoading}
-              required
             />
+          </div>
+        </div>
 
-            <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <TextInput
-                label="Prénom"
-                value={formData.first_name}
-                onChange={(event) => handleInputChange("first_name", event.currentTarget.value)}
+        {/* Other fields */}
+        {[
+          { id: "add_email", label: "Email", type: "email", icon: Mail, placeholder: "email@exemple.com", field: "email" },
+          { id: "add_tel", label: "Téléphone", type: "tel", icon: Phone, placeholder: "+33 1 23 45 67 89", field: "tel" },
+          { id: "add_role", label: "Poste", type: "text", icon: Briefcase, placeholder: "Directeur, Commercial…", field: "role_title" },
+          { id: "add_linkedin", label: "LinkedIn", type: "url", icon: Globe, placeholder: "https://linkedin.com/in/…", field: "linkedin_url" },
+        ].map(({ id, label, type, icon: Icon, placeholder, field }) => (
+          <div key={id} className="space-y-1.5">
+            <Label htmlFor={id}>{label}</Label>
+            <div className="relative">
+              <Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id={id}
+                type={type}
+                placeholder={placeholder}
+                className="pl-9"
+                value={formData[field as keyof typeof formData] as string}
+                onChange={(e) => set(field, e.target.value)}
                 disabled={isLoading}
               />
-              <TextInput
-                label="Nom"
-                value={formData.last_name}
-                onChange={(event) => handleInputChange("last_name", event.currentTarget.value)}
-                disabled={isLoading}
-              />
-            </SimpleGrid>
+            </div>
+          </div>
+        ))}
 
-            <TextInput
-              label="Email"
-              type="email"
-              placeholder="email@exemple.com"
-              value={formData.email}
-              onChange={(event) => handleInputChange("email", event.currentTarget.value)}
-              leftSection={<Mail size={16} />}
-              disabled={isLoading}
-            />
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="add_decision_maker"
+            checked={formData.is_decision_maker}
+            onCheckedChange={(checked) => set("is_decision_maker", Boolean(checked))}
+            disabled={isLoading}
+          />
+          <Label htmlFor="add_decision_maker" className="flex items-center gap-1.5 cursor-pointer">
+            <Users className="h-4 w-4" />
+            Décideur
+          </Label>
+        </div>
 
-            <TextInput
-              label="Téléphone"
-              type="tel"
-              placeholder="+33 1 23 45 67 89"
-              value={formData.tel}
-              onChange={(event) => handleInputChange("tel", event.currentTarget.value)}
-              leftSection={<Phone size={16} />}
-              disabled={isLoading}
-            />
+        <div className="space-y-1.5">
+          <Label className="flex items-center gap-1.5">
+            <MessageSquare className="h-4 w-4" />
+            Canal de communication préféré
+          </Label>
+          <Select value={formData.preferred_channel} onValueChange={(v) => set("preferred_channel", v)} disabled={isLoading}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="email">Email</SelectItem>
+              <SelectItem value="phone">Téléphone</SelectItem>
+              <SelectItem value="linkedin">LinkedIn</SelectItem>
+              <SelectItem value="whatsapp">WhatsApp</SelectItem>
+              <SelectItem value="sms">SMS</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-            <TextInput
-              label="Poste"
-              placeholder="Directeur, Commercial, etc."
-              value={formData.role_title}
-              onChange={(event) => handleInputChange("role_title", event.currentTarget.value)}
-              leftSection={<Briefcase size={16} />}
-              disabled={isLoading}
-            />
+        <div className="space-y-1.5">
+          <Label htmlFor="add_notes">Notes</Label>
+          <Textarea
+            id="add_notes"
+            placeholder="Notes sur ce contact..."
+            value={formData.notes}
+            onChange={(e) => set("notes", e.target.value)}
+            rows={3}
+            disabled={isLoading}
+          />
+        </div>
 
-            <TextInput
-              label="LinkedIn"
-              type="url"
-              placeholder="https://linkedin.com/in/..."
-              value={formData.linkedin_url}
-              onChange={(event) => handleInputChange("linkedin_url", event.currentTarget.value)}
-              leftSection={<Globe size={16} />}
-              disabled={isLoading}
-            />
+        <p className="text-xs text-muted-foreground">* Au moins un prénom ou un nom est requis</p>
 
-            <Checkbox
-              label={
-                <Group gap={6}>
-                  <Users size={14} />
-                  <span>Décideur</span>
-                </Group>
-              }
-              checked={formData.is_decision_maker}
-              onChange={(event) => handleInputChange("is_decision_maker", event.currentTarget.checked)}
-              disabled={isLoading}
-            />
-
-            <Select
-              label="Canal de communication préféré"
-              leftSection={<MessageSquare size={16} />}
-              data={[
-                { value: "email", label: "Email" },
-                { value: "phone", label: "Téléphone" },
-                { value: "linkedin", label: "LinkedIn" },
-                { value: "whatsapp", label: "WhatsApp" },
-                { value: "sms", label: "SMS" },
-              ]}
-              value={formData.preferred_channel}
-              onChange={(value) => handleInputChange("preferred_channel", value ?? "email")}
-              disabled={isLoading}
-            />
-
-            <Textarea
-              label="Notes"
-              placeholder="Notes sur ce contact..."
-              value={formData.notes}
-              onChange={(event) => handleInputChange("notes", event.currentTarget.value)}
-              minRows={3}
-              disabled={isLoading}
-            />
-
-            <Text size="sm" c="dimmed">
-              * Au moins un prénom ou un nom est requis
-            </Text>
-
-            <Group grow>
-              <Button variant="default" onClick={handleCancel} disabled={isLoading}>
-                Annuler
-              </Button>
-              <Button
-                type="submit"
-                disabled={isLoading || !formData.entreprise_id || (!formData.first_name.trim() && !formData.last_name.trim())}
-                leftSection={isLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              >
-                {isLoading ? "Ajout..." : "Ajouter"}
-              </Button>
-            </Group>
-          </Stack>
-        </form>
-      </Stack>
-    </Card>
+        <div className="flex gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            className="flex-1"
+            onClick={() => { setFormData(defaultFormData); setIsExpanded(false); }}
+            disabled={isLoading}
+          >
+            Annuler
+          </Button>
+          <Button
+            type="submit"
+            className="flex-1"
+            disabled={isLoading || !formData.entreprise_id || (!formData.first_name.trim() && !formData.last_name.trim())}
+          >
+            {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+            {isLoading ? "Ajout..." : "Ajouter"}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 };

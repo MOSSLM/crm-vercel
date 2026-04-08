@@ -9,6 +9,7 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
+  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -17,7 +18,28 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar";
-import { Building2, ChevronDown, CheckSquare, FolderKanban, Search, Settings, LogOut, type LucideIcon, Package, BarChart3, CheckCircle, Share2, Ban, Copy, PenLine, Magnet, GitBranch, Users, Building, Target } from "lucide-react";
+import {
+  Building2,
+  ChevronDown,
+  CheckSquare,
+  FolderKanban,
+  Search,
+  Settings,
+  LogOut,
+  type LucideIcon,
+  BarChart3,
+  CheckCircle,
+  Share2,
+  Ban,
+  Copy,
+  PenLine,
+  Magnet,
+  GitBranch,
+  Users,
+  Building,
+  Target,
+  Package,
+} from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
 import { TOP_CATEGORIES, CRM_ITEMS, PRODUCTION_ITEMS } from "@/components/layout/navigation";
@@ -29,6 +51,21 @@ type SidebarNavItem = {
   href: string;
   activeHref?: string;
 };
+
+function UserAvatar({ name }: { name?: string }) {
+  const initials = name
+    ? name
+        .split(" ")
+        .slice(0, 2)
+        .map((w) => w[0]?.toUpperCase() ?? "")
+        .join("")
+    : "?";
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground text-sm font-semibold">
+      {initials}
+    </div>
+  );
+}
 
 export const AppSidebar = () => {
   const { logout, user } = useAuth();
@@ -71,30 +108,36 @@ export const AppSidebar = () => {
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
-
   const focusItems =
     view === "prospection" ? prospectionItems : view === "qualification" ? qualificationItems : null;
 
   return (
     <Sidebar collapsible="icon" className="hidden md:flex">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-7 w-7" />
-          <h2 className="truncate">Sama CRM</h2>
+      {/* Logo */}
+      <SidebarHeader className="p-4 border-b border-sidebar-border">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Building2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-sm">Sama CRM</p>
+          </div>
         </div>
-        <div className="truncate text-sm text-muted-foreground">{user?.name}</div>
       </SidebarHeader>
 
       <SidebarContent>
         {focusItems ? (
           <SidebarGroup>
+            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground px-3 py-2">
+              {view === "prospection" ? "Mode Prospection" : "Mode Qualification"}
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {focusItems.map((item) => (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive(item.activeHref ?? item.href)}>
                       <Link href={item.href}>
-                        <item.icon className="h-5 w-5" />
+                        <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
@@ -105,6 +148,7 @@ export const AppSidebar = () => {
           </SidebarGroup>
         ) : (
           <>
+            {/* Top categories */}
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -112,7 +156,7 @@ export const AppSidebar = () => {
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive(item.href)}>
                         <Link href={item.href}>
-                          <item.icon className="h-5 w-5" />
+                          <item.icon className="h-4 w-4" />
                           <span>{item.title}</span>
                         </Link>
                       </SidebarMenuButton>
@@ -122,14 +166,15 @@ export const AppSidebar = () => {
               </SidebarGroupContent>
             </SidebarGroup>
 
+            {/* CRM section */}
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => setCrmOpen((prev) => !prev)}>
-                      <Building className="h-5 w-5" />
+                    <SidebarMenuButton onClick={() => setCrmOpen((p) => !p)}>
+                      <Building className="h-4 w-4" />
                       <span>CRM</span>
-                      <ChevronDown className={`ml-auto h-5 w-5 transition-transform ${crmOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${crmOpen ? "rotate-180" : ""}`} />
                     </SidebarMenuButton>
                     {crmOpen && (
                       <SidebarMenuSub>
@@ -137,7 +182,7 @@ export const AppSidebar = () => {
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
                               <Link href={item.href}>
-                                <item.icon className="h-5 w-5" />
+                                <item.icon className="h-4 w-4" />
                                 <span>{item.title}</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -150,14 +195,15 @@ export const AppSidebar = () => {
               </SidebarGroupContent>
             </SidebarGroup>
 
+            {/* Production section */}
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => setProductionOpen((prev) => !prev)}>
-                      <FolderKanban className="h-5 w-5" />
+                    <SidebarMenuButton onClick={() => setProductionOpen((p) => !p)}>
+                      <FolderKanban className="h-4 w-4" />
                       <span>Production</span>
-                      <ChevronDown className={`ml-auto h-5 w-5 transition-transform ${productionOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${productionOpen ? "rotate-180" : ""}`} />
                     </SidebarMenuButton>
                     {productionOpen && (
                       <SidebarMenuSub>
@@ -165,7 +211,7 @@ export const AppSidebar = () => {
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
                               <Link href={item.href}>
-                                <item.icon className="h-5 w-5" />
+                                <item.icon className="h-4 w-4" />
                                 <span>{item.title}</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -178,14 +224,15 @@ export const AppSidebar = () => {
               </SidebarGroupContent>
             </SidebarGroup>
 
+            {/* Actions section */}
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton onClick={() => setActionsOpen((prev) => !prev)}>
-                      <CheckSquare className="h-5 w-5" />
+                    <SidebarMenuButton onClick={() => setActionsOpen((p) => !p)}>
+                      <CheckSquare className="h-4 w-4" />
                       <span>Actions</span>
-                      <ChevronDown className={`ml-auto h-5 w-5 transition-transform ${actionsOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`ml-auto h-4 w-4 transition-transform ${actionsOpen ? "rotate-180" : ""}`} />
                     </SidebarMenuButton>
                     {actionsOpen && (
                       <SidebarMenuSub>
@@ -193,7 +240,7 @@ export const AppSidebar = () => {
                           <SidebarMenuSubItem key={item.href}>
                             <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
                               <Link href={item.href}>
-                                <item.icon className="h-5 w-5" />
+                                <item.icon className="h-4 w-4" />
                                 <span>{item.title}</span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -209,7 +256,15 @@ export const AppSidebar = () => {
         )}
       </SidebarContent>
 
-      <SidebarFooter className="space-y-2 p-4">
+      {/* Footer */}
+      <SidebarFooter className="border-t border-sidebar-border p-3">
+        {/* User info */}
+        {user?.name && (
+          <div className="flex items-center gap-2 px-1 py-2 mb-1">
+            <UserAvatar name={user.name} />
+            <span className="truncate text-sm font-medium">{user.name}</span>
+          </div>
+        )}
         <SidebarMenu>
           <SidebarMenuItem>
             <ColdCallPlaybookModal />
@@ -217,14 +272,14 @@ export const AppSidebar = () => {
           <SidebarMenuItem>
             <SidebarMenuButton asChild isActive={isActive("/settings")}>
               <Link href="/settings">
-                <Settings className="h-5 w-5" />
+                <Settings className="h-4 w-4" />
                 <span>Paramètres</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={logout}>
-              <LogOut className="h-5 w-5" />
+            <SidebarMenuButton onClick={logout} className="text-muted-foreground hover:text-destructive">
+              <LogOut className="h-4 w-4" />
               <span>Déconnexion</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
