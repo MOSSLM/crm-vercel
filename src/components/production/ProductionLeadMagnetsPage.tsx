@@ -369,6 +369,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
     const templateName = row.production_templates?.[0]?.nom;
     const pipelineName = firstRelation(opp?.pipelines)?.nom;
     const flags = parseFlags(opp?.flags);
+    const services = (firstRelation(opp?.entreprises)?.service_tags ?? []).map(t => t.trim()).filter(Boolean).sort();
     const { border, bg } = colorByRowId.get(row.id) ?? { border: '#94a3b8', bg: 'hsl(215,16%,97%)' };
     return (
       <Card
@@ -385,6 +386,19 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
           <Badge variant={row.statut === "pret" ? "default" : "secondary"}>{statusLabels[row.statut]}</Badge>
           <p className="text-sm text-muted-foreground">Opportunité: {opp?.name || firstRelation(opp?.entreprises)?.name || row.opportunite_id}</p>
           <p className="text-xs text-muted-foreground">Pipeline: {pipelineName || "N/A"}</p>
+          {services.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {services.map((s) => (
+                <span
+                  key={s}
+                  className="text-[10px] font-medium rounded-full px-1.5 py-0.5"
+                  style={{ backgroundColor: `${border}22`, color: border, border: `1px solid ${border}55` }}
+                >
+                  {s}
+                </span>
+              ))}
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">Priorité: {opp?.priorite || "moyenne"} • Montant: {Number(opp?.montant ?? 0).toLocaleString()}€</p>
           <div className="flex flex-wrap gap-1">
             {flags.length > 0 ? flags.map((flag) => (
