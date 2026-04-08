@@ -6,10 +6,18 @@ import { usePathname } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppData } from "@/components/AppDataContext";
-import { Button } from "@/components/ui/button";
-import { LayoutDashboard, Phone, Target } from "lucide-react";
+import { LayoutDashboard, Phone, Target, ChevronDown, Layers } from "lucide-react";
 import { useWorkspaceView } from "./useWorkspaceView";
 import { TopSubNav } from "./TopSubNav";
 
@@ -68,6 +76,12 @@ function usePageTitle() {
   return "Sama CRM";
 }
 
+const viewLabels: Record<string, string> = {
+  base: "Vue principale",
+  prospection: "Prospection",
+  qualification: "Qualification",
+};
+
 export function AppHeader() {
   const title = usePageTitle();
   const { view, setView } = useWorkspaceView();
@@ -79,57 +93,72 @@ export function AppHeader() {
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="mr-2 h-4" />
         </div>
+
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbPage className="max-w-[180px] truncate text-sm font-medium md:max-w-none md:text-base">{title}</BreadcrumbPage>
+              <BreadcrumbPage className="max-w-[180px] truncate text-sm font-medium md:max-w-none md:text-base">
+                {title}
+              </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
 
         <div className="ml-auto flex items-center gap-1 md:gap-2">
-          {view === "base" && (
-            <>
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/qualified?mode=cold_call" onClick={() => setView("prospection")} aria-label="Basculer en vue prospection">
-                  <Phone className="h-4 w-4" />
-                </Link>
+          {/* View switcher dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="gap-1.5 text-xs md:text-sm">
+                <Layers className="h-4 w-4" />
+                <span className="hidden sm:inline">{viewLabels[view]}</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
               </Button>
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/qualification" onClick={() => setView("qualification")} aria-label="Basculer en vue qualification">
-                  <Target className="h-4 w-4" />
-                </Link>
-              </Button>
-            </>
-          )}
-          {view === "prospection" && (
-            <>
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir au dashboard principal">
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="text-xs">Changer de vue</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/dashboard"
+                  onClick={() => setView("base")}
+                  className="flex items-center gap-2"
+                >
                   <LayoutDashboard className="h-4 w-4" />
+                  <div>
+                    <div className="font-medium">Vue principale</div>
+                    <div className="text-xs text-muted-foreground">Dashboard général</div>
+                  </div>
                 </Link>
-              </Button>
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/qualification" onClick={() => setView("qualification")} aria-label="Basculer en vue qualification">
-                  <Target className="h-4 w-4" />
-                </Link>
-              </Button>
-            </>
-          )}
-          {view === "qualification" && (
-            <>
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/dashboard" onClick={() => setView("base")} aria-label="Revenir au dashboard principal">
-                  <LayoutDashboard className="h-4 w-4" />
-                </Link>
-              </Button>
-              <Button variant="ghost" size="icon" asChild>
-                <Link href="/qualified?mode=cold_call" onClick={() => setView("prospection")} aria-label="Basculer en vue prospection">
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/qualified?mode=cold_call"
+                  onClick={() => setView("prospection")}
+                  className="flex items-center gap-2"
+                >
                   <Phone className="h-4 w-4" />
+                  <div>
+                    <div className="font-medium">Prospection</div>
+                    <div className="text-xs text-muted-foreground">Cold call & pipeline</div>
+                  </div>
                 </Link>
-              </Button>
-            </>
-          )}
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link
+                  href="/qualification"
+                  onClick={() => setView("qualification")}
+                  className="flex items-center gap-2"
+                >
+                  <Target className="h-4 w-4" />
+                  <div>
+                    <div className="font-medium">Qualification</div>
+                    <div className="text-xs text-muted-foreground">Qualifier des leads</div>
+                  </div>
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <ThemeToggle />
         </div>
       </div>

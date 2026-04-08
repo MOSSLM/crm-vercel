@@ -1,22 +1,26 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import {
-  Button,
-  Card,
-  Checkbox,
-  Divider,
-  Group,
-  Modal,
-  Select,
-  SimpleGrid,
-  Stack,
-  Text,
-  TextInput,
-  Textarea,
-  ThemeIcon,
-} from "@mantine/core";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   User,
   Loader2,
@@ -95,28 +99,19 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
     }
   }, [employee, open]);
 
-  const handleInputChange = (field: string, value: string | boolean) => {
+  const set = (field: string, value: string | boolean) =>
     setFormData((prev) => ({ ...prev, [field]: value }));
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!employee) {
-      toast.error("Erreur: contact non trouvé");
-      return;
-    }
-
+    if (!employee) { toast.error("Erreur: contact non trouvé"); return; }
     if (!formData.first_name.trim() && !formData.last_name.trim()) {
       toast.error("Veuillez saisir au moins un prénom ou un nom");
       return;
     }
-
     setIsLoading(true);
-
     try {
       const { contactsApi } = await import("../utils/api");
-
       await contactsApi.update(employee.id, {
         first_name: formData.first_name.trim() || undefined,
         last_name: formData.last_name.trim() || undefined,
@@ -128,7 +123,6 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
         preferred_channel: formData.preferred_channel,
         notes: formData.notes.trim() || undefined,
       });
-
       toast.success("Contact modifié avec succès");
       onOpenChange(false);
       onEmployeeUpdated();
@@ -142,16 +136,13 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
 
   const handleAddNote = async () => {
     if (!newNote.trim() || !employee) return;
-
     setAddingNote(true);
     try {
       const { contactsApi } = await import("../utils/api");
       await contactsApi.addNote(employee.id, newNote.trim());
-
       const timestamp = new Date().toLocaleString("fr-FR");
       const noteWithTimestamp = `[${timestamp}] ${newNote}`;
       const updatedNotes = formData.notes ? `${formData.notes}\n\n${noteWithTimestamp}` : noteWithTimestamp;
-
       setFormData((prev) => ({ ...prev, notes: updatedNotes }));
       setNewNote("");
       toast.success("Note ajoutée avec succès");
@@ -163,188 +154,177 @@ export const EditEmployeeModal: React.FC<EditEmployeeModalProps> = ({
     }
   };
 
-  const getEmployeeDisplayName = () => {
+  const displayName = () => {
     if (!employee) return "Contact";
     if (employee.first_name && employee.last_name) return `${employee.first_name} ${employee.last_name}`;
-    if (employee.last_name) return employee.last_name;
-    if (employee.first_name) return employee.first_name;
-    if (employee.email) return employee.email;
-    if (employee.tel) return employee.tel;
-    return "Contact";
+    return employee.last_name || employee.first_name || employee.email || employee.tel || "Contact";
   };
 
   if (!employee) return null;
 
   return (
-    <Modal
-      opened={open}
-      onClose={() => onOpenChange(false)}
-      title={
-        <Group gap="xs">
-          <ThemeIcon variant="light" size="md">
-            <User size={16} />
-          </ThemeIcon>
-          <div>
-            <Text fw={600}>Détails du contact</Text>
-            <Text size="sm" c="dimmed">
-              Modifier {getEmployeeDisplayName()} chez {companyName}
-            </Text>
-          </div>
-        </Group>
-      }
-      centered
-      size="xl"
-      radius="lg"
-      closeOnClickOutside={false}
-    >
-      <form onSubmit={handleSubmit}>
-        <Stack gap="md">
-          <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
-            <Stack gap="sm">
-              <Text fw={500}>Informations du contact</Text>
-              <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                <TextInput
-                  label="Prénom"
-                  value={formData.first_name}
-                  onChange={(event) => handleInputChange("first_name", event.currentTarget.value)}
-                  leftSection={<User size={16} />}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent">
+              <User className="h-4 w-4" />
+            </div>
+            <div>
+              <div>Détails du contact</div>
+              <p className="text-sm font-normal text-muted-foreground">
+                Modifier {displayName()} chez {companyName}
+              </p>
+            </div>
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit}>
+          <div className="grid gap-6 md:grid-cols-2 mt-4">
+            {/* Left: contact info */}
+            <div className="space-y-4">
+              <p className="font-medium text-sm">Informations du contact</p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="first_name">Prénom</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="first_name"
+                      className="pl-9"
+                      value={formData.first_name}
+                      onChange={(e) => set("first_name", e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="last_name">Nom</Label>
+                  <Input
+                    id="last_name"
+                    value={formData.last_name}
+                    onChange={(e) => set("last_name", e.target.value)}
+                    disabled={isLoading}
+                  />
+                </div>
+              </div>
+
+              {[
+                { id: "email", label: "Email", type: "email", icon: Mail, field: "email" },
+                { id: "tel", label: "Téléphone", type: "tel", icon: Phone, field: "tel" },
+                { id: "role_title", label: "Poste", type: "text", icon: Briefcase, field: "role_title" },
+                { id: "linkedin_url", label: "LinkedIn", type: "url", icon: Globe, field: "linkedin_url" },
+              ].map(({ id, label, type, icon: Icon, field }) => (
+                <div key={id} className="space-y-1.5">
+                  <Label htmlFor={id}>{label}</Label>
+                  <div className="relative">
+                    <Icon className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id={id}
+                      type={type}
+                      className="pl-9"
+                      value={formData[field as keyof typeof formData] as string}
+                      onChange={(e) => set(field, e.target.value)}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+              ))}
+
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="is_decision_maker"
+                  checked={formData.is_decision_maker}
+                  onCheckedChange={(checked) => set("is_decision_maker", Boolean(checked))}
                   disabled={isLoading}
                 />
-                <TextInput
-                  label="Nom"
-                  value={formData.last_name}
-                  onChange={(event) => handleInputChange("last_name", event.currentTarget.value)}
-                  disabled={isLoading}
-                />
-              </SimpleGrid>
+                <Label htmlFor="is_decision_maker" className="flex items-center gap-1.5 cursor-pointer">
+                  <Users className="h-4 w-4" />
+                  Décideur
+                </Label>
+              </div>
 
-              <TextInput
-                label="Email"
-                type="email"
-                value={formData.email}
-                onChange={(event) => handleInputChange("email", event.currentTarget.value)}
-                leftSection={<Mail size={16} />}
-                disabled={isLoading}
-              />
-              <TextInput
-                label="Téléphone"
-                type="tel"
-                value={formData.tel}
-                onChange={(event) => handleInputChange("tel", event.currentTarget.value)}
-                leftSection={<Phone size={16} />}
-                disabled={isLoading}
-              />
-              <TextInput
-                label="Poste"
-                value={formData.role_title}
-                onChange={(event) => handleInputChange("role_title", event.currentTarget.value)}
-                leftSection={<Briefcase size={16} />}
-                disabled={isLoading}
-              />
-              <TextInput
-                label="LinkedIn"
-                type="url"
-                value={formData.linkedin_url}
-                onChange={(event) => handleInputChange("linkedin_url", event.currentTarget.value)}
-                leftSection={<Globe size={16} />}
-                disabled={isLoading}
-              />
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1.5">
+                  <MessageSquare className="h-4 w-4" />
+                  Canal préféré
+                </Label>
+                <Select value={formData.preferred_channel} onValueChange={(v) => set("preferred_channel", v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="email">Email</SelectItem>
+                    <SelectItem value="phone">Téléphone</SelectItem>
+                    <SelectItem value="linkedin">LinkedIn</SelectItem>
+                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                    <SelectItem value="sms">SMS</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-              <Checkbox
-                label={
-                  <Group gap={6}>
-                    <Users size={14} />
-                    <span>Décideur</span>
-                  </Group>
-                }
-                checked={formData.is_decision_maker}
-                onChange={(event) => handleInputChange("is_decision_maker", event.currentTarget.checked)}
-                disabled={isLoading}
-              />
+              <p className="text-xs text-muted-foreground">* Au moins un prénom ou un nom est requis</p>
+            </div>
 
-              <Select
-                label="Canal préféré"
-                leftSection={<MessageSquare size={16} />}
-                data={[
-                  { value: "email", label: "Email" },
-                  { value: "phone", label: "Téléphone" },
-                  { value: "linkedin", label: "LinkedIn" },
-                  { value: "whatsapp", label: "WhatsApp" },
-                  { value: "sms", label: "SMS" },
-                ]}
-                value={formData.preferred_channel}
-                onChange={(value) => handleInputChange("preferred_channel", value ?? "email")}
-                disabled={isLoading}
-              />
+            {/* Right: notes */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4" />
+                <p className="font-medium text-sm">Notes & historique</p>
+              </div>
 
-              <Text size="sm" c="dimmed">
-                * Au moins un prénom ou un nom est requis
-              </Text>
-            </Stack>
-
-            <Stack gap="sm">
-              <Group gap="xs">
-                <MessageSquare size={16} />
-                <Text fw={500}>Notes & historique</Text>
-              </Group>
-
-              <Card withBorder radius="md" p="sm">
-                <Text size="sm" fw={500} mb="xs">
-                  Notes actuelles
-                </Text>
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <p className="text-sm font-medium">Notes actuelles</p>
                 <Textarea
                   value={formData.notes}
-                  onChange={(event) => handleInputChange("notes", event.currentTarget.value)}
-                  minRows={8}
+                  onChange={(e) => set("notes", e.target.value)}
+                  rows={8}
                   disabled={isLoading}
                 />
-              </Card>
+              </div>
 
-              <Card withBorder radius="md" p="sm">
-                <Text size="sm" fw={500}>
-                  Ajouter une note
-                </Text>
-                <Text size="xs" c="dimmed" mb="xs">
-                  Une date est ajoutée automatiquement.
-                </Text>
+              <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                <p className="text-sm font-medium">Ajouter une note</p>
+                <p className="text-xs text-muted-foreground">Une date est ajoutée automatiquement.</p>
                 <Textarea
                   value={newNote}
-                  onChange={(event) => setNewNote(event.currentTarget.value)}
+                  onChange={(e) => setNewNote(e.target.value)}
                   placeholder="Nouvelle note..."
-                  minRows={3}
+                  rows={3}
                   disabled={addingNote}
                 />
                 <Button
-                  mt="sm"
-                  fullWidth
+                  type="button"
+                  variant="outline"
+                  className="w-full"
                   size="sm"
-                  variant="light"
-                  leftSection={addingNote ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
                   onClick={handleAddNote}
                   disabled={!newNote.trim() || addingNote}
                 >
+                  {addingNote ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
                   {addingNote ? "Ajout en cours..." : "Ajouter la note"}
                 </Button>
-              </Card>
-            </Stack>
-          </SimpleGrid>
+              </div>
+            </div>
+          </div>
 
-          <Divider />
+          <Separator className="my-6" />
 
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => onOpenChange(false)} disabled={isLoading}>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" type="button" onClick={() => onOpenChange(false)} disabled={isLoading}>
               Annuler
             </Button>
             <Button
               type="submit"
               disabled={isLoading || (!formData.first_name.trim() && !formData.last_name.trim())}
-              leftSection={isLoading ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
             >
+              {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
               {isLoading ? "Modification..." : "Modifier"}
             </Button>
-          </Group>
-        </Stack>
-      </form>
-    </Modal>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 };
