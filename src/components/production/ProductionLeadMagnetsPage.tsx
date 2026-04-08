@@ -34,7 +34,7 @@ type LeadMagnetRow = {
     flags: string[] | null;
     pipeline_id: string;
     lead_magnet: boolean;
-    entreprises?: Relation<{ name: string | null }>;
+    entreprises?: Relation<{ name: string | null; service_tags?: string[] | null }>;
     pipelines?: Relation<{ nom: string | null }>;
   }[];
   production_templates?: { nom: string | null }[];
@@ -49,7 +49,7 @@ type OpportunityRow = {
   flags: string[] | null;
   pipeline_id: string;
   lead_magnet: boolean;
-  entreprises?: { name: string | null }[];
+  entreprises?: { name: string | null; service_tags?: string[] | null }[];
   pipelines?: { nom: string | null }[];
 };
 
@@ -65,14 +65,17 @@ const OPPORTUNITY_FLAGS = [
   { value: "a_revoir_plus_tard", label: "À revoir plus tard" },
 ] as const;
 
-const FLAG_PALETTE = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#06b6d4', '#6366f1', '#f97316'] as const;
-const FLAG_NO_COLOR = '#94a3b8';
+const hashToHue = (key: string): number =>
+  [...key].reduce((acc, c) => acc + c.charCodeAt(0), 0) % 360;
 
-const hashFlagKey = (key: string): number =>
-  key.length === 0 ? -1 : [...key].reduce((acc, c) => acc + c.charCodeAt(0), 0) % FLAG_PALETTE.length;
+const getServiceGroupKey = (tags?: string[] | null): string =>
+  (tags ?? []).map(t => t.trim().toLowerCase()).filter(Boolean).sort().join('+');
 
-const getFlagGroupKey = (flags: string[]): string =>
-  parseFlags(flags).map(canonicalizeOpportunityFlag).sort().join('+');
+const serviceGroupColors = (key: string): { border: string; bg: string } => {
+  if (!key) return { border: '#94a3b8', bg: 'hsl(215,16%,97%)' };
+  const hue = hashToHue(key);
+  return { border: `hsl(${hue},65%,50%)`, bg: `hsl(${hue},40%,97%)` };
+};
 
 const normalizeFlagValue = (flag: string) => flag.trim().toLowerCase().replace(/\s+/g, "_");
 const opportunityFlagByValue = new Map<string, (typeof OPPORTUNITY_FLAGS)[number]>(
@@ -177,7 +180,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
         supabase.from("production_templates").select("id,nom").order("nom"),
         supabase
           .from("opportunites")
-          .select("id,entreprise_id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)")
+          .select("id,entreprise_id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name,service_tags),pipelines(nom)")
           .order("created_at", { ascending: false }),
         supabase.from("pipelines").select("id,nom").order("ordre", { ascending: true }),
         mode === "tinder" ? fetchLeadMagnetProjectLinks() : Promise.resolve({ data: [] as LeadMagnetProjectLinkRow[], error: null }),
@@ -191,7 +194,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
       const { data: lmRows } = await supabase
         .from("production_lead_magnets")
         .select(
-          "id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,entreprise_id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name),pipelines(nom)),production_templates(nom)"
+          "id,opportunite_id,template_id,nom,statut,lien_livraison,created_at,opportunites(id,entreprise_id,name,priorite,montant,flags,pipeline_id,lead_magnet,entreprises(name,service_tags),pipelines(nom)),production_templates(nom)"
         )
         .order("created_at", { ascending: false });
 
@@ -288,8 +291,8 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
         return pipelineA.localeCompare(pipelineB, "fr");
       }
       if (sortBy === "flags") {
-        const kA = getFlagGroupKey(aOpportunity?.flags ?? []);
-        const kB = getFlagGroupKey(bOpportunity?.flags ?? []);
+        const kA = getServiceGroupKey(firstRelation(aOpportunity?.entreprises)?.service_tags);
+        const kB = getServiceGroupKey(firstRelation(bOpportunity?.entreprises)?.service_tags);
         if (kA === "" && kB !== "") return 1;
         if (kB === "" && kA !== "") return -1;
         return kA.localeCompare(kB, "fr");
@@ -307,16 +310,16 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
   }, [leadMagnets, sprintFlow?.opportunityIds]);
 
   const flagGroups = useMemo(() => {
-    const map = new Map<string, { label: string; color: string; rows: LeadMagnetRow[] }>();
+    const map = new Map<string, { label: string; border: string; bg: string; rows: LeadMagnetRow[] }>();
     for (const row of visibleRows) {
       const opp = firstRelation(row.opportunites);
-      const key = getFlagGroupKey(opp?.flags ?? []);
+      const entreprise = firstRelation(opp?.entreprises);
+      const key = getServiceGroupKey(entreprise?.service_tags);
       if (!map.has(key)) {
-        const flags = parseFlags(opp?.flags).map(canonicalizeOpportunityFlag).sort();
-        const label = flags.length > 0 ? flags.map(getFlagLabel).join(' · ') : 'Aucun flag';
-        const idx = hashFlagKey(key);
-        const color = idx >= 0 ? FLAG_PALETTE[idx] : FLAG_NO_COLOR;
-        map.set(key, { label, color, rows: [] });
+        const services = (entreprise?.service_tags ?? []).map(t => t.trim()).filter(Boolean).sort();
+        const label = services.length > 0 ? services.join(' · ') : 'Aucun service';
+        const { border, bg } = serviceGroupColors(key);
+        map.set(key, { label, border, bg, rows: [] });
       }
       map.get(key)!.rows.push(row);
     }
@@ -324,9 +327,9 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
   }, [visibleRows]);
 
   const colorByRowId = useMemo(() => {
-    const m = new Map<string, string>();
+    const m = new Map<string, { border: string; bg: string }>();
     for (const group of flagGroups) {
-      for (const row of group.rows) m.set(row.id, group.color);
+      for (const row of group.rows) m.set(row.id, { border: group.border, bg: group.bg });
     }
     return m;
   }, [flagGroups]);
@@ -366,12 +369,12 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
     const templateName = row.production_templates?.[0]?.nom;
     const pipelineName = firstRelation(opp?.pipelines)?.nom;
     const flags = parseFlags(opp?.flags);
-    const accentColor = colorByRowId.get(row.id) ?? FLAG_NO_COLOR;
+    const { border, bg } = colorByRowId.get(row.id) ?? { border: '#94a3b8', bg: 'hsl(215,16%,97%)' };
     return (
       <Card
         key={row.id}
         className="cursor-pointer hover:border-primary transition-colors"
-        style={{ borderLeft: `4px solid ${accentColor}` }}
+        style={{ borderLeft: `4px solid ${border}`, backgroundColor: bg }}
         onClick={() => openCard(row)}
       >
         <CardHeader>
@@ -508,7 +511,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
                 <SelectItem value="priorite">Trier: priorité opportunité</SelectItem>
                 <SelectItem value="montant">Trier: montant opportunité</SelectItem>
                 <SelectItem value="pipeline">Trier: pipeline</SelectItem>
-                <SelectItem value="flags">Trier: par flags / services</SelectItem>
+                <SelectItem value="flags">Trier: par services</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -543,7 +546,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
           {flagGroups.map((group) => (
             <section key={group.key}>
               <div className="flex items-center gap-2 mb-3 px-1">
-                <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: group.border }} />
                 <span className="text-sm font-semibold">{group.label}</span>
                 <span className="text-xs text-muted-foreground">({group.rows.length})</span>
               </div>
