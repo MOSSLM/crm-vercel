@@ -53,7 +53,10 @@ import {
   Star,
   PhoneCall,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Pencil,
+  Check,
+  Target
 } from 'lucide-react';
 
 import logger from '../utils/logger';
@@ -169,6 +172,9 @@ export const DashboardPage: React.FC = () => {
   const [selectedPerformanceMetric, setSelectedPerformanceMetric] = useState<PerformanceMetric>('revenue');
   const [taskCalendarMonth, setTaskCalendarMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [taskCalendarItems, setTaskCalendarItems] = useState<TaskCalendarItem[]>([]);
+  const [pickupRate, setPickupRate] = useState(40);
+  const [pickupEditing, setPickupEditing] = useState(false);
+  const [pickupDraft, setPickupDraft] = useState(40);
 
   // Charger les KPI du journal
   useEffect(() => {
@@ -234,6 +240,30 @@ export const DashboardPage: React.FC = () => {
     void loadTaskCalendarItems();
   }, []);
 
+  // Charger et persister le taux décroché (playbook_settings)
+  useEffect(() => {
+    const loadPickupRate = async () => {
+      const { data } = await supabase
+        .from('playbook_settings')
+        .select('pickup_rate')
+        .maybeSingle();
+      if (data?.pickup_rate != null) {
+        setPickupRate(data.pickup_rate);
+        setPickupDraft(data.pickup_rate);
+      }
+    };
+    void loadPickupRate();
+  }, []);
+
+  const savePickupRate = async (value: number) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    await supabase.from('playbook_settings').upsert(
+      { user_id: user.id, pickup_rate: value },
+      { onConflict: 'user_id' }
+    );
+  };
+
   // Adapter: string stageId -> number pour calculateDashboardMetrics
   const getOppsByStageForCalc = React.useCallback(
     (stageId: string) => {
@@ -273,7 +303,11 @@ export const DashboardPage: React.FC = () => {
     totalPending,
     funnelSteps,
     pipelineBreakdown,
-    recentActivity
+    recentActivity,
+    appelsParJour,
+    tauxInteretReel,
+    tauxClosingReel,
+    avgPaidPrice
   } = calculations;
 
   // Données pour les graphiques
@@ -326,6 +360,19 @@ export const DashboardPage: React.FC = () => {
       calls: Math.round(totalAppels * weights[index])
     }));
   }, [selectedPeriod, totalSigned, totalSignatures, totalRdv, totalAppels]);
+
+  // Projection cold call (formule du playbook modal, sur base mensuelle 22j ouvrés)
+  const PLAYBOOK_WD = 22;
+  const playbookProjection = useMemo(() => {
+    const pd = pickupRate / 100;
+    const ir = tauxInteretReel / 100;
+    const cr = tauxClosingReel / 100;
+    const decideurs      = Number((appelsParJour * pd).toFixed(1));
+    const interesses     = Number((appelsParJour * pd * ir).toFixed(1));
+    const ventesParMois  = Math.round(appelsParJour * pd * ir * cr * PLAYBOOK_WD);
+    const caParMois      = ventesParMois * (avgPaidPrice > 0 ? avgPaidPrice : 1750);
+    return { decideurs, interesses, ventesParMois, caParMois };
+  }, [pickupRate, appelsParJour, tauxInteretReel, tauxClosingReel, avgPaidPrice]);
 
   const funnelBarData = funnelSteps.map((step, index) => ({
     name: step.name,
@@ -647,6 +694,145 @@ export const DashboardPage: React.FC = () => {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+
+          {/* ── Projection Cold Call ─────────────────────────────────────── */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  <CardTitle>Projection Cold Call</CardTitle>
+                  <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                    Données réelles
+                  </span>
+                </div>
+              </div>
+              <CardDescription>
+                Calculé sur le mois courant ({PLAYBOOK_WD} jours ouvrés) • Prix moyen issu des contrats payés (acomptes)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {/* Row 1 — 5 input metrics */}
+              <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 mb-4">
+                {/* Appels / jour */}
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-700">
+                    {appelsParJour.toFixed(1)}
+                  </div>
+                  <div className="mt-1 text-xs text-blue-600 font-medium">Appels / jour</div>
+                  <div className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs text-blue-600">
+                    Réel
+                  </div>
+                </div>
+
+                {/* Taux décroché — seul metric "cible" */}
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-center">
+                  {pickupEditing ? (
+                    <div className="flex items-center justify-center gap-1">
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={pickupDraft}
+                        onChange={(e) => setPickupDraft(Number(e.target.value))}
+                        className="w-14 rounded border border-amber-300 bg-white px-1 py-0.5 text-center text-lg font-bold text-amber-700 focus:outline-none"
+                        autoFocus
+                      />
+                      <span className="text-lg font-bold text-amber-700">%</span>
+                      <button
+                        className="ml-1 rounded bg-amber-500 p-0.5 text-white hover:bg-amber-600"
+                        onClick={() => {
+                          const clamped = Math.min(100, Math.max(1, pickupDraft));
+                          setPickupRate(clamped);
+                          setPickupEditing(false);
+                          void savePickupRate(clamped);
+                        }}
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="text-2xl font-bold text-amber-700">{pickupRate}%</div>
+                  )}
+                  <div className="mt-1 text-xs text-amber-600 font-medium">Taux décroché</div>
+                  <button
+                    className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-600 hover:bg-amber-200"
+                    onClick={() => { setPickupDraft(pickupRate); setPickupEditing(true); }}
+                    title="Non suivi automatiquement — cliquez pour modifier"
+                  >
+                    <Pencil className="h-2.5 w-2.5" />
+                    Cible
+                  </button>
+                </div>
+
+                {/* Taux d'intérêt */}
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-700">
+                    {tauxInteretReel.toFixed(1)}%
+                  </div>
+                  <div className="mt-1 text-xs text-blue-600 font-medium">Taux d'intérêt</div>
+                  <div className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs text-blue-600">
+                    Réel (appel→RDV)
+                  </div>
+                </div>
+
+                {/* Taux de closing */}
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-700">
+                    {tauxClosingReel.toFixed(1)}%
+                  </div>
+                  <div className="mt-1 text-xs text-blue-600 font-medium">Taux de closing</div>
+                  <div className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs text-blue-600">
+                    Réel (RDV→signature)
+                  </div>
+                </div>
+
+                {/* Prix moyen */}
+                <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-700">
+                    {avgPaidPrice > 0 ? formatCurrency(Math.round(avgPaidPrice)) : '—'}
+                  </div>
+                  <div className="mt-1 text-xs text-blue-600 font-medium">Prix moyen</div>
+                  <div className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-xs text-blue-600">
+                    {avgPaidPrice > 0 ? 'Réel (contrats payés)' : 'Aucun contrat payé'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex-1 border-t border-border/50" />
+                <span>Projection mensuelle</span>
+                <div className="flex-1 border-t border-border/50" />
+              </div>
+
+              {/* Row 2 — 4 projected outputs */}
+              <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+                <div className="rounded-lg border border-border/60 bg-muted/40 p-4 text-center">
+                  <div className="text-3xl font-semibold">{playbookProjection.decideurs}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">Décideurs / jour</div>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-muted/40 p-4 text-center">
+                  <div className="text-3xl font-semibold text-amber-500">{playbookProjection.interesses}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">Intéressés / jour</div>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-muted/40 p-4 text-center">
+                  <div className="text-3xl font-semibold text-emerald-500">{playbookProjection.ventesParMois}</div>
+                  <div className="mt-1 text-sm text-muted-foreground">Ventes / mois</div>
+                </div>
+                <div className="rounded-lg border border-border/60 bg-muted/40 p-4 text-center">
+                  <div className="text-3xl font-semibold text-emerald-500">
+                    {formatCurrency(playbookProjection.caParMois)}
+                  </div>
+                  <div className="mt-1 text-sm text-muted-foreground">CA / mois projeté</div>
+                </div>
+              </div>
+
+              <p className="mt-3 text-xs text-muted-foreground">
+                Calcul sur {PLAYBOOK_WD} jours ouvrés. Taux d'intérêt = appels→RDV (mois courant) • Taux de closing = RDV→signature (mois courant) • Taux décroché = cible saisie manuellement.
+              </p>
             </CardContent>
           </Card>
 
