@@ -65,6 +65,15 @@ const OPPORTUNITY_FLAGS = [
   { value: "a_revoir_plus_tard", label: "À revoir plus tard" },
 ] as const;
 
+const FLAG_PALETTE = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#06b6d4', '#6366f1', '#f97316'] as const;
+const FLAG_NO_COLOR = '#94a3b8';
+
+const hashFlagKey = (key: string): number =>
+  key.length === 0 ? -1 : [...key].reduce((acc, c) => acc + c.charCodeAt(0), 0) % FLAG_PALETTE.length;
+
+const getFlagGroupKey = (flags: string[]): string =>
+  parseFlags(flags).map(canonicalizeOpportunityFlag).sort().join('+');
+
 const normalizeFlagValue = (flag: string) => flag.trim().toLowerCase().replace(/\s+/g, "_");
 const opportunityFlagByValue = new Map<string, (typeof OPPORTUNITY_FLAGS)[number]>(
   OPPORTUNITY_FLAGS.map((flag) => [flag.value, flag] as const)
@@ -110,7 +119,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
   const [pipelineFilter, setPipelineFilter] = useState<string>("all");
   const [flagFilter, setFlagFilter] = useState<string>("all");
   const [readyFilter, setReadyFilter] = useState<"all" | "ready" | "not_ready">("all");
-  const [sortBy, setSortBy] = useState<"created_at" | "priorite" | "montant" | "pipeline">("created_at");
+  const [sortBy, setSortBy] = useState<"created_at" | "priorite" | "montant" | "pipeline" | "flags">("created_at");
   const [form, setForm] = useState({ opportunite_id: "", template_id: "", nom: "" });
 
   const ensureLeadMagnetsForEveryOpportunity = useCallback(async (oppRows: OpportunityRow[], templateRows: TemplateRow[]) => {
@@ -278,6 +287,13 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
         const pipelineB = firstRelation(bOpportunity?.pipelines)?.nom || "";
         return pipelineA.localeCompare(pipelineB, "fr");
       }
+      if (sortBy === "flags") {
+        const kA = getFlagGroupKey(aOpportunity?.flags ?? []);
+        const kB = getFlagGroupKey(bOpportunity?.flags ?? []);
+        if (kA === "" && kB !== "") return 1;
+        if (kB === "" && kA !== "") return -1;
+        return kA.localeCompare(kB, "fr");
+      }
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [flagFilter, leadMagnets, pipelineFilter, readyFilter, sortBy, sprintFlow?.opportunityIds, sprintModule, statusFilter]);
@@ -289,6 +305,31 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
     const readyCount = sprintRows.filter((row) => row.statut === "pret" || Boolean(firstRelation(row.opportunites)?.lead_magnet)).length;
     return { current: readyCount, target: sprintRows.length };
   }, [leadMagnets, sprintFlow?.opportunityIds]);
+
+  const flagGroups = useMemo(() => {
+    const map = new Map<string, { label: string; color: string; rows: LeadMagnetRow[] }>();
+    for (const row of visibleRows) {
+      const opp = firstRelation(row.opportunites);
+      const key = getFlagGroupKey(opp?.flags ?? []);
+      if (!map.has(key)) {
+        const flags = parseFlags(opp?.flags).map(canonicalizeOpportunityFlag).sort();
+        const label = flags.length > 0 ? flags.map(getFlagLabel).join(' · ') : 'Aucun flag';
+        const idx = hashFlagKey(key);
+        const color = idx >= 0 ? FLAG_PALETTE[idx] : FLAG_NO_COLOR;
+        map.set(key, { label, color, rows: [] });
+      }
+      map.get(key)!.rows.push(row);
+    }
+    return Array.from(map.entries()).map(([key, val]) => ({ key, ...val }));
+  }, [visibleRows]);
+
+  const colorByRowId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const group of flagGroups) {
+      for (const row of group.rows) m.set(row.id, group.color);
+    }
+    return m;
+  }, [flagGroups]);
 
   const createLeadMagnet = async () => {
     if (!form.opportunite_id || !form.template_id) return;
@@ -319,6 +360,45 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
     }
     router.push(`/production/lead-magnet/${projectId}`);
   }, [mode, projectIdByOpportunityId, router]);
+
+  const renderCard = (row: LeadMagnetRow) => {
+    const opp = firstRelation(row.opportunites);
+    const templateName = row.production_templates?.[0]?.nom;
+    const pipelineName = firstRelation(opp?.pipelines)?.nom;
+    const flags = parseFlags(opp?.flags);
+    const accentColor = colorByRowId.get(row.id) ?? FLAG_NO_COLOR;
+    return (
+      <Card
+        key={row.id}
+        className="cursor-pointer hover:border-primary transition-colors"
+        style={{ borderLeft: `4px solid ${accentColor}` }}
+        onClick={() => openCard(row)}
+      >
+        <CardHeader>
+          <CardTitle className="text-base">{row.nom || opp?.name || firstRelation(opp?.entreprises)?.name || "Lead magnet"}</CardTitle>
+          <CardDescription>{templateName || "Template non défini"}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Badge variant={row.statut === "pret" ? "default" : "secondary"}>{statusLabels[row.statut]}</Badge>
+          <p className="text-sm text-muted-foreground">Opportunité: {opp?.name || firstRelation(opp?.entreprises)?.name || row.opportunite_id}</p>
+          <p className="text-xs text-muted-foreground">Pipeline: {pipelineName || "N/A"}</p>
+          <p className="text-xs text-muted-foreground">Priorité: {opp?.priorite || "moyenne"} • Montant: {Number(opp?.montant ?? 0).toLocaleString()}€</p>
+          <div className="flex flex-wrap gap-1">
+            {flags.length > 0 ? flags.map((flag) => (
+              <Badge key={flag} variant="outline" className="text-[10px]">
+                {getFlagLabel(canonicalizeOpportunityFlag(flag))}
+              </Badge>
+            )) : <span className="text-xs text-muted-foreground">Aucun flag</span>}
+          </div>
+          {row.lien_livraison ? (
+            <p className="text-xs text-emerald-700 truncate">Lien: {row.lien_livraison}</p>
+          ) : (
+            <p className="text-xs text-amber-700">Lien client non renseigné</p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -421,13 +501,14 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
               </SelectContent>
             </Select>
 
-            <Select value={sortBy} onValueChange={(value: "created_at" | "priorite" | "montant" | "pipeline") => setSortBy(value)}>
+            <Select value={sortBy} onValueChange={(value: "created_at" | "priorite" | "montant" | "pipeline" | "flags") => setSortBy(value)}>
               <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="created_at">Trier: plus récent</SelectItem>
                 <SelectItem value="priorite">Trier: priorité opportunité</SelectItem>
                 <SelectItem value="montant">Trier: montant opportunité</SelectItem>
                 <SelectItem value="pipeline">Trier: pipeline</SelectItem>
+                <SelectItem value="flags">Trier: par flags / services</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -457,40 +538,24 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
             </Card>
           ))}
         </div>
+      ) : sortBy === "flags" ? (
+        <div className="space-y-6">
+          {flagGroups.map((group) => (
+            <section key={group.key}>
+              <div className="flex items-center gap-2 mb-3 px-1">
+                <span className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: group.color }} />
+                <span className="text-sm font-semibold">{group.label}</span>
+                <span className="text-xs text-muted-foreground">({group.rows.length})</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {group.rows.map((row) => renderCard(row))}
+              </div>
+            </section>
+          ))}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {visibleRows.map((row) => {
-            const opp = firstRelation(row.opportunites);
-            const templateName = row.production_templates?.[0]?.nom;
-            const pipelineName = firstRelation(opp?.pipelines)?.nom;
-            const flags = parseFlags(opp?.flags);
-            return (
-              <Card key={row.id} className="cursor-pointer hover:border-primary" onClick={() => openCard(row)}>
-                <CardHeader>
-                  <CardTitle className="text-base">{row.nom || opp?.name || firstRelation(opp?.entreprises)?.name || "Lead magnet"}</CardTitle>
-                  <CardDescription>{templateName || "Template non défini"}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <Badge variant={row.statut === "pret" ? "default" : "secondary"}>{statusLabels[row.statut]}</Badge>
-                  <p className="text-sm text-muted-foreground">Opportunité: {opp?.name || firstRelation(opp?.entreprises)?.name || row.opportunite_id}</p>
-                  <p className="text-xs text-muted-foreground">Pipeline: {pipelineName || "N/A"}</p>
-                  <p className="text-xs text-muted-foreground">Priorité: {opp?.priorite || "moyenne"} • Montant: {Number(opp?.montant ?? 0).toLocaleString()}€</p>
-                  <div className="flex flex-wrap gap-1">
-                    {flags.length > 0 ? flags.map((flag) => (
-                      <Badge key={flag} variant="outline" className="text-[10px]">
-                        {getFlagLabel(canonicalizeOpportunityFlag(flag))}
-                      </Badge>
-                    )) : <span className="text-xs text-muted-foreground">Aucun flag</span>}
-                  </div>
-                  {row.lien_livraison ? (
-                    <p className="text-xs text-emerald-700 truncate">Lien: {row.lien_livraison}</p>
-                  ) : (
-                    <p className="text-xs text-amber-700">Lien client non renseigné</p>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
+          {visibleRows.map((row) => renderCard(row))}
         </div>
       )}
     </div>
