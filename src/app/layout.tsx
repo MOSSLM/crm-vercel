@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { DM_Sans, DM_Mono } from "next/font/google";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
   title: "Sama CRM",
@@ -16,7 +15,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="fr" suppressHydrationWarning className={cn(fontSans.variable, fontMono.variable)}>
+    <html lang="fr" suppressHydrationWarning className={`${fontSans.variable} ${fontMono.variable}`}>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <Providers>
           {children}
