@@ -1,4 +1,3 @@
-@import url("https://api.fontshare.com/v2/css?f[]=clash-display@400,500,600,700&display=swap");
 @custom-variant dark (&:is(.dark *));
 @import "tailwindcss";
 @plugin "tailwindcss-animate"; /* si tu utilises les animations shadcn */
@@ -19,56 +18,51 @@
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --tracking-tight: -0.02em;
-  --font-family-base: "Clash Display", ui-sans-serif, system-ui, sans-serif;
+  --font-family-base: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
 
-  --sage-gradient-start: #e9f1e4;
-  --sage-gradient-end: #f4f8f1;
-  --main-gradient-start: #fffdf6;
-  --main-gradient-end: #f7fbf5;
-
-  /* Color system - Light mode */
-  --background: #f5f7f3;
-  --foreground: #171a1f;
-  --card: #fcfdfb;
-  --card-foreground: #171a1f;
+  /* Color system - Light mode (lpura blue palette) */
+  --background: #f5f9ff;
+  --foreground: #00091a;
+  --card: #f5f9ff;
+  --card-foreground: #00091a;
   --popover: #ffffff;
-  --popover-foreground: #171a1f;
-  --primary: #161a20;
-  --primary-foreground: #f8fafc;
-  --secondary: #eef3ed;
-  --secondary-foreground: #171a1f;
-  --muted: #f0f3ee;
-  --muted-foreground: #5f6875;
-  --accent: #edf2ff;
-  --accent-foreground: #3d63ff;
-  --destructive: #d45c5c;
-  --destructive-foreground: #ffffff;
-  --border: #dde4db;
-  --input: #e2e8e0;
-  --input-background: #f7f9f6;
-  --switch-background: #ccd6ca;
-  --ring: rgba(61, 99, 255, 0.22);
+  --popover-foreground: #00091a;
+  --primary: #0066ff;
+  --primary-foreground: #ffffff;
+  --secondary: #cce0ff;
+  --secondary-foreground: #000308;
+  --muted: #e0edff;
+  --muted-foreground: #666666;
+  --accent: #e0edff;
+  --accent-foreground: #0066ff;
+  --destructive: #ef4444;
+  --destructive-foreground: #f5f8fc;
+  --border: #e6e6e6;
+  --input: #e6e6e6;
+  --input-background: #f5f9ff;
+  --switch-background: #cce0ff;
+  --ring: rgba(0, 102, 255, 0.22);
 
   /* Layout */
-  --radius: 0.875rem;
+  --radius: 0.75rem;
   --shadow-card: 0 6px 20px rgba(17, 24, 39, 0.04);
   --shadow-elevated: 0 12px 32px rgba(17, 24, 39, 0.06);
 
   /* Sidebar colors */
-  --sidebar: #f8faf7;
-  --sidebar-foreground: #171a1f;
-  --sidebar-primary: #161a20;
-  --sidebar-primary-foreground: #f8fafc;
-  --sidebar-accent: #eef3ed;
-  --sidebar-accent-foreground: #171a1f;
-  --sidebar-border: #e7ece5;
-  --sidebar-ring: rgba(61, 99, 255, 0.22);
+  --sidebar: #f5f9ff;
+  --sidebar-foreground: #00091a;
+  --sidebar-primary: #0066ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e0edff;
+  --sidebar-accent-foreground: #00091a;
+  --sidebar-border: #e6e6e6;
+  --sidebar-ring: rgba(0, 102, 255, 0.22);
 
-  /* Success, warning, info colors */
+  /* Semantic colors */
   --success: #2f8f6b;
   --success-foreground: #ffffff;
   --warning: #c98a1c;
-  --warning-foreground: #171a1f;
+  --warning-foreground: #00091a;
   --info: #68afc1;
   --info-foreground: #ffffff;
 
@@ -93,43 +87,45 @@
 
 }
 
-/* Dark mode overrides - VS Code Dark+ Theme inspiré */
+/* Dark mode overrides - lpura blue dark theme */
 .dark {
-  --background: #0e1218;
-  --foreground: #f3f6fa;
-  --card: #171d27;
-  --card-foreground: #f3f6fa;
-  --popover: #1b2230;
-  --popover-foreground: #f3f6fa;
-  --primary: #f4f7fb;
-  --primary-foreground: #11161d;
-  --secondary: #212a38;
-  --secondary-foreground: #f3f6fa;
-  --muted: #202938;
-  --muted-foreground: #aab3bf;
-  --accent: rgba(107, 134, 255, 0.14);
-  --accent-foreground: #6b86ff;
-  --destructive: #ff7c7c;
-  --destructive-foreground: #11161d;
-  --border: #2f3b4d;
-  --input: #2f3b4d;
-  --input-background: #1a2130;
-  --switch-background: #3d4b61;
-  --ring: rgba(107, 134, 255, 0.28);
+  --gradient: linear-gradient(to top left, #007adf, #00ecbc);
+
+  --background: #060d1a;
+  --foreground: #f3f5f8;
+  --card: #08101e;
+  --card-foreground: #f3f5f8;
+  --popover: #08101e;
+  --popover-foreground: #f3f5f8;
+  --primary: #004be0;
+  --primary-foreground: #f3f5f8;
+  --secondary: #10213d;
+  --secondary-foreground: #f3f5f8;
+  --muted: #10213d;
+  --muted-foreground: #7f8999;
+  --accent: #10213d;
+  --accent-foreground: #f3f5f8;
+  --destructive: #ef4444;
+  --destructive-foreground: #f5f8fc;
+  --border: #25252c;
+  --input: #10213d;
+  --input-background: #08101e;
+  --switch-background: #10213d;
+  --ring: rgba(0, 75, 224, 0.44);
   --success: #46b98a;
-  --success-foreground: #0e1218;
+  --success-foreground: #060d1a;
   --warning: #f0b54a;
-  --warning-foreground: #11161d;
+  --warning-foreground: #060d1a;
   --info: #7bc1d1;
-  --info-foreground: #0e1218;
-  --sidebar: #111723;
-  --sidebar-foreground: #f3f6fa;
-  --sidebar-primary: #f4f7fb;
-  --sidebar-primary-foreground: #11161d;
-  --sidebar-accent: #202938;
-  --sidebar-accent-foreground: #f3f6fa;
-  --sidebar-border: #263142;
-  --sidebar-ring: rgba(107, 134, 255, 0.28);
+  --info-foreground: #060d1a;
+  --sidebar: #060d1a;
+  --sidebar-foreground: #f3f5f8;
+  --sidebar-primary: #004be0;
+  --sidebar-primary-foreground: #f3f5f8;
+  --sidebar-accent: #10213d;
+  --sidebar-accent-foreground: #f3f5f8;
+  --sidebar-border: #25252c;
+  --sidebar-ring: rgba(0, 75, 224, 0.44);
   --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.28);
   --chart-1: #60a5fa;
   --chart-2: #f87171;
@@ -209,9 +205,6 @@
     font-family: var(--font-family-base), "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
     min-height: 100vh;
     line-height: 1.5;
-    background-image:
-      linear-gradient(to bottom, var(--main-gradient-start) 0%, var(--main-gradient-end) 100%),
-      radial-gradient(circle at top right, color-mix(in srgb, var(--color-accent) 22%, transparent) 0%, transparent 38%);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -233,23 +226,18 @@
     height: 1.25em;
   }
 
-  .sage-tab:hover,
-  .sage-tab.active {
-    background-image: linear-gradient(135deg, var(--sage-gradient-start), var(--sage-gradient-end));
+  [data-sidebar="menu-button"][data-active="true"],
+  [data-sidebar="menu-sub-button"][data-active="true"] {
+    background-color: var(--primary);
+    color: white;
+    font-weight: bold;
+    background-image: none;
   }
 
-  [data-sidebar="menu-button"]:is(:hover, [data-active="true"]),
-  [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) {
-    background-image: linear-gradient(135deg, var(--sage-gradient-start), var(--sage-gradient-end));
-  }
-
-  .dark [data-sidebar="menu-button"]:is(:hover, [data-active="true"]),
-  .dark [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) {
-    color: var(--sidebar-primary-foreground) !important;
-  }
-
-  .dark [data-sidebar="menu-sub-button"]:is(:hover, [data-active="true"]) > svg {
-    color: currentColor !important;
+  [data-sidebar="menu-button"]:hover:not([data-active="true"]),
+  [data-sidebar="menu-sub-button"]:hover:not([data-active="true"]) {
+    background-color: var(--muted);
+    background-image: none;
   }
 }
 
