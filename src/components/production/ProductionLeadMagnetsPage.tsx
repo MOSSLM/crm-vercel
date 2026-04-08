@@ -71,10 +71,10 @@ const hashToHue = (key: string): number =>
 const getServiceGroupKey = (tags?: string[] | null): string =>
   (tags ?? []).map(t => t.trim().toLowerCase()).filter(Boolean).sort().join('+');
 
-const serviceGroupColors = (key: string): { border: string; bg: string } => {
-  if (!key) return { border: '#94a3b8', bg: 'hsl(215,16%,97%)' };
+const serviceGroupColors = (key: string): { border: string; bg: string; hue: number | null } => {
+  if (!key) return { border: '#94a3b8', bg: 'hsl(215,16%,93%)', hue: null };
   const hue = hashToHue(key);
-  return { border: `hsl(${hue},65%,50%)`, bg: `hsl(${hue},40%,97%)` };
+  return { border: `hsl(${hue},55%,42%)`, bg: `hsl(${hue},35%,93%)`, hue };
 };
 
 const normalizeFlagValue = (flag: string) => flag.trim().toLowerCase().replace(/\s+/g, "_");
@@ -122,7 +122,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
   const [pipelineFilter, setPipelineFilter] = useState<string>("all");
   const [flagFilter, setFlagFilter] = useState<string>("all");
   const [readyFilter, setReadyFilter] = useState<"all" | "ready" | "not_ready">("all");
-  const [sortBy, setSortBy] = useState<"created_at" | "priorite" | "montant" | "pipeline" | "flags">("created_at");
+  const [sortBy, setSortBy] = useState<"created_at" | "priorite" | "montant" | "pipeline" | "flags">("flags");
   const [form, setForm] = useState({ opportunite_id: "", template_id: "", nom: "" });
 
   const ensureLeadMagnetsForEveryOpportunity = useCallback(async (oppRows: OpportunityRow[], templateRows: TemplateRow[]) => {
@@ -310,7 +310,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
   }, [leadMagnets, sprintFlow?.opportunityIds]);
 
   const flagGroups = useMemo(() => {
-    const map = new Map<string, { label: string; border: string; bg: string; rows: LeadMagnetRow[] }>();
+    const map = new Map<string, { label: string; border: string; bg: string; hue: number | null; rows: LeadMagnetRow[] }>();
     for (const row of visibleRows) {
       const opp = firstRelation(row.opportunites);
       const entreprise = firstRelation(opp?.entreprises);
@@ -318,18 +318,24 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
       if (!map.has(key)) {
         const services = (entreprise?.service_tags ?? []).map(t => t.trim()).filter(Boolean).sort();
         const label = services.length > 0 ? services.join(' · ') : 'Aucun service';
-        const { border, bg } = serviceGroupColors(key);
-        map.set(key, { label, border, bg, rows: [] });
+        const { border, bg, hue } = serviceGroupColors(key);
+        map.set(key, { label, border, bg, hue, rows: [] });
       }
       map.get(key)!.rows.push(row);
     }
-    return Array.from(map.entries()).map(([key, val]) => ({ key, ...val }));
+    return Array.from(map.entries())
+      .map(([key, val]) => ({ key, ...val }))
+      .sort((a, b) => {
+        if (a.key === "" && b.key !== "") return 1;
+        if (b.key === "" && a.key !== "") return -1;
+        return b.rows.length - a.rows.length;
+      });
   }, [visibleRows]);
 
   const colorByRowId = useMemo(() => {
-    const m = new Map<string, { border: string; bg: string }>();
+    const m = new Map<string, { border: string; bg: string; hue: number | null }>();
     for (const group of flagGroups) {
-      for (const row of group.rows) m.set(row.id, { border: group.border, bg: group.bg });
+      for (const row of group.rows) m.set(row.id, { border: group.border, bg: group.bg, hue: group.hue });
     }
     return m;
   }, [flagGroups]);
@@ -370,7 +376,10 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
     const pipelineName = firstRelation(opp?.pipelines)?.nom;
     const flags = parseFlags(opp?.flags);
     const services = (firstRelation(opp?.entreprises)?.service_tags ?? []).map(t => t.trim()).filter(Boolean).sort();
-    const { border, bg } = colorByRowId.get(row.id) ?? { border: '#94a3b8', bg: 'hsl(215,16%,97%)' };
+    const { border, bg, hue } = colorByRowId.get(row.id) ?? { border: '#94a3b8', bg: 'hsl(215,16%,93%)', hue: null };
+    const chipBg     = hue !== null ? `hsl(${hue},30%,85%)` : '#e2e8f0';
+    const chipText   = hue !== null ? `hsl(${hue},45%,25%)` : '#475569';
+    const chipBorder = hue !== null ? `hsl(${hue},40%,65%)` : '#94a3b8';
     return (
       <Card
         key={row.id}
@@ -392,7 +401,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
                 <span
                   key={s}
                   className="text-[10px] font-medium rounded-full px-1.5 py-0.5"
-                  style={{ backgroundColor: `${border}22`, color: border, border: `1px solid ${border}55` }}
+                  style={{ backgroundColor: chipBg, color: chipText, border: `1px solid ${chipBorder}` }}
                 >
                   {s}
                 </span>
