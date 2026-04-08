@@ -53,4 +53,9 @@ export interface DashboardCalculations {
   funnelSteps: FunnelStepData[];
   pipelineBreakdown: PipelineBreakdownData[];
   recentActivity: RecentActivity[];
+  // Cold call playbook metrics (monthly basis)
+  appelsParJour: number;
+  tauxInteretReel: number;
+  tauxClosingReel: number;
+  avgPaidPrice: number;
 }

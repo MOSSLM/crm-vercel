@@ -86,6 +86,18 @@ export const calculateDashboardMetrics = (
   const totalPendingFromDeposit = depositOpportunities.reduce((sum, opp) => sum + ((opp.value || opp.montant || 0) * 0.5), 0);
   const totalPending = totalPendingFromSigned + totalPendingFromDeposit;
 
+  // Cold call playbook metrics (always on monthly basis for the projection card)
+  const PLAYBOOK_WORKING_DAYS = 22;
+  const monthAppels = journalKpis.month.total_appels;
+  const monthRdvs   = journalKpis.month.total_rdvs;
+  const monthSigs   = journalKpis.month.total_signatures;
+  const appelsParJour   = monthAppels / PLAYBOOK_WORKING_DAYS;
+  const tauxInteretReel = monthAppels > 0 ? (monthRdvs / monthAppels) * 100 : 0;
+  const tauxClosingReel = monthRdvs   > 0 ? (monthSigs / monthRdvs)   * 100 : 0;
+  const avgPaidPrice    = depositOpportunities.length > 0
+    ? depositOpportunities.reduce((s, o) => s + (o.value || o.montant || 0), 0) / depositOpportunities.length
+    : 0;
+
   // Taux de conversion
   const contactToCallRate = contacts.length > 0 ? (totalAppels / contacts.length) * 100 : 0;
   const callToMeetingRate = totalAppels > 0 ? (totalRdv / totalAppels) * 100 : 0;
@@ -209,6 +221,10 @@ export const calculateDashboardMetrics = (
     quoteToSignRate,
     funnelSteps,
     pipelineBreakdown,
-    recentActivity
+    recentActivity,
+    appelsParJour,
+    tauxInteretReel,
+    tauxClosingReel,
+    avgPaidPrice
   };
 };
