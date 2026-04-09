@@ -37,18 +37,25 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { componentsApi } from "@/utils/siteBuilderApi";
 
-// Simple native color input wrapper
-const ColorInput = ({ value, onChange }: { value?: string; onChange: (val: string) => void }) => (
-  <div className="flex items-center gap-2 h-9 w-full rounded-md border border-input bg-background px-3 py-1">
+// Native color input replacing ColorPicker
+const ColorInput = ({ value, onChange, className }: { value?: string; onChange: (val: string) => void; className?: string }) => (
+  <div className={`flex items-center gap-2 h-9 rounded-md border border-input bg-background px-3 py-1 ${className ?? ""}`}>
     <input
       type="color"
-      value={value || "#000000"}
+      value={value && value.startsWith("#") ? value : "#000000"}
       onChange={(e) => onChange(e.target.value)}
-      className="h-6 w-6 rounded cursor-pointer border-0 bg-transparent p-0"
+      className="h-6 w-6 rounded cursor-pointer border-0 bg-transparent p-0 shrink-0"
     />
-    <span className="text-sm text-muted-foreground">{value || "#000000"}</span>
+    <span className="text-sm text-muted-foreground truncate">{value || "#000000"}</span>
   </div>
 );
+
+const parseSliderValue = (val: string | number | undefined, fallback = 0): number => {
+  if (typeof val === "number") return val;
+  if (!val) return fallback;
+  const n = parseFloat(String(val).replace(/[^0-9.]/g, ""));
+  return isNaN(n) ? fallback : n;
+};
 
 const SettingsTab: React.FC = () => {
   const { editor, dispatch } = useEditor();
@@ -66,13 +73,11 @@ const SettingsTab: React.FC = () => {
       window.dispatchEvent(new CustomEvent("sb:componentSaved"));
       setSaved(true);
       setTimeout(() => { setSaved(false); setShowSave(false); setCompName(""); }, 1500);
-    } catch {}
+    } catch { /* ignore */ }
     setSaving(false);
   };
 
   const handleChangeCustomValues = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const prop = e.target.id;
-    const value = e.target.value;
     dispatch({
       type: "UPDATE_ELEMENT",
       payload: {
@@ -80,7 +85,7 @@ const SettingsTab: React.FC = () => {
           ...editor.editor.selectedElement,
           content: {
             ...(!Array.isArray(editor.editor.selectedElement.content) ? editor.editor.selectedElement.content : {}),
-            [prop]: value,
+            [e.target.id]: e.target.value,
           },
         },
       },
@@ -88,14 +93,12 @@ const SettingsTab: React.FC = () => {
   };
 
   const handleOnChanges = (e: { target: { id: string; value: string } }) => {
-    const styleSettings = e.target.id;
-    const value = e.target.value;
     dispatch({
       type: "UPDATE_ELEMENT",
       payload: {
         elementDetails: {
           ...editor.editor.selectedElement,
-          styles: { ...editor.editor.selectedElement.styles, [styleSettings]: value },
+          styles: { ...editor.editor.selectedElement.styles, [e.target.id]: e.target.value },
         },
       },
     });
@@ -154,6 +157,7 @@ const SettingsTab: React.FC = () => {
       )}
 
       <Accordion type="multiple" className="w-full" defaultValue={["Custom", "Typography", "Dimensions", "Decorations", "Layout"]}>
+
         {/* Custom properties */}
         {(sel.type === "link" || sel.type === "video" || sel.type === "image") && (
           <AccordionItem value="Custom" className="px-6 py-0">
@@ -162,7 +166,7 @@ const SettingsTab: React.FC = () => {
               {sel.type === "link" && (
                 <div className="flex flex-col gap-2">
                   <Label>URL du lien</Label>
-                  <Input id="href" placeholder="https://example.com" onChange={handleChangeCustomValues} value={content.href ?? ""} />
+                  <Input id="href" placeholder="https://domain.example.com/pathname" onChange={handleChangeCustomValues} value={content.href ?? ""} />
                 </div>
               )}
               {sel.type === "video" && (
@@ -175,7 +179,7 @@ const SettingsTab: React.FC = () => {
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col gap-2">
                     <Label>URL de l&apos;image</Label>
-                    <Input id="src" placeholder="https://example.com/image.jpg" onChange={handleChangeCustomValues} value={content.src ?? ""} />
+                    <Input id="src" placeholder="https://domain.example.com/image.jpg" onChange={handleChangeCustomValues} value={content.src ?? ""} />
                   </div>
                   <div className="flex flex-col gap-2">
                     <Label>Description (alt)</Label>
@@ -193,60 +197,74 @@ const SettingsTab: React.FC = () => {
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label>Alignement</Label>
-              <ToggleGroup type="single" className="justify-between border rounded-md gap-4 items-center p-1"
-                onValueChange={(e) => handleOnChanges({ target: { id: "textAlign", value: e } })}>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="left"><AlignLeft className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Gauche</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="center"><AlignCenter className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Centre</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="right"><AlignRight className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Droite</p></TooltipContent></Tooltip>
+              <ToggleGroup
+                type="single"
+                className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
+                value={sel.styles.textAlign as string}
+                onValueChange={(e) => handleOnChanges({ target: { id: "textAlign", value: e } })}
+              >
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="left"><AlignLeft className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Gauche</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="center"><AlignCenter className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Centre</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="right"><AlignRight className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Droite</p></TooltipContent></Tooltip>
               </ToggleGroup>
             </div>
             <div className="flex flex-col gap-2">
               <Label>Couleur</Label>
-              <ColorInput value={sel.styles.color as string} onChange={(v) => handleOnChanges({ target: { id: "color", value: v } })} />
+              <ColorInput value={sel.styles.color as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "color", value: e } })} />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Décoration</Label>
-              <ToggleGroup type="single" className="justify-between border rounded-md gap-4 items-center p-1"
+              <ToggleGroup
+                type="single"
+                className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
                 value={sel.styles.textDecoration as string}
-                onValueChange={(e) => handleOnChanges({ target: { id: "textDecoration", value: e } })}>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="underline"><Underline className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Souligné</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="underline dotted"><GripHorizontal className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Pointillé</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="underline wavy"><Waves className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Ondulé</p></TooltipContent></Tooltip>
+                onValueChange={(e) => handleOnChanges({ target: { id: "textDecoration", value: e } })}
+              >
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="underline"><Underline className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Souligné <kbd className="text-[10px]">⌘U</kbd></p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="underline dotted"><GripHorizontal className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Pointillé</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="underline wavy"><Waves className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Ondulé</p></TooltipContent></Tooltip>
               </ToggleGroup>
             </div>
             <div className="flex flex-col gap-2">
               <Label>Style</Label>
-              <ToggleGroup type="single" className="justify-between border rounded-md gap-4 items-center p-1"
+              <ToggleGroup
+                type="single"
+                className="justify-between border rounded-md gap-4 items-center p-1"
                 value={sel.styles.fontStyle as string}
-                onValueChange={(e) => handleOnChanges({ target: { id: "fontStyle", value: e } })}>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="italic"><Italic className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Italique</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="normal"><Type className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Normal</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="oblique"><RemoveFormatting className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Oblique</p></TooltipContent></Tooltip>
+                onValueChange={(e) => handleOnChanges({ target: { id: "fontStyle", value: e } })}
+              >
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="italic"><Italic className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Italique <kbd className="text-[10px]">⌘I</kbd></p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="normal"><Type className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Normal</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="oblique"><RemoveFormatting className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Oblique</p></TooltipContent></Tooltip>
               </ToggleGroup>
             </div>
             <div className="flex flex-col gap-2">
               <Label>Graisse</Label>
-              <Select onValueChange={(e) => handleOnChanges({ target: { id: "fontWeight", value: e } })} value={sel.styles.fontWeight?.toString()}>
-                <SelectTrigger><SelectValue placeholder="Choisir la graisse" /></SelectTrigger>
+              <Select
+                onValueChange={(e) => handleOnChanges({ target: { id: "fontWeight", value: e } })}
+                value={sel.styles.fontWeight?.toString()}
+              >
+                <SelectTrigger className="w-full"><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel>Graisse</SelectLabel>
+                    <SelectLabel>Graisses</SelectLabel>
                     <SelectItem value="700">Gras</SelectItem>
                     <SelectItem value="600">Semi-gras</SelectItem>
                     <SelectItem value="500">Moyen</SelectItem>
                     <SelectItem value="normal">Normal</SelectItem>
                     <SelectItem value="300">Léger</SelectItem>
+                    <SelectItem value="200">Extra-léger</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex flex-col gap-2">
               <Label>Taille</Label>
-              <Input placeholder="16px" id="fontSize" onChange={handleOnChanges} value={sel.styles.fontSize as string ?? ""} />
+              <Input placeholder="px" id="fontSize" onChange={handleOnChanges} value={sel.styles.fontSize ?? ""} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Interlignage</Label>
-              <Input placeholder="1.5rem" id="lineHeight" onChange={handleOnChanges} value={sel.styles.lineHeight as string ?? ""} />
+              <Label>Hauteur de ligne</Label>
+              <Input placeholder="rem" id="lineHeight" onChange={handleOnChanges} value={sel.styles.lineHeight ?? ""} />
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -256,52 +274,79 @@ const SettingsTab: React.FC = () => {
           <AccordionTrigger className="!no-underline">Décorations</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label>Opacité ({typeof sel.styles?.opacity === "number" ? sel.styles?.opacity : parseFloat((sel.styles?.opacity || "100").replace("%", "")) || 100}%)</Label>
+              <Label>Opacité</Label>
+              <div className="flex items-center justify-end -mt-2">
+                <span className="p-2 text-sm">{parseSliderValue(sel.styles?.opacity, 100)}%</span>
+              </div>
               <Slider
+                className="-mt-2"
+                defaultValue={[parseSliderValue(sel.styles?.opacity, 100)]}
+                max={100}
+                step={1}
                 onValueChange={(e) => handleOnChanges({ target: { id: "opacity", value: `${e[0]}%` } })}
-                defaultValue={[typeof sel.styles?.opacity === "number" ? sel.styles.opacity : parseFloat((sel.styles?.opacity || "100").replace("%", "")) || 100]}
-                max={100} step={1}
               />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Couleur de bordure</Label>
-              <ColorInput value={sel.styles.borderColor as string} onChange={(v) => handleOnChanges({ target: { id: "borderColor", value: v } })} />
+              <ColorInput value={sel.styles.borderColor as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "borderColor", value: e } })} />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Épaisseur de bordure ({parseFloat((sel.styles?.borderWidth as string || "0").replace("px", "")) || 0}px)</Label>
+              <Label>Épaisseur de bordure</Label>
+              <div className="flex items-center justify-end -mt-2">
+                <span className="p-2 text-sm">{parseSliderValue(sel.styles?.borderWidth, 0)}px</span>
+              </div>
               <Slider
+                className="-mt-2"
+                defaultValue={[parseSliderValue(sel.styles?.borderWidth, 0)]}
+                max={100}
+                step={1}
                 onValueChange={(e) => handleOnChanges({ target: { id: "borderWidth", value: `${e[0]}px` } })}
-                defaultValue={[parseFloat((sel.styles?.borderWidth as string || "0").replace("px", "")) || 0]}
-                max={20} step={1}
               />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Arrondi ({parseFloat((sel.styles?.borderRadius as string || "0").replace("px", "")) || 0}px)</Label>
+              <Label>Rayon de bordure</Label>
+              <div className="flex items-center justify-end -mt-2">
+                <span className="p-2 text-sm">{parseSliderValue(sel.styles?.borderRadius, 0)}px</span>
+              </div>
               <Slider
+                className="-mt-2"
+                defaultValue={[parseSliderValue(sel.styles?.borderRadius, 0)]}
+                max={100}
+                step={1}
                 onValueChange={(e) => handleOnChanges({ target: { id: "borderRadius", value: `${e[0]}px` } })}
-                defaultValue={[parseFloat((sel.styles?.borderRadius as string || "0").replace("px", "")) || 0]}
-                max={100} step={1}
               />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Couleur de fond</Label>
-              <ColorInput value={sel.styles.background as string} onChange={(v) => handleOnChanges({ target: { id: "background", value: v } })} />
+              <ColorInput value={sel.styles.background as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "background", value: e } })} />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Image de fond</Label>
               <div className="flex border rounded-md overflow-clip">
-                <div className="w-12 bg-cover bg-center shrink-0" style={{ backgroundImage: sel.styles.backgroundImage as string }} />
-                <Input placeholder="url(https://...)" className="!border-y-0 rounded-none !border-r-0" id="backgroundImage" onChange={handleOnChanges} value={sel.styles.backgroundImage as string ?? ""} />
+                <div
+                  className="w-12 shrink-0 object-cover object-center"
+                  style={{ backgroundImage: sel.styles.backgroundImage as string }}
+                />
+                <Input
+                  placeholder="url(https://...)"
+                  className="!border-y-0 rounded-none !border-r-0 mr-2"
+                  id="backgroundImage"
+                  onChange={handleOnChanges}
+                  value={sel.styles.backgroundImage ?? ""}
+                />
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Taille du fond</Label>
-              <ToggleGroup type="single" className="justify-between border rounded-md gap-4 items-center p-1"
+              <Label>Position de l&apos;image</Label>
+              <ToggleGroup
+                type="single"
+                className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
+                value={sel.styles.backgroundSize?.toString()}
                 onValueChange={(e) => handleOnChanges({ target: { id: "backgroundSize", value: e } })}
-                value={sel.styles.backgroundSize?.toString()}>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="cover"><Expand className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Cover</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="contain"><Shrink className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Contain</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="auto"><LucideImageDown className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Auto</p></TooltipContent></Tooltip>
+              >
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="cover"><Expand className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Cover</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="contain"><Shrink className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Contain</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="auto"><LucideImageDown className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Auto</p></TooltipContent></Tooltip>
               </ToggleGroup>
             </div>
           </AccordionContent>
@@ -309,53 +354,65 @@ const SettingsTab: React.FC = () => {
 
         {/* Layout */}
         <AccordionItem value="Layout" className="px-6 py-0">
-          <AccordionTrigger className="!no-underline">Disposition</AccordionTrigger>
+          <AccordionTrigger className="!no-underline">Mise en page</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
-              <Label>Affichage</Label>
-              <Select onValueChange={(e) => handleOnChanges({ target: { id: "display", value: e } })}>
-                <SelectTrigger><SelectValue placeholder="Choisir" /></SelectTrigger>
+              <Label>Mode d&apos;affichage</Label>
+              <Select
+                onValueChange={(e) => handleOnChanges({ target: { id: "display", value: e } })}
+                value={sel.styles.display as string}
+              >
+                <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel>Display</SelectLabel>
+                    <SelectLabel>Mode</SelectLabel>
                     <SelectItem value="flex">Flex</SelectItem>
                     <SelectItem value="inline-flex">Inline Flex</SelectItem>
+                    <SelectItem value="inline">Inline</SelectItem>
                     <SelectItem value="block">Block</SelectItem>
                     <SelectItem value="inline-block">Inline Block</SelectItem>
-                    <SelectItem value="inline">Inline</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Justify Content</Label>
-              <ToggleGroup type="single" className="justify-between border rounded-md gap-2 items-center p-1"
+              <Label>Justifier</Label>
+              <ToggleGroup
+                type="single"
+                className="w-[274px] justify-between border rounded-md gap-2 items-center p-1"
+                value={sel.styles.justifyContent}
                 onValueChange={(e) => handleOnChanges({ target: { id: "justifyContent", value: e } })}
-                value={sel.styles.justifyContent as string}>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="space-between"><AlignHorizontalSpaceBetween className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Space Between</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="space-around"><AlignHorizontalSpaceAround className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Space Around</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="center"><AlignHorizontalJustifyCenterIcon className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Centre</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-start"><AlignHorizontalJustifyStart className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Début</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-end"><AlignHorizontalJustifyEnd className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Fin</p></TooltipContent></Tooltip>
+              >
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="space-between"><AlignHorizontalSpaceBetween className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Space Between</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="space-around"><AlignHorizontalSpaceAround className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Space Around</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="center"><AlignHorizontalJustifyCenterIcon className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Centre</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-start"><AlignHorizontalJustifyStart className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Début</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-end"><AlignHorizontalJustifyEnd className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Fin</p></TooltipContent></Tooltip>
               </ToggleGroup>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Align Items</Label>
-              <ToggleGroup type="single" className="justify-between border rounded-md gap-4 items-center p-1"
+              <Label>Aligner les éléments</Label>
+              <ToggleGroup
+                type="single"
+                className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
+                value={sel.styles.alignItems}
                 onValueChange={(e) => handleOnChanges({ target: { id: "alignItems", value: e } })}
-                value={sel.styles.alignItems as string}>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="center"><AlignVerticalJustifyCenter className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Centre</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-start"><AlignVerticalJustifyStart className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Début</p></TooltipContent></Tooltip>
-                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-end"><AlignVerticalJustifyEnd className="w-4 h-4" /></ToggleGroupItem></TooltipTrigger><TooltipContent><p>Fin</p></TooltipContent></Tooltip>
+              >
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="center"><AlignVerticalJustifyCenter className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Centre</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-start"><AlignVerticalJustifyStart className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Début</p></TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger><ToggleGroupItem value="flex-end"><AlignVerticalJustifyEnd className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Fin</p></TooltipContent></Tooltip>
               </ToggleGroup>
             </div>
             <div className="flex flex-col gap-2">
               <Label>Direction</Label>
-              <Select onValueChange={(e) => handleOnChanges({ target: { id: "flexDirection", value: e } })}>
-                <SelectTrigger><SelectValue placeholder="Choisir" /></SelectTrigger>
+              <Select
+                onValueChange={(e) => handleOnChanges({ target: { id: "flexDirection", value: e } })}
+                value={sel.styles.flexDirection as string}
+              >
+                <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectLabel>Direction</SelectLabel>
+                    <SelectLabel>Directions</SelectLabel>
                     <SelectItem value="row">Ligne</SelectItem>
                     <SelectItem value="column">Colonne</SelectItem>
                     <SelectItem value="row-reverse">Ligne inversée</SelectItem>
@@ -373,32 +430,41 @@ const SettingsTab: React.FC = () => {
           <AccordionContent>
             <div className="flex flex-col gap-4">
               <div className="flex gap-4">
-                <div className="flex flex-col gap-2 flex-1">
+                <div className="flex flex-col gap-2">
                   <Label>Hauteur</Label>
-                  <Input id="height" placeholder="px" onChange={handleOnChanges} value={sel.styles.height as string ?? ""} />
+                  <Input id="height" placeholder="px" onChange={handleOnChanges} value={sel.styles.height ?? ""} />
                 </div>
-                <div className="flex flex-col gap-2 flex-1">
+                <div className="flex flex-col gap-2">
                   <Label>Largeur</Label>
-                  <Input id="width" placeholder="px" onChange={handleOnChanges} value={sel.styles.width as string ?? ""} />
+                  <Input id="width" placeholder="px" onChange={handleOnChanges} value={sel.styles.width ?? ""} />
                 </div>
               </div>
-              <Label className="text-center text-xs text-muted-foreground">Marges (px)</Label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1"><Label className="text-xs">Haut</Label><Input id="marginTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginTop as string ?? ""} /></div>
-                <div className="flex flex-col gap-1"><Label className="text-xs">Bas</Label><Input id="marginBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginBottom as string ?? ""} /></div>
-                <div className="flex flex-col gap-1"><Label className="text-xs">Gauche</Label><Input id="marginLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginLeft as string ?? ""} /></div>
-                <div className="flex flex-col gap-1"><Label className="text-xs">Droite</Label><Input id="marginRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginRight as string ?? ""} /></div>
+              <Label className="w-full text-center">Marges (px)</Label>
+              <div className="flex flex-col gap-4">
+                <div className="flex gap-4">
+                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="marginTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginTop ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="marginBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginBottom ?? ""} /></div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="marginLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginLeft ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="marginRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginRight ?? ""} /></div>
+                </div>
               </div>
-              <Label className="text-center text-xs text-muted-foreground">Rembourrage (px)</Label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1"><Label className="text-xs">Haut</Label><Input id="paddingTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingTop as string ?? ""} /></div>
-                <div className="flex flex-col gap-1"><Label className="text-xs">Bas</Label><Input id="paddingBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingBottom as string ?? ""} /></div>
-                <div className="flex flex-col gap-1"><Label className="text-xs">Gauche</Label><Input id="paddingLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingLeft as string ?? ""} /></div>
-                <div className="flex flex-col gap-1"><Label className="text-xs">Droite</Label><Input id="paddingRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingRight as string ?? ""} /></div>
+              <Label className="w-full text-center">Rembourrage (px)</Label>
+              <div className="flex flex-col gap-4">
+                <div className="flex gap-4">
+                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="paddingTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingTop ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="paddingBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingBottom ?? ""} /></div>
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="paddingLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingLeft ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="paddingRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingRight ?? ""} /></div>
+                </div>
               </div>
             </div>
           </AccordionContent>
         </AccordionItem>
+
       </Accordion>
     </TooltipProvider>
   );

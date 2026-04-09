@@ -24,9 +24,18 @@ const EditorText: React.FC<EditorTextProps> = ({ element }) => {
     dispatch({ type: "CHANGE_CLICKED_ELEMENT", payload: { elementDetails: element } });
   };
 
+  const handleDragStart = (event: React.DragEvent) => {
+    if (editor.liveMode) return;
+    event.stopPropagation();
+    event.dataTransfer.setData("componentType", "canvasElement");
+    event.dataTransfer.setData("canvasElementId", element.id);
+  };
+
   return (
     <div
-      className={cn("p-0.5 w-full m-1 relative text-base min-h-7 transition-all", {
+      draggable={!editor.liveMode}
+      onDragStart={handleDragStart}
+      className={cn("p-0.5 w-full m-1 relative text-base min-h-7 transition-all cursor-grab active:cursor-grabbing", {
         "border-blue-500 border-solid": editor.selectedElement.id === element.id,
         "border-dashed border": !editor.liveMode,
       })}

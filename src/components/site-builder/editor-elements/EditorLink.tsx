@@ -28,10 +28,19 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
   const href = !Array.isArray(element.content) ? element.content.href : "#";
   const innerText = !Array.isArray(element.content) ? element.content.innerText : "Link";
 
+  const handleDragStart = (event: React.DragEvent) => {
+    if (editor.liveMode) return;
+    event.stopPropagation();
+    event.dataTransfer.setData("componentType", "canvasElement");
+    event.dataTransfer.setData("canvasElementId", element.id);
+  };
+
   return (
     <div
       style={element.styles}
-      className={cn("relative p-0.5 m-1 transition-all", {
+      draggable={!editor.liveMode}
+      onDragStart={handleDragStart}
+      className={cn("relative p-0.5 m-1 transition-all cursor-grab active:cursor-grabbing", {
         "border-blue-500 border-solid border": editor.selectedElement.id === element.id && !editor.liveMode,
         "border-dashed border": !editor.liveMode && editor.selectedElement.id !== element.id,
       })}

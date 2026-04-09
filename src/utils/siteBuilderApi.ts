@@ -87,7 +87,7 @@ export const sitePagesApi = {
         name: payload.name,
         path_name: payload.path_name ?? '',
         order: payload.order ?? 0,
-        content: '[]',
+        content: JSON.stringify([{ content: [], id: '__body', name: 'Body', styles: {}, type: '__body' }]),
       })
       .select()
       .single();

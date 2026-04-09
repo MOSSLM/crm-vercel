@@ -52,8 +52,8 @@ const SiteEditorSidebar: React.FC = () => {
           </div>
 
           {/* Icon strip */}
-          <div className="w-16 flex flex-col items-center pt-4 gap-1 bg-background">
-            <TabsList className="flex flex-col h-auto gap-1 bg-transparent p-0">
+          <div className="w-16 flex flex-col items-center pt-4 bg-background">
+            <TabsList className="flex flex-col items-center h-auto gap-4 bg-transparent p-0">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <TabsTrigger value="Settings" className="w-10 h-10 p-0 rounded-md data-[state=active]:bg-muted data-[state=active]:shadow-none">
