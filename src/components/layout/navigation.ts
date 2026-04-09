@@ -20,6 +20,7 @@ import {
   Share2,
   Ban,
   Copy,
+  Layout,
 } from "lucide-react";
 
 export type TopCategoryKey = "dashboard" | "calendar" | "crm" | "production" | "actions";
@@ -66,6 +67,7 @@ export const ACTION_ITEMS: NavItem[] = [
   { title: "Réseaux", icon: Share2, href: "/networks" },
   { title: "Blacklist", icon: Ban, href: "/blacklist" },
   { title: "Duplicats", icon: Copy, href: "/duplicates" },
+  { title: "Site Builder", icon: Layout, href: "/site-builder" },
 ];
 
 export const DASHBOARD_ITEMS: NavItem[] = [
@@ -101,7 +103,8 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     pathname.startsWith("/results") ||
     pathname.startsWith("/networks") ||
     pathname.startsWith("/blacklist") ||
-    pathname.startsWith("/duplicates")
+    pathname.startsWith("/duplicates") ||
+    pathname.startsWith("/site-builder")
   ) {
     return "actions";
   }
