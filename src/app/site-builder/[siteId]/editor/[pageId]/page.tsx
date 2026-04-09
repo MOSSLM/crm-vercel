@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { sitePagesApi } from "@/utils/siteBuilderApi";
+import { fetchSitePageById } from "@/utils/siteBuilderServerApi";
 import EditorProvider from "@/components/site-builder/EditorProvider";
 import SiteEditorNavigation from "@/components/site-builder/SiteEditorNavigation";
 import SiteEditor from "@/components/site-builder/SiteEditor";
@@ -12,7 +12,7 @@ interface EditorPageProps {
 export default async function EditorPage({ params }: EditorPageProps) {
   const { siteId, pageId } = await params;
 
-  const pageDetails = await sitePagesApi.fetchById(pageId).catch(() => null);
+  const pageDetails = await fetchSitePageById(pageId).catch(() => null);
 
   if (!pageDetails) {
     notFound();
