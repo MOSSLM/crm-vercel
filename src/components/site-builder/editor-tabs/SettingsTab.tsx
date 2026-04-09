@@ -36,6 +36,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { componentsApi } from "@/utils/siteBuilderApi";
+import { resolveResponsiveStyles, setResponsiveStyle } from "@/components/site-builder/style-system";
 
 // Native color input replacing ColorPicker
 const ColorInput = ({ value, onChange, className }: { value?: string; onChange: (val: string) => void; className?: string }) => (
@@ -98,7 +99,12 @@ const SettingsTab: React.FC = () => {
       payload: {
         elementDetails: {
           ...editor.editor.selectedElement,
-          styles: { ...editor.editor.selectedElement.styles, [e.target.id]: e.target.value },
+          styles: setResponsiveStyle(
+            editor.editor.selectedElement.styles,
+            editor.editor.device,
+            e.target.id,
+            e.target.value,
+          ),
         },
       },
     });
@@ -119,6 +125,7 @@ const SettingsTab: React.FC = () => {
 
   const sel = editor.editor.selectedElement;
   const content = !Array.isArray(sel.content) ? sel.content : {};
+  const resolvedStyles = resolveResponsiveStyles(sel.styles, editor.editor.device);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -200,7 +207,7 @@ const SettingsTab: React.FC = () => {
               <ToggleGroup
                 type="single"
                 className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
-                value={sel.styles.textAlign as string}
+                value={resolvedStyles.textAlign as string}
                 onValueChange={(e) => handleOnChanges({ target: { id: "textAlign", value: e } })}
               >
                 <Tooltip><TooltipTrigger><ToggleGroupItem value="left"><AlignLeft className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Gauche</p></TooltipContent></Tooltip>
@@ -210,14 +217,14 @@ const SettingsTab: React.FC = () => {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Couleur</Label>
-              <ColorInput value={sel.styles.color as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "color", value: e } })} />
+              <ColorInput value={resolvedStyles.color as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "color", value: e } })} />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Décoration</Label>
               <ToggleGroup
                 type="single"
                 className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
-                value={sel.styles.textDecoration as string}
+                value={resolvedStyles.textDecoration as string}
                 onValueChange={(e) => handleOnChanges({ target: { id: "textDecoration", value: e } })}
               >
                 <Tooltip><TooltipTrigger><ToggleGroupItem value="underline"><Underline className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Souligné <kbd className="text-[10px]">⌘U</kbd></p></TooltipContent></Tooltip>
@@ -230,7 +237,7 @@ const SettingsTab: React.FC = () => {
               <ToggleGroup
                 type="single"
                 className="justify-between border rounded-md gap-4 items-center p-1"
-                value={sel.styles.fontStyle as string}
+                value={resolvedStyles.fontStyle as string}
                 onValueChange={(e) => handleOnChanges({ target: { id: "fontStyle", value: e } })}
               >
                 <Tooltip><TooltipTrigger><ToggleGroupItem value="italic"><Italic className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Italique <kbd className="text-[10px]">⌘I</kbd></p></TooltipContent></Tooltip>
@@ -242,7 +249,7 @@ const SettingsTab: React.FC = () => {
               <Label>Graisse</Label>
               <Select
                 onValueChange={(e) => handleOnChanges({ target: { id: "fontWeight", value: e } })}
-                value={sel.styles.fontWeight?.toString()}
+                value={resolvedStyles.fontWeight?.toString()}
               >
                 <SelectTrigger className="w-full"><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
@@ -260,11 +267,11 @@ const SettingsTab: React.FC = () => {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Taille</Label>
-              <Input placeholder="px" id="fontSize" onChange={handleOnChanges} value={sel.styles.fontSize ?? ""} />
+              <Input placeholder="px" id="fontSize" onChange={handleOnChanges} value={resolvedStyles.fontSize ?? ""} />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Hauteur de ligne</Label>
-              <Input placeholder="rem" id="lineHeight" onChange={handleOnChanges} value={sel.styles.lineHeight ?? ""} />
+              <Input placeholder="rem" id="lineHeight" onChange={handleOnChanges} value={resolvedStyles.lineHeight ?? ""} />
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -276,11 +283,11 @@ const SettingsTab: React.FC = () => {
             <div className="flex flex-col gap-2">
               <Label>Opacité</Label>
               <div className="flex items-center justify-end -mt-2">
-                <span className="p-2 text-sm">{parseSliderValue(sel.styles?.opacity, 100)}%</span>
+                <span className="p-2 text-sm">{parseSliderValue(resolvedStyles?.opacity, 100)}%</span>
               </div>
               <Slider
                 className="-mt-2"
-                defaultValue={[parseSliderValue(sel.styles?.opacity, 100)]}
+                defaultValue={[parseSliderValue(resolvedStyles?.opacity, 100)]}
                 max={100}
                 step={1}
                 onValueChange={(e) => handleOnChanges({ target: { id: "opacity", value: `${e[0]}%` } })}
@@ -288,16 +295,16 @@ const SettingsTab: React.FC = () => {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Couleur de bordure</Label>
-              <ColorInput value={sel.styles.borderColor as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "borderColor", value: e } })} />
+              <ColorInput value={resolvedStyles.borderColor as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "borderColor", value: e } })} />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Épaisseur de bordure</Label>
               <div className="flex items-center justify-end -mt-2">
-                <span className="p-2 text-sm">{parseSliderValue(sel.styles?.borderWidth, 0)}px</span>
+                <span className="p-2 text-sm">{parseSliderValue(resolvedStyles?.borderWidth, 0)}px</span>
               </div>
               <Slider
                 className="-mt-2"
-                defaultValue={[parseSliderValue(sel.styles?.borderWidth, 0)]}
+                defaultValue={[parseSliderValue(resolvedStyles?.borderWidth, 0)]}
                 max={100}
                 step={1}
                 onValueChange={(e) => handleOnChanges({ target: { id: "borderWidth", value: `${e[0]}px` } })}
@@ -306,11 +313,11 @@ const SettingsTab: React.FC = () => {
             <div className="flex flex-col gap-2">
               <Label>Rayon de bordure</Label>
               <div className="flex items-center justify-end -mt-2">
-                <span className="p-2 text-sm">{parseSliderValue(sel.styles?.borderRadius, 0)}px</span>
+                <span className="p-2 text-sm">{parseSliderValue(resolvedStyles?.borderRadius, 0)}px</span>
               </div>
               <Slider
                 className="-mt-2"
-                defaultValue={[parseSliderValue(sel.styles?.borderRadius, 0)]}
+                defaultValue={[parseSliderValue(resolvedStyles?.borderRadius, 0)]}
                 max={100}
                 step={1}
                 onValueChange={(e) => handleOnChanges({ target: { id: "borderRadius", value: `${e[0]}px` } })}
@@ -318,21 +325,21 @@ const SettingsTab: React.FC = () => {
             </div>
             <div className="flex flex-col gap-2">
               <Label>Couleur de fond</Label>
-              <ColorInput value={sel.styles.background as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "background", value: e } })} />
+              <ColorInput value={resolvedStyles.background as string} className="w-[274px]" onChange={(e) => handleOnChanges({ target: { id: "background", value: e } })} />
             </div>
             <div className="flex flex-col gap-2">
               <Label>Image de fond</Label>
               <div className="flex border rounded-md overflow-clip">
                 <div
                   className="w-12 shrink-0 object-cover object-center"
-                  style={{ backgroundImage: sel.styles.backgroundImage as string }}
+                  style={{ backgroundImage: resolvedStyles.backgroundImage as string }}
                 />
                 <Input
                   placeholder="url(https://...)"
                   className="!border-y-0 rounded-none !border-r-0 mr-2"
                   id="backgroundImage"
                   onChange={handleOnChanges}
-                  value={sel.styles.backgroundImage ?? ""}
+                  value={resolvedStyles.backgroundImage ?? ""}
                 />
               </div>
             </div>
@@ -341,7 +348,7 @@ const SettingsTab: React.FC = () => {
               <ToggleGroup
                 type="single"
                 className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
-                value={sel.styles.backgroundSize?.toString()}
+                value={resolvedStyles.backgroundSize?.toString()}
                 onValueChange={(e) => handleOnChanges({ target: { id: "backgroundSize", value: e } })}
               >
                 <Tooltip><TooltipTrigger><ToggleGroupItem value="cover"><Expand className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Cover</p></TooltipContent></Tooltip>
@@ -360,7 +367,7 @@ const SettingsTab: React.FC = () => {
               <Label>Mode d&apos;affichage</Label>
               <Select
                 onValueChange={(e) => handleOnChanges({ target: { id: "display", value: e } })}
-                value={sel.styles.display as string}
+                value={resolvedStyles.display as string}
               >
                 <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
@@ -380,7 +387,7 @@ const SettingsTab: React.FC = () => {
               <ToggleGroup
                 type="single"
                 className="w-[274px] justify-between border rounded-md gap-2 items-center p-1"
-                value={sel.styles.justifyContent}
+                value={resolvedStyles.justifyContent}
                 onValueChange={(e) => handleOnChanges({ target: { id: "justifyContent", value: e } })}
               >
                 <Tooltip><TooltipTrigger><ToggleGroupItem value="space-between"><AlignHorizontalSpaceBetween className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Space Between</p></TooltipContent></Tooltip>
@@ -395,7 +402,7 @@ const SettingsTab: React.FC = () => {
               <ToggleGroup
                 type="single"
                 className="w-[274px] justify-between border rounded-md gap-4 items-center p-1"
-                value={sel.styles.alignItems}
+                value={resolvedStyles.alignItems}
                 onValueChange={(e) => handleOnChanges({ target: { id: "alignItems", value: e } })}
               >
                 <Tooltip><TooltipTrigger><ToggleGroupItem value="center"><AlignVerticalJustifyCenter className="w-5 h-5" /></ToggleGroupItem></TooltipTrigger><TooltipContent side="bottom"><p>Centre</p></TooltipContent></Tooltip>
@@ -407,7 +414,7 @@ const SettingsTab: React.FC = () => {
               <Label>Direction</Label>
               <Select
                 onValueChange={(e) => handleOnChanges({ target: { id: "flexDirection", value: e } })}
-                value={sel.styles.flexDirection as string}
+                value={resolvedStyles.flexDirection as string}
               >
                 <SelectTrigger><SelectValue placeholder="Sélectionner" /></SelectTrigger>
                 <SelectContent>
@@ -432,33 +439,33 @@ const SettingsTab: React.FC = () => {
               <div className="flex gap-4">
                 <div className="flex flex-col gap-2">
                   <Label>Hauteur</Label>
-                  <Input id="height" placeholder="px" onChange={handleOnChanges} value={sel.styles.height ?? ""} />
+                  <Input id="height" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.height ?? ""} />
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Largeur</Label>
-                  <Input id="width" placeholder="px" onChange={handleOnChanges} value={sel.styles.width ?? ""} />
+                  <Input id="width" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.width ?? ""} />
                 </div>
               </div>
               <Label className="w-full text-center">Marges (px)</Label>
               <div className="flex flex-col gap-4">
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="marginTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginTop ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="marginBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginBottom ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="marginTop" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.marginTop ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="marginBottom" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.marginBottom ?? ""} /></div>
                 </div>
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="marginLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginLeft ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="marginRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginRight ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="marginLeft" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.marginLeft ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="marginRight" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.marginRight ?? ""} /></div>
                 </div>
               </div>
               <Label className="w-full text-center">Rembourrage (px)</Label>
               <div className="flex flex-col gap-4">
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="paddingTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingTop ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="paddingBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingBottom ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="paddingTop" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.paddingTop ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="paddingBottom" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.paddingBottom ?? ""} /></div>
                 </div>
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="paddingLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingLeft ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="paddingRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingRight ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="paddingLeft" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.paddingLeft ?? ""} /></div>
+                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="paddingRight" placeholder="px" onChange={handleOnChanges} value={resolvedStyles.paddingRight ?? ""} /></div>
                 </div>
               </div>
             </div>

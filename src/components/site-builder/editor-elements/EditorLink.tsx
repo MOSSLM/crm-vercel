@@ -6,6 +6,7 @@ import { useEditor } from "@/components/site-builder/use-editor";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/components/ui/utils";
 import type { EditorElement } from "@/types";
+import { resolveResponsiveStyles } from "@/components/site-builder/style-system";
 
 interface EditorLinkProps {
   element: EditorElement;
@@ -37,7 +38,7 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
 
   return (
     <div
-      style={element.styles}
+      style={resolveResponsiveStyles(element.styles, editor.device)}
       draggable={!editor.liveMode}
       onDragStart={handleDragStart}
       className={cn("relative p-0.5 m-1 transition-all cursor-grab active:cursor-grabbing", {

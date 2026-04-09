@@ -8,6 +8,7 @@ import EditorRecursive from "./EditorRecursive";
 import { addVerifyElement, reinstantiateWithNewIds } from "@/components/site-builder/add-element";
 import { cn } from "@/components/ui/utils";
 import type { EditorBtns, EditorElement } from "@/types";
+import { resolveResponsiveStyles } from "@/components/site-builder/style-system";
 
 interface EditorSectionProps {
   element: EditorElement;
@@ -76,7 +77,7 @@ const EditorSection: React.FC<EditorSectionProps> = ({ element }) => {
 
   return (
     <section
-      style={styles}
+      style={resolveResponsiveStyles(styles, editor.device)}
       draggable={!editor.liveMode}
       onDragStart={handleDragStart}
       className={cn("relative p-4 transition-all w-full cursor-grab active:cursor-grabbing", {
