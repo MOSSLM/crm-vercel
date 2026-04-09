@@ -26,8 +26,10 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
     dispatch({ type: "CHANGE_CLICKED_ELEMENT", payload: { elementDetails: element } });
   };
 
-  const href = !Array.isArray(element.content) ? element.content.href : "#";
-  const innerText = !Array.isArray(element.content) ? element.content.innerText : "Link";
+  const simpleContent = !Array.isArray(element.content) && !('code' in element.content)
+    ? element.content : {};
+  const href = simpleContent.href ?? "#";
+  const innerText = simpleContent.innerText ?? "Link";
 
   const handleDragStart = (event: React.DragEvent) => {
     if (editor.liveMode) return;
@@ -96,7 +98,7 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
               payload: {
                 elementDetails: {
                   ...element,
-                  content: { ...(!Array.isArray(element.content) ? element.content : {}), innerText: (e.target as HTMLSpanElement).innerText },
+                  content: { ...(!Array.isArray(element.content) && !('code' in element.content) ? element.content : {}), innerText: (e.target as HTMLSpanElement).innerText },
                 },
               },
             });

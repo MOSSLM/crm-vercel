@@ -26,7 +26,9 @@ const EditorVideo: React.FC<EditorVideoProps> = ({ element }) => {
     dispatch({ type: "CHANGE_CLICKED_ELEMENT", payload: { elementDetails: element } });
   };
 
-  const src = !Array.isArray(element.content) ? element.content.src : "";
+  const simpleContent = !Array.isArray(element.content) && !('code' in element.content)
+    ? element.content : {};
+  const src = simpleContent.src ?? "";
 
   const handleDragStart = (event: React.DragEvent) => {
     if (editor.liveMode) return;
