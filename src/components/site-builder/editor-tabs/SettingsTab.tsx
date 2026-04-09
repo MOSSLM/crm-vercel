@@ -66,8 +66,7 @@ const SettingsTab: React.FC = () => {
     });
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleOnChanges = (e: any) => {
+  const handleOnChanges = (e: { target: { id: string; value: string } }) => {
     const styleSettings = e.target.id;
     const value = e.target.value;
     dispatch({
