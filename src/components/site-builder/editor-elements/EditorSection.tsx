@@ -17,11 +17,12 @@ const EditorSection: React.FC<EditorSectionProps> = ({ element }) => {
   const { content, id, styles } = element;
   const { dispatch, editor: editorState } = useEditor();
   const { editor } = editorState;
-  const [isDragOver, setIsDragOver] = React.useState(false);
+  const [dropPosition, setDropPosition] = React.useState<"inside" | "before" | "after" | null>(null);
 
   const handleOnDrop = (event: React.DragEvent) => {
     event.stopPropagation();
-    setIsDragOver(false);
+    const position = dropPosition ?? "inside";
+    setDropPosition(null);
     const componentType = event.dataTransfer.getData("componentType") as EditorBtns;
 
     if (componentType === "savedComponent") {
@@ -38,22 +39,28 @@ const EditorSection: React.FC<EditorSectionProps> = ({ element }) => {
     if (componentType === "canvasElement") {
       const elementId = event.dataTransfer.getData("canvasElementId");
       if (elementId && elementId !== id) {
-        dispatch({ type: "MOVE_ELEMENT", payload: { elementId, targetContainerId: id } });
+        dispatch({ type: "MOVE_ELEMENT", payload: { elementId, targetContainerId: id, position } });
       }
       return;
     }
 
+    if (position !== "inside") return;
     addVerifyElement(componentType, id, dispatch);
   };
 
   const handleDragOver = (event: React.DragEvent) => {
     event.preventDefault();
-    if (!isDragOver) setIsDragOver(true);
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offsetY = event.clientY - rect.top;
+    const third = rect.height / 3;
+    if (offsetY < third) setDropPosition("before");
+    else if (offsetY > third * 2) setDropPosition("after");
+    else setDropPosition("inside");
   };
 
   const handleDragLeave = (event: React.DragEvent) => {
     if (!event.currentTarget.contains(event.relatedTarget as Node)) {
-      setIsDragOver(false);
+      setDropPosition(null);
     }
   };
 
@@ -80,9 +87,11 @@ const EditorSection: React.FC<EditorSectionProps> = ({ element }) => {
       draggable={!editor.liveMode}
       onDragStart={handleDragStart}
       className={cn("relative p-4 transition-all w-full cursor-grab active:cursor-grabbing", {
-        "!border-blue-500 !border-solid border": editor.selectedElement.id === id && !editor.liveMode,
-        "!border-blue-400 !border-2 !border-solid bg-blue-50/10": isDragOver && !editor.liveMode,
-        "border-dashed border": !editor.liveMode && editor.selectedElement.id !== id,
+        "ring-2 ring-blue-500 ring-inset": editor.selectedElement.id === id && !editor.liveMode,
+        "ring-2 ring-blue-400 ring-inset bg-blue-50/10": dropPosition === "inside" && !editor.liveMode,
+        "border-t-2 border-blue-400": dropPosition === "before" && !editor.liveMode,
+        "border-b-2 border-blue-400": dropPosition === "after" && !editor.liveMode,
+        "outline outline-1 outline-dashed outline-border": !editor.liveMode && editor.selectedElement.id !== id,
       })}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

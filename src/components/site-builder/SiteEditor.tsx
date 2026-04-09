@@ -47,9 +47,10 @@ const SiteEditor: React.FC<SiteEditorProps> = ({ pageId, liveMode }) => {
   return (
     <div
       className={cn(
-        "flex-1 h-full overflow-y-auto overflow-x-hidden mr-[385px] bg-background transition-all",
+        "flex-1 h-full overflow-hidden mr-[385px] bg-background transition-all relative isolate z-0",
         {
           "p-0 mr-0": editor.editor.previewMode || editor.editor.liveMode,
+          "max-w-[1200px] w-full mx-auto": editor.editor.device === "Desktop",
           "!w-[850px] !flex-none mx-auto": editor.editor.device === "Tablet",
           "!w-[420px] !flex-none mx-auto": editor.editor.device === "Mobile",
           "pb-[100px]": !editor.editor.previewMode && !editor.editor.liveMode,
@@ -69,10 +70,12 @@ const SiteEditor: React.FC<SiteEditorProps> = ({ pageId, liveMode }) => {
         </Button>
       )}
 
-      {Array.isArray(editor.editor.elements) &&
-        editor.editor.elements.map((element) => (
-          <EditorRecursive key={element.id} element={element} />
-        ))}
+      <div className="relative h-full w-full overflow-y-auto overflow-x-hidden">
+        {Array.isArray(editor.editor.elements) &&
+          editor.editor.elements.map((element) => (
+            <EditorRecursive key={element.id} element={element} />
+          ))}
+      </div>
     </div>
   );
 };

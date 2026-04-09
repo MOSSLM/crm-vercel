@@ -15,7 +15,7 @@ const LayerItem: React.FC<LayerItemProps> = ({ element, depth = 0 }) => {
   const { dispatch, editor: editorState } = useEditor();
   const { editor } = editorState;
   const [open, setOpen] = React.useState(true);
-  const [isDragOver, setIsDragOver] = React.useState(false);
+  const [dropPosition, setDropPosition] = React.useState<"inside" | "before" | "after" | null>(null);
   const hasChildren = Array.isArray(element.content) && element.content.length > 0;
   const isContainer = Array.isArray(element.content);
 
@@ -32,25 +32,31 @@ const LayerItem: React.FC<LayerItemProps> = ({ element, depth = 0 }) => {
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (!isContainer) return;
     e.preventDefault();
     e.stopPropagation();
-    setIsDragOver(true);
+    const rect = e.currentTarget.getBoundingClientRect();
+    const offsetY = e.clientY - rect.top;
+    const third = rect.height / 3;
+
+    if (offsetY < third) setDropPosition("before");
+    else if (offsetY > third * 2) setDropPosition("after");
+    else setDropPosition(isContainer ? "inside" : "after");
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIsDragOver(false);
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropPosition(null);
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragOver(false);
+    const position = dropPosition ?? (isContainer ? "inside" : "after");
+    setDropPosition(null);
     const type = e.dataTransfer.getData("componentType");
     if (type === "canvasElement") {
       const elementId = e.dataTransfer.getData("canvasElementId");
-      if (elementId && elementId !== element.id && isContainer) {
-        dispatch({ type: "MOVE_ELEMENT", payload: { elementId, targetContainerId: element.id } });
+      if (elementId && elementId !== element.id) {
+        dispatch({ type: "MOVE_ELEMENT", payload: { elementId, targetContainerId: element.id, position } });
       }
     }
   };
@@ -68,7 +74,9 @@ const LayerItem: React.FC<LayerItemProps> = ({ element, depth = 0 }) => {
           "flex items-center gap-1 py-1 px-2 rounded-md cursor-pointer text-sm hover:bg-muted transition-colors",
           {
             "bg-muted": editor.selectedElement.id === element.id,
-            "ring-2 ring-blue-400 ring-inset": isDragOver && isContainer,
+            "ring-2 ring-blue-400 ring-inset": dropPosition === "inside",
+            "border-t-2 border-blue-400": dropPosition === "before",
+            "border-b-2 border-blue-400": dropPosition === "after",
           }
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
