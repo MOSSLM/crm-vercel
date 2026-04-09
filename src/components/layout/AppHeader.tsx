@@ -69,10 +69,12 @@ function usePageTitle() {
     "/search/new": "Nouvelle recherche",
     "/settings": "Paramètres",
     "/login": "Connexion",
+    "/site-builder": "Site Builder",
   };
 
   if (map[pathname]) return map[pathname];
   if (pathname.startsWith("/search/")) return map["/search"];
+  if (pathname.startsWith("/site-builder/")) return "Site Builder";
   return "Sama CRM";
 }
 

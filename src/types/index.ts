@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 export type RevenueBand =
   | 'unknown'
   | '0-100k'
@@ -287,3 +289,94 @@ export interface Objectives {
   relances: number;
   revenue: number;
 }
+
+// ─── Site Builder ────────────────────────────────────────────────────────────
+
+export interface Site {
+  id: string;
+  name: string;
+  description?: string;
+  published: boolean;
+  sub_domain_name?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SitePage {
+  id: string;
+  site_id: string;
+  name: string;
+  path_name: string;
+  content: string;
+  order: number;
+  visits: number;
+  preview_image?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Editor types (ported from lpura)
+export type DeviceTypes = 'Desktop' | 'Mobile' | 'Tablet';
+
+export type EditorBtns =
+  | 'text'
+  | 'container'
+  | 'section'
+  | 'link'
+  | '2Col'
+  | 'video'
+  | '__body'
+  | 'image'
+  | '3Col'
+  | null;
+
+export type EditorElement = {
+  id: string;
+  styles: CSSProperties;
+  name: string;
+  type: EditorBtns;
+  content:
+    | EditorElement[]
+    | {
+        href?: string;
+        innerText?: string;
+        src?: string;
+        alt?: string;
+      };
+};
+
+export type Editor = {
+  pageId: string;
+  liveMode: boolean;
+  elements: EditorElement[];
+  selectedElement: EditorElement;
+  device: DeviceTypes;
+  previewMode: boolean;
+};
+
+export type HistoryState = {
+  currentIndex: number;
+  history: Editor[];
+};
+
+export type EditorState = {
+  editor: Editor;
+  history: HistoryState;
+};
+
+export type EditorAction =
+  | { type: 'ADD_ELEMENT'; payload: { containerId: string; elementDetails: EditorElement } }
+  | { type: 'UPDATE_ELEMENT'; payload: { elementDetails: EditorElement } }
+  | { type: 'DELETE_ELEMENT'; payload: { elementDetails: EditorElement } }
+  | {
+      type: 'CHANGE_CLICKED_ELEMENT';
+      payload: { elementDetails?: EditorElement | { id: ''; content: []; name: ''; styles: Record<string, never>; type: null } };
+    }
+  | { type: 'CHANGE_DEVICE'; payload: { device: DeviceTypes } }
+  | { type: 'TOGGLE_PREVIEW_MODE' }
+  | { type: 'TOGGLE_LIVE_MODE'; payload?: { value: boolean } }
+  | { type: 'REDO' }
+  | { type: 'UNDO' }
+  | { type: 'LOAD_DATA'; payload: { elements: EditorElement[]; withLive: boolean } }
+  | { type: 'CLEAR_HISTORY' }
+  | { type: 'SET_PAGE_ID'; payload: { pageId: string } };

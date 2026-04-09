@@ -38,6 +38,7 @@ import {
   Users,
   Building,
   Target,
+  Layout,
   Package,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
@@ -105,6 +106,7 @@ export const AppSidebar = () => {
     { title: "Results", icon: Package, href: "/results" },
     { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
+    { title: "Site Builder", icon: Layout, href: "/site-builder" },
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
