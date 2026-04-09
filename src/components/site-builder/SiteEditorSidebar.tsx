@@ -34,7 +34,7 @@ const SiteEditorSidebar: React.FC = () => {
     <TooltipProvider delayDuration={300}>
       <Tabs defaultValue={getDefaultTab()} onValueChange={handleSaveTab}>
         {/* Fixed sidebar: content panel (left) + icon strip (right) */}
-        <div className="fixed right-0 top-[65px] h-[calc(100vh-65px)] flex z-20 border-l border-border bg-background">
+        <div className="fixed right-0 top-[65px] h-[calc(100vh-65px)] flex z-50 border-l border-border bg-background">
 
           {/* Content panel */}
           <div className="w-80 overflow-hidden border-r border-border">
