@@ -413,6 +413,9 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour
           </Button>
+          {company.logo_url && (
+            <img src={company.logo_url} alt="" className="h-12 w-12 rounded-lg object-cover flex-shrink-0 border" />
+          )}
           <div>
             <h1 className="flex items-center gap-2">
               {displayName}

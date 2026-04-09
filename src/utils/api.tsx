@@ -116,7 +116,8 @@ const COMPANY_COLUMNS = [
   'nombre_avis',
   'ville',
   'code_postal',
-  'pays'
+  'pays',
+  'logo_url'
 ] as const;
 const COMPANY_SELECT = COMPANY_COLUMNS.join(',');
 

@@ -360,7 +360,7 @@ async function fetchCompaniesByIds(ids: number[]): Promise<Map<number, CompanyLi
   const res = await supabase
     .from("entreprises")
     .select(
-      "id,name,ville,adresse,telephone,canonical_url,site_web_canonique,google_maps_url,google_url,service_tags,google_reviews_5star,note_moyenne,nombre_avis",
+      "id,name,ville,adresse,telephone,canonical_url,site_web_canonique,google_maps_url,google_url,service_tags,google_reviews_5star,note_moyenne,nombre_avis,logo_url",
     )
     .in("id", ids);
 
@@ -589,7 +589,7 @@ export async function loadLeadMagnetBundle(projectId: string) {
     const companyRes = await supabase
       .from("entreprises")
       .select(
-        "id,name,ville,adresse,telephone,canonical_url,site_web_canonique,google_maps_url,google_url,service_tags,google_reviews_5star,note_moyenne,nombre_avis",
+        "id,name,ville,adresse,telephone,canonical_url,site_web_canonique,google_maps_url,google_url,service_tags,google_reviews_5star,note_moyenne,nombre_avis,logo_url",
       )
       .eq("id", project.entreprise_id)
       .maybeSingle();
@@ -602,7 +602,7 @@ export async function loadLeadMagnetBundle(projectId: string) {
     const companyRes = await supabase
       .from("entreprises")
       .select(
-        "id,name,ville,adresse,telephone,canonical_url,site_web_canonique,google_maps_url,google_url,service_tags,google_reviews_5star,note_moyenne,nombre_avis",
+        "id,name,ville,adresse,telephone,canonical_url,site_web_canonique,google_maps_url,google_url,service_tags,google_reviews_5star,note_moyenne,nombre_avis,logo_url",
       )
       .eq("id", opportunity.entreprise_id)
       .maybeSingle();

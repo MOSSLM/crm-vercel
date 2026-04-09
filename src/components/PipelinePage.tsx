@@ -194,6 +194,9 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-1 min-w-0">
               <Grip className="h-3 w-3 text-muted-foreground cursor-grab flex-shrink-0" />
+              {associatedCompany?.logo_url
+                ? <img src={associatedCompany.logo_url} alt="" className="h-6 w-6 rounded object-cover flex-shrink-0" />
+                : null}
               <div className="flex-1 min-w-0">
                 {/* Nom de l'opportunité en premier */}
                 <div className="text-xs font-medium truncate">{opportunityName}</div>
@@ -247,6 +250,9 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <Grip className="h-4 w-4 text-muted-foreground cursor-grab flex-shrink-0" />
+              {associatedCompany?.logo_url
+                ? <img src={associatedCompany.logo_url} alt="" className="h-8 w-8 rounded object-cover flex-shrink-0" />
+                : null}
               <div className="flex-1 min-w-0">
                 {/* Nom de l'opportunité en premier */}
                 <h4 className="text-sm font-medium leading-tight truncate">{opportunityName}</h4>

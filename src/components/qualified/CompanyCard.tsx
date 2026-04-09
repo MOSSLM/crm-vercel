@@ -41,7 +41,9 @@ export const CompanyCard: React.FC<CompanyCardProps> = React.memo(({
         {/* Titre simplifié */}
         <div className="space-y-2">
           <div className="flex items-center gap-2">
-            <Building className="h-4 w-4 flex-shrink-0" />
+            {company.logo_url
+              ? <img src={company.logo_url} alt="" className="h-8 w-8 rounded object-cover flex-shrink-0" />
+              : <Building className="h-4 w-4 flex-shrink-0" />}
             <span className="text-sm font-medium leading-tight break-words">
               {displayName}
             </span>
