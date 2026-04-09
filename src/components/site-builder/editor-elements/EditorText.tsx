@@ -93,7 +93,7 @@ const EditorText: React.FC<EditorTextProps> = ({ element }) => {
           });
         }}
       >
-        {!Array.isArray(element.content) && element.content.innerText}
+        {!Array.isArray(element.content) && !('code' in element.content) && element.content.innerText}
       </span>
       {editor.selectedElement.id === element.id && !editor.liveMode && (
         <div className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-[25px] -right-[1px] rounded-none rounded-t-lg !text-white">
