@@ -329,6 +329,7 @@ export type EditorBtns =
   | 'image'
   | '3Col'
   | 'savedComponent'
+  | 'canvasElement'
   | null;
 
 export type EditorElement = {
@@ -380,7 +381,8 @@ export type EditorAction =
   | { type: 'UNDO' }
   | { type: 'LOAD_DATA'; payload: { elements: EditorElement[]; withLive: boolean } }
   | { type: 'CLEAR_HISTORY' }
-  | { type: 'SET_PAGE_ID'; payload: { pageId: string } };
+  | { type: 'SET_PAGE_ID'; payload: { pageId: string } }
+  | { type: 'MOVE_ELEMENT'; payload: { elementId: string; targetContainerId: string } };
 
 // Reusable saved components
 export interface SavedComponent {

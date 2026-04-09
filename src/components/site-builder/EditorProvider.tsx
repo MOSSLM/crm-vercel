@@ -68,6 +68,28 @@ const updateElement = (elements: EditorElement[], action: EditorAction): EditorE
   });
 };
 
+const moveElement = (elements: EditorElement[], elementId: string, targetContainerId: string): EditorElement[] => {
+  // Step 1: extract the element being moved
+  let moved: EditorElement | null = null;
+  const extract = (els: EditorElement[]): EditorElement[] =>
+    els.reduce<EditorElement[]>((acc, el) => {
+      if (el.id === elementId) { moved = el; return acc; }
+      if (Array.isArray(el.content)) return [...acc, { ...el, content: extract(el.content) }];
+      return [...acc, el];
+    }, []);
+  const afterExtract = extract(elements);
+  if (!moved) return elements;
+  // Step 2: insert into target
+  const insert = (els: EditorElement[]): EditorElement[] =>
+    els.map((el) => {
+      if (el.id === targetContainerId && Array.isArray(el.content))
+        return { ...el, content: [...el.content, moved!] };
+      if (Array.isArray(el.content)) return { ...el, content: insert(el.content) };
+      return el;
+    });
+  return insert(afterExtract);
+};
+
 const deleteElement = (elements: EditorElement[], action: EditorAction): EditorElement[] => {
   if (action.type !== "DELETE_ELEMENT") throw Error("Wrong action type for Delete Element");
 
@@ -147,6 +169,12 @@ const editorReducer = (state: EditorState = initialState, action: EditorAction):
     }
     case "SET_PAGE_ID":
       return { ...state, editor: { ...state.editor, pageId: action.payload.pageId } };
+    case "MOVE_ELEMENT": {
+      const updatedElements = moveElement(state.editor.elements, action.payload.elementId, action.payload.targetContainerId);
+      const updatedEditor = { ...state.editor, elements: updatedElements };
+      const updatedHistory = [...state.history.history.slice(0, state.history.currentIndex + 1), { ...updatedEditor }];
+      return { ...state, editor: updatedEditor, history: { ...state.history, history: updatedHistory, currentIndex: updatedHistory.length - 1 } };
+    }
     default:
       return state;
   }

@@ -30,7 +30,15 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
         try {
           const el = JSON.parse(json) as EditorElement;
           dispatch({ type: "ADD_ELEMENT", payload: { containerId: id, elementDetails: reinstantiateWithNewIds(el) } });
-        } catch {}
+        } catch { /* ignore */ }
+      }
+      return;
+    }
+
+    if (componentType === "canvasElement") {
+      const elementId = event.dataTransfer.getData("canvasElementId");
+      if (elementId && elementId !== id) {
+        dispatch({ type: "MOVE_ELEMENT", payload: { elementId, targetContainerId: id } });
       }
       return;
     }
@@ -49,6 +57,13 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
     }
   };
 
+  const handleDragStart = (event: React.DragEvent) => {
+    if (editor.liveMode || type === "__body") return;
+    event.stopPropagation();
+    event.dataTransfer.setData("componentType", "canvasElement");
+    event.dataTransfer.setData("canvasElementId", id);
+  };
+
   const handleOnClick = (event: React.MouseEvent) => {
     event.stopPropagation();
     dispatch({ type: "CHANGE_CLICKED_ELEMENT", payload: { elementDetails: element } });
@@ -64,6 +79,8 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
   return (
     <div
       style={styles}
+      draggable={!editor.liveMode && type !== "__body"}
+      onDragStart={handleDragStart}
       className={cn(
         "relative p-4 transition-all group",
         {
@@ -71,16 +88,17 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
           "h-fit": type === "container",
           "h-full w-full overflow-y-auto overflow-x-hidden": type === "__body",
           "flex flex-col md:!flex-row gap-4": type === "2Col" || type === "3Col",
-          // selection states
+          "!mb-[200px]": !editor.liveMode && !editor.previewMode && type === "__body",
+          // selection
           "!border-blue-500 !border-solid border":
             editor.selectedElement.id === id && !editor.liveMode && editor.selectedElement.type !== "__body",
           "!border-yellow-400 border-4 !border-solid":
             editor.selectedElement.id === id && !editor.liveMode && editor.selectedElement.type === "__body",
-          "!mb-[100px]": !editor.liveMode && !editor.previewMode && type === "__body",
-          // drag-over highlight
+          // drag-over
           "!border-blue-400 !border-2 !border-solid bg-blue-50/10": isDragOver && !editor.liveMode,
           // edit mode borders
           "border-dashed border": !editor.liveMode && editor.selectedElement.id !== id,
+          "cursor-grab active:cursor-grabbing": !editor.liveMode && type !== "__body",
         }
       )}
       onDragOver={handleDragOver}

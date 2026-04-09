@@ -27,10 +27,19 @@ const EditorVideo: React.FC<EditorVideoProps> = ({ element }) => {
 
   const src = !Array.isArray(element.content) ? element.content.src : "";
 
+  const handleDragStart = (event: React.DragEvent) => {
+    if (editor.liveMode) return;
+    event.stopPropagation();
+    event.dataTransfer.setData("componentType", "canvasElement");
+    event.dataTransfer.setData("canvasElementId", element.id);
+  };
+
   return (
     <div
       style={element.styles}
-      className={cn("relative transition-all w-full aspect-video", {
+      draggable={!editor.liveMode}
+      onDragStart={handleDragStart}
+      className={cn("relative transition-all w-full aspect-video cursor-grab active:cursor-grabbing", {
         "border-blue-500 border-solid border": editor.selectedElement.id === element.id && !editor.liveMode,
         "border-dashed border": !editor.liveMode && editor.selectedElement.id !== element.id,
       })}
