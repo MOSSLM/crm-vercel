@@ -1,3 +1,5 @@
+import type { CSSProperties } from 'react';
+
 export type RevenueBand =
   | 'unknown'
   | '0-100k'
@@ -330,7 +332,7 @@ export type EditorBtns =
 
 export type EditorElement = {
   id: string;
-  styles: React.CSSProperties;
+  styles: CSSProperties;
   name: string;
   type: EditorBtns;
   content:
