@@ -328,6 +328,7 @@ export type EditorBtns =
   | '__body'
   | 'image'
   | '3Col'
+  | 'savedComponent'
   | null;
 
 export type EditorElement = {
@@ -380,3 +381,13 @@ export type EditorAction =
   | { type: 'LOAD_DATA'; payload: { elements: EditorElement[]; withLive: boolean } }
   | { type: 'CLEAR_HISTORY' }
   | { type: 'SET_PAGE_ID'; payload: { pageId: string } };
+
+// Reusable saved components
+export interface SavedComponent {
+  id: string;
+  name: string;
+  category: string;
+  content: string; // JSON string of EditorElement
+  created_at: string;
+  updated_at: string;
+}
