@@ -330,7 +330,14 @@ export type EditorBtns =
   | '3Col'
   | 'savedComponent'
   | 'canvasElement'
+  | 'customCode'
   | null;
+
+export interface CustomCodeContent {
+  code: string;
+  schema: string; // JSON: { varName: { type: 'string'|'color'|'number'|'boolean', label: string, default: string } }
+  propValues: Record<string, string>;
+}
 
 export type EditorElement = {
   id: string;
@@ -344,7 +351,8 @@ export type EditorElement = {
         innerText?: string;
         src?: string;
         alt?: string;
-      };
+      }
+    | CustomCodeContent;
 };
 
 export type Editor = {

@@ -6,6 +6,7 @@ import EditorVideo from "./EditorVideo";
 import EditorLink from "./EditorLink";
 import EditorImage from "./EditorImage";
 import EditorSection from "./EditorSection";
+import EditorCustomCode from "./EditorCustomCode";
 
 type Props = { element: EditorElement };
 
@@ -29,6 +30,8 @@ const EditorRecursive = ({ element }: Props) => {
       return <EditorVideo element={element} />;
     case "link":
       return <EditorLink element={element} />;
+    case "customCode":
+      return <EditorCustomCode element={element} />;
     default:
       return null;
   }
