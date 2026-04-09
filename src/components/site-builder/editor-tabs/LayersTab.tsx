@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronRight, Layers } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useEditor } from "@/components/site-builder/use-editor";
 import { cn } from "@/components/ui/utils";
 import type { EditorElement } from "@/types";
@@ -113,12 +113,8 @@ const LayersTab: React.FC = () => {
   const { editor } = editorState;
 
   return (
-    <div className="px-4 py-6">
-      <div className="flex items-center gap-2 mb-2">
-        <Layers className="h-4 w-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold">Calques</h3>
-      </div>
-      <p className="text-xs text-muted-foreground mb-4">Structure de la page. Glissez pour réorganiser.</p>
+    <div className="px-2 py-2">
+      <p className="text-[10px] text-muted-foreground mb-2 px-2">Glissez pour réorganiser.</p>
       <div className="space-y-0.5">
         {editor.elements.map((element) => (
           <LayerItem key={element.id} element={element} />

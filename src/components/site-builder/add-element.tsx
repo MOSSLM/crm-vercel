@@ -164,5 +164,34 @@ export const addVerifyElement = (
       });
       break;
     }
+    case "customCode": {
+      dispatch({
+        type: "ADD_ELEMENT",
+        payload: {
+          containerId,
+          elementDetails: {
+            content: {
+              code: `<div style="padding: 40px; text-align: center; background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%); border-radius: 12px; font-family: system-ui, sans-serif;">
+  <h2 style="margin: 0 0 12px; font-size: 28px; color: #1a1a2e;">{{title}}</h2>
+  <p style="margin: 0; color: #555; font-size: 16px;">{{description}}</p>
+</div>`,
+              schema: JSON.stringify({
+                title:       { type: "string",  label: "Titre",       default: "Mon composant" },
+                description: { type: "string",  label: "Description", default: "Contenu personnalisé" },
+              }),
+              propValues: {
+                title: "Mon composant",
+                description: "Contenu personnalisé",
+              },
+            },
+            id: crypto.randomUUID(),
+            name: "Custom Code",
+            type: "customCode",
+            styles: { width: "100%", minHeight: "100px" },
+          },
+        },
+      });
+      break;
+    }
   }
 };

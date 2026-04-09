@@ -8,6 +8,7 @@ import {
   Square,
   Columns2,
   Columns3,
+  Code2,
 } from "lucide-react";
 import type { EditorBtns } from "@/types";
 
@@ -75,6 +76,12 @@ export const ELEMENT_PRIMITIVE_PLACEHOLDERS: ComponentElement[] = [
     placeholder: <PlaceholderBox icon={Link2} label="Lien" />,
     label: "Lien",
     id: "link",
+    group: "elements",
+  },
+  {
+    placeholder: <PlaceholderBox icon={Code2} label="Code" />,
+    label: "Code personnalisé",
+    id: "customCode",
     group: "elements",
   },
 ];

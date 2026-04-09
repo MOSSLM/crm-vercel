@@ -30,7 +30,7 @@ const ComponentsTab: React.FC = () => {
 
   const handleDragStart = (e: React.DragEvent, type: EditorBtns) => {
     if (type === null) return;
-    e.dataTransfer.setData("componentType", type);
+    e.dataTransfer.setData("componentType", type as string);
   };
 
   const handleSavedDragStart = (e: React.DragEvent, component: SavedComponent) => {
