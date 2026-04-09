@@ -25,6 +25,7 @@ import {
   Type,
   Underline,
   Waves,
+  Plus,
 } from "lucide-react";
 import { useEditor } from "@/components/site-builder/use-editor";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -57,12 +58,98 @@ const parseSliderValue = (val: string | number | undefined, fallback = 0): numbe
   return isNaN(n) ? fallback : n;
 };
 
+const UNIT_OPTIONS = ["px", "%", "rem", "em", "vh", "vw", "auto"] as const;
+type UnitOption = (typeof UNIT_OPTIONS)[number];
+
+const splitCssValue = (value: string | number | undefined, defaultUnit: UnitOption = "px"): { value: string; unit: UnitOption } => {
+  if (value === undefined || value === null || value === "") return { value: "", unit: defaultUnit };
+  const raw = String(value).trim();
+  if (raw === "auto") return { value: "", unit: "auto" };
+  const match = raw.match(/^(-?\d*\.?\d+)\s*([a-zA-Z%]+)?$/);
+  if (!match) return { value: raw.replace(/[a-zA-Z%]+$/g, ""), unit: defaultUnit };
+  const parsedUnit = match[2] as UnitOption | undefined;
+  return { value: match[1], unit: parsedUnit && UNIT_OPTIONS.includes(parsedUnit) ? parsedUnit : defaultUnit };
+};
+
+const UnitValueInput = ({
+  id,
+  label,
+  value,
+  onChange,
+  defaultUnit = "px",
+}: {
+  id: string;
+  label: string;
+  value?: string | number;
+  onChange: (e: { target: { id: string; value: string } }) => void;
+  defaultUnit?: UnitOption;
+}) => {
+  const parsed = React.useMemo(() => splitCssValue(value, defaultUnit), [value, defaultUnit]);
+  const [unit, setUnit] = React.useState<UnitOption>(parsed.unit);
+  const [rawValue, setRawValue] = React.useState(parsed.value);
+
+  React.useEffect(() => {
+    setUnit(parsed.unit);
+    setRawValue(parsed.value);
+  }, [parsed.unit, parsed.value]);
+
+  const commit = (nextValue: string, nextUnit: UnitOption) => {
+    if (nextValue === "" && nextUnit !== "auto") {
+      onChange({ target: { id, value: "" } });
+      return;
+    }
+    const valueWithUnit = nextUnit === "auto" ? "auto" : `${nextValue}${nextUnit}`;
+    onChange({ target: { id, value: valueWithUnit } });
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Label>{label}</Label>
+      <div className="flex gap-2">
+        <Input
+          id={id}
+          value={rawValue}
+          placeholder={defaultUnit}
+          onChange={(e) => {
+            const nextRaw = e.target.value.replace(/[a-zA-Z%]+$/g, "");
+            const typedUnit = e.target.value.match(/[a-zA-Z%]+$/)?.[0] as UnitOption | undefined;
+            const nextUnit = typedUnit && UNIT_OPTIONS.includes(typedUnit) ? typedUnit : unit;
+            setRawValue(nextRaw);
+            setUnit(nextUnit);
+            commit(nextRaw, nextUnit);
+          }}
+          disabled={unit === "auto"}
+        />
+        <Select
+          value={unit}
+          onValueChange={(u) => {
+            const next = u as UnitOption;
+            setUnit(next);
+            commit(rawValue, next);
+          }}
+        >
+          <SelectTrigger className="w-[88px] shrink-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {UNIT_OPTIONS.map((option) => (
+              <SelectItem key={`${id}-${option}`} value={option}>{option}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+};
+
 const SettingsTab: React.FC = () => {
   const { editor, dispatch } = useEditor();
   const [showSave, setShowSave] = React.useState(false);
   const [compName, setCompName] = React.useState("");
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
+  const [showAdvancedSize, setShowAdvancedSize] = React.useState(false);
+  const [enabledSizeFields, setEnabledSizeFields] = React.useState<string[]>([]);
 
   const handleSaveComponent = async () => {
     const sel = editor.editor.selectedElement;
@@ -104,6 +191,15 @@ const SettingsTab: React.FC = () => {
     });
   };
 
+  const sel = editor.editor.selectedElement;
+  const content = !Array.isArray(sel.content) ? sel.content : {};
+  const extraSizeFields = ["minWidth", "minHeight", "maxWidth", "maxHeight"];
+
+  React.useEffect(() => {
+    const active = extraSizeFields.filter((field) => Boolean(sel.styles[field as keyof typeof sel.styles]));
+    setEnabledSizeFields(active);
+  }, [sel.id]);
+
   if (!editor.editor.selectedElement.id) {
     return (
       <div className="px-6 py-6">
@@ -116,9 +212,6 @@ const SettingsTab: React.FC = () => {
       </div>
     );
   }
-
-  const sel = editor.editor.selectedElement;
-  const content = !Array.isArray(sel.content) ? sel.content : {};
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -156,12 +249,12 @@ const SettingsTab: React.FC = () => {
         </div>
       )}
 
-      <Accordion type="multiple" className="w-full" defaultValue={["Custom", "Typography", "Dimensions", "Decorations", "Layout"]}>
+      <Accordion type="multiple" className="w-full" defaultValue={["Custom", "Position", "Size", "Layout", "Styles"]}>
 
         {/* Custom properties */}
         {(sel.type === "link" || sel.type === "video" || sel.type === "image") && (
           <AccordionItem value="Custom" className="px-6 py-0">
-            <AccordionTrigger className="!no-underline">Personnalisé</AccordionTrigger>
+            <AccordionTrigger className="!no-underline flex-row-reverse justify-end gap-2">Personnalisé</AccordionTrigger>
             <AccordionContent>
               {sel.type === "link" && (
                 <div className="flex flex-col gap-2">
@@ -192,8 +285,8 @@ const SettingsTab: React.FC = () => {
         )}
 
         {/* Typography */}
-        <AccordionItem value="Typography" className="px-6 py-0 border-y-[1px]">
-          <AccordionTrigger className="!no-underline">Typographie</AccordionTrigger>
+        <AccordionItem value="Styles" className="px-6 py-0 border-y-[1px]">
+          <AccordionTrigger className="!no-underline flex-row-reverse justify-end gap-2">Styles</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label>Alignement</Label>
@@ -259,19 +352,17 @@ const SettingsTab: React.FC = () => {
               </Select>
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Taille</Label>
-              <Input placeholder="px" id="fontSize" onChange={handleOnChanges} value={sel.styles.fontSize ?? ""} />
+              <UnitValueInput id="fontSize" label="Taille" value={sel.styles.fontSize} onChange={handleOnChanges} defaultUnit="px" />
             </div>
             <div className="flex flex-col gap-2">
-              <Label>Hauteur de ligne</Label>
-              <Input placeholder="rem" id="lineHeight" onChange={handleOnChanges} value={sel.styles.lineHeight ?? ""} />
+              <UnitValueInput id="lineHeight" label="Hauteur de ligne" value={sel.styles.lineHeight} onChange={handleOnChanges} defaultUnit="rem" />
             </div>
           </AccordionContent>
         </AccordionItem>
 
         {/* Decorations */}
-        <AccordionItem value="Decorations" className="px-6 py-0">
-          <AccordionTrigger className="!no-underline">Décorations</AccordionTrigger>
+        <AccordionItem value="Visual" className="px-6 py-0">
+          <AccordionTrigger className="!no-underline flex-row-reverse justify-end gap-2">Apparence</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label>Opacité</Label>
@@ -352,9 +443,43 @@ const SettingsTab: React.FC = () => {
           </AccordionContent>
         </AccordionItem>
 
+        {/* Position */}
+        <AccordionItem value="Position" className="px-6 py-0">
+          <AccordionTrigger className="!no-underline flex-row-reverse justify-end gap-2">Position</AccordionTrigger>
+          <AccordionContent className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label>Type de position</Label>
+              <Select
+                onValueChange={(e) => handleOnChanges({ target: { id: "position", value: e } })}
+                value={(sel.styles.position as string) || "static"}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="static">Static</SelectItem>
+                  <SelectItem value="relative">Relative</SelectItem>
+                  <SelectItem value="absolute">Absolute</SelectItem>
+                  <SelectItem value="fixed">Fixed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {(sel.styles.position === "absolute" || sel.styles.position === "fixed" || sel.styles.position === "relative") && (
+              <>
+                <div className="flex gap-4">
+                  <UnitValueInput id="top" label="Top" value={sel.styles.top} onChange={handleOnChanges} defaultUnit="px" />
+                  <UnitValueInput id="left" label="Left" value={sel.styles.left} onChange={handleOnChanges} defaultUnit="px" />
+                </div>
+                <div className="flex gap-4">
+                  <UnitValueInput id="right" label="Right" value={sel.styles.right} onChange={handleOnChanges} defaultUnit="px" />
+                  <UnitValueInput id="bottom" label="Bottom" value={sel.styles.bottom} onChange={handleOnChanges} defaultUnit="px" />
+                </div>
+              </>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+
         {/* Layout */}
         <AccordionItem value="Layout" className="px-6 py-0">
-          <AccordionTrigger className="!no-underline">Mise en page</AccordionTrigger>
+          <AccordionTrigger className="!no-underline flex-row-reverse justify-end gap-2">Mise en page</AccordionTrigger>
           <AccordionContent className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label>Mode d&apos;affichage</Label>
@@ -421,44 +546,93 @@ const SettingsTab: React.FC = () => {
                 </SelectContent>
               </Select>
             </div>
+            {(sel.styles.display === "flex" || sel.styles.display === "grid" || sel.styles.display === "inline-flex") && (
+              <UnitValueInput id="gap" label="Gap" value={sel.styles.gap} onChange={handleOnChanges} defaultUnit="px" />
+            )}
+            {sel.styles.display === "grid" && (
+              <>
+                <div className="flex flex-col gap-2">
+                  <Label>Colonnes</Label>
+                  <Input id="gridTemplateColumns" placeholder="repeat(2, 1fr)" onChange={handleOnChanges} value={sel.styles.gridTemplateColumns ?? ""} />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <Label>Lignes</Label>
+                  <Input id="gridTemplateRows" placeholder="auto auto" onChange={handleOnChanges} value={sel.styles.gridTemplateRows ?? ""} />
+                </div>
+              </>
+            )}
+            <div className="flex flex-col gap-2">
+              <Label>Z-index</Label>
+              <Input
+                id="zIndex"
+                placeholder="0"
+                onChange={(e) => handleOnChanges({ target: { id: "zIndex", value: e.target.value.replace(/[^\d-]/g, "") } })}
+                value={sel.styles.zIndex?.toString() ?? ""}
+              />
+            </div>
           </AccordionContent>
         </AccordionItem>
 
-        {/* Dimensions */}
-        <AccordionItem value="Dimensions" className="px-6 py-0 border-b-0">
-          <AccordionTrigger className="!no-underline">Dimensions</AccordionTrigger>
+        {/* Size */}
+        <AccordionItem value="Size" className="px-6 py-0 border-b-0">
+          <AccordionTrigger className="!no-underline flex-row-reverse justify-end gap-2">Taille</AccordionTrigger>
           <AccordionContent>
             <div className="flex flex-col gap-4">
               <div className="flex gap-4">
-                <div className="flex flex-col gap-2">
-                  <Label>Hauteur</Label>
-                  <Input id="height" placeholder="px" onChange={handleOnChanges} value={sel.styles.height ?? ""} />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Largeur</Label>
-                  <Input id="width" placeholder="px" onChange={handleOnChanges} value={sel.styles.width ?? ""} />
-                </div>
+                <UnitValueInput id="height" label="Hauteur" value={sel.styles.height} onChange={handleOnChanges} defaultUnit="px" />
+                <UnitValueInput id="width" label="Largeur" value={sel.styles.width} onChange={handleOnChanges} defaultUnit="px" />
               </div>
+              <div className="flex items-center justify-between">
+                <Label>Contraintes</Label>
+                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setShowAdvancedSize((prev) => !prev)}>
+                  <Plus className="w-3.5 h-3.5 mr-1" />
+                  Plus
+                </Button>
+              </div>
+              {showAdvancedSize && (
+                <div className="space-y-2">
+                  {extraSizeFields.map((field) => (
+                    <button
+                      key={field}
+                      type="button"
+                      className="text-xs text-left text-muted-foreground hover:text-foreground"
+                      onClick={() => setEnabledSizeFields((prev) => (prev.includes(field) ? prev : [...prev, field]))}
+                    >
+                      Ajouter {field}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {enabledSizeFields.map((field) => (
+                <UnitValueInput
+                  key={field}
+                  id={field}
+                  label={field}
+                  value={sel.styles[field as keyof typeof sel.styles] as string}
+                  onChange={handleOnChanges}
+                  defaultUnit="px"
+                />
+              ))}
               <Label className="w-full text-center">Marges (px)</Label>
               <div className="flex flex-col gap-4">
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="marginTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginTop ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="marginBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginBottom ?? ""} /></div>
+                  <UnitValueInput id="marginTop" label="Haut" value={sel.styles.marginTop} onChange={handleOnChanges} defaultUnit="px" />
+                  <UnitValueInput id="marginBottom" label="Bas" value={sel.styles.marginBottom} onChange={handleOnChanges} defaultUnit="px" />
                 </div>
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="marginLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginLeft ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="marginRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.marginRight ?? ""} /></div>
+                  <UnitValueInput id="marginLeft" label="Gauche" value={sel.styles.marginLeft} onChange={handleOnChanges} defaultUnit="px" />
+                  <UnitValueInput id="marginRight" label="Droite" value={sel.styles.marginRight} onChange={handleOnChanges} defaultUnit="px" />
                 </div>
               </div>
               <Label className="w-full text-center">Rembourrage (px)</Label>
               <div className="flex flex-col gap-4">
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Haut</Label><Input id="paddingTop" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingTop ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Bas</Label><Input id="paddingBottom" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingBottom ?? ""} /></div>
+                  <UnitValueInput id="paddingTop" label="Haut" value={sel.styles.paddingTop} onChange={handleOnChanges} defaultUnit="px" />
+                  <UnitValueInput id="paddingBottom" label="Bas" value={sel.styles.paddingBottom} onChange={handleOnChanges} defaultUnit="px" />
                 </div>
                 <div className="flex gap-4">
-                  <div className="flex flex-col gap-2"><Label>Gauche</Label><Input id="paddingLeft" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingLeft ?? ""} /></div>
-                  <div className="flex flex-col gap-2"><Label>Droite</Label><Input id="paddingRight" placeholder="px" onChange={handleOnChanges} value={sel.styles.paddingRight ?? ""} /></div>
+                  <UnitValueInput id="paddingLeft" label="Gauche" value={sel.styles.paddingLeft} onChange={handleOnChanges} defaultUnit="px" />
+                  <UnitValueInput id="paddingRight" label="Droite" value={sel.styles.paddingRight} onChange={handleOnChanges} defaultUnit="px" />
                 </div>
               </div>
             </div>
