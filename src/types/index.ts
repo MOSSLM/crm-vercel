@@ -382,7 +382,14 @@ export type EditorAction =
   | { type: 'LOAD_DATA'; payload: { elements: EditorElement[]; withLive: boolean } }
   | { type: 'CLEAR_HISTORY' }
   | { type: 'SET_PAGE_ID'; payload: { pageId: string } }
-  | { type: 'MOVE_ELEMENT'; payload: { elementId: string; targetContainerId: string } };
+  | {
+      type: 'MOVE_ELEMENT';
+      payload: {
+        elementId: string;
+        targetContainerId: string;
+        position?: 'inside' | 'before' | 'after';
+      };
+    };
 
 // Reusable saved components
 export interface SavedComponent {
