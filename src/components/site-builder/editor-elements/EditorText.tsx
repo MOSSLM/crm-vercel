@@ -6,6 +6,7 @@ import { useEditor } from "@/components/site-builder/use-editor";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/components/ui/utils";
 import type { EditorElement } from "@/types";
+import { resolveResponsiveStyles } from "@/components/site-builder/style-system";
 
 interface EditorTextProps {
   element: EditorElement;
@@ -39,7 +40,7 @@ const EditorText: React.FC<EditorTextProps> = ({ element }) => {
         "border-blue-500 border-solid": editor.selectedElement.id === element.id,
         "border-dashed border": !editor.liveMode,
       })}
-      style={element.styles}
+      style={resolveResponsiveStyles(element.styles, editor.device)}
       onClick={handleClick}
     >
       {editor.selectedElement.id === element.id && !editor.liveMode && (

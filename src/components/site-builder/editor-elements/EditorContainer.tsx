@@ -8,6 +8,7 @@ import EditorRecursive from "./EditorRecursive";
 import { addVerifyElement, reinstantiateWithNewIds } from "@/components/site-builder/add-element";
 import { cn } from "@/components/ui/utils";
 import type { EditorBtns, EditorElement } from "@/types";
+import { resolveResponsiveStyles } from "@/components/site-builder/style-system";
 
 interface EditorContainerProps {
   element: EditorElement;
@@ -78,7 +79,7 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
 
   return (
     <div
-      style={styles}
+      style={resolveResponsiveStyles(styles, editor.device)}
       draggable={!editor.liveMode && type !== "__body"}
       onDragStart={handleDragStart}
       className={cn(

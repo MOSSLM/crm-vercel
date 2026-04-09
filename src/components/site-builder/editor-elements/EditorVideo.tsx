@@ -6,6 +6,7 @@ import { useEditor } from "@/components/site-builder/use-editor";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/components/ui/utils";
 import type { EditorElement } from "@/types";
+import { resolveResponsiveStyles } from "@/components/site-builder/style-system";
 
 interface EditorVideoProps {
   element: EditorElement;
@@ -36,7 +37,7 @@ const EditorVideo: React.FC<EditorVideoProps> = ({ element }) => {
 
   return (
     <div
-      style={element.styles}
+      style={resolveResponsiveStyles(element.styles, editor.device)}
       draggable={!editor.liveMode}
       onDragStart={handleDragStart}
       className={cn("relative transition-all w-full aspect-video cursor-grab active:cursor-grabbing", {

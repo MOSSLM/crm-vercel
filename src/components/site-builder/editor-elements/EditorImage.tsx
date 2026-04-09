@@ -6,6 +6,7 @@ import { useEditor } from "@/components/site-builder/use-editor";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/components/ui/utils";
 import type { EditorElement } from "@/types";
+import { resolveResponsiveStyles } from "@/components/site-builder/style-system";
 
 interface EditorImageProps {
   element: EditorElement;
@@ -37,7 +38,7 @@ const EditorImage: React.FC<EditorImageProps> = ({ element }) => {
 
   return (
     <div
-      style={element.styles}
+      style={resolveResponsiveStyles(element.styles, editor.device)}
       draggable={!editor.liveMode}
       onDragStart={handleDragStart}
       className={cn("relative transition-all cursor-grab active:cursor-grabbing", {
