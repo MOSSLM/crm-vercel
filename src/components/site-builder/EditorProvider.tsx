@@ -133,15 +133,18 @@ const editorReducer = (state: EditorState = initialState, action: EditorAction):
       }
       return state;
     }
-    case "LOAD_DATA":
+    case "LOAD_DATA": {
+      const parsed = action.payload.elements;
+      const elements = (Array.isArray(parsed) && parsed.length > 0) ? parsed : initialEditorState.elements;
       return {
         ...initialState,
         editor: {
           ...initialState.editor,
-          elements: action.payload.elements || initialEditorState.elements,
+          elements,
           liveMode: !!action.payload.withLive,
         },
       };
+    }
     case "SET_PAGE_ID":
       return { ...state, editor: { ...state.editor, pageId: action.payload.pageId } };
     default:

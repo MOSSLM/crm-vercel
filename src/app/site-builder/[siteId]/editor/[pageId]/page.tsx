@@ -19,10 +19,10 @@ export default async function EditorPage({ params }: EditorPageProps) {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-background">
+    <div className="flex flex-col h-screen bg-background">
       <EditorProvider siteId={siteId} pageDetails={pageDetails}>
         <SiteEditorNavigation siteId={siteId} pageId={pageId} />
-        <div className="flex flex-1 overflow-hidden relative">
+        <div className="flex flex-1 min-h-0 relative">
           <SiteEditor pageId={pageId} />
           <SiteEditorSidebar />
         </div>

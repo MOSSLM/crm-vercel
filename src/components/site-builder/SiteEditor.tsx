@@ -47,7 +47,7 @@ const SiteEditor: React.FC<SiteEditorProps> = ({ pageId, liveMode }) => {
   return (
     <div
       className={cn(
-        "h-screen overflow-y-auto overflow-x-hidden mr-[385px] bg-background transition-all",
+        "flex-1 h-full overflow-y-auto overflow-x-hidden mr-[385px] bg-background transition-all",
         {
           "p-0 mr-0": editor.editor.previewMode || editor.editor.liveMode,
           "!w-[850px] mx-auto": editor.editor.device === "Tablet",
