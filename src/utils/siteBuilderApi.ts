@@ -1,5 +1,5 @@
 import { supabase } from './supabase/client';
-import type { Site, SitePage } from '@/types';
+import type { Site, SitePage, SavedComponent } from '@/types';
 
 // ─── Sites API ───────────────────────────────────────────────────────────────
 
@@ -110,6 +110,34 @@ export const sitePagesApi = {
 
   async delete(id: string): Promise<void> {
     const { error } = await supabase.from('site_pages').delete().eq('id', id);
+    if (error) throw error;
+  },
+};
+
+// ─── Saved Components API ────────────────────────────────────────────────────
+
+export const componentsApi = {
+  async fetchAll(): Promise<SavedComponent[]> {
+    const { data, error } = await supabase
+      .from('site_builder_components')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data ?? []) as SavedComponent[];
+  },
+
+  async create(payload: { name: string; category?: string; content: string }): Promise<SavedComponent> {
+    const { data, error } = await supabase
+      .from('site_builder_components')
+      .insert({ name: payload.name, category: payload.category ?? 'custom', content: payload.content })
+      .select()
+      .single();
+    if (error) throw error;
+    return data as SavedComponent;
+  },
+
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase.from('site_builder_components').delete().eq('id', id);
     if (error) throw error;
   },
 };

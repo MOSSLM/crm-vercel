@@ -13,6 +13,8 @@ import {
   AlignVerticalJustifyCenter,
   AlignVerticalJustifyEnd,
   AlignVerticalJustifyStart,
+  Bookmark,
+  Check,
   Expand,
   GripHorizontal,
   Italic,
@@ -26,12 +28,14 @@ import {
 } from "lucide-react";
 import { useEditor } from "@/components/site-builder/use-editor";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { componentsApi } from "@/utils/siteBuilderApi";
 
 // Simple native color input wrapper
 const ColorInput = ({ value, onChange }: { value?: string; onChange: (val: string) => void }) => (
@@ -48,6 +52,23 @@ const ColorInput = ({ value, onChange }: { value?: string; onChange: (val: strin
 
 const SettingsTab: React.FC = () => {
   const { editor, dispatch } = useEditor();
+  const [showSave, setShowSave] = React.useState(false);
+  const [compName, setCompName] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const [saved, setSaved] = React.useState(false);
+
+  const handleSaveComponent = async () => {
+    const sel = editor.editor.selectedElement;
+    if (!sel.id || !compName.trim()) return;
+    setSaving(true);
+    try {
+      await componentsApi.create({ name: compName.trim(), content: JSON.stringify(sel) });
+      window.dispatchEvent(new CustomEvent("sb:componentSaved"));
+      setSaved(true);
+      setTimeout(() => { setSaved(false); setShowSave(false); setCompName(""); }, 1500);
+    } catch {}
+    setSaving(false);
+  };
 
   const handleChangeCustomValues = (e: React.ChangeEvent<HTMLInputElement>) => {
     const prop = e.target.id;
@@ -102,6 +123,35 @@ const SettingsTab: React.FC = () => {
         <h3 className="text-sm font-semibold mb-1">Styles</h3>
         <p className="text-xs text-muted-foreground mb-4">Personnalisez chaque composant comme vous le souhaitez.</p>
       </div>
+
+      {/* Save as component */}
+      {sel.type && sel.type !== "__body" && (
+        <div className="px-6 pb-4 border-b border-border">
+          {!showSave ? (
+            <Button variant="outline" size="sm" className="w-full gap-2 text-xs" onClick={() => setShowSave(true)}>
+              <Bookmark className="w-3.5 h-3.5" />
+              Sauvegarder comme composant
+            </Button>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <Label className="text-xs">Nom du composant</Label>
+              <div className="flex gap-2">
+                <Input
+                  value={compName}
+                  onChange={(e) => setCompName(e.target.value)}
+                  placeholder="Ex : Hero Section"
+                  className="h-8 text-xs"
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveComponent(); if (e.key === "Escape") { setShowSave(false); setCompName(""); } }}
+                  autoFocus
+                />
+                <Button size="sm" className="h-8 px-3 shrink-0" onClick={handleSaveComponent} disabled={saving || !compName.trim()}>
+                  {saved ? <Check className="w-3.5 h-3.5" /> : saving ? "…" : "OK"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <Accordion type="multiple" className="w-full" defaultValue={["Custom", "Typography", "Dimensions", "Decorations", "Layout"]}>
         {/* Custom properties */}

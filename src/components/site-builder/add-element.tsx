@@ -1,5 +1,16 @@
 import { defaultStyles } from "./editor.config";
-import type { EditorAction, EditorBtns } from "@/types";
+import type { EditorAction, EditorBtns, EditorElement } from "@/types";
+
+/** Recursively replace all element IDs with fresh UUIDs (for instantiating saved components). */
+export function reinstantiateWithNewIds(element: EditorElement): EditorElement {
+  return {
+    ...element,
+    id: crypto.randomUUID(),
+    content: Array.isArray(element.content)
+      ? element.content.map(reinstantiateWithNewIds)
+      : element.content,
+  };
+}
 
 export const addVerifyElement = (
   componentType: EditorBtns,
