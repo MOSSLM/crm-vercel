@@ -180,7 +180,7 @@ function ProjectionBox({
 }) {
   return (
     <div className="rounded-lg border border-border/60 bg-muted/40 p-4 text-center">
-      <div className={`text-3xl font-semibold ${color}`}>{value}</div>
+      <div className={`text-xl md:text-3xl font-semibold ${color}`}>{value}</div>
       <div className="mt-1 text-sm text-muted-foreground">{label}</div>
     </div>
   );

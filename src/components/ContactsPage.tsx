@@ -188,10 +188,10 @@ export const ContactsPage: React.FC = () => {
           />
         </div>
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
             <Select value={filterBy} onValueChange={setFilterBy}>
-              <SelectTrigger className="w-[200px]">
+              <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

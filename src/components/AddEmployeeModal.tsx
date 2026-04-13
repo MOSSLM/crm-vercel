@@ -148,7 +148,7 @@ export const AddEmployeeModal: React.FC<AddEmployeeModalProps> = ({
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="add-first-name" className="flex items-center gap-2">
                 <User className="h-4 w-4" />

@@ -171,7 +171,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className="p-3 md:p-6">
         <div className="flex items-center gap-4 mb-6">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -188,7 +188,7 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
 
   if (!employee || !associatedCompany) {
     return (
-      <div className="p-6">
+      <div className="p-3 md:p-6">
         <div className="flex items-center gap-4 mb-6">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -223,26 +223,26 @@ export const EmployeeDetailPage: React.FC<EmployeeDetailPageProps> = ({
       };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-3 md:p-6 max-w-6xl mx-auto space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour
           </Button>
-          <div>
-            <h1 className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              {displayName}
+          <div className="min-w-0">
+            <h1 className="flex items-center gap-2 text-lg sm:text-2xl font-bold mb-0">
+              <User className="h-5 w-5 shrink-0" />
+              <span className="truncate">{displayName}</span>
             </h1>
-            <p className="text-muted-foreground">
-              Contact chez {companyDisplayName} • ID: {employee.id}
+            <p className="text-muted-foreground text-sm truncate">
+              Contact chez {companyDisplayName}
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {isEditing ? (
             <>
               <Button variant="outline" onClick={handleCancel} disabled={isLoading}>

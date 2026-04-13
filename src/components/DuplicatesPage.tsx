@@ -170,7 +170,7 @@ const DuplicatesPage: React.FC = () => {
               setSelected((prev) => ({ ...prev, [group.domain]: val }))
             }
           >
-            <SelectTrigger size="sm" className="w-[180px]">
+            <SelectTrigger size="sm" className="w-full sm:w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -372,7 +372,7 @@ const DuplicatesPage: React.FC = () => {
                           }))
                         }
                       >
-                        <SelectTrigger size="sm" className="w-[180px]">
+                        <SelectTrigger size="sm" className="w-full sm:w-[180px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

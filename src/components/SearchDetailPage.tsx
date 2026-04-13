@@ -225,7 +225,7 @@ export const SearchDetailPage: React.FC<SearchDetailPageProps> = ({
   const qualified = searchResult.qualifiedCompanies ?? 0;
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" onClick={onBack} className="p-2">
           <ArrowLeft className="h-4 w-4" />

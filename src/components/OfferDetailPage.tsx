@@ -140,7 +140,7 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
 
   if (!offer) {
     return (
-      <div className="p-6">
+      <div className="p-3 md:p-6">
         <Card>
           <CardHeader>
             <CardTitle>Offre introuvable</CardTitle>
@@ -155,7 +155,7 @@ export const OfferDetailPage: React.FC<{ offerId: string }> = ({ offerId }) => {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-3 md:p-6">
       <Card className="max-w-3xl">
         <CardHeader>
           <CardTitle>Modifier l&apos;offre</CardTitle>

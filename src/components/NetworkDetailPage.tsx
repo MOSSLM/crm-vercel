@@ -36,7 +36,7 @@ const NetworkDetailPage: React.FC<Props> = ({ id }) => {
 
   if (!network) {
     return (
-      <div className="p-6">
+      <div className="p-3 md:p-6">
         <h1>Réseau introuvable</h1>
       </div>
     );
@@ -66,7 +66,7 @@ const NetworkDetailPage: React.FC<Props> = ({ id }) => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" asChild>
           <Link href="/networks">

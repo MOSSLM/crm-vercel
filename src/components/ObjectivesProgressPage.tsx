@@ -121,7 +121,7 @@ export const ObjectivesProgressPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6">
         <div className="animate-pulse">
           <div className="h-8 bg-muted rounded w-64 mb-4"></div>
           <div className="grid gap-4 grid-cols-1 md:grid-cols-3 mb-6">
@@ -136,21 +136,21 @@ export const ObjectivesProgressPage: React.FC = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       {/* En-tête */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1>Objectifs & Progression</h1>
-          <p className="text-muted-foreground">
-            Définissez vos objectifs et suivez vos performances à partir de kpi_daily_facts, pipeline_events et kpi_targets
+          <p className="text-muted-foreground text-sm">
+            Définissez vos objectifs et suivez vos performances
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Select 
-            value={selectedPeriodType} 
+        <div className="flex items-center gap-2 flex-wrap">
+          <Select
+            value={selectedPeriodType}
             onValueChange={(value: PeriodType) => setSelectedPeriodType(value)}
           >
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-full sm:w-48">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

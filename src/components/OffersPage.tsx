@@ -146,16 +146,16 @@ export const OffersPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-start justify-between gap-3">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold">Offres</h1>
-          <p className="text-muted-foreground">Consultez les offres existantes et ouvrez une fiche pour les modifier.</p>
+          <h1 className="text-xl sm:text-2xl font-semibold">Offres</h1>
+          <p className="text-muted-foreground text-sm">Consultez les offres existantes et ouvrez une fiche pour les modifier.</p>
         </div>
 
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button>
+            <Button className="shrink-0">
               <Plus className="h-4 w-4 mr-1" />
               Nouvelle offre
             </Button>

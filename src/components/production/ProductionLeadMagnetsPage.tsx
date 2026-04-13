@@ -489,7 +489,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
         <CardContent className="space-y-3">
           <div className="flex flex-wrap gap-2">
             <Select value={statusFilter} onValueChange={(value: "all" | LeadMagnetStatus) => setStatusFilter(value)}>
-              <SelectTrigger className="w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tous statuts</SelectItem>
                 <SelectItem value="a_faire">À faire</SelectItem>
@@ -499,7 +499,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
             </Select>
 
             <Select value={pipelineFilter} onValueChange={setPipelineFilter}>
-              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Pipeline" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Pipeline" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tous pipelines</SelectItem>
                 {pipelines.map((pipeline) => (
@@ -509,7 +509,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
             </Select>
 
             <Select value={flagFilter} onValueChange={setFlagFilter}>
-              <SelectTrigger className="w-[220px]"><SelectValue placeholder="Flag opportunité" /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Flag opportunité" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Tous flags</SelectItem>
                 {knownFlags.map((flag) => (
@@ -519,7 +519,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
             </Select>
 
             <Select value={readyFilter} onValueChange={(value: "all" | "ready" | "not_ready") => setReadyFilter(value)}>
-              <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[220px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">LM prêts + non prêts</SelectItem>
                 <SelectItem value="ready">Lead magnet prêt</SelectItem>
@@ -528,7 +528,7 @@ export function ProductionLeadMagnetsPage({ mode = "production", sprintModule = 
             </Select>
 
             <Select value={sortBy} onValueChange={(value: "created_at" | "priorite" | "montant" | "pipeline" | "flags") => setSortBy(value)}>
-              <SelectTrigger className="w-[220px]"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-full sm:w-[220px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="created_at">Trier: plus récent</SelectItem>
                 <SelectItem value="priorite">Trier: priorité opportunité</SelectItem>
