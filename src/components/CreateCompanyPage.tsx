@@ -85,7 +85,7 @@ export function CreateCompanyPage() {
   };
 
   return (
-    <div className="p-6">
+    <div className="p-3 md:p-6">
       <Card className="mx-auto max-w-3xl">
         <CardHeader>
           <CardTitle>Créer une entreprise</CardTitle>

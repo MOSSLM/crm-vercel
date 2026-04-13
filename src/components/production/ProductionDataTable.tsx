@@ -326,7 +326,7 @@ export const ProductionDataTable: React.FC<ProductionDataTableProps> = ({
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div>
         <h1>{title}</h1>
         {description && <p className="text-muted-foreground">{description}</p>}

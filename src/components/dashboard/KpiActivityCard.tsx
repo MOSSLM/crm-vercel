@@ -102,7 +102,7 @@ export function KpiActivityCard({
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-muted-foreground">Période :</span>
             <Select value={selectedPeriod} onValueChange={(v) => onPeriodChange(v as PeriodType)}>
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -159,7 +159,7 @@ export function KpiActivityCard({
                     {getPeriodLabel(selectedPeriod)} vs total
                   </Badge>
                 </div>
-                <div className="grid grid-cols-3 md:grid-cols-7 gap-2 text-xs">
+                <div className="grid grid-cols-4 md:grid-cols-7 gap-2 text-xs">
                   {kpiItems.map((item, index) => (
                     <div key={item.key} className="text-center">
                       <div className="font-medium">{item.label.slice(0, 3)}</div>

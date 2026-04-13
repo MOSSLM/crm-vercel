@@ -362,7 +362,7 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
 
   if (!company) {
     return (
-      <div className="p-6">
+      <div className="p-3 md:p-6">
         <div className="flex items-center gap-4 mb-6">
           <Button variant="ghost" size="sm" onClick={onBack}>
             <ArrowLeft className="h-4 w-4 mr-2" />
@@ -405,37 +405,37 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-3 md:p-6 max-w-7xl mx-auto space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={onBack}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Retour
           </Button>
           {company.logo_url && (
-            <img src={company.logo_url} alt="" className="h-12 w-12 rounded-lg object-cover flex-shrink-0 border" />
+            <img src={company.logo_url} alt="" className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg object-cover flex-shrink-0 border" />
           )}
-          <div>
-            <h1 className="flex items-center gap-2">
-              {displayName}
+          <div className="min-w-0">
+            <h1 className="flex flex-wrap items-center gap-2 text-lg sm:text-2xl font-bold mb-0">
+              <span className="truncate">{displayName}</span>
               {company.qualifie && (
-                <CheckCircle className="h-5 w-5 text-green-600" />
+                <CheckCircle className="h-5 w-5 text-green-600 shrink-0" />
               )}
               {company.manually_enriched && (
-                <Badge variant="outline" className="ml-2">
+                <Badge variant="outline" className="shrink-0">
                   <Database className="h-3 w-3 mr-1" />
                   Enrichi
                 </Badge>
               )}
             </h1>
-            <p className="text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               Détails de l'entreprise • ID: {company.id}
             </p>
           </div>
         </div>
-        
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-2 shrink-0">
           {isEditing ? (
             <>
               <Button variant="outline" onClick={handleCancel} disabled={isLoading}>

@@ -217,7 +217,7 @@ export const ResultsPage: React.FC = () => {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div>
         <h1>Résultats des Recherches</h1>
         <p className="text-muted-foreground">
