@@ -1115,6 +1115,16 @@ export async function GET(
         .reduce((acc, row) => acc + Number(row[key] ?? 0), 0);
 
       const rows = data || [];
+
+      // Count lead magnets directly from opportunites.lead_magnet = true
+      const { data: lmData } = await supabase
+        .from("opportunites")
+        .select("id, updated_at")
+        .eq("lead_magnet", true);
+      const lmRows = (lmData ?? []) as Array<{ id: string; updated_at: string }>;
+      const lmByDate = (fromDate: Date) =>
+        lmRows.filter((r) => new Date(r.updated_at) >= fromDate).length;
+
       const totals = {
         total_appels: sumAll(rows, "appels"),
         total_relances: sumAll(rows, "relances"),
@@ -1122,7 +1132,7 @@ export async function GET(
         total_devis: sumAll(rows, "devis"),
         total_signatures: sumAll(rows, "signatures"),
         total_acomptes: sumAll(rows, "acomptes"),
-        total_lead_magnets: 0,
+        total_lead_magnets: lmRows.length,
         total_qualified: sumAll(rows, "leads_qualifies"),
         week: {
           total_appels: sumByDate(rows, weekAgo, "appels"),
@@ -1131,7 +1141,7 @@ export async function GET(
           total_devis: sumByDate(rows, weekAgo, "devis"),
           total_signatures: sumByDate(rows, weekAgo, "signatures"),
           total_acomptes: sumByDate(rows, weekAgo, "acomptes"),
-          total_lead_magnets: 0,
+          total_lead_magnets: lmByDate(weekAgo),
           total_qualified: sumByDate(rows, weekAgo, "leads_qualifies"),
         },
         month: {
@@ -1141,7 +1151,7 @@ export async function GET(
           total_devis: sumByDate(rows, monthAgo, "devis"),
           total_signatures: sumByDate(rows, monthAgo, "signatures"),
           total_acomptes: sumByDate(rows, monthAgo, "acomptes"),
-          total_lead_magnets: 0,
+          total_lead_magnets: lmByDate(monthAgo),
           total_qualified: sumByDate(rows, monthAgo, "leads_qualifies"),
         },
         quarter: {
@@ -1151,7 +1161,7 @@ export async function GET(
           total_devis: sumByDate(rows, quarterAgo, "devis"),
           total_signatures: sumByDate(rows, quarterAgo, "signatures"),
           total_acomptes: sumByDate(rows, quarterAgo, "acomptes"),
-          total_lead_magnets: 0,
+          total_lead_magnets: lmByDate(quarterAgo),
           total_qualified: sumByDate(rows, quarterAgo, "leads_qualifies"),
         },
         year: {
@@ -1161,7 +1171,7 @@ export async function GET(
           total_devis: sumByDate(rows, yearAgo, "devis"),
           total_signatures: sumByDate(rows, yearAgo, "signatures"),
           total_acomptes: sumByDate(rows, yearAgo, "acomptes"),
-          total_lead_magnets: 0,
+          total_lead_magnets: lmByDate(yearAgo),
           total_qualified: sumByDate(rows, yearAgo, "leads_qualifies"),
         },
       };
