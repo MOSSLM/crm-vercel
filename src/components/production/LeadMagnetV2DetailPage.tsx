@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { supabase } from "@/utils/supabase/client";
+import { logLeadMagnet } from "@/utils/journalApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -912,6 +914,21 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     if (!project) return;
     await updateLeadMagnetProject(project.id, { pret_pour_lm: checked, statut: checked ? "ready" : "draft" });
     setProject((prev) => (prev ? { ...prev, pret_pour_lm: checked, statut: checked ? "ready" : "draft" } : prev));
+
+    // Sync to opportunites.lead_magnet and log journal event
+    const opportuniteId = typeof project.opportunite_id === "string" && project.opportunite_id ? project.opportunite_id : null;
+    if (opportuniteId) {
+      await supabase.from("opportunites").update({ lead_magnet: checked }).eq("id", opportuniteId);
+      if (checked) {
+        const entrepriseId = typeof project.entreprise_id === "number" ? project.entreprise_id : undefined;
+        await logLeadMagnet(
+          opportuniteId,
+          entrepriseId,
+          `Lead magnet prêt pour ${opportunitySummary.companyName || "l'entreprise"}`,
+        );
+      }
+    }
+
     toast.success(checked ? "Lead magnet marqué prêt ✅" : "Lead magnet repassé en préparation.");
   };
 

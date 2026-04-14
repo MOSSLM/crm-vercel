@@ -10,7 +10,8 @@ import {
   FileText,
   Handshake,
   Banknote,
-  Repeat
+  Repeat,
+  Star
 } from 'lucide-react';
 
 export const getCurrentPeriodData = (journalKpis: JournalKpiTotals, selectedPeriod: PeriodType): JournalKpiPeriodTotals => {
@@ -194,7 +195,8 @@ export const calculateDashboardMetrics = (
     { action: 'RDV obtenus', count: totalRdv, period: 'meetings', trend: 'up', icon: Calendar, shortAction: 'RDV' },
     { action: 'Devis envoyés', count: totalDevis, period: 'propositions', trend: 'up', icon: FileText, shortAction: 'Devis' },
     { action: 'Signatures obtenues', count: totalSignatures, period: 'contrats', trend: 'up', icon: Handshake, shortAction: 'Signatures' },
-    { action: 'Acomptes reçus', count: totalAcomptes, period: 'paiements', trend: 'up', icon: Banknote, shortAction: 'Acomptes' }
+    { action: 'Acomptes reçus', count: totalAcomptes, period: 'paiements', trend: 'up', icon: Banknote, shortAction: 'Acomptes' },
+    { action: 'Lead magnets prêts', count: totalLeadMagnets, period: 'production', trend: 'up', icon: Star, shortAction: 'Lead Magnets' }
   ];
 
   return {
