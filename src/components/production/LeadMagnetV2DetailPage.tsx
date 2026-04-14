@@ -24,17 +24,15 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/components/ui/utils";
 import {
-  createLeadMagnetPage,
   createLeadMagnetReview,
-  deleteLeadMagnetPage,
   deleteLeadMagnetReview,
   loadLeadMagnetBundle,
   listLeadMagnetCards,
   resolveLeadMagnetProjectId,
-  type LeadMagnetPageRecord,
+  type ContactPageData,
   type LeadMagnetProjectRecord,
   type LeadMagnetReviewRecord,
-  updateLeadMagnetPage,
+  type ServicePageData,
   updateLeadMagnetProject,
   updateLeadMagnetReview,
 } from "@/utils/leadMagnetV2Api";
@@ -87,7 +85,8 @@ type EditableProjectField = keyof ProjectModel;
 
 type FocusedField =
   | { scope: "project"; field: EditableProjectField }
-  | { scope: "page"; id: string; field: keyof LeadMagnetPageRecord }
+  | { scope: "service_page"; serviceKey: string; field: string }
+  | { scope: "contact_page"; field: string }
   | null;
 
 type CompanyLoose = Record<string, unknown>;
@@ -332,31 +331,12 @@ function TokenBar({
   );
 }
 
-function isContactPage(page: LeadMagnetPageRecord) {
-  const keys = [asString(page.page_key), asString(page.slug), asString(page.page_name)];
-  return keys.some((value) => {
-    const normalized = slugify(value);
-    return normalized === "contact" || normalized.includes("contact");
-  });
-}
-
-function getServicePageMatch(page: LeadMagnetPageRecord, serviceLabel: string) {
-  const body = (((page as any).body_json ?? {}) as Record<string, unknown>);
-  const candidates = [
-    asString(body.service_label),
-    asString((page as any).service_key),
-    asString(page.page_name),
-    asString(page.slug),
-    asString(page.page_key),
-  ];
-  const expected = slugify(normalizeServiceLabel(serviceLabel));
-  return candidates.some((value) => slugify(normalizeServiceLabel(value)) === expected);
-}
 
 export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const router = useRouter();
   const [project, setProject] = useState<ProjectModel | null>(null);
-  const [pages, setPages] = useState<LeadMagnetPageRecord[]>([]);
+  const [servicePageDataMap, setServicePageDataMap] = useState<Record<string, ServicePageData>>({});
+  const [contactPageData, setContactPageData] = useState<ContactPageData | null>(null);
   const [reviews, setReviews] = useState<LeadMagnetReviewRecord[]>([]);
   const [companyServiceTags, setCompanyServiceTags] = useState<string[]>([]);
   const [opportunitySummary, setOpportunitySummary] = useState({
@@ -379,10 +359,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const [activeServiceTab, setActiveServiceTab] = useState("");
   const cardSurfaceRef = useRef<HTMLDivElement | null>(null);
   const fileInputsRef = useRef<Record<string, HTMLInputElement | null>>({});
-  const provisioningServiceKeysRef = useRef<Set<string>>(new Set());
 
   const dirtyProject = useRef(false);
-  const dirtyPages = useRef(new Set<string>());
   const dirtyReviews = useRef(new Set<string>());
 
   const localStorageKey = `lead-magnet-workflow-${projectId}`;
@@ -472,28 +450,14 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const websiteUrl = normalizeExternalUrl(project?.website_url ?? project?.site_url ?? project?.override_website);
   const googleBusinessUrl = normalizeExternalUrl(project?.google_business_url ?? project?.google_maps_url);
 
-  const servicePages = useMemo(
-    () =>
-      pages.filter(
-        (page) => isTruthyText((page as any).service_key) || asString(page.page_key).startsWith("service_"),
-      ),
-    [pages],
-  );
-
-  const genericPages = useMemo(() => {
-    const servicePageIds = new Set(servicePages.map((page) => page.id));
-    return pages.filter((page) => !servicePageIds.has(page.id));
-  }, [pages, servicePages]);
-
-  const contactPage = useMemo(
-    () => genericPages.find((page) => isContactPage(page)) ?? null,
-    [genericPages],
-  );
-
   const activeServiceLabel = activeServiceTab || serviceTags[0] || "";
+  const activeServiceKey = useMemo(
+    () => (activeServiceLabel ? slugify(normalizeServiceLabel(activeServiceLabel)) : ""),
+    [activeServiceLabel],
+  );
   const activeServicePage = useMemo(
-    () => servicePages.find((page) => getServicePageMatch(page, activeServiceLabel)) ?? null,
-    [servicePages, activeServiceLabel],
+    () => (activeServiceKey ? servicePageDataMap[activeServiceKey] ?? null : null),
+    [servicePageDataMap, activeServiceKey],
   );
 
   const buildServicePreviewVars = (serviceLabel: string) => {
@@ -503,48 +467,31 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     return vars;
   };
 
-  const createServicePageRecord = async (serviceLabelRaw: string) => {
-    if (!project) {
-      throw new Error("Projet introuvable");
-    }
+  const initServicePage = (serviceLabelRaw: string) => {
+    if (!project) return;
 
     const serviceLabel = normalizeServiceLabel(serviceLabelRaw);
-    const existing = servicePages.find((page) => getServicePageMatch(page, serviceLabel));
-    if (existing) return existing;
-
     const serviceKey = slugify(serviceLabel);
-    const vars = buildServicePreviewVars(serviceLabel);
-    const metaTitle = renderTemplate("{{service_label}} {{location}} | {{name}}", vars);
-    const metaDescription = renderTemplate(
-      "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
-      vars,
-    );
-    const trustTitle = renderTemplate(asString(project.service_page_trust_title_template), vars);
 
-    const created = await createLeadMagnetPage({
-      project_id: project.id,
-      page_name: toTitleCase(serviceLabel),
-      page_key: `service_${serviceKey}`,
-      slug: serviceKey,
-      service_key: serviceKey,
-      headline: renderTemplate(asString(project.service_page_headline_template), vars),
-      subheadline: renderTemplate(asString(project.service_page_subheadline_template), vars),
-      meta_title: metaTitle,
-      meta_description: metaDescription,
-      is_active: true,
-      display_order: pages.length + 1,
-      body_json: {
-        service_label: serviceLabel,
-        trust_title: trustTitle,
-      },
+    setServicePageDataMap((prev) => {
+      if (prev[serviceKey]) return prev;
+      const vars = buildServicePreviewVars(serviceLabel);
+      return {
+        ...prev,
+        [serviceKey]: {
+          headline: renderTemplate(asString(project.service_page_headline_template), vars),
+          subheadline: renderTemplate(asString(project.service_page_subheadline_template), vars),
+          meta_title: renderTemplate("{{service_label}} {{location}} | {{name}}", vars),
+          meta_description: renderTemplate(
+            "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
+            vars,
+          ),
+          trust_title: renderTemplate(asString(project.service_page_trust_title_template), vars),
+          is_active: true,
+        },
+      };
     });
-
-    setPages((prev) => {
-      if (prev.some((page) => page.id === created.id)) return prev;
-      return [...prev, created];
-    });
-
-    return created;
+    dirtyProject.current = true;
   };
 
   useEffect(() => {
@@ -629,7 +576,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         if (!resolved) {
           if (!cancelled) {
             setProject(null);
-            setPages([]);
+            setServicePageDataMap({});
+            setContactPageData(null);
             setReviews([]);
             setCompanyServiceTags([]);
           }
@@ -645,27 +593,29 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
         const hydrated = hydrateProject(bundle);
         const normalizedHydrated = normalizeTemplateValue(hydrated) as ProjectModel;
-        const normalizedPages = bundle.pages.map((page) => ({
-          ...page,
-          headline: asString(normalizeTemplateValue(page.headline)),
-          subheadline: asString(normalizeTemplateValue(page.subheadline)),
-          meta_title: asString(normalizeTemplateValue(page.meta_title)),
-          meta_description: asString(normalizeTemplateValue(page.meta_description)),
-          body_json: normalizeTemplateValue(page.body_json),
-        }));
 
         if (JSON.stringify(hydrated) !== JSON.stringify(normalizedHydrated)) {
           dirtyProject.current = true;
         }
-        normalizedPages.forEach((page, index) => {
-          const source = bundle.pages[index];
-          if (JSON.stringify(source) !== JSON.stringify(page)) {
-            dirtyPages.current.add(page.id);
-          }
-        });
+
+        // Extract page data stored in project variables
+        const rawVars = (bundle.project?.variables ?? {}) as Record<string, unknown>;
+        const dbServicePageMap =
+          rawVars.service_pages &&
+          typeof rawVars.service_pages === "object" &&
+          !Array.isArray(rawVars.service_pages)
+            ? (rawVars.service_pages as Record<string, ServicePageData>)
+            : {};
+        const dbContactPage =
+          rawVars.contact_page &&
+          typeof rawVars.contact_page === "object" &&
+          !Array.isArray(rawVars.contact_page)
+            ? (rawVars.contact_page as ContactPageData)
+            : null;
 
         setProject(normalizedHydrated);
-        setPages(normalizedPages);
+        setServicePageDataMap(dbServicePageMap);
+        setContactPageData(dbContactPage);
         setReviews(bundle.reviews);
         setOpportunitySummary({
           companyName: normalizedHydrated.override_entreprise_name ?? asString(company["name"]),
@@ -711,23 +661,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   useEffect(() => {
     if (!project || !activeServiceLabel) return;
-    if (activeServicePage) return;
-
-    const key = `${project.id}:${slugify(activeServiceLabel)}`;
-    if (provisioningServiceKeysRef.current.has(key)) return;
-
-    provisioningServiceKeysRef.current.add(key);
-
-    void (async () => {
-      try {
-        await createServicePageRecord(activeServiceLabel);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "Impossible d'initialiser la page service");
-      } finally {
-        provisioningServiceKeysRef.current.delete(key);
-      }
-    })();
-  }, [project, activeServiceLabel, activeServicePage]);
+    if (servicePageDataMap[activeServiceKey]) return;
+    initServicePage(activeServiceLabel);
+  }, [project, activeServiceLabel, activeServiceKey, servicePageDataMap]);
 
   useEffect(() => {
     window.localStorage.setItem(localStorageKey, JSON.stringify(workflow));
@@ -754,18 +690,14 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       try {
         if (dirtyProject.current) {
           dirtyProject.current = false;
-          await updateLeadMagnetProject(project.id, project);
-        }
-
-        if (dirtyPages.current.size > 0) {
-          const ids = [...dirtyPages.current];
-          dirtyPages.current.clear();
-          await Promise.all(
-            ids.map((id) => {
-              const row = pages.find((entry) => entry.id === id);
-              return row ? updateLeadMagnetPage(row.id, row) : Promise.resolve();
-            }),
-          );
+          await updateLeadMagnetProject(project.id, {
+            ...project,
+            variables: {
+              ...((project.variables as Record<string, unknown>) ?? {}),
+              service_pages: servicePageDataMap,
+              contact_page: contactPageData,
+            },
+          });
         }
 
         if (dirtyReviews.current.size > 0) {
@@ -784,7 +716,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     }, 1200);
 
     return () => clearInterval(t);
-  }, [project, pages, reviews]);
+  }, [project, servicePageDataMap, contactPageData, reviews]);
 
   const completion = useMemo(() => {
     const hasSetup =
@@ -810,12 +742,15 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
     const hasServices =
       serviceTags.length > 0 &&
-      serviceTags.every((service) => servicePages.some((page) => getServicePageMatch(page, service)));
+      serviceTags.every((service) => {
+        const serviceKey = slugify(normalizeServiceLabel(service));
+        return Boolean(servicePageDataMap[serviceKey]);
+      });
 
     const activeReviewCount = reviews.filter((row) => row.is_active ?? (row as any).actif ?? true).length;
     const hasReviews = activeReviewCount > 0 || workflow.noReviewReason.trim().length > 0;
 
-    const hasPages = Boolean(contactPage && (contactPage.is_active ?? true));
+    const hasPages = Boolean(contactPageData && (contactPageData.is_active ?? true));
 
     const hasCta =
       [
@@ -839,7 +774,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       hasMeta,
       activeReviewCount,
     };
-  }, [project, reviews, workflow.noReviewReason, serviceTags, servicePages, contactPage]);
+  }, [project, reviews, workflow.noReviewReason, serviceTags, servicePageDataMap, contactPageData]);
 
   const orderedDeck = useMemo(() => {
     const review = cardIds.filter((id) => workflow.statuses[id] === "review");
@@ -934,26 +869,17 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     dirtyProject.current = true;
   };
 
-  const updatePageField = (pageId: string, field: keyof LeadMagnetPageRecord, value: unknown) => {
-    setPages((prev) => prev.map((row) => (row.id === pageId ? { ...row, [field]: value } : row)));
-    dirtyPages.current.add(pageId);
+  const updateServicePageField = (serviceKey: string, field: string, value: unknown) => {
+    setServicePageDataMap((prev) => ({
+      ...prev,
+      [serviceKey]: { ...(prev[serviceKey] ?? {}), [field]: value },
+    }));
+    dirtyProject.current = true;
   };
 
-  const updatePageBodyField = (pageId: string, key: string, value: unknown) => {
-    setPages((prev) =>
-      prev.map((row) =>
-        row.id === pageId
-          ? {
-              ...row,
-              body_json: {
-                ...(((row as any).body_json ?? {}) as Record<string, unknown>),
-                [key]: value,
-              },
-            }
-          : row,
-      ),
-    );
-    dirtyPages.current.add(pageId);
+  const updateContactPageField = (field: string, value: unknown) => {
+    setContactPageData((prev) => (prev ? { ...prev, [field]: value } : prev));
+    dirtyProject.current = true;
   };
 
   const updateReviewField = (reviewId: string, field: keyof LeadMagnetReviewRecord, value: unknown) => {
@@ -970,11 +896,15 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       return;
     }
 
-    if (focusedField.scope === "page") {
-      const page = pages.find((entry) => entry.id === focusedField.id);
-      if (!page) return;
-      const current = asString(page[focusedField.field] as unknown);
-      updatePageField(focusedField.id, focusedField.field, appendTokenToText(current, token));
+    if (focusedField.scope === "service_page") {
+      const current = asString((servicePageDataMap[focusedField.serviceKey] as any)?.[focusedField.field]);
+      updateServicePageField(focusedField.serviceKey, focusedField.field, appendTokenToText(current, token));
+      return;
+    }
+
+    if (focusedField.scope === "contact_page") {
+      const current = asString((contactPageData as any)?.[focusedField.field]);
+      updateContactPageField(focusedField.field, appendTokenToText(current, token));
     }
   };
 
@@ -1005,28 +935,27 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     }
   };
 
-  const createContactPage = async () => {
-    if (!project) return;
-    if (contactPage) {
+  const createContactPage = () => {
+    if (contactPageData) {
       toast.error("La page contact existe déjà.");
       return;
     }
-
-    const created = await createLeadMagnetPage({
-      project_id: project.id,
-      page_name: "Contact",
-      page_key: "contact",
-      slug: "contact",
+    setContactPageData({
       headline: "Contactez {{name}}",
       subheadline: "Obtenez votre devis ou votre rappel rapidement.",
       meta_title: "Contact | {{name}}",
       meta_description: "Contactez {{name}} à {{location}} pour votre projet.",
       is_active: true,
-      display_order: pages.length + 1,
-      body_json: {},
+      page_name: "Contact",
+      slug: "contact",
+      page_key: "contact",
     });
+    dirtyProject.current = true;
+  };
 
-    setPages((prev) => [...prev, created]);
+  const deleteContactPage = () => {
+    setContactPageData(null);
+    dirtyProject.current = true;
   };
 
   const currentStatus = workflow.statuses[activeCardId];
@@ -1039,22 +968,21 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const homeAboutPreview = renderTemplate(asString(project?.home_about_services_template), previewVars);
   const homeWhyPreview = renderTemplate(asString(project?.home_why_choose_title_template), previewVars);
 
-  const contactHeadlineRendered = contactPage
-    ? renderTemplate(asString(contactPage.headline), previewVars)
+  const contactHeadlineRendered = contactPageData
+    ? renderTemplate(asString(contactPageData.headline), previewVars)
     : "";
-  const contactSubheadlineRendered = contactPage
-    ? renderTemplate(asString(contactPage.subheadline), previewVars)
+  const contactSubheadlineRendered = contactPageData
+    ? renderTemplate(asString(contactPageData.subheadline), previewVars)
     : "";
-  const contactMetaTitleRendered = contactPage
-    ? renderTemplate(asString(contactPage.meta_title), previewVars)
+  const contactMetaTitleRendered = contactPageData
+    ? renderTemplate(asString(contactPageData.meta_title), previewVars)
     : "";
-  const contactMetaDescriptionRendered = contactPage
-    ? renderTemplate(asString(contactPage.meta_description), previewVars)
+  const contactMetaDescriptionRendered = contactPageData
+    ? renderTemplate(asString(contactPageData.meta_description), previewVars)
     : "";
 
-  const activeServiceBody = (((activeServicePage as any)?.body_json ?? {}) as Record<string, unknown>);
   const activeServiceTrustValue =
-    asString(activeServiceBody.trust_title) ||
+    asString(activeServicePage?.trust_title) ||
     renderTemplate(asString(project?.service_page_trust_title_template), activeServiceVars);
 
   const activeServiceHeadlineRendered = activeServicePage
@@ -1497,7 +1425,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       <div className="flex items-center justify-between gap-2">
                         <p className="text-sm font-medium">{activeServiceLabel}</p>
                         <span className="text-xs text-muted-foreground">
-                          slug : /{asString(activeServicePage.slug)}
+                          slug : /{activeServiceKey}
                         </span>
                       </div>
 
@@ -1507,8 +1435,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         <Label>Slogan</Label>
                         <Input
                           value={asString(activeServicePage.headline)}
-                          onChange={(event) => updatePageField(activeServicePage.id, "headline", event.target.value)}
-                          onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "headline" })}
+                          onChange={(event) => updateServicePageField(activeServiceKey, "headline", event.target.value)}
+                          onFocus={() => setFocusedField({ scope: "service_page", serviceKey: activeServiceKey, field: "headline" })}
                           placeholder={renderTemplate(asString(project.service_page_headline_template), activeServiceVars)}
                         />
                         <PreviewLine value={activeServiceHeadlineRendered} />
@@ -1518,8 +1446,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         <Label>Sous-slogan</Label>
                         <Textarea
                           value={asString(activeServicePage.subheadline)}
-                          onChange={(event) => updatePageField(activeServicePage.id, "subheadline", event.target.value)}
-                          onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "subheadline" })}
+                          onChange={(event) => updateServicePageField(activeServiceKey, "subheadline", event.target.value)}
+                          onFocus={() => setFocusedField({ scope: "service_page", serviceKey: activeServiceKey, field: "subheadline" })}
                           placeholder={renderTemplate(asString(project.service_page_subheadline_template), activeServiceVars)}
                         />
                         <PreviewLine value={activeServiceSubheadlineRendered} />
@@ -1529,7 +1457,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         <Label>Petit titre plus bas</Label>
                         <Input
                           value={activeServiceTrustValue}
-                          onChange={(event) => updatePageBodyField(activeServicePage.id, "trust_title", event.target.value)}
+                          onChange={(event) => updateServicePageField(activeServiceKey, "trust_title", event.target.value)}
                           placeholder={renderTemplate(asString(project.service_page_trust_title_template), activeServiceVars)}
                         />
                         <PreviewLine value={activeServiceTrustRendered} />
@@ -1540,8 +1468,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                           <Label>Meta title</Label>
                           <Input
                             value={asString(activeServicePage.meta_title)}
-                            onChange={(event) => updatePageField(activeServicePage.id, "meta_title", event.target.value)}
-                            onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "meta_title" })}
+                            onChange={(event) => updateServicePageField(activeServiceKey, "meta_title", event.target.value)}
+                            onFocus={() => setFocusedField({ scope: "service_page", serviceKey: activeServiceKey, field: "meta_title" })}
                             placeholder={renderTemplate("{{service_label}} {{location}} | {{name}}", activeServiceVars)}
                           />
                           <PreviewLine value={activeServiceMetaTitleRendered} />
@@ -1550,8 +1478,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                           <Label>Meta description</Label>
                           <Input
                             value={asString(activeServicePage.meta_description)}
-                            onChange={(event) => updatePageField(activeServicePage.id, "meta_description", event.target.value)}
-                            onFocus={() => setFocusedField({ scope: "page", id: activeServicePage.id, field: "meta_description" })}
+                            onChange={(event) => updateServicePageField(activeServiceKey, "meta_description", event.target.value)}
+                            onFocus={() => setFocusedField({ scope: "service_page", serviceKey: activeServiceKey, field: "meta_description" })}
                             placeholder={renderTemplate(
                               "Spécialiste de la {{service_label}} à {{location}}. Contactez {{name}} pour votre projet.",
                               activeServiceVars,
@@ -1564,7 +1492,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       <div className="flex items-center gap-2 text-sm">
                         <Switch
                           checked={Boolean(activeServicePage.is_active ?? true)}
-                          onCheckedChange={(checked) => updatePageField(activeServicePage.id, "is_active", checked)}
+                          onCheckedChange={(checked) => updateServicePageField(activeServiceKey, "is_active", checked)}
                         />
                         <span>Page active</span>
                       </div>
@@ -1684,28 +1612,21 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
               {activeCardId === "pages" && (
                 <div className="space-y-3" data-no-swipe="true">
-                  {!contactPage && (
+                  {!contactPageData && (
                     <div className="rounded-md border p-4">
                       <p className="mb-3 text-sm">Aucune page contact pour le moment.</p>
-                      <Button size="sm" variant="outline" onClick={() => void createContactPage()}>
+                      <Button size="sm" variant="outline" onClick={createContactPage}>
                         <Plus className="mr-2 h-4 w-4" />
                         Créer la page contact
                       </Button>
                     </div>
                   )}
 
-                  {contactPage && (
-                    <div key={contactPage.id} className="space-y-2 rounded-md border p-3">
+                  {contactPageData && (
+                    <div className="space-y-2 rounded-md border p-3">
                       <div className="flex items-center justify-between">
                         <p className="text-sm font-medium">Page contact</p>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={async () => {
-                            await deleteLeadMagnetPage(contactPage.id);
-                            setPages((prev) => prev.filter((x) => x.id !== contactPage.id));
-                          }}
-                        >
+                        <Button size="sm" variant="ghost" onClick={deleteContactPage}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -1715,49 +1636,49 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       <div className="grid gap-2 md:grid-cols-3">
                         <div className="space-y-1">
                           <Input
-                            value={asString(contactPage.page_name)}
-                            onChange={(event) => updatePageField(contactPage.id, "page_name", event.target.value)}
+                            value={asString(contactPageData.page_name)}
+                            onChange={(event) => updateContactPageField("page_name", event.target.value)}
                             placeholder="Titre"
-                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "page_name" })}
+                            onFocus={() => setFocusedField({ scope: "contact_page", field: "page_name" })}
                           />
-                          <PreviewLine value={asString(contactPage.page_name)} />
+                          <PreviewLine value={asString(contactPageData.page_name)} />
                         </div>
                         <div className="space-y-1">
                           <Input
-                            value={asString(contactPage.page_key)}
-                            onChange={(event) => updatePageField(contactPage.id, "page_key", event.target.value)}
+                            value={asString(contactPageData.page_key)}
+                            onChange={(event) => updateContactPageField("page_key", event.target.value)}
                             placeholder="page_key"
-                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "page_key" })}
+                            onFocus={() => setFocusedField({ scope: "contact_page", field: "page_key" })}
                           />
-                          <PreviewLine value={asString(contactPage.page_key)} />
+                          <PreviewLine value={asString(contactPageData.page_key)} />
                         </div>
                         <div className="space-y-1">
                           <Input
-                            value={asString(contactPage.slug)}
-                            onChange={(event) => updatePageField(contactPage.id, "slug", event.target.value)}
+                            value={asString(contactPageData.slug)}
+                            onChange={(event) => updateContactPageField("slug", event.target.value)}
                             placeholder="Slug"
-                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "slug" })}
+                            onFocus={() => setFocusedField({ scope: "contact_page", field: "slug" })}
                           />
-                          <PreviewLine value={asString(contactPage.slug)} />
+                          <PreviewLine value={asString(contactPageData.slug)} />
                         </div>
                       </div>
 
                       <div className="space-y-1">
                         <Input
-                          value={asString(contactPage.headline)}
-                          onChange={(event) => updatePageField(contactPage.id, "headline", event.target.value)}
+                          value={asString(contactPageData.headline)}
+                          onChange={(event) => updateContactPageField("headline", event.target.value)}
                           placeholder="Headline"
-                          onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "headline" })}
+                          onFocus={() => setFocusedField({ scope: "contact_page", field: "headline" })}
                         />
                         <PreviewLine value={contactHeadlineRendered} />
                       </div>
 
                       <div className="space-y-1">
                         <Textarea
-                          value={asString(contactPage.subheadline)}
-                          onChange={(event) => updatePageField(contactPage.id, "subheadline", event.target.value)}
+                          value={asString(contactPageData.subheadline)}
+                          onChange={(event) => updateContactPageField("subheadline", event.target.value)}
                           placeholder="Subheadline / contenu rapide"
-                          onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "subheadline" })}
+                          onFocus={() => setFocusedField({ scope: "contact_page", field: "subheadline" })}
                         />
                         <PreviewLine value={contactSubheadlineRendered} />
                       </div>
@@ -1765,19 +1686,19 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       <div className="grid gap-2 md:grid-cols-2">
                         <div className="space-y-1">
                           <Input
-                            value={asString(contactPage.meta_title)}
-                            onChange={(event) => updatePageField(contactPage.id, "meta_title", event.target.value)}
+                            value={asString(contactPageData.meta_title)}
+                            onChange={(event) => updateContactPageField("meta_title", event.target.value)}
                             placeholder="Meta title"
-                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "meta_title" })}
+                            onFocus={() => setFocusedField({ scope: "contact_page", field: "meta_title" })}
                           />
                           <PreviewLine value={contactMetaTitleRendered} />
                         </div>
                         <div className="space-y-1">
                           <Input
-                            value={asString(contactPage.meta_description)}
-                            onChange={(event) => updatePageField(contactPage.id, "meta_description", event.target.value)}
+                            value={asString(contactPageData.meta_description)}
+                            onChange={(event) => updateContactPageField("meta_description", event.target.value)}
                             placeholder="Meta description"
-                            onFocus={() => setFocusedField({ scope: "page", id: contactPage.id, field: "meta_description" })}
+                            onFocus={() => setFocusedField({ scope: "contact_page", field: "meta_description" })}
                           />
                           <PreviewLine value={contactMetaDescriptionRendered} />
                         </div>
@@ -1786,8 +1707,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                       <div className="flex items-center justify-between">
                         <label className="inline-flex items-center gap-2 text-sm">
                           <Switch
-                            checked={Boolean(contactPage.is_active ?? true)}
-                            onCheckedChange={(checked) => updatePageField(contactPage.id, "is_active", checked)}
+                            checked={Boolean(contactPageData.is_active ?? true)}
+                            onCheckedChange={(checked) => updateContactPageField("is_active", checked)}
                           />
                           Active
                         </label>
