@@ -105,7 +105,7 @@ export function LeadMagnetV2ListPage() {
         <CardHeader>
           <CardTitle>Lead Magnet CRM V2</CardTitle>
           <CardDescription>
-            Source de vérité 100% V2: <code>lead_magnet_projects</code>, <code>lead_magnet_pages</code>, <code>lead_magnet_reviews</code>.
+            Source de vérité 100% V2: <code>lead_magnet_projects</code>, <code>lead_magnet_reviews</code>.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">

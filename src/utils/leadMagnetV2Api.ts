@@ -42,6 +42,26 @@ export type PipelineStageLite = {
   nom: string | null;
 };
 
+export type ServicePageData = {
+  headline?: string | null;
+  subheadline?: string | null;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  trust_title?: string | null;
+  is_active?: boolean;
+};
+
+export type ContactPageData = {
+  headline?: string | null;
+  subheadline?: string | null;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  is_active?: boolean;
+  page_name?: string | null;
+  slug?: string | null;
+  page_key?: string | null;
+};
+
 export type LeadMagnetProjectRecord = {
   id: string;
   opportunite_id?: string | null;
@@ -91,25 +111,6 @@ export type LeadMagnetProjectRecord = {
   created_at?: string | null;
   updated_at?: string | null;
 
-  [key: string]: unknown;
-};
-
-export type LeadMagnetPageRecord = {
-  id: string;
-  lead_magnet_project_id: string;
-  project_id: string;
-  page_key?: string | null;
-  page_name?: string | null;
-  slug?: string | null;
-  service_key?: string | null;
-  is_active?: boolean | null;
-  headline?: string | null;
-  subheadline?: string | null;
-  meta_title?: string | null;
-  meta_description?: string | null;
-  body_json?: unknown;
-  display_order?: number | null;
-  updated_at?: string | null;
   [key: string]: unknown;
 };
 
@@ -176,17 +177,6 @@ const PROJECT_COLUMNS = new Set([
   "service_page_trust_title_template",
 ]);
 
-const PAGE_COLUMNS = new Set([
-  "lead_magnet_project_id",
-  "page_key",
-  "page_name",
-  "slug",
-  "service_key",
-  "body_json",
-  "is_active",
-  "display_order",
-]);
-
 const REVIEW_COLUMNS = new Set([
   "lead_magnet_project_id",
   "source",
@@ -221,13 +211,6 @@ const pickString = (...values: unknown[]): string | undefined => {
   return undefined;
 };
 
-const readTextField = (source: Record<string, unknown>, key: string, fallback: Record<string, unknown>) => {
-  const value = source[key];
-  if (typeof value === "string") return value;
-  const fallbackValue = fallback[key];
-  return typeof fallbackValue === "string" ? fallbackValue : undefined;
-};
-
 const isMissingTableOrColumnError = (error: { code?: string; message?: string } | null | undefined) => {
   if (!error) return false;
   const message = String(error.message ?? "").toLowerCase();
@@ -247,29 +230,6 @@ const normalizeProjectRow = (row: Record<string, unknown>): LeadMagnetProjectRec
   return row as LeadMagnetProjectRecord;
 };
 
-const normalizePageRow = (row: Record<string, unknown>): LeadMagnetPageRecord => {
-  const leadMagnetProjectId = String(row.lead_magnet_project_id ?? "");
-  const bodyJson = (row.body_json && typeof row.body_json === "object" && !Array.isArray(row.body_json)
-    ? (row.body_json as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
-
-  const headline = pickString(row.headline, bodyJson.headline);
-  const subheadline = pickString(row.subheadline, bodyJson.subheadline);
-  const metaTitle = pickString(row.meta_title, bodyJson.meta_title);
-  const metaDescription = pickString(row.meta_description, bodyJson.meta_description);
-
-  return {
-    ...(row as LeadMagnetPageRecord),
-    lead_magnet_project_id: leadMagnetProjectId,
-    project_id: leadMagnetProjectId,
-    body_json: bodyJson,
-    headline: headline ?? null,
-    subheadline: subheadline ?? null,
-    meta_title: metaTitle ?? null,
-    meta_description: metaDescription ?? null,
-  };
-};
-
 const normalizeReviewRow = (row: Record<string, unknown>): LeadMagnetReviewRecord => {
   const leadMagnetProjectId = String(row.lead_magnet_project_id ?? "");
   return {
@@ -286,36 +246,6 @@ const sortByDisplayOrder = <T extends { display_order?: number | null }>(rows: T
     return aOrder - bOrder;
   });
 };
-
-function normalizePagePayload(payload: Partial<LeadMagnetPageRecord>): Record<string, unknown> {
-  const source = payload as Record<string, unknown>;
-  const leadMagnetProjectId = pickString(source.lead_magnet_project_id, source.project_id);
-
-  if (!leadMagnetProjectId) {
-    throw new Error("lead_magnet_project_id manquant pour la page.");
-  }
-
-  const inputBody = (source.body_json && typeof source.body_json === "object" && !Array.isArray(source.body_json)
-    ? (source.body_json as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
-
-  const mergedBody = cleanUndefined({
-    ...inputBody,
-    headline: readTextField(source, "headline", inputBody),
-    subheadline: readTextField(source, "subheadline", inputBody),
-    meta_title: readTextField(source, "meta_title", inputBody),
-    meta_description: readTextField(source, "meta_description", inputBody),
-  });
-
-  return pickAllowed(
-    {
-      ...source,
-      lead_magnet_project_id: leadMagnetProjectId,
-      body_json: mergedBody,
-    },
-    PAGE_COLUMNS,
-  );
-}
 
 function normalizeReviewPayload(payload: Partial<LeadMagnetReviewRecord>): Record<string, unknown> {
   const source = payload as Record<string, unknown>;
@@ -337,6 +267,22 @@ function normalizeReviewPayload(payload: Partial<LeadMagnetReviewRecord>): Recor
 function readOpportunityId(project: LeadMagnetProjectRecord): string | null {
   const value = project.opportunite_id;
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * Computes the page count for a project from its variables field.
+ * Service pages are stored under variables.service_pages,
+ * the contact page under variables.contact_page.
+ */
+function computePageCountFromProject(project: LeadMagnetProjectRecord): number {
+  const vars = (project.variables ?? {}) as Record<string, unknown>;
+  const servicePages = vars.service_pages;
+  const servicePageCount =
+    servicePages && typeof servicePages === "object" && !Array.isArray(servicePages)
+      ? Object.keys(servicePages).length
+      : 0;
+  const hasContactPage = Boolean(vars.contact_page);
+  return servicePageCount + (hasContactPage ? 1 : 0);
 }
 
 async function fetchOpportunitiesByIds(ids: string[]): Promise<Map<string, OpportunityLite>> {
@@ -387,24 +333,6 @@ async function fetchStagesByIds(ids: number[]): Promise<Map<number, PipelineStag
   if (res.error) throw res.error;
 
   return new Map(((res.data ?? []) as PipelineStageLite[]).map((row) => [row.id, row]));
-}
-
-async function fetchPageCountsByProjectIds(ids: string[]): Promise<Map<string, number>> {
-  if (ids.length === 0) return new Map();
-
-  const res = await supabase
-    .from("lead_magnet_pages")
-    .select("id,lead_magnet_project_id")
-    .in("lead_magnet_project_id", ids);
-
-  if (res.error) throw res.error;
-
-  const counts = new Map<string, number>();
-  for (const row of (res.data ?? []) as Array<{ lead_magnet_project_id: string }>) {
-    const projectId = row.lead_magnet_project_id;
-    counts.set(projectId, (counts.get(projectId) ?? 0) + 1);
-  }
-  return counts;
 }
 
 async function fetchActiveReviewCountsByProjectIds(ids: string[]): Promise<Map<string, number>> {
@@ -469,10 +397,9 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
     ),
   );
 
-  const [pipelineMap, stageMap, pageCountMap, activeReviewCountMap] = await Promise.all([
+  const [pipelineMap, stageMap, activeReviewCountMap] = await Promise.all([
     fetchPipelinesByIds(pipelineIds),
     fetchStagesByIds(stageIds),
-    fetchPageCountsByProjectIds(projects.map((p) => p.id)),
     fetchActiveReviewCountsByProjectIds(projects.map((p) => p.id)),
   ]);
 
@@ -490,7 +417,7 @@ export async function listLeadMagnetCards(): Promise<LeadMagnetListItem[]> {
       company,
       pipeline: opportunity?.pipeline_id ? pipelineMap.get(opportunity.pipeline_id) ?? null : null,
       stage: typeof opportunity?.stage_id === "number" ? stageMap.get(opportunity.stage_id) ?? null : null,
-      pageCount: pageCountMap.get(project.id) ?? 0,
+      pageCount: computePageCountFromProject(project),
       activeReviewCount: activeReviewCountMap.get(project.id) ?? 0,
     };
   });
@@ -509,7 +436,7 @@ export async function loadLeadMagnetBundle(projectId: string) {
   if (!rawProject) {
     return {
       project: null,
-      pages: [] as LeadMagnetPageRecord[],
+      pages: [] as LeadMagnetPageV2[],
       reviews: [] as LeadMagnetReviewRecord[],
       opportunity: null as OpportunityLite | null,
       pipeline: null as PipelineLite | null,
@@ -520,27 +447,14 @@ export async function loadLeadMagnetBundle(projectId: string) {
 
   const project = normalizeProjectRow(rawProject);
 
-  const [pagesRes, reviewsRes] = await Promise.all([
-    supabase
-      .from("lead_magnet_pages")
-      .select("*")
-      .eq("lead_magnet_project_id", projectId)
-      .order("display_order", { ascending: true })
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("lead_magnet_reviews")
-      .select("*")
-      .eq("lead_magnet_project_id", projectId)
-      .order("display_order", { ascending: true })
-      .order("created_at", { ascending: true }),
-  ]);
+  const reviewsRes = await supabase
+    .from("lead_magnet_reviews")
+    .select("*")
+    .eq("lead_magnet_project_id", projectId)
+    .order("display_order", { ascending: true })
+    .order("created_at", { ascending: true });
 
-  if (pagesRes.error) throw pagesRes.error;
   if (reviewsRes.error) throw reviewsRes.error;
-
-  const pages = sortByDisplayOrder(
-    ((pagesRes.data ?? []) as Record<string, unknown>[]).map(normalizePageRow),
-  );
 
   const reviews = sortByDisplayOrder(
     ((reviewsRes.data ?? []) as Record<string, unknown>[]).map(normalizeReviewRow),
@@ -613,7 +527,7 @@ export async function loadLeadMagnetBundle(projectId: string) {
 
   return {
     project,
-    pages,
+    pages: [] as LeadMagnetPageV2[],
     reviews,
     opportunity,
     pipeline,
@@ -685,58 +599,6 @@ export async function updateLeadMagnetProject(
   return normalizeProjectRow(data as Record<string, unknown>);
 }
 
-export async function createLeadMagnetPage(payload: Partial<LeadMagnetPageRecord>) {
-  const normalized = normalizePagePayload(payload);
-
-  const { data, error } = await supabase
-    .from("lead_magnet_pages")
-    .insert(cleanUndefined(normalized))
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return normalizePageRow(data as Record<string, unknown>);
-}
-
-export async function updateLeadMagnetPage(pageId: string, updates: Partial<LeadMagnetPageRecord>) {
-  const source = updates as Record<string, unknown>;
-  const inputBody = (source.body_json && typeof source.body_json === "object" && !Array.isArray(source.body_json)
-    ? (source.body_json as Record<string, unknown>)
-    : {}) as Record<string, unknown>;
-
-  const mergedBody = cleanUndefined({
-    ...inputBody,
-    headline: readTextField(source, "headline", inputBody),
-    subheadline: readTextField(source, "subheadline", inputBody),
-    meta_title: readTextField(source, "meta_title", inputBody),
-    meta_description: readTextField(source, "meta_description", inputBody),
-  });
-
-  const normalized = pickAllowed(
-    {
-      ...source,
-      body_json: mergedBody,
-    },
-    PAGE_COLUMNS,
-  );
-  delete normalized.lead_magnet_project_id;
-
-  const { data, error } = await supabase
-    .from("lead_magnet_pages")
-    .update(cleanUndefined(normalized))
-    .eq("id", pageId)
-    .select("*")
-    .single();
-
-  if (error) throw error;
-  return normalizePageRow(data as Record<string, unknown>);
-}
-
-export async function deleteLeadMagnetPage(pageId: string) {
-  const { error } = await supabase.from("lead_magnet_pages").delete().eq("id", pageId);
-  if (error) throw error;
-}
-
 export async function createLeadMagnetReview(payload: Partial<LeadMagnetReviewRecord>) {
   const normalized = normalizeReviewPayload(payload);
 
@@ -771,5 +633,41 @@ export async function deleteLeadMagnetReview(reviewId: string) {
 }
 
 export type LeadMagnetProjectV2 = LeadMagnetProjectRecord;
-export type LeadMagnetPageV2 = LeadMagnetPageRecord;
 export type LeadMagnetReviewV2 = LeadMagnetReviewRecord;
+
+// ---------------------------------------------------------------------------
+// Legacy stubs — lead_magnet_pages table is no longer used.
+// These types/functions are kept only for backward compatibility with
+// LeadMagnetPage.tsx (legacy component, not used in any active route).
+// ---------------------------------------------------------------------------
+
+export type LeadMagnetPageV2 = {
+  id: string;
+  lead_magnet_project_id: string;
+  project_id: string;
+  page_key?: string | null;
+  page_name?: string | null;
+  slug?: string | null;
+  service_key?: string | null;
+  is_active?: boolean | null;
+  headline?: string | null;
+  subheadline?: string | null;
+  meta_title?: string | null;
+  meta_description?: string | null;
+  body_json?: unknown;
+  display_order?: number | null;
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
+export async function createLeadMagnetPage(_payload: Partial<LeadMagnetPageV2>): Promise<never> {
+  throw new Error("lead_magnet_pages table has been removed. Use lead_magnet_projects.variables instead.");
+}
+
+export async function updateLeadMagnetPage(_pageId: string, _updates: Partial<LeadMagnetPageV2>): Promise<never> {
+  throw new Error("lead_magnet_pages table has been removed. Use lead_magnet_projects.variables instead.");
+}
+
+export async function deleteLeadMagnetPage(_pageId: string): Promise<never> {
+  throw new Error("lead_magnet_pages table has been removed. Use lead_magnet_projects.variables instead.");
+}
