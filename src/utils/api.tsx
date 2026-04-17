@@ -30,7 +30,7 @@ export const isOpportunityRow = (row: unknown): row is Opportunity =>
 const isStageRow = (row: unknown): row is { id: number; nom?: string | null } =>
   isRecord(row) && typeof row.id === 'number';
 
-const isFullStageRow = (row: unknown): row is PipelineStage =>
+export const isFullStageRow = (row: unknown): row is PipelineStage =>
   isStageRow(row) &&
   typeof (row as { pipeline_id?: unknown }).pipeline_id === 'string' &&
   typeof row.nom === 'string' &&
@@ -2059,6 +2059,14 @@ export const pipelineStagesApi = {
       logger.error('Error creating stages:', error);
       return [];
     }
+  },
+
+  delete: async (id: number) => {
+    const { error } = await supabase
+      .from('etapes_pipeline')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
   },
 };
 

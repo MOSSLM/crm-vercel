@@ -39,7 +39,12 @@ import {
   Plus,
   MousePointerClick,
   X,
-  MoveRight
+  MoveRight,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
+  Pencil,
+  Check
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -563,14 +568,19 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
 };
 
 export const PipelinePage: React.FC = () => {
-  const { 
-    opportunities, 
+  const {
+    opportunities,
     pipelines,
-    pipelineStages, 
+    pipelineStages,
     moveOpportunityToStage,
     updateOpportunity,
     companies,
-    addPipeline
+    addPipeline,
+    addPipelineStage,
+    deletePipelineStage,
+    renamePipelineStage,
+    movePipelineStageUp,
+    movePipelineStageDown,
   } = useAppData();
   
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
@@ -595,6 +605,9 @@ export const PipelinePage: React.FC = () => {
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
   const [bulkTargetPipelineId, setBulkTargetPipelineId] = useState<string>('');
   const [isBulkMoving, setIsBulkMoving] = useState(false);
+  const [newStageName, setNewStageName] = useState('');
+  const [editingStageId, setEditingStageId] = useState<number | null>(null);
+  const [editingStageNom, setEditingStageNom] = useState('');
 
   React.useEffect(() => {
     if (selectedPipelineId !== 'all') return;
@@ -1119,29 +1132,95 @@ export const PipelinePage: React.FC = () => {
         {showSettings && (
           <Card className="p-4">
             <h3 className="font-medium mb-4">Configuration des étapes</h3>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {stagesForPipeline.map((stage) => {
+            <div className="flex flex-col gap-2">
+              {stagesForPipeline.map((stage, idx) => {
                 const config = stageConfigs.find(c => c.id === stage.id);
                 const stageColor = getStageColor(stage.nom);
-                
+                const isEditing = editingStageId === stage.id;
+
                 return (
-                  <div key={stage.id} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: stageColor }}
-                      ></div>
-                      <span className="text-sm font-medium">{stage.nom}</span>
+                  <div key={stage.id} className="flex items-center gap-2 p-3 border rounded-lg">
+                    {/* Reorder buttons */}
+                    <div className="flex flex-col gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        disabled={idx === 0}
+                        onClick={() => movePipelineStageUp(stage.id)}
+                      >
+                        <ChevronUp className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5"
+                        disabled={idx === stagesForPipeline.length - 1}
+                        onClick={() => movePipelineStageDown(stage.id)}
+                      >
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
+
+                    {/* Color dot */}
+                    <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: stageColor }} />
+
+                    {/* Name / inline edit */}
+                    {isEditing ? (
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                        <Input
+                          className="h-7 text-sm flex-1"
+                          value={editingStageNom}
+                          autoFocus
+                          onChange={(e) => setEditingStageNom(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              renamePipelineStage(stage.id, editingStageNom);
+                              setEditingStageId(null);
+                            } else if (e.key === 'Escape') {
+                              setEditingStageId(null);
+                            }
+                          }}
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 flex-shrink-0"
+                          onClick={() => {
+                            renamePipelineStage(stage.id, editingStageNom);
+                            setEditingStageId(null);
+                          }}
+                        >
+                          <Check className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                        <span className="text-sm font-medium truncate">{stage.nom}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 flex-shrink-0 opacity-40 hover:opacity-100"
+                          onClick={() => {
+                            setEditingStageId(stage.id);
+                            setEditingStageNom(stage.nom);
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Visibility + size toggles */}
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <div className="flex items-center gap-1">
                         <Eye className="h-4 w-4 text-muted-foreground" />
                         <Switch
                           checked={config?.isVisible !== false}
                           onCheckedChange={() => toggleStageVisibility(stage.id)}
                         />
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1">
                         <Minimize2 className="h-4 w-4 text-muted-foreground" />
                         <Switch
                           checked={config?.isReduced || false}
@@ -1149,9 +1228,53 @@ export const PipelinePage: React.FC = () => {
                         />
                       </div>
                     </div>
+
+                    {/* Delete */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 flex-shrink-0 text-destructive hover:text-destructive"
+                      onClick={() => deletePipelineStage(stage.id)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 );
               })}
+            </div>
+
+            {/* Add new stage */}
+            <div className="flex items-center gap-2 mt-4 pt-4 border-t">
+              <Input
+                placeholder="Nom de la nouvelle étape"
+                value={newStageName}
+                onChange={(e) => setNewStageName(e.target.value)}
+                className="flex-1"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newStageName.trim()) {
+                    const pipelineId = selectedPipelineId === 'all'
+                      ? (pipelines.find(p => p.is_default)?.id ?? pipelines[0]?.id ?? '')
+                      : selectedPipelineId;
+                    addPipelineStage(pipelineId, newStageName);
+                    setNewStageName('');
+                  }
+                }}
+              />
+              <Button
+                variant="outline"
+                className="flex-shrink-0"
+                disabled={!newStageName.trim()}
+                onClick={() => {
+                  const pipelineId = selectedPipelineId === 'all'
+                    ? (pipelines.find(p => p.is_default)?.id ?? pipelines[0]?.id ?? '')
+                    : selectedPipelineId;
+                  addPipelineStage(pipelineId, newStageName);
+                  setNewStageName('');
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Ajouter
+              </Button>
             </div>
           </Card>
         )}
