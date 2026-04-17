@@ -20,6 +20,7 @@ import {
   isOpportunityRow,
   isAchievementRow,
   isOpportunityNoteRow,
+  isFullStageRow,
 } from '../utils/api';
 import {
   getCompanyDisplayName,
@@ -162,6 +163,11 @@ interface AppDataContextType {
   updateContact: (id: string, updates: Partial<Contact>) => Promise<void>;
   addOpportunity: (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   addPipeline: (pipelineName: string) => Promise<Pipeline | null>;
+  addPipelineStage: (pipelineId: string, nom: string) => Promise<void>;
+  deletePipelineStage: (stageId: number) => Promise<void>;
+  renamePipelineStage: (stageId: number, nom: string) => Promise<void>;
+  movePipelineStageUp: (stageId: number) => Promise<void>;
+  movePipelineStageDown: (stageId: number) => Promise<void>;
   updateOpportunity: (id: string, updates: Partial<Opportunity>) => Promise<void>;
   addOffer: (offer: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
   updateOffer: (id: string, updates: Omit<Partial<Offer>, 'included_items'> & { included_items?: { included_offre_id: string; quantite?: number; is_optional?: boolean; notes?: string; discount_type?: 'percent' | 'fixed'; discount_value?: number }[] }) => Promise<void>;
@@ -1116,6 +1122,97 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
+  const addPipelineStage = async (pipelineId: string, nom: string): Promise<void> => {
+    const trimmed = nom.trim();
+    if (!trimmed) return;
+    const pipelineStagesForPipeline = pipelineStages.filter((s) => s.pipeline_id === pipelineId);
+    const nextOrdre = pipelineStagesForPipeline.length > 0
+      ? Math.max(...pipelineStagesForPipeline.map((s) => s.ordre)) + 1
+      : 1;
+    try {
+      const created = await pipelineStagesApi.create({ pipeline_id: pipelineId, nom: trimmed, ordre: nextOrdre, visible: true });
+      if (isFullStageRow(created)) {
+        setPipelineStages((prev) => [...prev, created]);
+      }
+    } catch (error) {
+      logger.error('Error adding pipeline stage:', error);
+      toast.error("Erreur lors de l'ajout de l'étape");
+    }
+  };
+
+  const deletePipelineStage = async (stageId: number): Promise<void> => {
+    const hasOpportunities = opportunities.some((o) => o.stage_id === stageId);
+    if (hasOpportunities) {
+      toast.error("Cette étape contient des opportunités et ne peut pas être supprimée");
+      return;
+    }
+    try {
+      await pipelineStagesApi.delete(stageId);
+      setPipelineStages((prev) => prev.filter((s) => s.id !== stageId));
+    } catch (error) {
+      logger.error('Error deleting pipeline stage:', error);
+      toast.error("Erreur lors de la suppression de l'étape");
+    }
+  };
+
+  const renamePipelineStage = async (stageId: number, nom: string): Promise<void> => {
+    const trimmed = nom.trim();
+    if (!trimmed) return;
+    try {
+      await pipelineStagesApi.update(stageId, { nom: trimmed });
+      setPipelineStages((prev) => prev.map((s) => s.id === stageId ? { ...s, nom: trimmed } : s));
+    } catch (error) {
+      logger.error('Error renaming pipeline stage:', error);
+      toast.error("Erreur lors du renommage de l'étape");
+    }
+  };
+
+  const movePipelineStageUp = async (stageId: number): Promise<void> => {
+    const stage = pipelineStages.find((s) => s.id === stageId);
+    if (!stage) return;
+    const siblings = pipelineStages.filter((s) => s.pipeline_id === stage.pipeline_id).sort((a, b) => a.ordre - b.ordre);
+    const idx = siblings.findIndex((s) => s.id === stageId);
+    if (idx <= 0) return;
+    const prev = siblings[idx - 1];
+    try {
+      await Promise.all([
+        pipelineStagesApi.update(stage.id, { ordre: prev.ordre }),
+        pipelineStagesApi.update(prev.id, { ordre: stage.ordre }),
+      ]);
+      setPipelineStages((all) => all.map((s) => {
+        if (s.id === stage.id) return { ...s, ordre: prev.ordre };
+        if (s.id === prev.id) return { ...s, ordre: stage.ordre };
+        return s;
+      }));
+    } catch (error) {
+      logger.error('Error moving stage up:', error);
+      toast.error("Erreur lors du déplacement de l'étape");
+    }
+  };
+
+  const movePipelineStageDown = async (stageId: number): Promise<void> => {
+    const stage = pipelineStages.find((s) => s.id === stageId);
+    if (!stage) return;
+    const siblings = pipelineStages.filter((s) => s.pipeline_id === stage.pipeline_id).sort((a, b) => a.ordre - b.ordre);
+    const idx = siblings.findIndex((s) => s.id === stageId);
+    if (idx < 0 || idx >= siblings.length - 1) return;
+    const next = siblings[idx + 1];
+    try {
+      await Promise.all([
+        pipelineStagesApi.update(stage.id, { ordre: next.ordre }),
+        pipelineStagesApi.update(next.id, { ordre: stage.ordre }),
+      ]);
+      setPipelineStages((all) => all.map((s) => {
+        if (s.id === stage.id) return { ...s, ordre: next.ordre };
+        if (s.id === next.id) return { ...s, ordre: stage.ordre };
+        return s;
+      }));
+    } catch (error) {
+      logger.error('Error moving stage down:', error);
+      toast.error("Erreur lors du déplacement de l'étape");
+    }
+  };
+
   const updateOpportunity = async (id: string, updates: Partial<Opportunity>) => {
     const original = opportunities.find((opp) => opp.id === id);
     if (!original) return;
@@ -1319,6 +1416,11 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     deleteContactNote,
     addOpportunity,
     addPipeline,
+    addPipelineStage,
+    deletePipelineStage,
+    renamePipelineStage,
+    movePipelineStageUp,
+    movePipelineStageDown,
     updateOpportunity,
     addOffer,
     updateOffer,
