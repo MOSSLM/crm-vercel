@@ -14,11 +14,11 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { Checkbox } from './ui/checkbox';
-import { 
-  DollarSign, 
-  Calendar, 
-  ArrowUp, 
-  ArrowDown, 
+import {
+  DollarSign,
+  Calendar,
+  ArrowUp,
+  ArrowDown,
   Minus,
   Target,
   Clock,
@@ -36,7 +36,10 @@ import {
   Mail,
   Linkedin,
   Globe,
-  Plus
+  Plus,
+  MousePointerClick,
+  X,
+  MoveRight
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -118,6 +121,9 @@ interface OpportunityCardProps {
   contactChannel: ContactChannel;
   onContactChannelChange: (opportunityId: string, channel: ContactChannel) => void;
   isReduced?: boolean;
+  selectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 const OpportunityCard: React.FC<OpportunityCardProps> = ({
@@ -127,7 +133,10 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
   onEdit,
   contactChannel,
   onContactChannelChange,
-  isReduced = false
+  isReduced = false,
+  selectionMode = false,
+  isSelected = false,
+  onToggleSelect,
 }) => {
   const { companies } = useAppData();
   const ref = useRef<HTMLDivElement>(null);
@@ -135,6 +144,7 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
   const [{ isDragging }, drag] = useDrag({
     type: ItemType,
     item: { id: opportunity.id, originalStage: opportunity.stage_id } as DragItem,
+    canDrag: !selectionMode,
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
@@ -180,20 +190,33 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
       <div
         ref={ref}
         className={`mb-2 pipeline-card border rounded-lg transition-all duration-200 border-l-4 ${
-          isDragging 
-            ? 'opacity-50 transform rotate-2 shadow-lg' 
+          selectionMode
+            ? isSelected
+              ? 'ring-2 ring-blue-500 cursor-pointer'
+              : 'cursor-pointer'
+            : isDragging
+            ? 'opacity-50 transform rotate-2 shadow-lg'
             : 'cursor-grab active:cursor-grabbing'
         }`}
-        style={{ 
+        style={{
           opacity: isDragging ? 0.5 : 1,
-          borderLeftColor: stageColor 
+          borderLeftColor: stageColor
         }}
-        onClick={() => onView(opportunity)}
+        onClick={() => selectionMode ? onToggleSelect?.(opportunity.id) : onView(opportunity)}
       >
         <div className="p-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 flex-1 min-w-0">
-              <Grip className="h-3 w-3 text-muted-foreground cursor-grab flex-shrink-0" />
+              {selectionMode ? (
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => onToggleSelect?.(opportunity.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex-shrink-0"
+                />
+              ) : (
+                <Grip className="h-3 w-3 text-muted-foreground cursor-grab flex-shrink-0" />
+              )}
               {associatedCompany?.logo_url
                 ? <img src={associatedCompany.logo_url} alt="" className="h-6 w-6 rounded object-cover flex-shrink-0" />
                 : null}
@@ -235,21 +258,34 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
     <div
       ref={ref}
       className={`mb-3 pipeline-card border rounded-lg transition-all duration-200 border-l-4 ${
-        isDragging 
-          ? 'opacity-50 transform rotate-2 shadow-lg' 
+        selectionMode
+          ? isSelected
+            ? 'ring-2 ring-blue-500 cursor-pointer'
+            : 'cursor-pointer'
+          : isDragging
+          ? 'opacity-50 transform rotate-2 shadow-lg'
           : 'cursor-grab active:cursor-grabbing'
       }`}
-      style={{ 
+      style={{
         opacity: isDragging ? 0.5 : 1,
-        borderLeftColor: stageColor 
+        borderLeftColor: stageColor
       }}
-      onClick={() => onView(opportunity)}
+      onClick={() => selectionMode ? onToggleSelect?.(opportunity.id) : onView(opportunity)}
     >
       <div className="p-3">
         <div className="flex items-start justify-between mb-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <Grip className="h-4 w-4 text-muted-foreground cursor-grab flex-shrink-0" />
+              {selectionMode ? (
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => onToggleSelect?.(opportunity.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex-shrink-0"
+                />
+              ) : (
+                <Grip className="h-4 w-4 text-muted-foreground cursor-grab flex-shrink-0" />
+              )}
               {associatedCompany?.logo_url
                 ? <img src={associatedCompany.logo_url} alt="" className="h-8 w-8 rounded object-cover flex-shrink-0" />
                 : null}
@@ -407,6 +443,10 @@ interface PipelineColumnProps {
   contactChannels: Record<string, ContactChannel>;
   onContactChannelChange: (opportunityId: string, channel: ContactChannel) => void;
   isReduced?: boolean;
+  selectionMode?: boolean;
+  selectedCardIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onSelectAll?: (ids: string[]) => void;
 }
 
 const PipelineColumn: React.FC<PipelineColumnProps> = ({
@@ -417,7 +457,11 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
   onEdit,
   contactChannels,
   onContactChannelChange,
-  isReduced = false
+  isReduced = false,
+  selectionMode = false,
+  selectedCardIds = new Set(),
+  onToggleSelect,
+  onSelectAll,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const stageValue = opportunities.reduce((sum, opp) => {
@@ -453,8 +497,8 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
     >
       <div className="mb-4">
         <div className="flex items-center gap-2 mb-2">
-          <div 
-            className="w-3 h-3 rounded-full"
+          <div
+            className="w-3 h-3 rounded-full flex-shrink-0"
             style={{ backgroundColor: stageColor }}
           ></div>
           <h3 className={`font-medium ${isReduced ? 'text-sm' : ''}`}>{stage.nom}</h3>
@@ -466,6 +510,21 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
           <div className={`text-muted-foreground ${isReduced ? 'text-xs' : 'text-sm'}`}>
             {stageValue.toLocaleString()}€
           </div>
+        )}
+        {selectionMode && opportunities.length > 0 && (
+          <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-muted-foreground">
+            <Checkbox
+              checked={opportunities.every((o) => selectedCardIds.has(o.id))}
+              onCheckedChange={(checked) => {
+                if (checked) {
+                  onSelectAll?.(opportunities.map((o) => o.id));
+                } else {
+                  onSelectAll?.([]);
+                }
+              }}
+            />
+            Tout sélectionner
+          </label>
         )}
       </div>
 
@@ -480,6 +539,9 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
             contactChannel={contactChannels[opportunity.id] ?? ContactChannel.PasDefini}
             onContactChannelChange={onContactChannelChange}
             isReduced={isReduced}
+            selectionMode={selectionMode}
+            isSelected={selectedCardIds.has(opportunity.id)}
+            onToggleSelect={onToggleSelect}
           />
         ))}
         
@@ -529,6 +591,10 @@ export const PipelinePage: React.FC = () => {
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
   const [newPipelineName, setNewPipelineName] = useState('');
   const [modalPipelineId, setModalPipelineId] = useState<string | undefined>(undefined);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(new Set());
+  const [bulkTargetPipelineId, setBulkTargetPipelineId] = useState<string>('');
+  const [isBulkMoving, setIsBulkMoving] = useState(false);
 
   React.useEffect(() => {
     if (selectedPipelineId !== 'all') return;
@@ -840,6 +906,70 @@ export const PipelinePage: React.FC = () => {
     }
   };
 
+  const handleToggleSelectionMode = () => {
+    setSelectionMode((prev) => {
+      if (prev) setSelectedCardIds(new Set());
+      return !prev;
+    });
+  };
+
+  const handleToggleSelectCard = (id: string) => {
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAllInColumn = (ids: string[]) => {
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev);
+      if (ids.length === 0) {
+        // deselect all from this column — we don't have the column ids here, handled in column
+        return next;
+      }
+      ids.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const handleDeselectAllInColumn = (ids: string[]) => {
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+  };
+
+  const handleBulkMove = async () => {
+    if (!bulkTargetPipelineId || selectedCardIds.size === 0) return;
+    const firstStage = pipelineStages
+      .filter((s) => s.pipeline_id === bulkTargetPipelineId)
+      .sort((a, b) => a.ordre - b.ordre)[0];
+    if (!firstStage) {
+      toast.error('Aucune étape trouvée dans ce pipeline');
+      return;
+    }
+    setIsBulkMoving(true);
+    try {
+      await Promise.all([...selectedCardIds].map((id) => moveOpportunityToStage(id, firstStage.id)));
+      const targetPipeline = pipelines.find((p) => p.id === bulkTargetPipelineId);
+      toast.success(`${selectedCardIds.size} opportunité(s) déplacée(s) vers "${targetPipeline?.nom}"`);
+      setSelectedCardIds(new Set());
+      setSelectionMode(false);
+      setBulkTargetPipelineId('');
+    } catch (error) {
+      logger.error('Erreur lors du déplacement en masse:', error);
+      toast.error('Erreur lors du déplacement en masse');
+    } finally {
+      setIsBulkMoving(false);
+    }
+  };
+
   const handleEditOpportunity = (opportunity: Opportunity) => {
     setEditingOpportunity({ ...opportunity });
     setSelectedOpportunity(null);
@@ -954,15 +1084,26 @@ export const PipelinePage: React.FC = () => {
               Mode Cold Call
             </Button>
             {pipelineMode === 'standard' && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSettings(!showSettings)}
-                className="flex items-center gap-2"
-              >
-                <Settings className="h-4 w-4" />
-                Configuration
-              </Button>
+              <>
+                <Button
+                  variant={selectionMode ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={handleToggleSelectionMode}
+                  className="flex items-center gap-2"
+                >
+                  <MousePointerClick className="h-4 w-4" />
+                  {selectionMode ? 'Annuler sélection' : 'Sélectionner'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowSettings(!showSettings)}
+                  className="flex items-center gap-2"
+                >
+                  <Settings className="h-4 w-4" />
+                  Configuration
+                </Button>
+              </>
             )}
           </div>
         </div>
@@ -1273,6 +1414,16 @@ export const PipelinePage: React.FC = () => {
                       contactChannels={contactChannels}
                       onContactChannelChange={handleContactChannelChange}
                       isReduced={isReduced}
+                      selectionMode={selectionMode}
+                      selectedCardIds={selectedCardIds}
+                      onToggleSelect={handleToggleSelectCard}
+                      onSelectAll={(ids) => {
+                        if (ids.length === 0) {
+                          handleDeselectAllInColumn(stageOpportunities.map((o) => o.id));
+                        } else {
+                          handleSelectAllInColumn(ids);
+                        }
+                      }}
                     />
                   </div>
                 );
@@ -1812,6 +1963,46 @@ export const PipelinePage: React.FC = () => {
           </>
         )}
       </div>
+
+      {/* Barre d'actions flottante pour la sélection en masse */}
+      {selectionMode && selectedCardIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-background border shadow-xl rounded-xl px-5 py-3">
+          <span className="text-sm font-medium whitespace-nowrap">
+            {selectedCardIds.size} opportunité{selectedCardIds.size > 1 ? 's' : ''} sélectionnée{selectedCardIds.size > 1 ? 's' : ''}
+          </span>
+          <MoveRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          <Select value={bulkTargetPipelineId} onValueChange={setBulkTargetPipelineId}>
+            <SelectTrigger className="h-8 w-48 text-sm">
+              <SelectValue placeholder="Choisir un pipeline" />
+            </SelectTrigger>
+            <SelectContent>
+              {pipelines.map((pipeline) => (
+                <SelectItem key={pipeline.id} value={pipeline.id}>
+                  {pipeline.nom}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            disabled={!bulkTargetPipelineId || isBulkMoving}
+            onClick={handleBulkMove}
+            className="whitespace-nowrap"
+          >
+            {isBulkMoving ? 'Déplacement...' : 'Déplacer'}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setSelectedCardIds(new Set());
+              setSelectionMode(false);
+            }}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
     </DndProvider>
   );
 };
