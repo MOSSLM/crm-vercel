@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/popover";
 import { Pipeline } from "@/types";
 import { Check, ChevronsUpDown, Plus } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/ui/utils";
 
 interface PipelineComboboxProps {
   pipelines: Pipeline[];
