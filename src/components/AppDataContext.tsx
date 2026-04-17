@@ -1071,6 +1071,11 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
+  const DEFAULT_PIPELINE_STAGE_NAMES = [
+    'Qualifié', 'Approche', 'Relance 1', 'Relance 2', 'Relance 3',
+    'RDV de vente 1', 'RDV de vente 2', 'Devis', 'Signature', 'Acompte',
+  ];
+
   const addPipeline = async (pipelineName: string): Promise<Pipeline | null> => {
     const normalizedName = pipelineName.trim();
     if (!normalizedName) {
@@ -1090,7 +1095,19 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       setPipelines((previous) =>
         [...previous, createdPipeline].sort((a, b) => a.ordre - b.ordre)
       );
-      toast.success(`Pipeline "${createdPipeline.nom}" créé`);
+
+      const stagesData = DEFAULT_PIPELINE_STAGE_NAMES.map((nom, index) => ({
+        pipeline_id: createdPipeline.id,
+        nom,
+        ordre: index + 1,
+        visible: true,
+      }));
+      const createdStages = await pipelineStagesApi.createMany(stagesData);
+      if (createdStages.length > 0) {
+        setPipelineStages((previous) => [...previous, ...createdStages]);
+      }
+
+      toast.success(`Pipeline "${createdPipeline.nom}" créé avec ${createdStages.length} étapes`);
       return createdPipeline;
     } catch (error) {
       logger.error('Error adding pipeline:', error);

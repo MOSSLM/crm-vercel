@@ -2034,7 +2034,7 @@ export const pipelineStagesApi = {
         .eq('id', id)
         .select()
         .single();
-      
+
       if (error) throw error;
       if (isFullStageRow(data)) {
         return data;
@@ -2045,7 +2045,21 @@ export const pipelineStagesApi = {
       logger.error('Error updating stage:', error);
       return { id, ...updates };
     }
-  }
+  },
+
+  createMany: async (stagesData: Record<string, unknown>[]): Promise<PipelineStage[]> => {
+    try {
+      const { data, error } = await supabase
+        .from('etapes_pipeline')
+        .insert(stagesData)
+        .select();
+      if (error) throw error;
+      return Array.isArray(data) ? data.filter(isFullStageRow) : [];
+    } catch (error) {
+      logger.error('Error creating stages:', error);
+      return [];
+    }
+  },
 };
 
 export const pipelinesApi = {

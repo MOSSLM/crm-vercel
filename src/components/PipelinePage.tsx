@@ -528,6 +528,7 @@ export const PipelinePage: React.FC = () => {
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
   const [newPipelineName, setNewPipelineName] = useState('');
+  const [modalPipelineId, setModalPipelineId] = useState<string | undefined>(undefined);
 
   React.useEffect(() => {
     if (selectedPipelineId !== 'all') return;
@@ -536,6 +537,10 @@ export const PipelinePage: React.FC = () => {
       setSelectedPipelineId(defaultPipeline.id);
     }
   }, [pipelines, selectedPipelineId]);
+
+  React.useEffect(() => {
+    setModalPipelineId(selectedOpportunity?.pipeline_id ?? undefined);
+  }, [selectedOpportunity?.id]);
 
   const stagesForPipeline = React.useMemo(
     () =>
@@ -1438,37 +1443,76 @@ export const PipelinePage: React.FC = () => {
                 <div>
                   <h3 className="font-medium mb-3">Détails</h3>
                   <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium">Étape actuelle</label>
-                      <Select 
-                        value={selectedOpportunity.stage_id?.toString()}
-                        onValueChange={(newStage) => {
-                          handleDrop(selectedOpportunity.id, parseInt(newStage));
-                          setSelectedOpportunity({
-                            ...selectedOpportunity,
-                            stage_id: parseInt(newStage)
-                          });
-                        }}
-                      >
-                        <SelectTrigger className="mt-1">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {pipelineStages
-                            .sort((a, b) => a.ordre - b.ordre)
-                            .map((stage) => (
-                              <SelectItem key={stage.id} value={stage.id.toString()}>
-                                <div className="flex items-center gap-2">
-                                  <div 
-                                    className="w-3 h-3 rounded-full" 
-                                    style={{ backgroundColor: getStageColor(stage.nom) }}
-                                  ></div>
-                                  {stage.nom}
-                                </div>
+                    <div className="col-span-2 grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium">Pipeline</label>
+                        <Select
+                          value={modalPipelineId ?? selectedOpportunity.pipeline_id ?? ''}
+                          onValueChange={(newPipelineId) => {
+                            setModalPipelineId(newPipelineId);
+                            const firstStage = pipelineStages
+                              .filter((s) => s.pipeline_id === newPipelineId)
+                              .sort((a, b) => a.ordre - b.ordre)[0];
+                            if (firstStage) {
+                              handleDrop(selectedOpportunity.id, firstStage.id);
+                              setSelectedOpportunity({
+                                ...selectedOpportunity,
+                                pipeline_id: newPipelineId,
+                                stage_id: firstStage.id,
+                              });
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue placeholder="Choisir un pipeline" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {pipelines.map((pipeline) => (
+                              <SelectItem key={pipeline.id} value={pipeline.id}>
+                                {pipeline.nom}
                               </SelectItem>
                             ))}
-                        </SelectContent>
-                      </Select>
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <div>
+                        <label className="text-sm font-medium">Étape actuelle</label>
+                        <Select
+                          value={selectedOpportunity.stage_id?.toString()}
+                          onValueChange={(newStage) => {
+                            handleDrop(selectedOpportunity.id, parseInt(newStage));
+                            setSelectedOpportunity({
+                              ...selectedOpportunity,
+                              stage_id: parseInt(newStage),
+                            });
+                          }}
+                        >
+                          <SelectTrigger className="mt-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {pipelineStages
+                              .filter((s) =>
+                                modalPipelineId
+                                  ? s.pipeline_id === modalPipelineId
+                                  : s.pipeline_id === selectedOpportunity.pipeline_id
+                              )
+                              .sort((a, b) => a.ordre - b.ordre)
+                              .map((stage) => (
+                                <SelectItem key={stage.id} value={stage.id.toString()}>
+                                  <div className="flex items-center gap-2">
+                                    <div
+                                      className="w-3 h-3 rounded-full"
+                                      style={{ backgroundColor: getStageColor(stage.nom) }}
+                                    />
+                                    {stage.nom}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
 
                     <div>

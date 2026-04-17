@@ -2,9 +2,23 @@
 
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { Pipeline } from "@/types";
-import { Check, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface PipelineComboboxProps {
   pipelines: Pipeline[];
@@ -25,150 +39,139 @@ export const PipelineCombobox: React.FC<PipelineComboboxProps> = ({
   allOptionLabel = "Tous les pipelines",
   placeholder = "Choisir ou créer un pipeline...",
 }) => {
+  const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
-  const [isFocused, setIsFocused] = React.useState(false);
 
   const selectedPipeline = React.useMemo(
-    () => pipelines.find((pipeline) => pipeline.id === selectedValue),
+    () => pipelines.find((p) => p.id === selectedValue),
     [pipelines, selectedValue]
   );
 
-  React.useEffect(() => {
-    if (isFocused) return;
-    if (includeAllOption && selectedValue === "all") {
-      setQuery(allOptionLabel);
-      return;
-    }
-    setQuery(selectedPipeline?.nom || "");
-  }, [allOptionLabel, includeAllOption, isFocused, selectedPipeline?.nom, selectedValue]);
+  const displayLabel =
+    includeAllOption && selectedValue === "all"
+      ? allOptionLabel
+      : (selectedPipeline?.nom ?? placeholder);
 
   const trimmedQuery = query.trim();
   const normalizedQuery = trimmedQuery.toLowerCase();
 
-  const matchesAllOption =
-    includeAllOption &&
-    normalizedQuery.length > 0 &&
-    allOptionLabel.toLowerCase() === normalizedQuery;
-
   const filteredPipelines = React.useMemo(
     () =>
-      pipelines
-        .filter((pipeline) => {
-          if (!normalizedQuery) return true;
-          return pipeline.nom.toLowerCase().includes(normalizedQuery);
-        })
-        .slice(0, 8),
+      pipelines.filter((p) =>
+        !normalizedQuery || p.nom.toLowerCase().includes(normalizedQuery)
+      ),
     [normalizedQuery, pipelines]
   );
 
   const exactMatch = pipelines.find(
-    (pipeline) => pipeline.nom.trim().toLowerCase() === normalizedQuery
+    (p) => p.nom.trim().toLowerCase() === normalizedQuery
   );
 
-  const canCreate =
-    !!trimmedQuery &&
-    !exactMatch &&
-    !matchesAllOption;
+  const matchesAllOption =
+    includeAllOption &&
+    normalizedQuery.length > 0 &&
+    allOptionLabel.toLowerCase().includes(normalizedQuery);
 
-  const showSuggestions =
-    isFocused &&
-    (!!trimmedQuery || filteredPipelines.length > 0 || includeAllOption);
+  const canCreate = !!trimmedQuery && !exactMatch && !matchesAllOption;
 
-  const selectOption = (value: string) => {
+  const handleSelect = (value: string) => {
     onSelect(value);
-    setIsFocused(false);
+    setOpen(false);
+    setQuery("");
   };
 
   const handleCreate = async () => {
     if (!canCreate) return;
     const created = await onCreate(trimmedQuery);
     if (created) {
-      onSelect(created.id);
-      setQuery(created.nom);
-      setIsFocused(false);
+      handleSelect(created.id);
     }
   };
 
   return (
-    <div className="relative w-56">
-      <Input
-        value={query}
-        placeholder={placeholder}
-        onChange={(event) => setQuery(event.target.value)}
-        onFocus={() => setIsFocused(true)}
-        onBlur={() => setTimeout(() => setIsFocused(false), 120)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter") return;
-          event.preventDefault();
-          if (exactMatch) {
-            selectOption(exactMatch.id);
-            return;
-          }
-          if (matchesAllOption) {
-            selectOption("all");
-            return;
-          }
-          if (canCreate) {
-            void handleCreate();
-            return;
-          }
-          if (filteredPipelines[0]) {
-            selectOption(filteredPipelines[0].id);
-          }
-        }}
-      />
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className="w-56 justify-between font-normal"
+        >
+          <span className="truncate">{displayLabel}</span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0">
+        <Command>
+          <CommandInput
+            placeholder="Rechercher..."
+            value={query}
+            onValueChange={setQuery}
+          />
+          <CommandList>
+            {includeAllOption && (
+              <CommandGroup>
+                <CommandItem
+                  value="all"
+                  onSelect={() => handleSelect("all")}
+                >
+                  <Check
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      selectedValue === "all" ? "opacity-100" : "opacity-0"
+                    )}
+                  />
+                  {allOptionLabel}
+                </CommandItem>
+              </CommandGroup>
+            )}
 
-      {showSuggestions && (
-        <div className="absolute z-20 mt-1 w-full rounded-md border bg-background p-1 shadow-sm space-y-1 max-h-56 overflow-auto">
-          {includeAllOption && (
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full justify-start h-8"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => selectOption("all")}
-            >
-              {selectedValue === "all" ? (
-                <Check className="h-4 w-4 mr-2" />
-              ) : (
-                <span className="inline-block w-4 mr-2" />
-              )}
-              {allOptionLabel}
-            </Button>
-          )}
+            {includeAllOption && (filteredPipelines.length > 0 || canCreate) && (
+              <CommandSeparator />
+            )}
 
-          {canCreate && (
-            <Button
-              type="button"
-              variant="ghost"
-              className="w-full justify-start h-8"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => void handleCreate()}
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Créer “{trimmedQuery}”
-            </Button>
-          )}
+            {filteredPipelines.length > 0 && (
+              <CommandGroup heading="Pipelines">
+                {filteredPipelines.map((pipeline) => (
+                  <CommandItem
+                    key={pipeline.id}
+                    value={pipeline.id}
+                    keywords={[pipeline.nom]}
+                    onSelect={() => handleSelect(pipeline.id)}
+                  >
+                    <Check
+                      className={cn(
+                        "mr-2 h-4 w-4",
+                        selectedValue === pipeline.id ? "opacity-100" : "opacity-0"
+                      )}
+                    />
+                    {pipeline.nom}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
 
-          {filteredPipelines.map((pipeline) => (
-            <Button
-              key={pipeline.id}
-              type="button"
-              variant="ghost"
-              className="w-full justify-start h-8"
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => selectOption(pipeline.id)}
-            >
-              {selectedValue === pipeline.id ? (
-                <Check className="h-4 w-4 mr-2" />
-              ) : (
-                <span className="inline-block w-4 mr-2" />
-              )}
-              {pipeline.nom}
-            </Button>
-          ))}
-        </div>
-      )}
-    </div>
+            {canCreate && (
+              <>
+                {filteredPipelines.length > 0 && <CommandSeparator />}
+                <CommandGroup>
+                  <CommandItem
+                    value={`create:${trimmedQuery}`}
+                    onSelect={() => void handleCreate()}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Créer &quot;{trimmedQuery}&quot;
+                  </CommandItem>
+                </CommandGroup>
+              </>
+            )}
+
+            {!canCreate && filteredPipelines.length === 0 && (
+              <CommandEmpty>Aucun pipeline trouvé.</CommandEmpty>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
 };
