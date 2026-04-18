@@ -18,6 +18,9 @@ const envSchema = z.object({
     .string()
     .min(1, { message: "GMAPS_API_TOKEN est requis" }),
   GMAPS_BASE_URL: z.string().url().optional(),
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  AI_PROVIDER: z.enum(["claude", "openai"]).default("claude"),
 });
 
 const envResult = envSchema.safeParse({
@@ -39,6 +42,15 @@ if (!envResult.success) {
   );
 }
 
+// Cross-field validation: require the right API key for the selected AI provider
+const { AI_PROVIDER, ANTHROPIC_API_KEY, OPENAI_API_KEY } = envResult.data;
+if (AI_PROVIDER === "claude" && !ANTHROPIC_API_KEY) {
+  console.warn("[env] ANTHROPIC_API_KEY manquante — l'enrichissement IA Claude sera désactivé");
+}
+if (AI_PROVIDER === "openai" && !OPENAI_API_KEY) {
+  console.warn("[env] OPENAI_API_KEY manquante — l'enrichissement IA OpenAI sera désactivé");
+}
+
 export const {
   SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY,
@@ -47,4 +59,7 @@ export const {
   GMAPS_AWS_SERVICE,
   GMAPS_API_TOKEN,
   GMAPS_BASE_URL,
+  ANTHROPIC_API_KEY,
+  OPENAI_API_KEY,
+  AI_PROVIDER,
 } = envResult.data;

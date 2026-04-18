@@ -408,3 +408,59 @@ export interface SavedComponent {
   created_at: string;
   updated_at: string;
 }
+
+// ─── AI Enrichment Assistant ────────────────────────────────────────────────
+
+export type AIProvider = "claude" | "openai";
+
+export type EnrichmentStepId =
+  | "scrape_website"
+  | "detect_services"
+  | "fix_address"
+  | "find_nearest_city"
+  | "surrounding_cities"
+  | "postal_code"
+  | "google_reviews";
+
+export type EnrichmentStepStatus =
+  | "pending"
+  | "running"
+  | "done"
+  | "error"
+  | "skipped";
+
+export interface EnrichmentStep {
+  id: EnrichmentStepId;
+  label: string;
+  status: EnrichmentStepStatus;
+  detail?: string;
+}
+
+export interface OpportunityEnrichmentProgress {
+  opportunityId: string;
+  companyName: string;
+  status: "pending" | "running" | "done" | "error";
+  steps: EnrichmentStep[];
+  error?: string;
+}
+
+export type SSEEventType =
+  | "opportunity_start"
+  | "step_update"
+  | "opportunity_done"
+  | "opportunity_error"
+  | "all_done";
+
+export interface SSEEvent {
+  type: SSEEventType;
+  opportunityId: string;
+  stepId?: EnrichmentStepId;
+  stepStatus?: EnrichmentStepStatus;
+  stepDetail?: string;
+  error?: string;
+}
+
+export interface AIEnrichmentRequest {
+  opportunityIds: string[];
+  provider: AIProvider;
+}
