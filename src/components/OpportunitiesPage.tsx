@@ -345,29 +345,13 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       return;
     }
 
-    const eligibleIds = selectedOpportunityIds.filter((id) => {
-      const opp = opportunities.find((o) => o.id === id);
-      return opp?.lead_magnet === false || opp?.lead_magnet === null || opp?.lead_magnet === undefined;
-    });
-
-    const skippedCount = selectedCount - eligibleIds.length;
-
-    if (eligibleIds.length === 0) {
-      toast.error("Toutes les opportunités sélectionnées ont déjà un lead magnet généré");
-      return;
-    }
-
-    if (skippedCount > 0) {
-      toast.warning(`${skippedCount} opportunité(s) ignorée(s) — lead magnet déjà généré`);
-    }
-
     try {
       setIsAutoEnriching(true);
 
       const { data: selectedProjects, error: projectsError } = await supabase
         .from('lead_magnet_projects')
         .select('id, opportunite_id')
-        .in('opportunite_id', eligibleIds)
+        .in('opportunite_id', selectedOpportunityIds)
         .in('statut', ['draft', 'failed']);
 
       if (projectsError) throw projectsError;
@@ -382,9 +366,15 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
         ).values()
       );
 
+      const skippedCount = selectedCount - uniqueProjects.length;
+
       if (uniqueProjects.length === 0) {
-        toast.error('Aucun lead magnet project lié aux opportunités sélectionnées');
+        toast.error("Aucune opportunité sélectionnée n'est éligible à l'enrichissement");
         return;
+      }
+
+      if (skippedCount > 0) {
+        toast.warning(`${skippedCount} opportunité(s) ignorée(s) — déjà traitée(s) ou non éligible(s)`);
       }
 
       const initialLogs: EnrichmentLogEntry[] = uniqueProjects.map((project) => {
