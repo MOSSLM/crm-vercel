@@ -22,6 +22,7 @@ function StatusBadge({ status }: { status: NotificationRecord['status'] }) {
 }
 
 function LogEntryRow({ entry }: { entry: EnrichmentLogEntry }) {
+  const [showRaw, setShowRaw] = useState(false);
   const icon = entry.status === 'success'
     ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500 shrink-0" />
     : entry.status === 'error'
@@ -30,13 +31,30 @@ function LogEntryRow({ entry }: { entry: EnrichmentLogEntry }) {
     ? <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
     : <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 shrink-0" />;
 
+  const showDetails = (entry.status === 'error' || entry.status === 'skipped') && entry.rawData;
+
   return (
-    <div className="flex items-start gap-2 py-1 text-xs">
-      {icon}
-      <div className="min-w-0 flex-1">
-        <span className="font-medium">{entry.company_name}</span>
-        {entry.message && <span className="text-muted-foreground"> — {entry.message}</span>}
+    <div className="py-1 text-xs">
+      <div className="flex items-start gap-2">
+        {icon}
+        <div className="min-w-0 flex-1">
+          <span className="font-medium">{entry.company_name}</span>
+          {entry.message && <span className="text-muted-foreground"> — {entry.message}</span>}
+          {showDetails && (
+            <button
+              onClick={() => setShowRaw((v) => !v)}
+              className="ml-2 text-muted-foreground underline underline-offset-2 hover:text-foreground"
+            >
+              {showRaw ? 'masquer' : 'détails bruts'}
+            </button>
+          )}
+        </div>
       </div>
+      {showRaw && entry.rawData && (
+        <pre className="mt-1 ml-5.5 text-[10px] bg-muted rounded p-2 overflow-auto max-h-40 whitespace-pre-wrap break-all">
+          {JSON.stringify(entry.rawData, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }
