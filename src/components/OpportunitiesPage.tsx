@@ -392,80 +392,55 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       setEnrichmentProgress({ current: 0, total: uniqueProjects.length, isComplete: false });
       setShowProgressModal(true);
 
+      const projectIds = uniqueProjects.map((project) => project.id);
+
       const { error: updateError } = await supabase
         .from('lead_magnet_projects')
         .update({ pret_pour_lm: true })
-        .in('id', uniqueProjects.map((p) => p.id));
+        .in('id', projectIds);
 
       if (updateError) throw updateError;
 
-      const processedLogs: EnrichmentLogEntry[] = [...initialLogs];
-      const tally = { success: 0, noWebsite: 0, errors: 0, skipped: skippedCount };
+      const results = await Promise.allSettled(
+        projectIds.map((id) =>
+          supabase.functions.invoke('enrich-lead-magnet', {
+            body: { project_id: id },
+          })
+        )
+      );
 
-      for (let i = 0; i < uniqueProjects.length; i++) {
-        const project = uniqueProjects[i];
-        const logIdx = processedLogs.findIndex((l) => l.project_id === project.id);
-
-        processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'running' };
-        setEnrichmentLogs([...processedLogs]);
-        setEnrichmentProgress({ current: i + 1, total: uniqueProjects.length, isComplete: false });
-
-        try {
-          const response = await fetch('/api/lead-magnet/enrich', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_id: project.id }),
-          });
-
-          const data = await response.json().catch(() => ({}));
-
-          if (!response.ok) {
-            const errorMessage =
-              typeof data?.error === 'string'
-                ? data.error
-                : "Erreur inconnue lors de l'appel du serveur d'enrichissement";
-
-            await supabase.from('lead_magnet_projects').update({ pret_pour_lm: false }).eq('id', project.id);
-            processedLogs[logIdx] = {
-              ...processedLogs[logIdx],
-              status: 'error',
-              message: errorMessage,
-              rawData: data,
-            };
-            tally.errors++;
-          } else {
-            const dataRecord = typeof data === 'object' && data !== null ? data as Record<string, unknown> : null;
-            const results = Array.isArray(dataRecord?.results) ? dataRecord.results as Record<string, unknown>[] : [];
-            const firstResult = results[0] ?? {};
-            const fnStatus = typeof firstResult.status === 'string' ? firstResult.status : '';
-            const fnError  = typeof firstResult.error  === 'string' ? firstResult.error  : '';
-
-            if (fnStatus === 'no_website') {
-              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'no_website', message: 'Site web introuvable', rawData: data };
-              tally.noWebsite++;
-            } else if (fnStatus === 'skipped' || fnStatus === 'failed') {
-              await supabase.from('lead_magnet_projects').update({ pret_pour_lm: false }).eq('id', project.id);
-              processedLogs[logIdx] = {
-                ...processedLogs[logIdx],
-                status: fnStatus === 'skipped' ? 'skipped' : 'error',
-                message: fnError || fnStatus,
-                rawData: data,
-              };
-              if (fnStatus === 'skipped') tally.skipped++;
-              else tally.errors++;
-            } else {
-              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'success', message: 'Enrichi avec succès', rawData: data };
-              tally.success++;
-            }
-          }
-        } catch {
-          await supabase.from('lead_magnet_projects').update({ pret_pour_lm: false }).eq('id', project.id);
-          processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'error', message: 'Erreur inconnue' };
-          tally.errors++;
+      const processedLogs: EnrichmentLogEntry[] = initialLogs.map((log, index) => {
+        const result = results[index];
+        if (!result) {
+          return { ...log, status: 'error', message: 'Erreur inconnue' };
         }
 
-        setEnrichmentLogs([...processedLogs]);
-      }
+        if (result.status === 'rejected') {
+          return { ...log, status: 'error', message: result.reason instanceof Error ? result.reason.message : 'Erreur inconnue' };
+        }
+
+        if (result.value.error) {
+          return {
+            ...log,
+            status: 'error',
+            message: typeof result.value.error.message === 'string' ? result.value.error.message : 'Erreur inconnue',
+            rawData: result.value.error,
+          };
+        }
+
+        return { ...log, status: 'success', message: 'Enrichi avec succès', rawData: result.value.data };
+      });
+
+      const successCount = processedLogs.filter((log) => log.status === 'success').length;
+      const errorsCount = processedLogs.filter((log) => log.status === 'error').length;
+      const skippedTotal = skippedCount;
+      const tally = { success: 0, noWebsite: 0, errors: 0, skipped: skippedCount };
+      tally.success = successCount;
+      tally.errors = errorsCount;
+      tally.skipped = skippedTotal;
+
+      setEnrichmentLogs(processedLogs);
+      setEnrichmentProgress({ current: uniqueProjects.length, total: uniqueProjects.length, isComplete: false });
 
       const overallStatus =
         tally.errors === uniqueProjects.length ? 'error'
