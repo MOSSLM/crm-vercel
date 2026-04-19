@@ -402,11 +402,22 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       if (updateError) throw updateError;
 
       const results = await Promise.allSettled(
-        projectIds.map((id) =>
-          supabase.functions.invoke('enrich-lead-magnet', {
-            body: { project_id: id },
-          })
-        )
+        projectIds.map(async (id) => {
+          const response = await fetch('/api/lead-magnet/enrich', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: id }),
+          });
+          const data = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const message =
+              typeof (data as { error?: unknown })?.error === 'string'
+                ? (data as { error: string }).error
+                : `HTTP ${response.status}`;
+            throw Object.assign(new Error(message), { rawData: data });
+          }
+          return data;
+        })
       );
 
       const processedLogs: EnrichmentLogEntry[] = initialLogs.map((log, index) => {
@@ -416,28 +427,41 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
         }
 
         if (result.status === 'rejected') {
-          return { ...log, status: 'error', message: result.reason instanceof Error ? result.reason.message : 'Erreur inconnue' };
-        }
-
-        if (result.value.error) {
+          const reason = result.reason as { message?: string; rawData?: unknown } | undefined;
           return {
             ...log,
             status: 'error',
-            message: typeof result.value.error.message === 'string' ? result.value.error.message : 'Erreur inconnue',
-            rawData: result.value.error,
+            message: typeof reason?.message === 'string' ? reason.message : 'Erreur inconnue',
+            rawData: reason?.rawData,
           };
         }
 
-        return { ...log, status: 'success', message: 'Enrichi avec succès', rawData: result.value.data };
+        const data = result.value as Record<string, unknown> | null;
+        const fnResults = Array.isArray((data as { results?: unknown })?.results)
+          ? ((data as { results: Record<string, unknown>[] }).results)
+          : [];
+        const first = fnResults[0] ?? {};
+        const fnStatus = typeof first.status === 'string' ? first.status : '';
+        const fnError = typeof first.error === 'string' ? first.error : '';
+
+        if (fnStatus === 'no_website') {
+          return { ...log, status: 'no_website', message: 'Site web introuvable', rawData: data };
+        }
+        if (fnStatus === 'failed') {
+          return { ...log, status: 'error', message: fnError || 'failed', rawData: data };
+        }
+        if (fnStatus === 'skipped') {
+          return { ...log, status: 'skipped', message: fnError || 'skipped', rawData: data };
+        }
+        return { ...log, status: 'success', message: 'Enrichi avec succès', rawData: data };
       });
 
-      const successCount = processedLogs.filter((log) => log.status === 'success').length;
-      const errorsCount = processedLogs.filter((log) => log.status === 'error').length;
-      const skippedTotal = skippedCount;
-      const tally = { success: 0, noWebsite: 0, errors: 0, skipped: skippedCount };
-      tally.success = successCount;
-      tally.errors = errorsCount;
-      tally.skipped = skippedTotal;
+      const tally = {
+        success: processedLogs.filter((log) => log.status === 'success').length,
+        noWebsite: processedLogs.filter((log) => log.status === 'no_website').length,
+        errors: processedLogs.filter((log) => log.status === 'error').length,
+        skipped: skippedCount + processedLogs.filter((log) => log.status === 'skipped').length,
+      };
 
       setEnrichmentLogs(processedLogs);
       setEnrichmentProgress({ current: uniqueProjects.length, total: uniqueProjects.length, isComplete: false });
