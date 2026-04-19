@@ -33,6 +33,7 @@ import {
   Columns3,
   Globe,
   Phone,
+  Loader2,
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -44,6 +45,7 @@ import { QualifiedColdCallWorkspace } from './QualifiedColdCallWorkspace';
 import { PipelineCombobox } from './PipelineCombobox';
 import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
 import { saveSprintFlow } from '@/utils/sprintFlow';
+import { createClient } from '@/utils/supabase/client';
 
 import logger from '../utils/logger';
 
@@ -81,6 +83,7 @@ interface KanbanDragItem {
   sourceValue: string;
 }
 export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprintModule = false }) => {
+  const supabase = createClient();
   const { 
     opportunities, 
     pipelines,
@@ -89,7 +92,8 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     addOpportunityNote,
     toggleLeadMagnet,
     companies,
-    addPipeline
+    addPipeline,
+    refreshData,
   } = useAppData();
   
   const [searchTerm, setSearchTerm] = useState('');
@@ -109,6 +113,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const [selectedOpportunityIds, setSelectedOpportunityIds] = useState<string[]>([]);
   const [bulkPipelineTarget, setBulkPipelineTarget] = useState<string>('none');
   const [sortByPipeline, setSortByPipeline] = useState(false);
+  const [isAutoEnriching, setIsAutoEnriching] = useState(false);
   const { sprintFlow } = useSprintFlowState();
 
   const stagesForSelectedPipeline = React.useMemo(
@@ -305,6 +310,98 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     } catch (error) {
       logger.error('Erreur déplacement groupé pipeline:', error);
       toast.error('Impossible de déplacer les opportunités');
+    }
+  };
+
+  const handleAutoEnrichSelection = async () => {
+    const selectedCount = selectedOpportunityIds.length;
+    if (selectedCount === 0) {
+      toast.error('Sélectionnez au moins une opportunité');
+      return;
+    }
+
+    if (selectedCount > 20) {
+      toast.error('Limite atteinte : 20 opportunités maximum par enrichissement');
+      return;
+    }
+
+    try {
+      setIsAutoEnriching(true);
+
+      const { data: selectedProjects, error: projectsError } = await supabase
+        .from('lead_magnet_projects')
+        .select('id, opportunite_id')
+        .in('opportunite_id', selectedOpportunityIds);
+
+      if (projectsError) throw projectsError;
+
+      const projectIds = Array.from(
+        new Set(
+          (selectedProjects ?? [])
+            .map((project) => project.id)
+            .filter((projectId): projectId is string => typeof projectId === 'string' && projectId.length > 0)
+        )
+      );
+
+      if (projectIds.length === 0) {
+        toast.error('Aucun lead magnet project lié aux opportunités sélectionnées');
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from('lead_magnet_projects')
+        .update({ pret_pour_lm: true })
+        .in('id', projectIds);
+
+      if (updateError) throw updateError;
+
+      const results = await Promise.allSettled(
+        projectIds.map((id) =>
+          supabase.functions.invoke('enrich-lead-magnet', {
+            body: { project_id: id },
+          })
+        )
+      );
+
+      const summary = results.reduce(
+        (acc, result) => {
+          if (result.status === 'rejected') {
+            acc.errors += 1;
+            return acc;
+          }
+
+          const { error, data } = result.value;
+          if (error) {
+            acc.errors += 1;
+            return acc;
+          }
+
+          const dataRecord = typeof data === 'object' && data !== null ? data as Record<string, unknown> : null;
+          const code = typeof dataRecord?.code === 'string' ? dataRecord.code : '';
+          const status = typeof dataRecord?.status === 'string' ? dataRecord.status : '';
+          const reason = typeof dataRecord?.reason === 'string' ? dataRecord.reason : '';
+
+          if ([code, status, reason].some((value) => value.toLowerCase() === 'no_website')) {
+            acc.noWebsite += 1;
+            return acc;
+          }
+
+          acc.success += 1;
+          return acc;
+        },
+        { success: 0, noWebsite: 0, errors: 0 }
+      );
+
+      toast.success(
+        `Enrichissement terminé — succès: ${summary.success} · no_website: ${summary.noWebsite} · erreurs: ${summary.errors}`
+      );
+      await refreshData();
+      setSelectedOpportunityIds([]);
+    } catch (error) {
+      logger.error('Erreur enrichissement auto lead magnet:', error);
+      toast.error("Impossible de lancer l'enrichissement automatique");
+    } finally {
+      setIsAutoEnriching(false);
     }
   };
 
@@ -910,6 +1007,20 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
         </Select>
         <Button onClick={handleBulkPipelineMove} disabled={selectedOpportunityIds.length === 0 || bulkPipelineTarget === 'none'}>
           Déplacer la sélection
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={handleAutoEnrichSelection}
+          disabled={isAutoEnriching || selectedOpportunityIds.length === 0}
+        >
+          {isAutoEnriching ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Enrichissement...
+            </>
+          ) : (
+            'Enrichir auto'
+          )}
         </Button>
       </div>
 
