@@ -332,18 +332,18 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
 
     const eligibleIds = selectedOpportunityIds.filter((id) => {
       const opp = opportunities.find((o) => o.id === id);
-      return opp?.lead_magnet === true;
+      return opp?.lead_magnet === false || opp?.lead_magnet === null || opp?.lead_magnet === undefined;
     });
 
     const skippedCount = selectedCount - eligibleIds.length;
 
     if (eligibleIds.length === 0) {
-      toast.error("Aucune opportunité sélectionnée n'a le lead magnet activé");
+      toast.error("Toutes les opportunités sélectionnées ont déjà un lead magnet généré");
       return;
     }
 
     if (skippedCount > 0) {
-      toast.warning(`${skippedCount} opportunité(s) ignorée(s) — lead magnet non activé`);
+      toast.warning(`${skippedCount} opportunité(s) ignorée(s) — lead magnet déjà généré`);
     }
 
     try {
@@ -352,7 +352,8 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       const { data: selectedProjects, error: projectsError } = await supabase
         .from('lead_magnet_projects')
         .select('id, opportunite_id')
-        .in('opportunite_id', eligibleIds);
+        .in('opportunite_id', eligibleIds)
+        .eq('statut', 'draft');
 
       if (projectsError) throw projectsError;
 
