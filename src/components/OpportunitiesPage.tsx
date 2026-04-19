@@ -353,7 +353,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
         .from('lead_magnet_projects')
         .select('id, opportunite_id')
         .in('opportunite_id', eligibleIds)
-        .eq('statut', 'draft');
+        .in('statut', ['draft', 'failed']);
 
       if (projectsError) throw projectsError;
 
