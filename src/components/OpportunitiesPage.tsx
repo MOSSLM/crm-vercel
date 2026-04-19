@@ -421,17 +421,26 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
         setEnrichmentProgress({ current: i + 1, total: uniqueProjects.length, isComplete: false });
 
         try {
-          const { error, data } = await supabase.functions.invoke('enrich-lead-magnet', {
-            body: { project_id: project.id },
+          const response = await fetch('/api/lead-magnet/enrich', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: project.id }),
           });
 
-          if (error) {
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            const errorMessage =
+              typeof data?.error === 'string'
+                ? data.error
+                : "Erreur inconnue lors de l'appel du serveur d'enrichissement";
+
             await supabase.from('lead_magnet_projects').update({ pret_pour_lm: false }).eq('id', project.id);
             processedLogs[logIdx] = {
               ...processedLogs[logIdx],
               status: 'error',
-              message: typeof error.message === 'string' ? error.message : 'Erreur inconnue',
-              rawData: { errorType: (error as { name?: string }).name ?? 'UnknownError', message: error.message },
+              message: errorMessage,
+              rawData: data,
             };
             tally.errors++;
           } else {
