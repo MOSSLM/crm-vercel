@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAppData } from "@/components/AppDataContext";
+import { NotificationCenter } from "@/components/NotificationCenter";
 import { LayoutDashboard, Phone, Target, ChevronDown, Layers } from "lucide-react";
 import { useWorkspaceView } from "./useWorkspaceView";
 import { TopSubNav } from "./TopSubNav";
@@ -161,6 +162,7 @@ export function AppHeader() {
             </DropdownMenuContent>
           </DropdownMenu>
 
+          <NotificationCenter />
           <ThemeToggle />
         </div>
       </div>
