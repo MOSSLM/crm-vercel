@@ -31,7 +31,7 @@ function LogEntryRow({ entry }: { entry: EnrichmentLogEntry }) {
     ? <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
     : <AlertTriangle className="h-3.5 w-3.5 text-yellow-500 shrink-0" />;
 
-  const showDetails = (entry.status === 'error' || entry.status === 'skipped') && entry.rawData;
+  const showDetails = (entry.status === 'error' || entry.status === 'skipped') && Boolean(entry.rawData);
 
   return (
     <div className="py-1 text-xs">
@@ -50,7 +50,7 @@ function LogEntryRow({ entry }: { entry: EnrichmentLogEntry }) {
           )}
         </div>
       </div>
-      {showRaw && entry.rawData && (
+      {showRaw && Boolean(entry.rawData) && (
         <pre className="mt-1 ml-5.5 text-[10px] bg-muted rounded p-2 overflow-auto max-h-40 whitespace-pre-wrap break-all">
           {JSON.stringify(entry.rawData, null, 2)}
         </pre>
