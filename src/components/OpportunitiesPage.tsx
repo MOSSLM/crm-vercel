@@ -119,6 +119,8 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [enrichmentLogs, setEnrichmentLogs] = useState<EnrichmentLogEntry[]>([]);
   const [enrichmentProgress, setEnrichmentProgress] = useState({ current: 0, total: 0, isComplete: false });
+  const [lmEnrichmentFilter, setLmEnrichmentFilter] = useState<'all' | 'to_enrich' | 'failed' | 'enriched'>('all');
+  const [lmProjectStatuts, setLmProjectStatuts] = useState<Map<string, string>>(new Map());
   const { sprintFlow } = useSprintFlowState();
 
   const stagesForSelectedPipeline = React.useMemo(
@@ -131,19 +133,26 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     [sprintFlow?.opportunityIds]
   );
 
+  const loadLmProjectStatuts = React.useCallback(async () => {
+    const { data } = await supabase.from('lead_magnet_projects').select('opportunite_id, statut');
+    setLmProjectStatuts(new Map((data ?? []).map((p) => [p.opportunite_id as string, p.statut as string])));
+  }, []);
+
+  React.useEffect(() => { loadLmProjectStatuts(); }, [loadLmProjectStatuts]);
+
   const filteredOpportunities = opportunities
     .filter(opportunity => {
     const companyName = opportunity.companyName || '';
     const tags = parseTags(opportunity.tags);
     const flags = parseFlags(opportunity.flags);
     const notes = opportunity.notes || '';
-    
+
     const searchLower = searchTerm.toLowerCase();
-    const matchesSearch = 
+    const matchesSearch =
       companyName.toLowerCase().includes(searchLower) ||
       tags.some(tag => tag.toLowerCase().includes(searchLower)) ||
       notes.toLowerCase().includes(searchLower);
-    
+
     const matchesPipeline = pipelineFilter === 'all' || opportunity.pipeline_id === pipelineFilter;
     const matchesStage = stageFilter === 'all' || opportunity.stage_id?.toString() === stageFilter;
     const matchesPriority = priorityFilter === 'all' || opportunity.priority === priorityFilter || opportunity.priorite === priorityFilter;
@@ -153,8 +162,14 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       !sprintFlow ||
       sprintOpportunityIds.size === 0 ||
       sprintOpportunityIds.has(opportunity.id);
+    const projStatut = lmProjectStatuts.get(opportunity.id);
+    const matchesLmEnrichment =
+      lmEnrichmentFilter === 'all' ||
+      (lmEnrichmentFilter === 'to_enrich' && !opportunity.lead_magnet && ['draft', 'failed'].includes(projStatut ?? '')) ||
+      (lmEnrichmentFilter === 'failed' && projStatut === 'failed') ||
+      (lmEnrichmentFilter === 'enriched' && opportunity.lead_magnet === true);
 
-      return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag && matchesSprint;
+      return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag && matchesSprint && matchesLmEnrichment;
     })
     .sort((a, b) => {
       if (!sortByPipeline) return 0;
@@ -411,27 +426,41 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
           });
 
           if (error) {
+            await supabase.from('lead_magnet_projects').update({ pret_pour_lm: false }).eq('id', project.id);
             processedLogs[logIdx] = {
               ...processedLogs[logIdx],
               status: 'error',
               message: typeof error.message === 'string' ? error.message : 'Erreur inconnue',
+              rawData: { errorType: (error as { name?: string }).name ?? 'UnknownError', message: error.message },
             };
             tally.errors++;
           } else {
             const dataRecord = typeof data === 'object' && data !== null ? data as Record<string, unknown> : null;
-            const code = typeof dataRecord?.code === 'string' ? dataRecord.code : '';
-            const fnStatus = typeof dataRecord?.status === 'string' ? dataRecord.status : '';
-            const reason = typeof dataRecord?.reason === 'string' ? dataRecord.reason : '';
+            const results = Array.isArray(dataRecord?.results) ? dataRecord.results as Record<string, unknown>[] : [];
+            const firstResult = results[0] ?? {};
+            const fnStatus = typeof firstResult.status === 'string' ? firstResult.status : '';
+            const fnError  = typeof firstResult.error  === 'string' ? firstResult.error  : '';
 
-            if ([code, fnStatus, reason].some((v) => v.toLowerCase() === 'no_website')) {
-              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'no_website', message: 'Site web introuvable' };
+            if (fnStatus === 'no_website') {
+              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'no_website', message: 'Site web introuvable', rawData: data };
               tally.noWebsite++;
+            } else if (fnStatus === 'skipped' || fnStatus === 'failed') {
+              await supabase.from('lead_magnet_projects').update({ pret_pour_lm: false }).eq('id', project.id);
+              processedLogs[logIdx] = {
+                ...processedLogs[logIdx],
+                status: fnStatus === 'skipped' ? 'skipped' : 'error',
+                message: fnError || fnStatus,
+                rawData: data,
+              };
+              if (fnStatus === 'skipped') tally.skipped++;
+              else tally.errors++;
             } else {
-              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'success', message: 'Enrichi avec succès' };
+              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'success', message: 'Enrichi avec succès', rawData: data };
               tally.success++;
             }
           }
         } catch {
+          await supabase.from('lead_magnet_projects').update({ pret_pour_lm: false }).eq('id', project.id);
           processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'error', message: 'Erreur inconnue' };
           tally.errors++;
         }
@@ -455,6 +484,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       setEnrichmentProgress({ current: uniqueProjects.length, total: uniqueProjects.length, isComplete: true });
 
       await refreshData();
+      await loadLmProjectStatuts();
       setSelectedOpportunityIds([]);
     } catch (error) {
       logger.error('Erreur enrichissement auto lead magnet:', error);
@@ -952,6 +982,18 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                 {OPPORTUNITY_FLAGS.map((flag) => (
                   <SelectItem key={flag.value} value={flag.value}>{flag.label}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={lmEnrichmentFilter} onValueChange={(v) => setLmEnrichmentFilter(v as typeof lmEnrichmentFilter)}>
+              <SelectTrigger className="w-[46vw] max-w-[220px] md:w-56 h-9">
+                <SelectValue placeholder="Enrichissement" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous (enrichissement)</SelectItem>
+                <SelectItem value="to_enrich">À enrichir</SelectItem>
+                <SelectItem value="failed">Échec</SelectItem>
+                <SelectItem value="enriched">Enrichi</SelectItem>
               </SelectContent>
             </Select>
 

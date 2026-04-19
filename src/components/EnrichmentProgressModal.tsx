@@ -3,7 +3,7 @@
 import React from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Progress } from './ui/progress';
-import { CheckCircle2, XCircle, Globe, Loader2, Clock } from 'lucide-react';
+import { CheckCircle2, XCircle, Globe, Loader2, Clock, AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import { cn } from './ui/utils';
@@ -12,8 +12,9 @@ export interface EnrichmentLogEntry {
   opportunite_id: string;
   company_name: string;
   project_id: string;
-  status: 'pending' | 'running' | 'success' | 'error' | 'no_website';
+  status: 'pending' | 'running' | 'success' | 'error' | 'no_website' | 'skipped';
   message?: string;
+  rawData?: unknown;
 }
 
 interface EnrichmentProgressModalProps {
@@ -35,6 +36,8 @@ function StatusIcon({ status }: { status: EnrichmentLogEntry['status'] }) {
       return <XCircle className="h-4 w-4 text-red-500 shrink-0" />;
     case 'no_website':
       return <Globe className="h-4 w-4 text-muted-foreground shrink-0" />;
+    case 'skipped':
+      return <AlertCircle className="h-4 w-4 text-yellow-500 shrink-0" />;
     default:
       return <Clock className="h-4 w-4 text-muted-foreground shrink-0" />;
   }
@@ -46,6 +49,7 @@ function statusLabel(status: EnrichmentLogEntry['status']) {
     case 'success': return 'Enrichi';
     case 'error': return 'Erreur';
     case 'no_website': return 'Site introuvable';
+    case 'skipped': return 'Ignoré';
     default: return 'En attente';
   }
 }
