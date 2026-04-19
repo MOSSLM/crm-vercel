@@ -47,6 +47,7 @@ import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
 import { saveSprintFlow } from '@/utils/sprintFlow';
 import { createClient } from '@/utils/supabase/client';
 
+import { cn } from '@/components/ui/utils';
 import logger from '../utils/logger';
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from './EnrichmentProgressModal';
 import { createNotification } from '../utils/notificationsApi';
@@ -119,7 +120,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [enrichmentLogs, setEnrichmentLogs] = useState<EnrichmentLogEntry[]>([]);
   const [enrichmentProgress, setEnrichmentProgress] = useState({ current: 0, total: 0, isComplete: false });
-  const [lmEnrichmentFilter, setLmEnrichmentFilter] = useState<'all' | 'to_enrich' | 'failed' | 'enriched'>('all');
+  const [lmEnrichmentFilter, setLmEnrichmentFilter] = useState<'all' | 'draft' | 'framer' | 'ready' | 'failed'>('all');
   const [lmProjectStatuts, setLmProjectStatuts] = useState<Map<string, string>>(new Map());
   const { sprintFlow } = useSprintFlowState();
 
@@ -139,6 +140,16 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   }, []);
 
   React.useEffect(() => { loadLmProjectStatuts(); }, [loadLmProjectStatuts]);
+
+  const lmStatusCounts = React.useMemo(() => {
+    const counts = { all: 0, draft: 0, framer: 0, ready: 0, failed: 0 };
+    for (const opp of opportunities) {
+      counts.all++;
+      const s = lmProjectStatuts.get(opp.id) ?? 'draft';
+      if (s in counts) counts[s as keyof typeof counts]++;
+    }
+    return counts;
+  }, [opportunities, lmProjectStatuts]);
 
   const filteredOpportunities = opportunities
     .filter(opportunity => {
@@ -165,9 +176,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     const projStatut = lmProjectStatuts.get(opportunity.id);
     const matchesLmEnrichment =
       lmEnrichmentFilter === 'all' ||
-      (lmEnrichmentFilter === 'to_enrich' && !opportunity.lead_magnet && ['draft', 'failed'].includes(projStatut ?? '')) ||
-      (lmEnrichmentFilter === 'failed' && projStatut === 'failed') ||
-      (lmEnrichmentFilter === 'enriched' && opportunity.lead_magnet === true);
+      projStatut === lmEnrichmentFilter;
 
       return matchesSearch && matchesPipeline && matchesStage && matchesPriority && matchesFlag && matchesSprint && matchesLmEnrichment;
     })
@@ -983,17 +992,30 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
               </SelectContent>
             </Select>
 
-            <Select value={lmEnrichmentFilter} onValueChange={(v) => setLmEnrichmentFilter(v as typeof lmEnrichmentFilter)}>
-              <SelectTrigger className="w-[46vw] max-w-[220px] md:w-56 h-9">
-                <SelectValue placeholder="Enrichissement" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous (enrichissement)</SelectItem>
-                <SelectItem value="to_enrich">À enrichir</SelectItem>
-                <SelectItem value="failed">Échec</SelectItem>
-                <SelectItem value="enriched">Enrichi</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-1">
+              {([
+                { value: 'all',    label: 'Tous' },
+                { value: 'draft',  label: 'Draft' },
+                { value: 'framer', label: 'Framer' },
+                { value: 'ready',  label: 'Ready' },
+                { value: 'failed', label: 'Échec' },
+              ] as const).map(({ value, label }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setLmEnrichmentFilter(value)}
+                  className={cn(
+                    'px-3 py-1 rounded-full text-sm font-medium transition-colors',
+                    lmEnrichmentFilter === value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                  )}
+                >
+                  {label}
+                  <span className="ml-1.5 text-xs opacity-70">{lmStatusCounts[value]}</span>
+                </button>
+              ))}
+            </div>
 
             <Button
               type="button"
