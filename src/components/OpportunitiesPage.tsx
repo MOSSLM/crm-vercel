@@ -48,6 +48,8 @@ import { saveSprintFlow } from '@/utils/sprintFlow';
 import { createClient } from '@/utils/supabase/client';
 
 import logger from '../utils/logger';
+import { EnrichmentProgressModal, type EnrichmentLogEntry } from './EnrichmentProgressModal';
+import { createNotification } from '../utils/notificationsApi';
 
 const OPPORTUNITY_FLAGS = [
   { value: 'site_merdique', label: 'Site merdique / inutilisable' },
@@ -114,6 +116,9 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const [bulkPipelineTarget, setBulkPipelineTarget] = useState<string>('none');
   const [sortByPipeline, setSortByPipeline] = useState(false);
   const [isAutoEnriching, setIsAutoEnriching] = useState(false);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [enrichmentLogs, setEnrichmentLogs] = useState<EnrichmentLogEntry[]>([]);
+  const [enrichmentProgress, setEnrichmentProgress] = useState({ current: 0, total: 0, isComplete: false });
   const { sprintFlow } = useSprintFlowState();
 
   const stagesForSelectedPipeline = React.useMemo(
@@ -325,81 +330,135 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       return;
     }
 
+    const eligibleIds = selectedOpportunityIds.filter((id) => {
+      const opp = opportunities.find((o) => o.id === id);
+      return opp?.lead_magnet === true;
+    });
+
+    const skippedCount = selectedCount - eligibleIds.length;
+
+    if (eligibleIds.length === 0) {
+      toast.error("Aucune opportunité sélectionnée n'a le lead magnet activé");
+      return;
+    }
+
+    if (skippedCount > 0) {
+      toast.warning(`${skippedCount} opportunité(s) ignorée(s) — lead magnet non activé`);
+    }
+
     try {
       setIsAutoEnriching(true);
 
       const { data: selectedProjects, error: projectsError } = await supabase
         .from('lead_magnet_projects')
         .select('id, opportunite_id')
-        .in('opportunite_id', selectedOpportunityIds);
+        .in('opportunite_id', eligibleIds);
 
       if (projectsError) throw projectsError;
 
-      const projectIds = Array.from(
-        new Set(
+      const uniqueProjects = Array.from(
+        new Map(
           (selectedProjects ?? [])
-            .map((project) => project.id)
-            .filter((projectId): projectId is string => typeof projectId === 'string' && projectId.length > 0)
-        )
+            .filter((p): p is { id: string; opportunite_id: string } =>
+              typeof p.id === 'string' && p.id.length > 0
+            )
+            .map((p) => [p.id, p])
+        ).values()
       );
 
-      if (projectIds.length === 0) {
+      if (uniqueProjects.length === 0) {
         toast.error('Aucun lead magnet project lié aux opportunités sélectionnées');
         return;
       }
 
+      const initialLogs: EnrichmentLogEntry[] = uniqueProjects.map((project) => {
+        const opp = opportunities.find((o) => o.id === project.opportunite_id);
+        const company = companies.find((c) => c.id === opp?.entreprise_id);
+        return {
+          opportunite_id: project.opportunite_id,
+          company_name: getCompanyDisplayName(opp?.companyName, company?.canonical_url),
+          project_id: project.id,
+          status: 'pending',
+        };
+      });
+
+      setEnrichmentLogs(initialLogs);
+      setEnrichmentProgress({ current: 0, total: uniqueProjects.length, isComplete: false });
+      setShowProgressModal(true);
+
       const { error: updateError } = await supabase
         .from('lead_magnet_projects')
         .update({ pret_pour_lm: true })
-        .in('id', projectIds);
+        .in('id', uniqueProjects.map((p) => p.id));
 
       if (updateError) throw updateError;
 
-      const results = await Promise.allSettled(
-        projectIds.map((id) =>
-          supabase.functions.invoke('enrich-lead-magnet', {
-            body: { project_id: id },
-          })
-        )
-      );
+      const processedLogs: EnrichmentLogEntry[] = [...initialLogs];
+      const tally = { success: 0, noWebsite: 0, errors: 0, skipped: skippedCount };
 
-      const summary = results.reduce(
-        (acc, result) => {
-          if (result.status === 'rejected') {
-            acc.errors += 1;
-            return acc;
-          }
+      for (let i = 0; i < uniqueProjects.length; i++) {
+        const project = uniqueProjects[i];
+        const logIdx = processedLogs.findIndex((l) => l.project_id === project.id);
 
-          const { error, data } = result.value;
+        processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'running' };
+        setEnrichmentLogs([...processedLogs]);
+        setEnrichmentProgress({ current: i + 1, total: uniqueProjects.length, isComplete: false });
+
+        try {
+          const { error, data } = await supabase.functions.invoke('enrich-lead-magnet', {
+            body: { project_id: project.id },
+          });
+
           if (error) {
-            acc.errors += 1;
-            return acc;
+            processedLogs[logIdx] = {
+              ...processedLogs[logIdx],
+              status: 'error',
+              message: typeof error.message === 'string' ? error.message : 'Erreur inconnue',
+            };
+            tally.errors++;
+          } else {
+            const dataRecord = typeof data === 'object' && data !== null ? data as Record<string, unknown> : null;
+            const code = typeof dataRecord?.code === 'string' ? dataRecord.code : '';
+            const fnStatus = typeof dataRecord?.status === 'string' ? dataRecord.status : '';
+            const reason = typeof dataRecord?.reason === 'string' ? dataRecord.reason : '';
+
+            if ([code, fnStatus, reason].some((v) => v.toLowerCase() === 'no_website')) {
+              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'no_website', message: 'Site web introuvable' };
+              tally.noWebsite++;
+            } else {
+              processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'success', message: 'Enrichi avec succès' };
+              tally.success++;
+            }
           }
+        } catch {
+          processedLogs[logIdx] = { ...processedLogs[logIdx], status: 'error', message: 'Erreur inconnue' };
+          tally.errors++;
+        }
 
-          const dataRecord = typeof data === 'object' && data !== null ? data as Record<string, unknown> : null;
-          const code = typeof dataRecord?.code === 'string' ? dataRecord.code : '';
-          const status = typeof dataRecord?.status === 'string' ? dataRecord.status : '';
-          const reason = typeof dataRecord?.reason === 'string' ? dataRecord.reason : '';
+        setEnrichmentLogs([...processedLogs]);
+      }
 
-          if ([code, status, reason].some((value) => value.toLowerCase() === 'no_website')) {
-            acc.noWebsite += 1;
-            return acc;
-          }
+      const overallStatus =
+        tally.errors === uniqueProjects.length ? 'error'
+        : tally.errors > 0 || tally.noWebsite > 0 ? 'partial'
+        : 'success';
 
-          acc.success += 1;
-          return acc;
-        },
-        { success: 0, noWebsite: 0, errors: 0 }
-      );
+      await createNotification({
+        type: 'enrichment',
+        title: `Enrichissement — ${uniqueProjects.length} projet(s)`,
+        status: overallStatus,
+        summary: { ...tally, total: uniqueProjects.length },
+        logs: processedLogs,
+      });
 
-      toast.success(
-        `Enrichissement terminé — succès: ${summary.success} · no_website: ${summary.noWebsite} · erreurs: ${summary.errors}`
-      );
+      setEnrichmentProgress({ current: uniqueProjects.length, total: uniqueProjects.length, isComplete: true });
+
       await refreshData();
       setSelectedOpportunityIds([]);
     } catch (error) {
       logger.error('Erreur enrichissement auto lead magnet:', error);
       toast.error("Impossible de lancer l'enrichissement automatique");
+      setShowProgressModal(false);
     } finally {
       setIsAutoEnriching(false);
     }
@@ -1388,6 +1447,15 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
           )}
         </DialogContent>
       </Dialog>
+
+      <EnrichmentProgressModal
+        open={showProgressModal}
+        logs={enrichmentLogs}
+        current={enrichmentProgress.current}
+        total={enrichmentProgress.total}
+        isComplete={enrichmentProgress.isComplete}
+        onClose={() => setShowProgressModal(false)}
+      />
     </div>
   );
 };
