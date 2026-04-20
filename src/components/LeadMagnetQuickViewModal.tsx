@@ -11,7 +11,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Phone, Mail, MapPin, Clock } from 'lucide-react';
+import { Loader2, Phone, Mail, MapPin, Clock, Download } from 'lucide-react';
 
 interface LeadMagnetQuickViewModalProps {
   opportunityId: string | null;
@@ -145,17 +145,43 @@ export function LeadMagnetQuickViewModal({
             <div className="space-y-6">
               {/* Header : logo + nom + badges */}
               <div className="flex items-start gap-4">
-                {project.logo_url ? (
-                  <img
-                    src={project.logo_url}
-                    alt="Logo"
-                    className="h-16 w-16 rounded-lg object-contain border border-gray-100 bg-white flex-shrink-0"
-                  />
-                ) : (
-                  <div className="h-16 w-16 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center flex-shrink-0">
-                    <span className="text-2xl text-gray-300">?</span>
+                <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                  {project.logo_url ? (
+                    <img
+                      src={project.logo_url}
+                      alt="Logo"
+                      className="h-16 w-16 rounded-lg object-contain border border-gray-100 bg-white"
+                    />
+                  ) : (
+                    <div className="h-16 w-16 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center">
+                      <span className="text-2xl text-gray-300">?</span>
+                    </div>
+                  )}
+                  <div className="flex gap-1">
+                    {project.logo_url && (
+                      <a
+                        href={project.logo_url}
+                        download={`${displayName}-logo.png`}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border rounded px-1.5 py-0.5 bg-white"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Download className="h-3 w-3" />
+                        PNG
+                      </a>
+                    )}
+                    {project.favicon_url && (
+                      <a
+                        href={project.favicon_url}
+                        download={`${displayName}-favicon.jpg`}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border rounded px-1.5 py-0.5 bg-white"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Download className="h-3 w-3" />
+                        ICO
+                      </a>
+                    )}
                   </div>
-                )}
+                </div>
                 <div className="flex-1 min-w-0">
                   <h2 className="text-xl font-bold leading-tight truncate">{displayName}</h2>
                   <div className="flex flex-wrap gap-2 mt-2">
