@@ -13,8 +13,11 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Phone, Mail, MapPin, Clock, Download, ExternalLink, Check } from 'lucide-react';
 
-type ProjectRecord = LeadMagnetProjectRecord & {
-  override_website?: string | null;
+type ProjectRecord = LeadMagnetProjectRecord;
+
+type ProductionLm = {
+  id: string;
+  lien_livraison: string | null;
 };
 
 interface LeadMagnetQuickViewModalProps {
@@ -57,18 +60,20 @@ export function LeadMagnetQuickViewModal({
 }: LeadMagnetQuickViewModalProps) {
   const supabase = createClient();
   const [project, setProject] = useState<ProjectRecord | null>(null);
+  const [productionLm, setProductionLm] = useState<ProductionLm | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [editingStatut, setEditingStatut] = useState('');
   const [isSavingStatut, setIsSavingStatut] = useState(false);
-  const [editingWebsiteUrl, setEditingWebsiteUrl] = useState('');
+  const [editingLienLivraison, setEditingLienLivraison] = useState('');
   const [isSavingUrl, setIsSavingUrl] = useState(false);
   const [urlSaved, setUrlSaved] = useState(false);
 
   useEffect(() => {
     if (!open || !opportunityId) {
       setProject(null);
+      setProductionLm(null);
       setError(null);
       return;
     }
@@ -77,23 +82,23 @@ export function LeadMagnetQuickViewModal({
     setLoading(true);
     setError(null);
 
-    supabase
-      .from('lead_magnet_projects')
-      .select('*')
-      .eq('opportunite_id', opportunityId)
-      .maybeSingle()
-      .then(({ data, error: fetchError }) => {
-        if (cancelled) return;
-        if (fetchError) {
-          setError('Erreur lors du chargement du projet lead magnet.');
-        } else {
-          const p = data as ProjectRecord | null;
-          setProject(p);
-          setEditingStatut(p?.statut ?? 'draft');
-          setEditingWebsiteUrl(p?.override_website ?? '');
-        }
-        setLoading(false);
-      });
+    Promise.all([
+      supabase.from('lead_magnet_projects').select('*').eq('opportunite_id', opportunityId).maybeSingle(),
+      supabase.from('production_lead_magnets').select('id,lien_livraison').eq('opportunite_id', opportunityId).maybeSingle(),
+    ]).then(([{ data: lmpData, error: lmpError }, { data: plmData }]) => {
+      if (cancelled) return;
+      if (lmpError) {
+        setError('Erreur lors du chargement du projet lead magnet.');
+      } else {
+        const p = lmpData as ProjectRecord | null;
+        const plm = plmData as ProductionLm | null;
+        setProject(p);
+        setProductionLm(plm);
+        setEditingStatut(p?.statut ?? 'draft');
+        setEditingLienLivraison(plm?.lien_livraison ?? '');
+      }
+      setLoading(false);
+    });
 
     return () => { cancelled = true; };
   }, [open, opportunityId]);
@@ -108,11 +113,11 @@ export function LeadMagnetQuickViewModal({
     onStatusChange?.(newStatut);
   };
 
-  const handleUrlSave = async () => {
-    if (!project) return;
+  const handleLienLivraisonSave = async () => {
+    if (!productionLm) return;
     setIsSavingUrl(true);
-    await supabase.from('lead_magnet_projects').update({ override_website: editingWebsiteUrl || null }).eq('id', project.id);
-    setProject({ ...project, override_website: editingWebsiteUrl || null });
+    await supabase.from('production_lead_magnets').update({ lien_livraison: editingLienLivraison || null }).eq('id', productionLm.id);
+    setProductionLm({ ...productionLm, lien_livraison: editingLienLivraison || null });
     setIsSavingUrl(false);
     setUrlSaved(true);
     setTimeout(() => setUrlSaved(false), 2000);
@@ -227,36 +232,38 @@ export function LeadMagnetQuickViewModal({
                 </div>
               </div>
 
-              {/* URL du site lead magnet */}
-              <div>
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Site publié
-                </h3>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={editingWebsiteUrl}
-                    onChange={(e) => { setEditingWebsiteUrl(e.target.value); setUrlSaved(false); }}
-                    onBlur={handleUrlSave}
-                    onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
-                    placeholder="https://mon-site.framer.website"
-                    className="flex-1 text-sm border rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-ring"
-                  />
-                  {isSavingUrl && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground self-center flex-shrink-0" />}
-                  {urlSaved && !isSavingUrl && <Check className="h-4 w-4 text-green-500 self-center flex-shrink-0" />}
-                  {editingWebsiteUrl && !isSavingUrl && (
-                    <a
-                      href={editingWebsiteUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center justify-center w-8 h-8 rounded-md border bg-white hover:bg-gray-50 flex-shrink-0 self-center"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                    </a>
-                  )}
+              {/* Lien de livraison client */}
+              {productionLm && (
+                <div>
+                  <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Lien de livraison client
+                  </h3>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={editingLienLivraison}
+                      onChange={(e) => { setEditingLienLivraison(e.target.value); setUrlSaved(false); }}
+                      onBlur={handleLienLivraisonSave}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+                      placeholder="https://mon-site.framer.website"
+                      className="flex-1 text-sm border rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-ring"
+                    />
+                    {isSavingUrl && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground self-center flex-shrink-0" />}
+                    {urlSaved && !isSavingUrl && <Check className="h-4 w-4 text-green-500 self-center flex-shrink-0" />}
+                    {editingLienLivraison && !isSavingUrl && (
+                      <a
+                        href={editingLienLivraison}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-center w-8 h-8 rounded-md border bg-white hover:bg-gray-50 flex-shrink-0 self-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                      </a>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Stats 2×2 */}
               <div className="grid grid-cols-2 gap-3">
