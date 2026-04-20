@@ -305,9 +305,13 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   };
 
   const toggleOpportunitySelection = (opportunityId: string, checked: boolean) => {
+    const currentScrollY = window.scrollY;
     setSelectedOpportunityIds((previous) =>
       checked ? Array.from(new Set([...previous, opportunityId])) : previous.filter((id) => id !== opportunityId)
     );
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: currentScrollY });
+    });
   };
 
   const handleBulkPipelineMove = async () => {
@@ -824,6 +828,33 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     );
   }, [filteredOpportunities]);
 
+  const filteredOpportunityIds = React.useMemo(
+    () => filteredOpportunities.map((opportunity) => opportunity.id),
+    [filteredOpportunities]
+  );
+
+  const selectedFilteredCount = React.useMemo(() => {
+    const selectedSet = new Set(selectedOpportunityIds);
+    return filteredOpportunityIds.filter((id) => selectedSet.has(id)).length;
+  }, [filteredOpportunityIds, selectedOpportunityIds]);
+
+  const allFilteredSelected = filteredOpportunityIds.length > 0 && selectedFilteredCount === filteredOpportunityIds.length;
+
+  const handleSelectAllFiltered = React.useCallback(() => {
+    if (filteredOpportunityIds.length === 0) return;
+    setSelectedOpportunityIds((previous) => {
+      const merged = new Set(previous);
+      filteredOpportunityIds.forEach((id) => merged.add(id));
+      return Array.from(merged);
+    });
+  }, [filteredOpportunityIds]);
+
+  const handleClearFilteredSelection = React.useCallback(() => {
+    if (filteredOpportunityIds.length === 0) return;
+    const filteredSet = new Set(filteredOpportunityIds);
+    setSelectedOpportunityIds((previous) => previous.filter((id) => !filteredSet.has(id)));
+  }, [filteredOpportunityIds]);
+
   const startSprintFromSelection = React.useCallback((targetCount: number) => {
     const selectedSet = new Set(selectedOpportunityIds);
     const selectedOpportunities = opportunities.filter((opportunity) => selectedSet.has(opportunity.id));
@@ -1113,7 +1144,16 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-muted-foreground">{selectedOpportunityIds.length} sélectionnée(s)</span>
+        <span className="text-sm text-muted-foreground">
+          {selectedOpportunityIds.length} sélectionnée(s) • {selectedFilteredCount}/{filteredOpportunityIds.length} sur les cartes filtrées
+        </span>
+        <Button
+          variant={allFilteredSelected ? "secondary" : "outline"}
+          onClick={allFilteredSelected ? handleClearFilteredSelection : handleSelectAllFiltered}
+          disabled={filteredOpportunityIds.length === 0}
+        >
+          {allFilteredSelected ? "Désélectionner les filtrées" : "Sélectionner toutes les filtrées"}
+        </Button>
         <Select value={bulkPipelineTarget} onValueChange={setBulkPipelineTarget}>
           <SelectTrigger className="w-56">
             <SelectValue placeholder="Envoyer dans un pipeline" />
