@@ -34,6 +34,7 @@ import {
   Globe,
   Phone,
   Loader2,
+  Monitor,
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -51,6 +52,7 @@ import { cn } from '@/components/ui/utils';
 import logger from '../utils/logger';
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from './EnrichmentProgressModal';
 import { createNotification } from '../utils/notificationsApi';
+import { LeadMagnetQuickViewModal } from './LeadMagnetQuickViewModal';
 
 const OPPORTUNITY_FLAGS = [
   { value: 'site_merdique', label: 'Site merdique / inutilisable' },
@@ -122,6 +124,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const [enrichmentProgress, setEnrichmentProgress] = useState({ current: 0, total: 0, isComplete: false });
   const [lmEnrichmentFilter, setLmEnrichmentFilter] = useState<'all' | 'draft' | 'framer' | 'ready' | 'failed'>('all');
   const [lmProjectStatuts, setLmProjectStatuts] = useState<Map<string, string>>(new Map());
+  const [lmModalOpportunityId, setLmModalOpportunityId] = useState<string | null>(null);
   const { sprintFlow } = useSprintFlowState();
 
   const stagesForSelectedPipeline = React.useMemo(
@@ -577,7 +580,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     const websiteUrl = normalizeWebsiteUrl(opportunity.companyUrl || associatedCompany?.canonical_url);
     
     return (
-      <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
+      <Card className="relative hover:shadow-md transition-shadow cursor-pointer h-full">
         <CardHeader className="pb-2 space-y-2">
           {/* Titre avec badge en-dessous */}
           <div className="space-y-2">
@@ -714,16 +717,16 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                 </a>
               </Button>
             )}
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               variant="outline"
               onClick={() => setSelectedOpportunity(opportunity)}
               className="flex-1 text-xs"
             >
               Voir
             </Button>
-            <Button 
-              size="sm" 
+            <Button
+              size="sm"
               variant="outline"
               onClick={() => handleEditOpportunity(opportunity)}
               className="flex-1 text-xs"
@@ -732,6 +735,17 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
               Modifier
             </Button>
           </div>
+
+          {(opportunity.leadMagnet || opportunity.lead_magnet) && (
+            <button
+              type="button"
+              className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center hover:shadow-md transition-shadow z-10"
+              onClick={(e) => { e.stopPropagation(); setLmModalOpportunityId(opportunity.id); }}
+              title="Voir lead magnet"
+            >
+              <Monitor className="h-4 w-4 text-gray-400" />
+            </button>
+          )}
         </CardContent>
       </Card>
     );
@@ -1558,6 +1572,17 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
         total={enrichmentProgress.total}
         isComplete={enrichmentProgress.isComplete}
         onClose={() => setShowProgressModal(false)}
+      />
+
+      <LeadMagnetQuickViewModal
+        open={lmModalOpportunityId !== null}
+        opportunityId={lmModalOpportunityId}
+        onClose={() => setLmModalOpportunityId(null)}
+        companyName={
+          lmModalOpportunityId
+            ? opportunities.find((o) => o.id === lmModalOpportunityId)?.companyName ?? undefined
+            : undefined
+        }
       />
     </div>
   );
