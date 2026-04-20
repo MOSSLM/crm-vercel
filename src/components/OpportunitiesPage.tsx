@@ -736,7 +736,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
             </Button>
           </div>
 
-          {(opportunity.leadMagnet || opportunity.lead_magnet) && (
+          {(() => { const s = lmProjectStatuts.get(opportunity.id); return s && s !== 'draft'; })() && (
             <button
               type="button"
               className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center hover:shadow-md transition-shadow z-10"
