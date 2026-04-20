@@ -1583,6 +1583,11 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
             ? opportunities.find((o) => o.id === lmModalOpportunityId)?.companyName ?? undefined
             : undefined
         }
+        onStatusChange={(newStatus) => {
+          if (lmModalOpportunityId) {
+            setLmProjectStatuts((prev) => new Map(prev).set(lmModalOpportunityId, newStatus));
+          }
+        }}
       />
     </div>
   );

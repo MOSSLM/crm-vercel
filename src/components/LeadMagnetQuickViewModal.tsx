@@ -11,14 +11,27 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Phone, Mail, MapPin, Clock, Download } from 'lucide-react';
+import { Loader2, Phone, Mail, MapPin, Clock, Download, ExternalLink, Check } from 'lucide-react';
+
+type ProjectRecord = LeadMagnetProjectRecord & {
+  override_website?: string | null;
+};
 
 interface LeadMagnetQuickViewModalProps {
   opportunityId: string | null;
   open: boolean;
   onClose: () => void;
   companyName?: string;
+  onStatusChange?: (newStatus: string) => void;
 }
+
+const STATUT_OPTIONS = [
+  { value: 'draft', label: 'Brouillon' },
+  { value: 'in_progress', label: 'En cours' },
+  { value: 'framer', label: 'Framer' },
+  { value: 'ready', label: 'Prêt ✓' },
+  { value: 'archived', label: 'Archivé' },
+];
 
 function parseServiceTags(value: unknown): string[] {
   if (!value) return [];
@@ -35,36 +48,23 @@ function parseServiceTags(value: unknown): string[] {
   return [];
 }
 
-function formatStatut(statut: string | null | undefined): string {
-  switch (statut) {
-    case 'draft': return 'Brouillon';
-    case 'in_progress': return 'En cours';
-    case 'ready': return 'Prêt';
-    case 'framer': return 'Framer';
-    case 'archived': return 'Archivé';
-    default: return statut ?? 'Inconnu';
-  }
-}
-
-function statutVariant(statut: string | null | undefined): 'default' | 'secondary' | 'outline' | 'destructive' {
-  switch (statut) {
-    case 'ready': return 'default';
-    case 'in_progress': return 'secondary';
-    case 'archived': return 'destructive';
-    default: return 'outline';
-  }
-}
-
 export function LeadMagnetQuickViewModal({
   opportunityId,
   open,
   onClose,
   companyName,
+  onStatusChange,
 }: LeadMagnetQuickViewModalProps) {
   const supabase = createClient();
-  const [project, setProject] = useState<LeadMagnetProjectRecord | null>(null);
+  const [project, setProject] = useState<ProjectRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [editingStatut, setEditingStatut] = useState('');
+  const [isSavingStatut, setIsSavingStatut] = useState(false);
+  const [editingWebsiteUrl, setEditingWebsiteUrl] = useState('');
+  const [isSavingUrl, setIsSavingUrl] = useState(false);
+  const [urlSaved, setUrlSaved] = useState(false);
 
   useEffect(() => {
     if (!open || !opportunityId) {
@@ -87,13 +87,36 @@ export function LeadMagnetQuickViewModal({
         if (fetchError) {
           setError('Erreur lors du chargement du projet lead magnet.');
         } else {
-          setProject(data as LeadMagnetProjectRecord | null);
+          const p = data as ProjectRecord | null;
+          setProject(p);
+          setEditingStatut(p?.statut ?? 'draft');
+          setEditingWebsiteUrl(p?.override_website ?? '');
         }
         setLoading(false);
       });
 
     return () => { cancelled = true; };
   }, [open, opportunityId]);
+
+  const handleStatutChange = async (newStatut: string) => {
+    if (!project) return;
+    setEditingStatut(newStatut);
+    setIsSavingStatut(true);
+    await supabase.from('lead_magnet_projects').update({ statut: newStatut }).eq('id', project.id);
+    setProject({ ...project, statut: newStatut });
+    setIsSavingStatut(false);
+    onStatusChange?.(newStatut);
+  };
+
+  const handleUrlSave = async () => {
+    if (!project) return;
+    setIsSavingUrl(true);
+    await supabase.from('lead_magnet_projects').update({ override_website: editingWebsiteUrl || null }).eq('id', project.id);
+    setProject({ ...project, override_website: editingWebsiteUrl || null });
+    setIsSavingUrl(false);
+    setUrlSaved(true);
+    setTimeout(() => setUrlSaved(false), 2000);
+  };
 
   const stats = project ? [
     { value: project.stat_years_experience, label: "Ans d'expérience" },
@@ -103,7 +126,6 @@ export function LeadMagnetQuickViewModal({
   ] : [];
 
   const serviceTags = project ? parseServiceTags(project.service_tags_snapshot) : [];
-
   const displayName = project?.override_entreprise_name ?? companyName ?? 'Entreprise inconnue';
 
   const hasContact = project && (
@@ -143,7 +165,7 @@ export function LeadMagnetQuickViewModal({
 
           {!loading && !error && project && (
             <div className="space-y-6">
-              {/* Header : logo + nom + badges */}
+              {/* Header : logo + nom + statut dropdown */}
               <div className="flex items-start gap-4">
                 <div className="flex flex-col items-center gap-2 flex-shrink-0">
                   {project.logo_url ? (
@@ -182,23 +204,57 @@ export function LeadMagnetQuickViewModal({
                     )}
                   </div>
                 </div>
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 space-y-3">
                   <h2 className="text-xl font-bold leading-tight truncate">{displayName}</h2>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    <Badge variant={statutVariant(project.statut)}>
-                      {formatStatut(project.statut)}
-                    </Badge>
+
+                  {/* Statut dropdown */}
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={editingStatut}
+                      onChange={(e) => handleStatutChange(e.target.value)}
+                      disabled={isSavingStatut}
+                      className="text-sm border rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 cursor-pointer"
+                    >
+                      {STATUT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    {isSavingStatut && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                     {project.pret_pour_lm === true && (
-                      <Badge className="bg-green-600 hover:bg-green-600/80 text-white">
-                        Prêt pour LM
-                      </Badge>
-                    )}
-                    {project.pret_pour_lm === false && (
-                      <Badge variant="outline" className="text-muted-foreground">
-                        Pas prêt
-                      </Badge>
+                      <Badge className="bg-green-600 hover:bg-green-600/80 text-white">Prêt pour LM</Badge>
                     )}
                   </div>
+                </div>
+              </div>
+
+              {/* URL du site lead magnet */}
+              <div>
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Site publié
+                </h3>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={editingWebsiteUrl}
+                    onChange={(e) => { setEditingWebsiteUrl(e.target.value); setUrlSaved(false); }}
+                    onBlur={handleUrlSave}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { e.currentTarget.blur(); } }}
+                    placeholder="https://mon-site.framer.website"
+                    className="flex-1 text-sm border rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-ring"
+                  />
+                  {isSavingUrl && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground self-center flex-shrink-0" />}
+                  {urlSaved && !isSavingUrl && <Check className="h-4 w-4 text-green-500 self-center flex-shrink-0" />}
+                  {editingWebsiteUrl && !isSavingUrl && (
+                    <a
+                      href={editingWebsiteUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center justify-center w-8 h-8 rounded-md border bg-white hover:bg-gray-50 flex-shrink-0 self-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                    </a>
+                  )}
                 </div>
               </div>
 
