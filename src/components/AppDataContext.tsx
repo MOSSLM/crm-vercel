@@ -386,7 +386,7 @@ const debounce = (func: Function, wait: number) => {
 const INITIAL_CONTACT_COMPANY_BATCH = 20;
 
 export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
 
   // State
 const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -435,6 +435,14 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       refreshData();
     }
   }, [isAuthenticated, authLoading]);
+
+  useEffect(() => {
+    if (!isAuthenticated || authLoading) return;
+    if (user?.role !== 'unknown') return;
+    toast.warning(
+      "Profil utilisateur incomplet: aucun rôle trouvé dans user_profiles. Les policies RLS peuvent masquer toutes les données.",
+    );
+  }, [isAuthenticated, authLoading, user?.role]);
 
   const refreshData = async () => {
     setLoading(true);

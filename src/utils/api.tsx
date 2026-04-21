@@ -2204,32 +2204,55 @@ export const notesApi = {
   }
 };
 
-// Achievements API (table: journal_succes)
+// Achievements API (legacy `journal_succes` was removed by KPI refactor migration)
 export const achievementsApi = {
   getAll: async (): Promise<Achievement[]> => {
     try {
-      // Simple query without JOINs to avoid relationship errors
       const { data, error } = await supabase
-        .from('journal_succes')
-        .select('*')
-        .order('date', { ascending: false });
+        .from('activity_log')
+        .select('id,occurred_at,activity_type,title,description,opportunite_id,entreprise_id')
+        .order('occurred_at', { ascending: false })
+        .limit(200);
 
       if (error) {
         logger.error('Supabase error:', error);
-        // Return mock data as fallback
         return [];
       }
 
       const rows = Array.isArray(data) ? (data as unknown[]) : [];
-      const achievements = rows.filter(isAchievementRow);
+      return rows
+        .filter(
+          (row): row is Record<string, unknown> & { id: number } =>
+            isRecord(row) && typeof row.id === 'number',
+        )
+        .map((row) => {
+          const occurredAt = typeof row.occurred_at === 'string' ? row.occurred_at : new Date().toISOString();
+          const activityType = typeof row.activity_type === 'string' ? row.activity_type : undefined;
+          const fallbackTitle = typeof row.title === 'string' && row.title.trim().length > 0
+            ? row.title
+            : typeof row.description === 'string'
+              ? row.description
+              : undefined;
 
-      return achievements.map((achievement) => ({
-        ...achievement,
-        type: mapAchievementEventType(achievement.type_evenement),
-        title: achievement.description,
-        value: achievement.value ?? undefined,
-        companyName: achievement.companyName ?? undefined,
-      }));
+          const derivedEventType =
+            activityType === 'signature' ? 'signature'
+            : activityType === 'encaissement' ? 'deposit'
+            : activityType === 'rdv' ? 'meeting'
+            : undefined;
+
+          return {
+            id: Number(row.id),
+            date: occurredAt,
+            type_evenement: activityType,
+            description: typeof row.description === 'string' ? row.description : undefined,
+            opportunite_id: typeof row.opportunite_id === 'string' ? row.opportunite_id : undefined,
+            entreprise_id: typeof row.entreprise_id === 'number' ? row.entreprise_id : undefined,
+            type: derivedEventType ?? mapAchievementEventType(activityType),
+            title: fallbackTitle,
+            value: undefined,
+            companyName: undefined,
+          };
+        });
     } catch (error) {
       logger.error('API Error:', error);
       return [];
@@ -2238,15 +2261,39 @@ export const achievementsApi = {
 
   create: async (achievementData: Omit<Achievement, 'id'>): Promise<Achievement> => {
     try {
+      const activityType =
+        achievementData.type_evenement === 'signature' ? 'signature'
+        : achievementData.type_evenement === 'deposit' ? 'encaissement'
+        : achievementData.type_evenement === 'meeting' ? 'rdv'
+        : achievementData.type_evenement === 'lead_magnet' ? 'note'
+        : achievementData.type_evenement === 'qualified' ? 'note'
+        : achievementData.type_evenement === 'monthly_goal' ? 'note'
+        : 'note';
+
       const { data, error } = await supabase
-        .from('journal_succes')
-        .insert([achievementData])
+        .from('activity_log')
+        .insert([{
+          occurred_at: achievementData.date,
+          activity_type: activityType,
+          title: achievementData.title ?? achievementData.description ?? null,
+          description: achievementData.description ?? null,
+          opportunite_id: achievementData.opportunite_id ?? null,
+          entreprise_id: achievementData.entreprise_id ?? null,
+        }])
         .select()
         .single();
 
       if (error) throw error;
-      if (isAchievementRow(data)) {
-        return data;
+      if (isRecord(data) && typeof data.id === 'number') {
+        return buildAchievementFromPartial(data.id, {
+          date: typeof data.occurred_at === 'string' ? data.occurred_at : achievementData.date,
+          type_evenement: typeof data.activity_type === 'string' ? data.activity_type : achievementData.type_evenement,
+          description: typeof data.description === 'string' ? data.description : achievementData.description,
+          opportunite_id: typeof data.opportunite_id === 'string' ? data.opportunite_id : achievementData.opportunite_id,
+          entreprise_id: typeof data.entreprise_id === 'number' ? data.entreprise_id : achievementData.entreprise_id,
+          type: achievementData.type,
+          title: typeof data.title === 'string' ? data.title : achievementData.title,
+        });
       }
       throw new Error('Invalid achievement payload');
     } catch (error) {
