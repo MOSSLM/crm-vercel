@@ -440,19 +440,19 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     setLoading(true);
     try {
       const [
-        searchResultsData,
-        companiesData,
-        qualifiedCompaniesData,
-        opportunitiesData,
-        pipelinesData,
-        offersData,
-        pipelineStagesData,
-        achievementsData,
-        keywordStatsData,
-        locationStatsData,
-        networksData,
-        urlBlacklistData,
-      ] = await Promise.all([
+        searchResultsResult,
+        companiesResult,
+        qualifiedCompaniesResult,
+        opportunitiesResult,
+        pipelinesResult,
+        offersResult,
+        pipelineStagesResult,
+        achievementsResult,
+        keywordStatsResult,
+        locationStatsResult,
+        networksResult,
+        urlBlacklistResult,
+      ] = await Promise.allSettled([
         searchResultsApi.getAll(),
         companiesApi.getAll(),
         companiesApi.getQualifiedOnly(),
@@ -466,6 +466,28 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         networksApi.getAll(),
         urlBlacklistApi.getAll(),
       ]);
+
+      const getSettledValue = <T,>(result: PromiseSettledResult<T>, fallback: T): T => {
+        if (result.status === 'fulfilled') {
+          return result.value;
+        }
+
+        logger.warn('Suppressed data loading error (likely due to role-based RLS):', result.reason);
+        return fallback;
+      };
+
+      const searchResultsData = getSettledValue(searchResultsResult, [] as SearchResult[]);
+      const companiesData = getSettledValue(companiesResult, [] as Company[]);
+      const qualifiedCompaniesData = getSettledValue(qualifiedCompaniesResult, [] as Company[]);
+      const opportunitiesData = getSettledValue(opportunitiesResult, [] as Opportunity[]);
+      const pipelinesData = getSettledValue(pipelinesResult, [] as Pipeline[]);
+      const offersData = getSettledValue(offersResult, [] as Offer[]);
+      const pipelineStagesData = getSettledValue(pipelineStagesResult, [] as PipelineStage[]);
+      const achievementsData = getSettledValue(achievementsResult, [] as Achievement[]);
+      const keywordStatsData = getSettledValue(keywordStatsResult, {} as Record<string, number>);
+      const locationStatsData = getSettledValue(locationStatsResult, {} as Record<string, number>);
+      const networksData = getSettledValue(networksResult, [] as CompanyNetwork[]);
+      const urlBlacklistData = getSettledValue(urlBlacklistResult, [] as UrlBlacklist[]);
 
       const safeSearchResults = searchResultsData.filter(isSearchResultRow);
       const safeOpportunities = opportunitiesData.filter(isOpportunityRow);
@@ -505,10 +527,14 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       let contactsData: Contact[] = [];
 
       if (initialCompanyIds.length > 0) {
-        const contactsByCompany = await contactsApi.getManyByCompanyIds(initialCompanyIds, {
-          forceRefresh: true,
-        });
-        contactsData = initialCompanyIds.flatMap((id) => contactsByCompany[id] || []);
+        try {
+          const contactsByCompany = await contactsApi.getManyByCompanyIds(initialCompanyIds, {
+            forceRefresh: true,
+          });
+          contactsData = initialCompanyIds.flatMap((id) => contactsByCompany[id] || []);
+        } catch (contactsError) {
+          logger.warn('Unable to load contacts for visible companies:', contactsError);
+        }
       }
 
       // Map search results to include compatibility properties
