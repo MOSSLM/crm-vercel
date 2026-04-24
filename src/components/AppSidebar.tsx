@@ -112,6 +112,12 @@ export const AppSidebar = () => {
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
   const focusItems =
     view === "prospection" ? prospectionItems : view === "qualification" ? qualificationItems : null;
+  const topQuickAccessItems = TOP_CATEGORIES.filter(
+    (item) => item.key === "dashboard" || item.key === "messagerie" || item.key === "calendar",
+  ).sort((a, b) => {
+    const order = ["dashboard", "messagerie", "calendar"];
+    return order.indexOf(a.key) - order.indexOf(b.key);
+  });
 
   return (
     <Sidebar collapsible="icon" className="hidden md:flex">
@@ -154,7 +160,7 @@ export const AppSidebar = () => {
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {TOP_CATEGORIES.slice(0, 2).map((item) => (
+                  {topQuickAccessItems.map((item) => (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton asChild isActive={isActive(item.href)}>
                         <Link href={item.href}>
