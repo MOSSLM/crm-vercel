@@ -18,6 +18,8 @@ const envSchema = z.object({
     .string()
     .min(1, { message: "GMAPS_API_TOKEN est requis" }),
   GMAPS_BASE_URL: z.string().url().optional(),
+  RESEND_API_KEY: z.string().min(1).optional(),
+  RESEND_FROM_EMAIL: z.string().email().optional(),
 });
 
 const envResult = envSchema.safeParse({
@@ -28,6 +30,8 @@ const envResult = envSchema.safeParse({
   GMAPS_AWS_SERVICE: process.env.GMAPS_AWS_SERVICE,
   GMAPS_API_TOKEN: process.env.GMAPS_API_TOKEN,
   GMAPS_BASE_URL: process.env.GMAPS_BASE_URL,
+  RESEND_API_KEY: process.env.RESEND_API_KEY,
+  RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
 });
 
 if (!envResult.success) {
@@ -47,4 +51,6 @@ export const {
   GMAPS_AWS_SERVICE,
   GMAPS_API_TOKEN,
   GMAPS_BASE_URL,
+  RESEND_API_KEY,
+  RESEND_FROM_EMAIL,
 } = envResult.data;
