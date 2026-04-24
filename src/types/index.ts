@@ -408,3 +408,118 @@ export interface SavedComponent {
   created_at: string;
   updated_at: string;
 }
+
+// ── AUDIT SYSTEM ──────────────────────────────────────────
+
+export interface AuditProblem {
+  title: string;
+  desc: string;
+}
+
+export interface AuditSolution {
+  num: string;
+  name: string;
+  desc: string;
+  tag: string;
+}
+
+export interface AuditLivrable {
+  title: string;
+  items: string[];
+}
+
+export interface AuditPlanningStep {
+  week: string;
+  title: string;
+  desc: string;
+}
+
+export interface AuditNextStep {
+  title: string;
+  desc: string;
+}
+
+export interface AuditPage1 {
+  date: string;
+  eyebrow: string;
+  title_line1: string;
+  title_line2: string;
+  title_line3: string;
+  subtitle: string;
+  client_name: string;
+  client_meta: string;
+  demo_url: string;
+}
+
+export interface AuditPage2 {
+  section_intro: string;
+  problems: AuditProblem[];
+  quote: string;
+  quote_source: string;
+}
+
+export interface AuditPage3 {
+  section_intro: string;
+  solutions: AuditSolution[];
+}
+
+export interface AuditPage4 {
+  livrables: AuditLivrable[];
+}
+
+export interface AuditPage5 {
+  planning_steps: AuditPlanningStep[];
+  price_setup: string;
+  price_setup_label: string;
+  price_setup_desc: string;
+  price_monthly: string;
+  price_monthly_label: string;
+  price_monthly_desc: string;
+  price_total: string;
+  price_total_label: string;
+  price_note: string;
+}
+
+export interface AuditPage6 {
+  next_steps: AuditNextStep[];
+  cta_title: string;
+  cta_sub: string;
+  contact_phone: string;
+  contact_email: string;
+  contact_website: string;
+}
+
+export interface AuditContent {
+  page1: AuditPage1;
+  page2: AuditPage2;
+  page3: AuditPage3;
+  page4: AuditPage4;
+  page5: AuditPage5;
+  page6: AuditPage6;
+}
+
+export interface Audit {
+  id: string;
+  opportunite_id: string;
+  template_id?: string;
+  entreprise_nom?: string;
+  entreprise_ville?: string;
+  entreprise_logo_url?: string;
+  entreprise_secteur?: string;
+  demo_site_url?: string;
+  content: AuditContent;
+  pdf_url?: string;
+  pdf_generated_at?: string;
+  statut: 'draft' | 'ready';
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditTemplate {
+  id: string;
+  nom: string;
+  template_key: string;
+  default_content: AuditContent;
+  created_at: string;
+  updated_at: string;
+}
