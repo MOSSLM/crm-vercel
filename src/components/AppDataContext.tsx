@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
 import {
@@ -385,6 +385,37 @@ const debounce = (func: Function, wait: number) => {
 
 const INITIAL_CONTACT_COMPANY_BATCH = 20;
 
+// ---------------------------------------------------------------------------
+// SWR cache: hydrate UI instantly from localStorage, then refresh in background
+// ---------------------------------------------------------------------------
+const CACHE_KEY = 'crm_data_cache_v1';
+
+interface CachedData {
+  opportunities: Opportunity[];
+  pipelines: Pipeline[];
+  pipelineStages: PipelineStage[];
+  offers: Offer[];
+}
+
+function loadCachedData(): CachedData | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(CACHE_KEY);
+    return raw ? (JSON.parse(raw) as CachedData) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedData(data: CachedData): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch {
+    // localStorage quota exceeded – silently ignore
+  }
+}
+
 export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
 
@@ -420,6 +451,16 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   }, []);
 
+  // Hydrate from cache before the first network fetch so the UI is instantly populated
+  useEffect(() => {
+    const cached = loadCachedData();
+    if (!cached) return;
+    setOpportunities(cached.opportunities);
+    setPipelines(cached.pipelines);
+    setPipelineStages(cached.pipelineStages);
+    setOffers(cached.offers);
+  }, []);
+
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (selectedQualificationOfferIdState) {
@@ -447,6 +488,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   const refreshData = async () => {
     setLoading(true);
     try {
+      // PRIMARY: 7 parallel fetches – everything needed to render the opportunities list.
+      // Achievements, stats, networks, blacklist and contacts load in the background after.
       const [
         searchResultsResult,
         companiesResult,
@@ -455,11 +498,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         pipelinesResult,
         offersResult,
         pipelineStagesResult,
-        achievementsResult,
-        keywordStatsResult,
-        locationStatsResult,
-        networksResult,
-        urlBlacklistResult,
       ] = await Promise.allSettled([
         searchResultsApi.getAll(),
         companiesApi.getAll(),
@@ -468,18 +506,12 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         pipelinesApi.getAll(),
         offersApi.getAll(),
         pipelineStagesApi.getAll(),
-        achievementsApi.getAll(),
-        statisticsApi.getKeywordStats(),
-        statisticsApi.getLocationStats(),
-        networksApi.getAll(),
-        urlBlacklistApi.getAll(),
       ]);
 
       const getSettledValue = <T,>(result: PromiseSettledResult<T>, fallback: T): T => {
         if (result.status === 'fulfilled') {
           return result.value;
         }
-
         logger.warn('Suppressed data loading error (likely due to role-based RLS):', result.reason);
         return fallback;
       };
@@ -491,22 +523,13 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       const pipelinesData = getSettledValue(pipelinesResult, [] as Pipeline[]);
       const offersData = getSettledValue(offersResult, [] as Offer[]);
       const pipelineStagesData = getSettledValue(pipelineStagesResult, [] as PipelineStage[]);
-      const achievementsData = getSettledValue(achievementsResult, [] as Achievement[]);
-      const keywordStatsData = getSettledValue(keywordStatsResult, {} as Record<string, number>);
-      const locationStatsData = getSettledValue(locationStatsResult, {} as Record<string, number>);
-      const networksData = getSettledValue(networksResult, [] as CompanyNetwork[]);
-      const urlBlacklistData = getSettledValue(urlBlacklistResult, [] as UrlBlacklist[]);
 
       const safeSearchResults = searchResultsData.filter(isSearchResultRow);
       const safeOpportunities = opportunitiesData.filter(isOpportunityRow);
-      const safeAchievements = achievementsData.filter(isAchievementRow);
 
       const companiesMap = new Map<number, Company>();
       [...companiesData, ...qualifiedCompaniesData].forEach((company: Company) => {
-        if (typeof company?.id !== 'number') {
-          return;
-        }
-
+        if (typeof company?.id !== 'number') return;
         const existing = companiesMap.get(company.id);
         companiesMap.set(company.id, { ...existing, ...company });
       });
@@ -517,35 +540,6 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         return dateB - dateA;
       });
 
-      const baseInitialCompanyIds = combinedCompanies
-        .slice(0, INITIAL_CONTACT_COMPANY_BATCH)
-        .map((company: Company) => company.id)
-        .filter((id): id is number => typeof id === 'number');
-
-      const qualifiedCompanyIds = qualifiedCompaniesData
-        .map((company: Company) => company.id)
-        .filter((id): id is number => typeof id === 'number');
-
-      const additionalQualifiedIds = qualifiedCompanyIds.filter(
-        (id) => !baseInitialCompanyIds.includes(id),
-      );
-
-      const initialCompanyIds = [...baseInitialCompanyIds, ...additionalQualifiedIds];
-
-      let contactsData: Contact[] = [];
-
-      if (initialCompanyIds.length > 0) {
-        try {
-          const contactsByCompany = await contactsApi.getManyByCompanyIds(initialCompanyIds, {
-            forceRefresh: true,
-          });
-          contactsData = initialCompanyIds.flatMap((id) => contactsByCompany[id] || []);
-        } catch (contactsError) {
-          logger.warn('Unable to load contacts for visible companies:', contactsError);
-        }
-      }
-
-      // Map search results to include compatibility properties
       const mappedSearchResults = safeSearchResults.map((result) => ({
         ...result,
         useMaps: result.source_maps,
@@ -555,23 +549,19 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         date: result.created_at,
       }));
 
-      setSearchResults(mappedSearchResults);
       const normalizedCompanies = combinedCompanies.map((c: Company) => {
         const legacySite = 'site_web_canonique' in c ? (c as { site_web_canonique?: string }).site_web_canonique : undefined;
         const canonical = canonicalizeUrl(c.canonical_url || legacySite || (c as any).url || '');
         return { ...c, canonical_url: canonical || undefined };
       });
+
+      // Commit primary data → UI becomes usable immediately
+      setSearchResults(mappedSearchResults);
       setCompanies(normalizedCompanies);
-      setContacts(contactsData);
       setOpportunities(safeOpportunities);
       setPipelines(pipelinesData);
       setOffers(offersData);
       setPipelineStages(pipelineStagesData);
-      setAchievements(safeAchievements);
-      setKeywordStats(keywordStatsData);
-      setLocationStats(locationStatsData);
-      setNetworks(networksData);
-      setUrlBlacklist(urlBlacklistData);
 
       if (offersData.length > 0) {
         const preferredOffer = selectedQualificationOfferIdState
@@ -585,10 +575,66 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
         }
       }
 
-      // Backward compatibility: objectifs par défaut
       setCurrentObjectives(getDefaultObjectives(getCurrentMonth()));
       setWeeklyObjectives(getDefaultWeeklyObjectives());
       setAnnualObjectives(getDefaultAnnualObjectives());
+
+      // Persist to localStorage so the next page load hydrates instantly
+      saveCachedData({
+        opportunities: safeOpportunities,
+        pipelines: pipelinesData,
+        pipelineStages: pipelineStagesData,
+        offers: offersData,
+      });
+
+      // SECONDARY: fire-and-forget — achievements, stats, networks, blacklist, contacts.
+      // These are not needed to render the opportunities list so they don't block the spinner.
+      void (async () => {
+        try {
+          const [
+            achievementsResult,
+            keywordStatsResult,
+            locationStatsResult,
+            networksResult,
+            urlBlacklistResult,
+          ] = await Promise.allSettled([
+            achievementsApi.getAll(),
+            statisticsApi.getKeywordStats(),
+            statisticsApi.getLocationStats(),
+            networksApi.getAll(),
+            urlBlacklistApi.getAll(),
+          ]);
+
+          setAchievements(getSettledValue(achievementsResult, [] as Achievement[]).filter(isAchievementRow));
+          setKeywordStats(getSettledValue(keywordStatsResult, {} as Record<string, number>));
+          setLocationStats(getSettledValue(locationStatsResult, {} as Record<string, number>));
+          setNetworks(getSettledValue(networksResult, [] as CompanyNetwork[]));
+          setUrlBlacklist(getSettledValue(urlBlacklistResult, [] as UrlBlacklist[]));
+
+          // Contacts — depends on the already-computed combinedCompanies
+          const baseInitialCompanyIds = combinedCompanies
+            .slice(0, INITIAL_CONTACT_COMPANY_BATCH)
+            .map((company: Company) => company.id)
+            .filter((id): id is number => typeof id === 'number');
+
+          const additionalQualifiedIds = qualifiedCompaniesData
+            .map((c: Company) => c.id)
+            .filter((id): id is number => typeof id === 'number')
+            .filter((id) => !baseInitialCompanyIds.includes(id));
+
+          const initialCompanyIds = [...baseInitialCompanyIds, ...additionalQualifiedIds];
+
+          if (initialCompanyIds.length > 0) {
+            const contactsByCompany = await contactsApi.getManyByCompanyIds(initialCompanyIds, {
+              forceRefresh: true,
+            });
+            setContacts(initialCompanyIds.flatMap((id) => contactsByCompany[id] || []));
+          }
+        } catch (secondaryError) {
+          logger.warn('Secondary data load failed:', secondaryError);
+        }
+      })();
+
     } catch (error) {
       logger.error('Error loading data:', error);
       toast.error('Erreur lors du chargement des données');
