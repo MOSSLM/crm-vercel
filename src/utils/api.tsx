@@ -1504,20 +1504,34 @@ export const opportunitiesApi = {
       );
 
       const missingCompanyIds = companyIds.filter((id) => !companyMetadataCache.has(id));
-      if (missingCompanyIds.length > 0) {
-        const { data: companyRows, error: companyError } = await supabase
-          .from('entreprises')
-          .select(COMPANY_METADATA_SELECT)
-          .in('id', missingCompanyIds);
+      const missingStageIds = stageIds.filter((id) => !stageMetadataCache.has(id));
 
-        if (companyError) {
-          logger.error('Error fetching company metadata:', companyError);
-        } else if (Array.isArray(companyRows)) {
-          const metadataRows = (companyRows as unknown[]).filter(isCompanyMetadataRow);
-          metadataRows.forEach((row) => {
-            companyMetadataCache.set(row.id, row);
-          });
-        }
+      // Fetch company and stage metadata in parallel instead of sequentially
+      const [companyResult, stageResult] = await Promise.all([
+        missingCompanyIds.length > 0
+          ? supabase.from('entreprises').select(COMPANY_METADATA_SELECT).in('id', missingCompanyIds)
+          : Promise.resolve({ data: [] as unknown[], error: null }),
+        missingStageIds.length > 0
+          ? supabase.from('etapes_pipeline').select(STAGE_METADATA_SELECT).in('id', missingStageIds)
+          : Promise.resolve({ data: [] as unknown[], error: null }),
+      ]);
+
+      if (companyResult.error) {
+        logger.error('Error fetching company metadata:', companyResult.error);
+      } else if (Array.isArray(companyResult.data)) {
+        const metadataRows = (companyResult.data as unknown[]).filter(isCompanyMetadataRow);
+        metadataRows.forEach((row) => {
+          companyMetadataCache.set(row.id, row);
+        });
+      }
+
+      if (stageResult.error) {
+        logger.error('Error fetching stage metadata:', stageResult.error);
+      } else if (Array.isArray(stageResult.data)) {
+        const stages = (stageResult.data as unknown[]).filter(isStageRow);
+        stages.forEach((row) => {
+          stageMetadataCache.set(row.id, row.nom || '');
+        });
       }
 
       const companiesMetadata = new Map<number, CompanyMetadata>();
@@ -1527,23 +1541,6 @@ export const opportunitiesApi = {
           companiesMetadata.set(id, cached);
         }
       });
-
-      const missingStageIds = stageIds.filter((id) => !stageMetadataCache.has(id));
-      if (missingStageIds.length > 0) {
-        const { data: stageRows, error: stageError } = await supabase
-          .from('etapes_pipeline')
-          .select(STAGE_METADATA_SELECT)
-          .in('id', missingStageIds);
-
-        if (stageError) {
-          logger.error('Error fetching stage metadata:', stageError);
-        } else if (Array.isArray(stageRows)) {
-          const stages = (stageRows as unknown[]).filter(isStageRow);
-          stages.forEach((row) => {
-            stageMetadataCache.set(row.id, row.nom || '');
-          });
-        }
-      }
 
       const enrichedData = validOpportunities.map((opp) => {
         const metadata =
