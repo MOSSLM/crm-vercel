@@ -154,7 +154,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     return counts;
   }, [opportunities, lmProjectStatuts]);
 
-  const filteredOpportunities = opportunities
+  const filteredOpportunities = React.useMemo(() => opportunities
     .filter(opportunity => {
     const companyName = opportunity.companyName || '';
     const tags = parseTags(opportunity.tags);
@@ -189,7 +189,10 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
       const pipelineB = pipelines.find((pipeline) => pipeline.id === b.pipeline_id)?.ordre ?? Number.MAX_SAFE_INTEGER;
       if (pipelineA !== pipelineB) return pipelineA - pipelineB;
       return (a.stage_id ?? Number.MAX_SAFE_INTEGER) - (b.stage_id ?? Number.MAX_SAFE_INTEGER);
-    });
+    }),
+  [opportunities, searchTerm, pipelineFilter, stageFilter, priorityFilter, flagFilter,
+   sprintModule, sprintFlow, sprintOpportunityIds, lmEnrichmentFilter, lmProjectStatuts,
+   sortByPipeline, pipelines]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Date inconnue';
