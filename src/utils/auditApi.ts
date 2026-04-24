@@ -21,7 +21,7 @@ const DEFAULT_CONTENT: AuditContent = {
       { title: 'Site vieillissant', desc: "La première impression est décisive. Un site au design daté ou difficile à naviguer réduit fortement les chances qu'un visiteur passe à l'action." },
       { title: 'Éléments mal positionnés', desc: "Des textes peu lisibles, des boutons difficiles à trouver ou une navigation confuse créent des obstacles qui découragent l'action, même chez un visiteur intéressé." },
       { title: 'Vos avis clients ne sont pas mis en avant', desc: "Vous avez d'excellents retours clients, mais ils n'apparaissent pas sur votre site. C'est pourtant un élément clé qui rassure et convainc les visiteurs hésitants." },
-      { title: 'Peu d'appels à l'action visibles', desc: "Sans formulaire express ou numéro de téléphone en un clic bien placé, un visiteur intéressé peut repartir sans laisser ses coordonnées." },
+      { title: "Peu d'appels à l'action visibles", desc: "Sans formulaire express ou numéro de téléphone en un clic bien placé, un visiteur intéressé peut repartir sans laisser ses coordonnées." },
     ],
     quote: "75 % des internautes jugent la crédibilité d'une entreprise sur la base de son site web — la conception visuelle est le premier signal de confiance.",
     quote_source: 'Stanford Web Credibility Research · Comportement utilisateur web',
