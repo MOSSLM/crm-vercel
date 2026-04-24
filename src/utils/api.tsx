@@ -1708,8 +1708,7 @@ export const opportunitiesApi = {
       throw new Error('Invalid opportunity payload');
     } catch (error) {
       logger.error('Error updating opportunity:', error);
-      const now = new Date().toISOString();
-      return buildOpportunityFromPartial(id, { ...updates, updated_at: now });
+      throw error;
     }
   },
   
@@ -2161,8 +2160,7 @@ export const notesApi = {
       throw new Error('Invalid note payload');
     } catch (error) {
       logger.error('Error creating note:', error);
-      const id = Date.now();
-      return buildOpportunityNoteFromPartial(id, noteData);
+      throw error;
     }
   },
 
@@ -2185,8 +2183,7 @@ export const notesApi = {
       throw new Error('Invalid note payload');
     } catch (error) {
       logger.error('Error updating note:', error);
-      const now = new Date().toISOString();
-      return buildOpportunityNoteFromPartial(id, { ...updates, created_at: now });
+      throw error;
     }
   },
   

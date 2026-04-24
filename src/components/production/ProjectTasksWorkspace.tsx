@@ -5,6 +5,7 @@ import { addDays, format, isSameDay, parseISO } from "date-fns";
 import { fr } from "date-fns/locale";
 import { CalendarCheck2, CalendarDays, CheckCircle2, Columns2, EllipsisVertical, ListTodo, Plus, RectangleHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -90,6 +91,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
   const [offers, setOffers] = useState<Offer[]>([]);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [draggedProjectId, setDraggedProjectId] = useState<string | null>(null);
   const [mobileLayout, setMobileLayout] = useState<"two" | "one">("two");
@@ -118,6 +120,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
   useEffect(() => {
     const load = async () => {
       setLoading(true);
+      try {
       const [{ data: projectsData }, { data: progressData }, { data: companyData }, { data: offersData }, { data: tasksData }] = await Promise.all([
         (scope === "all"
           ? supabase
@@ -176,7 +179,12 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
       setProjects(hydrated);
       setCompanies((companyData as Company[] | null) ?? []);
       setOffers((offersData as Offer[] | null) ?? []);
-      setLoading(false);
+      } catch (error) {
+        console.error("Erreur lors du chargement des projets:", error);
+        toast.error("Erreur lors du chargement des projets");
+      } finally {
+        setLoading(false);
+      }
     };
 
     void load();
@@ -222,63 +230,72 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
 
   const createProject = async () => {
     if (!projectForm.nom.trim()) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from("crm_projects")
+        .insert({
+          nom: projectForm.nom.trim(),
+          scope: currentScope,
+          status: projectForm.status,
+          priority: projectForm.priority,
+          due_date: projectForm.dueDate || null,
+          start_at: projectForm.startAt || null,
+          end_at: projectForm.endAt || null,
+          entreprise_id: projectForm.entrepriseId ? Number(projectForm.entrepriseId) : null,
+          offre_id: projectForm.offreId || null,
+          color: projectForm.color || "#4f46e5",
+          background_color: projectForm.backgroundColor || "#eef2ff",
+          progress: 0,
+        })
+        .select("id,nom,scope,status,priority,due_date,start_at,end_at,entreprise_id,offre_id,color,background_color,entreprises(id,name),offres(id,nom)")
+        .single();
 
-    const { data } = await supabase
-      .from("crm_projects")
-      .insert({
-        nom: projectForm.nom.trim(),
-        scope: currentScope,
-        status: projectForm.status,
-        priority: projectForm.priority,
-        due_date: projectForm.dueDate || null,
-        start_at: projectForm.startAt || null,
-        end_at: projectForm.endAt || null,
-        entreprise_id: projectForm.entrepriseId ? Number(projectForm.entrepriseId) : null,
-        offre_id: projectForm.offreId || null,
-        color: projectForm.color || "#4f46e5",
-        background_color: projectForm.backgroundColor || "#eef2ff",
-        progress: 0,
-      })
-      .select("id,nom,scope,status,priority,due_date,start_at,end_at,entreprise_id,offre_id,color,background_color,entreprises(id,name),offres(id,nom)")
-      .single();
+      if (error) throw error;
 
-    if (data) {
-      const inserted = data as ProjectQueryRow;
-      setProjects((prev) => [{
-        id: inserted.id,
-        nom: inserted.nom,
-        scope: inserted.scope,
-        status: inserted.status,
-        priority: inserted.priority,
-        due_date: inserted.due_date,
-        entreprise_id: inserted.entreprise_id,
-        offre_id: inserted.offre_id,
-        entreprises: inserted.entreprises?.[0] ?? null,
-        offres: inserted.offres?.[0] ?? null,
-        computed_project_progress: 0,
-        color: inserted.color ?? "#4f46e5",
-        background_color: inserted.background_color ?? "#eef2ff",
-        start_at: inserted.start_at ?? null,
-        end_at: inserted.end_at ?? null,
-        total_tasks: 0,
-        completed_tasks: 0,
-        remaining_tasks: 0,
-      }, ...prev]);
-      setIsCreateOpen(false);
-      setProjectForm({
-        nom: "",
-        status: "a_faire",
-        dueDate: "",
-        priority: "moyenne",
-        entrepriseQuery: "",
-        entrepriseId: "",
-        offreQuery: "",
-        offreId: "",
-        color: "#4f46e5",
-        backgroundColor: "#eef2ff",
-        startAt: "",
-        endAt: "",
-      });
+      if (data) {
+        const inserted = data as ProjectQueryRow;
+        setProjects((prev) => [{
+          id: inserted.id,
+          nom: inserted.nom,
+          scope: inserted.scope,
+          status: inserted.status,
+          priority: inserted.priority,
+          due_date: inserted.due_date,
+          entreprise_id: inserted.entreprise_id,
+          offre_id: inserted.offre_id,
+          entreprises: inserted.entreprises?.[0] ?? null,
+          offres: inserted.offres?.[0] ?? null,
+          computed_project_progress: 0,
+          color: inserted.color ?? "#4f46e5",
+          background_color: inserted.background_color ?? "#eef2ff",
+          start_at: inserted.start_at ?? null,
+          end_at: inserted.end_at ?? null,
+          total_tasks: 0,
+          completed_tasks: 0,
+          remaining_tasks: 0,
+        }, ...prev]);
+        setIsCreateOpen(false);
+        setProjectForm({
+          nom: "",
+          status: "a_faire",
+          dueDate: "",
+          priority: "moyenne",
+          entrepriseQuery: "",
+          entrepriseId: "",
+          offreQuery: "",
+          offreId: "",
+          color: "#4f46e5",
+          backgroundColor: "#eef2ff",
+          startAt: "",
+          endAt: "",
+        });
+      }
+    } catch (error) {
+      console.error("Erreur lors de la création du projet:", error);
+      toast.error("Erreur lors de la création du projet");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -310,14 +327,30 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
       background_color: editForm.backgroundColor,
     };
     if (!payload.nom) return;
-    await supabase.from("crm_projects").update(payload).eq("id", editingProject.id);
-    setProjects((prev) => prev.map((project) => (project.id === editingProject.id ? { ...project, ...payload, due_date: payload.due_date } : project)));
+    const original = projects.find((p) => p.id === editingProject.id);
+    setProjects((prev) => prev.map((project) => (project.id === editingProject.id ? { ...project, ...payload } : project)));
     setEditingProject(null);
+    try {
+      const { error } = await supabase.from("crm_projects").update(payload).eq("id", editingProject.id);
+      if (error) throw error;
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde du projet:", error);
+      toast.error("Erreur lors de la sauvegarde du projet");
+      if (original) setProjects((prev) => prev.map((project) => (project.id === editingProject.id ? original : project)));
+    }
   };
 
   const updateProjectStatus = async (projectId: string, status: ItemStatus) => {
-    await supabase.from("crm_projects").update({ status }).eq("id", projectId);
+    const original = projects.find((p) => p.id === projectId);
     setProjects((prev) => prev.map((project) => (project.id === projectId ? { ...project, status } : project)));
+    try {
+      const { error } = await supabase.from("crm_projects").update({ status }).eq("id", projectId);
+      if (error) throw error;
+    } catch (error) {
+      console.error("Erreur lors de la mise à jour du statut:", error);
+      toast.error("Erreur lors de la mise à jour du statut");
+      if (original) setProjects((prev) => prev.map((project) => (project.id === projectId ? original : project)));
+    }
   };
 
   const ProgressCircle = ({ value, color }: { value: number; color?: string | null }) => {
@@ -477,7 +510,7 @@ export function ProjectTasksWorkspace({ title, description, scope }: ProjectTask
             </div>
           </div>
           <DialogFooter>
-            <Button onClick={createProject}>Créer le projet</Button>
+            <Button onClick={createProject} disabled={saving}>{saving ? "Création..." : "Créer le projet"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
