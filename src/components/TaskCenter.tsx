@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { CheckSquare, ChevronDown, ChevronUp, FileText, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,14 +77,18 @@ export function TaskCenter() {
   const loadTasks = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("crm_tasks")
         .select("id,project_id,titre,description,status,priority,due_date,note_markdown,created_at")
         .is("project_id", null)
         .order("position", { ascending: true })
         .order("created_at", { ascending: false });
 
+      if (error) throw error;
       setTasks((data as StandaloneTask[] | null) ?? []);
+    } catch (error) {
+      console.error("Erreur lors du chargement des tâches:", error);
+      toast.error("Erreur lors du chargement des tâches");
     } finally {
       setLoading(false);
     }
@@ -146,9 +151,22 @@ export function TaskCenter() {
 
   const saveNote = async (taskId: string) => {
     const nextValue = noteDrafts[taskId] ?? "";
-    await supabase.from("crm_tasks").update({ note_markdown: nextValue.trim() || null }).eq("id", taskId).is("project_id", null);
-    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, note_markdown: nextValue.trim() || null } : task)));
-    setEditingId(null);
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("crm_tasks")
+        .update({ note_markdown: nextValue.trim() || null })
+        .eq("id", taskId)
+        .is("project_id", null);
+      if (error) throw error;
+      setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, note_markdown: nextValue.trim() || null } : task)));
+      setEditingId(null);
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde de la note:", error);
+      toast.error("Erreur lors de la sauvegarde de la note");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
