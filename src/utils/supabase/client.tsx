@@ -1,7 +1,9 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from './info';
 
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RETRIES = 2;
+const RETRY_BASE_DELAY_MS = 800;
 
 function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const controller = new AbortController();
@@ -12,10 +14,25 @@ function fetchWithTimeout(input: RequestInfo | URL, init?: RequestInit): Promise
   return fetch(input, { ...init, signal }).finally(() => clearTimeout(timer));
 }
 
+async function fetchWithRetry(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const isReadOnly = !init?.method || init.method.toUpperCase() === 'GET' || init.method.toUpperCase() === 'HEAD';
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fetchWithTimeout(input, init);
+    } catch (err) {
+      const isLast = attempt === MAX_RETRIES;
+      if (isLast || !isReadOnly) throw err;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * Math.pow(2, attempt)));
+    }
+  }
+  throw new Error('unreachable');
+}
+
 export const supabase = createSupabaseClient(
   `https://${projectId}.supabase.co`,
   publicAnonKey,
-  { global: { fetch: fetchWithTimeout } }
+  { global: { fetch: fetchWithRetry } }
 );
 
 // Export the createClient function for compatibility
