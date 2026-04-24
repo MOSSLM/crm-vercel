@@ -21,9 +21,12 @@ import {
   Ban,
   Copy,
   Layout,
+  MessageSquare,
+  Mail,
+  MessageCircle,
 } from "lucide-react";
 
-export type TopCategoryKey = "dashboard" | "calendar" | "crm" | "production" | "actions";
+export type TopCategoryKey = "dashboard" | "calendar" | "crm" | "production" | "actions" | "messagerie";
 
 export type NavItem = {
   title: string;
@@ -38,6 +41,7 @@ export const TOP_CATEGORIES: Array<NavItem & { key: TopCategoryKey }> = [
   { key: "crm", title: "CRM", href: "/companies", icon: Building2 },
   { key: "production", title: "Production", href: "/production/projets", icon: FolderKanban },
   { key: "actions", title: "Actions", href: "/qualification", icon: CheckSquare },
+  { key: "messagerie", title: "Messagerie", href: "/messagerie", icon: MessageSquare },
 ];
 
 export const CRM_ITEMS: NavItem[] = [
@@ -78,6 +82,11 @@ export const DASHBOARD_ITEMS: NavItem[] = [
 
 export const CALENDAR_ITEMS: NavItem[] = [{ title: "Calendrier", icon: CalendarDays, href: "/calendar" }];
 
+export const MESSAGERIE_ITEMS: NavItem[] = [
+  { title: "Email", icon: Mail, href: "/messagerie" },
+  { title: "WhatsApp", icon: MessageCircle, href: "/messagerie?tab=whatsapp" },
+];
+
 // Phone icon imported lazily for dashboard section.
 import { Phone } from "lucide-react";
 
@@ -109,6 +118,8 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     return "actions";
   }
 
+  if (pathname.startsWith("/messagerie")) return "messagerie";
+
   return "dashboard";
 }
 
@@ -122,6 +133,8 @@ export function getTopTabsForCategory(category: TopCategoryKey): NavItem[] {
       return ACTION_ITEMS;
     case "calendar":
       return CALENDAR_ITEMS;
+    case "messagerie":
+      return MESSAGERIE_ITEMS;
     default:
       return DASHBOARD_ITEMS;
   }
