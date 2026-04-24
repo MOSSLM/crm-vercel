@@ -439,6 +439,14 @@ export interface AuditNextStep {
   desc: string;
 }
 
+export interface AuditPricingService {
+  label: string;
+  sub_label?: string;
+  amount: number;
+  is_mrr: boolean;
+  enabled: boolean;
+}
+
 export interface AuditPage1 {
   date: string;
   eyebrow: string;
@@ -469,15 +477,21 @@ export interface AuditPage4 {
 
 export interface AuditPage5 {
   planning_steps: AuditPlanningStep[];
-  price_setup: string;
-  price_setup_label: string;
-  price_setup_desc: string;
-  price_monthly: string;
-  price_monthly_label: string;
-  price_monthly_desc: string;
-  price_total: string;
-  price_total_label: string;
+  // New flexible pricing structure
+  services?: AuditPricingService[];
+  pricing_subtitle?: string;
+  show_grain?: boolean;
+  flatten_grain_for_pdf?: boolean;
   price_note: string;
+  // Legacy fields kept for backward compatibility
+  price_setup?: string;
+  price_setup_label?: string;
+  price_setup_desc?: string;
+  price_monthly?: string;
+  price_monthly_label?: string;
+  price_monthly_desc?: string;
+  price_total?: string;
+  price_total_label?: string;
 }
 
 export interface AuditPage6 {

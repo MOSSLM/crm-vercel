@@ -8,15 +8,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { ArrowLeft, Download, Save, Plus, Trash2, Check, Loader2 } from 'lucide-react';
-import type { Audit, AuditContent, AuditLivrable, AuditNextStep, AuditPage1, AuditPage2, AuditPage3, AuditPage4, AuditPage5, AuditPage6, AuditPlanningStep, AuditProblem, AuditSolution } from '@/types';
+import type { Audit, AuditContent, AuditLivrable, AuditNextStep, AuditPage1, AuditPage2, AuditPage3, AuditPage4, AuditPage5, AuditPage6, AuditPlanningStep, AuditPricingService, AuditProblem, AuditSolution } from '@/types';
+import { getServices, calcTotal, fmtEur } from '@/components/audit/AuditShared';
 import { AuditPreview } from './AuditPreview';
 import { saveAuditContent, saveAuditMeta } from '@/utils/auditApi';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 
 // ── Field-to-page mapping ─────────────────────────────────
 const FIELD_PAGE: Record<string, number> = {
-  'page1.date': 1, 'page1.eyebrow': 1, 'page1.title': 1, 'page1.subtitle': 1, 'page1.client': 1, 'page1.logo': 1,
-  'page2.section_intro': 2, 'page2.problems.0': 2, 'page2.problems.1': 2, 'page2.problems.2': 2, 'page2.quote': 2,
+  'page1.date': 1, 'page1.eyebrow': 1, 'page1.title': 1, 'page1.subtitle': 1, 'page1.client': 1, 'page1.logo': 1, 'page1.demo': 1,
+  'page2.section_intro': 2, 'page2.problems.0': 2, 'page2.problems.1': 2, 'page2.problems.2': 2, 'page2.problems.3': 2, 'page2.problems.4': 2, 'page2.problems.5': 2, 'page2.quote': 2,
   'page3.section_intro': 3, 'page3.solutions.0': 3, 'page3.solutions.1': 3, 'page3.solutions.2': 3, 'page3.solutions.3': 3,
   'page4.livrables.0': 4, 'page4.livrables.1': 4, 'page4.livrables.2': 4, 'page4.livrables.3': 4,
   'page5.planning_steps.0': 5, 'page5.planning_steps.1': 5, 'page5.planning_steps.2': 5, 'page5.planning_steps.3': 5, 'page5.pricing': 5,
@@ -96,6 +97,11 @@ function Page2Editor({ data, onChange }: { data: AuditPage2; onChange: (d: Audit
     const problems = data.problems.map((p, idx) => idx === i ? { ...p, [k]: v } : p);
     onChange({ ...data, problems });
   };
+  const addProb = () => {
+    if (data.problems.length >= 6) return;
+    onChange({ ...data, problems: [...data.problems, { title: '', desc: '' }] });
+  };
+  const removeProb = (i: number) => onChange({ ...data, problems: data.problems.filter((_, idx) => idx !== i) });
 
   return (
     <div className="space-y-1">
@@ -103,10 +109,22 @@ function Page2Editor({ data, onChange }: { data: AuditPage2; onChange: (d: Audit
         <Textarea value={data.section_intro} onChange={e => onChange({ ...data, section_intro: e.target.value })} rows={3} />
       </FieldGroup>
 
-      <p className={`${labelStyle} mt-4 mb-2`}>Constats (3 cartes)</p>
+      <div className="flex items-center justify-between mt-4 mb-2">
+        <p className={labelStyle}>Constats ({data.problems.length}/6 cartes)</p>
+        {data.problems.length < 6 && (
+          <Button size="sm" variant="outline" onClick={addProb} className="h-6 text-xs px-2">
+            <Plus className="h-3 w-3 mr-1" /> Ajouter
+          </Button>
+        )}
+      </div>
       {data.problems.map((p, i) => (
         <div key={i} className="border border-border rounded-md p-3 mb-3 space-y-2">
-          <div className="text-xs font-semibold text-muted-foreground">Carte {i + 1}</div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">Carte {i + 1}</span>
+            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeProb(i)}>
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          </div>
           <FieldGroup label="Titre">
             <Input value={p.title} onChange={e => setProb(i, 'title', e.target.value)} />
           </FieldGroup>
@@ -117,10 +135,10 @@ function Page2Editor({ data, onChange }: { data: AuditPage2; onChange: (d: Audit
       ))}
 
       <div className="border-t border-border pt-4">
-        <FieldGroup label="Citation">
+        <FieldGroup label="Citation (stat comportement utilisateur)">
           <Textarea value={data.quote} onChange={e => onChange({ ...data, quote: e.target.value })} rows={2} />
         </FieldGroup>
-        <FieldGroup label="Source de la citation">
+        <FieldGroup label="Source">
           <Input value={data.quote_source} onChange={e => onChange({ ...data, quote_source: e.target.value })} />
         </FieldGroup>
       </div>
@@ -211,12 +229,20 @@ function Page4Editor({ data, onChange }: { data: AuditPage4; onChange: (d: Audit
 
 // ── Page 5 editor ─────────────────────────────────────────
 function Page5Editor({ data, onChange }: { data: AuditPage5; onChange: (d: AuditPage5) => void }) {
+  const services = getServices(data);
+  const { total, hasMrr } = calcTotal(services);
+
   const setStep = (i: number, k: keyof AuditPlanningStep, v: string) => {
     const steps = data.planning_steps.map((s, idx) => idx === i ? { ...s, [k]: v } : s);
     onChange({ ...data, planning_steps: steps });
   };
-  const set = (k: keyof AuditPage5) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    onChange({ ...data, [k]: e.target.value });
+
+  const setSvc = (i: number, patch: Partial<AuditPricingService>) => {
+    const updated = services.map((s, idx) => idx === i ? { ...s, ...patch } : s);
+    onChange({ ...data, services: updated });
+  };
+  const addSvc = () => onChange({ ...data, services: [...services, { label: '', sub_label: '', amount: 0, is_mrr: false, enabled: true }] });
+  const removeSvc = (i: number) => onChange({ ...data, services: services.filter((_, idx) => idx !== i) });
 
   return (
     <div className="space-y-1">
@@ -224,8 +250,8 @@ function Page5Editor({ data, onChange }: { data: AuditPage5; onChange: (d: Audit
       {data.planning_steps.map((step, i) => (
         <div key={i} className="border border-border rounded-md p-3 mb-3 space-y-2">
           <div className="grid grid-cols-2 gap-2">
-            <FieldGroup label="Semaine">
-              <Input value={step.week} onChange={e => setStep(i, 'week', e.target.value)} />
+            <FieldGroup label="Étiquette">
+              <Input value={step.week} onChange={e => setStep(i, 'week', e.target.value)} placeholder="Appel" />
             </FieldGroup>
             <FieldGroup label="Titre">
               <Input value={step.title} onChange={e => setStep(i, 'title', e.target.value)} />
@@ -238,30 +264,75 @@ function Page5Editor({ data, onChange }: { data: AuditPage5; onChange: (d: Audit
       ))}
 
       <div className="border-t border-border pt-4 mt-4">
-        <p className={`${labelStyle} mb-3`}>Investissement</p>
-        <div className="grid grid-cols-2 gap-3">
-          <FieldGroup label="Label setup">
-            <Input value={data.price_setup_label} onChange={set('price_setup_label')} />
-          </FieldGroup>
-          <FieldGroup label="Prix setup">
-            <Input value={data.price_setup} onChange={set('price_setup')} placeholder="1 490 €" />
-          </FieldGroup>
-          <FieldGroup label="Sous-label setup">
-            <Input value={data.price_setup_desc} onChange={set('price_setup_desc')} />
-          </FieldGroup>
-          <FieldGroup label="Prix mensuel">
-            <Input value={data.price_monthly} onChange={set('price_monthly')} placeholder="89 €/mois" />
-          </FieldGroup>
-          <FieldGroup label="Label mensuel">
-            <Input value={data.price_monthly_label} onChange={set('price_monthly_label')} />
-          </FieldGroup>
-          <FieldGroup label="Prix total an 1">
-            <Input value={data.price_total} onChange={set('price_total')} placeholder="2 558 €" />
-          </FieldGroup>
+        <div className="flex items-center justify-between mb-3">
+          <p className={labelStyle}>Investissement</p>
+          <Button size="sm" variant="outline" onClick={addSvc} className="h-6 text-xs px-2">
+            <Plus className="h-3 w-3 mr-1" /> Ajouter un service
+          </Button>
         </div>
-        <FieldGroup label="Note tarifaire">
-          <Textarea value={data.price_note} onChange={set('price_note')} rows={3} />
+
+        <FieldGroup label="Sous-titre carte (ex: Solution conseillée)">
+          <Input value={data.pricing_subtitle || ''} onChange={e => onChange({ ...data, pricing_subtitle: e.target.value })} placeholder="Solution conseillée" />
         </FieldGroup>
+
+        {services.map((svc, i) => (
+          <div key={i} className="border border-border rounded-md p-3 mb-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-muted-foreground">Service {i + 1}</span>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                  <input type="checkbox" checked={svc.is_mrr} onChange={e => setSvc(i, { is_mrr: e.target.checked })} className="w-3 h-3" />
+                  MRR /mois
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                  <input type="checkbox" checked={svc.enabled} onChange={e => setSvc(i, { enabled: e.target.checked })} className="w-3 h-3" />
+                  Actif
+                </label>
+                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => removeSvc(i)}>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+            <FieldGroup label="Label">
+              <Input value={svc.label} onChange={e => setSvc(i, { label: e.target.value })} />
+            </FieldGroup>
+            <FieldGroup label="Sous-label">
+              <Input value={svc.sub_label || ''} onChange={e => setSvc(i, { sub_label: e.target.value })} placeholder="Description courte..." />
+            </FieldGroup>
+            <FieldGroup label="Montant (€)">
+              <div className="relative">
+                <Input
+                  type="number"
+                  value={svc.amount || ''}
+                  onChange={e => setSvc(i, { amount: parseFloat(e.target.value) || 0 })}
+                  className="pr-8"
+                  placeholder="0"
+                />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">€{svc.is_mrr ? '/mois' : ''}</span>
+              </div>
+            </FieldGroup>
+          </div>
+        ))}
+
+        <div className="bg-muted/40 rounded-md p-3 mb-3 text-xs text-muted-foreground">
+          Total calculé — {hasMrr ? 'an 1' : 'one-shot'} : <span className="font-semibold text-foreground">{fmtEur(total)}</span>
+        </div>
+
+        <FieldGroup label="Note tarifaire">
+          <Textarea value={data.price_note} onChange={e => onChange({ ...data, price_note: e.target.value })} rows={3} />
+        </FieldGroup>
+
+        <div className="border-t border-border pt-3 mt-2 flex flex-col gap-2">
+          <p className={`${labelStyle} mb-1`}>Options visuelles</p>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+            <input type="checkbox" checked={data.show_grain !== false} onChange={e => onChange({ ...data, show_grain: e.target.checked })} className="w-3.5 h-3.5" />
+            Grain / texture sur la carte
+          </label>
+          <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+            <input type="checkbox" checked={data.flatten_grain_for_pdf === true} onChange={e => onChange({ ...data, flatten_grain_for_pdf: e.target.checked })} className="w-3.5 h-3.5" />
+            Supprimer le grain à l'export PDF
+          </label>
+        </div>
       </div>
     </div>
   );
