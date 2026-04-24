@@ -40,6 +40,7 @@ import {
   Target,
   Layout,
   Package,
+  ClipboardList,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
@@ -106,6 +107,7 @@ export const AppSidebar = () => {
     { title: "Results", icon: Package, href: "/results" },
     { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
+    { title: "Audits", icon: ClipboardList, href: "/opportunities" },
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
   ];
 

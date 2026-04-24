@@ -53,6 +53,8 @@ import logger from '../utils/logger';
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from './EnrichmentProgressModal';
 import { createNotification } from '../utils/notificationsApi';
 import { LeadMagnetQuickViewModal } from './LeadMagnetQuickViewModal';
+import { useRouter } from 'next/navigation';
+import { ClipboardList } from 'lucide-react';
 
 const OPPORTUNITY_FLAGS = [
   { value: 'site_merdique', label: 'Site merdique / inutilisable' },
@@ -88,6 +90,7 @@ interface KanbanDragItem {
   sourceValue: string;
 }
 export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprintModule = false }) => {
+  const router = useRouter();
   const supabase = createClient();
   const { 
     opportunities, 
@@ -645,6 +648,19 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
               </span>
             )}
           </div>
+
+          {/* Audit — disponible dès que le lead magnet est prêt */}
+          {(opportunity.leadMagnet || opportunity.lead_magnet) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full h-7 text-xs gap-1.5"
+              onClick={(e) => { e.stopPropagation(); router.push(`/audits/${opportunity.id}`); }}
+            >
+              <ClipboardList className="h-3 w-3" />
+              Ouvrir l'audit
+            </Button>
+          )}
 
           {/* Tags */}
           {tags.length > 0 && (
