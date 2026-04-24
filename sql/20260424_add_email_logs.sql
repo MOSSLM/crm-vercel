@@ -2,7 +2,7 @@
 create table if not exists public.email_logs (
   id uuid primary key default gen_random_uuid(),
   resend_id text,
-  contact_id text references public.contacts(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
   entreprise_id integer references public.entreprises(id) on delete set null,
   opportunite_id uuid references public.opportunites(id) on delete set null,
   lead_magnet_project_id uuid,
