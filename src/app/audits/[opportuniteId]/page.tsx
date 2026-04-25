@@ -21,19 +21,19 @@ export default function AuditPage() {
 
     async function init() {
       try {
-        // Load opportunity + company info
-        const { data: opp } = await supabase
-          .from('opportunites')
-          .select('id, name, entreprise_id, entreprises(name, adresse, ville, logo_url)')
-          .eq('id', opportuniteId)
-          .maybeSingle();
-
-        // Load production lead magnet for demo URL
-        const { data: plm } = await supabase
-          .from('production_lead_magnets')
-          .select('lien_livraison')
-          .eq('opportunite_id', opportuniteId)
-          .maybeSingle();
+        // Load opportunity + lead magnet in parallel
+        const [{ data: opp }, { data: plm }] = await Promise.all([
+          supabase
+            .from('opportunites')
+            .select('id, name, entreprise_id, entreprises(name, adresse, ville, logo_url)')
+            .eq('id', opportuniteId)
+            .maybeSingle(),
+          supabase
+            .from('production_lead_magnets')
+            .select('lien_livraison')
+            .eq('opportunite_id', opportuniteId)
+            .maybeSingle(),
+        ]);
 
         const company = (opp as { entreprises?: { name?: string; adresse?: string; ville?: string; logo_url?: string } } | null)?.entreprises;
         const companyName = company?.name || '';

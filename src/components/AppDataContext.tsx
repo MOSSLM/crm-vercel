@@ -1,5 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo } from 'react';
+import { CACHE_KEY, CACHE_TTL_MS } from '../utils/constants';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
 import {
@@ -388,29 +389,32 @@ const INITIAL_CONTACT_COMPANY_BATCH = 20;
 // ---------------------------------------------------------------------------
 // SWR cache: hydrate UI instantly from localStorage, then refresh in background
 // ---------------------------------------------------------------------------
-const CACHE_KEY = 'crm_data_cache_v1';
 
 interface CachedData {
   opportunities: Opportunity[];
   pipelines: Pipeline[];
   pipelineStages: PipelineStage[];
   offers: Offer[];
+  cached_at: number;
 }
 
-function loadCachedData(): CachedData | null {
+export function loadCachedData(): CachedData | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(CACHE_KEY);
-    return raw ? (JSON.parse(raw) as CachedData) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedData;
+    if (!parsed.cached_at || Date.now() - parsed.cached_at > CACHE_TTL_MS) return null;
+    return parsed;
   } catch {
     return null;
   }
 }
 
-function saveCachedData(data: CachedData): void {
+export function saveCachedData(data: Omit<CachedData, 'cached_at'>): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    window.localStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, cached_at: Date.now() }));
   } catch {
     // localStorage quota exceeded – silently ignore
   }

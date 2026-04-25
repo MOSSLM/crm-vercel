@@ -8,8 +8,11 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Download, Save, Check, Loader2 } from 'lucide-react';
 import type { Audit, AuditContent } from '@/types';
 import { AuditPreview } from './AuditPreview';
-import { saveAuditContent, saveAuditMeta } from '@/utils/auditApi';
+import { saveAudit } from '@/utils/auditApi';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
+import { supabase } from '@/utils/supabase/client';
+import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
+import { useDebounce } from '@/hooks/useDebounce';
 import { Page1Editor } from './audit/editors/Page1Editor';
 import { Page2Editor } from './audit/editors/Page2Editor';
 import { Page3Editor } from './audit/editors/Page3Editor';
@@ -58,6 +61,7 @@ interface AuditEditorPageProps {
 export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditEditorPageProps) {
   const router = useRouter();
   const [content, setContent] = useState<AuditContent>(initialAudit.content);
+  const debouncedContent = useDebounce(content, AUDIT_PREVIEW_DEBOUNCE_MS);
   const [logoUrl, setLogoUrl] = useState(initialAudit.entreprise_logo_url || '');
   const [activePage, setActivePage] = useState(1);
   const [activeField, setActiveField] = useState<string | null>(null);
@@ -96,30 +100,46 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
   };
 
   const handleSave = async () => {
+    if (!initialAudit.id) {
+      toast.error("Audit non initialisé — veuillez recharger la page");
+      return;
+    }
+
     setIsSaving(true);
     try {
-      await saveAuditContent(initialAudit.id, content);
-      await saveAuditMeta(initialAudit.id, {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Session expirée — veuillez recharger la page");
+        return;
+      }
+
+      await saveAudit(initialAudit.id, content, {
         entreprise_logo_url: logoUrl || undefined,
         statut: isReady ? 'ready' : 'draft',
       });
       setHasChanges(false);
       toast.success('Audit sauvegardé');
-    } catch {
-      toast.error('Erreur lors de la sauvegarde');
+    } catch (err) {
+      if (err instanceof Error && err.message === 'SESSION_EXPIRED') {
+        toast.error("Session expirée — veuillez recharger la page");
+      } else {
+        toast.error('Erreur lors de la sauvegarde');
+      }
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleExport = () => {
-    const html = generateAuditHtml(content, { logoUrl });
     const win = window.open('', '_blank');
     if (!win) { toast.error("Impossible d'ouvrir une nouvelle fenêtre"); return; }
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 600);
+    Promise.resolve().then(() => {
+      const html = generateAuditHtml(content, { logoUrl });
+      win.document.write(html);
+      win.document.close();
+      win.focus();
+      setTimeout(() => win.print(), PRINT_DELAY_MS);
+    });
   };
 
   useEffect(() => {
@@ -239,7 +259,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
             >
               <div ref={previewInnerRef} style={{ paddingTop: 16 }}>
                 <AuditPreview
-                  content={content}
+                  content={debouncedContent}
                   logoUrl={logoUrl || undefined}
                   activeField={activeField}
                   onFieldClick={handleFieldClick}

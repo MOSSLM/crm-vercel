@@ -1,7 +1,6 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { projectId, publicAnonKey } from './info';
-
-const REQUEST_TIMEOUT_MS = 30_000;
+import { REQUEST_TIMEOUT_MS } from '../constants';
 const MAX_RETRIES = 2;
 const RETRY_BASE_DELAY_MS = 800;
 

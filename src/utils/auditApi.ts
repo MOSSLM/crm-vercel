@@ -188,27 +188,27 @@ export async function upsertAudit(params: {
   return createAudit(params);
 }
 
-export async function saveAuditContent(auditId: string, content: AuditContent): Promise<void> {
-  const { error } = await supabase
-    .from('audits')
-    .update({ content, updated_at: new Date().toISOString() })
-    .eq('id', auditId);
-  if (error) throw error;
+function isAuthError(error: { code?: string; message?: string }): boolean {
+  return (
+    error.code === 'PGRST301' ||
+    !!error.message?.includes('JWT') ||
+    !!error.message?.includes('expired')
+  );
 }
 
-export async function saveAuditMeta(auditId: string, meta: {
-  entreprise_nom?: string;
-  entreprise_ville?: string;
-  entreprise_logo_url?: string;
-  entreprise_secteur?: string;
-  demo_site_url?: string;
-  statut?: 'draft' | 'ready';
-}): Promise<void> {
+export async function saveAudit(
+  auditId: string,
+  content: AuditContent,
+  meta: { entreprise_logo_url?: string; statut: 'draft' | 'ready' }
+): Promise<void> {
   const { error } = await supabase
     .from('audits')
-    .update({ ...meta, updated_at: new Date().toISOString() })
+    .update({ content, ...meta, updated_at: new Date().toISOString() })
     .eq('id', auditId);
-  if (error) throw error;
+  if (error) {
+    if (isAuthError(error)) throw new Error('SESSION_EXPIRED');
+    throw error;
+  }
 }
 
 export async function savePdfUrl(auditId: string, pdfUrl: string): Promise<void> {
