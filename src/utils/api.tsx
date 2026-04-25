@@ -1,4 +1,5 @@
 import { supabase } from './supabase/client';
+import { LIST_QUERY_LIMIT } from './constants';
 import {
   Achievement,
   Company,
@@ -553,7 +554,8 @@ export const searchResultsApi = {
       const { data, error } = await supabase
         .from('recherches')
         .select(SEARCH_RESULTS_SELECT)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(LIST_QUERY_LIMIT);
 
       if (error) {
         logger.error('Supabase error:', error);
@@ -1467,7 +1469,8 @@ export const opportunitiesApi = {
       const { data: opportunitiesData, error: opportunitiesError } = await supabase
         .from('opportunites')
         .select(OPPORTUNITY_SELECT)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(LIST_QUERY_LIMIT);
 
       if (opportunitiesError) {
         logger.error('Supabase error:', opportunitiesError);
@@ -1732,7 +1735,8 @@ export const offersApi = {
         .from('offres')
         .select(OFFER_SELECT)
         .order('qualification_order', { ascending: true })
-        .order('nom', { ascending: true });
+        .order('nom', { ascending: true })
+        .limit(LIST_QUERY_LIMIT);
 
       if (offersError) {
         logger.error('Error fetching offers:', offersError);
@@ -1978,7 +1982,8 @@ export const pipelineStagesApi = {
         .select('*')
         .eq('visible', true)
         .order('pipeline_id', { ascending: true })
-        .order('ordre', { ascending: true });
+        .order('ordre', { ascending: true })
+        .limit(LIST_QUERY_LIMIT);
       
       if (error) {
         logger.error('Supabase error:', error);
@@ -2074,7 +2079,8 @@ export const pipelinesApi = {
         .from('pipelines')
         .select('id, nom, ordre, visible, is_default')
         .eq('visible', true)
-        .order('ordre', { ascending: true });
+        .order('ordre', { ascending: true })
+        .limit(LIST_QUERY_LIMIT);
 
       if (error) {
         logger.error('Supabase pipelines error:', error);
@@ -2392,7 +2398,8 @@ export const networksApi = {
     try {
       const { data, error } = await supabase
         .from('reseaux_entreprises')
-        .select('*');
+        .select('*')
+        .limit(LIST_QUERY_LIMIT);
       if (error) throw error;
       return Array.isArray(data) ? data.filter(isCompanyNetworkRow) : [];
     } catch (error) {
@@ -2467,7 +2474,8 @@ export const urlBlacklistApi = {
       const { data, error } = await supabase
         .from('url_blacklist')
         .select('*')
-        .eq('active', true);
+        .eq('active', true)
+        .limit(LIST_QUERY_LIMIT);
       if (error) throw error;
       return Array.isArray(data) ? data.filter(isUrlBlacklistRow) : [];
     } catch (error) {
