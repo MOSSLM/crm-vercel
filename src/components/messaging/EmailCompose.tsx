@@ -56,7 +56,7 @@ export function EmailCompose({
   const [showPreview, setShowPreview] = useState(false);
 
   const insertText = (snippet: string) =>
-    setBody((prev) => prev + (prev.endsWith("\n") ? "" : "\n") + snippet + "\n");
+    setBody(body + (body.endsWith("\n") ? "" : "\n") + snippet + "\n");
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
