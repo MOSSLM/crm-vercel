@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   MessageCircle,
   Search,
+  User,
   Building2,
   ChevronRight,
   Magnet,
@@ -30,6 +31,8 @@ import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ContactRow {
+  kind: "contact";
+  id: string;
   contactId: string;
   firstName: string;
   lastName: string;
@@ -43,6 +46,22 @@ interface ContactRow {
   leadMagnetUrl?: string;
   opportunityId?: string;
 }
+
+interface CompanyRow {
+  kind: "company";
+  id: string;
+  companyId: number;
+  companyName: string;
+  tel: string;
+  pipelineName?: string;
+  stageName?: string;
+  hasLeadMagnet: boolean;
+  leadMagnetReady: boolean;
+  leadMagnetUrl?: string;
+  opportunityId?: string;
+}
+
+type WhatsAppRow = ContactRow | CompanyRow;
 
 // ─── Message templates ────────────────────────────────────────────────────────
 
@@ -105,6 +124,23 @@ function sanitizePhone(raw: string): string {
   return phone;
 }
 
+function isMobilePhone(raw: string): boolean {
+  if (!raw) return false;
+  const cleaned = raw.replace(/[^0-9+]/g, "");
+  if (cleaned.startsWith("+33")) {
+    const local = cleaned.slice(3);
+    return /^([67])\d{8}$/.test(local);
+  }
+  if (cleaned.startsWith("33")) {
+    const local = cleaned.slice(2);
+    return /^([67])\d{8}$/.test(local);
+  }
+  if (cleaned.startsWith("0")) {
+    return /^0[67]\d{8}$/.test(cleaned);
+  }
+  return false;
+}
+
 function buildWhatsAppUrl(phone: string, message: string): string {
   const sanitized = sanitizePhone(phone).replace("+", "");
   const encoded = encodeURIComponent(message);
@@ -115,6 +151,7 @@ function buildWhatsAppUrl(phone: string, message: string): string {
 
 export function WhatsAppTab() {
   const { contacts, opportunities, pipelines, pipelineStages, companies } = useAppData();
+  const [mode, setMode] = useState<"contacts" | "entreprises">("contacts");
 
   // Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -124,7 +161,7 @@ export function WhatsAppTab() {
   const [filterHasTel, setFilterHasTel] = useState(true);
 
   // Selection & compose
-  const [selectedRow, setSelectedRow] = useState<ContactRow | null>(null);
+  const [selectedRow, setSelectedRow] = useState<WhatsAppRow | null>(null);
   const [templateId, setTemplateId] = useState("lead_magnet");
   const [messageBody, setMessageBody] = useState("");
   const [phone, setPhone] = useState("");
@@ -162,6 +199,8 @@ export function WhatsAppTab() {
       const lmInfo = opp ? lmMap.get(opp.id) : undefined;
 
       return {
+        kind: "contact",
+        id: `contact:${contact.id}`,
         contactId: contact.id,
         firstName: contact.first_name ?? "",
         lastName: contact.last_name ?? "",
@@ -178,43 +217,75 @@ export function WhatsAppTab() {
     });
   }, [contacts, opportunities, companies, pipelines, pipelineStages, lmMap]);
 
+  const companyRows = useMemo<CompanyRow[]>(() => {
+    return companies.map((company) => {
+      const opp = opportunities.find((o) => o.entreprise_id === company.id);
+      const pipeline = opp?.pipeline_id ? pipelines.find((p) => p.id === opp.pipeline_id) : undefined;
+      const stage = opp?.stage_id ? pipelineStages.find((s) => s.id === opp.stage_id) : undefined;
+      const lmInfo = opp ? lmMap.get(opp.id) : undefined;
+
+      return {
+        kind: "company",
+        id: `company:${company.id}`,
+        companyId: company.id,
+        companyName: company.name ?? `Entreprise #${company.id}`,
+        tel: company.telephone ?? "",
+        pipelineName: pipeline?.nom ?? undefined,
+        stageName: stage?.nom ?? undefined,
+        hasLeadMagnet: !!lmInfo || (opp?.lead_magnet ?? false),
+        leadMagnetReady: lmInfo?.ready ?? false,
+        leadMagnetUrl: lmInfo?.url,
+        opportunityId: opp?.id,
+      };
+    });
+  }, [companies, opportunities, pipelines, pipelineStages, lmMap]);
+
   // Filtered
-  const filteredRows = useMemo<ContactRow[]>(() => {
-    return contactRows.filter((row) => {
+  const rows = mode === "contacts" ? contactRows : companyRows;
+
+  const filteredRows = useMemo<WhatsAppRow[]>(() => {
+    return rows.filter((row) => {
       if (filterHasTel && !row.tel) return false;
+      if (mode === "entreprises" && row.tel && !isMobilePhone(row.tel)) return false;
       if (filterPipeline !== "all" && !opportunities.some(
-        (o) => (o.contact_id === row.contactId || o.entreprise_id === row.companyId) && o.pipeline_id === filterPipeline
+        (o) => (row.kind === "contact"
+          ? (o.contact_id === row.contactId || o.entreprise_id === row.companyId)
+          : o.entreprise_id === row.companyId) && o.pipeline_id === filterPipeline
       )) return false;
       if (filterStage !== "all" && !opportunities.some(
-        (o) => (o.contact_id === row.contactId || o.entreprise_id === row.companyId) && String(o.stage_id) === filterStage
+        (o) => (row.kind === "contact"
+          ? (o.contact_id === row.contactId || o.entreprise_id === row.companyId)
+          : o.entreprise_id === row.companyId) && String(o.stage_id) === filterStage
       )) return false;
       if (filterLm === "with_lm" && !row.hasLeadMagnet) return false;
       if (filterLm === "lm_ready" && !row.leadMagnetReady) return false;
       if (filterLm === "no_lm" && row.hasLeadMagnet) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        const name = `${row.firstName} ${row.lastName}`.toLowerCase();
+        const name = row.kind === "contact"
+          ? `${row.firstName} ${row.lastName}`.toLowerCase()
+          : row.companyName.toLowerCase();
         if (!name.includes(q) && !row.companyName.toLowerCase().includes(q) && !row.tel.includes(q)) return false;
       }
       return true;
     });
-  }, [contactRows, filterHasTel, filterPipeline, filterStage, filterLm, searchQuery, opportunities]);
+  }, [rows, mode, filterHasTel, filterPipeline, filterStage, filterLm, searchQuery, opportunities]);
 
   const availableStages = useMemo(() => {
     if (filterPipeline === "all") return pipelineStages;
     return pipelineStages.filter((s) => s.pipeline_id === filterPipeline);
   }, [filterPipeline, pipelineStages]);
 
-  const buildMessage = useCallback((row: ContactRow, tmplId: string) => {
+  const buildMessage = useCallback((row: WhatsAppRow, tmplId: string) => {
     const tmpl = TEMPLATES.find((t) => t.id === tmplId) ?? TEMPLATES[0];
     return tmpl.body({
-      first_name: row.firstName || row.companyName,
+      first_name: row.kind === "contact" ? (row.firstName || row.companyName) : row.companyName,
       company_name: row.companyName,
       lead_magnet_url: row.leadMagnetUrl ?? "(lien lead magnet)",
     });
   }, []);
 
-  const selectRow = useCallback((row: ContactRow) => {
+  const selectRow = useCallback((row: WhatsAppRow) => {
     setSelectedRow(row);
     setPhone(row.tel);
     setMessageBody(buildMessage(row, templateId));
@@ -249,6 +320,23 @@ export function WhatsAppTab() {
       {/* ── LEFT: Contact list ── */}
       <div className="flex w-80 shrink-0 flex-col border-r">
         <div className="space-y-2 border-b p-3">
+          <div className="flex rounded-md border p-0.5">
+            <button
+              onClick={() => { setMode("contacts"); setSelectedRow(null); }}
+              className={`flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs ${mode === "contacts" ? "bg-accent font-medium" : "text-muted-foreground"}`}
+            >
+              <User className="h-3 w-3" />
+              Contacts
+            </button>
+            <button
+              onClick={() => { setMode("entreprises"); setSelectedRow(null); }}
+              className={`flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-xs ${mode === "entreprises" ? "bg-accent font-medium" : "text-muted-foreground"}`}
+            >
+              <Building2 className="h-3 w-3" />
+              Entreprises
+            </button>
+          </div>
+
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
             <Input
@@ -301,7 +389,7 @@ export function WhatsAppTab() {
 
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              {filteredRows.length} contact{filteredRows.length > 1 ? "s" : ""}
+              {filteredRows.length} {mode === "contacts" ? `contact${filteredRows.length > 1 ? "s" : ""}` : `entreprise${filteredRows.length > 1 ? "s" : ""}`}
             </span>
             <Button
               variant="ghost"
@@ -319,17 +407,19 @@ export function WhatsAppTab() {
           <div className="divide-y">
             {filteredRows.map((row) => (
               <button
-                key={row.contactId}
+                key={row.id}
                 onClick={() => selectRow(row)}
-                className={`flex w-full items-start gap-2.5 p-3 text-left transition-colors hover:bg-accent ${selectedRow?.contactId === row.contactId ? "bg-accent" : ""}`}
+                className={`flex w-full items-start gap-2.5 p-3 text-left transition-colors hover:bg-accent ${selectedRow?.id === row.id ? "bg-accent" : ""}`}
               >
                 <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#25D366]/10 text-xs font-semibold text-[#25D366]">
-                  {(row.firstName[0] ?? row.companyName[0] ?? "?").toUpperCase()}
+                  {(row.kind === "contact"
+                    ? (row.firstName[0] ?? row.companyName[0] ?? "?")
+                    : (row.companyName[0] ?? "?")).toUpperCase()}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1">
                     <span className="truncate text-sm font-medium">
-                      {row.firstName} {row.lastName}
+                      {row.kind === "contact" ? `${row.firstName} ${row.lastName}`.trim() : row.companyName}
                     </span>
                     {row.leadMagnetReady && (
                       <Magnet className="h-3 w-3 shrink-0 text-emerald-500" />
@@ -361,7 +451,7 @@ export function WhatsAppTab() {
             ))}
             {filteredRows.length === 0 && (
               <div className="p-8 text-center text-sm text-muted-foreground">
-                Aucun contact trouvé
+                {mode === "contacts" ? "Aucun contact trouvé" : "Aucune entreprise trouvée"}
               </div>
             )}
           </div>
@@ -380,7 +470,9 @@ export function WhatsAppTab() {
                 </div>
                 <div>
                   <p className="text-sm font-semibold">
-                    {selectedRow.firstName} {selectedRow.lastName}
+                    {selectedRow.kind === "contact"
+                      ? `${selectedRow.firstName} ${selectedRow.lastName}`.trim()
+                      : selectedRow.companyName}
                   </p>
                   <p className="text-xs text-muted-foreground">{selectedRow.companyName}</p>
                 </div>
@@ -438,6 +530,11 @@ export function WhatsAppTab() {
                   {phone && (
                     <p className="text-xs text-muted-foreground">
                       Format international : {sanitizePhone(phone)}
+                    </p>
+                  )}
+                  {mode === "entreprises" && (
+                    <p className="text-xs text-amber-600">
+                      Seuls les numéros mobiles (06/07, +33 6/+33 7) sont listés pour les entreprises.
                     </p>
                   )}
                 </div>
@@ -516,9 +613,11 @@ export function WhatsAppTab() {
               <MessageCircle className="h-8 w-8 text-[#25D366]" />
             </div>
             <div className="text-center">
-              <p className="text-sm font-medium">Sélectionnez un contact</p>
+              <p className="text-sm font-medium">
+                {mode === "contacts" ? "Sélectionnez un contact" : "Sélectionnez une entreprise"}
+              </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Le message sera pré-rempli avec le lead magnet
+                Le message sera pré-rempli avec le lead magnet ({mode === "contacts" ? "contact" : "entreprise"})
               </p>
             </div>
             <div className="mt-2 rounded-lg border border-[#25D366]/20 bg-[#25D366]/5 px-4 py-3 text-xs text-muted-foreground max-w-xs text-center">
