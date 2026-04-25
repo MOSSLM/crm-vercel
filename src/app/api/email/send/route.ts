@@ -1,52 +1,28 @@
-import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { createClient } from "@supabase/supabase-js";
+import { requireUser } from "@/app/api/_lib/auth";
+import { corsHeadersFor, preflight } from "@/app/api/_lib/cors";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { parseJson, sendEmailSchema, type SendEmailPayload } from "@/app/api/_lib/schemas";
+import { getServiceClient } from "@/app/api/_lib/service-client";
 
 export const runtime = "nodejs";
 
-const getSupabase = () => {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase config manquant");
-  return createClient(url, key);
-};
+export const OPTIONS = (req: Request) => preflight(req);
 
-export interface SendEmailPayload {
-  to_email: string;
-  to_name?: string;
-  subject: string;
-  body_html: string;
-  body_text?: string;
-  contact_id?: string;
-  entreprise_id?: number;
-  opportunite_id?: string;
-  lead_magnet_project_id?: string;
-}
+export async function POST(req: Request) {
+  const cors = corsHeadersFor(req);
 
-export async function POST(req: NextRequest) {
+  const auth = await requireUser(req, cors);
+  if (!auth.ok) return auth.response;
+
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    return NextResponse.json(
-      { error: "RESEND_API_KEY non configuré" },
-      { status: 503 }
-    );
+    return jsonError("RESEND_API_KEY non configuré", 503, {}, cors);
   }
 
-  let payload: SendEmailPayload;
-  try {
-    payload = await req.json();
-  } catch {
-    return NextResponse.json({ error: "Corps de requête invalide" }, { status: 400 });
-  }
-
-  const { to_email, to_name, subject, body_html, body_text, contact_id, entreprise_id, opportunite_id, lead_magnet_project_id } = payload;
-
-  if (!to_email || !subject || !body_html) {
-    return NextResponse.json(
-      { error: "Champs requis manquants: to_email, subject, body_html" },
-      { status: 400 }
-    );
-  }
+  const parsed = await parseJson<SendEmailPayload>(req, sendEmailSchema, cors);
+  if (!parsed.ok) return parsed.response;
+  const payload = parsed.data;
 
   const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
   const resend = new Resend(apiKey);
@@ -58,10 +34,10 @@ export async function POST(req: NextRequest) {
   try {
     const result = await resend.emails.send({
       from: fromEmail,
-      to: to_name ? `${to_name} <${to_email}>` : to_email,
-      subject,
-      html: body_html,
-      text: body_text ?? undefined,
+      to: payload.to_name ? `${payload.to_name} <${payload.to_email}>` : payload.to_email,
+      subject: payload.subject,
+      html: payload.body_html,
+      text: payload.body_text ?? undefined,
     });
 
     if (result.error) {
@@ -77,19 +53,18 @@ export async function POST(req: NextRequest) {
 
   // Log to Supabase regardless of outcome
   try {
-    const supabase = getSupabase();
-    await supabase.from("email_logs").insert({
+    await getServiceClient().from("email_logs").insert({
       resend_id: resendId ?? null,
-      contact_id: contact_id ?? null,
-      entreprise_id: entreprise_id ?? null,
-      opportunite_id: opportunite_id ?? null,
-      lead_magnet_project_id: lead_magnet_project_id ?? null,
-      to_email,
-      to_name: to_name ?? null,
+      contact_id: payload.contact_id ?? null,
+      entreprise_id: payload.entreprise_id ?? null,
+      opportunite_id: payload.opportunite_id ?? null,
+      lead_magnet_project_id: payload.lead_magnet_project_id ?? null,
+      to_email: payload.to_email,
+      to_name: payload.to_name ?? null,
       from_email: fromEmail,
-      subject,
-      body_html,
-      body_text: body_text ?? null,
+      subject: payload.subject,
+      body_html: payload.body_html,
+      body_text: payload.body_text ?? null,
       status,
       error_message: errorMessage ?? null,
     });
@@ -98,8 +73,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (status === "failed") {
-    return NextResponse.json({ error: errorMessage ?? "Échec envoi" }, { status: 502 });
+    return jsonError(errorMessage ?? "Échec envoi", 502, {}, cors);
   }
 
-  return NextResponse.json({ success: true, resend_id: resendId });
+  return json({ success: true, resend_id: resendId }, { headers: cors });
 }

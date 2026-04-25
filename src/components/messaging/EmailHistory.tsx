@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Inbox, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { authedFetch } from "@/utils/authedFetch";
 import { formatDate, type EmailLog } from "./emailTypes";
 
 interface Props {
@@ -23,7 +24,7 @@ export function EmailHistory({ contactId, entrepriseId, refreshKey }: Props) {
       const params = new URLSearchParams();
       if (contactId) params.set("contact_id", contactId);
       else if (entrepriseId) params.set("entreprise_id", String(entrepriseId));
-      const res = await fetch(`/api/email/logs?${params}`);
+      const res = await authedFetch(`/api/email/logs?${params}`);
       const json = await res.json();
       setLogs(json.logs ?? []);
     } catch {
@@ -33,7 +34,7 @@ export function EmailHistory({ contactId, entrepriseId, refreshKey }: Props) {
     }
   };
 
-  useEffect(() => { load(); }, [contactId, entrepriseId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [contactId, entrepriseId, refreshKey]);
 
   return (
     <div className="flex w-72 shrink-0 flex-col border-l">

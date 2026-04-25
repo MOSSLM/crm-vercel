@@ -1,30 +1,53 @@
+/**
+ * @jest-environment node
+ */
 import { POST } from './route';
 
 const mockFrom = jest.fn();
 const mockInsertTouchpoints = jest.fn();
 const mockInsertActivityLog = jest.fn();
 const mockInsertPipelineEvents = jest.fn();
+const mockAuthGetUser = jest.fn();
 let touchpointSelect: any;
 let touchpointSelectMock: jest.Mock;
 
+jest.mock('@/env', () => ({
+  SUPABASE_URL: 'http://localhost',
+  SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+}));
+
 jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => ({
-    from: mockFrom,
+    from: (...args: unknown[]) => mockFrom(...args),
+    auth: { getUser: (...args: unknown[]) => mockAuthGetUser(...args) },
   })),
 }));
 
+// Build a chainable Postgrest-like query object that supports .eq/.order/.limit
+// after any link in the chain, and resolves to the given value on `await`.
+const buildChainable = (resolved: unknown) => {
+  const q: any = {
+    eq: jest.fn(() => q),
+    order: jest.fn(() => q),
+    limit: jest.fn(() => q),
+    then: (resolve: (v: unknown) => void) => resolve(resolved),
+  };
+  return q;
+};
+
 describe('make-server journal routes', () => {
   beforeEach(() => {
-    touchpointSelect = {
-      eq: jest.fn().mockReturnThis(),
-      order: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockResolvedValue({ data: [{ step_sequence: 2 }], error: null }),
-    };
+    touchpointSelect = buildChainable({ data: [{ step_sequence: 2 }], error: null });
     touchpointSelectMock = jest.fn().mockReturnValue(touchpointSelect);
 
     mockInsertTouchpoints.mockResolvedValue({ error: null });
     mockInsertActivityLog.mockResolvedValue({ error: null });
     mockInsertPipelineEvents.mockResolvedValue({ error: null });
+
+    mockAuthGetUser.mockResolvedValue({
+      data: { user: { id: 'user-1', email: 'user@test' } },
+      error: null,
+    });
 
     mockFrom.mockImplementation((table: string) => {
       if (table === 'opportunity_touchpoints') {
@@ -54,15 +77,19 @@ describe('make-server journal routes', () => {
     jest.clearAllMocks();
   });
 
-  const executePost = (path: string[], body: any) =>
-    POST(
+  const executePost = (path: string[], body: any, opts: { authorization?: string | null } = {}) => {
+    const headers: Record<string, string> = { 'content-type': 'application/json' };
+    if (opts.authorization === undefined) headers.authorization = 'Bearer test-token';
+    else if (opts.authorization !== null) headers.authorization = opts.authorization;
+    return POST(
       new Request('http://localhost', {
         method: 'POST',
         body: JSON.stringify(body),
-        headers: { 'content-type': 'application/json' },
+        headers,
       }),
       { params: Promise.resolve({ path }) }
     );
+  };
 
   it('creates relance touchpoint with computed sequence', async () => {
     const response = await executePost(['journal', 'touchpoint'], {
@@ -153,5 +180,34 @@ describe('make-server journal routes', () => {
     });
     expect(activityPayload.channel).toBeUndefined();
     expect(activityPayload.details).toBeUndefined();
+  });
+
+  it('returns 401 when Authorization header is missing', async () => {
+    const response = await executePost(['journal', 'touchpoint'], {
+      opportunite_id: 'opp-1',
+      step_kind: 'relance',
+      channel: 'email',
+    }, { authorization: null });
+
+    expect(response.status).toBe(401);
+    expect(mockInsertTouchpoints).not.toHaveBeenCalled();
+    expect(mockAuthGetUser).not.toHaveBeenCalled();
+  });
+
+  it('returns 401 when Supabase rejects the access token', async () => {
+    mockAuthGetUser.mockResolvedValueOnce({
+      data: { user: null },
+      error: { message: 'invalid_token' },
+    });
+
+    const response = await executePost(['journal', 'touchpoint'], {
+      opportunite_id: 'opp-1',
+      step_kind: 'relance',
+      channel: 'email',
+    });
+
+    expect(response.status).toBe(401);
+    expect(mockInsertTouchpoints).not.toHaveBeenCalled();
+    expect(mockAuthGetUser).toHaveBeenCalledTimes(1);
   });
 });

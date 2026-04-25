@@ -39,6 +39,7 @@ import {
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { toast } from 'sonner';
+import { authedFetch } from '../utils/authedFetch';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { JournalStatsWidget } from './JournalStatsWidget';
 import { JournalActionButtons } from './JournalActionButtons';
@@ -425,7 +426,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
 
       const results = await Promise.allSettled(
         projectIds.map(async (id) => {
-          const response = await fetch('/api/lead-magnet/enrich', {
+          const response = await authedFetch('/api/lead-magnet/enrich', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ project_id: id }),

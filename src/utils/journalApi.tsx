@@ -1,6 +1,5 @@
-import { publicAnonKey } from './supabase/info';
-
 import { ContactChannel, ContactDirection, ContactOutcome } from '../types';
+import { authedFetch } from './authedFetch';
 
 import logger from './logger';
 const baseUrl = '/api/make-server-5c06d9e7';
@@ -84,11 +83,10 @@ export const createTouchpoint = async (
   payload: CreateTouchpointPayload,
 ): Promise<void> => {
   const touchpointKind = translateTouchpointKind(payload.step_kind);
-  const response = await fetch(`${baseUrl}/journal/touchpoint`, {
+  const response = await authedFetch(`${baseUrl}/journal/touchpoint`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       ...payload,
@@ -105,11 +103,10 @@ export const createTouchpoint = async (
 
 // Fonction générique pour enregistrer un événement
 export const logEvent = async (eventData: JournalEventData): Promise<void> => {
-  const response = await fetch(`${baseUrl}/journal/log`, {
+  const response = await authedFetch(`${baseUrl}/journal/log`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify(eventData),
   });
@@ -135,11 +132,10 @@ export const logCall = async (
     details: details ?? description,
   });
 
-  const response = await fetch(`${baseUrl}/journal/call`, {
+  const response = await authedFetch(`${baseUrl}/journal/call`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       opportunite_id,
@@ -171,11 +167,10 @@ export const logRelance = async (
     details: details ?? description,
   });
 
-  const response = await fetch(`${baseUrl}/journal/relance`, {
+  const response = await authedFetch(`${baseUrl}/journal/relance`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       opportunite_id,
@@ -207,11 +202,10 @@ export const logRdv = async (
     details: details ?? description,
   });
 
-  const response = await fetch(`${baseUrl}/journal/rdv`, {
+  const response = await authedFetch(`${baseUrl}/journal/rdv`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       opportunite_id,
@@ -243,11 +237,10 @@ export const logDevis = async (
     details: details ?? description,
   });
 
-  const response = await fetch(`${baseUrl}/journal/devis`, {
+  const response = await authedFetch(`${baseUrl}/journal/devis`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       opportunite_id,
@@ -279,11 +272,10 @@ export const logSignature = async (
     details: details ?? description,
   });
 
-  const response = await fetch(`${baseUrl}/journal/signature`, {
+  const response = await authedFetch(`${baseUrl}/journal/signature`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       opportunite_id,
@@ -315,11 +307,10 @@ export const logAcompte = async (
     details: details ?? description,
   });
 
-  const response = await fetch(`${baseUrl}/journal/acompte`, {
+  const response = await authedFetch(`${baseUrl}/journal/acompte`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       opportunite_id,
@@ -351,11 +342,10 @@ export const logLeadMagnet = async (
     details: details ?? description,
   });
 
-  const response = await fetch(`${baseUrl}/journal/lead-magnet`, {
+  const response = await authedFetch(`${baseUrl}/journal/lead-magnet`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${publicAnonKey}`,
     },
     body: JSON.stringify({
       opportunite_id,
@@ -378,11 +368,7 @@ export const getJournalStats = async (opportunite_id?: string, entreprise_id?: n
   if (opportunite_id) params.append('opportunite_id', opportunite_id);
   if (entreprise_id) params.append('entreprise_id', entreprise_id.toString());
 
-  const response = await fetch(`${baseUrl}/journal/stats?${params}`, {
-    headers: {
-      'Authorization': `Bearer ${publicAnonKey}`,
-    },
-  });
+  const response = await authedFetch(`${baseUrl}/journal/stats?${params}`);
 
   if (!response.ok) {
     const error = await response.json();
@@ -406,11 +392,7 @@ export const getJournalHistory = async (
     params.append('limit', Math.floor(limit).toString());
   }
 
-  const response = await fetch(`${baseUrl}/journal/history?${params}`, {
-    headers: {
-      'Authorization': `Bearer ${publicAnonKey}`,
-    },
-  });
+  const response = await authedFetch(`${baseUrl}/journal/history?${params}`);
 
   if (!response.ok) {
     const error = await response.json();
@@ -426,11 +408,7 @@ export const getNextSequenceNumber = async (type: string, opportunite_id?: strin
   if (opportunite_id) params.append('opportunite_id', opportunite_id);
   if (entreprise_id) params.append('entreprise_id', entreprise_id.toString());
 
-  const response = await fetch(`${baseUrl}/journal/next-sequence/${type}?${params}`, {
-    headers: {
-      'Authorization': `Bearer ${publicAnonKey}`,
-    },
-  });
+  const response = await authedFetch(`${baseUrl}/journal/next-sequence/${type}?${params}`);
 
   if (!response.ok) {
     const error = await response.json();
@@ -680,11 +658,7 @@ export interface JournalKpiTotals {
 export const getJournalKpiTotals = async (): Promise<JournalKpiTotals> => {
   logger.log('📡 Appel API vers:', `${baseUrl}/kpi/journal-totals`);
 
-  const response = await fetch(`${baseUrl}/kpi/journal-totals`, {
-    headers: {
-      Authorization: `Bearer ${publicAnonKey}`,
-    },
-  });
+  const response = await authedFetch(`${baseUrl}/kpi/journal-totals`);
 
   logger.log('📡 Statut de la réponse:', response.status, response.statusText);
 
