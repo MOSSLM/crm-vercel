@@ -112,6 +112,7 @@ const COMPANY_COLUMNS = [
   'enriched_by',
   'reseau_id',
   'telephone',
+  'email',
   'note_moyenne',
   'nombre_avis',
   'ville',

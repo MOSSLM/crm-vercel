@@ -67,6 +67,7 @@ export interface Company {
   code_postal?: string;
   pays?: string;
   telephone?: string | null;
+  email?: string | null;
   logo_url?: string | null;
 }
 
