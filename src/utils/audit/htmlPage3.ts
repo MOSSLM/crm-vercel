@@ -6,11 +6,11 @@ export function page3Html(content: AuditContent) {
   return `
 <div class="page">
 <div class="inner-page">
-  ${innerHeader('Notre solution')}
+  ${innerHeader(p.header_section || 'Notre solution')}
   <div class="inner-body">
     <div>
-      <div class="section-eyebrow">02 · Ce que l'on fait</div>
-      <div class="section-title">Un site conçu<br>pour <em>convertir</em></div>
+      <div class="section-eyebrow">${esc(p.section_label || "02 · Ce que l'on fait")}</div>
+      <div class="section-title">${esc(p.section_title || 'Un site conçu pour')} <em>${esc(p.section_title_em || 'convertir')}</em></div>
       <div class="section-intro">${esc(p.section_intro)}</div>
     </div>
     <div class="solution-list">

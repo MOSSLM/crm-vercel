@@ -51,14 +51,24 @@ export function SamaLogo({ size = 26, color = C.brume }: { size?: number; color?
   );
 }
 
-export function InnerHeader({ section }: { section: string }) {
+export function InnerHeader({ section, sectionField, activeField, onFieldClick }: {
+  section: string;
+  sectionField?: string;
+  activeField?: string | null;
+  onFieldClick?: (f: string) => void;
+}) {
+  const sectionLabel = (
+    <span style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(181,208,240,0.45)', fontWeight: 500 }}>{section}</span>
+  );
   return (
     <div style={{ background: C.nuit, padding: '22px 72px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <SamaLogo size={18} color={C.brume} />
         <span style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 13, letterSpacing: '0.4em', color: C.blanc, textTransform: 'uppercase', paddingLeft: '0.4em' }}>SAMA</span>
       </div>
-      <span style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(181,208,240,0.45)', fontWeight: 500 }}>{section}</span>
+      {sectionField ? (
+        <Zone field={sectionField} activeField={activeField} onFieldClick={onFieldClick}>{sectionLabel}</Zone>
+      ) : sectionLabel}
     </div>
   );
 }

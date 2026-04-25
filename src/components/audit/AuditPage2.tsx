@@ -25,11 +25,25 @@ export function AuditPage2({ content, activeField, onFieldClick }: Props) {
   const p = content.page2;
   return (
     <div id="audit-p2" style={{ width: 794, minHeight: 1123, background: C.creme, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-      <InnerHeader section="Votre situation" />
+      <InnerHeader
+        section={p.header_section || 'Votre situation'}
+        sectionField="page2.header_section"
+        activeField={activeField}
+        onFieldClick={onFieldClick}
+      />
       <div style={{ flex: 1, padding: '56px 72px 48px', display: 'flex', flexDirection: 'column', gap: 40 }}>
         <div>
-          <div style={{ fontSize: 9, letterSpacing: '0.25em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 10 }}>01 · Contexte</div>
-          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 38, lineHeight: 1.1, color: C.nuit }}>Ce que nous<br />avons <em style={{ fontStyle: 'italic', color: C.azur }}>observé</em></div>
+          <Zone field="page2.section_label" activeField={activeField} onFieldClick={onFieldClick}>
+            <div style={{ fontSize: 9, letterSpacing: '0.25em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 10 }}>
+              {p.section_label || '01 · Contexte'}
+            </div>
+          </Zone>
+          <Zone field="page2.section_heading" activeField={activeField} onFieldClick={onFieldClick}>
+            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 38, lineHeight: 1.1, color: C.nuit }}>
+              {p.section_title || 'Ce que nous avons'}{' '}
+              <em style={{ fontStyle: 'italic', color: C.azur }}>{p.section_title_em || 'observé'}</em>
+            </div>
+          </Zone>
           <Zone field="page2.section_intro" activeField={activeField} onFieldClick={onFieldClick}>
             <div style={{ fontSize: 14, lineHeight: 1.8, color: 'rgba(11,29,58,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>{p.section_intro}</div>
           </Zone>

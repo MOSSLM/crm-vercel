@@ -6,12 +6,12 @@ export function page6Html(content: AuditContent) {
   return `
 <div class="page">
 <div class="inner-page">
-  ${innerHeader('Prochaines étapes')}
+  ${innerHeader(p.header_section || 'Prochaines étapes')}
   <div class="inner-body">
     <div>
-      <div class="section-eyebrow">06 · Pour démarrer</div>
-      <div class="section-title">Simple, rapide,<br>et c'est <em>lancé</em></div>
-      <div class="section-intro">Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner.</div>
+      <div class="section-eyebrow">${esc(p.section_label || '05 · Pour démarrer')}</div>
+      <div class="section-title">${esc(p.section_title || 'Simple, rapide,')}<br>${esc(p.section_title_line2 || "et c'est")} <em>${esc(p.section_title_em || 'lancé')}</em></div>
+      <div class="section-intro">${esc(p.section_subtitle || "Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner.")}</div>
     </div>
     <div class="nextsteps-grid">
       ${p.next_steps.map((step, i) => `

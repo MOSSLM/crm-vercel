@@ -12,11 +12,11 @@ export function page2Html(content: AuditContent) {
   return `
 <div class="page">
 <div class="inner-page">
-  ${innerHeader('Votre situation')}
+  ${innerHeader(p.header_section || 'Votre situation')}
   <div class="inner-body">
     <div>
-      <div class="section-eyebrow">01 · Contexte</div>
-      <div class="section-title">Ce que nous<br>avons <em>observé</em></div>
+      <div class="section-eyebrow">${esc(p.section_label || '01 · Contexte')}</div>
+      <div class="section-title">${esc(p.section_title || 'Ce que nous avons')} <em>${esc(p.section_title_em || 'observé')}</em></div>
       <div class="section-intro">${esc(p.section_intro)}</div>
     </div>
     <div class="problem-grid">

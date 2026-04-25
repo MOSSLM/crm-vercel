@@ -12,12 +12,12 @@ export function page4Html(content: AuditContent) {
   return `
 <div class="page">
 <div class="inner-page">
-  ${innerHeader('Livrables inclus')}
+  ${innerHeader(p.header_section || 'Livrables inclus')}
   <div class="inner-body">
     <div>
-      <div class="section-eyebrow">03 · Ce que vous recevez</div>
-      <div class="section-title">Tout est <em>inclus</em></div>
-      <div class="section-intro">Aucune mauvaise surprise. Voici exactement ce que comprend la prestation.</div>
+      <div class="section-eyebrow">${esc(p.section_label || '03 · Ce que vous recevez')}</div>
+      <div class="section-title">${esc(p.section_title || 'Tout est')} <em>${esc(p.section_title_em || 'inclus')}</em></div>
+      <div class="section-intro">${esc(p.section_subtitle || 'Aucune mauvaise surprise. Voici exactement ce que comprend la prestation.')}</div>
     </div>
     <div class="livrables-grid">
       ${p.livrables.map(liv => `
