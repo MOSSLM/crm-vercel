@@ -88,7 +88,7 @@ export function EmailTab() {
     setSelectedContact(row);
     setSelectedCompany(null);
     const contactName = row.contact.first_name?.trim() || row.companyName;
-    const vars = { companyName: row.companyName, contactName, lmUrl: row.leadMagnetUrl };
+    const vars = { companyName: row.companyName, contactName, lmUrl: row.leadMagnetUrl ?? "" };
     setCurrentVars(vars);
     setToEmail(row.contact.email ?? "");
     setToName(`${row.contact.first_name ?? ""} ${row.contact.last_name ?? ""}`.trim());
@@ -99,7 +99,7 @@ export function EmailTab() {
   const handleSelectCompany = useCallback((row: CompanyRow) => {
     setSelectedCompany(row);
     setSelectedContact(null);
-    const vars = { companyName: row.company.name ?? "", contactName: row.company.name ?? "", lmUrl: row.leadMagnetUrl };
+    const vars = { companyName: row.company.name ?? "", contactName: row.company.name ?? "", lmUrl: row.leadMagnetUrl ?? "" };
     setCurrentVars(vars);
     setToEmail(row.company.email ?? "");
     setToName(row.company.name ?? "");
