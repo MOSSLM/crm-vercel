@@ -16,6 +16,10 @@ const DEFAULT_CONTENT: AuditContent = {
     demo_url: '',
   },
   page2: {
+    header_section: 'Votre situation',
+    section_label: '01 · Contexte',
+    section_title: 'Ce que nous avons',
+    section_title_em: 'observé',
     section_intro: "Vous avez une activité sérieuse, des clients satisfaits, et un vrai savoir-faire. Mais votre présence en ligne ne reflète pas encore tout ça — et vous passez potentiellement à côté de clients qui vous cherchent.",
     problems: [
       { title: 'Site vieillissant', desc: "La première impression est décisive. Un site au design daté ou difficile à naviguer réduit fortement les chances qu'un visiteur passe à l'action." },
@@ -27,6 +31,10 @@ const DEFAULT_CONTENT: AuditContent = {
     quote_source: 'Stanford Web Credibility Research · Comportement utilisateur web',
   },
   page3: {
+    header_section: 'Notre solution',
+    section_label: "02 · Ce que l'on fait",
+    section_title: 'Un site conçu pour',
+    section_title_em: 'convertir',
     section_intro: "Pas un site vitrine de plus. Un outil de développement commercial, pensé pour votre métier et vos clients.",
     solutions: [
       { num: '1', name: 'Site vitrine premium', desc: "Design sur-mesure, mobile-first, chargement ultra-rapide. Une image qui inspire confiance dès les 3 premières secondes.", tag: 'Design' },
@@ -36,6 +44,11 @@ const DEFAULT_CONTENT: AuditContent = {
     ],
   },
   page4: {
+    header_section: 'Livrables inclus',
+    section_label: '03 · Ce que vous recevez',
+    section_title: 'Tout est',
+    section_title_em: 'inclus',
+    section_subtitle: 'Aucune mauvaise surprise. Voici exactement ce que comprend la prestation.',
     livrables: [
       { title: 'Site web complet', items: ["Page d'accueil optimisée", "Pages services (jusqu'à 5)", "Page à propos", "Page contact + formulaire devis", "Design responsive mobile"] },
       { title: 'SEO & visibilité', items: ["Audit mots-clés local", "Optimisation on-page complète", "Intégration Google Search Console", "Plan de redirection (si nécessaire)", "Rapport de positionnement initial"] },
@@ -44,6 +57,8 @@ const DEFAULT_CONTENT: AuditContent = {
     ],
   },
   page5: {
+    header_section: 'Tarifs',
+    section_label: '04 · Investissement',
     planning_steps: [
       { week: 'Appel', title: 'Appel de lancement', desc: "Nous recueillons toutes les informations nécessaires en un seul appel : vos objectifs, votre identité, vos clients cibles." },
       { week: 'Production', title: 'Production', desc: "Notre équipe conçoit et développe votre site : design, textes, photos, intégration. Efficacement et sans allers-retours inutiles." },
@@ -60,6 +75,12 @@ const DEFAULT_CONTENT: AuditContent = {
     price_note: "Prix HT. Acompte de 40 % à la commande, solde à la livraison. Maintenance mensuelle sans engagement (résiliable à tout moment). Tarif indicatif — devis définitif sur demande.",
   },
   page6: {
+    header_section: 'Prochaines étapes',
+    section_label: '05 · Pour démarrer',
+    section_title: 'Simple, rapide,',
+    section_title_line2: "et c'est",
+    section_title_em: 'lancé',
+    section_subtitle: "Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner.",
     next_steps: [
       { title: 'Appel de lancement', desc: "On s'appelle pour recueillir toutes les informations nécessaires au projet en une seule conversation." },
       { title: 'Production en 1 semaine', desc: "Notre équipe conçoit et développe votre site rapidement et efficacement." },
@@ -75,6 +96,7 @@ const DEFAULT_CONTENT: AuditContent = {
 
 export function getDefaultAuditContent(overrides?: Partial<{
   entreprise_nom: string;
+  entreprise_adresse: string;
   entreprise_ville: string;
   entreprise_secteur: string;
   demo_url: string;
@@ -88,9 +110,10 @@ export function getDefaultAuditContent(overrides?: Partial<{
   if (overrides?.entreprise_nom) {
     content.page1.client_name = overrides.entreprise_nom;
   }
-  if (overrides?.entreprise_ville || overrides?.entreprise_secteur) {
-    const parts = [overrides.entreprise_secteur, overrides.entreprise_ville ? `${overrides.entreprise_ville}, France` : ''].filter(Boolean);
-    content.page1.client_meta = parts.join(' · ');
+  if (overrides?.entreprise_adresse) {
+    content.page1.client_meta = overrides.entreprise_adresse;
+  } else if (overrides?.entreprise_ville) {
+    content.page1.client_meta = overrides.entreprise_ville;
   }
   if (overrides?.demo_url) {
     content.page1.demo_url = overrides.demo_url;
@@ -122,6 +145,7 @@ export async function createAudit(params: {
   opportunite_id: string;
   template_id?: string;
   entreprise_nom?: string;
+  entreprise_adresse?: string;
   entreprise_ville?: string;
   entreprise_logo_url?: string;
   entreprise_secteur?: string;
@@ -129,6 +153,7 @@ export async function createAudit(params: {
 }): Promise<Audit> {
   const content = getDefaultAuditContent({
     entreprise_nom: params.entreprise_nom,
+    entreprise_adresse: params.entreprise_adresse,
     entreprise_ville: params.entreprise_ville,
     entreprise_secteur: params.entreprise_secteur,
     demo_url: params.demo_site_url,
@@ -152,6 +177,7 @@ export async function upsertAudit(params: {
   opportunite_id: string;
   template_id?: string;
   entreprise_nom?: string;
+  entreprise_adresse?: string;
   entreprise_ville?: string;
   entreprise_logo_url?: string;
   entreprise_secteur?: string;

@@ -5,36 +5,26 @@ export function page5Html(content: AuditContent) {
   const p = content.page5;
   const services = getServices(p);
   const { total, hasMrr } = calcTotal(services);
+  const enabledServices = services.filter(s => s.enabled);
   const showGrain = p.show_grain !== false;
   const flattenForPdf = p.flatten_grain_for_pdf === true;
   const useGrain = showGrain && !flattenForPdf;
+  const addlServices = p.additional_services || [];
 
   return `
 <div class="page">
 <div class="inner-page">
-  ${innerHeader('Planning &amp; Investissement')}
+  ${innerHeader(p.header_section || 'Tarifs')}
   <div class="inner-body">
     <div>
-      <div class="section-eyebrow">04 · Calendrier</div>
-      <div class="section-title">Mise en ligne <em>sous 7 jours</em></div>
-    </div>
-    <div class="planning-timeline">
-      ${p.planning_steps.map(step => `
-      <div class="planning-step">
-        <div class="planning-week"><div class="planning-week-label">${esc(step.week)}</div></div>
-        <div class="planning-dot-col"><div class="planning-dot"></div></div>
-        <div><div class="planning-step-title">${esc(step.title)}</div><div class="planning-step-desc">${esc(step.desc)}</div></div>
-      </div>`).join('')}
-    </div>
-    <div>
-      <div class="invest-eyebrow">05 · Investissement</div>
+      <div class="section-eyebrow">${esc(p.section_label || '04 · Investissement')}</div>
       ${p.pricing_subtitle ? `<div class="invest-subtitle">${esc(p.pricing_subtitle)}</div>` : ''}
       <div class="invest-block">
         <div class="invest-gradient"></div>
         ${useGrain ? `<div style="position:absolute;inset:0;opacity:.045;pointer-events:none;z-index:3;background-image:${GRAIN_SVG};background-repeat:repeat;background-size:200px 200px"></div>` : ''}
         <div class="invest-inner">
-          ${services.filter(s => s.enabled).map(svc => `
-          <div class="invest-row">
+          ${enabledServices.map((svc, i) => `
+          <div class="invest-row" style="${i < enabledServices.length - 1 ? 'border-bottom:1px solid rgba(181,208,240,0.1)' : ''}">
             <div>
               <div class="invest-label">${esc(svc.label)}</div>
               ${svc.sub_label ? `<div class="invest-sublabel">${esc(svc.sub_label)}</div>` : ''}
@@ -49,6 +39,23 @@ export function page5Html(content: AuditContent) {
         </div>
       </div>
     </div>
+    ${addlServices.length > 0 ? `
+    <div style="margin-top:32px">
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">
+        <div class="section-eyebrow" style="margin-bottom:0">${esc(p.addl_section_title || 'Services additionnels')}</div>
+        <span style="font-size:9px;color:rgba(11,29,58,0.35);letter-spacing:.1em;text-transform:uppercase">· Optionnel</span>
+      </div>
+      ${p.addl_section_subtitle ? `<div style="font-size:11px;color:rgba(11,29,58,0.5);margin-bottom:16px;line-height:1.6">${esc(p.addl_section_subtitle)}</div>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:${p.addl_section_subtitle ? '0' : '14px'}">
+        ${addlServices.map(svc => `
+        <div style="padding:18px 20px;background:white;border:1px solid rgba(58,123,213,0.12);border-radius:4px;display:flex;flex-direction:column;gap:6px">
+          ${svc.badge ? `<div style="font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#3A7BD5;background:rgba(58,123,213,0.08);padding:3px 7px;border-radius:2px;align-self:flex-start;font-weight:500">${esc(svc.badge)}</div>` : ''}
+          <div style="font-size:13px;font-weight:500;color:#0B1D3A;margin-top:${svc.badge ? '4px' : '0'}">${esc(svc.label)}</div>
+          ${svc.description ? `<div style="font-size:11px;color:rgba(11,29,58,0.5);line-height:1.6">${esc(svc.description)}</div>` : ''}
+          <div style="font-family:'Cormorant Garamond',serif;font-weight:300;font-size:22px;color:#0B1D3A;margin-top:6px">${fmtEur(svc.amount)}${svc.is_mrr ? '<span style="font-size:13px;color:rgba(11,29,58,0.5)">/mois</span>' : ''}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : ''}
   </div>
   ${innerFooter('05')}
 </div>

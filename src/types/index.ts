@@ -412,6 +412,14 @@ export interface SavedComponent {
 
 // ── AUDIT SYSTEM ──────────────────────────────────────────
 
+export interface AuditAdditionalService {
+  label: string;
+  description?: string;
+  amount: number;
+  is_mrr: boolean;
+  badge?: string;
+}
+
 export interface AuditProblem {
   title: string;
   desc: string;
@@ -461,6 +469,10 @@ export interface AuditPage1 {
 }
 
 export interface AuditPage2 {
+  header_section?: string;
+  section_label?: string;
+  section_title?: string;
+  section_title_em?: string;
   section_intro: string;
   problems: AuditProblem[];
   quote: string;
@@ -468,22 +480,38 @@ export interface AuditPage2 {
 }
 
 export interface AuditPage3 {
+  header_section?: string;
+  section_label?: string;
+  section_title?: string;
+  section_title_em?: string;
   section_intro: string;
   solutions: AuditSolution[];
 }
 
 export interface AuditPage4 {
+  header_section?: string;
+  section_label?: string;
+  section_title?: string;
+  section_title_em?: string;
+  section_subtitle?: string;
   livrables: AuditLivrable[];
 }
 
 export interface AuditPage5 {
+  header_section?: string;
+  section_label?: string;
+  // Planning steps kept for backward compat (no longer rendered on page 5)
   planning_steps: AuditPlanningStep[];
-  // New flexible pricing structure
+  // Main pricing card
   services?: AuditPricingService[];
   pricing_subtitle?: string;
   show_grain?: boolean;
   flatten_grain_for_pdf?: boolean;
   price_note: string;
+  // Additional optional services (mini cards)
+  additional_services?: AuditAdditionalService[];
+  addl_section_title?: string;
+  addl_section_subtitle?: string;
   // Legacy fields kept for backward compatibility
   price_setup?: string;
   price_setup_label?: string;
@@ -496,6 +524,12 @@ export interface AuditPage5 {
 }
 
 export interface AuditPage6 {
+  header_section?: string;
+  section_label?: string;
+  section_title?: string;
+  section_title_line2?: string;
+  section_title_em?: string;
+  section_subtitle?: string;
   next_steps: AuditNextStep[];
   cta_title: string;
   cta_sub: string;

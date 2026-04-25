@@ -24,7 +24,7 @@ export default function AuditPage() {
         // Load opportunity + company info
         const { data: opp } = await supabase
           .from('opportunites')
-          .select('id, name, entreprise_id, entreprises(name, ville, logo_url)')
+          .select('id, name, entreprise_id, entreprises(name, adresse, ville, logo_url)')
           .eq('id', opportuniteId)
           .maybeSingle();
 
@@ -35,8 +35,9 @@ export default function AuditPage() {
           .eq('opportunite_id', opportuniteId)
           .maybeSingle();
 
-        const company = (opp as { entreprises?: { name?: string; ville?: string; logo_url?: string } } | null)?.entreprises;
+        const company = (opp as { entreprises?: { name?: string; adresse?: string; ville?: string; logo_url?: string } } | null)?.entreprises;
         const companyName = company?.name || '';
+        const companyAdresse = company?.adresse || '';
         const companyVille = company?.ville || '';
         const logoUrl = company?.logo_url || '';
         const demoUrl = plm?.lien_livraison || '';
@@ -46,6 +47,7 @@ export default function AuditPage() {
         const existing = await upsertAudit({
           opportunite_id: opportuniteId,
           entreprise_nom: companyName,
+          entreprise_adresse: companyAdresse,
           entreprise_ville: companyVille,
           entreprise_logo_url: logoUrl,
           demo_site_url: demoUrl,

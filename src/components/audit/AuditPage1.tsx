@@ -10,8 +10,16 @@ interface Props {
   onFieldClick?: (field: string) => void;
 }
 
+function getDomain(url: string): string {
+  try { return new URL(url).hostname; } catch { return ''; }
+}
+
 export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Props) {
   const p = content.page1;
+  const domain = p.demo_url ? getDomain(p.demo_url) : '';
+  const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=32` : '';
+  const screenshotUrl = p.demo_url ? `https://image.thum.io/get/width/800/crop/400/${p.demo_url}` : '';
+
   return (
     <div id="audit-p1" style={{ width: 794, height: 1123, background: C.nuit, position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
       {/* Sky gradients */}
@@ -47,7 +55,7 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
             <div style={{ fontSize: 14, lineHeight: 1.7, color: 'rgba(181,208,240,0.65)', maxWidth: 440, fontWeight: 300 }}>{p.subtitle}</div>
           </Zone>
 
-          {/* Client block — logo client ici */}
+          {/* Client block */}
           <Zone field="page1.client" activeField={activeField} onFieldClick={onFieldClick} style={{ marginTop: 64 }}>
             <div style={{ padding: '24px 28px', border: `1px solid rgba(181,208,240,0.15)`, borderRadius: 4, background: 'rgba(58,123,213,0.06)', display: 'inline-block', maxWidth: 360 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -59,11 +67,11 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
                 )}
               </div>
               <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontWeight: 300, color: C.blanc, letterSpacing: '0.03em' }}>{p.client_name || 'Entreprise Cliente'}</div>
-              <div style={{ fontSize: 11, color: 'rgba(181,208,240,0.5)', marginTop: 4 }}>{p.client_meta || 'Secteur · Ville, France'}</div>
+              <div style={{ fontSize: 11, color: 'rgba(181,208,240,0.5)', marginTop: 4 }}>{p.client_meta || 'Adresse'}</div>
             </div>
           </Zone>
 
-          {/* Demo site CTA */}
+          {/* Demo site — browser mockup with screenshot */}
           {p.demo_url && (
             <Zone field="page1.demo" activeField={activeField} onFieldClick={onFieldClick} style={{ marginTop: 24 }}>
               <a href={p.demo_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'inline-block', maxWidth: 360 }}>
@@ -71,21 +79,42 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
                   <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 10 }}>Site démo disponible</div>
                   {/* Browser mockup */}
                   <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden', border: `1px solid rgba(181,208,240,0.1)` }}>
+                    {/* Address bar */}
                     <div style={{ background: 'rgba(255,255,255,0.07)', padding: '5px 10px', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <div style={{ display: 'flex', gap: 3 }}>
-                        {['rgba(255,100,100,0.5)', 'rgba(255,200,0,0.5)', 'rgba(100,200,100,0.5)'].map((c, i) => (
+                        {(['rgba(255,100,100,0.5)', 'rgba(255,200,0,0.5)', 'rgba(100,200,100,0.5)'] as const).map((c, i) => (
                           <div key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: c }} />
                         ))}
                       </div>
-                      <div style={{ flex: 1, height: 12, background: 'rgba(255,255,255,0.06)', borderRadius: 2, display: 'flex', alignItems: 'center', paddingLeft: 6 }}>
-                        <span style={{ fontSize: 7, color: 'rgba(181,208,240,0.45)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '90%' }}>{p.demo_url}</span>
+                      <div style={{ flex: 1, height: 13, background: 'rgba(255,255,255,0.06)', borderRadius: 2, display: 'flex', alignItems: 'center', paddingLeft: 5, gap: 4 }}>
+                        {faviconUrl && (
+                          <img
+                            src={faviconUrl}
+                            alt=""
+                            style={{ width: 8, height: 8, objectFit: 'contain', flexShrink: 0 }}
+                          />
+                        )}
+                        <span style={{ fontSize: 7, color: 'rgba(181,208,240,0.45)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', maxWidth: '85%' }}>{p.demo_url}</span>
                       </div>
                     </div>
-                    <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                      <div style={{ height: 16, background: 'rgba(58,123,213,0.18)', borderRadius: 2, width: '70%' }} />
-                      <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 2, width: '90%' }} />
-                      <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 2, width: '65%' }} />
-                      <div style={{ height: 22, background: 'rgba(58,123,213,0.3)', borderRadius: 3, width: 64, marginTop: 3 }} />
+                    {/* Screenshot with skeleton fallback */}
+                    <div style={{ position: 'relative', height: 130, overflow: 'hidden' }}>
+                      {/* Skeleton always present under screenshot */}
+                      <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 5, position: 'absolute', inset: 0 }}>
+                        <div style={{ height: 16, background: 'rgba(58,123,213,0.18)', borderRadius: 2, width: '70%' }} />
+                        <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 2, width: '90%' }} />
+                        <div style={{ height: 6, background: 'rgba(255,255,255,0.05)', borderRadius: 2, width: '65%' }} />
+                        <div style={{ height: 22, background: 'rgba(58,123,213,0.3)', borderRadius: 3, width: 64, marginTop: 3 }} />
+                      </div>
+                      {/* Screenshot overlays skeleton */}
+                      {screenshotUrl && (
+                        <img
+                          src={screenshotUrl}
+                          alt="Aperçu du site"
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
+                          onError={e => { (e.target as HTMLElement).style.display = 'none'; }}
+                        />
+                      )}
                     </div>
                   </div>
                   <div style={{ marginTop: 10, fontSize: 11, color: C.azur, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>

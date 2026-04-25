@@ -13,12 +13,31 @@ export function AuditPage6({ content, activeField, onFieldClick }: Props) {
   const p = content.page6;
   return (
     <div id="audit-p6" style={{ width: 794, minHeight: 1123, background: C.creme, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-      <InnerHeader section="Prochaines étapes" />
+      <InnerHeader
+        section={p.header_section || 'Prochaines étapes'}
+        sectionField="page6.header_section"
+        activeField={activeField}
+        onFieldClick={onFieldClick}
+      />
       <div style={{ flex: 1, padding: '56px 72px 48px', display: 'flex', flexDirection: 'column', gap: 40 }}>
         <div>
-          <div style={{ fontSize: 9, letterSpacing: '0.25em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 10 }}>06 · Pour démarrer</div>
-          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 38, lineHeight: 1.1, color: C.nuit }}>Simple, rapide,<br />et c'est <em style={{ fontStyle: 'italic', color: C.azur }}>lancé</em></div>
-          <div style={{ fontSize: 14, lineHeight: 1.8, color: 'rgba(11,29,58,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner.</div>
+          <Zone field="page6.section_label" activeField={activeField} onFieldClick={onFieldClick}>
+            <div style={{ fontSize: 9, letterSpacing: '0.25em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 10 }}>
+              {p.section_label || '05 · Pour démarrer'}
+            </div>
+          </Zone>
+          <Zone field="page6.section_heading" activeField={activeField} onFieldClick={onFieldClick}>
+            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 38, lineHeight: 1.1, color: C.nuit }}>
+              {p.section_title || 'Simple, rapide,'}<br />
+              {p.section_title_line2 || "et c'est"}{' '}
+              <em style={{ fontStyle: 'italic', color: C.azur }}>{p.section_title_em || 'lancé'}</em>
+            </div>
+          </Zone>
+          <Zone field="page6.section_subtitle" activeField={activeField} onFieldClick={onFieldClick}>
+            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'rgba(11,29,58,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>
+              {p.section_subtitle || "Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner."}
+            </div>
+          </Zone>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
