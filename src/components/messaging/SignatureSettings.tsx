@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { authedFetch } from "@/utils/authedFetch";
+import { buildSignatureHtml } from "@/utils/emailTemplate";
 
 export interface SignatureData {
   first_name:   string;
@@ -31,47 +32,32 @@ const EMPTY: SignatureData = {
   phone:        "",
   website:      "",
   linkedin_url: "",
-  accent_color: "#6366f1",
+  accent_color: "#3A7BD5",
 };
 
 const ACCENT_COLORS = [
-  { label: "Indigo",  value: "#6366f1" },
-  { label: "Bleu",   value: "#3b82f6" },
-  { label: "Violet", value: "#8b5cf6" },
-  { label: "Emerald",value: "#10b981" },
-  { label: "Amber",  value: "#f59e0b" },
-  { label: "Rose",   value: "#f43f5e" },
-  { label: "Gris",   value: "#64748b" },
-  { label: "Noir",   value: "#111827" },
+  { label: "SAMA Azur",value: "#3A7BD5" },
+  { label: "Indigo",   value: "#6366f1" },
+  { label: "Bleu",     value: "#3b82f6" },
+  { label: "Violet",   value: "#8b5cf6" },
+  { label: "Emerald",  value: "#10b981" },
+  { label: "Amber",    value: "#f59e0b" },
+  { label: "Rose",     value: "#f43f5e" },
+  { label: "Gris",     value: "#64748b" },
 ];
 
+/** Re-exported for callers that only need the HTML string (e.g. EmailCompose preview). */
 export function generateSignatureHtml(sig: SignatureData): string {
-  const fullName = [sig.first_name, sig.last_name].filter(Boolean).join(" ");
-  if (!fullName && !sig.job_title && !sig.email && !sig.phone) return "";
-
-  const color = sig.accent_color || "#6366f1";
-
-  const lines: string[] = [];
-  if (sig.email)        lines.push(`<span>📧&nbsp;<a href="mailto:${sig.email}" style="color:${color};text-decoration:none;">${sig.email}</a></span>`);
-  if (sig.phone)        lines.push(`<span>📞&nbsp;${sig.phone}</span>`);
-  if (sig.website)      lines.push(`<span>🌐&nbsp;<a href="${sig.website}" style="color:${color};text-decoration:none;">${sig.website.replace(/^https?:\/\//, "")}</a></span>`);
-  if (sig.linkedin_url) lines.push(`<span>🔗&nbsp;<a href="${sig.linkedin_url}" style="color:${color};text-decoration:none;">LinkedIn</a></span>`);
-
-  return `<div style="margin-top:24px;padding-top:16px;border-top:3px solid ${color};font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#374151;line-height:1.5;">
-  ${fullName ? `<div style="font-weight:700;font-size:15px;color:#111827;margin-bottom:2px;">${fullName}</div>` : ""}
-  ${(sig.job_title || sig.company) ? `<div style="color:#6b7280;margin-bottom:10px;">${[sig.job_title, sig.company].filter(Boolean).join(" · ")}</div>` : ""}
-  ${lines.length ? `<div style="display:flex;flex-direction:column;gap:3px;">${lines.join("")}</div>` : ""}
-</div>`;
+  return buildSignatureHtml(sig);
 }
 
 function SignaturePreview({ sig }: { sig: SignatureData }) {
-  const fullName = [sig.first_name, sig.last_name].filter(Boolean).join(" ");
-  const color = sig.accent_color || "#6366f1";
-  const hasContent = fullName || sig.job_title || sig.company || sig.email || sig.phone || sig.website || sig.linkedin_url;
+  const hasContent = sig.first_name || sig.last_name || sig.job_title || sig.email || sig.phone;
+  const sigHtml = generateSignatureHtml(sig);
 
   return (
     <div className="rounded-xl border bg-white shadow-sm overflow-hidden dark:bg-zinc-900">
-      {/* Fake email header */}
+      {/* Fake email client header */}
       <div className="border-b px-5 py-4 bg-gray-50 dark:bg-zinc-800">
         <div className="flex items-center gap-3 mb-3">
           <div className="flex gap-1.5">
@@ -85,7 +71,8 @@ function SignaturePreview({ sig }: { sig: SignatureData }) {
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <span className="w-12 shrink-0 font-medium">De :</span>
             <span className="text-foreground font-medium">
-              {[sig.first_name, sig.last_name].filter(Boolean).join(" ") || "Votre Nom"}{sig.email ? ` <${sig.email}>` : ""}
+              {[sig.first_name, sig.last_name].filter(Boolean).join(" ") || "Votre Nom"}
+              {sig.email ? ` <${sig.email}>` : ""}
             </span>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -104,47 +91,13 @@ function SignaturePreview({ sig }: { sig: SignatureData }) {
         <p>Bonjour,</p>
         <p className="mt-3 text-gray-400 italic">[ Votre message s&apos;affiche ici... ]</p>
 
-        {/* Signature */}
         {hasContent ? (
           <div
-            className="mt-6"
-            style={{ borderTop: `3px solid ${color}`, paddingTop: "16px", fontFamily: "Arial, sans-serif" }}
-          >
-            {(sig.first_name || sig.last_name) && (
-              <p style={{ fontWeight: 700, fontSize: "15px", color: "#111827", marginBottom: "2px" }}>
-                {fullName}
-              </p>
-            )}
-            {(sig.job_title || sig.company) && (
-              <p style={{ color: "#6b7280", fontSize: "13px", marginBottom: "10px" }}>
-                {[sig.job_title, sig.company].filter(Boolean).join(" · ")}
-              </p>
-            )}
-            <div className="flex flex-col gap-1" style={{ fontSize: "12px", color: "#374151" }}>
-              {sig.email && (
-                <span>📧&nbsp;
-                  <a href={`mailto:${sig.email}`} style={{ color, textDecoration: "none" }}>{sig.email}</a>
-                </span>
-              )}
-              {sig.phone && <span>📞&nbsp;{sig.phone}</span>}
-              {sig.website && (
-                <span>🌐&nbsp;
-                  <a href={sig.website} style={{ color, textDecoration: "none" }}>
-                    {sig.website.replace(/^https?:\/\//, "")}
-                  </a>
-                </span>
-              )}
-              {sig.linkedin_url && (
-                <span>🔗&nbsp;
-                  <a href={sig.linkedin_url} style={{ color, textDecoration: "none" }}>LinkedIn</a>
-                </span>
-              )}
-            </div>
-          </div>
+            className="mt-2"
+            dangerouslySetInnerHTML={{ __html: sigHtml }}
+          />
         ) : (
-          <div
-            className="mt-6 flex flex-col items-center justify-center py-6 rounded-lg border-2 border-dashed border-gray-200 dark:border-zinc-700 text-muted-foreground text-xs gap-1"
-          >
+          <div className="mt-6 flex flex-col items-center justify-center py-6 rounded-lg border-2 border-dashed border-gray-200 dark:border-zinc-700 text-muted-foreground text-xs gap-1">
             <User className="h-5 w-5 opacity-40" />
             <span>Votre signature apparaîtra ici</span>
           </div>

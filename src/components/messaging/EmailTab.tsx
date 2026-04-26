@@ -6,9 +6,9 @@ import { toast } from "sonner";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { fetchAuditByOpportunite } from "@/utils/auditApi";
 import { authedFetch } from "@/utils/authedFetch";
+import { wrapEmailBodyHtml } from "@/utils/emailTemplate";
 import { TEMPLATES, interpolate, type ContactRow, type CompanyRow, type EmailTemplate } from "./emailTypes";
 import type { SignatureData } from "./SignatureSettings";
-import { generateSignatureHtml } from "./SignatureSettings";
 import { ContactList } from "./ContactList";
 import { CompanyList } from "./CompanyList";
 import { EmailCompose } from "./EmailCompose";
@@ -160,8 +160,7 @@ export function EmailTab() {
     }
     setSending(true);
     try {
-      const sigHtml = signature ? generateSignatureHtml(signature) : "";
-      const bodyHtml = body.replace(/\n/g, "<br>") + (sigHtml ? sigHtml : "");
+      const bodyHtml = wrapEmailBodyHtml(body, signature);
 
       const res = await authedFetch("/api/email/send", {
         method: "POST",
