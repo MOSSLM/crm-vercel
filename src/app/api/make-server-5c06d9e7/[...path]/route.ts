@@ -1,26 +1,26 @@
-import { createClient } from "@supabase/supabase-js";
-import { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } from "@/env";
 import { ContactChannel, ContactDirection, ContactOutcome } from "@/types";
+import { requireUser } from "@/app/api/_lib/auth";
+import { corsHeadersFor, preflight } from "@/app/api/_lib/cors";
+import { getServiceClient } from "@/app/api/_lib/service-client";
 
 import logger from '../../../../utils/logger';
 // —— Next.js route options ——
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// —— Supabase (server) ——
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+// —— Supabase (server, service-role) ——
+const supabase = getServiceClient();
 
-// —— CORS helpers ——
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-const json = (data: any, status = 200) =>
-  new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", ...corsHeaders },
-  });
+// —— Per-handler json builder. Each handler resolves its CORS headers up front
+// and shadows `json` with this closure, so the existing handler bodies that
+// call `json(data, status)` continue to work unchanged. ——
+type JsonFn = (data: unknown, status?: number) => Response;
+const buildJson = (cors: Record<string, string>): JsonFn =>
+  (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { "Content-Type": "application/json", ...cors },
+    });
 
 // —— Logger très simple ——
 const log = (...args: any[]) => {
@@ -833,14 +833,17 @@ function transformRealKpiDataByPeriod(kpiData: any[], periodType: string) {
 // =============== ROUTER (catch-all) ================
 // ===================================================
 
-export async function OPTIONS() {
-  return new Response(null, { status: 204, headers: corsHeaders });
-}
+export const OPTIONS = (req: Request) => preflight(req);
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ path?: string[] }> }
 ) {
+  const cors = corsHeadersFor(req);
+  const json = buildJson(cors);
+  const auth = await requireUser(req, cors);
+  if (!auth.ok) return auth.response;
+
   try {
     const { path: raw } = await params;
     const segs = raw ?? [];
@@ -1191,6 +1194,11 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ path?: string[] }> }
 ) {
+  const cors = corsHeadersFor(req);
+  const json = buildJson(cors);
+  const auth = await requireUser(req, cors);
+  if (!auth.ok) return auth.response;
+
   try {
     const { path: raw } = await params;
     const segs = raw ?? [];
@@ -1426,6 +1434,11 @@ export async function PUT(
   req: Request,
   { params }: { params: Promise<{ path?: string[] }> }
 ) {
+  const cors = corsHeadersFor(req);
+  const json = buildJson(cors);
+  const auth = await requireUser(req, cors);
+  if (!auth.ok) return auth.response;
+
   try {
     const { path: raw } = await params;
     const segs = raw ?? [];
@@ -1511,9 +1524,14 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ path?: string[] }> }
 ) {
+  const cors = corsHeadersFor(req);
+  const json = buildJson(cors);
+  const auth = await requireUser(req, cors);
+  if (!auth.ok) return auth.response;
+
   try {
     const { path: raw } = await params;
     const segs = raw ?? [];

@@ -31,7 +31,24 @@ import { toast } from "sonner";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createClient } from "@/utils/supabase/client";
+import { authedFetch } from "@/utils/authedFetch";
+
+async function downloadResults(jobId: string, format: "csv" | "json") {
+  const res = await authedFetch(`/api/gmaps/results/${jobId}?format=${format}`);
+  if (!res.ok) {
+    toast.error("Téléchargement impossible");
+    return;
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `results-${jobId}.${format}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 const tileSteps = ["0.005", "0.01", "0.02", "0.05", "0.1"] as const;
 
@@ -63,7 +80,6 @@ const formSchema = z
 type FormValues = z.infer<typeof formSchema>;
 
 export const NewSearchPage: React.FC = () => {
-  const supabase = createClient();
   const locationRef = useRef<HTMLInputElement>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -125,13 +141,7 @@ export const NewSearchPage: React.FC = () => {
     if (!jobId || status === "done") return;
     const poll = setInterval(async () => {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const headers: HeadersInit = session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : {};
-        const res = await fetch(`/api/gmaps/job/${jobId}`, { headers });
+        const res = await authedFetch(`/api/gmaps/job/${jobId}`);
         if (res.ok) {
           const data = await res.json();
           setStatus(data.status);
@@ -142,10 +152,7 @@ export const NewSearchPage: React.FC = () => {
               pages: data.pages ?? 0,
             });
             toast.success("Recherche terminée");
-            await fetch(`/api/gmaps/scale-down`, {
-              method: "POST",
-              headers,
-            });
+            await authedFetch(`/api/gmaps/scale-down`, { method: "POST" });
             clearInterval(poll);
           }
         }
@@ -154,23 +161,14 @@ export const NewSearchPage: React.FC = () => {
       }
     }, 3000);
     return () => clearInterval(poll);
-  }, [jobId, status, supabase]);
+  }, [jobId, status]);
 
   const onSubmit = async (values: FormValues) => {
     setLoading(true);
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-        ...(session?.access_token
-          ? { Authorization: `Bearer ${session.access_token}` }
-          : {}),
-      };
-      const res = await fetch("/api/gmaps/crawl", {
+      const res = await authedFetch("/api/gmaps/crawl", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           keyword: values.keyword,
           location: values.location,
@@ -356,18 +354,22 @@ export const NewSearchPage: React.FC = () => {
                 {status === "done" && (
                   <div className="space-y-4">
                     <div className="space-x-4">
-                      <a
-                        href={`/api/gmaps/results/${jobId}?format=csv`}
-                        className="underline"
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="underline p-0 h-auto"
+                        onClick={() => downloadResults(jobId, "csv")}
                       >
                         Télécharger CSV
-                      </a>
-                      <a
-                        href={`/api/gmaps/results/${jobId}?format=json`}
-                        className="underline"
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="link"
+                        className="underline p-0 h-auto"
+                        onClick={() => downloadResults(jobId, "json")}
                       >
                         Télécharger JSON
-                      </a>
+                      </Button>
                     </div>
                     {stats && (
                       <Table>

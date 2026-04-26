@@ -5,6 +5,7 @@ import { Mail, User, Building2, PenLine } from "lucide-react";
 import { toast } from "sonner";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { fetchAuditByOpportunite } from "@/utils/auditApi";
+import { authedFetch } from "@/utils/authedFetch";
 import { TEMPLATES, interpolate, type ContactRow, type CompanyRow } from "./emailTypes";
 import { ContactList } from "./ContactList";
 import { CompanyList } from "./CompanyList";
@@ -131,7 +132,7 @@ export function EmailTab() {
     }
     setSending(true);
     try {
-      const res = await fetch("/api/email/send", {
+      const res = await authedFetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
