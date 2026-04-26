@@ -21,8 +21,8 @@ export default function AuditPage() {
 
     async function init() {
       try {
-        // Load opportunity + lead magnet in parallel
-        const [{ data: opp }, { data: plm }] = await Promise.all([
+        // Load opportunity, lead magnet delivery, and lead magnet project in parallel
+        const [{ data: opp }, { data: plm }, { data: lmp }] = await Promise.all([
           supabase
             .from('opportunites')
             .select('id, name, entreprise_id, entreprises(name, adresse, ville, logo_url)')
@@ -33,14 +33,23 @@ export default function AuditPage() {
             .select('lien_livraison')
             .eq('opportunite_id', opportuniteId)
             .maybeSingle(),
+          supabase
+            .from('lead_magnet_projects')
+            .select('override_address, override_city, override_location, variables')
+            .eq('opportunite_id', opportuniteId)
+            .maybeSingle(),
         ]);
 
         const company = (opp as { entreprises?: { name?: string; adresse?: string; ville?: string; logo_url?: string } } | null)?.entreprises;
         const companyName = company?.name || '';
-        const companyAdresse = company?.adresse || '';
-        const companyVille = company?.ville || '';
         const logoUrl = company?.logo_url || '';
         const demoUrl = plm?.lien_livraison || '';
+
+        // Prefer lead_magnet_projects override fields over entreprises defaults
+        const lmpData = lmp as { override_address?: string; override_city?: string; override_location?: string; variables?: { address?: string } } | null;
+        const lmpVariables = lmpData?.variables || {};
+        const companyAdresse = lmpData?.override_address || (lmpVariables as { address?: string }).address || company?.adresse || '';
+        const companyVille = lmpData?.override_location || lmpData?.override_city || company?.ville || '';
 
         setOpportunityName((opp as { name?: string } | null)?.name || companyName || opportuniteId);
 

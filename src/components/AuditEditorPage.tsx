@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Download, Save, Check, Loader2 } from 'lucide-react';
-import type { Audit, AuditContent } from '@/types';
+import type { Audit, AuditContent, AuditGlobalStyle } from '@/types';
 import { AuditPreview } from './AuditPreview';
 import { saveAudit } from '@/utils/auditApi';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
@@ -19,6 +19,7 @@ import { Page3Editor } from './audit/editors/Page3Editor';
 import { Page4Editor } from './audit/editors/Page4Editor';
 import { Page5Editor } from './audit/editors/Page5Editor';
 import { Page6Editor } from './audit/editors/Page6Editor';
+import { StyleEditor } from './audit/editors/StyleEditor';
 
 // ── Field-to-page mapping ─────────────────────────────────
 const FIELD_PAGE: Record<string, number> = {
@@ -51,7 +52,7 @@ const FIELD_PAGE: Record<string, number> = {
   'page6.next_steps.0': 6, 'page6.next_steps.1': 6, 'page6.next_steps.2': 6, 'page6.cta': 6,
 };
 
-const PAGE_LABELS = ['Couverture', 'Situation', 'Solution', 'Livrables', 'Tarifs', 'Étapes'];
+const PAGE_LABELS = ['Couverture', 'Situation', 'Solution', 'Livrables', 'Tarifs', 'Étapes', 'Style'];
 
 interface AuditEditorPageProps {
   audit: Audit;
@@ -90,6 +91,11 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
 
   const updatePage = useCallback(<K extends keyof AuditContent>(page: K, data: AuditContent[K]) => {
     setContent(prev => ({ ...prev, [page]: data }));
+    markChange();
+  }, []);
+
+  const updateGlobalStyle = useCallback((patch: Partial<AuditGlobalStyle>) => {
+    setContent(prev => ({ ...prev, global_style: { ...prev.global_style, ...patch } }));
     markChange();
   }, []);
 
@@ -235,6 +241,9 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
               )}
               {activePage === 6 && (
                 <Page6Editor data={content.page6} onChange={data => updatePage('page6', data)} />
+              )}
+              {activePage === 7 && (
+                <StyleEditor gs={content.global_style || {}} onChange={updateGlobalStyle} />
               )}
             </div>
           </div>

@@ -21,6 +21,7 @@ function CheckBadge() {
 
 export function AuditPage4({ content, activeField, onFieldClick }: Props) {
   const p = content.page4;
+  const gs = content.global_style;
   return (
     <div id="audit-p4" style={{ width: 794, minHeight: 1123, background: C.creme, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       <InnerHeader
@@ -37,13 +38,13 @@ export function AuditPage4({ content, activeField, onFieldClick }: Props) {
             </div>
           </Zone>
           <Zone field="page4.section_heading" activeField={activeField} onFieldClick={onFieldClick}>
-            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 38, lineHeight: 1.1, color: C.nuit }}>
+            <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: gs?.font_section_title ?? 38, lineHeight: 1.1, color: C.nuit }}>
               {p.section_title || 'Tout est'}{' '}
               <em style={{ fontStyle: 'italic', color: C.azur }}>{p.section_title_em || 'inclus'}</em>
             </div>
           </Zone>
           <Zone field="page4.section_subtitle" activeField={activeField} onFieldClick={onFieldClick}>
-            <div style={{ fontSize: 14, lineHeight: 1.8, color: 'rgba(11,29,58,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>
+            <div style={{ fontSize: gs?.font_section_intro ?? 14, lineHeight: 1.8, color: 'rgba(11,29,58,0.65)', maxWidth: 560, marginTop: 16, fontWeight: 300 }}>
               {p.section_subtitle || 'Aucune mauvaise surprise. Voici exactement ce que comprend la prestation.'}
             </div>
           </Zone>
