@@ -456,6 +456,15 @@ export interface AuditPricingService {
   enabled: boolean;
 }
 
+export interface AuditGlobalStyle {
+  grain_opacity?: number;        // default 0.045
+  grain_base_frequency?: number; // default 0.75 (higher = finer grain)
+  grain_color?: string;          // default '#ffffff'
+  font_cover_title?: number;     // default 56
+  font_section_title?: number;   // default 38
+  font_section_intro?: number;   // default 14
+}
+
 export interface AuditPage1 {
   date: string;
   eyebrow: string;
@@ -545,6 +554,7 @@ export interface AuditContent {
   page4: AuditPage4;
   page5: AuditPage5;
   page6: AuditPage6;
+  global_style?: AuditGlobalStyle;
 }
 
 export interface Audit {

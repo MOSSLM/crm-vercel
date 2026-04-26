@@ -43,7 +43,7 @@ export function AuditPage5({ content, activeField, onFieldClick }: Props) {
           <Zone field="page5.pricing" activeField={activeField} onFieldClick={onFieldClick}>
             <div style={{ background: C.nuit, borderRadius: 6, padding: '36px 40px', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 300px 200px at 90% 0%, rgba(58,123,213,0.3) 0%, transparent 65%), radial-gradient(ellipse 200px 200px at 0% 100%, rgba(58,123,213,0.15) 0%, transparent 60%)', opacity: 0.6 }} />
-              {showGrain && <GrainOverlay />}
+              {showGrain && <GrainOverlay globalStyle={content.global_style} />}
               <div style={{ position: 'relative', zIndex: 4 }}>
                 {enabledServices.map((svc, i) => (
                   <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'baseline', gap: 24, padding: '14px 0', borderBottom: i < enabledServices.length - 1 ? `1px solid rgba(181,208,240,0.1)` : 'none' }}>

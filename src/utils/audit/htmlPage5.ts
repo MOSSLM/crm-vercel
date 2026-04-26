@@ -1,8 +1,9 @@
 import type { AuditContent } from '@/types';
-import { esc, innerHeader, innerFooter, getServices, calcTotal, fmtEur, GRAIN_SVG } from './htmlShared';
+import { esc, innerHeader, innerFooter, getServices, calcTotal, fmtEur, makeGrainSvgUrl } from './htmlShared';
 
 export function page5Html(content: AuditContent) {
   const p = content.page5;
+  const gs = content.global_style;
   const services = getServices(p);
   const { total, hasMrr } = calcTotal(services);
   const enabledServices = services.filter(s => s.enabled);
@@ -10,6 +11,8 @@ export function page5Html(content: AuditContent) {
   const flattenForPdf = p.flatten_grain_for_pdf === true;
   const useGrain = showGrain && !flattenForPdf;
   const addlServices = p.additional_services || [];
+  const grainUrl = makeGrainSvgUrl(gs?.grain_base_frequency ?? 0.75, gs?.grain_color ?? '#ffffff');
+  const grainOpacity = gs?.grain_opacity ?? 0.045;
 
   return `
 <div class="page">
@@ -21,10 +24,10 @@ export function page5Html(content: AuditContent) {
       ${p.pricing_subtitle ? `<div class="invest-subtitle">${esc(p.pricing_subtitle)}</div>` : ''}
       <div class="invest-block">
         <div class="invest-gradient"></div>
-        ${useGrain ? `<div style="position:absolute;inset:0;opacity:.045;pointer-events:none;z-index:3;background-image:${GRAIN_SVG};background-repeat:repeat;background-size:200px 200px"></div>` : ''}
+        ${useGrain ? `<div style="position:absolute;inset:0;opacity:${grainOpacity};pointer-events:none;z-index:3;background-image:${grainUrl};background-repeat:repeat;background-size:200px 200px"></div>` : ''}
         <div class="invest-inner">
           ${enabledServices.map((svc, i) => `
-          <div class="invest-row" style="${i < enabledServices.length - 1 ? 'border-bottom:1px solid rgba(181,208,240,0.1)' : ''}">
+          <div class="invest-row" style="${i < enabledServices.length - 1 ? 'border-bottom:1px solid rgba(181,208,240,0.1)' : 'border-bottom:none'}">
             <div>
               <div class="invest-label">${esc(svc.label)}</div>
               ${svc.sub_label ? `<div class="invest-sublabel">${esc(svc.sub_label)}</div>` : ''}
