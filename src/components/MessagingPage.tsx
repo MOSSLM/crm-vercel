@@ -2,21 +2,25 @@
 
 import React, { Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Mail, MessageCircle } from "lucide-react";
+import { Mail, MessageCircle, LayoutTemplate, Settings } from "lucide-react";
 import { EmailTab } from "@/components/messaging/EmailTab";
 import { WhatsAppTab } from "@/components/messaging/WhatsAppTab";
+import { EmailTemplatesTab } from "@/components/messaging/EmailTemplatesTab";
+import { SignatureSettings } from "@/components/messaging/SignatureSettings";
 
-type TabKey = "email" | "whatsapp";
+type TabKey = "email" | "whatsapp" | "templates" | "parametres";
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType; color?: string }[] = [
-  { key: "email", label: "Email", icon: Mail },
-  { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, color: "#25D366" },
+  { key: "email",      label: "Email",      icon: Mail },
+  { key: "whatsapp",   label: "WhatsApp",   icon: MessageCircle, color: "#25D366" },
+  { key: "templates",  label: "Templates",  icon: LayoutTemplate },
+  { key: "parametres", label: "Paramètres", icon: Settings },
 ];
 
 function MessagingInner() {
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const activeTab = (searchParams.get("tab") as TabKey) ?? "email";
+  const router       = useRouter();
+  const activeTab    = (searchParams.get("tab") as TabKey) ?? "email";
 
   const setTab = (tab: TabKey) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -34,7 +38,7 @@ function MessagingInner() {
       {/* Tab bar */}
       <div className="flex shrink-0 items-center gap-1 border-b px-4 pt-3">
         {TABS.map((tab) => {
-          const Icon = tab.icon;
+          const Icon     = tab.icon;
           const isActive = activeTab === tab.key;
           return (
             <button
@@ -58,8 +62,10 @@ function MessagingInner() {
 
       {/* Tab content */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        {activeTab === "email" && <EmailTab />}
-        {activeTab === "whatsapp" && <WhatsAppTab />}
+        {activeTab === "email"      && <EmailTab />}
+        {activeTab === "whatsapp"   && <WhatsAppTab />}
+        {activeTab === "templates"  && <EmailTemplatesTab />}
+        {activeTab === "parametres" && <SignatureSettings />}
       </div>
     </div>
   );
