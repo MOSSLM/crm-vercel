@@ -6,7 +6,9 @@ import { toast } from "sonner";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { fetchAuditByOpportunite } from "@/utils/auditApi";
 import { authedFetch } from "@/utils/authedFetch";
-import { TEMPLATES, interpolate, type ContactRow, type CompanyRow } from "./emailTypes";
+import { TEMPLATES, interpolate, type ContactRow, type CompanyRow, type EmailTemplate } from "./emailTypes";
+import type { SignatureData } from "./SignatureSettings";
+import { generateSignatureHtml } from "./SignatureSettings";
 import { ContactList } from "./ContactList";
 import { CompanyList } from "./CompanyList";
 import { EmailCompose } from "./EmailCompose";
@@ -31,6 +33,10 @@ function makeVars(companyName: string, contactName: string, lmUrl?: string) {
 export function EmailTab() {
   const [mode, setMode] = useState<Mode>("contacts");
 
+  // Signature + DB templates
+  const [signature, setSignature]   = useState<SignatureData | null>(null);
+  const [dbTemplates, setDbTemplates] = useState<EmailTemplate[]>([]);
+
   // LM map: opportunite_id → { ready, url }
   const [lmMap, setLmMap] = useState<Map<string, { ready: boolean; url?: string }>>(new Map());
 
@@ -51,6 +57,19 @@ export function EmailTab() {
   // Contextual vars for template re-application
   const [currentVars, setCurrentVars] = useState({ companyName: "", contactName: "", lmUrl: "" });
 
+  // Load signature settings and DB templates on mount
+  useEffect(() => {
+    authedFetch("/api/email/signature")
+      .then((r) => r.json())
+      .then((data) => { if (data) setSignature(data); })
+      .catch(() => {});
+
+    authedFetch("/api/email/templates")
+      .then((r) => r.json())
+      .then((data) => { if (Array.isArray(data)) setDbTemplates(data); })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     listLeadMagnetCards().then((items) => {
       const map = new Map<string, { ready: boolean; url?: string }>();
@@ -67,14 +86,23 @@ export function EmailTab() {
     }).catch(() => {});
   }, []);
 
+  // When DB templates load, switch the default templateId to the DB lead_magnet entry
+  useEffect(() => {
+    if (dbTemplates.length > 0) {
+      const lm = dbTemplates.find((t) => t.type === "lead_magnet" && t.is_default);
+      if (lm) setTemplateId(lm.id);
+    }
+  }, [dbTemplates]);
+
   const applyTemplate = useCallback((id: string, vars: { companyName: string; contactName: string; lmUrl?: string }) => {
     setTemplateId(id);
-    const tmpl = TEMPLATES.find((t) => t.id === id);
+    // Search DB templates first, then fall back to static list (covers initial state)
+    const tmpl = dbTemplates.find((t) => t.id === id) ?? TEMPLATES.find((t) => t.id === id);
     if (!tmpl) return;
     const v = makeVars(vars.companyName, vars.contactName, vars.lmUrl);
     setSubject(interpolate(tmpl.subject, v));
     setBody(interpolate(tmpl.body, v));
-  }, []);
+  }, [dbTemplates]);
 
   const fetchAudit = useCallback(async (opportunityId?: string) => {
     setAuditUrl(undefined);
@@ -132,6 +160,9 @@ export function EmailTab() {
     }
     setSending(true);
     try {
+      const sigHtml = signature ? generateSignatureHtml(signature) : "";
+      const bodyHtml = body.replace(/\n/g, "<br>") + (sigHtml ? sigHtml : "");
+
       const res = await authedFetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -139,7 +170,7 @@ export function EmailTab() {
           to_email: toEmail,
           to_name: toName || undefined,
           subject,
-          body_html: body.replace(/\n/g, "<br>"),
+          body_html: bodyHtml,
           body_text: body,
           contact_id: selectedContact?.contact.id,
           entreprise_id: selectedContact?.contact.entreprise_id ?? selectedCompany?.company.id,
@@ -226,8 +257,10 @@ export function EmailTab() {
             setBody={setBody}
             templateId={templateId}
             onApplyTemplate={handleApplyTemplate}
+            dbTemplates={dbTemplates}
             leadMagnetUrl={currentLmUrl}
             auditUrl={auditUrl}
+            signature={signature}
             sending={sending}
             onSend={handleSend}
           />

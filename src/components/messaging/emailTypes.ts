@@ -1,5 +1,24 @@
 import type { Contact, Company, Opportunity } from "@/types";
 
+export type TemplateType =
+  | "premier_contact"
+  | "relance"
+  | "lead_magnet"
+  | "suivi"
+  | "presentation"
+  | "autre";
+
+export interface EmailTemplate {
+  id:         string;
+  user_id:    string | null;
+  name:       string;
+  type:       TemplateType;
+  subject:    string;
+  body:       string;
+  is_default: boolean;
+  created_at: string;
+}
+
 export interface EmailLog {
   id: string;
   to_email: string;
@@ -31,6 +50,15 @@ export interface CompanyRow {
   hasLeadMagnet: boolean;
   leadMagnetReady: boolean;
   leadMagnetUrl?: string;
+}
+
+// Union type covering both static templates (label) and DB templates (name)
+export type TemplateItem =
+  | { id: string; label: string; subject: string; body: string }
+  | EmailTemplate;
+
+export function getTemplateName(t: TemplateItem): string {
+  return "label" in t ? t.label : t.name;
 }
 
 export const TEMPLATES = [

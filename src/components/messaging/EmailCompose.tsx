@@ -10,53 +10,73 @@ import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Mail, Send, RefreshCw, Magnet, Clock, Eye, EyeOff, Sparkles, FileText,
+  PenLine,
 } from "lucide-react";
-import { TEMPLATES } from "./emailTypes";
+import { TEMPLATES, getTemplateName, type EmailTemplate } from "./emailTypes";
+import type { SignatureData } from "./SignatureSettings";
+import { generateSignatureHtml } from "./SignatureSettings";
 
 interface Props {
   // Header context
-  headerTitle?: string;
+  headerTitle?:    string;
   headerSubtitle?: string;
-  hasLm?: boolean;
-  lmReady?: boolean;
+  hasLm?:          boolean;
+  lmReady?:        boolean;
 
   // Recipient
-  toEmail: string;
+  toEmail:    string;
   setToEmail: (v: string) => void;
-  toName: string;
-  setToName: (v: string) => void;
+  toName:     string;
+  setToName:  (v: string) => void;
 
   // Content
-  subject: string;
+  subject:    string;
   setSubject: (v: string) => void;
-  body: string;
-  setBody: (v: string) => void;
+  body:       string;
+  setBody:    (v: string) => void;
 
-  // Template
-  templateId: string;
+  // Template (DB templates override static ones when provided)
+  templateId:      string;
   onApplyTemplate: (id: string) => void;
+  dbTemplates?:    EmailTemplate[];
 
   // Insertable URLs
   leadMagnetUrl?: string;
-  auditUrl?: string;
+  auditUrl?:      string;
+
+  // Signature
+  signature?: SignatureData | null;
 
   // Actions
   sending: boolean;
-  onSend: () => void;
+  onSend:  () => void;
 }
 
 export function EmailCompose({
   headerTitle, headerSubtitle, hasLm, lmReady,
   toEmail, setToEmail, toName, setToName,
   subject, setSubject, body, setBody,
-  templateId, onApplyTemplate,
+  templateId, onApplyTemplate, dbTemplates,
   leadMagnetUrl, auditUrl,
+  signature,
   sending, onSend,
 }: Props) {
-  const [showPreview, setShowPreview] = useState(false);
+  const [showPreview, setShowPreview]       = useState(false);
+  const [showSignature, setShowSignature]   = useState(true);
 
   const insertText = (snippet: string) =>
     setBody(body + (body.endsWith("\n") ? "" : "\n") + snippet + "\n");
+
+  // Use DB templates if available, fall back to static list
+  const templates = (dbTemplates && dbTemplates.length > 0) ? dbTemplates : TEMPLATES;
+
+  const sigHtml   = signature ? generateSignatureHtml(signature) : "";
+  const hasSig    = sigHtml.length > 0;
+
+  // Prepare preview HTML with optional signature
+  const previewHtml =
+    body.replace(/\n/g, "<br>") +
+    (hasSig && showSignature ? sigHtml : "");
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -91,10 +111,10 @@ export function EmailCompose({
       <ScrollArea className="flex-1">
         <div className="space-y-4 p-4">
           {/* Template selector */}
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-muted-foreground" />
+          <div className="flex items-start gap-2">
+            <Sparkles className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
             <div className="flex flex-wrap gap-1.5">
-              {TEMPLATES.map((t) => (
+              {templates.map((t) => (
                 <Button
                   key={t.id}
                   variant={templateId === t.id ? "default" : "outline"}
@@ -102,7 +122,7 @@ export function EmailCompose({
                   className="h-7 text-xs"
                   onClick={() => onApplyTemplate(t.id)}
                 >
-                  {t.label}
+                  {getTemplateName(t)}
                 </Button>
               ))}
             </div>
@@ -202,7 +222,7 @@ export function EmailCompose({
             {showPreview ? (
               <div
                 className="min-h-48 rounded-md border bg-card p-4 text-sm leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: body.replace(/\n/g, "<br>") }}
+                dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
             ) : (
               <Textarea
@@ -214,6 +234,32 @@ export function EmailCompose({
               />
             )}
           </div>
+
+          {/* Signature preview */}
+          {hasSig && !showPreview && (
+            <div className="rounded-md border border-dashed bg-muted/30 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-1.5 border-b border-dashed">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <PenLine className="h-3 w-3" />
+                  Signature
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 px-2 text-[10px]"
+                  onClick={() => setShowSignature((p) => !p)}
+                >
+                  {showSignature ? "Masquer" : "Afficher"}
+                </Button>
+              </div>
+              {showSignature && (
+                <div
+                  className="px-3 py-3 text-sm pointer-events-none select-none"
+                  dangerouslySetInnerHTML={{ __html: sigHtml }}
+                />
+              )}
+            </div>
+          )}
         </div>
       </ScrollArea>
 
