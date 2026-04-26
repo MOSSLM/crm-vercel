@@ -50,20 +50,20 @@ const DEFAULT_CONTENT: AuditContent = {
     section_title_em: 'inclus',
     section_subtitle: 'Aucune mauvaise surprise. Voici exactement ce que comprend la prestation.',
     livrables: [
-      { title: 'Site web complet', items: ["Page d'accueil optimisée", "Pages services (jusqu'à 5)", "Page à propos", "Page contact + formulaire devis", "Design responsive mobile"] },
-      { title: 'SEO & visibilité', items: ["Audit mots-clés local", "Optimisation on-page complète", "Intégration Google Search Console", "Plan de redirection (si nécessaire)", "Rapport de positionnement initial"] },
-      { title: 'Contenu & copywriting', items: ["Textes de vente rédigés", "Mise en valeur de vos réalisations", "Intégration avis clients", "Photos optimisées web"] },
-      { title: 'Suivi & support', items: ["Rapport mensuel (trafic, leads)", "Maintenance incluse 6 mois"] },
+      { title: 'Site web complet', items: ["Page d'accueil optimisée", "Pages services (jusqu'à 5)", "Page à propos", 'Page contact + formulaire devis', 'Design responsive mobile'] },
+      { title: 'SEO & visibilité', items: ['Audit mots-clés local', 'Optimisation on-page complète', 'Intégration Google Search Console', 'Plan de redirection (si nécessaire)', 'Rapport de positionnement initial'] },
+      { title: 'Contenu & copywriting', items: ['Textes de vente rédigés', 'Mise en valeur de vos réalisations', 'Intégration avis clients', 'Photos optimisées web'] },
+      { title: 'Suivi & support', items: ['Rapport mensuel (trafic, leads)', 'Maintenance incluse 6 mois'] },
     ],
   },
   page5: {
     header_section: 'Tarifs',
     section_label: '04 · Investissement',
     planning_steps: [
-      { week: 'Appel', title: 'Appel de lancement', desc: "Nous recueillons toutes les informations nécessaires en un seul appel : vos objectifs, votre identité, vos clients cibles." },
-      { week: 'Production', title: 'Production', desc: "Notre équipe conçoit et développe votre site : design, textes, photos, intégration. Efficacement et sans allers-retours inutiles." },
-      { week: 'Validation', title: 'Validation', desc: "Vous relisez et validez chaque détail. Les ajustements sont rapides — jusqu'à satisfaction complète." },
-      { week: 'Transfert', title: 'Transfert du site', desc: "Votre site est mis en ligne sous 7 jours. Vous en êtes propriétaire à vie." },
+      { week: 'Appel', title: 'Appel de lancement', desc: 'Nous recueillons toutes les informations nécessaires en un seul appel : vos objectifs, votre identité, vos clients cibles.' },
+      { week: 'Production', title: 'Production', desc: 'Notre équipe conçoit et développe votre site : design, textes, photos, intégration. Efficacement et sans allers-retours inutiles.' },
+      { week: 'Validation', title: 'Validation', desc: 'Vous relisez et validez chaque détail. Les ajustements sont rapides — jusqu\'à satisfaction complète.' },
+      { week: 'Transfert', title: 'Transfert du site', desc: 'Votre site est mis en ligne sous 7 jours. Vous en êtes propriétaire à vie.' },
     ],
     services: [
       { label: 'Site web complet + SEO initial', sub_label: 'Conception, développement, contenus, mise en ligne', amount: 1490, is_mrr: false, enabled: true },
@@ -72,7 +72,7 @@ const DEFAULT_CONTENT: AuditContent = {
     pricing_subtitle: 'Solution conseillée',
     show_grain: true,
     flatten_grain_for_pdf: false,
-    price_note: "Prix HT. Acompte de 40 % à la commande, solde à la livraison. Maintenance mensuelle sans engagement (résiliable à tout moment). Tarif indicatif — devis définitif sur demande.",
+    price_note: 'Prix HT. Acompte de 40 % à la commande, solde à la livraison. Maintenance mensuelle sans engagement (résiliable à tout moment). Tarif indicatif — devis définitif sur demande.',
   },
   page6: {
     header_section: 'Prochaines étapes',
@@ -80,19 +80,65 @@ const DEFAULT_CONTENT: AuditContent = {
     section_title: 'Simple, rapide,',
     section_title_line2: "et c'est",
     section_title_em: 'lancé',
-    section_subtitle: "Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner.",
+    section_subtitle: 'Pas de processus compliqué. On travaille vite et bien — vous avez une entreprise à faire tourner.',
     next_steps: [
       { title: 'Appel de lancement', desc: "On s'appelle pour recueillir toutes les informations nécessaires au projet en une seule conversation." },
-      { title: 'Production en 1 semaine', desc: "Notre équipe conçoit et développe votre site rapidement et efficacement." },
-      { title: 'Mise en ligne sous 7 jours', desc: "Votre site est mis en ligne. Vous en êtes propriétaire à vie." },
+      { title: 'Production en 1 semaine', desc: 'Notre équipe conçoit et développe votre site rapidement et efficacement.' },
+      { title: 'Mise en ligne sous 7 jours', desc: 'Votre site est mis en ligne. Vous en êtes propriétaire à vie.' },
     ],
     cta_title: 'Prêt à avancer ?',
-    cta_sub: "Réservez un appel gratuit — sans engagement.",
+    cta_sub: 'Réservez un appel gratuit — sans engagement.',
     contact_phone: '+33 6 XX XX XX XX',
     contact_email: 'contact@votreagence.fr',
     contact_website: '',
   },
 };
+
+function normalizeAuditContent(content: Partial<AuditContent> | null | undefined): AuditContent {
+  const defaults = getDefaultAuditContent();
+  const source = content ?? {};
+
+  return {
+    page1: { ...defaults.page1, ...(source.page1 ?? {}) },
+    page2: {
+      ...defaults.page2,
+      ...(source.page2 ?? {}),
+      problems: source.page2?.problems?.length ? source.page2.problems : defaults.page2.problems,
+    },
+    page3: {
+      ...defaults.page3,
+      ...(source.page3 ?? {}),
+      solutions: source.page3?.solutions?.length ? source.page3.solutions : defaults.page3.solutions,
+    },
+    page4: {
+      ...defaults.page4,
+      ...(source.page4 ?? {}),
+      livrables: source.page4?.livrables?.length ? source.page4.livrables : defaults.page4.livrables,
+    },
+    page5: {
+      ...defaults.page5,
+      ...(source.page5 ?? {}),
+      planning_steps: source.page5?.planning_steps?.length ? source.page5.planning_steps : defaults.page5.planning_steps,
+      services: source.page5?.services?.length ? source.page5.services : defaults.page5.services,
+    },
+    page6: {
+      ...defaults.page6,
+      ...(source.page6 ?? {}),
+      next_steps: source.page6?.next_steps?.length ? source.page6.next_steps : defaults.page6.next_steps,
+    },
+    global_style: {
+      ...(defaults.global_style ?? {}),
+      ...(source.global_style ?? {}),
+    },
+  };
+}
+
+function hydrateAudit(audit: Audit): Audit {
+  return {
+    ...audit,
+    content: normalizeAuditContent(audit.content),
+  };
+}
 
 export function getDefaultAuditContent(overrides?: Partial<{
   entreprise_nom: string;
@@ -138,7 +184,7 @@ export async function fetchAuditByOpportunite(opportuniteId: string): Promise<Au
     .eq('opportunite_id', opportuniteId)
     .maybeSingle();
   if (error) throw error;
-  return data as Audit | null;
+  return data ? hydrateAudit(data as Audit) : null;
 }
 
 export async function createAudit(params: {
@@ -159,10 +205,12 @@ export async function createAudit(params: {
     demo_url: params.demo_site_url,
   });
 
+  const { entreprise_adresse: _unusedAddress, ...insertableParams } = params;
+
   const { data, error } = await supabase
     .from('audits')
     .insert({
-      ...params,
+      ...insertableParams,
       content,
       statut: 'draft',
     })
@@ -170,7 +218,7 @@ export async function createAudit(params: {
     .single();
 
   if (error) throw error;
-  return data as Audit;
+  return hydrateAudit(data as Audit);
 }
 
 export async function upsertAudit(params: {
