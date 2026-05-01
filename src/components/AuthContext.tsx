@@ -39,44 +39,55 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const supabase = createClient();
 
   useEffect(() => {
-    const buildUserFromSession = async (sessionUser: SupabaseUser): Promise<User> => {
-      let role: User['role'] = 'unknown';
-      let fullName = sessionUser.user_metadata?.name || sessionUser.email || 'Utilisateur';
+    const baseUserFromSession = (sessionUser: SupabaseUser): User => ({
+      id: sessionUser.id,
+      email: sessionUser.email || '',
+      name: sessionUser.user_metadata?.name || sessionUser.email || 'Utilisateur',
+      role: 'unknown',
+    });
 
-      const { data: profile, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('role, full_name')
-        .eq('id', sessionUser.id)
-        .maybeSingle();
+    const enrichUserFromProfile = async (sessionUser: SupabaseUser) => {
+      try {
+        const { data: profile, error: profileError } = await supabase
+          .from('user_profiles')
+          .select('role, full_name')
+          .eq('id', sessionUser.id)
+          .maybeSingle();
 
-      if (profileError) {
-        logger.warn('Unable to load user profile role:', profileError);
-      } else if (profile) {
-        if (profile.role === 'admin' || profile.role === 'freelance') {
-          role = profile.role;
+        if (profileError) {
+          logger.warn('Unable to load user profile role:', profileError);
+          return;
         }
-        if (typeof profile.full_name === 'string' && profile.full_name.trim().length > 0) {
-          fullName = profile.full_name;
+
+        if (!profile) {
+          logger.warn('No user_profiles row found for connected user. RLS may hide all CRM data.');
+          return;
         }
-      } else {
-        logger.warn('No user_profiles row found for connected user. RLS may hide all CRM data.');
+
+        setUser((prev) => {
+          if (!prev || prev.id !== sessionUser.id) return prev;
+          const role: User['role'] =
+            profile.role === 'admin' || profile.role === 'freelance' ? profile.role : prev.role;
+          const fullName =
+            typeof profile.full_name === 'string' && profile.full_name.trim().length > 0
+              ? profile.full_name
+              : prev.name;
+          return { ...prev, role, name: fullName };
+        });
+      } catch (error) {
+        logger.warn('Profile enrichment failed:', error);
       }
-
-      return {
-        id: sessionUser.id,
-        email: sessionUser.email || '',
-        name: fullName,
-        role,
-      };
     };
 
     // Vérifier la session Supabase au démarrage
     const checkAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        
+
         if (session?.user) {
-          setUser(await buildUserFromSession(session.user));
+          setUser(baseUserFromSession(session.user));
+          // Fire-and-forget: don't block loading state on profile fetch
+          void enrichUserFromProfile(session.user);
         }
       } catch (error) {
         logger.error('Error checking auth:', error);
@@ -88,9 +99,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     checkAuth();
 
     // Écouter les changements d'authentification Supabase
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
-        setUser(await buildUserFromSession(session.user));
+        setUser(baseUserFromSession(session.user));
+        void enrichUserFromProfile(session.user);
       } else {
         setUser(null);
       }
