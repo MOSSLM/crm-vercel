@@ -96,7 +96,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     };
 
-    checkAuth();
+    // Safety valve: if Supabase hangs (e.g. network issue in production), unblock the UI after 5s
+    const loadingTimeout = setTimeout(() => setLoading(false), 5000);
+    checkAuth().finally(() => clearTimeout(loadingTimeout));
 
     // Écouter les changements d'authentification Supabase
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
