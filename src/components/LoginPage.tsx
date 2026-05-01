@@ -96,7 +96,7 @@ export const LoginPage: React.FC = () => {
               </Alert>
             )}
 
-            <Button type="submit" className="w-full" disabled={submitting || loading}>
+            <Button type="submit" className="w-full" disabled={submitting}>
               {submitting ? "Connexion..." : "Se connecter"}
             </Button>
           </form>
