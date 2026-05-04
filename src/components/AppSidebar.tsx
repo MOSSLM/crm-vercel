@@ -41,6 +41,7 @@ import {
   Layout,
   Package,
   ClipboardList,
+  MessageSquare,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
@@ -89,14 +90,13 @@ export const AppSidebar = () => {
   ];
 
   const prospectionItems: SidebarNavItem[] = [
-    { title: "Dashboard prospection", icon: BarChart3, href: "/prospection/dashboard" },
-    { title: "Sprint CRM", icon: CheckSquare, href: "/opportunities" },
-    { title: "Qualifiés (appel)", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
-    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
+    { title: "Dashboard Sales", icon: BarChart3, href: "/prospection/dashboard" },
     { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
     { title: "Opportunités", icon: Target, href: "/opportunities" },
-    { title: "Offres", icon: Package, href: "/offres" },
+    { title: "Qualifiés", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
     { title: "Contacts", icon: Users, href: "/contacts" },
+    { title: "Offres", icon: Package, href: "/offres" },
+    { title: "Messagerie", icon: MessageSquare, href: "/messagerie" },
   ];
 
   const actionItems: SidebarNavItem[] = [
@@ -139,7 +139,7 @@ export const AppSidebar = () => {
         {focusItems ? (
           <SidebarGroup>
             <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground px-3 py-2">
-              {view === "prospection" ? "Mode Prospection" : "Mode Qualification"}
+              {view === "prospection" ? "Mode Sales" : "Mode Qualification"}
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
