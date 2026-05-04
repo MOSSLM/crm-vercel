@@ -65,6 +65,17 @@ interface Props {
 
   sending: boolean;
   onSend: () => void;
+
+  rawTemplateBody?: string;
+}
+
+function highlightVarsEmail(text: string): React.ReactNode[] {
+  const parts = text.split(/({{[^}]+}})/g);
+  return parts.map((part, i) =>
+    /^{{[^}]+}}$/.test(part)
+      ? <span key={i} className="rounded bg-blue-100 px-1 font-mono text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">{part}</span>
+      : <span key={i}>{part}</span>
+  );
 }
 
 export function EmailCompose({
@@ -75,6 +86,7 @@ export function EmailCompose({
   leadMagnetUrl, auditUrl, attachAudit, onToggleAttachAudit,
   signature,
   sending, onSend,
+  rawTemplateBody,
 }: Props) {
   const [showPreview, setShowPreview] = useState(false);
   const [showSignature, setShowSignature] = useState(true);
@@ -329,11 +341,43 @@ export function EmailCompose({
                 {showPreview ? "Éditer" : "Aperçu"}
               </Button>
             </div>
+
             {showPreview ? (
               <div
                 className="min-h-56 rounded-lg border bg-card p-4 text-sm leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: previewHtml }}
               />
+            ) : rawTemplateBody ? (
+              /* Split view: raw template | rendered editable body */
+              <div className="grid grid-cols-2 gap-3">
+                {/* Left: raw template with highlighted variables */}
+                <div className="flex flex-col rounded-lg border border-dashed bg-muted/30 overflow-hidden">
+                  <div className="flex items-center gap-1.5 border-b border-dashed px-3 py-1.5">
+                    <FileText className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Template brut</span>
+                  </div>
+                  <ScrollArea className="flex-1" style={{ height: "280px" }}>
+                    <pre className="whitespace-pre-wrap break-words px-3 py-3 text-xs leading-relaxed font-sans">
+                      {highlightVarsEmail(rawTemplateBody)}
+                    </pre>
+                  </ScrollArea>
+                </div>
+                {/* Right: editable rendered body */}
+                <div className="flex flex-col rounded-lg border overflow-hidden">
+                  <div className="flex items-center gap-1.5 border-b bg-muted/20 px-3 py-1.5">
+                    <PenLine className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Variables appliquées</span>
+                  </div>
+                  <Textarea
+                    ref={bodyRef}
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                    placeholder="Rédigez votre message…"
+                    className="resize-none text-sm border-0 rounded-none shadow-none focus-visible:ring-0"
+                    style={{ height: "280px" }}
+                  />
+                </div>
+              </div>
             ) : (
               <Textarea
                 ref={bodyRef}
