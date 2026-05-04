@@ -133,7 +133,7 @@ const CONNECTION_DEFS: ConnectionDef[] = [
   {
     id: 'supabase',
     title: 'Supabase Edge Functions',
-    description: 'Invoquez vos Edge Functions Supabase directement depuis les nœuds d'automatisation.',
+    description: "Invoquez vos Edge Functions Supabase directement depuis les nœuds d'automatisation.",
     icon: Database,
     iconBg: 'bg-green-500/10',
     iconColor: 'text-green-500',
