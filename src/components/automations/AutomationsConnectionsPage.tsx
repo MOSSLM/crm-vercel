@@ -104,7 +104,7 @@ const CONNECTION_DEFS: ConnectionDef[] = [
   {
     id: 'webhook',
     title: 'Webhook sortant',
-    description: 'Appelez n'importe quelle API externe depuis vos automatisations avec authentification.',
+    description: "Appelez n'importe quelle API externe depuis vos automatisations avec authentification.",
     icon: Globe,
     iconBg: 'bg-emerald-500/10',
     iconColor: 'text-emerald-500',
