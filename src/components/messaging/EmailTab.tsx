@@ -59,6 +59,7 @@ export function EmailTab() {
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   const [currentVars, setCurrentVars] = useState({ companyName: "", contactName: "", lmUrl: "" });
+  const [rawTemplateBody, setRawTemplateBody] = useState("");
 
   useEffect(() => {
     authedFetch("/api/email/signature")
@@ -102,6 +103,7 @@ export function EmailTab() {
     const v = makeVars(vars.companyName, vars.contactName, vars.lmUrl);
     setSubject(interpolate(tmpl.subject, v));
     setBody(interpolate(tmpl.body, v));
+    setRawTemplateBody(tmpl.body);
   }, [dbTemplates]);
 
   const fetchAudit = useCallback(async (opportunityId?: string) => {
@@ -147,6 +149,7 @@ export function EmailTab() {
     setSelectedCompany(null);
     setAuditPdfUrl(undefined);
     setAttachAudit(false);
+    setRawTemplateBody("");
     if (m === "manuel") {
       setToEmail("");
       setToName("");
@@ -300,6 +303,7 @@ export function EmailTab() {
             signature={signature}
             sending={sending}
             onSend={handleSend}
+            rawTemplateBody={rawTemplateBody}
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">

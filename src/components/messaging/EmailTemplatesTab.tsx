@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Plus, Search, Pencil, Copy, Trash2, Lock, Loader2,
-  Mail, ChevronDown, X, Sparkles, Tag,
+  Mail, ChevronDown, X, Sparkles, Tag, Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -99,22 +99,25 @@ function TypeBadge({ type }: { type: TemplateType }) {
 // ── Modal ────────────────────────────────────────────────────────────────────
 
 interface ModalProps {
-  initial:  typeof BLANK_FORM | null;
-  onSave:   (data: typeof BLANK_FORM) => Promise<void>;
-  onClose:  () => void;
-  saving:   boolean;
+  initial:   typeof BLANK_FORM | null;
+  onSave:    (data: typeof BLANK_FORM) => Promise<void>;
+  onClose:   () => void;
+  saving:    boolean;
+  viewOnly?: boolean;
 }
 
-function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
+function TemplateModal({ initial, onSave, onClose, saving, viewOnly }: ModalProps) {
   const [form, setForm] = useState(initial ?? BLANK_FORM);
   const isEdit = !!initial?.name;
 
   const set = (field: keyof typeof BLANK_FORM) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-      setForm((p) => ({ ...p, [field]: e.target.value }));
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+      if (!viewOnly) setForm((p) => ({ ...p, [field]: e.target.value }));
+    };
 
-  const insertVar = (v: string) =>
-    setForm((p) => ({ ...p, body: p.body + v }));
+  const insertVar = (v: string) => {
+    if (!viewOnly) setForm((p) => ({ ...p, body: p.body + v }));
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -123,12 +126,22 @@ function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
         <div className="flex items-center justify-between border-b px-6 py-4">
           <div className="flex items-center gap-2">
             <Mail className="h-4 w-4 text-primary" />
-            <h2 className="font-semibold">{isEdit ? "Modifier le template" : "Nouveau template"}</h2>
+            <h2 className="font-semibold">
+              {viewOnly ? "Aperçu du template" : (isEdit ? "Modifier le template" : "Nouveau template")}
+            </h2>
           </div>
           <button onClick={onClose} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {/* Read-only notice */}
+        {viewOnly && (
+          <div className="flex items-center gap-2 border-b bg-amber-50 px-6 py-2.5 text-xs text-amber-700 dark:bg-amber-950/30 dark:text-amber-400">
+            <Lock className="h-3 w-3 shrink-0" />
+            Modèle par défaut — lecture seule. Utilisez &ldquo;Dupliquer&rdquo; pour créer une version personnalisable.
+          </div>
+        )}
 
         <ScrollArea className="flex-1">
           <div className="space-y-4 p-6">
@@ -139,8 +152,9 @@ function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
                 <Input
                   value={form.name}
                   onChange={set("name")}
+                  readOnly={viewOnly}
                   placeholder="Ex. Premier contact B2B"
-                  className="h-9 text-sm"
+                  className={`h-9 text-sm ${viewOnly ? "bg-muted cursor-default" : ""}`}
                 />
               </div>
               <div className="space-y-1.5">
@@ -149,7 +163,8 @@ function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
                   <select
                     value={form.type}
                     onChange={set("type")}
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 pr-8 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-ring"
+                    disabled={viewOnly}
+                    className={`h-9 w-full rounded-md border border-input bg-background px-3 pr-8 text-sm appearance-none focus:outline-none focus:ring-2 focus:ring-ring ${viewOnly ? "bg-muted cursor-default" : ""}`}
                   >
                     {Object.entries(TYPE_CONFIG).map(([key, cfg]) => (
                       <option key={key} value={key}>{cfg.label}</option>
@@ -166,8 +181,9 @@ function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
               <Input
                 value={form.subject}
                 onChange={set("subject")}
+                readOnly={viewOnly}
                 placeholder="Ex. Développer la visibilité de {{company_name}}"
-                className="h-9 text-sm"
+                className={`h-9 text-sm ${viewOnly ? "bg-muted cursor-default" : ""}`}
               />
             </div>
 
@@ -175,26 +191,29 @@ function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-medium">Corps du message</Label>
-                <div className="flex items-center gap-1">
-                  <Sparkles className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Variables :</span>
-                  {VARIABLES.map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => insertVar(v)}
-                      className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
+                {!viewOnly && (
+                  <div className="flex items-center gap-1">
+                    <Sparkles className="h-3 w-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">Variables :</span>
+                    {VARIABLES.map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => insertVar(v)}
+                        className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <textarea
                 value={form.body}
                 onChange={set("body")}
+                readOnly={viewOnly}
                 placeholder="Bonjour {{contact_name}},&#10;&#10;…"
                 rows={12}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+                className={`w-full rounded-md border border-input bg-background px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground ${viewOnly ? "bg-muted cursor-default" : ""}`}
               />
             </div>
           </div>
@@ -202,15 +221,21 @@ function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
 
         {/* Footer */}
         <div className="flex justify-end gap-2 border-t px-6 py-4">
-          <Button variant="outline" onClick={onClose} disabled={saving}>Annuler</Button>
-          <Button
-            onClick={() => onSave(form)}
-            disabled={saving || !form.name.trim() || !form.subject.trim() || !form.body.trim()}
-            className="gap-2"
-          >
-            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {isEdit ? "Enregistrer" : "Créer le template"}
-          </Button>
+          {viewOnly ? (
+            <Button onClick={onClose}>Fermer</Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onClose} disabled={saving}>Annuler</Button>
+              <Button
+                onClick={() => onSave(form)}
+                disabled={saving || !form.name.trim() || !form.subject.trim() || !form.body.trim()}
+                className="gap-2"
+              >
+                {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {isEdit ? "Enregistrer" : "Créer le template"}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -221,12 +246,13 @@ function TemplateModal({ initial, onSave, onClose, saving }: ModalProps) {
 
 interface CardProps {
   template:    EmailTemplate;
+  onView:      () => void;
   onEdit:      () => void;
   onDuplicate: () => void;
   onDelete:    () => void;
 }
 
-function TemplateCard({ template, onEdit, onDuplicate, onDelete }: CardProps) {
+function TemplateCard({ template, onView, onEdit, onDuplicate, onDelete }: CardProps) {
   const preview = template.body.slice(0, 120).replace(/\n/g, " ");
 
   return (
@@ -265,7 +291,17 @@ function TemplateCard({ template, onEdit, onDuplicate, onDelete }: CardProps) {
 
         {/* Actions */}
         <div className="flex items-center gap-1.5">
-          {!template.is_default && (
+          {template.is_default ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 px-2.5 text-xs"
+              onClick={onView}
+            >
+              <Eye className="h-3 w-3" />
+              Voir
+            </Button>
+          ) : (
             <Button
               variant="ghost"
               size="sm"
@@ -302,6 +338,10 @@ function TemplateCard({ template, onEdit, onDuplicate, onDelete }: CardProps) {
   );
 }
 
+// ── Modal state type ──────────────────────────────────────────────────────────
+
+type ModalState = "create" | { template: EmailTemplate; viewOnly: boolean } | null;
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function EmailTemplatesTab() {
@@ -309,7 +349,7 @@ export function EmailTemplatesTab() {
   const [loading, setLoading]     = useState(true);
   const [filter, setFilter]       = useState<TemplateType | "all">("all");
   const [search, setSearch]       = useState("");
-  const [modal, setModal]         = useState<"create" | EmailTemplate | null>(null);
+  const [modal, setModal]         = useState<ModalState>(null);
   const [saving, setSaving]       = useState(false);
 
   const load = useCallback(async () => {
@@ -337,8 +377,8 @@ export function EmailTemplatesTab() {
         });
         if (!res.ok) throw new Error("Création échouée");
         toast.success("Template créé !");
-      } else if (modal && typeof modal === "object") {
-        const res = await authedFetch(`/api/email/templates/${modal.id}`, {
+      } else if (modal && modal !== "create" && !modal.viewOnly) {
+        const res = await authedFetch(`/api/email/templates/${modal.template.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(form),
@@ -396,8 +436,10 @@ export function EmailTemplatesTab() {
   const defaultCount = filtered.filter((t) => t.is_default).length;
   const customCount  = filtered.filter((t) => !t.is_default).length;
 
-  const modalInitial = modal && modal !== "create"
-    ? { name: modal.name, type: modal.type, subject: modal.subject, body: modal.body }
+  const modalTemplate = modal && modal !== "create" ? modal.template : null;
+  const modalViewOnly = modal && modal !== "create" ? modal.viewOnly : false;
+  const modalInitial  = modalTemplate
+    ? { name: modalTemplate.name, type: modalTemplate.type, subject: modalTemplate.subject, body: modalTemplate.body }
     : null;
 
   return (
@@ -488,7 +530,8 @@ export function EmailTemplatesTab() {
                       <TemplateCard
                         key={t.id}
                         template={t}
-                        onEdit={() => setModal(t)}
+                        onView={() => setModal({ template: t, viewOnly: true })}
+                        onEdit={() => setModal({ template: t, viewOnly: false })}
                         onDuplicate={() => handleDuplicate(t)}
                         onDelete={() => handleDelete(t)}
                       />
@@ -515,7 +558,8 @@ export function EmailTemplatesTab() {
                       <TemplateCard
                         key={t.id}
                         template={t}
-                        onEdit={() => setModal(t)}
+                        onView={() => setModal({ template: t, viewOnly: true })}
+                        onEdit={() => setModal({ template: t, viewOnly: false })}
                         onDuplicate={() => handleDuplicate(t)}
                         onDelete={() => handleDelete(t)}
                       />
@@ -534,6 +578,7 @@ export function EmailTemplatesTab() {
           onSave={handleSave}
           onClose={() => setModal(null)}
           saving={saving}
+          viewOnly={modalViewOnly}
         />
       )}
     </div>

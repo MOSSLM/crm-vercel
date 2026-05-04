@@ -186,6 +186,9 @@ export function WhatsAppTab() {
   const [newTplBody, setNewTplBody] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // Raw template body (before variable interpolation) for split view
+  const [rawTemplateBody, setRawTemplateBody] = useState("");
+
   // Load custom templates from localStorage
   useEffect(() => {
     try {
@@ -306,12 +309,16 @@ export function WhatsAppTab() {
     setSelectedRow(row);
     setPhone(row.tel);
     setMessageBody(buildMessage(row, activeTemplateId));
-  }, [activeTemplateId, buildMessage]);
+    const tmpl = templates.find((t) => t.id === activeTemplateId) ?? templates[0];
+    setRawTemplateBody(tmpl?.body ?? "");
+  }, [activeTemplateId, buildMessage, templates]);
 
   const applyTemplate = useCallback((id: string) => {
     setActiveTemplateId(id);
+    const tmpl = templates.find((t) => t.id === id) ?? templates[0];
+    setRawTemplateBody(tmpl?.body ?? "");
     if (selectedRow) setMessageBody(buildMessage(selectedRow, id));
-  }, [selectedRow, buildMessage]);
+  }, [selectedRow, buildMessage, templates]);
 
   // Insert variable at cursor
   const insertVar = (varKey: string) => {
@@ -651,32 +658,50 @@ export function WhatsAppTab() {
                 </div>
               </div>
 
-              {/* Right aside: preview */}
-              {messageBody && (
-                <div className="flex w-72 shrink-0 flex-col border-l bg-muted/10">
-                  <div className="border-b px-4 py-2.5">
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Aperçu</p>
+              {/* Right aside: split view — template brut (haut) / message rendu (bas) */}
+              <div className="flex w-72 shrink-0 flex-col border-l bg-muted/10">
+                {/* Top: raw template with highlighted variables */}
+                <div className="flex flex-col border-b" style={{ flex: "1 1 0", minHeight: 0 }}>
+                  <div className="border-b bg-muted/20 px-4 py-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Template brut</p>
                   </div>
-                  <ScrollArea className="flex-1 p-4">
-                    <div className="flex justify-end">
-                      <div className="relative max-w-[220px] rounded-2xl rounded-tr-sm bg-[#dcf8c6] px-3.5 py-2.5 text-sm shadow-sm dark:bg-[#005c4b]">
-                        <p className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-100">
-                          {messageBody}
-                        </p>
-                        <p className="mt-1 text-right text-[10px] text-gray-500">Maintenant ✓✓</p>
-                      </div>
-                    </div>
-                    {selectedRow.leadMagnetUrl && (
-                      <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-950/30">
-                        <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Lead Magnet</p>
-                        <p className="mt-0.5 truncate text-xs text-emerald-600 dark:text-emerald-500">
-                          {selectedRow.leadMagnetUrl}
-                        </p>
-                      </div>
+                  <ScrollArea className="flex-1 p-3">
+                    <p className="whitespace-pre-wrap break-words text-xs leading-relaxed font-mono">
+                      {highlightVars(rawTemplateBody || (templates.find((t) => t.id === activeTemplateId)?.body ?? ""))}
+                    </p>
+                  </ScrollArea>
+                </div>
+                {/* Bottom: rendered message as WhatsApp bubble */}
+                <div className="flex flex-col" style={{ flex: "1 1 0", minHeight: 0 }}>
+                  <div className="border-b bg-muted/20 px-4 py-2">
+                    <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Message rendu</p>
+                  </div>
+                  <ScrollArea className="flex-1 p-3">
+                    {messageBody ? (
+                      <>
+                        <div className="flex justify-end">
+                          <div className="relative max-w-[200px] rounded-2xl rounded-tr-sm bg-[#dcf8c6] px-3 py-2 text-xs shadow-sm dark:bg-[#005c4b]">
+                            <p className="whitespace-pre-wrap break-words text-gray-800 dark:text-gray-100">
+                              {messageBody}
+                            </p>
+                            <p className="mt-1 text-right text-[10px] text-gray-500">Maintenant ✓✓</p>
+                          </div>
+                        </div>
+                        {selectedRow.leadMagnetUrl && (
+                          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 dark:border-emerald-800 dark:bg-emerald-950/30">
+                            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Lead Magnet</p>
+                            <p className="mt-0.5 truncate text-xs text-emerald-600 dark:text-emerald-500">
+                              {selectedRow.leadMagnetUrl}
+                            </p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center pt-4">Sélectionnez un template</p>
                     )}
                   </ScrollArea>
                 </div>
-              )}
+              </div>
             </div>
           </>
         ) : (
