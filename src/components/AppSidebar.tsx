@@ -169,6 +169,15 @@ export const AppSidebar = () => {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                  {/* Automations — top-level shortcut */}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={isActive("/automations")}>
+                      <Link href="/automations">
+                        <Zap className="h-4 w-4" />
+                        <span>Automatisations</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -261,7 +270,7 @@ export const AppSidebar = () => {
                       <SidebarMenuSub>
                         {actionItems.map((item) => (
                           <SidebarMenuSubItem key={item.href}>
-                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.activeHref ?? item.href)}>
                               <Link href={item.href}>
                                 <item.icon className="h-4 w-4" />
                                 <span>{item.title}</span>
