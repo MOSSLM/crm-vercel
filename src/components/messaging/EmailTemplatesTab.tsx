@@ -377,7 +377,7 @@ export function EmailTemplatesTab() {
         });
         if (!res.ok) throw new Error("Création échouée");
         toast.success("Template créé !");
-      } else if (modal && modal !== "create" && !modal.viewOnly) {
+      } else if (modal && !modal.viewOnly) {
         const res = await authedFetch(`/api/email/templates/${modal.template.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
