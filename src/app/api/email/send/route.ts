@@ -31,6 +31,24 @@ export async function POST(req: Request) {
   let status: "sent" | "failed" = "sent";
   let errorMessage: string | undefined;
 
+  // Optionally fetch and attach the audit PDF (base64 content for Resend)
+  const attachments: { filename: string; content: string }[] = [];
+  if (payload.audit_pdf_url) {
+    try {
+      const pdfRes = await fetch(payload.audit_pdf_url);
+      if (pdfRes.ok) {
+        const arrayBuf = await pdfRes.arrayBuffer();
+        // Convert to base64 without Buffer (web-compatible)
+        const bytes = new Uint8Array(arrayBuf);
+        let binary = "";
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        attachments.push({ filename: "audit.pdf", content: btoa(binary) });
+      }
+    } catch (e) {
+      console.warn("[email/send] could not fetch audit PDF:", e);
+    }
+  }
+
   try {
     const result = await resend.emails.send({
       from: fromEmail,
@@ -38,6 +56,7 @@ export async function POST(req: Request) {
       subject: payload.subject,
       html: payload.body_html,
       text: payload.body_text ?? undefined,
+      attachments: attachments.length > 0 ? attachments : undefined,
     });
 
     if (result.error) {

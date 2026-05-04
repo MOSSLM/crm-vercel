@@ -19,6 +19,7 @@ export const sendEmailSchema = z.object({
   entreprise_id: z.coerce.number().int().positive().optional(),
   opportunite_id: z.string().uuid().optional(),
   lead_magnet_project_id: z.string().uuid().optional(),
+  audit_pdf_url: z.string().url().optional(),
 });
 export type SendEmailPayload = z.infer<typeof sendEmailSchema>;
 

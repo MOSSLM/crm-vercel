@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Mail, User, Building2, PenLine } from "lucide-react";
+import { Mail, User, Building2, PenLine, FileText, Send, Paperclip } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { fetchAuditByOpportunite } from "@/utils/auditApi";
 import { authedFetch } from "@/utils/authedFetch";
@@ -13,6 +15,7 @@ import { ContactList } from "./ContactList";
 import { CompanyList } from "./CompanyList";
 import { EmailCompose } from "./EmailCompose";
 import { EmailHistory } from "./EmailHistory";
+import { cn } from "@/lib/utils";
 
 type Mode = "contacts" | "entreprises" | "manuel";
 
@@ -34,7 +37,7 @@ export function EmailTab() {
   const [mode, setMode] = useState<Mode>("contacts");
 
   // Signature + DB templates
-  const [signature, setSignature]   = useState<SignatureData | null>(null);
+  const [signature, setSignature] = useState<SignatureData | null>(null);
   const [dbTemplates, setDbTemplates] = useState<EmailTemplate[]>([]);
 
   // LM map: opportunite_id → { ready, url }
@@ -51,13 +54,12 @@ export function EmailTab() {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
-  const [auditUrl, setAuditUrl] = useState<string | undefined>();
+  const [auditPdfUrl, setAuditPdfUrl] = useState<string | undefined>();
+  const [attachAudit, setAttachAudit] = useState(false);
   const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
-  // Contextual vars for template re-application
   const [currentVars, setCurrentVars] = useState({ companyName: "", contactName: "", lmUrl: "" });
 
-  // Load signature settings and DB templates on mount
   useEffect(() => {
     authedFetch("/api/email/signature")
       .then((r) => r.json())
@@ -86,7 +88,6 @@ export function EmailTab() {
     }).catch(() => {});
   }, []);
 
-  // When DB templates load, switch the default templateId to the DB lead_magnet entry
   useEffect(() => {
     if (dbTemplates.length > 0) {
       const lm = dbTemplates.find((t) => t.type === "lead_magnet" && t.is_default);
@@ -96,7 +97,6 @@ export function EmailTab() {
 
   const applyTemplate = useCallback((id: string, vars: { companyName: string; contactName: string; lmUrl?: string }) => {
     setTemplateId(id);
-    // Search DB templates first, then fall back to static list (covers initial state)
     const tmpl = dbTemplates.find((t) => t.id === id) ?? TEMPLATES.find((t) => t.id === id);
     if (!tmpl) return;
     const v = makeVars(vars.companyName, vars.contactName, vars.lmUrl);
@@ -105,11 +105,12 @@ export function EmailTab() {
   }, [dbTemplates]);
 
   const fetchAudit = useCallback(async (opportunityId?: string) => {
-    setAuditUrl(undefined);
+    setAuditPdfUrl(undefined);
+    setAttachAudit(false);
     if (!opportunityId) return;
     try {
       const audit = await fetchAuditByOpportunite(opportunityId);
-      if (audit?.pdf_url && audit.statut === "ready") setAuditUrl(audit.pdf_url);
+      if (audit?.pdf_url && audit.statut === "ready") setAuditPdfUrl(audit.pdf_url);
     } catch {}
   }, []);
 
@@ -144,7 +145,8 @@ export function EmailTab() {
     setMode(m);
     setSelectedContact(null);
     setSelectedCompany(null);
-    setAuditUrl(undefined);
+    setAuditPdfUrl(undefined);
+    setAttachAudit(false);
     if (m === "manuel") {
       setToEmail("");
       setToName("");
@@ -152,6 +154,26 @@ export function EmailTab() {
       setBody("");
     }
   };
+
+  // "Envoyer l'audit" — applique un template audit et coche l'attachement
+  const handleSendAuditQuickAction = useCallback(() => {
+    const auditTemplate = dbTemplates.find((t) => t.type === "suivi") ?? TEMPLATES.find((t) => t.id === "suivi");
+    const vars = {
+      company_name: currentVars.companyName,
+      contact_name: currentVars.contactName,
+      lead_magnet_url: auditPdfUrl ?? currentVars.lmUrl ?? "(lien audit)",
+    };
+    if (auditTemplate) {
+      setSubject(interpolate(auditTemplate.subject, vars));
+      setBody(
+        interpolate(auditTemplate.body, vars) +
+        (auditPdfUrl ? `\n\n📄 Votre audit : ${auditPdfUrl}` : "")
+      );
+      setTemplateId(auditTemplate.id);
+    }
+    setAttachAudit(true);
+    toast.success("Template audit appliqué — vérifiez le message puis envoyez !");
+  }, [dbTemplates, currentVars, auditPdfUrl]);
 
   const handleSend = async () => {
     if (!toEmail || !subject || !body) {
@@ -161,7 +183,6 @@ export function EmailTab() {
     setSending(true);
     try {
       const bodyHtml = wrapEmailBodyHtml(body, signature);
-
       const res = await authedFetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -174,12 +195,14 @@ export function EmailTab() {
           contact_id: selectedContact?.contact.id,
           entreprise_id: selectedContact?.contact.entreprise_id ?? selectedCompany?.company.id,
           opportunite_id: selectedContact?.opportunity?.id ?? selectedCompany?.opportunity?.id,
+          audit_pdf_url: attachAudit && auditPdfUrl ? auditPdfUrl : undefined,
         }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Échec");
       toast.success("Email envoyé avec succès !");
       setHistoryRefreshKey((k) => k + 1);
+      setAttachAudit(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur lors de l'envoi");
     } finally {
@@ -187,38 +210,51 @@ export function EmailTab() {
     }
   };
 
-  const composeActive =
-    mode === "manuel" || !!selectedContact || !!selectedCompany;
-
+  const composeActive = mode === "manuel" || !!selectedContact || !!selectedCompany;
   const historyContactId = selectedContact?.contact.id;
   const historyEntrepriseId = selectedContact?.contact.entreprise_id ?? selectedCompany?.company.id;
-
   const currentLmUrl = selectedContact?.leadMagnetUrl ?? selectedCompany?.leadMagnetUrl;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Mode tabs */}
-      <div className="flex shrink-0 border-b">
+      <div className="flex shrink-0 border-b bg-muted/20">
         {MODE_TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => handleSwitchMode(id)}
-            className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+            className={cn(
+              "flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
               mode === id
                 ? "border-primary text-primary"
                 : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
+            )}
           >
             <Icon className="h-3.5 w-3.5" />
             {label}
           </button>
         ))}
+
+        {/* Audit quick action — visible when audit is available */}
+        {auditPdfUrl && (
+          <div className="ml-auto flex items-center px-3">
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 gap-1.5 border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:bg-blue-950/30 dark:text-blue-400"
+              onClick={handleSendAuditQuickAction}
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              Envoyer l'audit PDF
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* 3-panel layout */}
       <div className="flex flex-1 gap-0 overflow-hidden">
-        {/* Left panel */}
-        <div className="flex w-80 shrink-0 flex-col border-r">
+        {/* Left panel: contact/company list */}
+        <div className="flex w-72 shrink-0 flex-col border-r bg-muted/20">
           {mode === "contacts" && (
             <ContactList lmMap={lmMap} selected={selectedContact} onSelect={handleSelectContact} />
           )}
@@ -258,19 +294,24 @@ export function EmailTab() {
             onApplyTemplate={handleApplyTemplate}
             dbTemplates={dbTemplates}
             leadMagnetUrl={currentLmUrl}
-            auditUrl={auditUrl}
+            auditUrl={auditPdfUrl}
+            attachAudit={attachAudit}
+            onToggleAttachAudit={() => setAttachAudit((v) => !v)}
             signature={signature}
             sending={sending}
             onSend={handleSend}
           />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <Mail className="h-10 w-10 opacity-20" />
-            <p className="text-sm">
-              {mode === "contacts"
-                ? "Sélectionnez un contact pour composer un email"
-                : "Sélectionnez une entreprise pour composer un email"}
-            </p>
+            <Mail className="h-12 w-12 opacity-15" />
+            <div className="text-center">
+              <p className="font-medium">
+                {mode === "contacts" ? "Sélectionnez un contact" : "Sélectionnez une entreprise"}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Le message sera pré-rempli avec le template actif
+              </p>
+            </div>
           </div>
         )}
 

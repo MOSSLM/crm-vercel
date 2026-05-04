@@ -82,7 +82,7 @@ function usePageTitle() {
 
 const viewLabels: Record<string, string> = {
   base: "Vue principale",
-  prospection: "Prospection",
+  prospection: "Sales",
   qualification: "Qualification",
 };
 
@@ -136,14 +136,14 @@ export function AppHeader() {
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <Link
-                  href="/qualified?mode=cold_call"
+                  href="/prospection/dashboard"
                   onClick={() => setView("prospection")}
                   className="flex items-center gap-2"
                 >
                   <Phone className="h-4 w-4" />
                   <div>
-                    <div className="font-medium">Prospection</div>
-                    <div className="text-xs text-muted-foreground">Cold call & pipeline</div>
+                    <div className="font-medium">Sales</div>
+                    <div className="text-xs text-muted-foreground">Pipeline & actions quotidiennes</div>
                   </div>
                 </Link>
               </DropdownMenuItem>

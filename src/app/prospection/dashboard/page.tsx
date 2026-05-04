@@ -1,14 +1,14 @@
 import AppLayout from "@/components/layout/AppLayout";
 import RequireAuth from "@/components/auth/RequireAuth";
 import WorkspaceViewSync from "@/components/layout/WorkspaceViewSync";
-import { DashboardPage } from "@/components/DashboardPage";
+import { SalesDashboard } from "@/components/SalesDashboard";
 
-export default function ProspectionDashboardRoute() {
+export default function SalesDashboardRoute() {
   return (
     <AppLayout>
       <RequireAuth>
         <WorkspaceViewSync view="prospection" />
-        <DashboardPage />
+        <SalesDashboard />
       </RequireAuth>
     </AppLayout>
   );

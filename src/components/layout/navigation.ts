@@ -76,16 +76,13 @@ export const ACTION_ITEMS: NavItem[] = [
 
 export const DASHBOARD_ITEMS: NavItem[] = [
   { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
-  { title: "Prospection", icon: Phone, href: "/prospection/dashboard" },
+  { title: "Sales", icon: Phone, href: "/prospection/dashboard" },
   { title: "Qualification", icon: CheckCircle, href: "/qualification/dashboard" },
 ];
 
 export const CALENDAR_ITEMS: NavItem[] = [{ title: "Calendrier", icon: CalendarDays, href: "/calendar" }];
 
-export const MESSAGERIE_ITEMS: NavItem[] = [
-  { title: "Email", icon: Mail, href: "/messagerie" },
-  { title: "WhatsApp", icon: MessageCircle, href: "/messagerie?tab=whatsapp" },
-];
+export const MESSAGERIE_ITEMS: NavItem[] = [];
 
 // Phone icon imported lazily for dashboard section.
 import { Phone } from "lucide-react";
