@@ -42,6 +42,7 @@ import {
   Package,
   ClipboardList,
   MessageSquare,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
@@ -172,6 +173,15 @@ export const AppSidebar = () => {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                  {/* Automations — top-level shortcut */}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={isActive("/automations")}>
+                      <Link href="/automations">
+                        <Zap className="h-4 w-4" />
+                        <span>Automatisations</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -248,7 +258,7 @@ export const AppSidebar = () => {
                       <SidebarMenuSub>
                         {actionItems.map((item) => (
                           <SidebarMenuSubItem key={item.href}>
-                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.activeHref ?? item.href)}>
                               <Link href={item.href}>
                                 <item.icon className="h-4 w-4" />
                                 <span>{item.title}</span>
@@ -268,7 +278,6 @@ export const AppSidebar = () => {
 
       {/* Footer */}
       <SidebarFooter className="border-t border-sidebar-border p-3">
-        {/* User info */}
         {user?.name && (
           <div className="flex items-center gap-2 px-1 py-2 mb-1">
             <UserAvatar name={user.name} />

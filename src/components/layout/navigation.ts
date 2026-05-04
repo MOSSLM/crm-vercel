@@ -22,11 +22,17 @@ import {
   Copy,
   Layout,
   MessageSquare,
-  Mail,
-  MessageCircle,
+  Zap,
 } from "lucide-react";
 
-export type TopCategoryKey = "dashboard" | "calendar" | "crm" | "production" | "actions" | "messagerie";
+export type TopCategoryKey =
+  | "dashboard"
+  | "calendar"
+  | "crm"
+  | "production"
+  | "actions"
+  | "messagerie"
+  | "automations";
 
 export type NavItem = {
   title: string;
@@ -42,6 +48,7 @@ export const TOP_CATEGORIES: Array<NavItem & { key: TopCategoryKey }> = [
   { key: "production", title: "Production", href: "/production/projets", icon: FolderKanban },
   { key: "actions", title: "Actions", href: "/qualification", icon: CheckSquare },
   { key: "messagerie", title: "Messagerie", href: "/messagerie", icon: MessageSquare },
+  { key: "automations", title: "Automatisations", href: "/automations", icon: Zap },
 ];
 
 export const CRM_ITEMS: NavItem[] = [
@@ -74,6 +81,10 @@ export const ACTION_ITEMS: NavItem[] = [
   { title: "Site Builder", icon: Layout, href: "/site-builder" },
 ];
 
+export const AUTOMATIONS_ITEMS: NavItem[] = [
+  { title: "Workflows", icon: Zap, href: "/automations" },
+];
+
 export const DASHBOARD_ITEMS: NavItem[] = [
   { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
   { title: "Sales", icon: Phone, href: "/prospection/dashboard" },
@@ -84,10 +95,10 @@ export const CALENDAR_ITEMS: NavItem[] = [{ title: "Calendrier", icon: CalendarD
 
 export const MESSAGERIE_ITEMS: NavItem[] = [];
 
-// Phone icon imported lazily for dashboard section.
 import { Phone } from "lucide-react";
 
 export function getCategoryFromPath(pathname: string): TopCategoryKey {
+  if (pathname.startsWith("/automations")) return "automations";
   if (pathname.startsWith("/calendar")) return "calendar";
   if (pathname.startsWith("/production") || pathname.startsWith("/objectifs")) return "production";
   if (
@@ -99,7 +110,6 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
   ) {
     return "crm";
   }
-
   if (
     pathname.startsWith("/actions/sprint") ||
     pathname.startsWith("/qualification") ||
@@ -114,9 +124,7 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
   ) {
     return "actions";
   }
-
   if (pathname.startsWith("/messagerie")) return "messagerie";
-
   return "dashboard";
 }
 
@@ -128,6 +136,8 @@ export function getTopTabsForCategory(category: TopCategoryKey): NavItem[] {
       return PRODUCTION_ITEMS;
     case "actions":
       return ACTION_ITEMS;
+    case "automations":
+      return AUTOMATIONS_ITEMS;
     case "calendar":
       return CALENDAR_ITEMS;
     case "messagerie":
