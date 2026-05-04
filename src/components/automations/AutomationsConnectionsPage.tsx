@@ -104,7 +104,7 @@ const CONNECTION_DEFS: ConnectionDef[] = [
   {
     id: 'webhook',
     title: 'Webhook sortant',
-    description: 'Appelez n'importe quelle API externe depuis vos automatisations avec authentification.',
+    description: "Appelez n'importe quelle API externe depuis vos automatisations avec authentification.",
     icon: Globe,
     iconBg: 'bg-emerald-500/10',
     iconColor: 'text-emerald-500',
@@ -133,7 +133,7 @@ const CONNECTION_DEFS: ConnectionDef[] = [
   {
     id: 'supabase',
     title: 'Supabase Edge Functions',
-    description: 'Invoquez vos Edge Functions Supabase directement depuis les nœuds d'automatisation.',
+    description: "Invoquez vos Edge Functions Supabase directement depuis les nœuds d'automatisation.",
     icon: Database,
     iconBg: 'bg-green-500/10',
     iconColor: 'text-green-500',
