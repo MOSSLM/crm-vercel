@@ -23,6 +23,7 @@ import {
   Layout,
   MessageSquare,
   Zap,
+  Plug,
 } from "lucide-react";
 
 export type TopCategoryKey =
@@ -83,6 +84,7 @@ export const ACTION_ITEMS: NavItem[] = [
 
 export const AUTOMATIONS_ITEMS: NavItem[] = [
   { title: "Workflows", icon: Zap, href: "/automations" },
+  { title: "Connexions", icon: Plug, href: "/automations/connections" },
 ];
 
 export const DASHBOARD_ITEMS: NavItem[] = [
