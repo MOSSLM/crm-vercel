@@ -582,3 +582,69 @@ export interface AuditTemplate {
   created_at: string;
   updated_at: string;
 }
+
+// ── WORKFLOW AUTOMATION ──────────────────────────────────────
+
+export type WorkflowActionType = 'create_task' | 'add_note' | 'send_email' | 'update_field';
+
+export type WorkflowTriggerType =
+  | 'stage_changed'
+  | 'opportunite_created'
+  | 'email_sent'
+  | 'offre_accepted';
+
+export interface WorkflowAction {
+  type: WorkflowActionType;
+  delay_days?: number;
+  params: Record<string, string>;
+}
+
+export interface CrmWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  trigger_type: WorkflowTriggerType;
+  trigger_conditions: Record<string, string>;
+  actions: WorkflowAction[];
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmWorkflowExecution {
+  id: string;
+  workflow_id: string;
+  opportunite_id?: string;
+  trigger_data?: Record<string, unknown>;
+  status: 'completed' | 'failed' | 'partial';
+  actions_executed?: WorkflowAction[];
+  error?: string;
+  executed_at: string;
+}
+
+export interface OpportuniteTask {
+  id: string;
+  opportunite_id: string;
+  entreprise_id?: number;
+  titre: string;
+  description?: string;
+  type: 'relance' | 'appel' | 'email' | 'rdv' | 'autre';
+  statut: 'a_faire' | 'fait' | 'annule';
+  due_date?: string;
+  assigned_to?: string;
+  workflow_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OpportuniteOffre {
+  id: string;
+  opportunite_id: string;
+  offre_id?: string;
+  offre_nom: string;
+  offre_prix_ht?: number;
+  statut: 'proposee' | 'acceptee' | 'refusee' | 'en_cours';
+  notes?: string;
+  created_at: string;
+  offres?: Pick<Offer, 'id' | 'nom' | 'type' | 'prix_ht' | 'devise' | 'billing_period'>;
+}
