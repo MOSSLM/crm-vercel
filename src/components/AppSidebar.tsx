@@ -9,7 +9,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -42,6 +41,7 @@ import {
   Package,
   ClipboardList,
   MessageSquare,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
@@ -138,9 +138,6 @@ export const AppSidebar = () => {
       <SidebarContent>
         {focusItems ? (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground px-3 py-2">
-              {view === "prospection" ? "Mode Sales" : "Mode Qualification"}
-            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {focusItems.map((item) => (
@@ -172,6 +169,22 @@ export const AppSidebar = () => {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Automatisation */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={isActive("/workflows")}>
+                      <Link href="/workflows">
+                        <Zap className="h-4 w-4" />
+                        <span>Automatisation</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -268,7 +281,6 @@ export const AppSidebar = () => {
 
       {/* Footer */}
       <SidebarFooter className="border-t border-sidebar-border p-3">
-        {/* User info */}
         {user?.name && (
           <div className="flex items-center gap-2 px-1 py-2 mb-1">
             <UserAvatar name={user.name} />
