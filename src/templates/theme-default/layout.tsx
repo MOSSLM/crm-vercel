@@ -1,15 +1,11 @@
 import Link from "next/link";
 import React from "react";
+import type { SiteGlobalSettings, ThemeGlobalVariables } from "@/types";
 
 interface ThemeLayoutProps {
   children: React.ReactNode;
   variables: Record<string, string>;
-  settings: {
-    colors: { primary: string; secondary: string; accent: string; background: string; text: string };
-    fonts: { heading: string; body: string };
-    borderRadius?: string;
-    spacing?: string;
-  };
+  settings: ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings };
   companyName?: string;
   logoUrl?: string;
   phone?: string;
