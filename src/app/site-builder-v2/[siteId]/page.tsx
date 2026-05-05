@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -43,9 +44,9 @@ export default function SiteBuilderV2Page() {
     return (
       <div className="flex flex-col items-center justify-center h-screen bg-[#0f0f11]">
         <p className="text-white/40 text-sm mb-3">Site introuvable</p>
-        <a href="/site-builder-v2" className="text-blue-400 hover:underline text-sm">
+        <Link href="/site-builder-v2" className="text-blue-400 hover:underline text-sm">
           ← Retour aux sites
-        </a>
+        </Link>
       </div>
     );
   }
