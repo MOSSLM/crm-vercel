@@ -83,7 +83,6 @@ export const ACTION_ITEMS: NavItem[] = [
 ];
 
 export const AUTOMATIONS_ITEMS: NavItem[] = [
-  { title: "Workflows", icon: Zap, href: "/automations" },
   { title: "Connexions", icon: Plug, href: "/automations/connections" },
 ];
 
