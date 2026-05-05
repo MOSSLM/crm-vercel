@@ -122,22 +122,19 @@ function siteConfigReducer(state: SiteConfigState, action: SiteConfigAction): Si
   }
 }
 
-function deepMerge(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
-  const result = { ...base };
-  for (const key of Object.keys(override)) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function deepMerge<T extends object>(base: T, override: Partial<T>): T {
+  const result = { ...base } as T;
+  for (const key of Object.keys(override) as Array<keyof T>) {
     const bVal = base[key];
     const oVal = override[key];
-    if (
-      oVal !== null &&
-      typeof oVal === "object" &&
-      !Array.isArray(oVal) &&
-      bVal !== null &&
-      typeof bVal === "object" &&
-      !Array.isArray(bVal)
-    ) {
-      result[key] = deepMerge(bVal as Record<string, unknown>, oVal as Record<string, unknown>);
-    } else {
-      result[key] = oVal;
+    if (isRecord(oVal) && isRecord(bVal)) {
+      result[key] = deepMerge(bVal as object, oVal as object) as unknown as T[keyof T];
+    } else if (oVal !== undefined) {
+      result[key] = oVal as T[keyof T];
     }
   }
   return result;
