@@ -1,3 +1,4 @@
+import Link from "next/link";
 import React from "react";
 
 interface ThemeLayoutProps {
@@ -36,7 +37,7 @@ const ThemeLayout: React.FC<ThemeLayoutProps> = ({
       {/* Header */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-gray-100 shadow-sm">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <a href="/" className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             {logoUrl ? (
               <img src={logoUrl} alt={companyName ?? "Logo"} className="h-10 w-auto object-contain" />
             ) : (
@@ -47,7 +48,7 @@ const ThemeLayout: React.FC<ThemeLayoutProps> = ({
                 {companyName ?? "Entreprise"}
               </span>
             )}
-          </a>
+          </Link>
 
           <nav className="hidden md:flex items-center gap-6">
             <a href="#services" className="text-sm font-medium text-gray-600 hover:text-[var(--color-primary)] transition-colors">
