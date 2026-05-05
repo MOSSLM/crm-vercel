@@ -967,14 +967,25 @@ export const DEFAULT_STYLE_GUIDE: StyleGuide = {
   },
 };
 
+/** Section entry within a sitemap page (for Sitemap workspace) */
+export interface SitemapSection {
+  id: string;
+  name: string;
+  description: string;
+  type?: string;
+}
+
 /** Page entry in sites.sitemap */
 export interface SitemapPage {
   id: string;
   slug: string;
   title: string;
+  sections?: SitemapSection[];
   metaTitle?: string;
   metaDescription?: string;
 }
+
+export type WorkspaceId = 'sitemap' | 'wireframe' | 'style-guide' | 'design';
 
 /** State for the Relume-like builder */
 export interface RelumeBuilderState {
@@ -987,7 +998,8 @@ export interface RelumeBuilderState {
   activePage: string;
   selectedInstanceId: string | null;
   selectedSnippetId: string | null;
-  deviceView: 'desktop' | 'mobile';
+  deviceView: 'desktop' | 'tablet' | 'mobile';
+  activeWorkspace: WorkspaceId;
   aiPanelOpen: boolean;
   stylePanelOpen: boolean;
   libraryOpen: boolean;
@@ -1006,7 +1018,8 @@ export interface RelumeHistoryEntry {
 export type RelumeBuilderAction =
   | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[] } }
   | { type: 'SET_ACTIVE_PAGE'; payload: string }
-  | { type: 'SET_DEVICE_VIEW'; payload: 'desktop' | 'mobile' }
+  | { type: 'SET_DEVICE_VIEW'; payload: 'desktop' | 'tablet' | 'mobile' }
+  | { type: 'SET_WORKSPACE'; payload: WorkspaceId }
   | { type: 'SELECT_INSTANCE'; payload: string | null }
   | { type: 'SELECT_SNIPPET'; payload: string | null }
   | { type: 'ADD_INSTANCE'; payload: { instance: SiteSectionInstance; pageSlug: string; index?: number } }

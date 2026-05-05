@@ -1,21 +1,15 @@
 "use client";
 
 import React from "react";
-import Link from "next/link";
-import {
-  Save, Globe, Laptop, Smartphone, Undo2, Redo2, Sparkles, Palette,
-  Eye, Layers, ArrowLeft, Check
-} from "lucide-react";
+import { Save, Globe, Check, Share2, Upload, Users } from "lucide-react";
 import { toast } from "sonner";
-import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage } from "@/types";
+import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, WorkspaceId } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { RelumeBuilderProvider, useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
-import { SectionLibraryPanel } from "./SectionLibraryPanel";
-import { StyleGuidePanel } from "./StyleGuidePanel";
-import { PropertiesPanel } from "./PropertiesPanel";
-import { AIPanel } from "./AIPanel";
-import { RelumeCanvas } from "./RelumeCanvas";
-import { PageTabsBar } from "./PageTabsBar";
+import { SitemapWorkspace } from "./SitemapWorkspace";
+import { WireframeWorkspace } from "./WireframeWorkspace";
+import { StyleGuideWorkspace } from "./StyleGuideWorkspace";
+import { DesignWorkspace } from "./DesignWorkspace";
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -58,13 +52,11 @@ function RelumeEditorInner({
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
 
-  // Build lookup map for section defs
   const sectionDefs = React.useMemo(
     () => Object.fromEntries(initialSections.map((s) => [s.id, s])),
     [initialSections]
   );
 
-  // Load initial data
   React.useEffect(() => {
     dispatch({
       type: "LOAD",
@@ -84,24 +76,17 @@ function RelumeEditorInner({
   const handleSave = async () => {
     setSaving(true);
     try {
-      // Save style guide and sitemap to site
       await fetch(`/api/site-builder-v2/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          style_guide: state.styleGuide,
-          sitemap: state.sitemap,
-        }),
+        body: JSON.stringify({ style_guide: state.styleGuide, sitemap: state.sitemap }),
       });
-
-      // Save all section instances
       const instances = Object.values(state.instances);
       await fetch(`/api/site-builder-v2/sites/${siteId}/instances`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instances }),
       });
-
       dispatch({ type: "MARK_SAVED" });
       toast.success("Sauvegardé");
     } catch {
@@ -141,7 +126,6 @@ function RelumeEditorInner({
     const instance = state.instances[instanceId];
     const sectionDef = instance?.section_def ?? (instance?.section_id ? sectionDefs[instance.section_id] : null);
     if (!instance || !sectionDef) return;
-
     try {
       const res = await fetch("/api/site-builder-v2/ai/regenerate-section", {
         method: "POST",
@@ -164,260 +148,151 @@ function RelumeEditorInner({
     }
   };
 
-  // ─── Left panel content ───────────────────────────────────────────────────────
-
-  const renderLeftPanel = () => {
-    if (state.aiPanelOpen) {
-      return (
-        <AIPanel
-          siteId={siteId}
-          enterpriseId={enterpriseId}
-          availableSections={initialSections}
-          onClose={() => dispatch({ type: "TOGGLE_AI_PANEL" })}
-        />
-      );
-    }
-    if (state.stylePanelOpen) {
-      return <StyleGuidePanel />;
-    }
-    return <SectionLibraryPanel sections={initialSections} />;
-  };
-
-  const canUndo = state.historyIndex >= 0;
-  const canRedo = state.historyIndex < state.history.length - 1;
+  const WORKSPACES: { id: WorkspaceId; label: string }[] = [
+    { id: "sitemap", label: "Sitemap" },
+    { id: "wireframe", label: "Wireframe" },
+    { id: "style-guide", label: "Style Guide" },
+    { id: "design", label: "Design" },
+  ];
 
   return (
-    <div className="flex flex-col h-screen bg-[#0f0f11] text-white overflow-hidden">
+    <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">
 
       {/* ─ Top Bar ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-white/10 bg-[#0f0f11] flex-shrink-0 z-40">
+      <div className="flex items-center h-12 px-4 border-b border-gray-200 bg-white flex-shrink-0 z-40 select-none">
 
-        {/* Back */}
-        <Link
-          href="/site-builder-v2"
-          className="flex items-center gap-1.5 text-white/40 hover:text-white/80 transition-colors text-sm mr-1"
-        >
-          <ArrowLeft size={15} />
-        </Link>
-
-        {/* Site name */}
-        <div className="flex items-center gap-2">
-          <div
-            className="w-5 h-5 rounded"
-            style={{ backgroundColor: state.styleGuide.colors.primary }}
-          />
-          <span className="text-sm font-medium text-white/80">{siteName}</span>
+        {/* Logo + Site name */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex-shrink-0 flex items-center justify-center">
+            <div className="w-2 h-2 rounded-full bg-white/80" />
+          </div>
+          <span className="text-sm font-medium text-gray-800 truncate max-w-[160px]">{siteName}</span>
         </div>
 
-        {/* Dirty indicator */}
-        {state.isDirty && (
-          <span className="text-xs text-amber-400/60 bg-amber-400/10 px-1.5 py-0.5 rounded">
-            Non sauvegardé
-          </span>
-        )}
-
-        <div className="flex-1" />
-
-        {/* Left panel toggles */}
-        <div className="flex items-center gap-1">
-          <TopBarButton
-            active={state.libraryOpen && !state.aiPanelOpen && !state.stylePanelOpen}
-            onClick={() => {
-              dispatch({ type: "TOGGLE_LIBRARY" });
-              if (state.aiPanelOpen) dispatch({ type: "TOGGLE_AI_PANEL" });
-              if (state.stylePanelOpen) dispatch({ type: "TOGGLE_STYLE_PANEL" });
-            }}
-            title="Bibliothèque"
-          >
-            <Layers size={15} />
-          </TopBarButton>
-          <TopBarButton
-            active={state.stylePanelOpen}
-            onClick={() => dispatch({ type: "TOGGLE_STYLE_PANEL" })}
-            title="Style Guide"
-          >
-            <Palette size={15} />
-          </TopBarButton>
-          <TopBarButton
-            active={state.aiPanelOpen}
-            onClick={() => dispatch({ type: "TOGGLE_AI_PANEL" })}
-            title="Assistant IA"
-            className="text-purple-400"
-          >
-            <Sparkles size={15} />
-          </TopBarButton>
-        </div>
-
-        <div className="h-5 w-px bg-white/10" />
-
-        {/* Device toggle */}
-        <div className="flex items-center gap-1">
-          <TopBarButton
-            active={state.deviceView === "desktop"}
-            onClick={() => dispatch({ type: "SET_DEVICE_VIEW", payload: "desktop" })}
-            title="Desktop"
-          >
-            <Laptop size={15} />
-          </TopBarButton>
-          <TopBarButton
-            active={state.deviceView === "mobile"}
-            onClick={() => dispatch({ type: "SET_DEVICE_VIEW", payload: "mobile" })}
-            title="Mobile"
-          >
-            <Smartphone size={15} />
-          </TopBarButton>
-        </div>
-
-        <div className="h-5 w-px bg-white/10" />
-
-        {/* Undo / Redo */}
-        <div className="flex items-center gap-1">
-          <TopBarButton
-            onClick={() => dispatch({ type: "UNDO" })}
-            disabled={!canUndo}
-            title="Annuler (Ctrl+Z)"
-          >
-            <Undo2 size={15} />
-          </TopBarButton>
-          <TopBarButton
-            onClick={() => dispatch({ type: "REDO" })}
-            disabled={!canRedo}
-            title="Refaire (Ctrl+Y)"
-          >
-            <Redo2 size={15} />
-          </TopBarButton>
-        </div>
-
-        <div className="h-5 w-px bg-white/10" />
-
-        {/* Preview */}
-        {isPublished && publishedSubdomain && (
-          <a
-            href={`https://${publishedSubdomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "monsupercrm.fr"}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/60 hover:text-white/90 border border-white/10 hover:border-white/20 rounded-md transition-all"
-          >
-            <Eye size={13} />
-            Prévisualiser
-          </a>
-        )}
-
-        {/* Save */}
-        <button
-          onClick={handleSave}
-          disabled={saving || !state.isDirty}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 hover:border-white/20 rounded-md transition-all disabled:opacity-40"
-        >
-          {saving ? (
-            <div className="w-3 h-3 border border-white/40 border-t-transparent rounded-full animate-spin" />
-          ) : state.isDirty ? (
-            <Save size={13} />
-          ) : (
-            <Check size={13} className="text-green-400" />
-          )}
-          {saving ? "Sauvegarde..." : "Enregistrer"}
+        {/* Invite & earn */}
+        <button className="ml-3 flex items-center gap-1.5 px-3 py-1 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors flex-shrink-0">
+          <Users size={12} />
+          Invite &amp; earn
         </button>
 
-        {/* Publish */}
-        <div className="relative">
-          <button
-            onClick={() => setShowPublish(!showPublish)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded-md transition-all font-medium"
-          >
-            <Globe size={13} />
-            {isPublished ? "Republier" : "Publier"}
-          </button>
-          {showPublish && (
-            <div className="absolute top-full right-0 mt-2 w-72 bg-[#1a1a1e] border border-white/15 rounded-xl shadow-2xl p-4 z-50">
-              <div className="text-sm font-semibold mb-3 text-white">Publier le site</div>
-              <div className="flex items-center gap-1 mb-3">
-                <input
-                  type="text"
-                  value={publishDomain}
-                  onChange={(e) => setPublishDomain(e.target.value.replace(/[^a-z0-9-]/g, ""))}
-                  placeholder="mon-site"
-                  className="flex-1 bg-white/5 border border-white/10 rounded px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-blue-500/50"
-                />
-                <span className="text-xs text-white/30">.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "site.fr"}</span>
-              </div>
-              <button
-                onClick={handlePublish}
-                disabled={publishing || !publishDomain.trim()}
-                className="w-full py-2 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all disabled:opacity-50"
-              >
-                {publishing ? "Publication..." : "Publier"}
-              </button>
-            </div>
+        {/* Center workspace tabs */}
+        <div className="flex items-center gap-0.5 mx-auto">
+          {WORKSPACES.map((ws) => (
+            <button
+              key={ws.id}
+              onClick={() => dispatch({ type: "SET_WORKSPACE", payload: ws.id })}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                state.activeWorkspace === ws.id
+                  ? "bg-gray-900 text-white"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-100"
+              }`}
+            >
+              {ws.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Right actions */}
+        <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+          {/* Dirty indicator */}
+          {state.isDirty && (
+            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+              Non sauvegardé
+            </span>
           )}
+
+          {/* Save */}
+          <button
+            onClick={handleSave}
+            disabled={saving || !state.isDirty}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-40"
+          >
+            {saving ? (
+              <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+            ) : state.isDirty ? (
+              <Save size={12} />
+            ) : (
+              <Check size={12} className="text-green-600" />
+            )}
+            {saving ? "Sauvegarde..." : "Enregistrer"}
+          </button>
+
+          {/* Share */}
+          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
+            <Share2 size={12} />
+            Share
+          </button>
+
+          {/* Export */}
+          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
+            <Upload size={12} />
+            Export
+          </button>
+
+          {/* Publish / Upgrade */}
+          <div className="relative">
+            <button
+              onClick={() => setShowPublish(!showPublish)}
+              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-700 transition-colors"
+            >
+              <Globe size={12} />
+              {isPublished ? "Republier" : "Publier"}
+            </button>
+            {showPublish && (
+              <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-50">
+                <div className="text-sm font-semibold mb-3 text-gray-900">Publier le site</div>
+                <div className="flex items-center gap-1 mb-3">
+                  <input
+                    type="text"
+                    value={publishDomain}
+                    onChange={(e) => setPublishDomain(e.target.value.replace(/[^a-z0-9-]/g, ""))}
+                    placeholder="mon-site"
+                    className="flex-1 bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs text-gray-900 font-mono focus:outline-none focus:border-blue-500"
+                  />
+                  <span className="text-xs text-gray-400">.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "site.fr"}</span>
+                </div>
+                <button
+                  onClick={handlePublish}
+                  disabled={publishing || !publishDomain.trim()}
+                  className="w-full py-2 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+                >
+                  {publishing ? "Publication..." : "Publier"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* ─ Page Tabs ─────────────────────────────────────────────────────────── */}
-      <PageTabsBar />
-
-      {/* ─ Main Layout ───────────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-h-0">
-
-        {/* Left Panel */}
-        {(state.libraryOpen || state.aiPanelOpen || state.stylePanelOpen) && (
-          <div className="w-64 flex-shrink-0 border-r border-white/10 bg-[#0f0f11] flex flex-col overflow-hidden">
-            {renderLeftPanel()}
-          </div>
+      {/* ─ Workspace ─────────────────────────────────────────────────────────── */}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        {state.activeWorkspace === "sitemap" && (
+          <SitemapWorkspace
+            siteId={siteId}
+            enterpriseId={enterpriseId}
+            availableSections={initialSections}
+          />
         )}
-
-        {/* Canvas area */}
-        <RelumeCanvas
-          sectionDefs={sectionDefs}
-          onAddSection={() => {
-            if (!state.libraryOpen || state.aiPanelOpen || state.stylePanelOpen) {
-              if (state.aiPanelOpen) dispatch({ type: "TOGGLE_AI_PANEL" });
-              if (state.stylePanelOpen) dispatch({ type: "TOGGLE_STYLE_PANEL" });
-              if (!state.libraryOpen) dispatch({ type: "TOGGLE_LIBRARY" });
-            }
-          }}
-        />
-
-        {/* Right Panel: Properties */}
-        {state.selectedInstanceId && (
-          <div className="w-72 flex-shrink-0 border-l border-white/10 bg-[#0f0f11] flex flex-col overflow-hidden">
-            <PropertiesPanel onRegenerateSection={handleRegenerateSection} />
-          </div>
+        {state.activeWorkspace === "wireframe" && (
+          <WireframeWorkspace
+            sectionDefs={sectionDefs}
+            availableSections={initialSections}
+            onRegenerateSection={handleRegenerateSection}
+          />
+        )}
+        {state.activeWorkspace === "style-guide" && (
+          <StyleGuideWorkspace />
+        )}
+        {state.activeWorkspace === "design" && (
+          <DesignWorkspace
+            sectionDefs={sectionDefs}
+            onRegenerateSection={handleRegenerateSection}
+          />
         )}
       </div>
     </div>
   );
 }
 
-// ─── Top Bar Button ───────────────────────────────────────────────────────────
-
-function TopBarButton({
-  children,
-  active,
-  disabled,
-  onClick,
-  title,
-  className = "",
-}: {
-  children: React.ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  onClick?: () => void;
-  title?: string;
-  className?: string;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={title}
-      className={`p-1.5 rounded transition-all ${
-        active
-          ? "bg-white/10 text-white"
-          : "text-white/40 hover:text-white/80 hover:bg-white/5"
-      } disabled:opacity-30 disabled:cursor-not-allowed ${className}`}
-    >
-      {children}
-    </button>
-  );
-}
+// suppress unused import warnings
+void nanoid;

@@ -8,6 +8,7 @@ import type {
   SiteSectionInstance,
   SitemapPage,
   StyleGuide,
+  WorkspaceId,
 } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 
@@ -72,6 +73,9 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
 
     case "SET_DEVICE_VIEW":
       return { ...state, deviceView: action.payload };
+
+    case "SET_WORKSPACE":
+      return { ...state, activeWorkspace: action.payload as WorkspaceId };
 
     case "SELECT_INSTANCE":
       return { ...state, selectedInstanceId: action.payload, selectedSnippetId: null };
@@ -329,6 +333,7 @@ const initialState: RelumeBuilderState = {
   selectedInstanceId: null,
   selectedSnippetId: null,
   deviceView: "desktop",
+  activeWorkspace: "sitemap",
   aiPanelOpen: false,
   stylePanelOpen: false,
   libraryOpen: true,
