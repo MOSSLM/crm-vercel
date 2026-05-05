@@ -291,7 +291,7 @@ function mergeDeep<T>(target: T, source: Partial<T>): T {
     const sv = source[key];
     const tv = target[key];
     if (sv !== null && typeof sv === "object" && !Array.isArray(sv) && typeof tv === "object" && tv !== null) {
-      out[key] = mergeDeep(tv, sv as Partial<T[keyof T]>) as T[keyof T];
+      out[key] = mergeDeep(tv as T[keyof T] & object, sv as Partial<T[keyof T] & object>) as T[keyof T];
     } else if (sv !== undefined) {
       out[key] = sv as T[keyof T];
     }
