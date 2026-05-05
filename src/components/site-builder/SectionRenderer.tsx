@@ -23,7 +23,7 @@ interface SectionRendererProps {
 
 type AnyProps = Record<string, unknown>;
 
-const sectionComponents: Record<string, React.ComponentType<AnyProps>> = {
+const sectionComponents: Record<string, React.ComponentType<any>> = {
   hero: HeroSection,
   services: ServicesSection,
   about: AboutSection,
