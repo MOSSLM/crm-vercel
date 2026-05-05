@@ -648,3 +648,102 @@ export interface OpportuniteOffre {
   created_at: string;
   offres?: Pick<Offer, 'id' | 'nom' | 'type' | 'prix_ht' | 'devise' | 'billing_period'>;
 }
+
+// ── SITE BUILDER V2 – Theme & Config System ──────────────────────────────────
+
+export type SectionDataSource = 'enterprise' | 'config' | 'client-editable' | 'dynamic';
+
+export interface SectionDefinition {
+  type: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  defaultData: Record<string, unknown>;
+}
+
+export interface ThemeGlobalVariables {
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+  };
+  fonts: { heading: string; body: string };
+  borderRadius?: string;
+  spacing?: string;
+}
+
+export interface ThemeConfig {
+  slug: string;
+  name: string;
+  description?: string;
+  version?: string;
+  sections: SectionDefinition[];
+  globalVariables: ThemeGlobalVariables;
+  enterpriseVariables: string[];
+}
+
+export interface SiteSection {
+  id: string;
+  type: string;
+  dataSource: SectionDataSource;
+  data: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  hidden?: boolean;
+}
+
+export interface SiteConfig {
+  theme: string;
+  settings: ThemeGlobalVariables;
+  sections: SiteSection[];
+}
+
+// Extended site record with publishing fields
+export interface SiteV2 extends Site {
+  published_subdomain?: string;
+  published_domain?: string;
+  is_published?: boolean;
+  enterprise_id?: number;
+  site_config?: SiteConfig | null;
+}
+
+export interface ClientOverride {
+  id: string;
+  site_id: string;
+  section_id: string;
+  data: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlogPost {
+  id: string;
+  site_id: string;
+  title: string;
+  slug: string;
+  excerpt?: string;
+  content?: string;
+  cover_image_url?: string;
+  published_at?: string;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// New editor state based on SiteConfig (replaces element-tree approach)
+export type SiteConfigAction =
+  | { type: 'LOAD_CONFIG'; payload: { config: SiteConfig } }
+  | { type: 'ADD_SECTION'; payload: { section: SiteSection; index?: number } }
+  | { type: 'REMOVE_SECTION'; payload: { sectionId: string } }
+  | { type: 'UPDATE_SECTION'; payload: { sectionId: string; data: Partial<SiteSection> } }
+  | { type: 'REORDER_SECTIONS'; payload: { fromIndex: number; toIndex: number } }
+  | { type: 'UPDATE_SETTINGS'; payload: { settings: Partial<ThemeGlobalVariables> } }
+  | { type: 'SET_THEME'; payload: { theme: string } }
+  | { type: 'TOGGLE_SECTION_VISIBILITY'; payload: { sectionId: string } };
+
+export interface SiteConfigState {
+  config: SiteConfig;
+  isDirty: boolean;
+  selectedSectionId: string | null;
+}
