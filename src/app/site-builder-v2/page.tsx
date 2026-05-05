@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Globe, GlobeOff, Pencil, Trash2 } from "lucide-react";
+import { Plus, Globe, Pencil, Trash2 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -113,7 +113,7 @@ export default function SiteBuilderV2ListPage() {
                     {site.is_published ? (
                       <Globe className="h-5 w-5 text-primary" />
                     ) : (
-                      <GlobeOff className="h-5 w-5 text-muted-foreground" />
+                      <Globe className="h-5 w-5 text-muted-foreground" />
                     )}
                   </div>
                   <Badge variant={site.is_published ? "default" : "secondary"} className="text-xs">

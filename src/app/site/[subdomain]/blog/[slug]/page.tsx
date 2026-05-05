@@ -1,3 +1,4 @@
+import Link from "next/link";
 import React from "react";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
@@ -70,12 +71,12 @@ export default async function BlogPostPage({ params }: BlogPostPageProps) {
         />
       )}
       <div className="mt-12 pt-8 border-t border-gray-200">
-        <a
+        <Link
           href="/"
           className="text-[var(--color-primary)] hover:underline text-sm font-medium"
         >
           ← Retour à l'accueil
-        </a>
+        </Link>
       </div>
     </article>
   );
