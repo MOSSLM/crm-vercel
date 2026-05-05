@@ -653,6 +653,8 @@ export interface OpportuniteOffre {
 
 export type SectionDataSource = 'enterprise' | 'config' | 'client-editable' | 'dynamic';
 
+export type SectionAnimation = 'none' | 'fade-in' | 'slide-up' | 'slide-in-left' | 'slide-in-right';
+
 export interface SectionDefinition {
   type: string;
   label: string;
@@ -669,9 +671,33 @@ export interface ThemeGlobalVariables {
     background: string;
     text: string;
   };
-  fonts: { heading: string; body: string };
+  fonts: {
+    heading: string;
+    body: string;
+    baseSize?: string;
+  };
+  buttons?: {
+    borderRadius?: string;
+    padding?: string;
+    style?: 'filled' | 'outline';
+  };
+  cards?: {
+    borderRadius?: string;
+    shadow?: string;
+    padding?: string;
+  };
+  spacing?: {
+    sectionPadding?: string;
+    elementGap?: string;
+  };
   borderRadius?: string;
-  spacing?: string;
+}
+
+export interface SiteGlobalSettings {
+  metaTitle?: string;
+  metaDescription?: string;
+  faviconUrl?: string;
+  isActive?: boolean;
 }
 
 export interface ThemeConfig {
@@ -679,6 +705,7 @@ export interface ThemeConfig {
   name: string;
   description?: string;
   version?: string;
+  previewImageUrl?: string;
   sections: SectionDefinition[];
   globalVariables: ThemeGlobalVariables;
   enterpriseVariables: string[];
@@ -691,12 +718,23 @@ export interface SiteSection {
   data: Record<string, unknown>;
   config?: Record<string, unknown>;
   hidden?: boolean;
+  animation?: SectionAnimation;
+}
+
+export interface SitePage {
+  id: string;
+  slug: string;
+  title: string;
+  metaTitle?: string;
+  metaDescription?: string;
+  sections: SiteSection[];
 }
 
 export interface SiteConfig {
   theme: string;
-  settings: ThemeGlobalVariables;
-  sections: SiteSection[];
+  settings: ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings };
+  pages: SitePage[];
+  sections?: SiteSection[]; // deprecated — migrated to pages on load
 }
 
 // Extended site record with publishing fields
@@ -731,17 +769,34 @@ export interface BlogPost {
   updated_at: string;
 }
 
+export interface ManagedTheme {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  preview_image_url?: string;
+  config: Partial<ThemeConfig>;
+  is_enabled: boolean;
+  is_builtin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // New editor state based on SiteConfig (replaces element-tree approach)
 export type SiteConfigAction =
   | { type: 'LOAD_CONFIG'; payload: { config: SiteConfig } }
-  | { type: 'ADD_SECTION'; payload: { section: SiteSection; index?: number } }
-  | { type: 'REMOVE_SECTION'; payload: { sectionId: string } }
-  | { type: 'UPDATE_SECTION'; payload: { sectionId: string; data: Partial<SiteSection> } }
-  | { type: 'REORDER_SECTIONS'; payload: { fromIndex: number; toIndex: number } }
-  | { type: 'UPDATE_SETTINGS'; payload: { settings: Partial<ThemeGlobalVariables> } }
+  | { type: 'ADD_SECTION'; payload: { section: SiteSection; index?: number; pageId?: string } }
+  | { type: 'REMOVE_SECTION'; payload: { sectionId: string; pageId?: string } }
+  | { type: 'UPDATE_SECTION'; payload: { sectionId: string; data: Partial<SiteSection>; pageId?: string } }
+  | { type: 'REORDER_SECTIONS'; payload: { fromIndex: number; toIndex: number; pageId?: string } }
+  | { type: 'UPDATE_SETTINGS'; payload: { settings: Partial<ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings }> } }
   | { type: 'SET_THEME'; payload: { theme: string } }
-  | { type: 'TOGGLE_SECTION_VISIBILITY'; payload: { sectionId: string } }
-  | { type: 'SELECT_SECTION'; payload: { sectionId: string | null } };
+  | { type: 'TOGGLE_SECTION_VISIBILITY'; payload: { sectionId: string; pageId?: string } }
+  | { type: 'SELECT_SECTION'; payload: { sectionId: string | null } }
+  | { type: 'ADD_PAGE'; payload: { page: SitePage } }
+  | { type: 'REMOVE_PAGE'; payload: { pageId: string } }
+  | { type: 'UPDATE_PAGE'; payload: { pageId: string; data: Partial<Omit<SitePage, 'id' | 'sections'>> } }
+  | { type: 'SET_ACTIVE_PAGE'; payload: { pageId: string } };
 
 export interface SiteTemplate {
   id: string;
@@ -758,4 +813,5 @@ export interface SiteConfigState {
   config: SiteConfig;
   isDirty: boolean;
   selectedSectionId: string | null;
+  activePageId: string | null;
 }

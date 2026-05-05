@@ -110,6 +110,8 @@ export const AppSidebar = () => {
     { title: "Audits", icon: ClipboardList, href: "/opportunities" },
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
     { title: "Sites V2", icon: Layout, href: "/site-builder-v2" },
+    { title: "Thèmes", icon: Layout, href: "/themes" },
+    { title: "Docs Thèmes", icon: Layout, href: "/docs/themes" },
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
