@@ -284,14 +284,16 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
   }
 }
 
-function mergeDeep<T>(target: T, source: Partial<T>): T {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mergeDeep<T extends Record<string, any>>(target: T, source: Partial<T>): T {
   if (typeof target !== "object" || target === null) return source as T;
   const out = { ...target };
   for (const key of Object.keys(source as object) as (keyof T)[]) {
     const sv = source[key];
     const tv = target[key];
     if (sv !== null && typeof sv === "object" && !Array.isArray(sv) && typeof tv === "object" && tv !== null) {
-      out[key] = mergeDeep(tv, sv as Partial<T[keyof T]>) as T[keyof T];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      out[key] = mergeDeep(tv as Record<string, any>, sv as Record<string, any>) as T[keyof T];
     } else if (sv !== undefined) {
       out[key] = sv as T[keyof T];
     }
