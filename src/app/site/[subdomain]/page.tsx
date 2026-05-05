@@ -35,13 +35,15 @@ export default async function SitePage({ params }: SitePageProps) {
 
   const { config, enterpriseVariables, siteId } = site;
 
+  const sections = config.sections ?? [];
+
   // Pre-fetch blog posts if there's a blog section
-  const hasBlog = config.sections.some((s) => s.type === "blog" && !s.hidden);
+  const hasBlog = sections.some((s) => s.type === "blog" && !s.hidden);
   const blogPosts = hasBlog ? await fetchBlogPosts(siteId) : [];
 
   return (
     <>
-      {config.sections
+      {sections
         .filter((s) => !s.hidden)
         .map((section) => (
           <SectionRenderer
