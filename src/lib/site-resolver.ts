@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { SiteConfig, SiteSection, BlogPost } from "@/types";
+import type { SiteConfig, SiteSection, BlogPost, StyleGuide } from "@/types";
 
 function getServiceClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -16,6 +16,8 @@ export interface ResolvedSite {
   logoUrl?: string;
   phone?: string;
   isPublished: boolean;
+  styleGuide?: StyleGuide | null;
+  hasDynamicSections?: boolean;
 }
 
 // Resolve a site by subdomain or custom domain
@@ -29,7 +31,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, site_config"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, site_config, style_guide"
     )
     .eq("is_published", true);
 
@@ -112,6 +114,7 @@ export async function resolveSite(
     logoUrl,
     phone,
     isPublished: siteRow.is_published,
+    styleGuide: (siteRow.style_guide as StyleGuide) ?? null,
   };
 }
 
