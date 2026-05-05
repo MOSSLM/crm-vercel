@@ -156,7 +156,10 @@ const themeConfig: ThemeConfig = {
       body: "Inter",
     },
     borderRadius: "md",
-    spacing: "normal",
+    spacing: {
+      sectionPadding: "80px",
+      elementGap: "24px",
+    },
   },
 
   enterpriseVariables: [
