@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
-const supabase = createClient(
-  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+export const dynamic = "force-dynamic";
 
 interface RouteContext {
   params: Promise<{ slug: string }>;
@@ -13,6 +9,7 @@ interface RouteContext {
 
 // PATCH /api/themes/[slug] — enable/disable or update a theme
 export async function PATCH(request: Request, context: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { slug } = await context.params;
   try {
     const body = await request.json();
@@ -47,6 +44,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
 // DELETE /api/themes/[slug] — delete a custom theme (not builtin)
 export async function DELETE(_request: Request, context: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { slug } = await context.params;
 
   const { data: existing } = await supabase

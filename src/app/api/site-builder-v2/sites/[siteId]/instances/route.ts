@@ -1,10 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+export const dynamic = "force-dynamic";
 
 interface RouteContext {
   params: Promise<{ siteId: string }>;
@@ -13,6 +10,7 @@ interface RouteContext {
 /** GET /api/site-builder-v2/sites/[siteId]/instances
  *  Returns all section instances for a site, with joined section_def */
 export async function GET(_req: Request, { params }: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { siteId } = await params;
 
   const { data, error } = await supabase
@@ -32,6 +30,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
 /** PUT /api/site-builder-v2/sites/[siteId]/instances
  *  Full replace: delete all existing and insert new ones */
 export async function PUT(req: Request, { params }: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { siteId } = await params;
   const body = await req.json();
   const instances = body.instances as Array<{
@@ -84,6 +83,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
 /** PATCH /api/site-builder-v2/sites/[siteId]/instances
  *  Update a single instance's content or style */
 export async function PATCH(req: Request, { params }: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { siteId } = await params;
   const { instanceId, content, custom_style, is_hidden, sort_order } = await req.json();
 
