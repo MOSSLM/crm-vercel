@@ -3,7 +3,7 @@
 import React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Globe, GlobeOff, Sparkles, Settings } from "lucide-react";
+import { ArrowLeft, Globe, Sparkles, Settings } from "lucide-react";
 import Link from "next/link";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -214,7 +214,7 @@ function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: Inne
 
           {site.is_published ? (
             <Button variant="outline" size="sm" onClick={handleUnpublish} className="gap-2 text-xs">
-              <GlobeOff className="h-4 w-4" />
+              <Globe className="h-4 w-4" />
               Dépublier
             </Button>
           ) : (

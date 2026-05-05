@@ -49,7 +49,7 @@ export default async function SitePage({ params }: SitePageProps) {
             section={section}
             variables={enterpriseVariables}
             subdomain={subdomain}
-            blogPosts={blogPosts as Array<Record<string, unknown>>}
+            blogPosts={blogPosts}
           />
         ))}
     </>
