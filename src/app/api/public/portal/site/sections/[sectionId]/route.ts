@@ -53,7 +53,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const config = site.site_config as SiteConfig | null;
-  const section = config?.sections.find((s: SiteSection) => s.id === sectionId);
+  const section = config?.sections?.find((s: SiteSection) => s.id === sectionId);
 
   if (!section) {
     return NextResponse.json({ error: "Section introuvable" }, { status: 404 });

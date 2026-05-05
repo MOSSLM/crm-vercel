@@ -721,7 +721,7 @@ export interface SiteSection {
   animation?: SectionAnimation;
 }
 
-export interface SitePage {
+export interface SiteConfigPage {
   id: string;
   slug: string;
   title: string;
@@ -733,7 +733,7 @@ export interface SitePage {
 export interface SiteConfig {
   theme: string;
   settings: ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings };
-  pages: SitePage[];
+  pages: SiteConfigPage[];
   sections?: SiteSection[]; // deprecated — migrated to pages on load
 }
 
@@ -793,9 +793,9 @@ export type SiteConfigAction =
   | { type: 'SET_THEME'; payload: { theme: string } }
   | { type: 'TOGGLE_SECTION_VISIBILITY'; payload: { sectionId: string; pageId?: string } }
   | { type: 'SELECT_SECTION'; payload: { sectionId: string | null } }
-  | { type: 'ADD_PAGE'; payload: { page: SitePage } }
+  | { type: 'ADD_PAGE'; payload: { page: SiteConfigPage } }
   | { type: 'REMOVE_PAGE'; payload: { pageId: string } }
-  | { type: 'UPDATE_PAGE'; payload: { pageId: string; data: Partial<Omit<SitePage, 'id' | 'sections'>> } }
+  | { type: 'UPDATE_PAGE'; payload: { pageId: string; data: Partial<Omit<SiteConfigPage, 'id' | 'sections'>> } }
   | { type: 'SET_ACTIVE_PAGE'; payload: { pageId: string } };
 
 export interface SiteTemplate {

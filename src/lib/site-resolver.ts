@@ -93,9 +93,10 @@ export async function resolveSite(
 
   if (overrides && overrides.length > 0) {
     const overrideMap = Object.fromEntries(overrides.map((o) => [o.section_id, o.data]));
+    const sections = config.sections ?? [];
     config = {
       ...config,
-      sections: config.sections.map((s: SiteSection) =>
+      sections: sections.map((s: SiteSection) =>
         overrideMap[s.id]
           ? { ...s, data: { ...s.data, ...(overrideMap[s.id] as Record<string, unknown>) } }
           : s
