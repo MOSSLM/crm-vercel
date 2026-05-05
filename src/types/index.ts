@@ -740,7 +740,18 @@ export type SiteConfigAction =
   | { type: 'REORDER_SECTIONS'; payload: { fromIndex: number; toIndex: number } }
   | { type: 'UPDATE_SETTINGS'; payload: { settings: Partial<ThemeGlobalVariables> } }
   | { type: 'SET_THEME'; payload: { theme: string } }
-  | { type: 'TOGGLE_SECTION_VISIBILITY'; payload: { sectionId: string } };
+  | { type: 'TOGGLE_SECTION_VISIBILITY'; payload: { sectionId: string } }
+  | { type: 'SELECT_SECTION'; payload: { sectionId: string | null } };
+
+export interface SiteTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  preview_image_url?: string;
+  site_config: SiteConfig;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface SiteConfigState {
   config: SiteConfig;

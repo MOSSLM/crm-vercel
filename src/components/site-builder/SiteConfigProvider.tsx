@@ -117,6 +117,9 @@ function siteConfigReducer(state: SiteConfigState, action: SiteConfigAction): Si
         isDirty: true,
       };
 
+    case "SELECT_SECTION":
+      return { ...state, selectedSectionId: action.payload.sectionId };
+
     default:
       return state;
   }

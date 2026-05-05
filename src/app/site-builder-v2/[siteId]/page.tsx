@@ -1,13 +1,8 @@
 "use client";
 
 import React from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Globe, Sparkles, Settings } from "lucide-react";
-import Link from "next/link";
-import AppLayout from "@/components/layout/AppLayout";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -17,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import SiteConfigProvider from "@/components/site-builder/SiteConfigProvider";
 import SiteConfigEditor from "@/components/site-builder/SiteConfigEditor";
 import { useSiteConfig } from "@/components/site-builder/use-site-config";
@@ -26,7 +22,6 @@ export default function SiteBuilderV2Page() {
   const { siteId } = useParams<{ siteId: string }>();
   const [site, setSite] = React.useState<SiteV2 | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [publishOpen, setPublishOpen] = React.useState(false);
 
   React.useEffect(() => {
     fetch(`/api/site-builder-v2/sites/${siteId}`)
@@ -38,52 +33,44 @@ export default function SiteBuilderV2Page() {
 
   if (loading) {
     return (
-      <AppLayout>
-        <div className="flex items-center justify-center h-64">
-          <div className="animate-pulse text-muted-foreground">Chargement...</div>
-        </div>
-      </AppLayout>
+      <div className="flex items-center justify-center h-screen bg-[#0f0f11]">
+        <div className="animate-pulse text-white/40 text-sm">Chargement…</div>
+      </div>
     );
   }
 
   if (!site) {
     return (
-      <AppLayout>
-        <div className="p-6 text-center">
-          <p className="text-muted-foreground">Site introuvable</p>
-          <Link href="/site-builder-v2">
-            <Button variant="link">Retour</Button>
-          </Link>
-        </div>
-      </AppLayout>
+      <div className="flex flex-col items-center justify-center h-screen bg-[#0f0f11]">
+        <p className="text-white/40 text-sm mb-3">Site introuvable</p>
+        <a href="/site-builder-v2" className="text-blue-400 hover:underline text-sm">
+          ← Retour aux sites
+        </a>
+      </div>
     );
   }
 
   return (
-    <AppLayout>
-      <SiteConfigProvider siteId={siteId} initialConfig={site.site_config ?? undefined}>
-        <SiteBuilderV2Inner site={site} setSite={setSite} publishOpen={publishOpen} setPublishOpen={setPublishOpen} />
-      </SiteConfigProvider>
-    </AppLayout>
+    <SiteConfigProvider siteId={siteId} initialConfig={site.site_config ?? undefined}>
+      <SiteBuilderV2Inner site={site} setSite={setSite} />
+    </SiteConfigProvider>
   );
 }
 
-// ─── Inner component (has access to SiteConfigProvider) ─────────────────────
+// ─── Inner component ─────────────────────────────────────────────────────────
 
 interface InnerProps {
   site: SiteV2;
   setSite: (s: SiteV2) => void;
-  publishOpen: boolean;
-  setPublishOpen: (v: boolean) => void;
 }
 
-function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: InnerProps) {
+function SiteBuilderV2Inner({ site, setSite }: InnerProps) {
   const { state, dispatch } = useSiteConfig();
   const [saving, setSaving] = React.useState(false);
   const [generating, setGenerating] = React.useState(false);
+  const [publishOpen, setPublishOpen] = React.useState(false);
   const [subdomain, setSubdomain] = React.useState(site.published_subdomain ?? "");
   const [publishing, setPublishing] = React.useState(false);
-  const router = useRouter();
 
   const handleSave = async () => {
     setSaving(true);
@@ -94,7 +81,7 @@ function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: Inne
         body: JSON.stringify({ site_config: state.config }),
       });
       if (!res.ok) throw new Error("Erreur de sauvegarde");
-      dispatch({ type: "LOAD_CONFIG", payload: { config: state.config } }); // reset dirty
+      dispatch({ type: "LOAD_CONFIG", payload: { config: state.config } });
       toast.success("Configuration sauvegardée");
     } catch {
       toast.error("Erreur lors de la sauvegarde");
@@ -110,11 +97,6 @@ function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: Inne
     }
     setGenerating(true);
     try {
-      // Fetch company data
-      const companyRes = await fetch(`/api/site-builder-v2/sites/${site.id}`);
-      const siteData = await companyRes.json();
-
-      // Call AI generation
       const res = await fetch("/api/site-builder-v2/generate-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -138,13 +120,11 @@ function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: Inne
     if (!subdomain.trim()) { toast.error("Sous-domaine requis"); return; }
     setPublishing(true);
     try {
-      // Save config first
       await fetch(`/api/site-builder-v2/sites/${site.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ site_config: state.config }),
       });
-      // Publish
       const res = await fetch(`/api/site-builder-v2/sites/${site.id}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -177,61 +157,20 @@ function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: Inne
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Top navigation bar */}
-      <div className="flex items-center justify-between px-4 h-14 border-b border-border bg-background flex-shrink-0 z-10">
-        <div className="flex items-center gap-3">
-          <Link href="/site-builder-v2" className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <span className="font-semibold text-sm truncate max-w-48">{site.name}</span>
-          <Badge variant={site.is_published ? "default" : "secondary"} className="text-xs">
-            {site.is_published ? "Publié" : "Brouillon"}
-          </Badge>
-          {site.is_published && site.published_subdomain && (
-            <a
-              href={`https://${site.published_subdomain}.monsupercrm.fr`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-blue-600 hover:underline hidden sm:block"
-            >
-              {site.published_subdomain}.monsupercrm.fr ↗
-            </a>
-          )}
-        </div>
+    <>
+      <SiteConfigEditor
+        siteName={site.name}
+        siteId={site.id}
+        isPublished={!!site.is_published}
+        publishedSubdomain={site.published_subdomain}
+        onSave={handleSave}
+        isSaving={saving}
+        onPublish={() => setPublishOpen(true)}
+        onUnpublish={handleUnpublish}
+        onGenerateAI={handleGenerateWithAI}
+        isGenerating={generating}
+      />
 
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleGenerateWithAI}
-            disabled={generating}
-            className="gap-2 text-xs"
-          >
-            <Sparkles className="h-4 w-4" />
-            {generating ? "Génération…" : "Générer avec l'IA"}
-          </Button>
-
-          {site.is_published ? (
-            <Button variant="outline" size="sm" onClick={handleUnpublish} className="gap-2 text-xs">
-              <Globe className="h-4 w-4" />
-              Dépublier
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" onClick={() => setPublishOpen(true)} className="gap-2 text-xs">
-              <Globe className="h-4 w-4" />
-              Publier
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* Editor */}
-      <div className="flex-1 overflow-hidden">
-        <SiteConfigEditor onSave={handleSave} isSaving={saving} />
-      </div>
-
-      {/* Publish dialog */}
       <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
         <DialogContent>
           <DialogHeader>
@@ -245,12 +184,14 @@ function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: Inne
                   id="subdomain"
                   placeholder="mon-client"
                   value={subdomain}
-                  onChange={(e) => setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  onChange={(e) =>
+                    setSubdomain(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))
+                  }
                 />
                 <span className="text-sm text-muted-foreground whitespace-nowrap">.monsupercrm.fr</span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Uniquement lettres minuscules, chiffres et tirets.
+                Lettres minuscules, chiffres et tirets uniquement.
               </p>
             </div>
           </div>
@@ -262,6 +203,6 @@ function SiteBuilderV2Inner({ site, setSite, publishOpen, setPublishOpen }: Inne
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
