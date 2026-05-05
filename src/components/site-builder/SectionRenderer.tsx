@@ -1,5 +1,5 @@
 import React from "react";
-import type { SiteSection } from "@/types";
+import type { SiteSection, BlogPost } from "@/types";
 
 // Lazy-load section components from themes
 import HeroSection from "@/templates/theme-default/sections/hero";
@@ -18,11 +18,10 @@ interface SectionRendererProps {
   variables: Record<string, string>;
   clientOverrides?: Record<string, unknown>;
   subdomain?: string;
-  blogPosts?: Array<Record<string, unknown>>;
+  blogPosts?: BlogPost[];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyProps = Record<string, any>;
+type AnyProps = Record<string, unknown>;
 
 const sectionComponents: Record<string, React.ComponentType<AnyProps>> = {
   hero: HeroSection,
