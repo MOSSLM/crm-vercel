@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import type { SiteConfig, SiteSection } from "@/types";
 
-const supabase = createClient(
-  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+export const dynamic = "force-dynamic";
 
 async function authenticate(request: Request): Promise<number | null> {
+  const supabase = getSupabaseServiceClient();
   const token = request.headers.get("x-portal-token");
   if (!token) return null;
 
@@ -27,6 +24,7 @@ interface RouteContext {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { sectionId } = await context.params;
   const enterpriseId = await authenticate(request);
   if (!enterpriseId) {

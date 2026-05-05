@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
-const supabase = createClient(
-  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+export const dynamic = "force-dynamic";
 
 interface RouteContext {
   params: Promise<{ siteId: string }>;
@@ -13,6 +9,7 @@ interface RouteContext {
 
 // POST /api/site-builder-v2/sites/[siteId]/publish
 export async function POST(request: Request, context: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { siteId } = await context.params;
 
   try {
@@ -60,6 +57,7 @@ export async function POST(request: Request, context: RouteContext) {
 
 // DELETE /api/site-builder-v2/sites/[siteId]/publish — unpublish
 export async function DELETE(_request: Request, context: RouteContext) {
+  const supabase = getSupabaseServiceClient();
   const { siteId } = await context.params;
 
   const { data, error } = await supabase

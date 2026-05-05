@@ -286,17 +286,19 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
 
 function mergeDeep<T>(target: T, source: Partial<T>): T {
   if (typeof target !== "object" || target === null) return source as T;
-  const out = { ...target };
-  for (const key of Object.keys(source as object) as (keyof T)[]) {
-    const sv = source[key];
-    const tv = target[key];
+  const out = { ...target } as Record<string, unknown>;
+  const src = source as Record<string, unknown>;
+  const tgt = target as Record<string, unknown>;
+  for (const key of Object.keys(src)) {
+    const sv = src[key];
+    const tv = tgt[key];
     if (sv !== null && typeof sv === "object" && !Array.isArray(sv) && typeof tv === "object" && tv !== null) {
-      out[key] = mergeDeep(tv, sv as Partial<T[keyof T]>) as T[keyof T];
+      out[key] = mergeDeep(tv as Record<string, unknown>, sv as Partial<Record<string, unknown>>);
     } else if (sv !== undefined) {
-      out[key] = sv as T[keyof T];
+      out[key] = sv;
     }
   }
-  return out;
+  return out as T;
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────────

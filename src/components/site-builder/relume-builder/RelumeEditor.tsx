@@ -77,7 +77,6 @@ function RelumeEditorInner({
         })),
       },
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
   // ─── Save ────────────────────────────────────────────────────────────────────

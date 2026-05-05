@@ -626,7 +626,6 @@ function SnippetDivider({ color }: { color?: string }) {
 
 // ─── Master registry ──────────────────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const SNIPPET_REGISTRY: Record<string, React.ComponentType<any>> = {
   heading: SnippetHeading,
   paragraph: SnippetParagraph,

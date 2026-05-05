@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import type { SiteConfig } from "@/types";
 
-const supabase = createClient(
-  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+export const dynamic = "force-dynamic";
 
 // GET /api/site-builder-v2/sites — list all sites
 export async function GET() {
+  const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
     .from("sites")
     .select("id, name, description, is_published, published_subdomain, published_domain, enterprise_id, site_config, created_at, updated_at")
@@ -21,6 +18,7 @@ export async function GET() {
 
 // POST /api/site-builder-v2/sites — create a site
 export async function POST(request: Request) {
+  const supabase = getSupabaseServiceClient();
   try {
     const body = await request.json();
     const { name, description, enterprise_id, site_config } = body as {

@@ -1,16 +1,13 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import { listThemes } from "@/templates/index";
 import type { ManagedTheme } from "@/types";
 
-const supabase = createClient(
-  (process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL)!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
+export const dynamic = "force-dynamic";
 
 // GET /api/themes — list all themes (builtin + custom from DB)
 export async function GET() {
+  const supabase = getSupabaseServiceClient();
   const builtinThemes = listThemes();
 
   const { data: dbThemes, error } = await supabase
@@ -52,6 +49,7 @@ export async function GET() {
 
 // POST /api/themes — create a custom theme
 export async function POST(request: Request) {
+  const supabase = getSupabaseServiceClient();
   try {
     const body = await request.json();
     const { slug, name, description, preview_image_url, config } = body as {
