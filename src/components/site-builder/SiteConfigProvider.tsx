@@ -6,7 +6,7 @@ import type {
   SiteConfigAction,
   SiteConfigState,
   SiteSection,
-  SitePage,
+  SiteConfigPage,
   ThemeGlobalVariables,
   SiteGlobalSettings,
 } from "@/types";
@@ -15,7 +15,7 @@ function nanoid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 }
 
-const defaultPage: SitePage = {
+const defaultPage: SiteConfigPage = {
   id: "page-home",
   slug: "/",
   title: "Accueil",
@@ -86,10 +86,10 @@ function reorder<T>(arr: T[], from: number, to: number): T[] {
 }
 
 function updatePageSections(
-  pages: SitePage[],
+  pages: SiteConfigPage[],
   pageId: string,
   updater: (sections: SiteSection[]) => SiteSection[]
-): SitePage[] {
+): SiteConfigPage[] {
   return pages.map((p) =>
     p.id === pageId ? { ...p, sections: updater(p.sections) } : p
   );
