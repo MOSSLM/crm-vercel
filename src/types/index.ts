@@ -748,6 +748,7 @@ export interface SiteTemplate {
   name: string;
   description?: string;
   preview_image_url?: string;
+  category?: string;
   site_config: SiteConfig;
   created_at: string;
   updated_at: string;
