@@ -109,6 +109,7 @@ export const AppSidebar = () => {
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
     { title: "Audits", icon: ClipboardList, href: "/opportunities" },
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
+    { title: "Sites V2", icon: Layout, href: "/site-builder-v2" },
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
