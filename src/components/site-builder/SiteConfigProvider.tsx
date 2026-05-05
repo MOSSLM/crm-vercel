@@ -93,7 +93,7 @@ function siteConfigReducer(state: SiteConfigState, action: SiteConfigAction): Si
         ...state,
         config: {
           ...state.config,
-          settings: deepMerge(state.config.settings, action.payload.settings) as ThemeGlobalVariables,
+          settings: deepMerge(state.config.settings, action.payload.settings as Record<string, unknown>) as unknown as ThemeGlobalVariables,
         },
         isDirty: true,
       };
