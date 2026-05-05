@@ -6,8 +6,21 @@ import type {
   SiteConfigAction,
   SiteConfigState,
   SiteSection,
+  SitePage,
   ThemeGlobalVariables,
+  SiteGlobalSettings,
 } from "@/types";
+
+function nanoid() {
+  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+}
+
+const defaultPage: SitePage = {
+  id: "page-home",
+  slug: "/",
+  title: "Accueil",
+  sections: [],
+};
 
 const defaultConfig: SiteConfig = {
   theme: "theme-default",
@@ -19,15 +32,50 @@ const defaultConfig: SiteConfig = {
       background: "#ffffff",
       text: "#111827",
     },
-    fonts: { heading: "Inter", body: "Inter" },
+    fonts: { heading: "Inter", body: "Inter", baseSize: "16px" },
+    buttons: { borderRadius: "8px", padding: "12px 24px", style: "filled" },
+    cards: { borderRadius: "8px", shadow: "md", padding: "24px" },
+    spacing: { sectionPadding: "80px", elementGap: "24px" },
+    siteSettings: {
+      metaTitle: "",
+      metaDescription: "",
+      faviconUrl: "",
+      isActive: true,
+    },
   },
-  sections: [],
+  pages: [{ ...defaultPage }],
 };
+
+function migrateLegacyConfig(raw: SiteConfig): SiteConfig {
+  // If old format: has sections[] but no pages[] → wrap into home page
+  const hasPages = Array.isArray(raw.pages) && raw.pages.length > 0;
+  const hasSections = Array.isArray((raw as unknown as { sections?: SiteSection[] }).sections);
+
+  if (!hasPages && hasSections) {
+    const legacy = raw as unknown as { sections: SiteSection[] } & Omit<SiteConfig, 'pages'>;
+    return {
+      ...raw,
+      pages: [{
+        id: "page-home",
+        slug: "/",
+        title: "Accueil",
+        sections: legacy.sections ?? [],
+      }],
+    };
+  }
+
+  if (!hasPages) {
+    return { ...raw, pages: [{ ...defaultPage }] };
+  }
+
+  return raw;
+}
 
 const initialState: SiteConfigState = {
   config: defaultConfig,
   isDirty: false,
   selectedSectionId: null,
+  activePageId: "page-home",
 };
 
 function reorder<T>(arr: T[], from: number, to: number): T[] {
@@ -37,63 +85,99 @@ function reorder<T>(arr: T[], from: number, to: number): T[] {
   return next;
 }
 
+function updatePageSections(
+  pages: SitePage[],
+  pageId: string,
+  updater: (sections: SiteSection[]) => SiteSection[]
+): SitePage[] {
+  return pages.map((p) =>
+    p.id === pageId ? { ...p, sections: updater(p.sections) } : p
+  );
+}
+
 function siteConfigReducer(state: SiteConfigState, action: SiteConfigAction): SiteConfigState {
   switch (action.type) {
-    case "LOAD_CONFIG":
-      return { ...state, config: action.payload.config, isDirty: false, selectedSectionId: null };
-
-    case "ADD_SECTION": {
-      const sections = [...state.config.sections];
-      const idx = action.payload.index ?? sections.length;
-      sections.splice(idx, 0, action.payload.section);
+    case "LOAD_CONFIG": {
+      const migrated = migrateLegacyConfig(action.payload.config);
+      const firstPageId = migrated.pages[0]?.id ?? null;
       return {
         ...state,
-        config: { ...state.config, sections },
+        config: migrated,
+        isDirty: false,
+        selectedSectionId: null,
+        activePageId: firstPageId,
+      };
+    }
+
+    case "ADD_SECTION": {
+      const targetPageId = action.payload.pageId ?? state.activePageId;
+      if (!targetPageId) return state;
+      const pages = updatePageSections(state.config.pages, targetPageId, (sections) => {
+        const next = [...sections];
+        const idx = action.payload.index ?? next.length;
+        next.splice(idx, 0, action.payload.section);
+        return next;
+      });
+      return {
+        ...state,
+        config: { ...state.config, pages },
         isDirty: true,
         selectedSectionId: action.payload.section.id,
       };
     }
 
-    case "REMOVE_SECTION":
+    case "REMOVE_SECTION": {
+      const targetPageId = action.payload.pageId ?? state.activePageId;
+      if (!targetPageId) return state;
+      const pages = updatePageSections(state.config.pages, targetPageId, (sections) =>
+        sections.filter((s) => s.id !== action.payload.sectionId)
+      );
       return {
         ...state,
-        config: {
-          ...state.config,
-          sections: state.config.sections.filter((s) => s.id !== action.payload.sectionId),
-        },
+        config: { ...state.config, pages },
         isDirty: true,
         selectedSectionId:
           state.selectedSectionId === action.payload.sectionId ? null : state.selectedSectionId,
       };
+    }
 
-    case "UPDATE_SECTION":
+    case "UPDATE_SECTION": {
+      const targetPageId = action.payload.pageId ?? state.activePageId;
+      if (!targetPageId) return state;
+      const pages = updatePageSections(state.config.pages, targetPageId, (sections) =>
+        sections.map((s) =>
+          s.id === action.payload.sectionId ? { ...s, ...action.payload.data } : s
+        )
+      );
       return {
         ...state,
-        config: {
-          ...state.config,
-          sections: state.config.sections.map((s) =>
-            s.id === action.payload.sectionId ? { ...s, ...action.payload.data } : s
-          ),
-        },
+        config: { ...state.config, pages },
         isDirty: true,
       };
+    }
 
-    case "REORDER_SECTIONS":
+    case "REORDER_SECTIONS": {
+      const targetPageId = action.payload.pageId ?? state.activePageId;
+      if (!targetPageId) return state;
+      const pages = updatePageSections(state.config.pages, targetPageId, (sections) =>
+        reorder(sections, action.payload.fromIndex, action.payload.toIndex)
+      );
       return {
         ...state,
-        config: {
-          ...state.config,
-          sections: reorder(state.config.sections, action.payload.fromIndex, action.payload.toIndex),
-        },
+        config: { ...state.config, pages },
         isDirty: true,
       };
+    }
 
     case "UPDATE_SETTINGS":
       return {
         ...state,
         config: {
           ...state.config,
-          settings: deepMerge(state.config.settings, action.payload.settings as Record<string, unknown>) as unknown as ThemeGlobalVariables,
+          settings: deepMerge(
+            state.config.settings,
+            action.payload.settings as Record<string, unknown>
+          ) as SiteConfig["settings"],
         },
         isDirty: true,
       };
@@ -105,20 +189,69 @@ function siteConfigReducer(state: SiteConfigState, action: SiteConfigAction): Si
         isDirty: true,
       };
 
-    case "TOGGLE_SECTION_VISIBILITY":
+    case "TOGGLE_SECTION_VISIBILITY": {
+      const targetPageId = action.payload.pageId ?? state.activePageId;
+      if (!targetPageId) return state;
+      const pages = updatePageSections(state.config.pages, targetPageId, (sections) =>
+        sections.map((s) =>
+          s.id === action.payload.sectionId ? { ...s, hidden: !s.hidden } : s
+        )
+      );
+      return {
+        ...state,
+        config: { ...state.config, pages },
+        isDirty: true,
+      };
+    }
+
+    case "SELECT_SECTION":
+      return { ...state, selectedSectionId: action.payload.sectionId };
+
+    case "ADD_PAGE": {
       return {
         ...state,
         config: {
           ...state.config,
-          sections: state.config.sections.map((s) =>
-            s.id === action.payload.sectionId ? { ...s, hidden: !s.hidden } : s
-          ),
+          pages: [...state.config.pages, action.payload.page],
         },
         isDirty: true,
+        activePageId: action.payload.page.id,
+        selectedSectionId: null,
       };
+    }
 
-    case "SELECT_SECTION":
-      return { ...state, selectedSectionId: action.payload.sectionId };
+    case "REMOVE_PAGE": {
+      const pages = state.config.pages.filter((p) => p.id !== action.payload.pageId);
+      const newActivePageId =
+        state.activePageId === action.payload.pageId
+          ? (pages[0]?.id ?? null)
+          : state.activePageId;
+      return {
+        ...state,
+        config: { ...state.config, pages },
+        isDirty: true,
+        activePageId: newActivePageId,
+        selectedSectionId: null,
+      };
+    }
+
+    case "UPDATE_PAGE": {
+      const pages = state.config.pages.map((p) =>
+        p.id === action.payload.pageId ? { ...p, ...action.payload.data } : p
+      );
+      return {
+        ...state,
+        config: { ...state.config, pages },
+        isDirty: true,
+      };
+    }
+
+    case "SET_ACTIVE_PAGE":
+      return {
+        ...state,
+        activePageId: action.payload.pageId,
+        selectedSectionId: null,
+      };
 
     default:
       return state;
@@ -166,9 +299,11 @@ const SiteConfigProvider: React.FC<SiteConfigProviderProps> = ({
   siteId,
   initialConfig,
 }) => {
+  const migratedConfig = initialConfig ? migrateLegacyConfig(initialConfig) : defaultConfig;
   const [state, dispatch] = React.useReducer(siteConfigReducer, {
     ...initialState,
-    config: initialConfig ?? defaultConfig,
+    config: migratedConfig,
+    activePageId: migratedConfig.pages[0]?.id ?? null,
   });
 
   return (

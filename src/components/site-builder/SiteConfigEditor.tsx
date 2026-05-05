@@ -1,11 +1,12 @@
 "use client";
 
 import React from "react";
+import ReactDOM from "react-dom";
 import {
   Plus, Trash2, Eye, EyeOff, GripVertical, Settings,
   ChevronUp, ChevronDown, Laptop, Tablet, Smartphone,
   PanelLeft, Globe, Sparkles, ArrowLeft, Save,
-  LayoutTemplate, X,
+  LayoutTemplate, X, FileText, Home, Cog,
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/components/ui/utils";
@@ -18,8 +19,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useSiteConfig } from "./use-site-config";
 import { getTheme } from "@/templates/index";
 import SectionRenderer from "@/components/site-builder/SectionRenderer";
-import type { SiteSection, SectionDataSource as SDS } from "@/types";
-import type { SectionDefinition } from "@/types";
+import type {
+  SiteSection, SectionDataSource as SDS, SitePage, SectionAnimation,
+  SectionDefinition, SiteConfigAction, ThemeGlobalVariables, SiteGlobalSettings,
+} from "@/types";
 
 function nanoid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -33,6 +36,14 @@ const DEVICE_WIDTHS: Record<Device, string> = {
   Mobile: "390px",
 };
 
+const ANIMATION_LABELS: Record<SectionAnimation, string> = {
+  none: "Aucune",
+  "fade-in": "Fondu",
+  "slide-up": "Glisse haut",
+  "slide-in-left": "Glisse gauche",
+  "slide-in-right": "Glisse droite",
+};
+
 interface SiteConfigEditorProps {
   siteName: string;
   siteId: string;
@@ -44,6 +55,52 @@ interface SiteConfigEditorProps {
   onUnpublish?: () => void;
   onGenerateAI?: () => void;
   isGenerating?: boolean;
+}
+
+// ─── Portal Dropdown ──────────────────────────────────────────────────────────
+
+interface PortalDropdownProps {
+  anchorRef: React.RefObject<HTMLElement | null>;
+  open: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+  align?: "left" | "right";
+}
+
+function PortalDropdown({ anchorRef, open, onClose, children, align = "left" }: PortalDropdownProps) {
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+
+  React.useLayoutEffect(() => {
+    if (!open || !anchorRef.current) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    setPos({
+      top: rect.bottom + window.scrollY + 4,
+      left: align === "right" ? rect.right - 208 : rect.left,
+    });
+  }, [open, anchorRef, align]);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (anchorRef.current && !anchorRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open, onClose, anchorRef]);
+
+  if (!open || !pos) return null;
+
+  return ReactDOM.createPortal(
+    <div
+      style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 99999 }}
+      className="w-52 bg-[#111113] border border-white/10 rounded-lg shadow-2xl py-1"
+    >
+      {children}
+    </div>,
+    document.body
+  );
 }
 
 // ─── Main Editor Component ───────────────────────────────────────────────────
@@ -61,28 +118,24 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
   isGenerating,
 }) => {
   const { state, dispatch } = useSiteConfig();
-  const { config, selectedSectionId, isDirty } = state;
+  const { config, selectedSectionId, isDirty, activePageId } = state;
   const [device, setDevice] = React.useState<Device>("Desktop");
   const [previewMode, setPreviewMode] = React.useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = React.useState(true);
-  const [addMenuOpen, setAddMenuOpen] = React.useState(false);
+  const [addSectionMenuOpen, setAddSectionMenuOpen] = React.useState(false);
+  const [settingsPanelOpen, setSettingsPanelOpen] = React.useState(false);
+  const [addPageDialogOpen, setAddPageDialogOpen] = React.useState(false);
+  const [newPageSlug, setNewPageSlug] = React.useState("");
+  const [newPageTitle, setNewPageTitle] = React.useState("");
+
+  const addSectionBtnRef = React.useRef<HTMLButtonElement>(null);
+  const settingsBtnRef = React.useRef<HTMLButtonElement>(null);
 
   const theme = getTheme(config.theme);
-  const sections = config.sections;
+  const pages = config.pages ?? [];
+  const activePage = pages.find((p) => p.id === activePageId) ?? pages[0] ?? null;
+  const sections = activePage?.sections ?? [];
   const selectedSection = sections.find((s) => s.id === selectedSectionId) ?? null;
-
-  // Close add menu on outside click
-  const addMenuRef = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    if (!addMenuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
-        setAddMenuOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [addMenuOpen]);
 
   // Keyboard shortcuts
   React.useEffect(() => {
@@ -97,6 +150,7 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
       }
       if (e.key === "Escape") {
         setPreviewMode(false);
+        setAddSectionMenuOpen(false);
       }
     };
     document.addEventListener("keydown", handler);
@@ -111,36 +165,81 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
       type,
       dataSource: "config",
       data: { ...sectionDef.defaultData },
+      animation: "none",
     };
-    dispatch({ type: "ADD_SECTION", payload: { section: newSection } });
-    setAddMenuOpen(false);
+    dispatch({ type: "ADD_SECTION", payload: { section: newSection, pageId: activePage?.id } });
+    setAddSectionMenuOpen(false);
   };
 
-  const handleRemove = (id: string) => {
+  const handleRemoveSection = (id: string) => {
     if (window.confirm("Supprimer cette section ?")) {
-      dispatch({ type: "REMOVE_SECTION", payload: { sectionId: id } });
+      dispatch({ type: "REMOVE_SECTION", payload: { sectionId: id, pageId: activePage?.id } });
     }
   };
 
   const handleToggleVisibility = (id: string) => {
-    dispatch({ type: "TOGGLE_SECTION_VISIBILITY", payload: { sectionId: id } });
+    dispatch({ type: "TOGGLE_SECTION_VISIBILITY", payload: { sectionId: id, pageId: activePage?.id } });
   };
 
   const handleMoveUp = (index: number) => {
     if (index === 0) return;
-    dispatch({ type: "REORDER_SECTIONS", payload: { fromIndex: index, toIndex: index - 1 } });
+    dispatch({ type: "REORDER_SECTIONS", payload: { fromIndex: index, toIndex: index - 1, pageId: activePage?.id } });
   };
 
   const handleMoveDown = (index: number) => {
     if (index === sections.length - 1) return;
-    dispatch({ type: "REORDER_SECTIONS", payload: { fromIndex: index, toIndex: index + 1 } });
+    dispatch({ type: "REORDER_SECTIONS", payload: { fromIndex: index, toIndex: index + 1, pageId: activePage?.id } });
   };
 
   const handleSelectSection = (id: string) => {
     dispatch({ type: "SELECT_SECTION", payload: { sectionId: id } });
+    setSettingsPanelOpen(false);
   };
 
-  // ── Preview mode (full-screen) ────────────────────────────────────────────
+  const handleAddPage = () => {
+    if (!newPageTitle.trim()) return;
+    const slug = newPageSlug.trim() || `/${newPageTitle.toLowerCase().replace(/\s+/g, "-")}`;
+    const normalizedSlug = slug.startsWith("/") ? slug : `/${slug}`;
+    dispatch({
+      type: "ADD_PAGE",
+      payload: {
+        page: {
+          id: `page-${nanoid()}`,
+          slug: normalizedSlug,
+          title: newPageTitle.trim(),
+          sections: [],
+        },
+      },
+    });
+    setAddPageDialogOpen(false);
+    setNewPageSlug("");
+    setNewPageTitle("");
+  };
+
+  const handleRemovePage = (pageId: string) => {
+    if (pages.length <= 1) return;
+    if (window.confirm("Supprimer cette page ?")) {
+      dispatch({ type: "REMOVE_PAGE", payload: { pageId } });
+    }
+  };
+
+  // CSS variables for live design tokens preview
+  const canvasVars: React.CSSProperties = {
+    "--color-primary": config.settings?.colors?.primary ?? "#1a56db",
+    "--color-secondary": config.settings?.colors?.secondary ?? "#6b7280",
+    "--color-accent": config.settings?.colors?.accent ?? "#f59e0b",
+    "--color-background": config.settings?.colors?.background ?? "#ffffff",
+    "--color-text": config.settings?.colors?.text ?? "#111827",
+    "--font-heading": config.settings?.fonts?.heading ?? "Inter",
+    "--font-body": config.settings?.fonts?.body ?? "Inter",
+    "--font-base-size": config.settings?.fonts?.baseSize ?? "16px",
+    "--btn-radius": config.settings?.buttons?.borderRadius ?? "8px",
+    "--card-radius": config.settings?.cards?.borderRadius ?? "8px",
+    "--section-padding": config.settings?.spacing?.sectionPadding ?? "80px",
+    "--element-gap": config.settings?.spacing?.elementGap ?? "24px",
+  } as React.CSSProperties;
+
+  // Preview mode (full-screen)
   if (previewMode) {
     return (
       <div className="fixed inset-0 z-50 bg-white overflow-auto">
@@ -155,11 +254,7 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
         </Button>
         <div className="bg-white">
           {sections.filter((s) => !s.hidden).map((section) => (
-            <SectionRenderer
-              key={section.id}
-              section={section}
-              variables={{}}
-            />
+            <SectionRenderer key={section.id} section={section} variables={{}} />
           ))}
         </div>
       </div>
@@ -197,10 +292,7 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
 
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-sm font-medium text-white/90 truncate max-w-40">{siteName}</span>
-              <Badge
-                variant={isPublished ? "default" : "secondary"}
-                className="text-[10px] h-5 shrink-0"
-              >
+              <Badge variant={isPublished ? "default" : "secondary"} className="text-[10px] h-5 shrink-0">
                 {isPublished ? "Publié" : "Brouillon"}
               </Badge>
               {isDirty && (
@@ -257,6 +349,24 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
               <TooltipContent>Aperçu (⌘P)</TooltipContent>
             </Tooltip>
 
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  ref={settingsBtnRef}
+                  variant="ghost"
+                  size="icon"
+                  className={cn("h-8 w-8 text-white/70 hover:text-white hover:bg-white/10", settingsPanelOpen && "bg-white/10 text-white")}
+                  onClick={() => {
+                    setSettingsPanelOpen((v) => !v);
+                    dispatch({ type: "SELECT_SECTION", payload: { sectionId: null } });
+                  }}
+                >
+                  <Cog className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Paramètres du site</TooltipContent>
+            </Tooltip>
+
             {onGenerateAI && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -305,55 +415,154 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
           {/* ── Left Panel ────────────────────────────────────────────────── */}
           <div
             className={cn(
-              "flex-shrink-0 flex flex-col bg-[#18181b] border-r border-white/10 transition-all duration-200 overflow-hidden",
-              leftPanelOpen ? "w-64" : "w-0"
+              "flex-shrink-0 flex flex-col bg-[#18181b] border-r border-white/10 transition-all duration-200",
+              leftPanelOpen ? "w-64" : "w-0 overflow-hidden"
             )}
           >
             {leftPanelOpen && (
-              <>
-                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                  <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Sections</span>
-                  <div ref={addMenuRef} className="relative">
+              <div className="flex flex-col h-full overflow-hidden">
+                {/* Pages zone */}
+                <div className="flex-shrink-0 border-b border-white/10">
+                  <div className="flex items-center justify-between px-4 py-2.5">
+                    <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Pages</span>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7 text-white/60 hover:text-white hover:bg-white/10"
-                          onClick={() => setAddMenuOpen((v) => !v)}
+                          className="h-6 w-6 text-white/60 hover:text-white hover:bg-white/10"
+                          onClick={() => setAddPageDialogOpen(true)}
                         >
-                          <Plus className="h-4 w-4" />
+                          <Plus className="h-3.5 w-3.5" />
                         </Button>
                       </TooltipTrigger>
-                      <TooltipContent>Ajouter une section</TooltipContent>
+                      <TooltipContent>Ajouter une page</TooltipContent>
                     </Tooltip>
-
-                    {addMenuOpen && theme && (
-                      <div className="absolute top-9 left-0 z-50 w-52 bg-[#111113] border border-white/10 rounded-lg shadow-2xl py-1">
-                        <p className="text-[10px] text-white/30 uppercase tracking-wider px-3 pt-2 pb-1">
-                          Ajouter
-                        </p>
-                        {theme.sections.map((s) => (
-                          <button
-                            key={s.type}
-                            type="button"
-                            className="w-full text-left text-sm px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2"
-                            onClick={() => handleAddSection(s.type)}
-                          >
-                            <LayoutTemplate className="h-3.5 w-3.5 text-white/30 shrink-0" />
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
+
+                  <div className="px-2 pb-2 space-y-0.5 max-h-40 overflow-y-auto">
+                    {pages.map((page) => {
+                      const isActivePg = page.id === (activePage?.id);
+                      return (
+                        <div
+                          key={page.id}
+                          className={cn(
+                            "group flex items-center gap-1.5 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                            isActivePg
+                              ? "bg-blue-600/20 border border-blue-500/30"
+                              : "hover:bg-white/5 border border-transparent"
+                          )}
+                          onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: { pageId: page.id } })}
+                        >
+                          {page.slug === "/" ? (
+                            <Home className="h-3 w-3 text-white/40 shrink-0" />
+                          ) : (
+                            <FileText className="h-3 w-3 text-white/30 shrink-0" />
+                          )}
+                          <span className={cn(
+                            "flex-1 text-xs truncate",
+                            isActivePg ? "text-white" : "text-white/60"
+                          )}>
+                            {page.title}
+                          </span>
+                          <span className="text-[10px] text-white/25 truncate max-w-20 shrink-0">
+                            {page.slug}
+                          </span>
+                          {pages.length > 1 && (
+                            <button
+                              type="button"
+                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-opacity"
+                              onClick={(e) => { e.stopPropagation(); handleRemovePage(page.id); }}
+                              title="Supprimer la page"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Add page dialog (inline) */}
+                {addPageDialogOpen && (
+                  <div className="border-b border-white/10 px-3 py-3 bg-white/5">
+                    <p className="text-xs text-white/50 mb-2">Nouvelle page</p>
+                    <Input
+                      placeholder="Titre (ex: Services)"
+                      value={newPageTitle}
+                      onChange={(e) => setNewPageTitle(e.target.value)}
+                      className="h-7 text-xs bg-black/30 border-white/10 text-white mb-1.5"
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddPage(); if (e.key === "Escape") setAddPageDialogOpen(false); }}
+                      autoFocus
+                    />
+                    <Input
+                      placeholder="Slug (ex: /services)"
+                      value={newPageSlug}
+                      onChange={(e) => setNewPageSlug(e.target.value)}
+                      className="h-7 text-xs bg-black/30 border-white/10 text-white mb-2"
+                    />
+                    <div className="flex gap-1.5">
+                      <Button size="sm" className="h-6 text-xs flex-1 px-2" onClick={handleAddPage} disabled={!newPageTitle.trim()}>
+                        Créer
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs text-white/50" onClick={() => { setAddPageDialogOpen(false); setNewPageSlug(""); setNewPageTitle(""); }}>
+                        Annuler
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sections zone */}
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/10 flex-shrink-0">
+                  <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                    Sections
+                    {activePage && activePage.slug !== "/" && (
+                      <span className="ml-1 text-white/25 normal-case font-normal">— {activePage.title}</span>
+                    )}
+                  </span>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        ref={addSectionBtnRef}
+                        type="button"
+                        className="h-6 w-6 flex items-center justify-center rounded text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+                        onClick={() => setAddSectionMenuOpen((v) => !v)}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent>Ajouter une section</TooltipContent>
+                  </Tooltip>
+
+                  {/* Portal dropdown — escapes overflow-hidden */}
+                  <PortalDropdown
+                    anchorRef={addSectionBtnRef}
+                    open={addSectionMenuOpen}
+                    onClose={() => setAddSectionMenuOpen(false)}
+                  >
+                    <p className="text-[10px] text-white/30 uppercase tracking-wider px-3 pt-2 pb-1">
+                      Ajouter une section
+                    </p>
+                    {theme?.sections.map((s) => (
+                      <button
+                        key={s.type}
+                        type="button"
+                        className="w-full text-left text-sm px-3 py-2 text-white/70 hover:text-white hover:bg-white/10 transition-colors flex items-center gap-2"
+                        onClick={() => handleAddSection(s.type)}
+                      >
+                        <LayoutTemplate className="h-3.5 w-3.5 text-white/30 shrink-0" />
+                        {s.label}
+                      </button>
+                    ))}
+                  </PortalDropdown>
                 </div>
 
                 {/* Section list */}
                 <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
                   {sections.length === 0 && (
-                    <div className="flex flex-col items-center justify-center py-10 text-center">
-                      <LayoutTemplate className="h-8 w-8 text-white/15 mb-3" />
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <LayoutTemplate className="h-7 w-7 text-white/15 mb-2" />
                       <p className="text-xs text-white/30">Aucune section.</p>
                       <p className="text-xs text-white/20">Cliquez sur + pour en ajouter.</p>
                     </div>
@@ -380,26 +589,23 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
                           {def?.label ?? section.type}
                         </span>
 
-                        {/* Actions — visible on hover/selected */}
                         <div className={cn(
                           "flex items-center gap-0.5 transition-opacity",
                           isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                         )}>
                           <button
                             type="button"
-                            className="p-0.5 rounded text-white/30 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed"
+                            className="p-0.5 rounded text-white/30 hover:text-white hover:bg-white/10 disabled:opacity-20"
                             onClick={(e) => { e.stopPropagation(); handleMoveUp(index); }}
                             disabled={index === 0}
-                            title="Monter"
                           >
                             <ChevronUp className="h-3 w-3" />
                           </button>
                           <button
                             type="button"
-                            className="p-0.5 rounded text-white/30 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:cursor-not-allowed"
+                            className="p-0.5 rounded text-white/30 hover:text-white hover:bg-white/10 disabled:opacity-20"
                             onClick={(e) => { e.stopPropagation(); handleMoveDown(index); }}
                             disabled={index === sections.length - 1}
-                            title="Descendre"
                           >
                             <ChevronDown className="h-3 w-3" />
                           </button>
@@ -407,15 +613,13 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
                             type="button"
                             className="p-0.5 rounded text-white/30 hover:text-white hover:bg-white/10"
                             onClick={(e) => { e.stopPropagation(); handleToggleVisibility(section.id); }}
-                            title={section.hidden ? "Afficher" : "Masquer"}
                           >
                             {section.hidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                           </button>
                           <button
                             type="button"
                             className="p-0.5 rounded text-white/30 hover:text-red-400 hover:bg-red-500/10"
-                            onClick={(e) => { e.stopPropagation(); handleRemove(section.id); }}
-                            title="Supprimer"
+                            onClick={(e) => { e.stopPropagation(); handleRemoveSection(section.id); }}
                           >
                             <Trash2 className="h-3 w-3" />
                           </button>
@@ -427,7 +631,7 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
 
                 {/* Published link */}
                 {isPublished && publishedSubdomain && (
-                  <div className="border-t border-white/10 px-4 py-3">
+                  <div className="border-t border-white/10 px-4 py-3 flex-shrink-0">
                     <a
                       href={`https://${publishedSubdomain}.monsupercrm.fr`}
                       target="_blank"
@@ -439,33 +643,55 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
                     </a>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </div>
 
           {/* ── Center Canvas ─────────────────────────────────────────────── */}
-          <div className="flex-1 overflow-auto bg-[#0f0f11]"
+          <div
+            className="flex-1 overflow-auto bg-[#0f0f11]"
             style={{
               backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px)",
               backgroundSize: "20px 20px",
             }}
           >
             <div className="min-h-full py-8 px-6 flex flex-col items-center">
+              {/* Simulated URL bar */}
+              <div
+                className="mb-3 flex items-center gap-2 bg-[#18181b] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white/50"
+                style={{ width: DEVICE_WIDTHS[device], maxWidth: "100%" }}
+              >
+                <Globe className="h-3 w-3 text-white/25 shrink-0" />
+                <span className="flex-1 truncate font-mono">
+                  {isPublished && publishedSubdomain
+                    ? `https://${publishedSubdomain}.monsupercrm.fr${activePage?.slug ?? "/"}`
+                    : `preview${activePage?.slug ?? "/"}`
+                  }
+                </span>
+                {activePage && (
+                  <span className="text-white/25 shrink-0">{activePage.title}</span>
+                )}
+              </div>
+
               <div
                 className="bg-white shadow-2xl overflow-hidden transition-all duration-300"
                 style={{
+                  ...canvasVars,
                   width: DEVICE_WIDTHS[device],
                   maxWidth: "100%",
-                  minHeight: "calc(100vh - 120px)",
+                  minHeight: "calc(100vh - 160px)",
                   boxShadow: "0 0 0 1px rgba(255,255,255,0.05), 0 32px 80px rgba(0,0,0,0.6)",
                   borderRadius: device === "Desktop" ? "4px 4px 0 0" : "16px",
                 }}
-                onClick={() => dispatch({ type: "SELECT_SECTION", payload: { sectionId: null } })}
+                onClick={() => {
+                  dispatch({ type: "SELECT_SECTION", payload: { sectionId: null } });
+                  setSettingsPanelOpen(false);
+                }}
               >
                 {sections.length === 0 ? (
                   <div className="flex flex-col items-center justify-center min-h-64 text-gray-400 py-20">
                     <LayoutTemplate className="h-12 w-12 text-gray-200 mb-4" />
-                    <p className="text-lg font-medium text-gray-300">Site vide</p>
+                    <p className="text-lg font-medium text-gray-300">Page vide</p>
                     <p className="text-sm text-gray-400 mt-1">Ajoutez des sections depuis le panneau gauche</p>
                   </div>
                 ) : (
@@ -483,16 +709,12 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
                           handleSelectSection(section.id);
                         }}
                       >
-                        {/* Section label overlay on hover/select */}
                         {section.id === selectedSectionId && (
                           <div className="absolute top-0 left-0 z-10 bg-blue-500 text-white text-[10px] font-medium px-2 py-0.5 rounded-br">
                             {theme?.sections.find((s) => s.type === section.type)?.label ?? section.type}
                           </div>
                         )}
-                        <SectionRenderer
-                          section={section}
-                          variables={{}}
-                        />
+                        <SectionRenderer section={section} variables={{}} />
                       </div>
                     );
                   })
@@ -502,23 +724,48 @@ const SiteConfigEditor: React.FC<SiteConfigEditorProps> = ({
           </div>
 
           {/* ── Right Panel ───────────────────────────────────────────────── */}
-          {selectedSection && (
+          {selectedSection ? (
             <SectionConfigPanel
               section={selectedSection}
               dispatch={dispatch}
               themeDef={theme?.sections.find((s) => s.type === selectedSection.type)}
+              pageId={activePage?.id}
               onClose={() => dispatch({ type: "SELECT_SECTION", payload: { sectionId: null } })}
             />
-          )}
+          ) : settingsPanelOpen ? (
+            <SiteSettingsPanelWrapper
+              settings={config.settings}
+              dispatch={dispatch}
+              onClose={() => setSettingsPanelOpen(false)}
+            />
+          ) : null}
         </div>
       </div>
     </TooltipProvider>
   );
 };
 
-// ─── Section Config Panel ────────────────────────────────────────────────────
+// ─── Site Settings Panel Wrapper ─────────────────────────────────────────────
 
-import type { SiteConfigAction } from "@/types";
+import SiteSettingsPanel from "./SiteSettingsPanel";
+
+type SiteSettings = ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings };
+
+const SiteSettingsPanelWrapper: React.FC<{
+  settings: SiteSettings;
+  dispatch: React.Dispatch<SiteConfigAction>;
+  onClose: () => void;
+}> = ({ settings, dispatch, onClose }) => {
+  return (
+    <SiteSettingsPanel
+      settings={settings}
+      onUpdate={(patch) => dispatch({ type: "UPDATE_SETTINGS", payload: { settings: patch } })}
+      onClose={onClose}
+    />
+  );
+};
+
+// ─── Section Config Panel ────────────────────────────────────────────────────
 
 const DATA_SOURCE_LABELS: Record<SDS, string> = {
   enterprise: "Entreprise",
@@ -533,6 +780,7 @@ interface SectionConfigPanelProps {
   section: SiteSection;
   dispatch: React.Dispatch<SiteConfigAction>;
   themeDef?: SectionDefinition;
+  pageId?: string;
   onClose: () => void;
 }
 
@@ -540,6 +788,7 @@ const SectionConfigPanel: React.FC<SectionConfigPanelProps> = ({
   section,
   dispatch,
   themeDef,
+  pageId,
   onClose,
 }) => {
   const [tab, setTab] = React.useState<"form" | "json">("form");
@@ -556,7 +805,7 @@ const SectionConfigPanel: React.FC<SectionConfigPanelProps> = ({
     try {
       const parsed = JSON.parse(value);
       setJsonError(null);
-      dispatch({ type: "UPDATE_SECTION", payload: { sectionId: section.id, data: { data: parsed } } });
+      dispatch({ type: "UPDATE_SECTION", payload: { sectionId: section.id, data: { data: parsed }, pageId } });
     } catch {
       setJsonError("JSON invalide");
     }
@@ -564,12 +813,16 @@ const SectionConfigPanel: React.FC<SectionConfigPanelProps> = ({
 
   const handleFieldChange = (key: string, value: unknown) => {
     const newData = { ...section.data, [key]: value };
-    dispatch({ type: "UPDATE_SECTION", payload: { sectionId: section.id, data: { data: newData } } });
+    dispatch({ type: "UPDATE_SECTION", payload: { sectionId: section.id, data: { data: newData }, pageId } });
     setJsonText(JSON.stringify(newData, null, 2));
   };
 
   const handleDataSourceChange = (ds: SDS) => {
-    dispatch({ type: "UPDATE_SECTION", payload: { sectionId: section.id, data: { dataSource: ds } } });
+    dispatch({ type: "UPDATE_SECTION", payload: { sectionId: section.id, data: { dataSource: ds }, pageId } });
+  };
+
+  const handleAnimationChange = (anim: SectionAnimation) => {
+    dispatch({ type: "UPDATE_SECTION", payload: { sectionId: section.id, data: { animation: anim }, pageId } });
   };
 
   return (
@@ -582,11 +835,7 @@ const SectionConfigPanel: React.FC<SectionConfigPanelProps> = ({
             {themeDef?.label ?? section.type}
           </span>
         </div>
-        <button
-          type="button"
-          className="p-1 rounded text-white/40 hover:text-white hover:bg-white/10"
-          onClick={onClose}
-        >
+        <button type="button" className="p-1 rounded text-white/40 hover:text-white hover:bg-white/10" onClick={onClose}>
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -613,24 +862,40 @@ const SectionConfigPanel: React.FC<SectionConfigPanelProps> = ({
         </div>
       </div>
 
+      {/* Animation */}
+      <div className="px-4 py-3 border-b border-white/10">
+        <p className="text-[10px] text-white/40 uppercase tracking-wider mb-2">Animation d'entrée</p>
+        <div className="grid grid-cols-2 gap-1">
+          {(Object.keys(ANIMATION_LABELS) as SectionAnimation[]).map((anim) => (
+            <button
+              key={anim}
+              type="button"
+              className={cn(
+                "text-xs px-2 py-1.5 rounded border transition-colors text-left",
+                (section.animation ?? "none") === anim
+                  ? "border-purple-500 bg-purple-600/20 text-purple-300"
+                  : "border-white/10 text-white/40 hover:border-white/30 hover:text-white/70"
+              )}
+              onClick={() => handleAnimationChange(anim)}
+            >
+              {ANIMATION_LABELS[anim]}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Tab switcher */}
       <div className="flex border-b border-white/10">
         <button
           type="button"
-          className={cn(
-            "flex-1 py-2 text-xs font-medium transition-colors",
-            tab === "form" ? "text-white border-b-2 border-blue-500" : "text-white/40 hover:text-white/70"
-          )}
+          className={cn("flex-1 py-2 text-xs font-medium transition-colors", tab === "form" ? "text-white border-b-2 border-blue-500" : "text-white/40 hover:text-white/70")}
           onClick={() => setTab("form")}
         >
           Formulaire
         </button>
         <button
           type="button"
-          className={cn(
-            "flex-1 py-2 text-xs font-medium transition-colors",
-            tab === "json" ? "text-white border-b-2 border-blue-500" : "text-white/40 hover:text-white/70"
-          )}
+          className={cn("flex-1 py-2 text-xs font-medium transition-colors", tab === "json" ? "text-white border-b-2 border-blue-500" : "text-white/40 hover:text-white/70")}
           onClick={() => setTab("json")}
         >
           JSON
@@ -640,10 +905,7 @@ const SectionConfigPanel: React.FC<SectionConfigPanelProps> = ({
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         {tab === "form" ? (
-          <FormEditor
-            data={section.data}
-            onChange={handleFieldChange}
-          />
+          <FormEditor data={section.data} onChange={handleFieldChange} />
         ) : (
           <div className="p-4">
             <textarea
@@ -651,9 +913,7 @@ const SectionConfigPanel: React.FC<SectionConfigPanelProps> = ({
               onChange={(e) => handleJsonChange(e.target.value)}
               className={cn(
                 "w-full font-mono text-xs bg-black/40 border rounded-lg p-3 text-white/80 resize-none focus:outline-none focus:ring-1",
-                jsonError
-                  ? "border-red-500/50 focus:ring-red-500"
-                  : "border-white/10 focus:ring-blue-500"
+                jsonError ? "border-red-500/50 focus:ring-red-500" : "border-white/10 focus:ring-blue-500"
               )}
               rows={28}
               spellCheck={false}
@@ -688,7 +948,6 @@ const FormEditor: React.FC<FormEditorProps> = ({ data, onChange }) => {
       {entries.map(([key, value]) => (
         <FormField key={key} fieldKey={key} value={value} onChange={onChange} />
       ))}
-
       {settings && Object.keys(settings).length > 0 && (
         <div className="border-t border-white/10 pt-4">
           <p className="text-[10px] text-white/40 uppercase tracking-wider mb-3">Paramètres</p>
@@ -697,9 +956,7 @@ const FormEditor: React.FC<FormEditorProps> = ({ data, onChange }) => {
               key={`settings.${key}`}
               fieldKey={key}
               value={value}
-              onChange={(k, v) => {
-                onChange("settings", { ...(settings as Record<string, unknown>), [k]: v });
-              }}
+              onChange={(k, v) => onChange("settings", { ...(settings as Record<string, unknown>), [k]: v })}
               compact
             />
           ))}
@@ -717,25 +974,14 @@ interface FormFieldProps {
 }
 
 const FIELD_LABELS: Record<string, string> = {
-  title: "Titre",
-  subtitle: "Sous-titre",
-  content: "Contenu",
-  backgroundImage: "Image de fond (URL)",
-  image: "Image (URL)",
-  show: "Visible",
-  overlay: "Overlay sombre",
-  height: "Hauteur",
-  columns: "Colonnes",
-  style: "Style",
-  showMap: "Afficher la carte",
-  showForm: "Afficher le formulaire",
-  showRating: "Afficher les étoiles",
-  postsPerPage: "Articles par page",
-  showExcerpt: "Afficher l'extrait",
-  delay: "Délai (ms)",
-  showOnce: "Afficher une seule fois",
-  lightbox: "Lightbox",
-  imagePosition: "Position image",
+  title: "Titre", subtitle: "Sous-titre", content: "Contenu",
+  backgroundImage: "Image de fond (URL)", image: "Image (URL)",
+  show: "Visible", overlay: "Overlay sombre", height: "Hauteur",
+  columns: "Colonnes", style: "Style", showMap: "Afficher la carte",
+  showForm: "Afficher le formulaire", showRating: "Afficher les étoiles",
+  postsPerPage: "Articles par page", showExcerpt: "Afficher l'extrait",
+  delay: "Délai (ms)", showOnce: "Afficher une seule fois",
+  lightbox: "Lightbox", imagePosition: "Position image",
 };
 
 function labelForKey(key: string): string {
@@ -743,111 +989,71 @@ function labelForKey(key: string): string {
 }
 
 const FormField: React.FC<FormFieldProps> = ({ fieldKey, value, onChange, compact }) => {
-  // CTA object: { text, href }
   if (fieldKey === "cta" && value && typeof value === "object" && !Array.isArray(value)) {
     const cta = value as { text?: string; href?: string };
     return (
       <div className={cn("space-y-2", compact && "mb-3")}>
         <Label className="text-xs text-white/50 uppercase tracking-wider">CTA</Label>
         <div className="space-y-1.5">
-          <Input
-            value={cta.text ?? ""}
-            onChange={(e) => onChange(fieldKey, { ...cta, text: e.target.value })}
-            placeholder="Texte du bouton"
-            className="h-8 text-xs bg-black/30 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-blue-500"
-          />
-          <Input
-            value={cta.href ?? ""}
-            onChange={(e) => onChange(fieldKey, { ...cta, href: e.target.value })}
-            placeholder="Lien (#contact, /page...)"
-            className="h-8 text-xs bg-black/30 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-blue-500"
-          />
+          <Input value={cta.text ?? ""} onChange={(e) => onChange(fieldKey, { ...cta, text: e.target.value })} placeholder="Texte du bouton" className="h-8 text-xs bg-black/30 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-blue-500" />
+          <Input value={cta.href ?? ""} onChange={(e) => onChange(fieldKey, { ...cta, href: e.target.value })} placeholder="Lien (#contact, /page...)" className="h-8 text-xs bg-black/30 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-blue-500" />
         </div>
       </div>
     );
   }
 
-  // Array values → count badge + note
   if (Array.isArray(value)) {
     return (
       <div className={cn("space-y-1", compact && "mb-3")}>
         <Label className="text-xs text-white/50 uppercase tracking-wider">{labelForKey(fieldKey)}</Label>
-        <p className="text-xs text-white/40 italic">
-          {value.length} élément(s) — éditer en JSON pour modifier
-        </p>
+        <p className="text-xs text-white/40 italic">{value.length} élément(s) — éditer en JSON</p>
       </div>
     );
   }
 
-  // Boolean
   if (typeof value === "boolean") {
     return (
       <div className={cn("flex items-center justify-between", compact && "mb-2")}>
         <Label className="text-xs text-white/60">{labelForKey(fieldKey)}</Label>
         <button
           type="button"
-          className={cn(
-            "w-10 h-5 rounded-full transition-colors relative",
-            value ? "bg-blue-600" : "bg-white/15"
-          )}
+          className={cn("w-10 h-5 rounded-full transition-colors relative", value ? "bg-blue-600" : "bg-white/15")}
           onClick={() => onChange(fieldKey, !value)}
         >
-          <span className={cn(
-            "absolute top-0.5 h-4 w-4 bg-white rounded-full shadow transition-transform",
-            value ? "translate-x-5 left-0.5" : "translate-x-0 left-0.5"
-          )} />
+          <span className={cn("absolute top-0.5 h-4 w-4 bg-white rounded-full shadow transition-transform", value ? "translate-x-5 left-0.5" : "translate-x-0 left-0.5")} />
         </button>
       </div>
     );
   }
 
-  // Number
   if (typeof value === "number") {
     return (
       <div className={cn("space-y-1", compact && "mb-2")}>
         <Label className="text-xs text-white/50">{labelForKey(fieldKey)}</Label>
-        <Input
-          type="number"
-          value={value}
-          onChange={(e) => onChange(fieldKey, Number(e.target.value))}
-          className="h-8 text-xs bg-black/30 border-white/10 text-white focus-visible:ring-blue-500"
-        />
+        <Input type="number" value={value} onChange={(e) => onChange(fieldKey, Number(e.target.value))} className="h-8 text-xs bg-black/30 border-white/10 text-white focus-visible:ring-blue-500" />
       </div>
     );
   }
 
-  // String — textarea for long fields, input for short
   if (typeof value === "string") {
     const isLong = fieldKey === "content" || value.length > 80;
-    const label = (
-      <Label className="text-xs text-white/50 uppercase tracking-wider">{labelForKey(fieldKey)}</Label>
-    );
+    const label = <Label className="text-xs text-white/50 uppercase tracking-wider">{labelForKey(fieldKey)}</Label>;
     if (isLong) {
       return (
         <div className={cn("space-y-1", compact && "mb-2")}>
           {label}
-          <textarea
-            value={value}
-            onChange={(e) => onChange(fieldKey, e.target.value)}
-            rows={3}
-            className="w-full text-xs bg-black/30 border border-white/10 rounded-md p-2 text-white/80 placeholder:text-white/20 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
+          <textarea value={value} onChange={(e) => onChange(fieldKey, e.target.value)} rows={3} className="w-full text-xs bg-black/30 border border-white/10 rounded-md p-2 text-white/80 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500" />
         </div>
       );
     }
     return (
       <div className={cn("space-y-1", compact && "mb-2")}>
         {label}
-        <Input
-          value={value}
-          onChange={(e) => onChange(fieldKey, e.target.value)}
-          className="h-8 text-xs bg-black/30 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-blue-500"
-        />
+        <Input value={value} onChange={(e) => onChange(fieldKey, e.target.value)} className="h-8 text-xs bg-black/30 border-white/10 text-white placeholder:text-white/20 focus-visible:ring-blue-500" />
       </div>
     );
   }
 
-  // Object — show as JSON mini editor
   if (typeof value === "object" && value !== null) {
     return (
       <div className={cn("space-y-1", compact && "mb-2")}>
