@@ -74,8 +74,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
 
     // 1. Update style guide if provided
     if (data.styleGuide) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: data.styleGuide as any });
+        dispatch({ type: "UPDATE_STYLE_GUIDE", payload: data.styleGuide as any });
     }
 
     // 2. Build sitemap pages
