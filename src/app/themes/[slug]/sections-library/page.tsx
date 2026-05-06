@@ -7,12 +7,13 @@ import {
   PanelResizeHandle,
 } from "react-resizable-panels";
 import Link from "next/link";
-import { ArrowLeft, BookOpen } from "lucide-react";
+import { ArrowLeft, BookOpen, Settings } from "lucide-react";
 import { toast } from "sonner";
 import SectionTree from "./SectionTree";
 import SectionEditor from "./SectionEditor";
 import SectionPreview from "./SectionPreview";
 import SectionChat from "./SectionChat";
+import SectionSettings from "./SectionSettings";
 import type { ThemeSection } from "./types";
 
 interface PageProps {
@@ -27,6 +28,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
   const [unsaved, setUnsaved] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
 
   // Resolve params
   React.useEffect(() => {
@@ -140,10 +142,22 @@ export default function SectionsLibraryPage({ params }: PageProps) {
             Chargement des sections…
           </span>
         )}
-        <div className="ml-auto text-xs text-zinc-600">
-          {sections.length} section{sections.length !== 1 ? "s" : ""}
+        <div className="ml-auto flex items-center gap-3">
+          <span className="text-xs text-zinc-600">
+            {sections.length} section{sections.length !== 1 ? "s" : ""}
+          </span>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-200 transition-colors"
+            title="Réglages du prompt IA"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            Réglages
+          </button>
         </div>
       </header>
+
+      <SectionSettings themeSlug={slug} open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 
       {/* Main resizable layout */}
       <div className="flex-1 min-h-0">

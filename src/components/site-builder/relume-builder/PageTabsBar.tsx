@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Plus, X, MoreHorizontal } from "lucide-react";
+import { Plus, X, Copy } from "lucide-react";
 import type { SitemapPage } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 
@@ -93,6 +93,18 @@ function PageTab({ page }: { page: SitemapPage }) {
     >
       {isHome && <span className="text-xs">🏠</span>}
       {page.title}
+      {isActive && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            dispatch({ type: "DUPLICATE_PAGE", payload: page.id });
+          }}
+          className="ml-1 text-white/30 hover:text-blue-400 transition-colors"
+          title="Dupliquer la page"
+        >
+          <Copy size={10} />
+        </button>
+      )}
       {!isHome && isActive && (
         <button
           onClick={(e) => {
@@ -101,7 +113,7 @@ function PageTab({ page }: { page: SitemapPage }) {
               dispatch({ type: "REMOVE_PAGE", payload: page.id });
             }
           }}
-          className="ml-1 text-white/30 hover:text-red-400 transition-colors"
+          className="ml-0.5 text-white/30 hover:text-red-400 transition-colors"
         >
           <X size={10} />
         </button>

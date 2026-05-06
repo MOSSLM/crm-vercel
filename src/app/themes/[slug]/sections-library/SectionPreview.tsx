@@ -266,7 +266,7 @@ function buildPreviewHTML(
 </head>
 <body>
   <div id="root"></div>
-  <script type="text/babel" data-type="module" data-presets="react,typescript">
+  <script type="text/babel" data-presets="react,typescript">
     const __exampleData = ${JSON.stringify(exampleData)};
     const __variables = ${JSON.stringify(variables)};
 

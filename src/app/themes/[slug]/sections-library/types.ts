@@ -15,7 +15,10 @@ export type AIModel =
   | "claude-sonnet-4-6"
   | "claude-3-5-sonnet"
   | "claude-3-opus"
-  | "claude-opus-4-7";
+  | "claude-opus-4-7"
+  | "gpt-4o"
+  | "gpt-4o-mini"
+  | "gpt-4-turbo";
 
 export interface ChatMessage {
   id: string;
@@ -37,9 +40,12 @@ export const CATEGORIES: { id: string; label: string }[] = [
   { id: "misc", label: "Divers" },
 ];
 
-export const AI_MODELS: { id: AIModel; label: string }[] = [
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-  { id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet" },
-  { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
-  { id: "claude-3-opus", label: "Claude 3 Opus" },
+export const AI_MODELS: { id: AIModel; label: string; provider: "anthropic" | "openai" }[] = [
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", provider: "anthropic" },
+  { id: "claude-3-5-sonnet", label: "Claude 3.5 Sonnet", provider: "anthropic" },
+  { id: "claude-opus-4-7", label: "Claude Opus 4.7", provider: "anthropic" },
+  { id: "claude-3-opus", label: "Claude 3 Opus", provider: "anthropic" },
+  { id: "gpt-4o", label: "GPT-4o", provider: "openai" },
+  { id: "gpt-4o-mini", label: "GPT-4o mini", provider: "openai" },
+  { id: "gpt-4-turbo", label: "GPT-4 Turbo", provider: "openai" },
 ];

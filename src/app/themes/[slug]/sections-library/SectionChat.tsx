@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { AI_MODELS, type AIModel, type ChatMessage } from "./types";
+import { useSystemPrompt } from "./SectionSettings";
 
 interface Props {
   themeSlug: string;
@@ -46,6 +47,7 @@ export default function SectionChat({
   currentCode,
   onApplyCode,
 }: Props) {
+  const systemPrompt = useSystemPrompt(themeSlug);
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -107,6 +109,7 @@ export default function SectionChat({
               currentCode,
               message: messageText,
               history,
+              systemPrompt,
             }),
           }
         );
@@ -190,10 +193,20 @@ export default function SectionChat({
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-zinc-900 border-zinc-800 text-white text-xs">
-            {AI_MODELS.map((m) => (
-              <SelectItem key={m.id} value={m.id} className="text-xs">
-                {m.label}
-              </SelectItem>
+            {(["anthropic", "openai"] as const).map((provider) => (
+              <React.Fragment key={provider}>
+                <div className="px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-500">
+                  {provider === "anthropic" ? "Claude" : "ChatGPT"}
+                </div>
+                {AI_MODELS.filter((m) => m.provider === provider).map((m) => (
+                  <SelectItem key={m.id} value={m.id} className="text-xs">
+                    <span className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${provider === "anthropic" ? "bg-orange-400" : "bg-green-500"}`} />
+                      {m.label}
+                    </span>
+                  </SelectItem>
+                ))}
+              </React.Fragment>
             ))}
           </SelectContent>
         </Select>
