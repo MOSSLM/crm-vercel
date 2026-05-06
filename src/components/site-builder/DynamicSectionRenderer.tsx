@@ -4,6 +4,12 @@ import React from "react";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
 import { LibrarySectionIframe } from "./LibrarySectionIframe";
+import {
+  resolveColorScheme,
+  generateShadeCSSVars,
+  type ColorSchemePreset,
+  type SectionColorScheme,
+} from "@/lib/color-utils";
 
 interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
@@ -25,7 +31,12 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     md: "0 4px 6px -1px rgba(0,0,0,0.10)",
     lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
   };
+
+  // Generate shade CSS vars for primary, secondary, accent
+  const shadeVars = generateShadeCSSVars(sg.colors);
+
   return {
+    // Core colors
     "--color-primary": sg.colors.primary,
     "--color-secondary": sg.colors.secondary,
     "--color-accent": sg.colors.accent,
@@ -33,46 +44,75 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     "--color-bg-alt": sg.colors.backgroundAlt,
     "--color-text": sg.colors.text,
     "--color-text-muted": sg.colors.textMuted,
+    // Typography
     "--font-heading": sg.fonts.heading + ", Inter, sans-serif",
     "--font-body": sg.fonts.body + ", Inter, sans-serif",
     "--font-base-size": sg.fonts.baseSize,
+    // Buttons
     "--btn-radius": sg.buttons.borderRadius,
     "--btn-padding": sg.buttons.padding,
+    // Cards
     "--card-radius": sg.cards.borderRadius,
     "--card-shadow": shadowMap[sg.cards.shadow] ?? shadowMap.md,
     "--card-padding": sg.cards.padding,
+    // Spacing
     "--section-padding": sg.spacing.sectionPadding,
     "--element-gap": sg.spacing.elementGap,
     "--max-content-width": sg.spacing.maxContentWidth,
+    // Shade scales (--color-primary-50 ... --color-primary-950, etc.)
+    ...shadeVars,
+  } as React.CSSProperties;
+}
+
+/** Resolve the color scheme from content.__color_scheme and return CSS overrides */
+function resolveColorSchemeVars(
+  content: Record<string, unknown>,
+  styleGuide: StyleGuide,
+): React.CSSProperties {
+  const raw = content.__color_scheme;
+  if (!raw || raw === "default") return {};
+
+  let scheme: SectionColorScheme;
+  if (typeof raw === "string") {
+    scheme = { preset: raw as ColorSchemePreset };
+  } else if (typeof raw === "object" && raw !== null) {
+    scheme = raw as SectionColorScheme;
+  } else {
+    return {};
+  }
+
+  const resolved = resolveColorScheme(scheme, styleGuide.colors);
+  return {
+    "--color-background": resolved.bg,
+    "--color-text": resolved.text,
+    "--color-text-muted": resolved.textMuted,
   } as React.CSSProperties;
 }
 
 function layoutToCSS(
   layout: SiteSectionDef["structure"]["layout"],
-  isMobile = false
 ): React.CSSProperties {
-  const effectiveLayout = isMobile ? layout : layout;
   const alignMap: Record<string, string> = { left: "flex-start", center: "center", right: "flex-end" };
 
-  if (effectiveLayout.type === "grid") {
-    const cols = Array.isArray(effectiveLayout.columns)
-      ? effectiveLayout.columns.map(() => "1fr").join(" ")
-      : `repeat(${effectiveLayout.columns ?? 2}, minmax(0, 1fr))`;
+  if (layout.type === "grid") {
+    const cols = Array.isArray(layout.columns)
+      ? layout.columns.map(() => "1fr").join(" ")
+      : `repeat(${layout.columns ?? 2}, minmax(0, 1fr))`;
     return {
       display: "grid",
       gridTemplateColumns: cols,
-      gap: effectiveLayout.gap ?? "var(--element-gap)",
+      gap: layout.gap ?? "var(--element-gap)",
       alignItems: "center",
     };
   }
 
-  if (effectiveLayout.type === "flex-row") {
+  if (layout.type === "flex-row") {
     return {
       display: "flex",
       flexDirection: "row",
       flexWrap: "wrap",
-      gap: effectiveLayout.gap ?? "var(--element-gap)",
-      justifyContent: alignMap[effectiveLayout.align ?? "left"] ?? "flex-start",
+      gap: layout.gap ?? "var(--element-gap)",
+      justifyContent: alignMap[layout.align ?? "left"] ?? "flex-start",
       alignItems: "center",
     };
   }
@@ -81,8 +121,8 @@ function layoutToCSS(
   return {
     display: "flex",
     flexDirection: "column",
-    gap: effectiveLayout.gap ?? "var(--element-gap)",
-    alignItems: alignMap[effectiveLayout.align ?? "left"] ?? "flex-start",
+    gap: layout.gap ?? "var(--element-gap)",
+    alignItems: alignMap[layout.align ?? "left"] ?? "flex-start",
   };
 }
 
@@ -96,12 +136,30 @@ export function DynamicSectionRenderer({
   selectedSnippetId,
   onSelectSnippet,
 }: DynamicSectionRendererProps) {
+  // Filter out __ meta keys from content passed to section components
+  const contentWithoutMeta = Object.fromEntries(
+    Object.entries(instance.content).filter(([k]) => !k.startsWith("__"))
+  );
+
+  // Color scheme override computed from content.__color_scheme
+  const colorSchemeVars = resolveColorSchemeVars(instance.content, styleGuide);
+
   // Library section: render via iframe using the section code
   if (sectionDef.code) {
-    const contentWithoutMeta = Object.fromEntries(
-      Object.entries(instance.content).filter(([k]) => !k.startsWith("__"))
-    );
     const handleClick = editorMode ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); } : undefined;
+
+    // Merge color scheme into a modified styleGuide for the iframe
+    const effectiveStyleGuide: StyleGuide = {
+      ...styleGuide,
+      colors: {
+        ...styleGuide.colors,
+        // Apply color scheme overrides to the background/text colors passed to the iframe
+        background: (colorSchemeVars["--color-background"] as string) || styleGuide.colors.background,
+        text: (colorSchemeVars["--color-text"] as string) || styleGuide.colors.text,
+        textMuted: (colorSchemeVars["--color-text-muted"] as string) || styleGuide.colors.textMuted,
+      },
+    };
+
     return (
       <div
         onClick={handleClick}
@@ -124,7 +182,7 @@ export function DynamicSectionRenderer({
           <LibrarySectionIframe
             code={sectionDef.code}
             content={{ ...sectionDef.default_content, ...contentWithoutMeta }}
-            styleGuide={styleGuide}
+            styleGuide={effectiveStyleGuide}
           />
         )}
       </div>
@@ -136,11 +194,18 @@ export function DynamicSectionRenderer({
 
   const cssVars = styleGuideToCSSVars(styleGuide);
 
+  // Apply padding from schema field __padding_y if set
+  const paddingY = typeof instance.content.__padding_y === "number"
+    ? `${instance.content.__padding_y}px`
+    : undefined;
+
   const padding = structure.padding ?? {};
   const sectionStyle: React.CSSProperties = {
     ...cssVars,
-    paddingTop: padding.top ?? "var(--section-padding)",
-    paddingBottom: padding.bottom ?? "var(--section-padding)",
+    // Color scheme overrides (applied after base vars so they take precedence)
+    ...colorSchemeVars,
+    paddingTop: paddingY ?? padding.top ?? "var(--section-padding)",
+    paddingBottom: paddingY ?? padding.bottom ?? "var(--section-padding)",
     paddingLeft: padding.left ?? "24px",
     paddingRight: padding.right ?? "24px",
     backgroundColor: structure.background ?? "var(--color-background)",
@@ -178,7 +243,6 @@ export function DynamicSectionRenderer({
           className="absolute inset-0 pointer-events-none transition-all"
           style={{
             border: selected ? "2px solid #3b82f6" : "2px solid transparent",
-            outline: selected ? "none" : undefined,
           }}
         />
       )}

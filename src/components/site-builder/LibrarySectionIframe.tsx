@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { StyleGuide } from "@/types";
+import { generateColorShades } from "@/lib/color-utils";
 
 interface LibrarySectionIframeProps {
   code: string;
@@ -111,6 +112,17 @@ function styleGuideToCSSVars(sg: StyleGuide): string {
     md: "0 4px 6px -1px rgba(0,0,0,0.10)",
     lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
   };
+
+  // Generate shade vars for primary, secondary, accent
+  const shadeEntries: string[] = [];
+  const shadeTargets = { primary: sg.colors.primary, secondary: sg.colors.secondary, accent: sg.colors.accent };
+  for (const [name, hex] of Object.entries(shadeTargets)) {
+    const shades = generateColorShades(hex);
+    for (const [stop, value] of Object.entries(shades)) {
+      shadeEntries.push(`--color-${name}-${stop}: ${value};`);
+    }
+  }
+
   return [
     `--color-primary: ${sg.colors.primary};`,
     `--color-secondary: ${sg.colors.secondary};`,
@@ -134,6 +146,8 @@ function styleGuideToCSSVars(sg: StyleGuide): string {
     `--tw-primary: ${sg.colors.primary};`,
     `--tw-secondary: ${sg.colors.secondary};`,
     `--tw-accent: ${sg.colors.accent};`,
+    // Shade scales
+    ...shadeEntries,
   ].join("\n    ");
 }
 
@@ -195,9 +209,16 @@ function buildHTML(
         secondary: styleGuide.colors.secondary,
         accent: styleGuide.colors.accent,
         background: styleGuide.colors.background,
+        backgroundAlt: styleGuide.colors.backgroundAlt,
         text: styleGuide.colors.text,
+        textMuted: styleGuide.colors.textMuted,
         fontHeading: styleGuide.fonts.heading,
         fontBody: styleGuide.fonts.body,
+        baseSize: styleGuide.fonts.baseSize,
+        // Shade scales for section code to use (e.g. tokens.primaryShades[500])
+        primaryShades: generateColorShades(styleGuide.colors.primary),
+        secondaryShades: generateColorShades(styleGuide.colors.secondary),
+        accentShades: generateColorShades(styleGuide.colors.accent),
       }
     : {};
 
