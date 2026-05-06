@@ -95,6 +95,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
     page_slug: string;
     sort_order: number;
     content: Record<string, unknown>;
+    blocks?: Array<{ id: string; type: string; settings: Record<string, unknown> }>;
     custom_style?: Record<string, unknown>;
     is_hidden?: boolean;
   }>;
@@ -121,6 +122,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
     page_slug: inst.page_slug,
     sort_order: inst.sort_order,
     content: inst.content ?? {},
+    blocks: inst.blocks ?? [],
     custom_style: inst.custom_style ?? {},
     is_hidden: inst.is_hidden ?? false,
   }));
@@ -139,12 +141,13 @@ export async function PUT(req: Request, { params }: RouteContext) {
 export async function PATCH(req: Request, { params }: RouteContext) {
   const supabase = getSupabaseServiceClient();
   const { siteId } = await params;
-  const { instanceId, content, custom_style, is_hidden, sort_order } = await req.json();
+  const { instanceId, content, blocks, custom_style, is_hidden, sort_order } = await req.json();
 
   if (!instanceId) return NextResponse.json({ error: "instanceId requis" }, { status: 400 });
 
   const updates: Record<string, unknown> = {};
   if (content !== undefined) updates.content = content;
+  if (blocks !== undefined) updates.blocks = blocks;
   if (custom_style !== undefined) updates.custom_style = custom_style;
   if (is_hidden !== undefined) updates.is_hidden = is_hidden;
   if (sort_order !== undefined) updates.sort_order = sort_order;

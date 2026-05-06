@@ -351,6 +351,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
       page_slug: pageSlug,
       sort_order: (state.instancesByPage[pageSlug] ?? []).length,
       content: { ...sectionDef.default_content },
+      blocks: [],
       custom_style: {},
       is_hidden: false,
       created_at: new Date().toISOString(),

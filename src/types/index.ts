@@ -795,17 +795,44 @@ export type SectionFieldType =
   | 'image_picker' | 'video_url'
   | 'select' | 'radio' | 'checkbox'
   | 'alignment' | 'font'
-  | 'header' | 'paragraph'; // non-editable separators
+  | 'header' | 'paragraph'    // non-editable separators
+  // ─── CRM-specific bindings (no products / collections / articles) ───────────
+  | 'page_link'               // pick an internal page from sitemap (vs free URL)
+  | 'icon_picker'             // Lucide icon name with autocomplete
+  | 'enterprise_field'        // bind to an entreprise.* field (nom, telephone, …)
+  | 'review_source'           // 'google' | 'config' | 'static'
+  | 'social_links';           // grouped fb/ig/li/tw/yt fields
+
+/** Group used to organise fields in the editor (Contenu / Style / etc.). */
+export type SectionFieldGroup = 'content' | 'layout' | 'style' | 'advanced' | 'seo';
+
+/** Visibility predicate: a field is shown only if the predicate is true. */
+export interface SectionFieldVisibilityRule {
+  /** ID of the field this rule depends on (lookup is in the same scope: section settings or block settings). */
+  field: string;
+  /** Show when target value strictly equals this. */
+  equals?: unknown;
+  /** Show when target value is in this list. */
+  in?: unknown[];
+  /** Show when target value is truthy (non-empty, not 0, not false). */
+  truthy?: boolean;
+}
 
 interface SectionFieldBase {
   id: string;
   label: string;
   info?: string;
   default?: unknown;
+  /** When true, the editor / validator flags an empty value. */
+  required?: boolean;
+  /** Editor tab grouping. Defaults to 'content' for content fields, 'style' for color/scheme. */
+  group?: SectionFieldGroup;
+  /** Hide the field unless the rule passes. */
+  visible_if?: SectionFieldVisibilityRule;
 }
 
-export interface SectionTextField extends SectionFieldBase { type: 'text' | 'url'; placeholder?: string; }
-export interface SectionTextareaField extends SectionFieldBase { type: 'textarea' | 'richtext'; rows?: number; }
+export interface SectionTextField extends SectionFieldBase { type: 'text' | 'url'; placeholder?: string; maxLength?: number; }
+export interface SectionTextareaField extends SectionFieldBase { type: 'textarea' | 'richtext'; rows?: number; maxLength?: number; }
 export interface SectionNumberField extends SectionFieldBase { type: 'number'; min?: number; max?: number; step?: number; unit?: string; }
 export interface SectionRangeField extends SectionFieldBase { type: 'range'; min: number; max: number; step?: number; unit?: string; }
 export interface SectionColorField extends SectionFieldBase { type: 'color'; }
@@ -818,32 +845,92 @@ export interface SectionSelectField extends SectionFieldBase {
 export interface SectionCheckboxField extends SectionFieldBase { type: 'checkbox'; }
 export interface SectionAlignmentField extends SectionFieldBase { type: 'alignment'; }
 export interface SectionFontField extends SectionFieldBase { type: 'font'; }
-export interface SectionHeaderField { type: 'header'; content: string; }
-export interface SectionParagraphField { type: 'paragraph'; content: string; }
+export interface SectionHeaderField { type: 'header'; content: string; group?: SectionFieldGroup; }
+export interface SectionParagraphField { type: 'paragraph'; content: string; group?: SectionFieldGroup; }
+
+// CRM-specific fields
+export interface SectionPageLinkField extends SectionFieldBase { type: 'page_link'; allowExternal?: boolean; placeholder?: string; }
+export interface SectionIconPickerField extends SectionFieldBase { type: 'icon_picker'; }
+export interface SectionEnterpriseFieldField extends SectionFieldBase {
+  type: 'enterprise_field';
+  /** Restrict the pickable entreprise.* keys (otherwise the full list is offered). */
+  allow?: Array<'nom' | 'telephone' | 'email' | 'adresse' | 'ville' | 'code_postal' | 'logo_url' | 'note_moyenne' | 'nombre_avis' | 'description' | 'annee_creation' | 'siret'>;
+}
+export interface SectionReviewSourceField extends SectionFieldBase { type: 'review_source'; }
+export interface SectionSocialLinksField extends SectionFieldBase {
+  type: 'social_links';
+  /** Which platforms to expose. Default: facebook, instagram, linkedin, twitter. */
+  platforms?: Array<'facebook' | 'instagram' | 'linkedin' | 'twitter' | 'youtube' | 'tiktok'>;
+}
 
 export type SectionField =
   | SectionTextField | SectionTextareaField | SectionNumberField
   | SectionRangeField | SectionColorField | SectionColorSchemeField
   | SectionImagePickerField | SectionSelectField | SectionCheckboxField
-  | SectionAlignmentField | SectionFontField | SectionHeaderField | SectionParagraphField;
+  | SectionAlignmentField | SectionFontField | SectionHeaderField | SectionParagraphField
+  | SectionPageLinkField | SectionIconPickerField | SectionEnterpriseFieldField
+  | SectionReviewSourceField | SectionSocialLinksField;
 
 export interface SectionBlockSchema {
   type: string;
   name: string;
-  settings: SectionField[];
+  /** Lucide icon name shown in the block list. */
+  icon?: string;
+  /** Optional one-liner description shown when picking a block to add. */
+  description?: string;
+  /** Maximum instances of THIS block type per section (additionally bounded by section.max_blocks). */
   limit?: number;
+  settings: SectionField[];
 }
+
+/** A canned configuration of a section, exposed to the user when adding a section. */
+export interface SectionPreset {
+  name: string;
+  description?: string;
+  /** Initial values for the section's settings (keyed by field id). */
+  settings?: Record<string, unknown>;
+  /** Initial blocks. `id` is generated by the editor; only `type`/`settings` are required. */
+  blocks?: Array<{ type: string; settings?: Record<string, unknown> }>;
+}
+
+/** Top-level grouping shown in the section library and used to order presets. */
+export type SectionCategory =
+  | 'navigation' | 'hero' | 'content' | 'social-proof' | 'cta'
+  | 'contact' | 'media' | 'commerce' | 'footer' | 'misc';
 
 export interface SectionSchema {
   name: string;
+  /** Short human description, also injected into the AI prompt. */
+  description?: string;
+  /** Library category. */
+  category?: SectionCategory;
+  /** Lucide icon name used in the library and editor. */
+  icon?: string;
+  /** Reserved Shopify-style tag — currently informational. */
+  tag?: 'section' | 'header' | 'footer';
   settings: SectionField[];
   blocks?: SectionBlockSchema[];
   max_blocks?: number;
-  presets?: Array<{
-    name: string;
-    settings?: Record<string, unknown>;
-    blocks?: Array<{ type: string; settings?: Record<string, unknown> }>;
-  }>;
+  min_blocks?: number;
+  presets?: SectionPreset[];
+  /** Hard limits enforced by the editor. */
+  limits?: {
+    /** Cap how many instances of this section type can live on a single page (e.g. 1 for navbar/footer). */
+    instances_per_page?: number;
+    /** Cap across the whole site. */
+    instances_per_site?: number;
+  };
+  /** If set, the section is only addable on these template/page slugs. */
+  enabled_on?: { templates?: string[] };
+  /** If set, the section is hidden on these template/page slugs. */
+  disabled_on?: { templates?: string[] };
+}
+
+/** A single block stored on a section instance. */
+export interface SectionBlockInstance {
+  id: string;
+  type: string;
+  settings: Record<string, unknown>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -877,6 +964,8 @@ export interface SiteSectionInstance {
   page_slug: string;
   sort_order: number;
   content: Record<string, unknown>;
+  /** Repeatable items defined by the section schema's blocks[]. */
+  blocks: SectionBlockInstance[];
   custom_style?: Record<string, unknown>;
   is_hidden: boolean;
   created_at: string;
@@ -1031,6 +1120,12 @@ export type RelumeBuilderAction =
   | { type: 'REMOVE_INSTANCE'; payload: string }
   | { type: 'UPDATE_INSTANCE_CONTENT'; payload: { id: string; content: Record<string, unknown> } }
   | { type: 'UPDATE_INSTANCE_STYLE'; payload: { id: string; style: Record<string, unknown> } }
+  | { type: 'ADD_BLOCK'; payload: { instanceId: string; blockType: string; settings?: Record<string, unknown>; index?: number } }
+  | { type: 'UPDATE_BLOCK'; payload: { instanceId: string; blockId: string; settings: Record<string, unknown> } }
+  | { type: 'REMOVE_BLOCK'; payload: { instanceId: string; blockId: string } }
+  | { type: 'DUPLICATE_BLOCK'; payload: { instanceId: string; blockId: string } }
+  | { type: 'REORDER_BLOCKS'; payload: { instanceId: string; fromIndex: number; toIndex: number } }
+  | { type: 'APPLY_PRESET'; payload: { instanceId: string; preset: SectionPreset } }
   | { type: 'REORDER_INSTANCES'; payload: { pageSlug: string; fromIndex: number; toIndex: number } }
   | { type: 'TOGGLE_INSTANCE_VISIBILITY'; payload: string }
   | { type: 'UPDATE_STYLE_GUIDE'; payload: Partial<StyleGuide> }

@@ -65,7 +65,11 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
         title: string;
         metaTitle?: string;
         metaDescription?: string;
-        sections?: Array<{ section_id: string; content: Record<string, unknown> }>;
+        sections?: Array<{
+          section_id: string;
+          content: Record<string, unknown>;
+          blocks?: Array<{ id: string; type: string; settings: Record<string, unknown> }>;
+        }>;
       }>;
     },
     sections: SiteSectionDef[]
@@ -106,6 +110,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
           page_slug: page.slug,
           sort_order: idx,
           content: sectionData.content ?? {},
+          blocks: Array.isArray(sectionData.blocks) ? sectionData.blocks : [],
           custom_style: {},
           is_hidden: false,
           created_at: new Date().toISOString(),
