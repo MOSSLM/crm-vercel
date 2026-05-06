@@ -59,6 +59,7 @@ export default function SectionChat({
   });
   const [htmlPasteMode, setHtmlPasteMode] = React.useState(false);
   const [pastedHtml, setPastedHtml] = React.useState("");
+  const [htmlPasteMessage, setHtmlPasteMessage] = React.useState("");
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
 
@@ -149,9 +150,11 @@ export default function SectionChat({
 
   const handleHtmlPaste = () => {
     if (!pastedHtml.trim()) return;
-    const prompt = `Convertis ce HTML en composant React TSX avec les props (tokens, data, variables). Adapte les classes CSS en Tailwind. Remplace les textes par des variables entreprise appropriées.\n\nHTML à convertir :\n\`\`\`html\n${pastedHtml}\n\`\`\``;
+    const extra = htmlPasteMessage.trim();
+    const prompt = `Convertis ce HTML en composant React TSX avec les props (tokens, data, variables). Adapte les classes CSS en Tailwind. Remplace les textes par des variables entreprise appropriées.${extra ? `\n\nInstructions : ${extra}` : ""}\n\nHTML à convertir :\n\`\`\`html\n${pastedHtml}\n\`\`\``;
     setHtmlPasteMode(false);
     setPastedHtml("");
+    setHtmlPasteMessage("");
     sendMessage(prompt);
   };
 
@@ -268,15 +271,22 @@ export default function SectionChat({
 
       {/* HTML paste mode */}
       {htmlPasteMode && (
-        <div className="border-t border-zinc-800 p-2 bg-zinc-900 flex-shrink-0">
-          <p className="text-xs text-zinc-400 mb-1">Collez votre HTML :</p>
+        <div className="border-t border-zinc-800 p-2 bg-zinc-900 flex-shrink-0 space-y-1.5">
+          <p className="text-xs text-zinc-400">Collez votre HTML :</p>
           <Textarea
             value={pastedHtml}
             onChange={(e) => setPastedHtml(e.target.value)}
             placeholder="<section class='...'>...</section>"
             className="font-mono text-xs bg-zinc-800 border-zinc-700 text-zinc-300 resize-none h-24"
           />
-          <div className="flex gap-2 mt-1.5">
+          <p className="text-xs text-zinc-500">Instructions (optionnel) :</p>
+          <Textarea
+            value={htmlPasteMessage}
+            onChange={(e) => setHtmlPasteMessage(e.target.value)}
+            placeholder="Ex : adapte les couleurs, ajoute une animation…"
+            className="text-xs bg-zinc-800 border-zinc-700 text-zinc-300 resize-none h-12"
+          />
+          <div className="flex gap-2">
             <Button
               size="sm"
               className="h-6 text-xs bg-blue-600 hover:bg-blue-700"
@@ -289,7 +299,7 @@ export default function SectionChat({
               size="sm"
               variant="ghost"
               className="h-6 text-xs text-zinc-400"
-              onClick={() => { setHtmlPasteMode(false); setPastedHtml(""); }}
+              onClick={() => { setHtmlPasteMode(false); setPastedHtml(""); setHtmlPasteMessage(""); }}
             >
               Annuler
             </Button>
