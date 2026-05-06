@@ -1,5 +1,3 @@
-import type { CSSProperties } from 'react';
-
 export type RevenueBand =
   | 'unknown'
   | '0-100k'
@@ -291,125 +289,6 @@ export interface Objectives {
   revenue: number;
 }
 
-// ─── Site Builder ────────────────────────────────────────────────────────────
-
-export interface Site {
-  id: string;
-  name: string;
-  description?: string;
-  published: boolean;
-  sub_domain_name?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface SitePage {
-  id: string;
-  site_id: string;
-  name: string;
-  path_name: string;
-  content: string;
-  order: number;
-  visits: number;
-  preview_image?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-// Editor types (ported from lpura)
-export type DeviceTypes = 'Desktop' | 'Mobile' | 'Tablet';
-
-export type EditorBtns =
-  | 'text'
-  | 'container'
-  | 'section'
-  | 'link'
-  | '2Col'
-  | 'video'
-  | '__body'
-  | 'image'
-  | '3Col'
-  | 'savedComponent'
-  | 'canvasElement'
-  | 'customCode'
-  | null;
-
-export interface CustomCodeContent {
-  code: string;
-  schema: string; // JSON: { varName: { type: 'string'|'color'|'number'|'boolean', label: string, default: string } }
-  propValues: Record<string, string>;
-}
-
-export type EditorElement = {
-  id: string;
-  styles: CSSProperties;
-  name: string;
-  type: EditorBtns;
-  content:
-    | EditorElement[]
-    | {
-        href?: string;
-        innerText?: string;
-        src?: string;
-        alt?: string;
-      }
-    | CustomCodeContent;
-};
-
-export type Editor = {
-  pageId: string;
-  liveMode: boolean;
-  elements: EditorElement[];
-  selectedElement: EditorElement;
-  device: DeviceTypes;
-  previewMode: boolean;
-};
-
-export type HistoryState = {
-  currentIndex: number;
-  history: Editor[];
-};
-
-export type EditorState = {
-  editor: Editor;
-  history: HistoryState;
-};
-
-export type EditorAction =
-  | { type: 'ADD_ELEMENT'; payload: { containerId: string; elementDetails: EditorElement } }
-  | { type: 'UPDATE_ELEMENT'; payload: { elementDetails: EditorElement } }
-  | { type: 'DELETE_ELEMENT'; payload: { elementDetails: EditorElement } }
-  | {
-      type: 'CHANGE_CLICKED_ELEMENT';
-      payload: { elementDetails?: EditorElement | { id: ''; content: []; name: ''; styles: Record<string, never>; type: null } };
-    }
-  | { type: 'CHANGE_DEVICE'; payload: { device: DeviceTypes } }
-  | { type: 'TOGGLE_PREVIEW_MODE' }
-  | { type: 'TOGGLE_LIVE_MODE'; payload?: { value: boolean } }
-  | { type: 'REDO' }
-  | { type: 'UNDO' }
-  | { type: 'LOAD_DATA'; payload: { elements: EditorElement[]; withLive: boolean } }
-  | { type: 'CLEAR_HISTORY' }
-  | { type: 'SET_PAGE_ID'; payload: { pageId: string } }
-  | {
-      type: 'MOVE_ELEMENT';
-      payload: {
-        elementId: string;
-        targetContainerId: string;
-        position?: 'inside' | 'before' | 'after';
-      };
-    };
-
-// Reusable saved components
-export interface SavedComponent {
-  id: string;
-  name: string;
-  category: string;
-  content: string; // JSON string of EditorElement
-  created_at: string;
-  updated_at: string;
-}
-
 // ── AUDIT SYSTEM ──────────────────────────────────────────
 
 export interface AuditAdditionalService {
@@ -582,3 +461,482 @@ export interface AuditTemplate {
   created_at: string;
   updated_at: string;
 }
+
+// ── WORKFLOW AUTOMATION ──────────────────────────────────────
+
+export type WorkflowActionType = 'create_task' | 'add_note' | 'send_email' | 'update_field';
+
+export type WorkflowTriggerType =
+  | 'stage_changed'
+  | 'opportunite_created'
+  | 'email_sent'
+  | 'offre_accepted';
+
+export interface WorkflowAction {
+  type: WorkflowActionType;
+  delay_days?: number;
+  params: Record<string, string>;
+}
+
+export interface CrmWorkflow {
+  id: string;
+  name: string;
+  description?: string;
+  trigger_type: WorkflowTriggerType;
+  trigger_conditions: Record<string, string>;
+  actions: WorkflowAction[];
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CrmWorkflowExecution {
+  id: string;
+  workflow_id: string;
+  opportunite_id?: string;
+  trigger_data?: Record<string, unknown>;
+  status: 'completed' | 'failed' | 'partial';
+  actions_executed?: WorkflowAction[];
+  error?: string;
+  executed_at: string;
+}
+
+export interface OpportuniteTask {
+  id: string;
+  opportunite_id: string;
+  entreprise_id?: number;
+  titre: string;
+  description?: string;
+  type: 'relance' | 'appel' | 'email' | 'rdv' | 'autre';
+  statut: 'a_faire' | 'fait' | 'annule';
+  due_date?: string;
+  assigned_to?: string;
+  workflow_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OpportuniteOffre {
+  id: string;
+  opportunite_id: string;
+  offre_id?: string;
+  offre_nom: string;
+  offre_prix_ht?: number;
+  statut: 'proposee' | 'acceptee' | 'refusee' | 'en_cours';
+  notes?: string;
+  created_at: string;
+  offres?: Pick<Offer, 'id' | 'nom' | 'type' | 'prix_ht' | 'devise' | 'billing_period'>;
+}
+
+// ── SITE BUILDER V2 – Theme & Config System ──────────────────────────────────
+
+export type SectionDataSource = 'enterprise' | 'config' | 'client-editable' | 'dynamic';
+
+export type SectionAnimation = 'none' | 'fade-in' | 'slide-up' | 'slide-in-left' | 'slide-in-right';
+
+export interface SectionDefinition {
+  type: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  defaultData: Record<string, unknown>;
+}
+
+export interface ThemeGlobalVariables {
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+  };
+  fonts: {
+    heading: string;
+    body: string;
+    baseSize?: string;
+  };
+  buttons?: {
+    borderRadius?: string;
+    padding?: string;
+    style?: 'filled' | 'outline';
+  };
+  cards?: {
+    borderRadius?: string;
+    shadow?: string;
+    padding?: string;
+  };
+  spacing?: {
+    sectionPadding?: string;
+    elementGap?: string;
+  };
+  borderRadius?: string;
+}
+
+export interface SiteGlobalSettings {
+  metaTitle?: string;
+  metaDescription?: string;
+  faviconUrl?: string;
+  isActive?: boolean;
+}
+
+export interface ThemeConfig {
+  slug: string;
+  name: string;
+  description?: string;
+  version?: string;
+  previewImageUrl?: string;
+  sections: SectionDefinition[];
+  globalVariables: ThemeGlobalVariables;
+  enterpriseVariables: string[];
+  pageStructure?: {
+    mode: 'single' | 'multi';
+    requiredPages?: { slug: string; title: string }[];
+    allowCustomPages?: boolean;
+  };
+  sectionsLibrary?: {
+    sectionIds: string[];
+  };
+}
+
+export interface SiteSection {
+  id: string;
+  type: string;
+  dataSource: SectionDataSource;
+  data: Record<string, unknown>;
+  config?: Record<string, unknown>;
+  hidden?: boolean;
+  animation?: SectionAnimation;
+}
+
+export interface SiteConfigPage {
+  id: string;
+  slug: string;
+  title: string;
+  metaTitle?: string;
+  metaDescription?: string;
+  sections: SiteSection[];
+}
+
+export interface SiteConfig {
+  theme: string;
+  settings: ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings };
+  pages: SiteConfigPage[];
+  sections?: SiteSection[]; // deprecated — migrated to pages on load
+}
+
+// Site record (Site Builder)
+export interface SiteV2 {
+  id: string;
+  name: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+  published_subdomain?: string;
+  published_domain?: string;
+  is_published?: boolean;
+  enterprise_id?: number;
+  site_config?: SiteConfig | null;
+}
+
+export interface SiteVersion {
+  id: string;
+  site_id: string;
+  version_number: number;
+  site_config: Record<string, unknown>;
+  change_description?: string;
+  created_by?: string;
+  created_at: string;
+}
+
+export interface ClientOverride {
+  id: string;
+  site_id: string;
+  section_id: string;
+  data: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BlogPost {
+  id: string;
+  site_id: string;
+  title: string;
+  slug: string;
+  excerpt?: string;
+  content?: string;
+  cover_image_url?: string;
+  published_at?: string;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ManagedTheme {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  preview_image_url?: string;
+  config: Partial<ThemeConfig>;
+  is_enabled: boolean;
+  is_builtin: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// New editor state based on SiteConfig (replaces element-tree approach)
+export type SiteConfigAction =
+  | { type: 'LOAD_CONFIG'; payload: { config: SiteConfig } }
+  | { type: 'ADD_SECTION'; payload: { section: SiteSection; index?: number; pageId?: string } }
+  | { type: 'REMOVE_SECTION'; payload: { sectionId: string; pageId?: string } }
+  | { type: 'UPDATE_SECTION'; payload: { sectionId: string; data: Partial<SiteSection>; pageId?: string } }
+  | { type: 'REORDER_SECTIONS'; payload: { fromIndex: number; toIndex: number; pageId?: string } }
+  | { type: 'UPDATE_SETTINGS'; payload: { settings: Partial<ThemeGlobalVariables & { siteSettings?: SiteGlobalSettings }> } }
+  | { type: 'SET_THEME'; payload: { theme: string } }
+  | { type: 'TOGGLE_SECTION_VISIBILITY'; payload: { sectionId: string; pageId?: string } }
+  | { type: 'SELECT_SECTION'; payload: { sectionId: string | null } }
+  | { type: 'ADD_PAGE'; payload: { page: SiteConfigPage } }
+  | { type: 'REMOVE_PAGE'; payload: { pageId: string } }
+  | { type: 'UPDATE_PAGE'; payload: { pageId: string; data: Partial<Omit<SiteConfigPage, 'id' | 'sections'>> } }
+  | { type: 'SET_ACTIVE_PAGE'; payload: { pageId: string } };
+
+export interface SiteTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  preview_image_url?: string;
+  category?: string;
+  site_config: SiteConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SiteConfigState {
+  config: SiteConfig;
+  isDirty: boolean;
+  selectedSectionId: string | null;
+  activePageId: string | null;
+}
+
+// ─── Relume-like Dynamic Sections System ──────────────────────────────────────
+
+export type SnippetType =
+  | 'heading'
+  | 'paragraph'
+  | 'button'
+  | 'button-group'
+  | 'image'
+  | 'badge'
+  | 'icon'
+  | 'card'
+  | 'card-grid'
+  | 'testimonial-grid'
+  | 'faq-accordion'
+  | 'contact-form'
+  | 'contact-info'
+  | 'stat-row'
+  | 'stat-grid'
+  | 'image-grid'
+  | 'logo-row'
+  | 'team-grid'
+  | 'video'
+  | 'spacer'
+  | 'divider'
+  | 'flex-col'
+  | 'flex-row'
+  | 'custom';
+
+export interface SnippetDefinition {
+  id: string;
+  type: SnippetType;
+  props: Record<string, unknown>;
+  editable?: string[];
+  children?: SnippetDefinition[];
+}
+
+export interface SectionLayout {
+  type: 'stack' | 'grid' | 'flex-row';
+  columns?: number | number[];
+  gap?: string;
+  align?: 'left' | 'center' | 'right';
+}
+
+export interface SectionStructure {
+  snippets: SnippetDefinition[];
+  layout: SectionLayout;
+  padding?: { top?: string; bottom?: string; left?: string; right?: string };
+  background?: string;
+  responsive?: { mobile?: Partial<SectionLayout> };
+}
+
+/** A row in site_sections — the reusable section library */
+export interface SiteSectionDef {
+  id: string;
+  name: string;
+  type: string;
+  category?: string;
+  preview_image_url?: string;
+  structure: SectionStructure;
+  default_content: Record<string, unknown>;
+  is_builtin: boolean;
+  tags?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+/** A row in site_section_instances — a section placed on a site page */
+export interface SiteSectionInstance {
+  id: string;
+  site_id: string;
+  section_id: string | null;
+  page_slug: string;
+  sort_order: number;
+  content: Record<string, unknown>;
+  custom_style?: Record<string, unknown>;
+  is_hidden: boolean;
+  created_at: string;
+  updated_at: string;
+  /** Joined from site_sections */
+  section_def?: SiteSectionDef;
+}
+
+/** Global style design tokens stored in sites.style_guide */
+export interface StyleGuide {
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    backgroundAlt: string;
+    text: string;
+    textMuted: string;
+  };
+  fonts: {
+    heading: string;
+    body: string;
+    baseSize: string;
+    scale?: number;
+  };
+  buttons: {
+    borderRadius: string;
+    padding: string;
+    style: 'filled' | 'outline' | 'soft';
+    hoverEffect?: 'darken' | 'lift' | 'none';
+  };
+  cards: {
+    borderRadius: string;
+    shadow: 'none' | 'sm' | 'md' | 'lg';
+    padding: string;
+  };
+  spacing: {
+    sectionPadding: string;
+    elementGap: string;
+    maxContentWidth: string;
+  };
+}
+
+export const DEFAULT_STYLE_GUIDE: StyleGuide = {
+  colors: {
+    primary: '#1a56db',
+    secondary: '#6b7280',
+    accent: '#f59e0b',
+    background: '#ffffff',
+    backgroundAlt: '#f9fafb',
+    text: '#111827',
+    textMuted: '#6b7280',
+  },
+  fonts: {
+    heading: 'Inter',
+    body: 'Inter',
+    baseSize: '16px',
+    scale: 1.25,
+  },
+  buttons: {
+    borderRadius: '8px',
+    padding: '12px 24px',
+    style: 'filled',
+    hoverEffect: 'darken',
+  },
+  cards: {
+    borderRadius: '12px',
+    shadow: 'md',
+    padding: '24px',
+  },
+  spacing: {
+    sectionPadding: '80px',
+    elementGap: '24px',
+    maxContentWidth: '1200px',
+  },
+};
+
+/** Section entry within a sitemap page (for Sitemap workspace) */
+export interface SitemapSection {
+  id: string;
+  name: string;
+  description: string;
+  type?: string;
+}
+
+/** Page entry in sites.sitemap */
+export interface SitemapPage {
+  id: string;
+  slug: string;
+  title: string;
+  sections?: SitemapSection[];
+  metaTitle?: string;
+  metaDescription?: string;
+}
+
+export type WorkspaceId = 'sitemap' | 'wireframe' | 'style-guide' | 'design';
+
+/** State for the Relume-like builder */
+export interface RelumeBuilderState {
+  siteId: string;
+  siteName: string;
+  styleGuide: StyleGuide;
+  sitemap: SitemapPage[];
+  instances: Record<string, SiteSectionInstance>;
+  instancesByPage: Record<string, string[]>;
+  activePage: string;
+  selectedInstanceId: string | null;
+  selectedSnippetId: string | null;
+  deviceView: 'desktop' | 'tablet' | 'mobile';
+  activeWorkspace: WorkspaceId;
+  aiPanelOpen: boolean;
+  stylePanelOpen: boolean;
+  libraryOpen: boolean;
+  isDirty: boolean;
+  history: RelumeHistoryEntry[];
+  historyIndex: number;
+}
+
+export interface RelumeHistoryEntry {
+  instances: Record<string, SiteSectionInstance>;
+  instancesByPage: Record<string, string[]>;
+  styleGuide: StyleGuide;
+  sitemap: SitemapPage[];
+}
+
+export type RelumeBuilderAction =
+  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[] } }
+  | { type: 'SET_ACTIVE_PAGE'; payload: string }
+  | { type: 'SET_DEVICE_VIEW'; payload: 'desktop' | 'tablet' | 'mobile' }
+  | { type: 'SET_WORKSPACE'; payload: WorkspaceId }
+  | { type: 'SELECT_INSTANCE'; payload: string | null }
+  | { type: 'SELECT_SNIPPET'; payload: string | null }
+  | { type: 'ADD_INSTANCE'; payload: { instance: SiteSectionInstance; pageSlug: string; index?: number } }
+  | { type: 'REMOVE_INSTANCE'; payload: string }
+  | { type: 'UPDATE_INSTANCE_CONTENT'; payload: { id: string; content: Record<string, unknown> } }
+  | { type: 'UPDATE_INSTANCE_STYLE'; payload: { id: string; style: Record<string, unknown> } }
+  | { type: 'REORDER_INSTANCES'; payload: { pageSlug: string; fromIndex: number; toIndex: number } }
+  | { type: 'TOGGLE_INSTANCE_VISIBILITY'; payload: string }
+  | { type: 'UPDATE_STYLE_GUIDE'; payload: Partial<StyleGuide> }
+  | { type: 'ADD_PAGE'; payload: SitemapPage }
+  | { type: 'REMOVE_PAGE'; payload: string }
+  | { type: 'UPDATE_PAGE'; payload: { id: string; data: Partial<SitemapPage> } }
+  | { type: 'TOGGLE_AI_PANEL' }
+  | { type: 'TOGGLE_STYLE_PANEL' }
+  | { type: 'TOGGLE_LIBRARY' }
+  | { type: 'UNDO' }
+  | { type: 'REDO' }
+  | { type: 'MARK_SAVED' };

@@ -2087,3 +2087,48 @@
 .sb-animate-sidebar-r { animation: sb-slide-from-right 0.32s cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: 0.05s; }
 .sb-animate-sidebar-l { animation: sb-slide-from-left  0.32s cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: 0.05s; }
 .sb-animate-canvas    { animation: sb-fade-in           0.4s  cubic-bezier(0.16, 1, 0.3, 1) both; animation-delay: 0.1s;  }
+
+/* ── Section entry animations (IntersectionObserver triggered) ── */
+@keyframes section-fade-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes section-slide-up {
+  from { opacity: 0; transform: translateY(40px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes section-slide-in-left {
+  from { opacity: 0; transform: translateX(-48px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes section-slide-in-right {
+  from { opacity: 0; transform: translateX(48px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Base states: hidden until .--visible applied */
+.sb-anim-fade-in,
+.sb-anim-slide-up,
+.sb-anim-slide-in-left,
+.sb-anim-slide-in-right {
+  opacity: 0;
+}
+
+.sb-anim-fade-in--visible       { animation: section-fade-in     0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.sb-anim-slide-up--visible      { animation: section-slide-up    0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.sb-anim-slide-in-left--visible  { animation: section-slide-in-left  0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.sb-anim-slide-in-right--visible { animation: section-slide-in-right 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .sb-anim-fade-in,
+  .sb-anim-slide-up,
+  .sb-anim-slide-in-left,
+  .sb-anim-slide-in-right {
+    opacity: 1 !important;
+    animation: none !important;
+  }
+}

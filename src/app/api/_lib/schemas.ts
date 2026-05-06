@@ -20,6 +20,7 @@ export const sendEmailSchema = z.object({
   opportunite_id: z.string().uuid().optional(),
   lead_magnet_project_id: z.string().uuid().optional(),
   audit_pdf_url: z.string().url().optional(),
+  type: z.enum(["lead_magnet", "relance", "premier_contact", "autre"]).optional(),
 });
 export type SendEmailPayload = z.infer<typeof sendEmailSchema>;
 
