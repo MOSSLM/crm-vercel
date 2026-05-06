@@ -109,7 +109,7 @@ export const AppSidebar = () => {
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
     { title: "Audits", icon: ClipboardList, href: "/opportunities" },
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
-    { title: "Sites V2", icon: Layout, href: "/site-builder-v2" },
+    { title: "Sites V2", icon: Layout, href: "/site-builder" },
     { title: "Thèmes", icon: Layout, href: "/themes" },
     { title: "Docs Thèmes", icon: Layout, href: "/docs/themes" },
   ];

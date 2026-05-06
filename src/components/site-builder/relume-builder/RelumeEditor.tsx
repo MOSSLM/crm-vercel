@@ -1,7 +1,9 @@
 "use client";
 
 import React from "react";
-import { Save, Globe, Check, Share2, Upload, Users } from "lucide-react";
+import { Save, Globe, Check, Share2, Upload, Users, History, X, RotateCcw } from "lucide-react";
+import { format } from "date-fns";
+import type { SiteVersion } from "@/types";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, WorkspaceId } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
@@ -51,6 +53,10 @@ function RelumeEditorInner({
   const [publishing, setPublishing] = React.useState(false);
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
+  const [showHistory, setShowHistory] = React.useState(false);
+  const [versions, setVersions] = React.useState<SiteVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = React.useState(false);
+  const [restoring, setRestoring] = React.useState<string | null>(null);
 
   const sectionDefs = React.useMemo(
     () => Object.fromEntries(initialSections.map((s) => [s.id, s])),
@@ -76,16 +82,24 @@ function RelumeEditorInner({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch(`/api/site-builder-v2/sites/${siteId}`, {
+      const instances = Object.values(state.instances);
+      await fetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ style_guide: state.styleGuide, sitemap: state.sitemap }),
       });
-      const instances = Object.values(state.instances);
-      await fetch(`/api/site-builder-v2/sites/${siteId}/instances`, {
+      await fetch(`/api/site-builder/sites/${siteId}/instances`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instances }),
+      });
+      // Save version snapshot
+      await fetch(`/api/site-builder/sites/${siteId}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          snapshot: { style_guide: state.styleGuide, sitemap: state.sitemap, instances },
+        }),
       });
       dispatch({ type: "MARK_SAVED" });
       toast.success("Sauvegardé");
@@ -96,13 +110,46 @@ function RelumeEditorInner({
     }
   };
 
+  const handleOpenHistory = async () => {
+    setShowHistory(true);
+    setLoadingVersions(true);
+    try {
+      const res = await fetch(`/api/site-builder/sites/${siteId}/versions`);
+      setVersions(await res.json());
+    } catch {
+      toast.error("Erreur lors du chargement des versions");
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  const handleRestore = async (versionId: string) => {
+    if (!window.confirm("Restaurer cette version ? L'état actuel sera remplacé.")) return;
+    setRestoring(versionId);
+    try {
+      const res = await fetch(`/api/site-builder/sites/${siteId}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ version_id: versionId }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Version restaurée — rechargement…");
+      setShowHistory(false);
+      setTimeout(() => window.location.reload(), 800);
+    } catch {
+      toast.error("Erreur lors de la restauration");
+    } finally {
+      setRestoring(null);
+    }
+  };
+
   // ─── Publish ─────────────────────────────────────────────────────────────────
 
   const handlePublish = async () => {
     if (!publishDomain.trim()) return;
     setPublishing(true);
     try {
-      const res = await fetch(`/api/site-builder-v2/sites/${siteId}/publish`, {
+      const res = await fetch(`/api/site-builder/sites/${siteId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subdomain: publishDomain.trim() }),
@@ -127,7 +174,7 @@ function RelumeEditorInner({
     const sectionDef = instance?.section_def ?? (instance?.section_id ? sectionDefs[instance.section_id] : null);
     if (!instance || !sectionDef) return;
     try {
-      const res = await fetch("/api/site-builder-v2/ai/regenerate-section", {
+      const res = await fetch("/api/site-builder/ai/regenerate-section", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -218,6 +265,15 @@ function RelumeEditorInner({
             {saving ? "Sauvegarde..." : "Enregistrer"}
           </button>
 
+          {/* Historique */}
+          <button
+            onClick={handleOpenHistory}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+          >
+            <History size={12} />
+            Historique
+          </button>
+
           {/* Share */}
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
             <Share2 size={12} />
@@ -291,6 +347,80 @@ function RelumeEditorInner({
           />
         )}
       </div>
+      {/* ─ History Modal ──────────────────────────────────────────────────────── */}
+      {showHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setShowHistory(false)}>
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <History size={16} className="text-gray-500" />
+                <span className="text-sm font-semibold text-gray-900">Historique des versions</span>
+              </div>
+              <button onClick={() => setShowHistory(false)} className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto max-h-96">
+              {loadingVersions ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                </div>
+              ) : versions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <History size={32} className="text-gray-200 mb-3" />
+                  <p className="text-sm text-gray-400">Aucune version sauvegardée</p>
+                  <p className="text-xs text-gray-300 mt-1">Sauvegardez le site pour créer une version</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {versions.map((v, i) => (
+                    <div key={v.id} className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition-colors">
+                      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center">
+                        <span className="text-xs font-mono text-gray-500">v{v.version_number}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-800 truncate">
+                          {v.change_description ?? (i === 0 ? "Version actuelle" : `Version ${v.version_number}`)}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {format(new Date(v.created_at), "dd/MM/yyyy à HH:mm")}
+                        </p>
+                      </div>
+                      {i !== 0 && (
+                        <button
+                          onClick={() => handleRestore(v.id)}
+                          disabled={restoring === v.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-100 transition-colors disabled:opacity-50 flex-shrink-0"
+                        >
+                          {restoring === v.id ? (
+                            <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <RotateCcw size={11} />
+                          )}
+                          Restaurer
+                        </button>
+                      )}
+                      {i === 0 && (
+                        <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full flex-shrink-0">
+                          Actuelle
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-gray-100 bg-gray-50">
+              <p className="text-xs text-gray-400">Les 20 dernières versions sont conservées automatiquement.</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

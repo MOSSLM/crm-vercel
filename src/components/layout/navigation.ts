@@ -20,7 +20,7 @@ import {
   Share2,
   Ban,
   Copy,
-  Layout,
+  BookOpen,
   MessageSquare,
   Zap,
   Plug,
@@ -81,9 +81,9 @@ export const ACTION_ITEMS: NavItem[] = [
   { title: "Réseaux", icon: Share2, href: "/networks" },
   { title: "Blacklist", icon: Ban, href: "/blacklist" },
   { title: "Duplicats", icon: Copy, href: "/duplicates" },
-  { title: "Site Builder (V1)", icon: Layout, href: "/site-builder" },
-  { title: "Sites V2", icon: Globe, href: "/site-builder-v2" },
-  { title: "Templates Sites", icon: Layers, href: "/site-templates" },
+  { title: "Sites", icon: Globe, href: "/site-builder" },
+  { title: "Thèmes", icon: Layers, href: "/themes" },
+  { title: "Docs Thèmes", icon: BookOpen, href: "/themes/docs" },
 ];
 
 export const AUTOMATIONS_ITEMS: NavItem[] = [
@@ -126,7 +126,8 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     pathname.startsWith("/blacklist") ||
     pathname.startsWith("/duplicates") ||
     pathname.startsWith("/site-builder") ||
-    pathname.startsWith("/site-templates")
+    pathname.startsWith("/site-templates") ||
+    pathname.startsWith("/themes")
   ) {
     return "actions";
   }

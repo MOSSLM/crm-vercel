@@ -8,7 +8,7 @@ interface RouteContext {
   params: Promise<{ siteId: string }>;
 }
 
-// GET /api/site-builder-v2/sites/[siteId]
+// GET /api/site-builder/sites/[siteId]
 export async function GET(_request: Request, context: RouteContext) {
   const supabase = getSupabaseServiceClient();
   const { siteId } = await context.params;
@@ -22,7 +22,7 @@ export async function GET(_request: Request, context: RouteContext) {
   return NextResponse.json(data);
 }
 
-// PATCH /api/site-builder-v2/sites/[siteId] — update name, description, site_config
+// PATCH /api/site-builder/sites/[siteId] — update name, description, site_config
 export async function PATCH(request: Request, context: RouteContext) {
   const supabase = getSupabaseServiceClient();
   const { siteId } = await context.params;
@@ -59,7 +59,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 }
 
-// DELETE /api/site-builder-v2/sites/[siteId]
+// DELETE /api/site-builder/sites/[siteId]
 export async function DELETE(_request: Request, context: RouteContext) {
   const supabase = getSupabaseServiceClient();
   const { siteId } = await context.params;

@@ -65,7 +65,7 @@ export default function SiteTemplatesPage() {
   const handleApplyToNewSite = async (template: SiteTemplate) => {
     setApplyingId(template.id);
     try {
-      const res = await fetch("/api/site-builder-v2/sites", {
+      const res = await fetch("/api/site-builder/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -76,7 +76,7 @@ export default function SiteTemplatesPage() {
       if (!res.ok) throw new Error();
       const site = await res.json();
       toast.success("Site créé depuis le template !");
-      window.location.href = `/site-builder-v2/${site.id}`;
+      window.location.href = `/site-builder/${site.id}`;
     } catch {
       toast.error("Erreur lors de la création du site");
     } finally {

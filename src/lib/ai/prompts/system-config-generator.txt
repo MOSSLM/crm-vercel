@@ -41,6 +41,9 @@ Structure du JSON :
 
 ## Sections disponibles (thème "theme-default")
 
+RÈGLE ABSOLUE : tu ne peux utiliser QUE les types de sections listés ci-dessous (sectionsLibrary du thème).
+Ne crée, n'invente et n'utilise aucun autre type de section.
+
 | type | description |
 |------|-------------|
 | hero | Bannière principale avec titre, sous-titre, CTA |

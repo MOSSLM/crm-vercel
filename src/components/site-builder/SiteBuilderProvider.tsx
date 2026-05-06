@@ -288,13 +288,13 @@ export const SiteConfigContext = React.createContext<SiteConfigContextData>({
   siteId: "",
 });
 
-type SiteConfigProviderProps = {
+type SiteBuilderProviderProps = {
   children: React.ReactNode;
   siteId: string;
   initialConfig?: SiteConfig;
 };
 
-const SiteConfigProvider: React.FC<SiteConfigProviderProps> = ({
+const SiteBuilderProvider: React.FC<SiteBuilderProviderProps> = ({
   children,
   siteId,
   initialConfig,
@@ -313,5 +313,5 @@ const SiteConfigProvider: React.FC<SiteConfigProviderProps> = ({
   );
 };
 
-export default SiteConfigProvider;
+export default SiteBuilderProvider;
 export { defaultConfig };
