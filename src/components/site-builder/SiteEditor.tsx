@@ -91,18 +91,18 @@ const SiteEditor: React.FC<SiteEditorProps> = ({ pageId, liveMode, leftPanelOpen
     >
       {/* Padding wrapper — offsets content away from fixed panels */}
       <div
-        className="min-h-full transition-[padding-left] duration-300 ease-in-out"
+        className="transition-[padding-left] duration-300 ease-in-out"
         style={{
           paddingLeft: leftPanelOpen ? LEFT_PANEL_WIDTH : 0,
           paddingRight: SIDEBAR_WIDTH,
         }}
       >
-        <div className="py-10 px-6 min-h-full flex flex-col">
-          {/* White page canvas */}
+        <div className="py-10 px-6">
+          {/* White page canvas — height grows with content */}
           <div
             className={cn(
-              "mx-auto bg-white rounded-t-sm overflow-x-hidden flex-1",
-              "min-h-[calc(100vh-73px)]",
+              "mx-auto bg-white rounded-t-sm overflow-x-hidden",
+              "min-h-[300px]",
               {
                 "w-full max-w-[1200px]": device === "Desktop",
                 "w-[850px]":            device === "Tablet",

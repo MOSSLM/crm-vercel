@@ -14,14 +14,22 @@ type TabsName = "Settings" | "Components";
 const SiteEditorSidebar: React.FC = () => {
   const { editor } = useEditor();
 
-  const getDefaultTab = (): TabsName => {
+  const [activeTab, setActiveTab] = React.useState<TabsName>(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("site-builder-tab") as TabsName) || "Settings";
     }
     return "Settings";
-  };
+  });
 
-  const handleSaveTab = (tab: string) => {
+  // Auto-switch to Settings when an element is selected on the canvas
+  React.useEffect(() => {
+    if (editor.editor.selectedElement.id) {
+      setActiveTab("Settings");
+    }
+  }, [editor.editor.selectedElement.id]);
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab as TabsName);
     if (typeof window !== "undefined") {
       localStorage.setItem("site-builder-tab", tab);
     }
@@ -31,7 +39,7 @@ const SiteEditorSidebar: React.FC = () => {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <Tabs defaultValue={getDefaultTab()} onValueChange={handleSaveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         {/* Fixed sidebar: content panel (left) + icon strip (right) */}
         <div className="sb-animate-sidebar-r fixed right-0 top-[53px] h-[calc(100vh-53px)] flex z-50 border-l border-border bg-background">
 

@@ -181,6 +181,21 @@ const SiteEditorNavigation: React.FC<SiteEditorNavigationProps> = ({
 
         {/* ── RIGHT: actions ───────────────────────────────────────────── */}
         <div className="flex items-center justify-end gap-1">
+          {/* Wireframe / Design toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => dispatch({ type: "TOGGLE_WIREFRAME_MODE" })}
+                className={cn("h-8 px-3 text-xs shrink-0", { "bg-muted": editor.editor.wireframeMode })}
+              >
+                {editor.editor.wireframeMode ? "Design" : "Wireframe"}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>{editor.editor.wireframeMode ? "Passer en mode Design" : "Passer en mode Wireframe"}</p></TooltipContent>
+          </Tooltip>
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="outline" size="icon" onClick={handlePreviewClick} className="h-8 w-8">
