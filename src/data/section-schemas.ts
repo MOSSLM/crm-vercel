@@ -1037,3 +1037,126 @@ export function isFieldVisible(
   if (rule.truthy) return Boolean(target) && target !== '' && target !== 0;
   return true;
 }
+
+// ─── Validation / normalisation ───────────────────────────────────────────────
+
+/**
+ * Coerce a raw value into the expected JS type for a given field. Used both
+ * when persisting and when reading user-edited content. Unknown / unset values
+ * are returned as-is so the legacy adapter can still pick them up.
+ */
+function coerceFieldValue(field: SectionField, raw: unknown): unknown {
+  if (field.type === 'header' || field.type === 'paragraph') return raw;
+  if (raw === undefined || raw === null) return raw;
+
+  switch (field.type) {
+    case 'number':
+    case 'range': {
+      const n = typeof raw === 'number' ? raw : parseFloat(String(raw));
+      if (Number.isNaN(n)) return field.default ?? 0;
+      const min = (field as { min?: number }).min;
+      const max = (field as { max?: number }).max;
+      let v = n;
+      if (typeof min === 'number') v = Math.max(min, v);
+      if (typeof max === 'number') v = Math.min(max, v);
+      return v;
+    }
+    case 'checkbox':
+      if (typeof raw === 'boolean') return raw;
+      if (raw === 'true' || raw === 1 || raw === '1') return true;
+      if (raw === 'false' || raw === 0 || raw === '0') return false;
+      return Boolean(raw);
+    case 'select':
+    case 'radio': {
+      const opts = (field as { options?: { value: string }[] }).options ?? [];
+      const allowed = opts.map((o) => o.value);
+      const s = String(raw);
+      return allowed.includes(s) ? s : (field.default ?? allowed[0] ?? '');
+    }
+    default:
+      return raw;
+  }
+}
+
+/**
+ * Returns a sanitised copy of `content` with:
+ * - All field defaults applied for missing keys
+ * - Values coerced to their declared types
+ * - Reserved meta keys (`__color_scheme`, `__padding_y`, `__library`, …) preserved
+ *
+ * Unknown extra keys are kept (they may be legacy aliases consumed by the
+ * legacy adapter at render time).
+ */
+export function validateSectionContent(
+  schema: SectionSchema,
+  content: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...content };
+
+  for (const field of schema.settings) {
+    if (field.type === 'header' || field.type === 'paragraph') continue;
+    const id = (field as { id: string }).id;
+    if (out[id] === undefined && field.default !== undefined) {
+      out[id] = field.default;
+    } else if (out[id] !== undefined) {
+      out[id] = coerceFieldValue(field, out[id]);
+    }
+  }
+  return out;
+}
+
+/**
+ * Validate / normalise blocks against a schema:
+ * - Drop blocks with unknown types
+ * - Coerce each block's settings against its schema
+ * - Enforce per-block-type `limit` (extra blocks of that type are dropped)
+ * - Enforce section-level `max_blocks` (extra blocks dropped from the tail)
+ */
+export function validateSectionBlocks(
+  schema: SectionSchema,
+  blocks: Array<{ id: string; type: string; settings: Record<string, unknown> }>,
+): Array<{ id: string; type: string; settings: Record<string, unknown> }> {
+  if (!Array.isArray(blocks)) return [];
+  const blockSchemas = schema.blocks ?? [];
+  if (blockSchemas.length === 0) return [];
+
+  const perTypeCount: Record<string, number> = {};
+  const out: Array<{ id: string; type: string; settings: Record<string, unknown> }> = [];
+
+  for (const block of blocks) {
+    const blockSchema = blockSchemas.find((b) => b.type === block.type);
+    if (!blockSchema) continue; // unknown type → drop
+
+    perTypeCount[block.type] = (perTypeCount[block.type] ?? 0) + 1;
+    if (typeof blockSchema.limit === 'number' && perTypeCount[block.type] > blockSchema.limit) continue;
+
+    // Coerce settings against the block's own field schema
+    const settings: Record<string, unknown> = { ...block.settings };
+    for (const field of blockSchema.settings) {
+      if (field.type === 'header' || field.type === 'paragraph') continue;
+      const id = (field as { id: string }).id;
+      if (settings[id] === undefined && field.default !== undefined) {
+        settings[id] = field.default;
+      } else if (settings[id] !== undefined) {
+        settings[id] = coerceFieldValue(field, settings[id]);
+      }
+    }
+
+    out.push({ id: block.id, type: block.type, settings });
+
+    if (typeof schema.max_blocks === 'number' && out.length >= schema.max_blocks) break;
+  }
+
+  return out;
+}
+
+/**
+ * Returns the visible (post-`visible_if`) settings as displayed to the user.
+ * Useful when serialising for the AI prompt or when computing diffs.
+ */
+export function getVisibleFields(
+  schema: SectionSchema,
+  content: Record<string, unknown>,
+): SectionField[] {
+  return schema.settings.filter((f) => isFieldVisible(f, content));
+}

@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { styleGuideToCSSVars } from "./DynamicSectionRenderer";
+import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 
 interface DynamicPageRendererProps {
   siteId: string;
@@ -72,7 +73,8 @@ interface DynamicSectionPublicProps {
 
 function DynamicSectionPublic({ instance, sectionDef, guide }: DynamicSectionPublicProps) {
   const { structure } = sectionDef;
-  const content = { ...sectionDef.default_content, ...instance.content };
+  const adapted = adaptContentForRender(instance.content ?? {}, instance.blocks ?? []);
+  const content = { ...sectionDef.default_content, ...adapted };
   const cssVars = styleGuideToCSSVars(guide);
 
   const padding = structure.padding ?? {};

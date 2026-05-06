@@ -9,3 +9,4 @@ export { ImagePickerField } from "./ImagePickerField";
 export { FontPickerField } from "./FontPickerField";
 export { FieldRenderer } from "./FieldRenderer";
 export { SchemaEditor, splitSchemaFields } from "./SchemaEditor";
+export { BlocksEditor } from "./BlocksEditor";

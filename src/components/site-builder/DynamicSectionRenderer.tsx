@@ -4,6 +4,7 @@ import React from "react";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
 import { LibrarySectionIframe } from "./LibrarySectionIframe";
+import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 import {
   resolveColorScheme,
   generateShadeCSSVars,
@@ -187,7 +188,10 @@ export function DynamicSectionRenderer({
         {(!instance.is_hidden || editorMode) && (
           <LibrarySectionIframe
             code={sectionDef.code}
-            content={{ ...sectionDef.default_content, ...contentWithoutMeta }}
+            content={{
+              ...sectionDef.default_content,
+              ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
+            }}
             styleGuide={effectiveStyleGuide}
           />
         )}
@@ -196,7 +200,8 @@ export function DynamicSectionRenderer({
   }
 
   const { structure } = sectionDef;
-  const content = { ...sectionDef.default_content, ...instance.content };
+  const adapted = adaptContentForRender(instance.content, instance.blocks ?? []);
+  const content = { ...sectionDef.default_content, ...adapted };
 
   const cssVars = styleGuideToCSSVars(styleGuide);
 
