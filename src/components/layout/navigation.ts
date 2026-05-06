@@ -57,6 +57,7 @@ export const PRODUCTION_ITEMS: NavItem[] = [
   { title: "Tâches", icon: ListChecks, href: "/production/taches" },
   { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
   { title: "Templates", icon: LayoutTemplate, href: "/production/templates" },
+  { title: "Site Builder", icon: Layout, href: "/site-builder" },
   { title: "Apps", icon: AppWindow, href: "/production/apps" },
   { title: "Objectifs", icon: Target, href: "/objectifs" },
 ];
@@ -89,7 +90,7 @@ import { Phone } from "lucide-react";
 
 export function getCategoryFromPath(pathname: string): TopCategoryKey {
   if (pathname.startsWith("/calendar")) return "calendar";
-  if (pathname.startsWith("/production") || pathname.startsWith("/objectifs")) return "production";
+  if (pathname.startsWith("/production") || pathname.startsWith("/objectifs") || pathname.startsWith("/site-builder")) return "production";
   if (
     pathname.startsWith("/companies") ||
     pathname.startsWith("/contacts") ||
@@ -109,8 +110,7 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     pathname.startsWith("/results") ||
     pathname.startsWith("/networks") ||
     pathname.startsWith("/blacklist") ||
-    pathname.startsWith("/duplicates") ||
-    pathname.startsWith("/site-builder")
+    pathname.startsWith("/duplicates")
   ) {
     return "actions";
   }
