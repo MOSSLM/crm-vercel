@@ -306,13 +306,207 @@ export const SECTION_SCHEMAS: Record<string, SectionSchema> = {
 |----|-------------|
 | `__color_scheme` | Sélecteur de palette appliqué comme CSS vars override au niveau section |
 | `__padding_y` | Override de `paddingTop`/`paddingBottom` de la section |
+| `__library` | Référence vers une section bibliothèque (theme_sections), géré au runtime |
 
 ### Sections built-in avec schema
 
-Les 12+ types de sections built-in ont des schemas prédéfinis :
-`hero`, `hero-centered`, `hero-split`, `navbar`, `services`, `services-grid`, `features`,
-`testimonials`, `about`, `contact`, `cta-banner`, `faq`, `stats`, `stat-row`,
-`gallery`, `team`, `logos`, `logo-row`, `blog`, `footer`
+Les 14 types de sections built-in ont des schemas complets (settings + blocks + presets) :
+`hero`, `navbar`, `services`, `testimonials`, `about`, `contact`, `cta-banner`,
+`faq`, `stats`, `gallery`, `team`, `logos`, `blog`, `footer`.
+
+Les alias `hero-centered`, `hero-split`, `services-grid`, `features`, `about-split`,
+`cta`, `stat-row`, `image-grid`, `logo-row`, `header` pointent vers les mêmes schemas.
+
+---
+
+## Champs avancés du schema
+
+### `group` — Groupement dans l'éditeur
+
+Chaque champ peut être tagué avec un `group` qui détermine dans quel onglet il apparaît :
+
+| Group | Onglet | Exemple |
+|-------|--------|---------|
+| `content` | Contenu | Titre, description, CTA |
+| `layout` | Style → Mise en page | Disposition, colonnes, alignement |
+| `style` | Style → Style | Palette, padding, image de fond |
+| `advanced` | Style → Avancé | Custom CSS |
+
+À défaut, le splitter utilise des heuristiques (id `__color_scheme` / `__padding_y`, type `color`).
+
+### `visible_if` — Visibilité conditionnelle
+
+Cache un champ tant que la condition n'est pas remplie. Évalué dans la même portée
+(settings de la section ou settings d'un block).
+
+```typescript
+{ type: 'text', id: 'cta_secondary', label: 'Bouton secondaire' },
+{
+  type: 'url', id: 'cta_secondary_href', label: 'Lien bouton secondaire',
+  visible_if: { field: 'cta_secondary', truthy: true },
+},
+
+// Aussi : { equals: 'value' } ou { in: ['a', 'b'] }
+```
+
+### `required` — Champ obligatoire
+
+Sert d'indication à l'éditeur (badge "requis") et au validateur côté serveur.
+
+### Types de champs CRM-spécifiques
+
+| Type | Description | Stocke |
+|------|-------------|--------|
+| `page_link` | Sélecteur de page interne du site (avec option URL externe) | URL string |
+| `icon_picker` | Sélecteur d'icône Lucide avec autocomplete | `name` Lucide |
+| `enterprise_field` | Bind vers `entreprise.<key>` (nom, telephone, email, …) | clé string |
+| `review_source` | Choix de la source des avis : `google`, `config`, `static` | string |
+| `social_links` | Groupe pré-fait fb/ig/li/tw/yt/tiktok | object |
+
+Pas de `product_picker` / `collection_picker` / `article_picker` (non pertinent pour le CRM).
+
+---
+
+## Blocks (éléments répétables)
+
+Inspirés des blocks Shopify : un schema peut déclarer un ou plusieurs `blocks[]`,
+chacun avec son propre jeu de `settings`. Les blocks d'une instance sont stockés
+dans la colonne JSONB `site_section_instances.blocks` (ajoutée par la migration
+`20260507_section_instance_blocks.sql`).
+
+```typescript
+const servicesSchema: SectionSchema = {
+  name: 'Services',
+  // ...
+  max_blocks: 12,
+  min_blocks: 1,
+  blocks: [
+    {
+      type: 'service_item',
+      name: 'Service',
+      icon: 'briefcase',
+      limit: 12,
+      settings: [
+        { type: 'icon_picker', id: 'icon', label: 'Icône', default: 'star' },
+        { type: 'text', id: 'title', label: 'Titre', required: true },
+        { type: 'textarea', id: 'description', label: 'Description', rows: 3 },
+      ],
+    },
+  ],
+};
+```
+
+Forme stockée dans `site_section_instances.blocks` :
+
+```json
+[
+  { "id": "abc123", "type": "service_item", "settings": { "icon": "wrench", "title": "Plomberie", "description": "..." } },
+  { "id": "def456", "type": "service_item", "settings": { "icon": "flame", "title": "Chauffage", "description": "..." } }
+]
+```
+
+L'éditeur (`BlocksEditor`) supporte : ajouter, dupliquer, supprimer, réordonner.
+Les limites `limit` (par type) et `max_blocks` (section) sont respectées dans l'UI.
+
+---
+
+## Presets
+
+Configurations prêtes à l'emploi exposées dans l'onglet **Contenu** du panneau de
+propriétés. Appliquer un preset remplace le `content` et les `blocks` de l'instance.
+
+```typescript
+presets: [
+  {
+    name: 'Grille 3 cartes élevées',
+    description: '3 services en cartes avec ombre.',
+    settings: { layout: 'grid-3', card_style: 'elevated' },
+    blocks: [
+      { type: 'service_item', settings: { icon: 'zap', title: 'Rapidité', description: '…' } },
+      { type: 'service_item', settings: { icon: 'shield-check', title: 'Garantie', description: '…' } },
+      { type: 'service_item', settings: { icon: 'heart', title: 'Service client', description: '…' } },
+    ],
+  },
+],
+```
+
+---
+
+## Limits
+
+```typescript
+limits: {
+  instances_per_page?: number,  // ex: 1 pour navbar / footer / hero
+  instances_per_site?: number,
+}
+```
+
+Utilisé par la library de sections pour griser une section déjà placée le
+nombre de fois autorisé.
+
+---
+
+## Validation runtime
+
+`src/data/section-schemas.ts` expose :
+
+- `validateSectionContent(schema, content)` — applique les defaults, coerce les types
+  (`number`, `boolean`, `select` → valeur autorisée)
+- `validateSectionBlocks(schema, blocks)` — drop les blocks de type inconnu, coerce
+  les settings, applique `limit` et `max_blocks`
+- `isFieldVisible(field, content)` — évalue `visible_if`
+- `getVisibleFields(schema, content)` — retourne les champs actuellement visibles
+- `buildInitialSectionState(schema, preset?)` — content + blocks initiaux pour
+  une nouvelle instance
+
+---
+
+## Legacy adapter (rétrocompatibilité runtime)
+
+`src/lib/site-builder/legacy-content-adapter.ts` projette les nouvelles clés
+de schema vers les clés legacy consommées par les composants de section et le
+moteur de snippets :
+
+| Schema id | Legacy alias |
+|-----------|--------------|
+| `heading` | `title` |
+| `subheading` | `subtitle` |
+| `body` | `content` |
+| `background_image` | `backgroundImage` |
+| `cta_primary` + `cta_primary_href` | `cta: { text, href }` |
+| `image_position` | `imagePosition` |
+| `logo_image` | `logo` |
+
+Les `blocks[]` sont projetés en arrays sous les clés attendues par les snippets
+(`service_item` → `items` / `cards`, `testimonial_item` → `testimonials` /
+`reviews`, `faq_item` → `faqs`, `stat_item` → `stats`, `gallery_item` → `images`,
+`team_member` → `members`, `logo_item` → `logos`, `nav_link` → `links`,
+`footer_column` → `columns`).
+
+Les valeurs explicitement déjà présentes ne sont jamais écrasées.
+
+---
+
+## Génération IA basée sur le schema
+
+Le prompt système `src/lib/ai/prompts/system-config-generator.txt` contient
+le placeholder `{{SECTIONS_DOC}}` qui est remplacé à chaque appel par
+`buildSectionsPromptDoc()` (`src/lib/ai/schema-prompt-doc.ts`).
+
+Cette doc est dérivée directement du registre `SECTION_SCHEMAS` :
+- liste des sections disponibles avec leur description
+- pour chaque section : champs `content` (id, type, valeurs autorisées, défaut)
+- pour chaque section : blocks supportés et leurs settings
+- noms des presets disponibles
+
+Conséquence : ajouter ou modifier un schema met automatiquement le prompt à jour
+au prochain appel — aucun changement manuel du `.txt` n'est nécessaire.
+
+L'IA est instruite de :
+1. Utiliser strictement les `id` de schema (`heading`, pas `title`)
+2. Mettre les éléments répétables dans `blocks[]`, pas dans `content`
+3. Respecter les valeurs autorisées des `select`
+4. Respecter `max_blocks` et les limites par type
 
 ---
 

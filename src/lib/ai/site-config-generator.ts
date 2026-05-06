@@ -2,6 +2,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import type { SiteConfig } from "@/types";
 import type { CompanyLite } from "@/utils/leadMagnetV2Api";
+import { resolvePromptTemplate } from "./schema-prompt-doc";
 
 interface GeneratorInput {
   company: CompanyLite;
@@ -9,10 +10,12 @@ interface GeneratorInput {
   additionalContext?: string;
 }
 
-// Reads the system prompt from disk (server-side only)
+// Reads the system prompt template from disk and injects the dynamic
+// section reference derived from SECTION_SCHEMAS.
 function getSystemPrompt(): string {
   const promptPath = join(process.cwd(), "src/lib/ai/prompts/system-config-generator.txt");
-  return readFileSync(promptPath, "utf-8");
+  const template = readFileSync(promptPath, "utf-8");
+  return resolvePromptTemplate(template);
 }
 
 export async function generateSiteConfig(input: GeneratorInput): Promise<SiteConfig> {
