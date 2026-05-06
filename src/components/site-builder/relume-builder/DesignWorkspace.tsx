@@ -9,45 +9,7 @@ import {
 import type { SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
-
-// ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
-
-function useCanvasPanZoom() {
-  const [pan, setPan] = React.useState({ x: 60, y: 30 });
-  const [scale, setScale] = React.useState(0.8);
-  const isPanning = React.useRef(false);
-  const lastPos = React.useRef({ x: 0, y: 0 });
-  const spaceHeld = React.useRef(false);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      spaceHeld.current = e.type === "keydown" && e.code === "Space";
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKey);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey); };
-  }, []);
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || spaceHeld.current) {
-      isPanning.current = true;
-      lastPos.current = { x: e.clientX, y: e.clientY };
-      e.preventDefault();
-    }
-  };
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!isPanning.current) return;
-    setPan((p) => ({ x: p.x + e.clientX - lastPos.current.x, y: p.y + e.clientY - lastPos.current.y }));
-    lastPos.current = { x: e.clientX, y: e.clientY };
-  };
-  const onMouseUp = () => { isPanning.current = false; };
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
-  };
-
-  return { pan, scale, onMouseDown, onMouseMove, onMouseUp, onWheel };
-}
+import { useCanvasPanZoom } from "./useCanvasPanZoom";
 
 // ─── Panel sections ────────────────────────────────────────────────────────────
 
@@ -64,7 +26,7 @@ interface DesignWorkspaceProps {
 
 export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
-  const canvas = useCanvasPanZoom();
+  const canvas = useCanvasPanZoom({ initialPan: { x: 60, y: 30 }, initialScale: 0.8 });
   const [activePanel, setActivePanel] = React.useState<DesignPanel>("animations");
   const [panelOpen, setPanelOpen] = React.useState(true);
 
@@ -333,11 +295,11 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
 
       {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
       <div
+        ref={canvas.containerRef}
         className="flex-1 overflow-hidden relative"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
-        onWheel={canvas.onWheel}
         onClick={() => dispatch({ type: "SELECT_INSTANCE", payload: null })}
       >
         {/* Dot grid */}
@@ -455,6 +417,14 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-md shadow-sm text-gray-600 hover:bg-gray-50 transition-colors">
             <Square size={11} />
             Aperçu
+          </button>
+
+          {/* Reset view */}
+          <button
+            onClick={canvas.resetView}
+            className="text-xs text-gray-500 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm hover:bg-gray-50 transition-colors"
+          >
+            ⊞ Reset
           </button>
 
           {/* Zoom indicator */}

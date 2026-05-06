@@ -55,7 +55,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       const firstPage = action.payload.sitemap[0]?.slug ?? "/";
       return {
         ...state,
-        styleGuide: action.payload.styleGuide,
+        styleGuide: mergeDeep(DEFAULT_STYLE_GUIDE, action.payload.styleGuide) as StyleGuide,
         sitemap: action.payload.sitemap,
         instances: instancesMap,
         instancesByPage: byPage,

@@ -3,12 +3,15 @@ import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
 export const dynamic = "force-dynamic";
 
-interface GenerateRequest {
+interface RegeneratePageRequest {
   siteId: string;
   enterpriseId?: number;
-  description: string;
-  pages: string;
+  pageSlug: string;
+  pageTitle: string;
+  currentSections: Array<{ id: string; name: string; type?: string; description?: string }>;
   availableSectionTypes: string[];
+  globalDescription?: string;
+  context?: string;
   model?: string;
   provider?: "claude" | "openai";
 }
@@ -18,7 +21,7 @@ async function callAI(
   model: string,
   systemPrompt: string,
   userPrompt: string,
-  maxTokens = 8192
+  maxTokens = 4096
 ): Promise<string> {
   if (provider === "openai") {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -40,7 +43,6 @@ async function callAI(
     return data.choices?.[0]?.message?.content ?? "";
   }
 
-  // Anthropic
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error("ANTHROPIC_API_KEY non configuré");
   const res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -65,17 +67,14 @@ async function callAI(
 export async function POST(req: Request) {
   const supabase = getSupabaseServiceClient();
   try {
-    const body = (await req.json()) as GenerateRequest;
+    const body = (await req.json()) as RegeneratePageRequest;
     const {
-      siteId, enterpriseId, description, pages,
-      availableSectionTypes,
+      siteId, enterpriseId, pageSlug, pageTitle,
+      currentSections, availableSectionTypes,
+      globalDescription = "", context = "",
       model = "claude-sonnet-4-6",
       provider = "claude",
     } = body;
-
-    if (!description?.trim()) {
-      return NextResponse.json({ error: "description requis" }, { status: 400 });
-    }
 
     // Fetch enterprise data if available
     let enterpriseInfo = "";
@@ -87,110 +86,72 @@ export async function POST(req: Request) {
         .single();
       if (ent) {
         enterpriseInfo = `
-Données entreprise :
-- Nom : ${ent.nom ?? "Inconnu"}
-- Ville : ${ent.ville ?? "Non précisée"}
-- Téléphone : ${ent.telephone ?? "Non précisé"}
-- Services : ${Array.isArray(ent.service_tags) ? ent.service_tags.join(", ") : "Non précisé"}
-- Note Google : ${ent.note_moyenne ?? "N/A"} (${ent.nombre_avis ?? 0} avis)
+Entreprise : ${ent.nom ?? ""} — ${ent.ville ?? ""}
+Services : ${Array.isArray(ent.service_tags) ? ent.service_tags.join(", ") : ""}
+Note Google : ${ent.note_moyenne ?? "N/A"} (${ent.nombre_avis ?? 0} avis)
 `.trim();
       }
     }
 
     const systemPrompt = `Tu es un expert en création de sites web professionnels.
-Tu génères des configurations de sites complets en JSON pour un système de builder.
-Tu dois choisir les meilleures sections parmi les types disponibles et écrire du contenu professionnel en français.
+Tu génères le contenu d'une seule page d'un site web en JSON.
 Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.`;
 
     const userPrompt = `
-Description de l'entreprise :
-${description}
+Page à régénérer : "${pageTitle}" (slug: ${pageSlug})
 
-${enterpriseInfo}
+${globalDescription ? `Description générale du site : ${globalDescription}` : ""}
+${enterpriseInfo ? `\n${enterpriseInfo}` : ""}
+${context ? `\nInstructions spécifiques pour cette page : ${context}` : ""}
 
-Pages souhaitées : ${pages}
+Types de sections disponibles : ${availableSectionTypes.join(", ")}
 
-Types de sections disponibles dans la bibliothèque :
-${availableSectionTypes.join(", ")}
+${currentSections.length > 0 ? `Sections actuelles de la page : ${currentSections.map((s) => s.name).join(", ")}` : ""}
 
-Génère un sitemap complet avec le contenu pour chaque page.
-Pour chaque page, choisis 3-6 types de sections pertinentes parmi ceux disponibles.
-Écris du contenu professionnel et convaincant adapté à l'entreprise.
+Génère 3 à 6 sections adaptées à cette page avec leur contenu.
 
 Réponds avec ce format JSON exact :
 {
-  "styleGuide": {
-    "colors": {
-      "primary": "#...",
-      "secondary": "#...",
-      "accent": "#...",
-      "background": "#ffffff",
-      "backgroundAlt": "#f9fafb",
-      "text": "#111827",
-      "textMuted": "#6b7280"
-    },
-    "fonts": {
-      "heading": "Inter",
-      "body": "Inter",
-      "baseSize": "16px"
-    }
-  },
-  "sitemap": [
-    {
-      "slug": "/",
-      "title": "Accueil",
-      "metaTitle": "...",
-      "metaDescription": "...",
-      "sections": [
-        { "id": "s1", "name": "Hero", "description": "Section hero principale", "type": "hero-centered" }
-      ]
-    }
+  "sections": [
+    { "id": "s1", "name": "Hero", "description": "Section hero de la page", "type": "hero-centered" }
   ],
   "instances": [
     {
-      "pageSlug": "/",
+      "pageSlug": "${pageSlug}",
       "sectionType": "hero-centered",
       "sortOrder": 0,
       "content": {
         "heading": "...",
         "subheading": "...",
-        "badge_text": "...",
-        "cta_text": "...",
-        "body": "..."
+        "body": "...",
+        "cta_text": "..."
       }
     }
   ]
 }
 
-IMPORTANT:
-- Utilise uniquement les types de sections fournis dans la liste
-- Le contenu des instances doit contenir les clés textuelles principales (heading, subheading, body, cta_text, etc.)
-- Écris en français, style professionnel et convaincant
-- Adapte les couleurs du style guide à l'activité de l'entreprise
+IMPORTANT : Écris uniquement en français, style professionnel.
 `.trim();
 
-    const text = await callAI(provider, model, systemPrompt, userPrompt, 8192);
+    const text = await callAI(provider, model, systemPrompt, userPrompt, 4096);
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("Aucun JSON dans la réponse IA");
 
     const generated = JSON.parse(jsonMatch[0]);
 
-    // Persist style_guide and sitemap
-    if (siteId) {
-      await supabase
-        .from("sites")
-        .update({
-          style_guide: generated.styleGuide,
-          sitemap: generated.sitemap?.map((p: Record<string, unknown>, i: number) => ({
-            id: `page-${i}`,
-            slug: p.slug,
-            title: p.title,
-            metaTitle: p.metaTitle,
-            metaDescription: p.metaDescription,
-          })),
-        })
-        .eq("id", siteId);
+    // Persist updated sitemap sections for this page
+    if (siteId && generated.sections) {
+      const { data: site } = await supabase.from("sites").select("sitemap").eq("id", siteId).single();
+      if (site?.sitemap) {
+        const updatedSitemap = (site.sitemap as Array<Record<string, unknown>>).map((p) => {
+          if (p.slug === pageSlug) {
+            return { ...p, sections: generated.sections };
+          }
+          return p;
+        });
+        await supabase.from("sites").update({ sitemap: updatedSitemap }).eq("id", siteId);
+      }
     }
 
     return NextResponse.json(generated);

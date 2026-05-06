@@ -3,55 +3,14 @@
 import React from "react";
 import {
   Sparkles, FileText, MoreHorizontal, Plus, Trash2,
-  ChevronRight, Send, Loader2, AlertCircle
+  ChevronRight, Send, Loader2, AlertCircle,
+  RotateCcw, Edit3
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
-
-// ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
-
-function useCanvasPanZoom() {
-  const [pan, setPan] = React.useState({ x: 60, y: 60 });
-  const [scale, setScale] = React.useState(1);
-  const isPanning = React.useRef(false);
-  const lastPos = React.useRef({ x: 0, y: 0 });
-  const spaceHeld = React.useRef(false);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Space" && e.type === "keydown") spaceHeld.current = true;
-      if (e.code === "Space" && e.type === "keyup") spaceHeld.current = false;
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKey);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey); };
-  }, []);
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || spaceHeld.current) {
-      isPanning.current = true;
-      lastPos.current = { x: e.clientX, y: e.clientY };
-      e.preventDefault();
-    }
-  };
-
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!isPanning.current) return;
-    setPan((p) => ({ x: p.x + e.clientX - lastPos.current.x, y: p.y + e.clientY - lastPos.current.y }));
-    lastPos.current = { x: e.clientX, y: e.clientY };
-  };
-
-  const onMouseUp = () => { isPanning.current = false; };
-
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale((s) => Math.min(2, Math.max(0.25, s * delta)));
-  };
-
-  return { pan, scale, onMouseDown, onMouseMove, onMouseUp, onWheel };
-}
+import { useCanvasPanZoom } from "./useCanvasPanZoom";
+import { AI_MODELS, ModelSelector, type AIModelId } from "./aiModels";
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -65,14 +24,22 @@ interface SitemapWorkspaceProps {
 
 export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: SitemapWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
-  const canvas = useCanvasPanZoom();
+  const canvas = useCanvasPanZoom({ initialPan: { x: 60, y: 60 }, initialScale: 1 });
+
+  // Global AI state
   const [aiInput, setAiInput] = React.useState("");
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");
+  const [selectedModel, setSelectedModel] = React.useState<AIModelId>("claude-sonnet-4-6");
+
+  // Per-page state
   const [expandedPages, setExpandedPages] = React.useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
+  const [pageContext, setPageContext] = React.useState<Record<string, string>>({});
+  const [pageContextOpen, setPageContextOpen] = React.useState<Record<string, boolean>>({});
+  const [pageRegenerating, setPageRegenerating] = React.useState<Record<string, boolean>>({});
 
-  // ─── AI Generation ──────────────────────────────────────────────────────────
+  // ─── Global AI Generation ────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
     if (!aiInput.trim()) return;
@@ -80,6 +47,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     setAiStep("generating");
     try {
       const pageList = state.sitemap.map((p) => p.title).join(", ");
+      const modelConfig = AI_MODELS.find((m) => m.id === selectedModel)!;
       const res = await fetch("/api/site-builder-v2/ai/generate-sitemap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -89,6 +57,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           description: aiInput,
           pages: pageList,
           availableSectionTypes: availableSections.map((s) => s.type),
+          model: selectedModel,
+          provider: modelConfig.provider,
         }),
       });
       if (!res.ok) throw new Error("Erreur IA");
@@ -143,6 +113,76 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     }
   };
 
+  // ─── Per-page AI Regeneration ─────────────────────────────────────────────────
+
+  const handleRegeneratePage = async (page: SitemapPage) => {
+    setPageRegenerating((prev) => ({ ...prev, [page.id]: true }));
+    try {
+      const modelConfig = AI_MODELS.find((m) => m.id === selectedModel)!;
+      const context = pageContext[page.id] ?? "";
+      const res = await fetch("/api/site-builder-v2/ai/regenerate-page", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId,
+          enterpriseId,
+          pageSlug: page.slug,
+          pageTitle: page.title,
+          currentSections: page.sections ?? [],
+          availableSectionTypes: availableSections.map((s) => s.type),
+          globalDescription: aiInput,
+          context,
+          model: selectedModel,
+          provider: modelConfig.provider,
+        }),
+      });
+      if (!res.ok) throw new Error("Erreur IA");
+      const data = await res.json();
+
+      if (data.sections) {
+        dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { sections: data.sections } } });
+      }
+
+      if (data.instances?.length) {
+        // Remove existing instances for this page
+        const existingIds = state.instancesByPage[page.slug] ?? [];
+        for (const id of existingIds) {
+          dispatch({ type: "REMOVE_INSTANCE", payload: id });
+        }
+        // Add new instances
+        for (const inst of data.instances) {
+          const secDef = availableSections.find((s) => s.type === inst.sectionType);
+          if (!secDef) continue;
+          dispatch({
+            type: "ADD_INSTANCE",
+            payload: {
+              instance: {
+                id: nanoid(),
+                site_id: siteId,
+                section_id: secDef.id,
+                section_def: secDef,
+                page_slug: page.slug,
+                sort_order: inst.sortOrder ?? 0,
+                content: inst.content ?? {},
+                custom_style: {},
+                is_hidden: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+              pageSlug: page.slug,
+            },
+          });
+        }
+      }
+
+      toast.success(`Page "${page.title}" régénérée !`);
+    } catch {
+      toast.error("Erreur lors de la régénération");
+    } finally {
+      setPageRegenerating((prev) => ({ ...prev, [page.id]: false }));
+    }
+  };
+
   // ─── Page management ─────────────────────────────────────────────────────────
 
   const addPage = () => {
@@ -161,6 +201,10 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
+  };
+
+  const togglePageContext = (id: string) => {
+    setPageContextOpen((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   // ─── SVG connector lines ──────────────────────────────────────────────────────
@@ -202,6 +246,12 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
               <span>Aucune entreprise liée. Les résultats seront génériques.</span>
             </div>
           )}
+
+          {/* Model selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-700">Modèle IA</label>
+            <ModelSelector value={selectedModel} onChange={setSelectedModel} />
+          </div>
 
           <div className="space-y-2">
             <label className="text-xs font-medium text-gray-700">Description de votre activité</label>
@@ -268,12 +318,11 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
 
       {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
       <div
+        ref={canvas.containerRef}
         className="flex-1 overflow-hidden relative cursor-default"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
-        onWheel={canvas.onWheel}
-        style={{ cursor: "default" }}
       >
         {/* Dot grid background */}
         <div
@@ -296,7 +345,6 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           <svg
             style={{ position: "absolute", top: 0, left: 0, width: totalWidth + 200, height: 600, overflow: "visible", pointerEvents: "none" }}
           >
-            {/* Root → each page */}
             {state.sitemap.map((page, i) => {
               const pos = pagePositions[i];
               const fromX = rootX + 80;
@@ -332,6 +380,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           {state.sitemap.map((page, i) => {
             const pos = pagePositions[i];
             const isExpanded = expandedPages.has(page.id);
+            const isContextOpen = pageContextOpen[page.id] ?? false;
+            const isRegenerating = pageRegenerating[page.id] ?? false;
             const sections: SitemapSection[] = page.sections ?? [];
 
             return (
@@ -347,6 +397,27 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                   </div>
                   <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{page.title}</span>
                   <div className="flex items-center gap-1">
+                    {/* Per-page AI regenerate */}
+                    <button
+                      onClick={() => handleRegeneratePage(page)}
+                      disabled={isRegenerating}
+                      className="p-1 hover:bg-purple-50 rounded text-purple-400 hover:text-purple-600 transition-colors"
+                      title="Régénérer cette page avec l'IA"
+                    >
+                      {isRegenerating ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                    </button>
+                    {/* Context toggle */}
+                    <button
+                      onClick={() => togglePageContext(page.id)}
+                      className={`p-1 hover:bg-gray-100 rounded transition-colors ${isContextOpen ? "text-blue-500" : "text-gray-400 hover:text-gray-600"}`}
+                      title="Ajouter du contexte pour cette page"
+                    >
+                      <Edit3 size={12} />
+                    </button>
                     <button
                       onClick={() => toggleExpand(page.id)}
                       className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
@@ -374,6 +445,28 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                     </div>
                   </div>
                 </div>
+
+                {/* Per-page context input */}
+                {isContextOpen && (
+                  <div className="px-3 py-2 bg-blue-50/60 border-b border-blue-100">
+                    <p className="text-[10px] text-blue-600 font-medium mb-1">Contexte supplémentaire pour cette page</p>
+                    <textarea
+                      value={pageContext[page.id] ?? ""}
+                      onChange={(e) => setPageContext((prev) => ({ ...prev, [page.id]: e.target.value }))}
+                      placeholder="Ex: Focus sur les témoignages clients, inclure un formulaire de contact..."
+                      rows={3}
+                      className="w-full text-[10px] bg-white border border-blue-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400 text-gray-700 placeholder-gray-400"
+                    />
+                    <button
+                      onClick={() => handleRegeneratePage(page)}
+                      disabled={isRegenerating}
+                      className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {isRegenerating ? <Loader2 size={10} className="animate-spin" /> : <RotateCcw size={10} />}
+                      Régénérer cette page
+                    </button>
+                  </div>
+                )}
 
                 {/* Sections list */}
                 {sections.length > 0 && (
@@ -415,9 +508,23 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           </div>
         </div>
 
-        {/* Zoom indicator */}
-        <div className="absolute bottom-4 right-4 text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none">
-          {Math.round(canvas.scale * 100)}%
+        {/* Controls bar */}
+        <div className="absolute bottom-4 right-4 flex items-center gap-2">
+          <button
+            onClick={canvas.resetView}
+            className="text-xs text-gray-500 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm hover:bg-gray-50 transition-colors"
+            title="Réinitialiser la vue"
+          >
+            ⊞ Reset
+          </button>
+          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none">
+            {Math.round(canvas.scale * 100)}%
+          </div>
+        </div>
+
+        {/* Pan hint */}
+        <div className="absolute bottom-4 left-4 text-[10px] text-gray-400 bg-white/80 border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none pointer-events-none">
+          Espace + glisser pour naviguer · Molette pour zoomer
         </div>
 
         {/* Generation status */}
