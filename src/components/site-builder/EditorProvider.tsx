@@ -13,6 +13,7 @@ const initialEditorState: EditorState["editor"] = {
   device: "Desktop",
   previewMode: false,
   liveMode: false,
+  wireframeMode: false,
   elements: [
     {
       content: [],
@@ -74,7 +75,6 @@ const moveElement = (
   targetContainerId: string,
   position: "inside" | "before" | "after" = "inside"
 ): EditorElement[] => {
-  // Step 1: extract the element being moved
   let moved: EditorElement | null = null;
   const extract = (els: EditorElement[]): EditorElement[] =>
     els.reduce<EditorElement[]>((acc, el) => {
@@ -98,7 +98,6 @@ const moveElement = (
       if (position === "inside" && el.id === targetContainerId && Array.isArray(el.content)) {
         return { ...el, content: [...el.content, moved!] };
       }
-
       if (Array.isArray(el.content)) {
         return { ...el, content: insertRelative(el.content) };
       }
@@ -158,6 +157,8 @@ const editorReducer = (state: EditorState = initialState, action: EditorAction):
       return { ...state, editor: { ...state.editor, previewMode: !state.editor.previewMode } };
     case "TOGGLE_LIVE_MODE":
       return { ...state, editor: { ...state.editor, liveMode: action.payload ? action.payload.value : !state.editor.liveMode } };
+    case "TOGGLE_WIREFRAME_MODE":
+      return { ...state, editor: { ...state.editor, wireframeMode: !state.editor.wireframeMode } };
     case "CLEAR_HISTORY":
       return { ...state, history: { ...state.history, history: [], currentIndex: 0 } };
     case "REDO": {

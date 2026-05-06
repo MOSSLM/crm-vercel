@@ -299,6 +299,7 @@ export interface Site {
   description?: string;
   published: boolean;
   sub_domain_name?: string;
+  linked_company_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -363,6 +364,7 @@ export type Editor = {
   selectedElement: EditorElement;
   device: DeviceTypes;
   previewMode: boolean;
+  wireframeMode: boolean;
 };
 
 export type HistoryState = {
@@ -386,6 +388,7 @@ export type EditorAction =
   | { type: 'CHANGE_DEVICE'; payload: { device: DeviceTypes } }
   | { type: 'TOGGLE_PREVIEW_MODE' }
   | { type: 'TOGGLE_LIVE_MODE'; payload?: { value: boolean } }
+  | { type: 'TOGGLE_WIREFRAME_MODE' }
   | { type: 'REDO' }
   | { type: 'UNDO' }
   | { type: 'LOAD_DATA'; payload: { elements: EditorElement[]; withLive: boolean } }
