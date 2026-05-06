@@ -124,6 +124,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                 content: inst.content ?? {},
                 custom_style: {},
                 is_hidden: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
               },
               pageSlug: inst.pageSlug ?? "/",
             },
