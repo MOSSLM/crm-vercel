@@ -28,7 +28,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
     setPreview(null);
 
     try {
-      const res = await fetch("/api/site-builder-v2/ai/generate-sitemap", {
+      const res = await fetch("/api/site-builder/ai/generate-sitemap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

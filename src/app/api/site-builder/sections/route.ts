@@ -3,7 +3,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/site-builder-v2/sections — list all available sections */
+/** GET /api/site-builder/sections — list all available sections */
 export async function GET(req: Request) {
   const supabase = getSupabaseServiceClient();
   const { searchParams } = new URL(req.url);
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   return NextResponse.json(data ?? []);
 }
 
-/** POST /api/site-builder-v2/sections — create a custom section */
+/** POST /api/site-builder/sections — create a custom section */
 export async function POST(req: Request) {
   const supabase = getSupabaseServiceClient();
   try {

@@ -4,7 +4,7 @@ import type { SiteConfig } from "@/types";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/site-builder-v2/sites — list all sites
+// GET /api/site-builder/sites — list all sites
 export async function GET() {
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
@@ -16,7 +16,7 @@ export async function GET() {
   return NextResponse.json(data ?? []);
 }
 
-// POST /api/site-builder-v2/sites — create a site
+// POST /api/site-builder/sites — create a site
 export async function POST(request: Request) {
   const supabase = getSupabaseServiceClient();
   try {

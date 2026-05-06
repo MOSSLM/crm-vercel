@@ -1,4 +1,3 @@
-import type { CSSProperties } from 'react';
 
 export type RevenueBand =
   | 'unknown'
@@ -316,99 +315,6 @@ export interface SitePage {
   updated_at: string;
 }
 
-// Editor types (ported from lpura)
-export type DeviceTypes = 'Desktop' | 'Mobile' | 'Tablet';
-
-export type EditorBtns =
-  | 'text'
-  | 'container'
-  | 'section'
-  | 'link'
-  | '2Col'
-  | 'video'
-  | '__body'
-  | 'image'
-  | '3Col'
-  | 'savedComponent'
-  | 'canvasElement'
-  | 'customCode'
-  | null;
-
-export interface CustomCodeContent {
-  code: string;
-  schema: string; // JSON: { varName: { type: 'string'|'color'|'number'|'boolean', label: string, default: string } }
-  propValues: Record<string, string>;
-}
-
-export type EditorElement = {
-  id: string;
-  styles: CSSProperties;
-  name: string;
-  type: EditorBtns;
-  content:
-    | EditorElement[]
-    | {
-        href?: string;
-        innerText?: string;
-        src?: string;
-        alt?: string;
-      }
-    | CustomCodeContent;
-};
-
-export type Editor = {
-  pageId: string;
-  liveMode: boolean;
-  elements: EditorElement[];
-  selectedElement: EditorElement;
-  device: DeviceTypes;
-  previewMode: boolean;
-};
-
-export type HistoryState = {
-  currentIndex: number;
-  history: Editor[];
-};
-
-export type EditorState = {
-  editor: Editor;
-  history: HistoryState;
-};
-
-export type EditorAction =
-  | { type: 'ADD_ELEMENT'; payload: { containerId: string; elementDetails: EditorElement } }
-  | { type: 'UPDATE_ELEMENT'; payload: { elementDetails: EditorElement } }
-  | { type: 'DELETE_ELEMENT'; payload: { elementDetails: EditorElement } }
-  | {
-      type: 'CHANGE_CLICKED_ELEMENT';
-      payload: { elementDetails?: EditorElement | { id: ''; content: []; name: ''; styles: Record<string, never>; type: null } };
-    }
-  | { type: 'CHANGE_DEVICE'; payload: { device: DeviceTypes } }
-  | { type: 'TOGGLE_PREVIEW_MODE' }
-  | { type: 'TOGGLE_LIVE_MODE'; payload?: { value: boolean } }
-  | { type: 'REDO' }
-  | { type: 'UNDO' }
-  | { type: 'LOAD_DATA'; payload: { elements: EditorElement[]; withLive: boolean } }
-  | { type: 'CLEAR_HISTORY' }
-  | { type: 'SET_PAGE_ID'; payload: { pageId: string } }
-  | {
-      type: 'MOVE_ELEMENT';
-      payload: {
-        elementId: string;
-        targetContainerId: string;
-        position?: 'inside' | 'before' | 'after';
-      };
-    };
-
-// Reusable saved components
-export interface SavedComponent {
-  id: string;
-  name: string;
-  category: string;
-  content: string; // JSON string of EditorElement
-  created_at: string;
-  updated_at: string;
-}
 
 // ── AUDIT SYSTEM ──────────────────────────────────────────
 
@@ -700,6 +606,17 @@ export interface SiteGlobalSettings {
   isActive?: boolean;
 }
 
+export interface ThemePageStructure {
+  mode: 'single' | 'multi';
+  requiredPages?: { slug: string; title: string }[];
+  allowCustomPages?: boolean;
+}
+
+export interface ThemeSectionsLibrary {
+  /** IDs des sections disponibles dans ce thème — l'IA ne peut utiliser que ces IDs */
+  sectionIds: string[];
+}
+
 export interface ThemeConfig {
   slug: string;
   name: string;
@@ -709,6 +626,8 @@ export interface ThemeConfig {
   sections: SectionDefinition[];
   globalVariables: ThemeGlobalVariables;
   enterpriseVariables: string[];
+  pageStructure?: ThemePageStructure;
+  sectionsLibrary?: ThemeSectionsLibrary;
 }
 
 export interface SiteSection {
@@ -986,6 +905,19 @@ export interface SitemapPage {
 }
 
 export type WorkspaceId = 'sitemap' | 'wireframe' | 'style-guide' | 'design';
+
+// ── SITE VERSIONING ──────────────────────────────────────────
+
+export interface SiteVersion {
+  id: string;
+  site_id: string;
+  version_number: number;
+  style_guide: StyleGuide | null;
+  sitemap: SitemapPage[] | null;
+  created_at: string;
+  created_by: string | null;
+  change_description: string | null;
+}
 
 /** State for the Relume-like builder */
 export interface RelumeBuilderState {

@@ -176,6 +176,31 @@ const themeConfig: ThemeConfig = {
     "entreprise.description",
     "entreprise.annee_creation",
   ],
+
+  pageStructure: {
+    mode: "multi",
+    requiredPages: [
+      { slug: "/", title: "Accueil" },
+      { slug: "/contact", title: "Contact" },
+    ],
+    allowCustomPages: true,
+  },
+
+  sectionsLibrary: {
+    // L'IA ne peut utiliser que ces sectionIds — aucune génération libre
+    sectionIds: [
+      "hero",
+      "services",
+      "about",
+      "testimonials",
+      "contact",
+      "gallery",
+      "faq",
+      "blog",
+      "popup",
+      "cta-banner",
+    ],
+  },
 };
 
 export default themeConfig;

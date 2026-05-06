@@ -20,12 +20,13 @@ import {
   Share2,
   Ban,
   Copy,
-  Layout,
   MessageSquare,
   Zap,
   Plug,
   Globe,
-  Layers,
+  Palette,
+  BookOpen,
+  Phone,
 } from "lucide-react";
 
 export type TopCategoryKey =
@@ -81,9 +82,9 @@ export const ACTION_ITEMS: NavItem[] = [
   { title: "Réseaux", icon: Share2, href: "/networks" },
   { title: "Blacklist", icon: Ban, href: "/blacklist" },
   { title: "Duplicats", icon: Copy, href: "/duplicates" },
-  { title: "Site Builder (V1)", icon: Layout, href: "/site-builder" },
-  { title: "Sites V2", icon: Globe, href: "/site-builder-v2" },
-  { title: "Templates Sites", icon: Layers, href: "/site-templates" },
+  { title: "Sites", icon: Globe, href: "/site-builder" },
+  { title: "Thèmes", icon: Palette, href: "/themes" },
+  { title: "Docs Thèmes", icon: BookOpen, href: "/docs/themes" },
 ];
 
 export const AUTOMATIONS_ITEMS: NavItem[] = [
@@ -99,8 +100,6 @@ export const DASHBOARD_ITEMS: NavItem[] = [
 export const CALENDAR_ITEMS: NavItem[] = [{ title: "Calendrier", icon: CalendarDays, href: "/calendar" }];
 
 export const MESSAGERIE_ITEMS: NavItem[] = [];
-
-import { Phone } from "lucide-react";
 
 export function getCategoryFromPath(pathname: string): TopCategoryKey {
   if (pathname.startsWith("/automations")) return "automations";
@@ -126,7 +125,8 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     pathname.startsWith("/blacklist") ||
     pathname.startsWith("/duplicates") ||
     pathname.startsWith("/site-builder") ||
-    pathname.startsWith("/site-templates")
+    pathname.startsWith("/themes") ||
+    pathname.startsWith("/docs/themes")
   ) {
     return "actions";
   }

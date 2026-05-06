@@ -7,7 +7,7 @@ interface RouteContext {
   params: Promise<{ siteId: string }>;
 }
 
-/** GET /api/site-builder-v2/sites/[siteId]/instances
+/** GET /api/site-builder/sites/[siteId]/instances
  *  Returns all section instances for a site, with joined section_def */
 export async function GET(_req: Request, { params }: RouteContext) {
   const supabase = getSupabaseServiceClient();
@@ -27,7 +27,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
   return NextResponse.json(data ?? []);
 }
 
-/** PUT /api/site-builder-v2/sites/[siteId]/instances
+/** PUT /api/site-builder/sites/[siteId]/instances
  *  Full replace: delete all existing and insert new ones */
 export async function PUT(req: Request, { params }: RouteContext) {
   const supabase = getSupabaseServiceClient();
@@ -80,7 +80,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
   return NextResponse.json({ count: toInsert.length });
 }
 
-/** PATCH /api/site-builder-v2/sites/[siteId]/instances
+/** PATCH /api/site-builder/sites/[siteId]/instances
  *  Update a single instance's content or style */
 export async function PATCH(req: Request, { params }: RouteContext) {
   const supabase = getSupabaseServiceClient();

@@ -7,7 +7,7 @@ interface RouteContext {
   params: Promise<{ siteId: string }>;
 }
 
-// POST /api/site-builder-v2/sites/[siteId]/publish
+// POST /api/site-builder/sites/[siteId]/publish
 export async function POST(request: Request, context: RouteContext) {
   const supabase = getSupabaseServiceClient();
   const { siteId } = await context.params;
@@ -55,7 +55,7 @@ export async function POST(request: Request, context: RouteContext) {
   }
 }
 
-// DELETE /api/site-builder-v2/sites/[siteId]/publish — unpublish
+// DELETE /api/site-builder/sites/[siteId]/publish — unpublish
 export async function DELETE(_request: Request, context: RouteContext) {
   const supabase = getSupabaseServiceClient();
   const { siteId } = await context.params;
