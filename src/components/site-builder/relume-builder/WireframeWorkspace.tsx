@@ -221,6 +221,8 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
       content: { ...sectionDef.default_content },
       custom_style: {},
       is_hidden: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       section_def: sectionDef,
     };
     dispatch({ type: "ADD_INSTANCE", payload: { instance: newInstance, pageSlug } });
