@@ -65,10 +65,16 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
 }
 
 /** Resolve the color scheme from content.__color_scheme and return CSS overrides */
+interface ColorSchemeVars extends React.CSSProperties {
+  "--color-background"?: string;
+  "--color-text"?: string;
+  "--color-text-muted"?: string;
+}
+
 function resolveColorSchemeVars(
   content: Record<string, unknown>,
   styleGuide: StyleGuide,
-): React.CSSProperties & Record<string, string> {
+): ColorSchemeVars {
   const raw = content.__color_scheme;
   if (!raw || raw === "default") return {};
 
@@ -86,7 +92,7 @@ function resolveColorSchemeVars(
     "--color-background": resolved.bg,
     "--color-text": resolved.text,
     "--color-text-muted": resolved.textMuted,
-  } as React.CSSProperties;
+  };
 }
 
 function layoutToCSS(
