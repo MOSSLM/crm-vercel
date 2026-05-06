@@ -26,7 +26,8 @@ export function LibrarySectionIframe({
   minHeight = 200,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = React.useState(minHeight);
+  // Start tall so sections using 100vh / min-h-screen get correct initial viewport
+  const [height, setHeight] = React.useState(Math.max(minHeight, 1200));
 
   const allVariables = React.useMemo(() => ({
     ...DEFAULT_VARIABLES,
@@ -45,8 +46,6 @@ export function LibrarySectionIframe({
       try {
         const doc = iframe.contentDocument;
         if (!doc) return;
-        // force no scroll inside iframe
-        doc.body.style.overflow = "hidden";
         const h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
         if (h && h > 0) setHeight(h);
       } catch {
@@ -148,6 +147,10 @@ function buildHTML(
 ): string {
   const cssVars = styleGuide ? styleGuideToCSSVars(styleGuide) : "";
 
+  // Extract export default name BEFORE stripping keywords
+  const exportDefaultFnMatch = code.match(/export\s+default\s+function\s+([A-Z]\w*)/);
+  const exportDefaultName = exportDefaultFnMatch ? exportDefaultFnMatch[1] : null;
+
   const processedCode = code
     .replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?\s*$/gm, "")
     .replace(/^import\s+['"][^'"]+['"]\s*;?\s*$/gm, "")
@@ -165,7 +168,8 @@ function buildHTML(
     processedCode.match(/^const\s+([A-Z]\w*)\s*=/m);
   const componentName = fnMatch ? fnMatch[1] : null;
   const exportedMatch = processedCode.match(/\/\/ exported:\s+(\w+)/);
-  const renderName = exportedMatch ? exportedMatch[1] : componentName;
+  // Priority: explicit export default fn > export default identifier > first component
+  const renderName = exportDefaultName || (exportedMatch ? exportedMatch[1] : componentName);
 
   const renderCall = renderName
     ? `try {
@@ -210,7 +214,8 @@ function buildHTML(
     :root {
       ${cssVars}
     }
-    html, body { margin: 0; overflow: hidden; font-family: var(--font-body, Inter, sans-serif); background: var(--color-background, #fff); color: var(--color-text, #111); }
+    html, body { margin: 0; font-family: var(--font-body, Inter, sans-serif); background: var(--color-background, #fff); color: var(--color-text, #111); }
+    body { overflow-x: hidden; }
     * { box-sizing: border-box; }
   <\/style>
 <\/head>

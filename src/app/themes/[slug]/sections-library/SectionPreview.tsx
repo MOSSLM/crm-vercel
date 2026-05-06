@@ -181,22 +181,25 @@ export default function SectionPreview({ code, sectionId }: Props) {
               <iframe
                 srcDoc={srcDoc}
                 sandbox="allow-scripts"
+                scrolling="no"
                 className="w-full border-0"
-                style={{ minHeight: "400px" }}
+                style={{ height: "1200px", overflow: "hidden" }}
                 title={`Preview ${sectionId}`}
                 onLoad={(e) => {
-                  // Auto-height
                   const iframe = e.currentTarget;
                   const resize = () => {
                     try {
-                      const h = iframe.contentDocument?.documentElement?.scrollHeight;
-                      if (h) iframe.style.height = `${h}px`;
+                      const h = iframe.contentDocument?.documentElement?.scrollHeight ||
+                                iframe.contentDocument?.body?.scrollHeight;
+                      if (h && h > 0) iframe.style.height = `${h}px`;
                     } catch {
                       /* cross-origin */
                     }
                   };
                   iframe.contentWindow?.addEventListener("resize", resize);
                   resize();
+                  setTimeout(resize, 400);
+                  setTimeout(resize, 1000);
                 }}
               />
             ) : (
@@ -217,6 +220,10 @@ function buildPreviewHTML(
   exampleData: Record<string, unknown>,
   variables: Record<string, string>
 ): string {
+  // Extract export default name BEFORE stripping keywords
+  const exportDefaultFnMatch = code.match(/export\s+default\s+function\s+([A-Z]\w*)/);
+  const exportDefaultName = exportDefaultFnMatch ? exportDefaultFnMatch[1] : null;
+
   // Strip/replace imports and exports for iframe preview (Babel runs in non-module mode)
   const processedCode = code
     .replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?\s*$/gm, "")   // multi-brace imports
@@ -230,13 +237,13 @@ function buildPreviewHTML(
     .replace(/\nexport\s+default\s+(\w+)\s*;/g, "\n// exported: $1")
     .replace(/^export\s+(const|let|var|function|class)\s+/gm, "$1 ");     // export const → const
 
-  // Detect the first React component (PascalCase) to render
+  // Detect the component to render: export default fn > export default id > first PascalCase
   const fnMatch =
     processedCode.match(/^function\s+([A-Z]\w*)/m) ||
     processedCode.match(/^const\s+([A-Z]\w*)\s*=/m);
   const componentName = fnMatch ? fnMatch[1] : null;
   const exportedMatch = processedCode.match(/\/\/ exported:\s+(\w+)/);
-  const renderName = exportedMatch ? exportedMatch[1] : componentName;
+  const renderName = exportDefaultName || (exportedMatch ? exportedMatch[1] : componentName);
 
   const renderCall = renderName
     ? `try {
@@ -266,7 +273,7 @@ function buildPreviewHTML(
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
-  <style>body { margin: 0; } * { box-sizing: border-box; }<\/style>
+  <style>html, body { margin: 0; } body { overflow-x: hidden; } * { box-sizing: border-box; }<\/style>
 <\/head>
 <body>
   <div id="root"><\/div>
