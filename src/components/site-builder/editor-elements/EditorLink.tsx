@@ -15,6 +15,10 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
   const { dispatch, editor: editorState } = useEditor();
   const { editor } = editorState;
   const [dropPosition, setDropPosition] = React.useState<"before" | "after" | null>(null);
+  const [isEditing, setIsEditing] = React.useState(false);
+
+  const isSelected = editor.selectedElement.id === element.id && !editor.liveMode;
+  const effectiveStyles = editor.wireframeMode ? {} : element.styles;
 
   const handleDelete = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -26,7 +30,7 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
     dispatch({ type: "CHANGE_CLICKED_ELEMENT", payload: { elementDetails: element } });
   };
 
-  const simpleContent = !Array.isArray(element.content) && !('code' in element.content)
+  const simpleContent = !Array.isArray(element.content) && !("code" in element.content)
     ? element.content : {};
   const href = simpleContent.href ?? "#";
   const innerText = simpleContent.innerText ?? "Link";
@@ -64,12 +68,12 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
 
   return (
     <div
-      style={element.styles}
-      draggable={!editor.liveMode}
+      style={effectiveStyles}
+      draggable={!editor.liveMode && !isEditing}
       onDragStart={handleDragStart}
-      className={cn("relative p-0.5 m-1 transition-all cursor-grab active:cursor-grabbing", {
-        "ring-2 ring-blue-500 ring-inset": editor.selectedElement.id === element.id && !editor.liveMode,
-        "outline outline-1 outline-dashed outline-border": !editor.liveMode && editor.selectedElement.id !== element.id,
+      className={cn("relative p-0.5 m-1 transition-all", {
+        "cursor-grab active:cursor-grabbing": !editor.liveMode && !isEditing,
+        "outline outline-1 outline-dashed outline-border": !editor.liveMode && !isSelected,
         "border-t-2 border-blue-400": dropPosition === "before" && !editor.liveMode,
         "border-b-2 border-blue-400": dropPosition === "after" && !editor.liveMode,
       })}
@@ -78,7 +82,15 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {editor.selectedElement.id === element.id && !editor.liveMode && (
+      {/* Rectangular selection ring — never inherits element border-radius */}
+      {isSelected && (
+        <div
+          className="absolute inset-0 pointer-events-none z-10"
+          style={{ boxShadow: "inset 0 0 0 2px rgb(59 130 246)" }}
+        />
+      )}
+
+      {isSelected && (
         <Badge className="absolute -top-6 -left-0.5 rounded-none rounded-t-md">
           {element.name}
         </Badge>
@@ -89,16 +101,21 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
         </a>
       ) : (
         <span
-          contentEditable={!editor.liveMode}
+          contentEditable
           suppressContentEditableWarning
           className="outline-none underline text-blue-500 cursor-text"
+          onFocus={() => setIsEditing(true)}
           onBlur={(e) => {
+            setIsEditing(false);
             dispatch({
               type: "UPDATE_ELEMENT",
               payload: {
                 elementDetails: {
                   ...element,
-                  content: { ...(!Array.isArray(element.content) && !('code' in element.content) ? element.content : {}), innerText: (e.target as HTMLSpanElement).innerText },
+                  content: {
+                    ...(!Array.isArray(element.content) && !("code" in element.content) ? element.content : {}),
+                    innerText: (e.target as HTMLSpanElement).innerText,
+                  },
                 },
               },
             });
@@ -107,8 +124,8 @@ const EditorLink: React.FC<EditorLinkProps> = ({ element }) => {
           {innerText}
         </span>
       )}
-      {editor.selectedElement.id === element.id && !editor.liveMode && (
-        <div className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-[25px] -right-[1px] rounded-none rounded-t-lg !text-white">
+      {isSelected && (
+        <div className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-[25px] -right-[1px] rounded-none rounded-t-lg !text-white z-20">
           <Trash className="cursor-pointer w-4 h-4" onClick={handleDelete} />
         </div>
       )}

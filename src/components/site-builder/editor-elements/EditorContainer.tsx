@@ -19,6 +19,9 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
   const { editor } = editorState;
   const [dropPosition, setDropPosition] = React.useState<"inside" | "before" | "after" | null>(null);
 
+  const isSelected = editor.selectedElement.id === id && !editor.liveMode;
+  const effectiveStyles = editor.wireframeMode ? {} : styles;
+
   const handleOnDrop = (event: React.DragEvent) => {
     event.stopPropagation();
     const position = dropPosition ?? "inside";
@@ -85,7 +88,7 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
 
   return (
     <div
-      style={styles}
+      style={effectiveStyles}
       draggable={!editor.liveMode && type !== "__body"}
       onDragStart={handleDragStart}
       className={cn(
@@ -93,20 +96,15 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
         {
           "max-w-full w-full": type === "container" || type === "2Col" || type === "3Col",
           "h-fit": type === "container",
-          "h-full w-full overflow-y-auto overflow-x-hidden": type === "__body",
+          "w-full overflow-y-auto overflow-x-hidden": type === "__body",
           "flex flex-col md:!flex-row gap-4": type === "2Col" || type === "3Col",
           "!mb-[200px]": !editor.liveMode && !editor.previewMode && type === "__body",
-          // selection
-          "ring-2 ring-blue-500 ring-inset":
-            editor.selectedElement.id === id && !editor.liveMode && editor.selectedElement.type !== "__body",
-          "ring-4 ring-yellow-400 ring-inset":
-            editor.selectedElement.id === id && !editor.liveMode && editor.selectedElement.type === "__body",
           // drag-over
           "ring-2 ring-blue-400 ring-inset bg-blue-50/10": dropPosition === "inside" && !editor.liveMode,
           "border-t-2 border-blue-400": dropPosition === "before" && !editor.liveMode,
           "border-b-2 border-blue-400": dropPosition === "after" && !editor.liveMode,
           // edit mode borders
-          "outline outline-1 outline-dashed outline-border": !editor.liveMode && editor.selectedElement.id !== id,
+          "outline outline-1 outline-dashed outline-border": !editor.liveMode && !isSelected,
           "cursor-grab active:cursor-grabbing": !editor.liveMode && type !== "__body",
         }
       )}
@@ -115,9 +113,23 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
       onDrop={handleOnDrop}
       onClick={handleOnClick}
     >
+      {/* Rectangular selection ring — never inherits element border-radius */}
+      {isSelected && type !== "__body" && (
+        <div
+          className="absolute inset-0 pointer-events-none z-10"
+          style={{ boxShadow: "inset 0 0 0 2px rgb(59 130 246)" }}
+        />
+      )}
+      {isSelected && type === "__body" && (
+        <div
+          className="absolute inset-0 pointer-events-none z-10"
+          style={{ boxShadow: "inset 0 0 0 4px rgb(250 204 21)" }}
+        />
+      )}
+
       <Badge
         className={cn("absolute -top-6 -left-0.5 rounded-none rounded-t-md hidden", {
-          block: editor.selectedElement.id === element.id && !editor.liveMode,
+          block: isSelected && !editor.liveMode,
         })}
       >
         {element.name}
@@ -143,8 +155,8 @@ const EditorContainer: React.FC<EditorContainerProps> = ({ element }) => {
         <EditorRecursive key={child.id} element={child} />
       ))}
 
-      {editor.selectedElement.id === element.id && !editor.liveMode && editor.selectedElement.type !== "__body" && (
-        <div className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-[25px] -right-[1px] rounded-none rounded-t-lg !text-white">
+      {isSelected && type !== "__body" && (
+        <div className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-[25px] -right-[1px] rounded-none rounded-t-lg !text-white z-20">
           <Trash className="cursor-pointer w-4 h-4" onClick={handleDelete} />
         </div>
       )}

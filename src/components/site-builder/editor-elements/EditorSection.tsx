@@ -19,6 +19,9 @@ const EditorSection: React.FC<EditorSectionProps> = ({ element }) => {
   const { editor } = editorState;
   const [dropPosition, setDropPosition] = React.useState<"inside" | "before" | "after" | null>(null);
 
+  const isSelected = editor.selectedElement.id === id && !editor.liveMode;
+  const effectiveStyles = editor.wireframeMode ? {} : styles;
+
   const handleOnDrop = (event: React.DragEvent) => {
     event.stopPropagation();
     const position = dropPosition ?? "inside";
@@ -83,24 +86,31 @@ const EditorSection: React.FC<EditorSectionProps> = ({ element }) => {
 
   return (
     <section
-      style={styles}
+      style={effectiveStyles}
       draggable={!editor.liveMode}
       onDragStart={handleDragStart}
       className={cn("relative p-4 transition-all w-full cursor-grab active:cursor-grabbing", {
-        "ring-2 ring-blue-500 ring-inset": editor.selectedElement.id === id && !editor.liveMode,
         "ring-2 ring-blue-400 ring-inset bg-blue-50/10": dropPosition === "inside" && !editor.liveMode,
         "border-t-2 border-blue-400": dropPosition === "before" && !editor.liveMode,
         "border-b-2 border-blue-400": dropPosition === "after" && !editor.liveMode,
-        "outline outline-1 outline-dashed outline-border": !editor.liveMode && editor.selectedElement.id !== id,
+        "outline outline-1 outline-dashed outline-border": !editor.liveMode && !isSelected,
       })}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleOnDrop}
       onClick={handleOnClick}
     >
+      {/* Rectangular selection ring — never inherits element border-radius */}
+      {isSelected && (
+        <div
+          className="absolute inset-0 pointer-events-none z-10"
+          style={{ boxShadow: "inset 0 0 0 2px rgb(59 130 246)" }}
+        />
+      )}
+
       <Badge
         className={cn("absolute -top-6 -left-0.5 rounded-none rounded-t-md hidden", {
-          block: editor.selectedElement.id === element.id && !editor.liveMode,
+          block: isSelected,
         })}
       >
         {element.name}
@@ -116,8 +126,8 @@ const EditorSection: React.FC<EditorSectionProps> = ({ element }) => {
         <EditorRecursive key={child.id} element={child} />
       ))}
 
-      {editor.selectedElement.id === element.id && !editor.liveMode && (
-        <div className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-[25px] -right-[1px] rounded-none rounded-t-lg !text-white">
+      {isSelected && (
+        <div className="absolute bg-primary px-2.5 py-1 text-xs font-bold -top-[25px] -right-[1px] rounded-none rounded-t-lg !text-white z-20">
           <Trash className="cursor-pointer w-4 h-4" onClick={handleDelete} />
         </div>
       )}

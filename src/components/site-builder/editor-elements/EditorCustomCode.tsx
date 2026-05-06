@@ -21,8 +21,9 @@ function interpolate(code: string, propValues: Record<string, string>): string {
 const EditorCustomCode: React.FC<Props> = ({ element }) => {
   const { dispatch, editor: editorState } = useEditor();
   const { editor } = editorState;
-  const isSelected = editor.selectedElement.id === element.id;
+  const isSelected = editor.selectedElement.id === element.id && !editor.liveMode;
   const content = isCustomCodeContent(element.content) ? element.content : null;
+  const effectiveStyles = editor.wireframeMode ? {} : element.styles;
 
   const handleSelect = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -34,7 +35,6 @@ const EditorCustomCode: React.FC<Props> = ({ element }) => {
     dispatch({ type: "DELETE_ELEMENT", payload: { elementDetails: element } });
   };
 
-  // Drag support (canvas element move)
   const handleDragStart = (e: React.DragEvent) => {
     e.stopPropagation();
     e.dataTransfer.setData("componentType", "canvasElement");
@@ -45,7 +45,6 @@ const EditorCustomCode: React.FC<Props> = ({ element }) => {
   if (editor.liveMode) {
     if (!content) return null;
     const html = interpolate(content.code, content.propValues ?? {});
-    // If code has <script> tags, use srcdoc iframe for safe execution
     const hasScript = /<script[\s>]/i.test(html);
     if (hasScript) {
       const srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;margin:0;padding:0}</style></head><body>${html}</body></html>`;
@@ -66,7 +65,7 @@ const EditorCustomCode: React.FC<Props> = ({ element }) => {
     );
   }
 
-  // ── EDIT MODE ────────────────────────────────────────────────────────────
+  // ── EDIT MODE ──────────────────────────────────────────────────────
   const propCount = (() => {
     try {
       if (!content?.schema) return 0;
@@ -81,15 +80,20 @@ const EditorCustomCode: React.FC<Props> = ({ element }) => {
       draggable
       onDragStart={handleDragStart}
       onClick={handleSelect}
-      style={element.styles}
+      style={effectiveStyles}
       className={cn(
         "relative cursor-pointer select-none transition-all group",
         "outline outline-1 outline-dashed outline-border",
-        {
-          "outline-2 outline-blue-500 outline-solid": isSelected,
-        }
       )}
     >
+      {/* Rectangular selection ring — never inherits element border-radius */}
+      {isSelected && (
+        <div
+          className="absolute inset-0 pointer-events-none z-10"
+          style={{ boxShadow: "inset 0 0 0 2px rgb(59 130 246)" }}
+        />
+      )}
+
       {/* Selection badge + delete */}
       {isSelected && (
         <div className="absolute -top-6 left-0 flex items-center gap-1 z-[100]">
