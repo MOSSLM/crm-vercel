@@ -31,10 +31,11 @@ export default function Nom({ tokens={}, data={}, variables={} }: Props)
 Variables : variables['entreprise.nom|telephone|email|adresse|ville|code_postal|description|annee_creation|note_moyenne|nombre_avis|logo_url']
 
 Règles :
-- export default function obligatoire, pas d'imports React
+- export default function OBLIGATOIRE — jamais export const, export type, ni imports
 - Tailwind mobile-first (sm: md: lg:), pas de CSS inline
 - Textes statiques → variables['entreprise.*'] ou data.*
 - Pas de hooks complexes ni fetch
+- Si on te donne du code avec des imports ou exports nommés, réécris-le en respectant ces règles
 
 Réponse : \`\`\`tsx [code] \`\`\` puis 1-2 phrases d'explication.`;
 
@@ -114,7 +115,7 @@ export async function POST(
     ];
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const timeout = setTimeout(() => controller.abort(), 55000);
 
     try {
       const response = await anthropic.messages.create(

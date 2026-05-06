@@ -217,17 +217,23 @@ function buildPreviewHTML(
   exampleData: Record<string, unknown>,
   variables: Record<string, string>
 ): string {
-  // Strip/replace imports for iframe preview
+  // Strip/replace imports and exports for iframe preview (Babel runs in non-module mode)
   const processedCode = code
-    .replace(/^import\s+.*?from\s+['"][^'"]+['"]\s*;?\s*$/gm, "")
+    .replace(/^import\s+[\s\S]*?from\s+['"][^'"]+['"]\s*;?\s*$/gm, "")   // multi-brace imports
+    .replace(/^import\s+['"][^'"]+['"]\s*;?\s*$/gm, "")                   // side-effect imports
     .replace(/^['"]use client['"]\s*;?\s*$/gm, "")
+    .replace(/^export\s+type\s+\{[^}]*\}\s*(?:from\s+['"][^'"]+['"])?\s*;?\s*$/gm, "") // export type { ... }
+    .replace(/^export\s+\{[^}]*\}\s*(?:from\s+['"][^'"]+['"])?\s*;?\s*$/gm, "")        // export { ... }
+    .replace(/^export\s+type\s+([\w]+)/gm, "type $1")                     // export type Foo → type Foo
     .replace(/export\s+default\s+function\s+/g, "function ")
     .replace(/export\s+default\s+class\s+/g, "class ")
-    .replace(/\nexport\s+default\s+(\w+)\s*;/g, "\n// exported: $1");
+    .replace(/\nexport\s+default\s+(\w+)\s*;/g, "\n// exported: $1")
+    .replace(/^export\s+(const|let|var|function|class)\s+/gm, "$1 ");     // export const → const
 
+  // Detect the first React component (PascalCase) to render
   const fnMatch =
-    processedCode.match(/^function\s+(\w+)/m) ||
-    processedCode.match(/^const\s+(\w+)\s*=\s*(?:React\.)?(?:memo\()?(?:\([^)]*\)|[^=]+)\s*=>/m);
+    processedCode.match(/^function\s+([A-Z]\w*)/m) ||
+    processedCode.match(/^const\s+([A-Z]\w*)\s*=/m);
   const componentName = fnMatch ? fnMatch[1] : null;
   const exportedMatch = processedCode.match(/\/\/ exported:\s+(\w+)/);
   const renderName = exportedMatch ? exportedMatch[1] : componentName;
