@@ -4,10 +4,12 @@ import React from "react";
 import {
   Laptop, Tablet, Smartphone, Plus, Trash2, Layers,
   Search, Sparkles, GripVertical, MoreHorizontal,
-  ChevronDown, RefreshCw
+  ChevronDown, RefreshCw, Loader2, MessageSquare, Send
 } from "lucide-react";
+import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { type AIModelId, ModelDropdown } from "./SitemapWorkspace";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -15,37 +17,38 @@ function useCanvasPanZoom(initialPan = { x: 40, y: 40 }) {
   const [pan, setPan] = React.useState(initialPan);
   const [scale, setScale] = React.useState(0.75);
   const isPanning = React.useRef(false);
+  const didPan = React.useRef(false);
   const lastPos = React.useRef({ x: 0, y: 0 });
-  const spaceHeld = React.useRef(false);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      spaceHeld.current = e.type === "keydown" && e.code === "Space";
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKey);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey); };
-  }, []);
 
   const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || spaceHeld.current) {
+    if (e.button === 0 || e.button === 1) {
       isPanning.current = true;
+      didPan.current = false;
       lastPos.current = { x: e.clientX, y: e.clientY };
-      e.preventDefault();
+      if (e.button === 1) e.preventDefault();
     }
   };
   const onMouseMove = (e: React.MouseEvent) => {
     if (!isPanning.current) return;
-    setPan((p) => ({ x: p.x + e.clientX - lastPos.current.x, y: p.y + e.clientY - lastPos.current.y }));
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) didPan.current = true;
+    if (didPan.current) {
+      setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+    }
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
   const onMouseUp = () => { isPanning.current = false; };
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+    if (e.ctrlKey || e.metaKey) {
+      setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+    } else {
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
   };
 
-  return { pan, scale, onMouseDown, onMouseMove, onMouseUp, onWheel };
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel };
 }
 
 // ─── Section type categories ──────────────────────────────────────────────────
@@ -148,22 +151,6 @@ function WireframeBlock({ type, name }: { type: string; name: string }) {
     );
   }
 
-  if (lname.includes("stat") || lname.includes("chiffre")) {
-    return (
-      <div className="bg-gray-900 px-4 py-4 flex flex-col gap-2">
-        <div className="w-1/3 h-2 bg-gray-600 rounded" />
-        <div className="grid grid-cols-3 gap-3 mt-1">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="flex flex-col items-center gap-1">
-              <div className="w-12 h-5 bg-gray-500 rounded" />
-              <div className="w-8 h-1.5 bg-gray-600 rounded" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   if (lname.includes("cta") || lname.includes("banner")) {
     return (
       <div className="bg-blue-600 px-4 py-4 flex flex-col items-center gap-2">
@@ -174,7 +161,6 @@ function WireframeBlock({ type, name }: { type: string; name: string }) {
     );
   }
 
-  // Generic section
   return (
     <div className="bg-white px-4 py-4 flex flex-col gap-2">
       <div className="w-1/3 h-2 bg-gray-300 rounded" />
@@ -190,12 +176,73 @@ function WireframeBlock({ type, name }: { type: string; name: string }) {
 interface WireframeWorkspaceProps {
   sectionDefs: Record<string, SiteSectionDef>;
   availableSections: SiteSectionDef[];
-  onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
+  onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
+}
+
+// ─── Section AI popover ───────────────────────────────────────────────────────
+
+function SectionAIPopover({
+  instanceId,
+  onRegenerate,
+  onClose,
+}: {
+  instanceId: string;
+  onRegenerate: (prompt: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [prompt, setPrompt] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  const handleSubmit = async () => {
+    setLoading(true);
+    try {
+      await onRegenerate(prompt);
+      onClose();
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div
+      className="absolute right-0 top-full mt-1 w-56 bg-white border border-purple-200 rounded-xl shadow-xl z-40 p-3"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-1.5 mb-2">
+        <Sparkles size={11} className="text-purple-500" />
+        <span className="text-[10px] font-semibold text-purple-700">Régénérer avec l'IA</span>
+      </div>
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder="Instructions spécifiques (optionnel)..."
+        rows={3}
+        autoFocus
+        className="w-full text-[10px] bg-gray-50 border border-gray-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
+      />
+      <div className="flex gap-1.5 mt-2">
+        <button
+          onClick={onClose}
+          className="flex-1 py-1.5 text-[10px] text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50"
+        >
+          Annuler
+        </button>
+        <button
+          onClick={handleSubmit}
+          disabled={loading}
+          className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+        >
+          {loading ? <Loader2 size={9} className="animate-spin" /> : <Send size={9} />}
+          {loading ? "..." : "Générer"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function WireframeWorkspace({ sectionDefs, availableSections }: WireframeWorkspaceProps) {
+export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerateSection }: WireframeWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const canvas = useCanvasPanZoom();
   const [leftPanel, setLeftPanel] = React.useState<"library" | "ai" | null>("library");
@@ -203,6 +250,11 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
   const [activeCategory, setActiveCategory] = React.useState("Tous");
   const [sectionMenuOpen, setSectionMenuOpen] = React.useState<string | null>(null);
   const [sectionTypePicker, setSectionTypePicker] = React.useState<string | null>(null);
+  const [sectionAIOpen, setSectionAIOpen] = React.useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = React.useState<AIModelId>("claude-sonnet-4-6");
+  const [pageAIOpen, setPageAIOpen] = React.useState<string | null>(null);
+  const [pageContexts, setPageContexts] = React.useState<Record<string, string>>({});
+  const [pageLoading, setPageLoading] = React.useState<string | null>(null);
 
   const filteredSections = availableSections.filter((s) => {
     const matchSearch = s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -240,6 +292,23 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
       payload: { id: instanceId, style: { _section_def_id: newDef.id, _section_def_type: newDef.type } },
     });
     setSectionTypePicker(null);
+  };
+
+  const handleRegeneratePage = async (pageSlug: string, pageId: string) => {
+    const context = pageContexts[pageId] ?? "";
+    setPageLoading(pageId);
+    try {
+      const instanceIds = state.instancesByPage[pageSlug] ?? [];
+      for (const instanceId of instanceIds) {
+        await onRegenerateSection?.(instanceId, context, selectedModel);
+      }
+      toast.success("Page régénérée !");
+      setPageAIOpen(null);
+    } catch {
+      toast.error("Erreur lors de la régénération");
+    } finally {
+      setPageLoading(null);
+    }
   };
 
   const PAGE_COL_WIDTH = 240;
@@ -321,10 +390,16 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
           )}
 
           {leftPanel === "ai" && (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-              <Sparkles size={24} className="text-purple-400 mb-3" />
-              <p className="text-sm font-medium text-gray-700 mb-1">Assistant IA</p>
-              <p className="text-xs text-gray-400">Générez du contenu textuel pour vos sections depuis le Sitemap.</p>
+            <div className="flex-1 flex flex-col p-4 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-gray-700">Modèle IA</label>
+                <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
+              </div>
+              <div className="flex-1 flex flex-col items-center justify-center text-center">
+                <Sparkles size={24} className="text-purple-400 mb-3" />
+                <p className="text-sm font-medium text-gray-700 mb-1">Assistant IA</p>
+                <p className="text-xs text-gray-400">Cliquez sur le bouton ✨ d'une page ou d'une section pour la régénérer.</p>
+              </div>
             </div>
           )}
         </div>
@@ -333,7 +408,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
       {/* Panel toggle */}
       <button
         onClick={() => setLeftPanel(leftPanel ? null : "library")}
-        className="absolute left-[260px] top-1/2 -translate-y-1/2 z-20 w-5 h-12 bg-white border border-gray-200 border-l-0 rounded-r-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
+        className="absolute top-1/2 -translate-y-1/2 z-20 w-5 h-12 bg-white border border-gray-200 border-l-0 rounded-r-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
         style={{ left: leftPanel ? 260 : 0 }}
       >
         <ChevronDown size={12} className={`transition-transform ${leftPanel ? "-rotate-90" : "rotate-90"}`} />
@@ -341,11 +416,13 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
 
       {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
       <div
-        className="flex-1 overflow-hidden relative"
+        className="flex-1 overflow-hidden relative select-none"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
+        onMouseLeave={canvas.onMouseUp}
         onWheel={canvas.onWheel}
+        style={{ cursor: "grab" }}
       >
         {/* Dot grid */}
         <div
@@ -368,12 +445,16 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
         >
           {state.sitemap.map((page) => {
             const instanceIds = state.instancesByPage[page.slug] ?? [];
+            const isPageAIOpen = pageAIOpen === page.id;
+            const isPageLoading = pageLoading === page.id;
+            const pageCtx = pageContexts[page.id] ?? "";
 
             return (
               <div
                 key={page.id}
                 style={{ width: PAGE_COL_WIDTH, flexShrink: 0 }}
                 className="flex flex-col"
+                onClick={(e) => e.stopPropagation()}
               >
                 {/* Page header */}
                 <div
@@ -382,8 +463,40 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
                 >
                   <div className={`w-2 h-2 rounded-full flex-shrink-0 ${state.activePage === page.slug ? "bg-blue-500" : "bg-gray-300"}`} />
                   <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{page.title}</span>
-                  <span className="text-[10px] text-gray-400">{page.slug}</span>
+                  {/* Per-page AI button */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setPageAIOpen(isPageAIOpen ? null : page.id); }}
+                    className={`p-1 rounded transition-colors flex-shrink-0 ${isPageAIOpen ? "text-purple-600 bg-purple-50" : "text-gray-400 hover:text-purple-600 hover:bg-purple-50"}`}
+                    title="Régénérer la page avec l'IA"
+                  >
+                    <Sparkles size={11} />
+                  </button>
                 </div>
+
+                {/* Page AI panel */}
+                {isPageAIOpen && (
+                  <div className="bg-purple-50 border border-purple-200 border-t-0 px-3 py-2.5">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <MessageSquare size={10} className="text-purple-500" />
+                      <span className="text-[10px] font-semibold text-purple-700">Contexte pour {page.title}</span>
+                    </div>
+                    <textarea
+                      value={pageCtx}
+                      onChange={(e) => setPageContexts((prev) => ({ ...prev, [page.id]: e.target.value }))}
+                      placeholder="Instructions pour régénérer toutes les sections..."
+                      rows={2}
+                      className="w-full text-[10px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <button
+                      onClick={() => handleRegeneratePage(page.slug, page.id)}
+                      disabled={isPageLoading || instanceIds.length === 0}
+                      className="mt-1.5 w-full flex items-center justify-center gap-1 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                    >
+                      {isPageLoading ? <><Loader2 size={9} className="animate-spin" /> Génération...</> : <><RefreshCw size={9} /> Régénérer la page</>}
+                    </button>
+                  </div>
+                )}
 
                 {/* Page column body */}
                 <div className="bg-white border border-t-0 border-gray-200 rounded-b-xl overflow-hidden shadow-sm flex flex-col">
@@ -392,6 +505,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
                     if (!instance) return null;
                     const secDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
                     const isSelected = state.selectedInstanceId === instanceId;
+                    const isSectionAIOpen = sectionAIOpen === instanceId;
 
                     return (
                       <div
@@ -405,15 +519,34 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
                           name={secDef?.name ?? "Section"}
                         />
 
-                        {/* Section label */}
+                        {/* Section label + controls */}
                         <div className="px-2 py-1.5 bg-white flex items-center gap-1.5 border-t border-gray-50">
                           <GripVertical size={10} className="text-gray-300" />
                           <span className="text-[10px] text-gray-500 flex-1 truncate font-medium">
                             {secDef?.name ?? "Section"}
                           </span>
 
-                          {/* Controls: only on hover */}
                           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* AI regenerate per section */}
+                            <div className="relative">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSectionAIOpen(isSectionAIOpen ? null : instanceId); }}
+                                className={`p-0.5 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors ${isSectionAIOpen ? "text-purple-600" : ""}`}
+                                title="Régénérer avec l'IA"
+                              >
+                                <Sparkles size={9} />
+                              </button>
+                              {isSectionAIOpen && (
+                                <SectionAIPopover
+                                  instanceId={instanceId}
+                                  onRegenerate={async (prompt) => {
+                                    await onRegenerateSection?.(instanceId, prompt, selectedModel);
+                                  }}
+                                  onClose={() => setSectionAIOpen(null)}
+                                />
+                              )}
+                            </div>
+
                             {/* Switch section type */}
                             <div className="relative">
                               <button
@@ -527,8 +660,9 @@ export function WireframeWorkspace({ sectionDefs, availableSections }: Wireframe
             })}
           </div>
 
-          {/* Zoom indicator */}
-          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none">
+          {/* Zoom hint + indicator */}
+          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll</span>
+          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm">
             {Math.round(canvas.scale * 100)}%
           </div>
         </div>

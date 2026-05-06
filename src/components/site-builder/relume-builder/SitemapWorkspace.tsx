@@ -3,11 +3,23 @@
 import React from "react";
 import {
   Sparkles, FileText, MoreHorizontal, Plus, Trash2,
-  ChevronRight, Send, Loader2, AlertCircle
+  ChevronRight, Send, Loader2, AlertCircle, ChevronDown, RefreshCw, MessageSquare
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+
+// ─── AI Model config ──────────────────────────────────────────────────────────
+
+export const AI_MODELS = [
+  { provider: "anthropic", id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
+  { provider: "anthropic", id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
+  { provider: "anthropic", id: "claude-opus-4-7", label: "Claude Opus 4.7" },
+  { provider: "openai", id: "gpt-4o", label: "GPT-4o" },
+  { provider: "openai", id: "gpt-4o-mini", label: "GPT-4o mini" },
+] as const;
+
+export type AIModelId = typeof AI_MODELS[number]["id"];
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -15,30 +27,26 @@ function useCanvasPanZoom() {
   const [pan, setPan] = React.useState({ x: 60, y: 60 });
   const [scale, setScale] = React.useState(1);
   const isPanning = React.useRef(false);
+  const didPan = React.useRef(false);
   const lastPos = React.useRef({ x: 0, y: 0 });
-  const spaceHeld = React.useRef(false);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.code === "Space" && e.type === "keydown") spaceHeld.current = true;
-      if (e.code === "Space" && e.type === "keyup") spaceHeld.current = false;
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKey);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey); };
-  }, []);
 
   const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || spaceHeld.current) {
+    if (e.button === 0 || e.button === 1) {
       isPanning.current = true;
+      didPan.current = false;
       lastPos.current = { x: e.clientX, y: e.clientY };
-      e.preventDefault();
+      if (e.button === 1) e.preventDefault();
     }
   };
 
   const onMouseMove = (e: React.MouseEvent) => {
     if (!isPanning.current) return;
-    setPan((p) => ({ x: p.x + e.clientX - lastPos.current.x, y: p.y + e.clientY - lastPos.current.y }));
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) didPan.current = true;
+    if (didPan.current) {
+      setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+    }
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
 
@@ -46,11 +54,60 @@ function useCanvasPanZoom() {
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    setScale((s) => Math.min(2, Math.max(0.25, s * delta)));
+    if (e.ctrlKey || e.metaKey) {
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setScale((s) => Math.min(2, Math.max(0.25, s * delta)));
+    } else {
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
   };
 
-  return { pan, scale, onMouseDown, onMouseMove, onMouseUp, onWheel };
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel };
+}
+
+// ─── Model Dropdown ────────────────────────────────────────────────────────────
+
+export function ModelDropdown({ value, onChange }: { value: AIModelId; onChange: (v: AIModelId) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const model = AI_MODELS.find((m) => m.id === value) ?? AI_MODELS[0];
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors text-gray-700"
+      >
+        <span className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${model.provider === "anthropic" ? "bg-orange-400" : "bg-green-500"}`} />
+          {model.label}
+        </span>
+        <ChevronDown size={11} className="text-gray-400 flex-shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1">
+          {[
+            { provider: "anthropic", label: "Claude" },
+            { provider: "openai", label: "ChatGPT" },
+          ].map((group) => (
+            <div key={group.provider}>
+              <div className="px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">{group.label}</div>
+              {AI_MODELS.filter((m) => m.provider === group.provider).map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => { onChange(m.id); setOpen(false); }}
+                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors hover:bg-gray-50 ${m.id === value ? "text-blue-600 font-medium" : "text-gray-700"}`}
+                >
+                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${m.provider === "anthropic" ? "bg-orange-400" : "bg-green-500"}`} />
+                  {m.label}
+                  {m.id === value && <span className="ml-auto text-blue-500">✓</span>}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -71,8 +128,14 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");
   const [expandedPages, setExpandedPages] = React.useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = React.useState<AIModelId>("claude-sonnet-4-6");
 
-  // ─── AI Generation ──────────────────────────────────────────────────────────
+  // Per-page state: context text + per-page loading
+  const [pageContexts, setPageContexts] = React.useState<Record<string, string>>({});
+  const [pageContextOpen, setPageContextOpen] = React.useState<string | null>(null);
+  const [pageLoading, setPageLoading] = React.useState<string | null>(null);
+
+  // ─── AI Generation (full sitemap) ──────────────────────────────────────────
 
   const handleGenerate = async () => {
     if (!aiInput.trim()) return;
@@ -89,6 +152,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           description: aiInput,
           pages: pageList,
           availableSectionTypes: availableSections.map((s) => s.type),
+          model: selectedModel,
         }),
       });
       if (!res.ok) throw new Error("Erreur IA");
@@ -140,6 +204,72 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
       toast.error("Erreur lors de la génération");
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  // ─── AI regeneration for a single page ────────────────────────────────────
+
+  const handleRegeneratePage = async (page: SitemapPage) => {
+    setPageLoading(page.id);
+    try {
+      const context = pageContexts[page.id] ?? "";
+      const res = await fetch("/api/site-builder-v2/ai/regenerate-page", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId,
+          enterpriseId,
+          pageSlug: page.slug,
+          pageTitle: page.title,
+          globalDescription: aiInput,
+          pageContext: context,
+          availableSectionTypes: availableSections.map((s) => s.type),
+          model: selectedModel,
+        }),
+      });
+      if (!res.ok) throw new Error("Erreur IA");
+      const data = await res.json();
+
+      if (data.sections) {
+        dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { sections: data.sections } } });
+      }
+      if (data.instances?.length) {
+        // Remove existing instances for this page
+        const existingIds = state.instancesByPage[page.slug] ?? [];
+        for (const id of existingIds) {
+          dispatch({ type: "REMOVE_INSTANCE", payload: id });
+        }
+        // Add new instances
+        for (const inst of data.instances) {
+          const secDef = availableSections.find((s) => s.type === inst.sectionType);
+          if (!secDef) continue;
+          dispatch({
+            type: "ADD_INSTANCE",
+            payload: {
+              instance: {
+                id: nanoid(),
+                site_id: siteId,
+                section_id: secDef.id,
+                section_def: secDef,
+                page_slug: page.slug,
+                sort_order: inst.sortOrder ?? 0,
+                content: inst.content ?? {},
+                custom_style: {},
+                is_hidden: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+              pageSlug: page.slug,
+            },
+          });
+        }
+      }
+      toast.success(`Page "${page.title}" régénérée !`);
+      setPageContextOpen(null);
+    } catch {
+      toast.error("Erreur lors de la régénération");
+    } finally {
+      setPageLoading(null);
     }
   };
 
@@ -203,6 +333,12 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
             </div>
           )}
 
+          {/* Model selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-700">Modèle IA</label>
+            <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
+          </div>
+
           <div className="space-y-2">
             <label className="text-xs font-medium text-gray-700">Description de votre activité</label>
             <textarea
@@ -220,7 +356,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
               {state.sitemap.map((page) => (
                 <div key={page.id} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded-md">
                   <FileText size={11} className="text-gray-400" />
-                  <span className="text-xs text-gray-700">{page.title}</span>
+                  <span className="text-xs text-gray-700 flex-1">{page.title}</span>
                 </div>
               ))}
             </div>
@@ -268,12 +404,13 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
 
       {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
       <div
-        className="flex-1 overflow-hidden relative cursor-default"
+        className="flex-1 overflow-hidden relative select-none"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
+        onMouseLeave={canvas.onMouseUp}
         onWheel={canvas.onWheel}
-        style={{ cursor: "default" }}
+        style={{ cursor: "grab" }}
       >
         {/* Dot grid background */}
         <div
@@ -333,12 +470,16 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
             const pos = pagePositions[i];
             const isExpanded = expandedPages.has(page.id);
             const sections: SitemapSection[] = page.sections ?? [];
+            const isLoadingPage = pageLoading === page.id;
+            const pageCtx = pageContexts[page.id] ?? "";
+            const isContextOpen = pageContextOpen === page.id;
 
             return (
               <div
                 key={page.id}
                 style={{ position: "absolute", top: pos.y, left: pos.x, width: PAGE_CARD_WIDTH }}
-                className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
+                className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible"
+                onClick={(e) => e.stopPropagation()}
               >
                 {/* Card header */}
                 <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
@@ -347,6 +488,14 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                   </div>
                   <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{page.title}</span>
                   <div className="flex items-center gap-1">
+                    {/* Per-page AI regenerate */}
+                    <button
+                      onClick={() => setPageContextOpen(isContextOpen ? null : page.id)}
+                      className={`p-1 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors ${isContextOpen ? "text-purple-600 bg-purple-50" : ""}`}
+                      title="Régénérer avec l'IA"
+                    >
+                      <Sparkles size={11} />
+                    </button>
                     <button
                       onClick={() => toggleExpand(page.id)}
                       className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
@@ -374,6 +523,35 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                     </div>
                   </div>
                 </div>
+
+                {/* Per-page AI context panel */}
+                {isContextOpen && (
+                  <div className="px-3 py-2.5 bg-purple-50 border-b border-purple-100">
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <MessageSquare size={10} className="text-purple-500" />
+                      <span className="text-[10px] font-semibold text-purple-700">Contexte pour cette page</span>
+                    </div>
+                    <textarea
+                      value={pageCtx}
+                      onChange={(e) => setPageContexts((prev) => ({ ...prev, [page.id]: e.target.value }))}
+                      placeholder={`Instructions spécifiques pour "${page.title}"...`}
+                      rows={3}
+                      className="w-full text-[10px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <button
+                      onClick={() => handleRegeneratePage(page)}
+                      disabled={isLoadingPage}
+                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors disabled:opacity-50"
+                    >
+                      {isLoadingPage ? (
+                        <><Loader2 size={10} className="animate-spin" /> Génération...</>
+                      ) : (
+                        <><RefreshCw size={10} /> Régénérer cette page</>
+                      )}
+                    </button>
+                  </div>
+                )}
 
                 {/* Sections list */}
                 {sections.length > 0 && (
@@ -415,9 +593,12 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           </div>
         </div>
 
-        {/* Zoom indicator */}
-        <div className="absolute bottom-4 right-4 text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none">
-          {Math.round(canvas.scale * 100)}%
+        {/* Bottom bar */}
+        <div className="absolute bottom-4 right-4 flex items-center gap-2">
+          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser pour déplacer · Ctrl+scroll pour zoomer</span>
+          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm">
+            {Math.round(canvas.scale * 100)}%
+          </div>
         </div>
 
         {/* Generation status */}
