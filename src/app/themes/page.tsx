@@ -19,6 +19,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import AppLayout from "@/components/layout/AppLayout";
 import type { ManagedTheme } from "@/types";
 
 export default function ThemesPage() {
@@ -79,70 +80,74 @@ export default function ThemesPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
+      <AppLayout>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Thèmes</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Gérez les thèmes disponibles pour le builder de sites.{" "}
-            <Link href="/docs/themes" className="text-primary hover:underline">
-              Voir la documentation →
-            </Link>
-          </p>
+    <AppLayout>
+      <div className="p-6 max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">Thèmes</h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Gérez les thèmes disponibles pour le builder de sites.{" "}
+              <Link href="/docs/themes" className="text-primary hover:underline">
+                Voir la documentation →
+              </Link>
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setGenerateOpen(true)} className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Créer depuis une URL
+            </Button>
+            <Button onClick={() => setCreateOpen(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nouveau thème
+            </Button>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setGenerateOpen(true)} className="gap-2">
-            <Sparkles className="h-4 w-4" />
-            Créer depuis une URL
-          </Button>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nouveau thème
-          </Button>
-        </div>
+
+        {/* Themes grid */}
+        {themes.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+            <Layout className="h-10 w-10 mb-3 opacity-20" />
+            <p>Aucun thème installé.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {themes.map((theme) => (
+              <ThemeCard
+                key={theme.slug}
+                theme={theme}
+                onToggle={() => handleToggle(theme)}
+                onDelete={() => handleDelete(theme)}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Create dialog */}
+        <CreateThemeDialog
+          open={createOpen}
+          onClose={() => setCreateOpen(false)}
+          onCreated={handleThemeCreated}
+        />
+
+        {/* Generate from URL dialog */}
+        <GenerateFromUrlDialog
+          open={generateOpen}
+          onClose={() => setGenerateOpen(false)}
+          onCreated={handleThemeCreated}
+        />
       </div>
-
-      {/* Themes grid */}
-      {themes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-          <Layout className="h-10 w-10 mb-3 opacity-20" />
-          <p>Aucun thème installé.</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {themes.map((theme) => (
-            <ThemeCard
-              key={theme.slug}
-              theme={theme}
-              onToggle={() => handleToggle(theme)}
-              onDelete={() => handleDelete(theme)}
-            />
-          ))}
-        </div>
-      )}
-
-      {/* Create dialog */}
-      <CreateThemeDialog
-        open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        onCreated={handleThemeCreated}
-      />
-
-      {/* Generate from URL dialog */}
-      <GenerateFromUrlDialog
-        open={generateOpen}
-        onClose={() => setGenerateOpen(false)}
-        onCreated={handleThemeCreated}
-      />
-    </div>
+    </AppLayout>
   );
 }
 
