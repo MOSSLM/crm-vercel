@@ -3,7 +3,8 @@
 import React from "react";
 import {
   Sparkles, FileText, MoreHorizontal, Plus, Trash2,
-  ChevronRight, Send, Loader2, AlertCircle, ChevronDown, RefreshCw, MessageSquare
+  ChevronRight, Send, Loader2, AlertCircle, ChevronDown, RefreshCw, MessageSquare,
+  Copy, ZoomIn, ZoomOut, Maximize2
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
@@ -62,7 +63,11 @@ function useCanvasPanZoom() {
     }
   };
 
-  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel };
+  const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
+  const zoomOut = () => setScale((s) => Math.max(0.25, parseFloat((s - 0.1).toFixed(2))));
+  const resetZoom = () => { setScale(1); setPan({ x: 60, y: 60 }); };
+
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel, zoomIn, zoomOut, resetZoom };
 }
 
 // ─── Model Dropdown ────────────────────────────────────────────────────────────
@@ -134,6 +139,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [pageContexts, setPageContexts] = React.useState<Record<string, string>>({});
   const [pageContextOpen, setPageContextOpen] = React.useState<string | null>(null);
   const [pageLoading, setPageLoading] = React.useState<string | null>(null);
+  const [editingPageId, setEditingPageId] = React.useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = React.useState("");
 
   // ─── AI Generation (full sitemap) ──────────────────────────────────────────
 
@@ -486,7 +493,34 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                   <div className="w-5 h-5 rounded bg-blue-50 flex items-center justify-center flex-shrink-0">
                     <FileText size={10} className="text-blue-500" />
                   </div>
-                  <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{page.title}</span>
+                  {editingPageId === page.id ? (
+                    <input
+                      autoFocus
+                      value={editingTitle}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onBlur={() => {
+                        if (editingTitle.trim()) dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { title: editingTitle.trim() } } });
+                        setEditingPageId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          if (editingTitle.trim()) dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { title: editingTitle.trim() } } });
+                          setEditingPageId(null);
+                        }
+                        if (e.key === "Escape") setEditingPageId(null);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="flex-1 text-xs font-semibold bg-white border border-blue-400 rounded px-1 py-0.5 focus:outline-none"
+                    />
+                  ) : (
+                    <span
+                      className="text-xs font-semibold text-gray-800 flex-1 truncate cursor-text"
+                      onDoubleClick={(e) => { e.stopPropagation(); setEditingPageId(page.id); setEditingTitle(page.title); }}
+                      title="Double-clic pour renommer"
+                    >
+                      {page.title}
+                    </span>
+                  )}
                   <div className="flex items-center gap-1">
                     {/* Per-page AI regenerate */}
                     <button
@@ -510,7 +544,21 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                         <MoreHorizontal size={12} />
                       </button>
                       {menuOpen === page.id && (
-                        <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+                        <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+                          <button
+                            onClick={() => { setEditingPageId(page.id); setEditingTitle(page.title); setMenuOpen(null); }}
+                            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            <FileText size={11} />
+                            Renommer
+                          </button>
+                          <button
+                            onClick={() => { dispatch({ type: "DUPLICATE_PAGE", payload: page.id }); setMenuOpen(null); }}
+                            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            <Copy size={11} />
+                            Dupliquer
+                          </button>
                           <button
                             onClick={() => { removePage(page.id); setMenuOpen(null); }}
                             className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
@@ -595,9 +643,17 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
 
         {/* Bottom bar */}
         <div className="absolute bottom-4 right-4 flex items-center gap-2">
-          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser pour déplacer · Ctrl+scroll pour zoomer</span>
-          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm">
-            {Math.round(canvas.scale * 100)}%
+          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll pour zoomer</span>
+          <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Dézoomer">
+              <ZoomOut size={12} />
+            </button>
+            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center" title="Réinitialiser">
+              {Math.round(canvas.scale * 100)}%
+            </button>
+            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Zoomer">
+              <ZoomIn size={12} />
+            </button>
           </div>
         </div>
 

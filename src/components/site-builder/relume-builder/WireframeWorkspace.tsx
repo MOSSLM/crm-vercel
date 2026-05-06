@@ -4,7 +4,8 @@ import React from "react";
 import {
   Laptop, Tablet, Smartphone, Plus, Trash2, Layers,
   Search, Sparkles, GripVertical, MoreHorizontal,
-  ChevronDown, RefreshCw, Loader2, MessageSquare, Send
+  ChevronDown, RefreshCw, Loader2, MessageSquare, Send,
+  ZoomIn, ZoomOut
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
@@ -48,7 +49,11 @@ function useCanvasPanZoom(initialPan = { x: 40, y: 40 }) {
     }
   };
 
-  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel };
+  const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
+  const zoomOut = () => setScale((s) => Math.max(0.2, parseFloat((s - 0.1).toFixed(2))));
+  const resetZoom = () => { setScale(0.75); setPan({ x: 40, y: 40 }); };
+
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel, zoomIn, zoomOut, resetZoom };
 }
 
 // ─── Section type categories ──────────────────────────────────────────────────
@@ -171,6 +176,74 @@ function WireframeBlock({ type, name }: { type: string; name: string }) {
   );
 }
 
+// ─── Section type picker with search ─────────────────────────────────────────
+
+function SectionTypePicker({
+  availableSections,
+  onSelect,
+  onClose,
+}: {
+  availableSections: SiteSectionDef[];
+  onSelect: (s: SiteSectionDef) => void;
+  onClose: () => void;
+}) {
+  const [q, setQ] = React.useState("");
+  const filtered = availableSections.filter((s) =>
+    s.name.toLowerCase().includes(q.toLowerCase()) ||
+    s.category.toLowerCase().includes(q.toLowerCase())
+  );
+
+  // Group by category
+  const groups = React.useMemo(() => {
+    const map: Record<string, SiteSectionDef[]> = {};
+    for (const s of filtered) {
+      if (!map[s.category]) map[s.category] = [];
+      map[s.category].push(s);
+    }
+    return map;
+  }, [filtered]);
+
+  return (
+    <div
+      className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-30 flex flex-col max-h-64"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="p-2 border-b border-gray-100 flex-shrink-0">
+        <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Changer de section</div>
+        <div className="relative">
+          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Rechercher..."
+            className="w-full pl-6 pr-2 py-1 text-[10px] bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+          />
+        </div>
+      </div>
+      <div className="overflow-y-auto flex-1 py-1">
+        {Object.entries(groups).map(([cat, sections]) => (
+          <React.Fragment key={cat}>
+            <div className="px-2 pt-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">{cat}</div>
+            {sections.map((s) => (
+              <button
+                key={s.id}
+                onClick={(e) => { e.stopPropagation(); onSelect(s); onClose(); }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 text-left"
+              >
+                {s.name}
+              </button>
+            ))}
+          </React.Fragment>
+        ))}
+        {filtered.length === 0 && (
+          <p className="text-[10px] text-gray-400 text-center py-4">Aucune section trouvée</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface WireframeWorkspaceProps {
@@ -185,10 +258,14 @@ function SectionAIPopover({
   instanceId,
   onRegenerate,
   onClose,
+  model,
+  onModelChange,
 }: {
   instanceId: string;
   onRegenerate: (prompt: string) => Promise<void>;
   onClose: () => void;
+  model: AIModelId;
+  onModelChange: (m: AIModelId) => void;
 }) {
   const [prompt, setPrompt] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -212,6 +289,8 @@ function SectionAIPopover({
         <Sparkles size={11} className="text-purple-500" />
         <span className="text-[10px] font-semibold text-purple-700">Régénérer avec l'IA</span>
       </div>
+      <ModelDropdown value={model} onChange={onModelChange} />
+      <div className="mt-2" />
       <textarea
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
@@ -543,6 +622,8 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                                     await onRegenerateSection?.(instanceId, prompt, selectedModel);
                                   }}
                                   onClose={() => setSectionAIOpen(null)}
+                                  model={selectedModel}
+                                  onModelChange={setSelectedModel}
                                 />
                               )}
                             </div>
@@ -557,18 +638,11 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                                 <RefreshCw size={9} />
                               </button>
                               {sectionTypePicker === instanceId && (
-                                <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-xl z-30 py-1 max-h-48 overflow-y-auto">
-                                  <div className="px-2 py-1 text-[9px] text-gray-400 uppercase tracking-wider font-medium">Changer de type</div>
-                                  {availableSections.map((s) => (
-                                    <button
-                                      key={s.id}
-                                      onClick={(e) => { e.stopPropagation(); swapSectionType(instanceId, s); }}
-                                      className="flex items-center gap-2 w-full px-2 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50"
-                                    >
-                                      {s.name}
-                                    </button>
-                                  ))}
-                                </div>
+                                <SectionTypePicker
+                                  availableSections={availableSections}
+                                  onSelect={(s) => swapSectionType(instanceId, s)}
+                                  onClose={() => setSectionTypePicker(null)}
+                                />
                               )}
                             </div>
 
@@ -660,10 +734,18 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
             })}
           </div>
 
-          {/* Zoom hint + indicator */}
+          {/* Zoom controls */}
           <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll</span>
-          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm">
-            {Math.round(canvas.scale * 100)}%
+          <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Dézoomer">
+              <ZoomOut size={12} />
+            </button>
+            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center" title="Réinitialiser">
+              {Math.round(canvas.scale * 100)}%
+            </button>
+            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Zoomer">
+              <ZoomIn size={12} />
+            </button>
           </div>
         </div>
       </div>

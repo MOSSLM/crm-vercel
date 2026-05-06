@@ -4,7 +4,8 @@ import React from "react";
 import {
   Laptop, Tablet, Smartphone, Layers, Sparkles,
   Move, Zap, Image as ImageIcon, Maximize2,
-  ChevronDown, Play, Square, MoreHorizontal
+  ChevronDown, Play, Square, MoreHorizontal,
+  ZoomIn, ZoomOut
 } from "lucide-react";
 import type { SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
@@ -47,7 +48,11 @@ function useCanvasPanZoom() {
     }
   };
 
-  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel };
+  const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
+  const zoomOut = () => setScale((s) => Math.max(0.2, parseFloat((s - 0.1).toFixed(2))));
+  const resetZoom = () => { setScale(0.8); setPan({ x: 60, y: 30 }); };
+
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel, zoomIn, zoomOut, resetZoom };
 }
 
 // ─── Panel sections ────────────────────────────────────────────────────────────
@@ -460,12 +465,17 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
             Aperçu
           </button>
 
-          {/* Zoom hint */}
           <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll</span>
-
-          {/* Zoom indicator */}
-          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm">
-            {Math.round(canvas.scale * 100)}%
+          <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
+            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Dézoomer">
+              <ZoomOut size={12} />
+            </button>
+            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center" title="Réinitialiser">
+              {Math.round(canvas.scale * 100)}%
+            </button>
+            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Zoomer">
+              <ZoomIn size={12} />
+            </button>
           </div>
         </div>
       </div>

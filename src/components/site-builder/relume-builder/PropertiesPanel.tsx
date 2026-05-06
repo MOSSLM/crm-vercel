@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X } from "lucide-react";
+import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X, ImageIcon } from "lucide-react";
 import type { SiteSectionInstance, SnippetDefinition } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 
@@ -66,7 +66,11 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
         {/* Snippets list */}
         <div className="px-4 py-3 border-b border-white/10">
           <div className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Contenu</div>
-          <SnippetsEditor instance={instance} snippets={sectionDef.structure.snippets} />
+          {sectionDef.structure?.snippets?.length > 0 ? (
+            <SnippetsEditor instance={instance} snippets={sectionDef.structure.snippets} />
+          ) : (
+            <GenericContentEditor instance={instance} />
+          )}
         </div>
 
         {/* AI regenerate */}
@@ -286,7 +290,8 @@ function FieldEditor({
   }
 
   if (typeof value === "string") {
-    const isUrl = contentKey.includes("src") || contentKey.includes("href") || contentKey.includes("image");
+    const isImageUrl = contentKey.includes("src") || contentKey.includes("image") || contentKey.includes("img");
+    const isUrl = isImageUrl || contentKey.includes("href") || contentKey.includes("url");
     const isLong = value.length > 80 || contentKey === "body" || contentKey === "subheading";
 
     return (
@@ -307,11 +312,52 @@ function FieldEditor({
             className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white placeholder-white/20 focus:outline-none focus:border-blue-500/50"
           />
         )}
+        {isImageUrl && value && (
+          <div className="mt-1.5 w-full h-16 rounded overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={value}
+              alt=""
+              className="w-full h-full object-cover"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          </div>
+        )}
       </div>
     );
   }
 
   return null;
+}
+
+// ─── Generic Content Editor (fallback when no snippets) ────────────────────────
+
+function GenericContentEditor({ instance }: { instance: SiteSectionInstance }) {
+  const { dispatch } = useRelumeBuilder();
+  const content = instance.content ?? {};
+  const keys = Object.keys(content).filter((k) => typeof content[k] === "string" || Array.isArray(content[k]));
+
+  const updateContent = (key: string, value: unknown) => {
+    dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [key]: value } } });
+  };
+
+  if (keys.length === 0) {
+    return <p className="text-xs text-white/30 text-center py-2">Aucun contenu éditable</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {keys.map((key) => (
+        <FieldEditor
+          key={key}
+          fieldName={key}
+          contentKey={key}
+          value={content[key]}
+          onUpdate={updateContent}
+        />
+      ))}
+    </div>
+  );
 }
 
 // ─── Array Field Editor ────────────────────────────────────────────────────────
@@ -373,17 +419,27 @@ function ArrayFieldEditor({
             </div>
             {expandedItem === idx && (
               <div className="px-2 pb-2 pt-1 space-y-2 border-t border-white/5">
-                {keys.map((k) => (
-                  <div key={k}>
-                    <label className="text-xs text-white/30 block mb-0.5">{FIELD_LABELS[k] ?? k}</label>
-                    <input
-                      type="text"
-                      value={String(obj[k] ?? "")}
-                      onChange={(e) => updateItem(idx, k, e.target.value)}
-                      className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500/50"
-                    />
-                  </div>
-                ))}
+                {keys.map((k) => {
+                  const isImageUrl = k.includes("src") || k.includes("image") || k.includes("img");
+                  const val = String(obj[k] ?? "");
+                  return (
+                    <div key={k}>
+                      <label className="text-xs text-white/30 block mb-0.5">{FIELD_LABELS[k] ?? k}</label>
+                      <input
+                        type={isImageUrl ? "url" : "text"}
+                        value={val}
+                        onChange={(e) => updateItem(idx, k, e.target.value)}
+                        className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500/50"
+                      />
+                      {isImageUrl && val && (
+                        <div className="mt-1 w-full h-10 rounded overflow-hidden bg-white/5 border border-white/10">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={val} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -1,7 +1,10 @@
 "use client";
 
 import React from "react";
-import { Save, Globe, Check, Share2, Upload, Users } from "lucide-react";
+import {
+  Save, Globe, Check, Share2, Upload, Users,
+  Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2
+} from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, WorkspaceId } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
@@ -34,12 +37,323 @@ export function RelumeEditor(props: RelumeEditorProps) {
   );
 }
 
+// ─── Entreprise type ──────────────────────────────────────────────────────────
+
+interface Entreprise {
+  id: number;
+  nom: string;
+}
+
+// ─── Theme type ───────────────────────────────────────────────────────────────
+
+interface ThemeEntry {
+  slug: string;
+  name: string;
+  is_enabled?: boolean;
+}
+
+// ─── Company Dropdown ─────────────────────────────────────────────────────────
+
+function CompanyDropdown({
+  currentEnterpriseId,
+  onSelect,
+}: {
+  currentEnterpriseId?: number;
+  onSelect: (id: number | null, nom: string) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [search, setSearch] = React.useState("");
+  const [companies, setCompanies] = React.useState<Entreprise[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const [currentName, setCurrentName] = React.useState<string>("");
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (open && companies.length === 0) {
+      setLoading(true);
+      fetch("/api/site-builder/entreprises")
+        .then((r) => r.json())
+        .then((data: Entreprise[]) => {
+          setCompanies(data);
+          if (currentEnterpriseId) {
+            const found = data.find((c) => c.id === currentEnterpriseId);
+            if (found) setCurrentName(found.nom);
+          }
+        })
+        .catch(() => toast.error("Erreur chargement entreprises"))
+        .finally(() => setLoading(false));
+    }
+  }, [open]);
+
+  // Load current name on mount
+  React.useEffect(() => {
+    if (currentEnterpriseId && !currentName) {
+      fetch("/api/site-builder/entreprises")
+        .then((r) => r.json())
+        .then((data: Entreprise[]) => {
+          const found = data.find((c) => c.id === currentEnterpriseId);
+          if (found) setCurrentName(found.nom);
+          setCompanies(data);
+        })
+        .catch(() => {});
+    }
+  }, [currentEnterpriseId]);
+
+  // Close on outside click
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const filtered = companies.filter((c) =>
+    c.nom.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-3 py-1 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors max-w-[160px]"
+      >
+        <Building2 size={12} className="flex-shrink-0 text-gray-400" />
+        <span className="truncate">{currentName || "Lier une entreprise"}</span>
+        <ChevronDown size={10} className="flex-shrink-0 text-gray-400" />
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50">
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                autoFocus
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher une entreprise..."
+                className="w-full pl-7 pr-2 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+              />
+            </div>
+          </div>
+          <div className="max-h-48 overflow-y-auto py-1">
+            {loading && (
+              <div className="flex items-center justify-center py-4">
+                <Loader2 size={14} className="animate-spin text-gray-400" />
+              </div>
+            )}
+            {!loading && currentEnterpriseId && (
+              <button
+                onClick={() => { onSelect(null, ""); setCurrentName(""); setOpen(false); }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+              >
+                <X size={10} />
+                Aucune entreprise
+              </button>
+            )}
+            {!loading && filtered.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => { onSelect(c.id, c.nom); setCurrentName(c.nom); setOpen(false); setSearch(""); }}
+                className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-gray-50 ${c.id === currentEnterpriseId ? "text-blue-600 font-medium" : "text-gray-700"}`}
+              >
+                <Building2 size={10} className="text-gray-400 flex-shrink-0" />
+                {c.nom}
+                {c.id === currentEnterpriseId && <span className="ml-auto text-blue-500">✓</span>}
+              </button>
+            ))}
+            {!loading && filtered.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-3">Aucune entreprise trouvée</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Save As Theme Dialog ─────────────────────────────────────────────────────
+
+function SaveAsThemeDialog({
+  open,
+  onClose,
+  styleGuide,
+}: {
+  open: boolean;
+  onClose: () => void;
+  styleGuide: StyleGuide;
+}) {
+  const [name, setName] = React.useState("");
+  const [slug, setSlug] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  if (!open) return null;
+
+  const handleSave = async () => {
+    if (!name.trim() || !slug.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/themes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          slug: slug.trim(),
+          description: `Thème créé depuis le site builder`,
+          style_guide: styleGuide,
+        }),
+      });
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error ?? "Erreur");
+      }
+      toast.success(`Thème "${name}" enregistré ! Visible dans /themes.`);
+      setName("");
+      setSlug("");
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-xl shadow-2xl w-80 p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Bookmark size={16} className="text-gray-600" />
+          <span className="font-semibold text-gray-900">Enregistrer comme thème</span>
+          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600"><X size={14} /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Nom du thème</label>
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (!slug) setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""));
+              }}
+              placeholder="Mon thème pro"
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Identifiant (slug)</label>
+            <input
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+              placeholder="mon-theme-pro"
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-400"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose} className="flex-1 py-2 text-sm text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50">Annuler</button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim() || !slug.trim()}
+            className="flex-1 py-2 text-sm font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-700 disabled:opacity-50"
+          >
+            {saving ? "Enregistrement..." : "Enregistrer"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Load Theme Dropdown ──────────────────────────────────────────────────────
+
+function LoadThemeDropdown({ onLoadTheme }: { onLoadTheme: (theme: ThemeEntry & { style_guide?: StyleGuide }) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [themes, setThemes] = React.useState<ThemeEntry[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const handleOpen = async () => {
+    setOpen(!open);
+    if (themes.length === 0) {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/themes");
+        const data: ThemeEntry[] = await res.json();
+        setThemes(data);
+      } catch {
+        toast.error("Erreur chargement thèmes");
+      } finally {
+        setLoading(false);
+      }
+    }
+  };
+
+  const handleSelect = async (theme: ThemeEntry) => {
+    try {
+      const res = await fetch(`/api/themes/${theme.slug}`);
+      if (!res.ok) throw new Error("Thème introuvable");
+      const fullTheme = await res.json();
+      onLoadTheme(fullTheme);
+      setOpen(false);
+      toast.success(`Thème "${theme.name}" chargé`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur");
+    }
+  };
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={handleOpen}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+      >
+        <Palette size={12} />
+        Thème
+        <ChevronDown size={10} className="text-gray-400" />
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1">
+          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Charger un thème</div>
+          {loading && (
+            <div className="flex justify-center py-3">
+              <Loader2 size={14} className="animate-spin text-gray-400" />
+            </div>
+          )}
+          {!loading && themes.map((t) => (
+            <button
+              key={t.slug}
+              onClick={() => handleSelect(t)}
+              className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
+            >
+              <Palette size={10} className="text-gray-400" />
+              {t.name}
+            </button>
+          ))}
+          {!loading && themes.length === 0 && (
+            <p className="text-xs text-gray-400 text-center py-3">Aucun thème disponible</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Inner Editor ─────────────────────────────────────────────────────────────
 
 function RelumeEditorInner({
   siteId,
   siteName,
-  enterpriseId,
+  enterpriseId: initialEnterpriseId,
   isPublished,
   publishedSubdomain,
   initialSections = [],
@@ -52,6 +366,8 @@ function RelumeEditorInner({
   const [publishing, setPublishing] = React.useState(false);
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
+  const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
+  const [showSaveTheme, setShowSaveTheme] = React.useState(false);
 
   const sectionDefs = React.useMemo(
     () => Object.fromEntries(initialSections.map((s) => [s.id, s])),
@@ -88,14 +404,10 @@ function RelumeEditorInner({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instances }),
       });
-      // Crée une snapshot de version à chaque sauvegarde
       await fetch(`/api/site-builder/sites/${siteId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          style_guide: state.styleGuide,
-          sitemap: state.sitemap,
-        }),
+        body: JSON.stringify({ style_guide: state.styleGuide, sitemap: state.sitemap }),
       });
       dispatch({ type: "MARK_SAVED" });
       toast.success("Sauvegardé");
@@ -127,6 +439,30 @@ function RelumeEditorInner({
       toast.error(err instanceof Error ? err.message : "Erreur de publication");
     } finally {
       setPublishing(false);
+    }
+  };
+
+  // ─── Link company ─────────────────────────────────────────────────────────────
+
+  const handleSelectCompany = async (id: number | null) => {
+    setEnterpriseId(id ?? undefined);
+    try {
+      await fetch(`/api/site-builder/sites/${siteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enterprise_id: id }),
+      });
+      toast.success(id ? "Entreprise liée" : "Entreprise dissociée");
+    } catch {
+      toast.error("Erreur lors de la liaison");
+    }
+  };
+
+  // ─── Load theme ───────────────────────────────────────────────────────────────
+
+  const handleLoadTheme = (theme: { style_guide?: StyleGuide }) => {
+    if (theme.style_guide) {
+      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: theme.style_guide });
     }
   };
 
@@ -169,22 +505,29 @@ function RelumeEditorInner({
   return (
     <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">
 
+      {/* ─ Dialogs ─────────────────────────────────────────────────────────── */}
+      <SaveAsThemeDialog
+        open={showSaveTheme}
+        onClose={() => setShowSaveTheme(false)}
+        styleGuide={state.styleGuide}
+      />
+
       {/* ─ Top Bar ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center h-12 px-4 border-b border-gray-200 bg-white flex-shrink-0 z-40 select-none">
+      <div className="flex items-center h-12 px-4 border-b border-gray-200 bg-white flex-shrink-0 z-40 select-none gap-2">
 
         {/* Logo + Site name */}
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
           <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex-shrink-0 flex items-center justify-center">
             <div className="w-2 h-2 rounded-full bg-white/80" />
           </div>
-          <span className="text-sm font-medium text-gray-800 truncate max-w-[160px]">{siteName}</span>
+          <span className="text-sm font-medium text-gray-800 truncate max-w-[140px]">{siteName}</span>
         </div>
 
-        {/* Invite & earn */}
-        <button className="ml-3 flex items-center gap-1.5 px-3 py-1 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors flex-shrink-0">
-          <Users size={12} />
-          Invite &amp; earn
-        </button>
+        {/* Company linker */}
+        <CompanyDropdown
+          currentEnterpriseId={enterpriseId}
+          onSelect={(id, _nom) => handleSelectCompany(id)}
+        />
 
         {/* Center workspace tabs */}
         <div className="flex items-center gap-0.5 mx-auto">
@@ -230,6 +573,19 @@ function RelumeEditorInner({
 
           {/* Historique des versions */}
           <SiteVersionHistory siteId={siteId} />
+
+          {/* Load theme */}
+          <LoadThemeDropdown onLoadTheme={handleLoadTheme} />
+
+          {/* Save as theme */}
+          <button
+            onClick={() => setShowSaveTheme(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+            title="Enregistrer comme thème réutilisable"
+          >
+            <Bookmark size={12} />
+            Thème
+          </button>
 
           {/* Share */}
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">

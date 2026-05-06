@@ -212,6 +212,35 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       };
     }
 
+    case "DUPLICATE_PAGE": {
+      const snapshot = takeSnapshot(state);
+      const srcPage = state.sitemap.find((p) => p.id === action.payload);
+      if (!srcPage) return state;
+      const newId = nanoid();
+      const newSlug = srcPage.slug === "/" ? `/copy-${newId.slice(0, 6)}` : `${srcPage.slug}-copy`;
+      const newPage = { ...srcPage, id: newId, slug: newSlug, title: `${srcPage.title} (copie)` };
+      const srcInstances = state.instancesByPage[srcPage.slug] ?? [];
+      const newInstances = { ...state.instances };
+      const newIds: string[] = [];
+      for (const instId of srcInstances) {
+        const src = state.instances[instId];
+        if (!src) continue;
+        const newInstId = nanoid();
+        newInstances[newInstId] = { ...src, id: newInstId, page_slug: newSlug };
+        newIds.push(newInstId);
+      }
+      return {
+        ...state,
+        sitemap: [...state.sitemap, newPage],
+        instances: newInstances,
+        instancesByPage: { ...state.instancesByPage, [newSlug]: newIds },
+        activePage: newSlug,
+        isDirty: true,
+        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
+        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+      };
+    }
+
     case "REMOVE_PAGE": {
       const newSitemap = state.sitemap.filter((p) => p.id !== action.payload);
       const removedPage = state.sitemap.find((p) => p.id === action.payload);
