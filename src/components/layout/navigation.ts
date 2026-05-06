@@ -126,6 +126,7 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     pathname.startsWith("/duplicates") ||
     pathname.startsWith("/site-builder") ||
     pathname.startsWith("/themes") ||
+    pathname.startsWith("/sections-library") ||
     pathname.startsWith("/docs/themes")
   ) {
     return "actions";

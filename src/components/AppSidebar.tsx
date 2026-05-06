@@ -42,6 +42,7 @@ import {
   ClipboardList,
   MessageSquare,
   Zap,
+  BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
@@ -111,6 +112,7 @@ export const AppSidebar = () => {
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
     { title: "Sites V2", icon: Layout, href: "/site-builder" },
     { title: "Thèmes", icon: Layout, href: "/themes" },
+    { title: "Créateur de sections", icon: BookOpen, href: "/sections-library" },
     { title: "Docs Thèmes", icon: Layout, href: "/docs/themes" },
   ];
 
