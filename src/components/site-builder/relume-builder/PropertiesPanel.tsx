@@ -1,16 +1,29 @@
 "use client";
 
-import React from "react";
-import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X, ImageIcon } from "lucide-react";
+import React, { useState } from "react";
+import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X, Settings, Palette, FileText } from "lucide-react";
 import type { SiteSectionInstance, SnippetDefinition } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
+import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
+import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
+import { getSchemaForSection } from "@/data/section-schemas";
+import type { ColorSchemePreset } from "@/lib/color-utils";
 
 interface PropertiesPanelProps {
   onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
 }
 
+type TabId = "content" | "style" | "ai";
+
+const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: "content", label: "Contenu", icon: FileText },
+  { id: "style", label: "Style", icon: Palette },
+  { id: "ai", label: "IA", icon: Sparkles },
+];
+
 export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
   const { state, dispatch } = useRelumeBuilder();
+  const [activeTab, setActiveTab] = useState<TabId>("content");
   const instance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
   const sectionDef = instance?.section_def;
 
@@ -23,6 +36,18 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
       </div>
     );
   }
+
+  const schema = getSchemaForSection(sectionDef);
+
+  const updateContent = (key: string, value: unknown) => {
+    dispatch({
+      type: "UPDATE_INSTANCE_CONTENT",
+      payload: { id: instance.id, content: { [key]: value } },
+    });
+  };
+
+  // Determine which tabs are shown
+  const showAI = !!onRegenerateSection;
 
   return (
     <div className="flex flex-col h-full text-white">
@@ -41,7 +66,7 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
       </div>
 
       {/* Section actions */}
-      <div className="px-4 py-3 border-b border-white/10 flex gap-2">
+      <div className="px-4 py-2.5 border-b border-white/10 flex gap-1">
         <button
           onClick={() => dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instance.id })}
           className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors px-2 py-1.5 rounded hover:bg-white/5"
@@ -51,32 +76,120 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
         </button>
         <MoveButtons instance={instance} />
         <button
-          onClick={() => {
-            dispatch({ type: "REMOVE_INSTANCE", payload: instance.id });
-          }}
+          onClick={() => dispatch({ type: "REMOVE_INSTANCE", payload: instance.id })}
           className="flex items-center gap-1.5 text-xs text-red-400/70 hover:text-red-400 transition-colors px-2 py-1.5 rounded hover:bg-red-500/5 ml-auto"
         >
           <Trash2 size={12} />
-          Supprimer
+          Suppr.
         </button>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {/* Snippets list */}
-        <div className="px-4 py-3 border-b border-white/10">
-          <div className="text-xs font-semibold text-white/40 uppercase tracking-wider mb-3">Contenu</div>
-          {sectionDef.structure?.snippets?.length > 0 ? (
-            <SnippetsEditor instance={instance} snippets={sectionDef.structure.snippets} />
-          ) : (
-            <GenericContentEditor instance={instance} />
-          )}
-        </div>
+      {/* Tabs */}
+      <div className="flex border-b border-white/10">
+        {TABS.filter((t) => t.id !== "ai" || showAI).map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs transition-colors border-b-2 ${
+              activeTab === id
+                ? "border-blue-400 text-blue-300"
+                : "border-transparent text-white/40 hover:text-white/60"
+            }`}
+          >
+            <Icon size={11} />
+            {label}
+          </button>
+        ))}
+        {!showAI && (
+          <button
+            onClick={() => setActiveTab("ai")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs transition-colors border-b-2 ${
+              activeTab === "ai"
+                ? "border-blue-400 text-blue-300"
+                : "border-transparent text-white/40 hover:text-white/60"
+            }`}
+          >
+            <Sparkles size={11} />
+            IA
+          </button>
+        )}
+      </div>
 
-        {/* AI regenerate */}
-        {onRegenerateSection && (
+      {/* Tab Content */}
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === "content" && (
           <div className="px-4 py-3">
-            <AIRegenerateSection instanceId={instance.id} onRegenerate={onRegenerateSection} />
+            {schema ? (
+              (() => {
+                const { contentFields } = splitSchemaFields(schema);
+                const contentOnlySchema = { ...schema, settings: contentFields };
+                return (
+                  <SchemaEditor
+                    schema={contentOnlySchema}
+                    content={instance.content}
+                    onUpdate={updateContent}
+                    styleGuide={state.styleGuide}
+                  />
+                );
+              })()
+            ) : sectionDef.structure?.snippets?.length > 0 ? (
+              <SnippetsEditor instance={instance} snippets={sectionDef.structure.snippets} />
+            ) : (
+              <GenericContentEditor instance={instance} />
+            )}
+          </div>
+        )}
+
+        {activeTab === "style" && (
+          <div className="px-4 py-3 space-y-4">
+            {/* Color Scheme */}
+            <div>
+              <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Palette de couleurs</div>
+              <ColorSchemeField
+                setting={{ type: "color_scheme", id: "__color_scheme", label: "Palette" }}
+                value={(instance.content.__color_scheme as string) ?? "default"}
+                onChange={(preset: ColorSchemePreset) => updateContent("__color_scheme", preset)}
+                styleGuide={state.styleGuide}
+              />
+            </div>
+
+            {/* Style fields from schema */}
+            {schema && (() => {
+              const { styleFields } = splitSchemaFields(schema);
+              // Remove __color_scheme since we render it above
+              const filteredStyle = styleFields.filter((f) => !("id" in f) || f.id !== "__color_scheme");
+              if (filteredStyle.length === 0) return null;
+              return (
+                <div>
+                  <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Mise en page</div>
+                  <SchemaEditor
+                    schema={{ name: "style", settings: filteredStyle }}
+                    content={instance.content}
+                    onUpdate={updateContent}
+                    styleGuide={state.styleGuide}
+                  />
+                </div>
+              );
+            })()}
+
+            {/* Custom style overrides */}
+            <div>
+              <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Avancé</div>
+              <CustomStyleEditor instance={instance} />
+            </div>
+          </div>
+        )}
+
+        {activeTab === "ai" && (
+          <div className="px-4 py-3">
+            {onRegenerateSection ? (
+              <AIRegenerateSection instanceId={instance.id} onRegenerate={onRegenerateSection} />
+            ) : (
+              <div className="text-center py-6 space-y-2">
+                <Sparkles size={20} className="text-purple-400/30 mx-auto" />
+                <p className="text-xs text-white/30">Régénération IA non disponible</p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -106,6 +219,7 @@ function MoveButtons({ instance }: { instance: SiteSectionInstance }) {
         onClick={moveUp}
         disabled={idx <= 0}
         className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors px-2 py-1.5 rounded hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+        title="Monter"
       >
         <ChevronUp size={12} />
       </button>
@@ -113,6 +227,7 @@ function MoveButtons({ instance }: { instance: SiteSectionInstance }) {
         onClick={moveDown}
         disabled={idx >= ids.length - 1}
         className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors px-2 py-1.5 rounded hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed"
+        title="Descendre"
       >
         <ChevronDown size={12} />
       </button>
@@ -120,7 +235,44 @@ function MoveButtons({ instance }: { instance: SiteSectionInstance }) {
   );
 }
 
-// ─── Snippet Editor ────────────────────────────────────────────────────────────
+// ─── Custom Style Editor (advanced CSS overrides) ─────────────────────────────
+
+function CustomStyleEditor({ instance }: { instance: SiteSectionInstance }) {
+  const { dispatch } = useRelumeBuilder();
+  const style = (instance.custom_style ?? {}) as Record<string, string>;
+
+  const updateStyle = (key: string, value: string) => {
+    dispatch({
+      type: "UPDATE_INSTANCE_STYLE",
+      payload: { id: instance.id, style: { [key]: value } },
+    });
+  };
+
+  const commonProps: { key: string; label: string; placeholder: string }[] = [
+    { key: "paddingTop", label: "Padding haut", placeholder: "var(--section-padding)" },
+    { key: "paddingBottom", label: "Padding bas", placeholder: "var(--section-padding)" },
+    { key: "borderRadius", label: "Radius", placeholder: "0px" },
+  ];
+
+  return (
+    <div className="space-y-2">
+      {commonProps.map(({ key, label, placeholder }) => (
+        <div key={key}>
+          <label className="text-[11px] text-white/40 block mb-1">{label}</label>
+          <input
+            type="text"
+            value={style[key] ?? ""}
+            placeholder={placeholder}
+            onChange={(e) => updateStyle(key, e.target.value)}
+            className="w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 text-xs text-white placeholder-white/20 focus:outline-none focus:border-white/30"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Snippet Editor (legacy fallback) ─────────────────────────────────────────
 
 function SnippetsEditor({
   instance,
@@ -158,42 +310,22 @@ function SnippetsEditor({
 // ─── Individual Snippet Editor ─────────────────────────────────────────────────
 
 const SNIPPET_TYPE_LABELS: Record<string, string> = {
-  heading: "Titre",
-  paragraph: "Paragraphe",
-  badge: "Badge",
-  button: "Bouton",
-  "button-group": "Groupe de boutons",
-  image: "Image",
-  "card-grid": "Grille de cartes",
-  "testimonial-grid": "Témoignages",
-  "faq-accordion": "FAQ",
-  "contact-info": "Infos contact",
-  "contact-form": "Formulaire",
-  "stat-row": "Statistiques",
-  "stat-grid": "Grille stats",
-  "image-grid": "Grille d'images",
-  "team-grid": "Équipe",
-  "logo-row": "Logos",
-  spacer: "Espacement",
-  divider: "Séparateur",
+  heading: "Titre", paragraph: "Paragraphe", badge: "Badge", button: "Bouton",
+  "button-group": "Groupe de boutons", image: "Image", "card-grid": "Grille de cartes",
+  "testimonial-grid": "Témoignages", "faq-accordion": "FAQ", "contact-info": "Infos contact",
+  "contact-form": "Formulaire", "stat-row": "Statistiques", "stat-grid": "Grille stats",
+  "image-grid": "Galerie", "team-grid": "Équipe", "logo-row": "Logos",
+  spacer: "Espacement", divider: "Séparateur",
 };
 
 function SnippetEditor({
-  snippet,
-  content,
-  isExpanded,
-  onToggle,
-  onUpdateContent,
+  snippet, content, isExpanded, onToggle, onUpdateContent,
 }: {
-  snippet: SnippetDefinition;
-  content: Record<string, unknown>;
-  isExpanded: boolean;
-  onToggle: () => void;
-  onUpdateContent: (key: string, value: unknown) => void;
+  snippet: SnippetDefinition; content: Record<string, unknown>; isExpanded: boolean;
+  onToggle: () => void; onUpdateContent: (key: string, value: unknown) => void;
 }) {
   const editableFields = snippet.editable ?? [];
   if (editableFields.length === 0 && (!snippet.children || snippet.children.length === 0)) return null;
-
   const label = SNIPPET_TYPE_LABELS[snippet.type] ?? snippet.type;
 
   return (
@@ -211,30 +343,14 @@ function SnippetEditor({
             const propVal = snippet.props[field];
             if (typeof propVal === "string" && propVal.startsWith("{{")) {
               const key = propVal.replace(/^\{\{|\}\}$/g, "").trim();
-              const currentVal = content[key] ?? "";
               return (
-                <FieldEditor
-                  key={field}
-                  fieldName={field}
-                  contentKey={key}
-                  value={currentVal}
-                  onUpdate={onUpdateContent}
-                />
+                <FieldEditor key={field} fieldName={field} contentKey={key} value={content[key]} onUpdate={onUpdateContent} />
               );
             }
             return null;
           })}
-
-          {/* Handle children recursively */}
           {snippet.children?.map((child) => (
-            <SnippetEditor
-              key={child.id}
-              snippet={child}
-              content={content}
-              isExpanded={true}
-              onToggle={() => {}}
-              onUpdateContent={onUpdateContent}
-            />
+            <SnippetEditor key={child.id} snippet={child} content={content} isExpanded={true} onToggle={() => {}} onUpdateContent={onUpdateContent} />
           ))}
         </div>
       )}
@@ -242,41 +358,18 @@ function SnippetEditor({
   );
 }
 
-// ─── Field Editor ─────────────────────────────────────────────────────────────
+// ─── Field Editor (for snippet fallback) ──────────────────────────────────────
 
 const FIELD_LABELS: Record<string, string> = {
-  text: "Texte",
-  heading: "Titre",
-  subheading: "Sous-titre",
-  src: "URL image",
-  alt: "Texte alternatif",
-  href: "Lien URL",
-  body: "Corps",
-  phone: "Téléphone",
-  email: "Email",
-  address: "Adresse",
-  submitText: "Texte bouton",
-  cards: "Cartes",
-  testimonials: "Témoignages",
-  items: "Éléments",
-  stats: "Statistiques",
-  faqs: "Questions",
-  members: "Membres",
-  logos: "Logos",
-  images: "Images",
-  buttons: "Boutons",
+  text: "Texte", heading: "Titre", subheading: "Sous-titre", src: "URL image",
+  alt: "Texte alternatif", href: "Lien URL", body: "Corps", phone: "Téléphone",
+  email: "Email", address: "Adresse", submitText: "Texte bouton", cards: "Cartes",
+  testimonials: "Témoignages", items: "Éléments", stats: "Statistiques", faqs: "Questions",
+  members: "Membres", logos: "Logos", images: "Images", buttons: "Boutons",
 };
 
-function FieldEditor({
-  fieldName,
-  contentKey,
-  value,
-  onUpdate,
-}: {
-  fieldName: string;
-  contentKey: string;
-  value: unknown;
-  onUpdate: (key: string, value: unknown) => void;
+function FieldEditor({ fieldName, contentKey, value, onUpdate }: {
+  fieldName: string; contentKey: string; value: unknown; onUpdate: (key: string, value: unknown) => void;
 }) {
   const label = FIELD_LABELS[contentKey] ?? FIELD_LABELS[fieldName] ?? fieldName;
 
@@ -315,27 +408,23 @@ function FieldEditor({
         {isImageUrl && value && (
           <div className="mt-1.5 w-full h-16 rounded overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={value}
-              alt=""
-              className="w-full h-full object-cover"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-            />
+            <img src={value} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
           </div>
         )}
       </div>
     );
   }
-
   return null;
 }
 
-// ─── Generic Content Editor (fallback when no snippets) ────────────────────────
+// ─── Generic Content Editor (fallback) ────────────────────────────────────────
 
 function GenericContentEditor({ instance }: { instance: SiteSectionInstance }) {
   const { dispatch } = useRelumeBuilder();
   const content = instance.content ?? {};
-  const keys = Object.keys(content).filter((k) => typeof content[k] === "string" || Array.isArray(content[k]));
+  const keys = Object.keys(content).filter(
+    (k) => !k.startsWith("__") && (typeof content[k] === "string" || Array.isArray(content[k]))
+  );
 
   const updateContent = (key: string, value: unknown) => {
     dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [key]: value } } });
@@ -348,13 +437,7 @@ function GenericContentEditor({ instance }: { instance: SiteSectionInstance }) {
   return (
     <div className="space-y-3">
       {keys.map((key) => (
-        <FieldEditor
-          key={key}
-          fieldName={key}
-          contentKey={key}
-          value={content[key]}
-          onUpdate={updateContent}
-        />
+        <FieldEditor key={key} fieldName={key} contentKey={key} value={content[key]} onUpdate={updateContent} />
       ))}
     </div>
   );
@@ -362,14 +445,8 @@ function GenericContentEditor({ instance }: { instance: SiteSectionInstance }) {
 
 // ─── Array Field Editor ────────────────────────────────────────────────────────
 
-function ArrayFieldEditor({
-  contentKey,
-  items,
-  onUpdate,
-}: {
-  contentKey: string;
-  items: unknown[];
-  onUpdate: (key: string, value: unknown) => void;
+function ArrayFieldEditor({ contentKey, items, onUpdate }: {
+  contentKey: string; items: unknown[]; onUpdate: (key: string, value: unknown) => void;
 }) {
   const [expandedItem, setExpandedItem] = React.useState<number | null>(0);
 
@@ -383,23 +460,18 @@ function ArrayFieldEditor({
 
   const addItem = () => {
     const template = items[0] ?? {};
-    const newItem = Object.fromEntries(
-      Object.keys(template as Record<string, unknown>).map((k) => [k, ""])
-    );
+    const newItem = Object.fromEntries(Object.keys(template as Record<string, unknown>).map((k) => [k, ""]));
     onUpdate(contentKey, [...items, newItem]);
   };
 
-  const removeItem = (index: number) => {
-    onUpdate(contentKey, items.filter((_, i) => i !== index));
-  };
+  const removeItem = (index: number) => onUpdate(contentKey, items.filter((_, i) => i !== index));
 
   return (
     <div className="space-y-2">
       {items.map((item, idx) => {
         const obj = item as Record<string, unknown>;
         const keys = Object.keys(obj).filter((k) => typeof obj[k] === "string");
-        const previewKey = keys[0] ?? "";
-        const preview = String(obj[previewKey] ?? `Élément ${idx + 1}`).slice(0, 30);
+        const preview = String(obj[keys[0]] ?? `Élément ${idx + 1}`).slice(0, 30);
 
         return (
           <div key={idx} className="border border-white/10 rounded-md overflow-hidden">
@@ -410,10 +482,7 @@ function ArrayFieldEditor({
               >
                 {preview || `Élément ${idx + 1}`}
               </button>
-              <button
-                onClick={() => removeItem(idx)}
-                className="text-white/20 hover:text-red-400 transition-colors p-1"
-              >
+              <button onClick={() => removeItem(idx)} className="text-white/20 hover:text-red-400 transition-colors p-1">
                 <X size={10} />
               </button>
             </div>
@@ -431,12 +500,6 @@ function ArrayFieldEditor({
                         onChange={(e) => updateItem(idx, k, e.target.value)}
                         className="w-full bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500/50"
                       />
-                      {isImageUrl && val && (
-                        <div className="mt-1 w-full h-10 rounded overflow-hidden bg-white/5 border border-white/10">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={val} alt="" className="w-full h-full object-cover" onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -458,11 +521,9 @@ function ArrayFieldEditor({
 // ─── AI Section Regeneration ──────────────────────────────────────────────────
 
 function AIRegenerateSection({
-  instanceId,
-  onRegenerate,
+  instanceId, onRegenerate,
 }: {
-  instanceId: string;
-  onRegenerate: (id: string, prompt: string) => Promise<void>;
+  instanceId: string; onRegenerate: (id: string, prompt: string) => Promise<void>;
 }) {
   const [prompt, setPrompt] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -478,7 +539,7 @@ function AIRegenerateSection({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center gap-2">
         <Sparkles size={12} className="text-purple-400" />
         <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">IA Copywriting</span>
@@ -487,7 +548,7 @@ function AIRegenerateSection({
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         placeholder="Rends ce contenu plus professionnel..."
-        rows={2}
+        rows={3}
         className="w-full bg-white/5 border border-white/10 rounded px-2 py-1.5 text-xs text-white placeholder-white/20 focus:outline-none focus:border-purple-500/50 resize-none"
       />
       <button
@@ -498,6 +559,9 @@ function AIRegenerateSection({
         {loading ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
         {loading ? "Génération..." : "Régénérer le contenu"}
       </button>
+      <p className="text-[10px] text-white/20 text-center leading-relaxed">
+        L&apos;IA va réécrire le contenu de cette section en conservant la structure existante.
+      </p>
     </div>
   );
 }

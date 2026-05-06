@@ -220,3 +220,168 @@ SUPABASE_SERVICE_ROLE_KEY=xxx
 ANTHROPIC_API_KEY=xxx              # Pour la génération IA
 NEXT_PUBLIC_APP_DOMAIN=monsupercrm.fr  # Optionnel, défaut: "monsupercrm.fr"
 ```
+
+---
+
+## Système de Schemas par Section (Shopify-like)
+
+### Vue d'ensemble
+
+Chaque type de section peut désormais définir un **schema** qui liste ses paramètres éditables, avec un type par champ. Ce système est identique aux `sections/*.liquid` de Shopify.
+
+Le schema est résolu dans cet ordre de priorité :
+1. `sectionDef.schema` — schema inline depuis la DB (`theme_sections.schema`)
+2. `SECTION_SCHEMAS[sectionDef.type]` — registre statique (`src/data/section-schemas.ts`)
+3. Fallback snippets / clé-valeur générique (comportement legacy)
+
+### Types de champs disponibles
+
+| Type | Composant | Description |
+|------|-----------|-------------|
+| `text` | `TextField` | Champ texte simple |
+| `textarea` | `TextField` | Zone de texte multilignes |
+| `url` | `TextField` | Champ URL |
+| `number` | `RangeField` | Nombre avec min/max/step |
+| `range` | `RangeField` | Slider avec unité (px, %, rem…) |
+| `select` | `SelectField` | Dropdown ou boutons segmentés |
+| `radio` | `SelectField` | Boutons radio (≤3 options = boutons) |
+| `checkbox` | `CheckboxField` | Toggle switch |
+| `color` | `ColorPickerField` | Color picker avec palette style guide + shades |
+| `color_scheme` | `ColorSchemeField` | Sélecteur de palette de section (7 presets) |
+| `image_picker` | `ImagePickerField` | Sélecteur d'image (URL + upload) |
+| `alignment` | `AlignmentField` | Sélecteur left/center/right/justify |
+| `font` | `FontPickerField` | Sélecteur de police Google Fonts |
+| `header` | — | Séparateur de groupe (non éditable) |
+| `paragraph` | — | Texte informatif (non éditable) |
+
+### Définir un schema pour une section
+
+```typescript
+// src/data/section-schemas.ts
+import type { SectionSchema } from '@/types';
+
+const monSchema: SectionSchema = {
+  name: "Ma Section",
+  settings: [
+    { type: 'header', content: 'Contenu' },
+    { type: 'text', id: 'heading', label: 'Titre', default: 'Mon titre' },
+    { type: 'textarea', id: 'body', label: 'Description', rows: 3 },
+    { type: 'image_picker', id: 'image', label: 'Image principale' },
+    { type: 'header', content: 'Mise en page' },
+    {
+      type: 'select', id: 'layout', label: 'Disposition',
+      options: [
+        { label: 'Image à gauche', value: 'left' },
+        { label: 'Image à droite', value: 'right' },
+      ],
+      default: 'right',
+    },
+    { type: 'range', id: '__padding_y', label: 'Espacement vertical', min: 40, max: 200, step: 8, unit: 'px', default: 80 },
+    { type: 'header', content: 'Style' },
+    { type: 'color_scheme', id: '__color_scheme', label: 'Palette de couleurs' },
+  ],
+  blocks: [
+    {
+      type: 'item',
+      name: 'Élément',
+      settings: [
+        { type: 'text', id: 'title', label: 'Titre' },
+        { type: 'textarea', id: 'description', label: 'Description' },
+        { type: 'image_picker', id: 'icon', label: 'Icône' },
+      ],
+    },
+  ],
+};
+
+// Ajouter au registre
+export const SECTION_SCHEMAS: Record<string, SectionSchema> = {
+  'ma-section': monSchema,
+  // ...
+};
+```
+
+### IDs réservés (comportement automatique)
+
+| ID | Comportement |
+|----|-------------|
+| `__color_scheme` | Sélecteur de palette appliqué comme CSS vars override au niveau section |
+| `__padding_y` | Override de `paddingTop`/`paddingBottom` de la section |
+
+### Sections built-in avec schema
+
+Les 12+ types de sections built-in ont des schemas prédéfinis :
+`hero`, `hero-centered`, `hero-split`, `navbar`, `services`, `services-grid`, `features`,
+`testimonials`, `about`, `contact`, `cta-banner`, `faq`, `stats`, `stat-row`,
+`gallery`, `team`, `logos`, `logo-row`, `blog`, `footer`
+
+---
+
+## Système de Couleurs — Nuances & Color Schemes
+
+### Génération de nuances (Shade Scales)
+
+Depuis les 7 couleurs de base du Style Guide, le système génère automatiquement **11 nuances** (50→950) via `src/lib/color-utils.ts`.
+
+```typescript
+import { generateColorShades } from '@/lib/color-utils';
+
+const shades = generateColorShades('#1a56db');
+// → { 50: '#f0f4ff', 100: '#e0e9fd', ..., 500: '#1a56db', ..., 950: '#040d2a' }
+```
+
+- Les nuances sont calculées côté client à partir des couleurs de base (jamais stockées en DB)
+- Accessibles en CSS via `--color-primary-50` … `--color-primary-950` (et idem pour `secondary`, `accent`)
+- Accessibles dans les sections library via `window.__tokens.primaryShades[500]`
+- Visibles dans **Style Guide → Couleurs** : clic sur "Nuances Primaire" pour développer/copier
+
+### Color Schemes par section
+
+Chaque instance de section peut avoir un color scheme indépendant du style guide global :
+
+| Preset | Fond | Texte |
+|--------|------|-------|
+| `default` | `colors.background` | `colors.text` |
+| `alt` | `colors.backgroundAlt` | `colors.text` |
+| `primary` | `colors.primary` | auto (contraste) |
+| `secondary` | `colors.secondary` | auto (contraste) |
+| `dark` | `#111827` | `#f9fafb` |
+| `light` | `#ffffff` | `#111827` |
+| `inverted` | `colors.text` | `colors.background` |
+
+Le color scheme est stocké dans `instance.content.__color_scheme` (string preset ou objet `{ preset, customBg?, customText? }`).
+
+Dans le builder : **cliquer une section → onglet Style → Palette de couleurs**.
+
+---
+
+## Navbar — Options de Comportement
+
+La section Navbar expose des paramètres spécifiques via son schema :
+
+| Paramètre | Valeurs | Effet |
+|-----------|---------|-------|
+| `position` | `sticky` \| `fixed` \| `relative` \| `absolute` | CSS `position` de la navbar |
+| `background` | `solid` \| `transparent` \| `blur` | Style du fond (glass effect) |
+| `show_shadow` | `true` \| `false` | Ombre portée |
+| `hide_on_scroll_down` | `true` \| `false` | Masquer quand scroll vers le bas |
+
+Ces valeurs sont stockées dans `instance.content` et doivent être lues par le composant de rendu de la section navbar.
+
+---
+
+## Composants d'Édition (Field Editors)
+
+Tous les composants vivent dans `src/components/site-builder/editors/`.
+
+```typescript
+import { FieldRenderer, SchemaEditor } from '@/components/site-builder/editors';
+
+// Rendre un champ individuel
+<FieldRenderer field={setting} value={content[setting.id]} onChange={...} styleGuide={guide} />
+
+// Rendre tout un schema
+<SchemaEditor schema={schema} content={instance.content} onUpdate={updateContent} styleGuide={guide} />
+```
+
+Le `PropertiesPanel` détecte automatiquement si la section a un schema et l'utilise. Sans schema, il retombe sur l'éditeur snippets/générique existant.
+

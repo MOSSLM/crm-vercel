@@ -786,6 +786,68 @@ export interface SectionStructure {
   responsive?: { mobile?: Partial<SectionLayout> };
 }
 
+// ─── Section Schema System (Shopify-like) ─────────────────────────────────────
+
+export type SectionFieldType =
+  | 'text' | 'textarea' | 'richtext' | 'url'
+  | 'number' | 'range'
+  | 'color' | 'color_scheme'
+  | 'image_picker' | 'video_url'
+  | 'select' | 'radio' | 'checkbox'
+  | 'alignment' | 'font'
+  | 'header' | 'paragraph'; // non-editable separators
+
+interface SectionFieldBase {
+  id: string;
+  label: string;
+  info?: string;
+  default?: unknown;
+}
+
+export interface SectionTextField extends SectionFieldBase { type: 'text' | 'url'; placeholder?: string; }
+export interface SectionTextareaField extends SectionFieldBase { type: 'textarea' | 'richtext'; rows?: number; }
+export interface SectionNumberField extends SectionFieldBase { type: 'number'; min?: number; max?: number; step?: number; unit?: string; }
+export interface SectionRangeField extends SectionFieldBase { type: 'range'; min: number; max: number; step?: number; unit?: string; }
+export interface SectionColorField extends SectionFieldBase { type: 'color'; }
+export interface SectionColorSchemeField extends SectionFieldBase { type: 'color_scheme'; }
+export interface SectionImagePickerField extends SectionFieldBase { type: 'image_picker' | 'video_url'; }
+export interface SectionSelectField extends SectionFieldBase {
+  type: 'select' | 'radio';
+  options: { label: string; value: string }[];
+}
+export interface SectionCheckboxField extends SectionFieldBase { type: 'checkbox'; }
+export interface SectionAlignmentField extends SectionFieldBase { type: 'alignment'; }
+export interface SectionFontField extends SectionFieldBase { type: 'font'; }
+export interface SectionHeaderField { type: 'header'; content: string; }
+export interface SectionParagraphField { type: 'paragraph'; content: string; }
+
+export type SectionField =
+  | SectionTextField | SectionTextareaField | SectionNumberField
+  | SectionRangeField | SectionColorField | SectionColorSchemeField
+  | SectionImagePickerField | SectionSelectField | SectionCheckboxField
+  | SectionAlignmentField | SectionFontField | SectionHeaderField | SectionParagraphField;
+
+export interface SectionBlockSchema {
+  type: string;
+  name: string;
+  settings: SectionField[];
+  limit?: number;
+}
+
+export interface SectionSchema {
+  name: string;
+  settings: SectionField[];
+  blocks?: SectionBlockSchema[];
+  max_blocks?: number;
+  presets?: Array<{
+    name: string;
+    settings?: Record<string, unknown>;
+    blocks?: Array<{ type: string; settings?: Record<string, unknown> }>;
+  }>;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /** A row in site_sections — the reusable section library */
 export interface SiteSectionDef {
   id: string;
@@ -803,6 +865,8 @@ export interface SiteSectionDef {
   code?: string;
   theme_slug?: string;
   theme_section_id?: string;
+  /** Shopify-like schema defining editable settings for this section */
+  schema?: SectionSchema;
 }
 
 /** A row in site_section_instances — a section placed on a site page */
@@ -819,6 +883,11 @@ export interface SiteSectionInstance {
   updated_at: string;
   /** Joined from site_sections */
   section_def?: SiteSectionDef;
+  /**
+   * Color scheme override stored in content.__color_scheme.
+   * Resolved to CSS var overrides at render time.
+   * Preset: 'default' | 'alt' | 'primary' | 'secondary' | 'dark' | 'light' | 'inverted'
+   */
 }
 
 /** Global style design tokens stored in sites.style_guide */

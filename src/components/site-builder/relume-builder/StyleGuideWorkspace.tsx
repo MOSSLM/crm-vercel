@@ -1,9 +1,10 @@
 "use client";
 
 import React from "react";
-import { Lock, Shuffle, Plus, Sun, Moon, ChevronDown, Eye, EyeOff, Type, Palette, Layout, Sliders } from "lucide-react";
+import { Lock, Shuffle, Plus, Sun, Moon, ChevronDown, Eye, EyeOff, Type, Palette, Layout, Sliders, ChevronRight, Copy, Check } from "lucide-react";
 import type { StyleGuide } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
+import { generateColorShades, isLightColor } from "@/lib/color-utils";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -84,6 +85,76 @@ function ColorSwatch({ label, hex, onChange, small }: ColorSwatchProps) {
         className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
         title={`Modifier ${label}`}
       />
+    </div>
+  );
+}
+
+// ─── Shade Strip ──────────────────────────────────────────────────────────────
+
+const SHADE_STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
+
+function ShadeStrip({ label, baseHex }: { label: string; baseHex: string }) {
+  const [expanded, setExpanded] = React.useState(false);
+  const [copiedHex, setCopiedHex] = React.useState<string | null>(null);
+  const shades = React.useMemo(() => generateColorShades(baseHex), [baseHex]);
+
+  const copyHex = (hex: string) => {
+    navigator.clipboard.writeText(hex).then(() => {
+      setCopiedHex(hex);
+      setTimeout(() => setCopiedHex(null), 1200);
+    });
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 transition-colors"
+      >
+        <ChevronRight size={11} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+        Nuances {label}
+      </button>
+
+      {/* Compact strip — always visible */}
+      <div className="flex gap-0.5 h-4 rounded overflow-hidden">
+        {SHADE_STOPS.map((stop) => (
+          <div
+            key={stop}
+            className="flex-1 cursor-pointer hover:ring-1 hover:ring-white hover:ring-offset-0 hover:z-10 transition-all"
+            style={{ backgroundColor: shades[stop] }}
+            title={`${label}-${stop}: ${shades[stop]}`}
+            onClick={() => copyHex(shades[stop])}
+          />
+        ))}
+      </div>
+
+      {/* Expanded detail */}
+      {expanded && (
+        <div className="grid grid-cols-11 gap-1 pt-1">
+          {SHADE_STOPS.map((stop) => {
+            const hex = shades[stop];
+            const isCopied = copiedHex === hex;
+            return (
+              <button
+                key={stop}
+                onClick={() => copyHex(hex)}
+                className="group flex flex-col items-center gap-0.5"
+                title={`Copier ${hex}`}
+              >
+                <div
+                  className="w-full aspect-square rounded-md border border-black/5 group-hover:scale-105 transition-transform flex items-center justify-center"
+                  style={{ backgroundColor: hex }}
+                >
+                  {isCopied && (
+                    <Check size={8} style={{ color: isLightColor(hex) ? "#000" : "#fff" }} />
+                  )}
+                </div>
+                <span className="text-[7px] text-gray-400 leading-none">{stop}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -373,7 +444,7 @@ export function StyleGuideWorkspace() {
             <>
               <div>
                 <SectionLabel>Couleurs de marque</SectionLabel>
-                <div className="flex gap-2 flex-wrap">
+                <div className="flex gap-2 flex-wrap mb-3">
                   <ColorSwatch label="Primaire" hex={guide.colors.primary} onChange={(h) => updateColor("primary", h)} />
                   <ColorSwatch label="Secondaire" hex={guide.colors.secondary} onChange={(h) => updateColor("secondary", h)} />
                   <ColorSwatch label="Accent" hex={guide.colors.accent} onChange={(h) => updateColor("accent", h)} />
@@ -383,6 +454,12 @@ export function StyleGuideWorkspace() {
                   >
                     <Plus size={14} className="text-gray-300" />
                   </div>
+                </div>
+                {/* Shade scales for brand colors */}
+                <div className="space-y-3 pt-1 border-t border-gray-100">
+                  <ShadeStrip label="Primaire" baseHex={guide.colors.primary} />
+                  <ShadeStrip label="Secondaire" baseHex={guide.colors.secondary} />
+                  <ShadeStrip label="Accent" baseHex={guide.colors.accent} />
                 </div>
               </div>
 
