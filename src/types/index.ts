@@ -799,6 +799,10 @@ export interface SiteSectionDef {
   tags?: string[];
   created_at: string;
   updated_at: string;
+  /** Set when section comes from theme_sections (library) */
+  code?: string;
+  theme_slug?: string;
+  theme_section_id?: string;
 }
 
 /** A row in site_section_instances — a section placed on a site page */

@@ -3,47 +3,50 @@ import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/site-builder/sections — list all available sections */
+/**
+ * GET /api/site-builder/sections
+ * Returns sections from the theme_sections library (user-created sections).
+ * Each row is mapped to a SiteSectionDef-compatible object with a `code` field.
+ */
 export async function GET(req: Request) {
   const supabase = getSupabaseServiceClient();
   const { searchParams } = new URL(req.url);
   const category = searchParams.get("category");
   const search = searchParams.get("q");
+  const themeSlug = searchParams.get("theme_slug");
 
   let query = supabase
-    .from("site_sections")
+    .from("theme_sections")
     .select("*")
-    .order("is_builtin", { ascending: false })
-    .order("name");
+    .order("category", { ascending: true })
+    .order("sort_order", { ascending: true })
+    .order("name", { ascending: true });
 
+  if (themeSlug) query = query.eq("theme_slug", themeSlug);
   if (category) query = query.eq("category", category);
   if (search) query = query.ilike("name", `%${search}%`);
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
-}
 
-/** POST /api/site-builder/sections — create a custom section */
-export async function POST(req: Request) {
-  const supabase = getSupabaseServiceClient();
-  try {
-    const body = await req.json();
-    const { name, type, category, structure, default_content, tags } = body;
+  // Map theme_sections rows to SiteSectionDef-compatible format
+  const sections = (data ?? []).map((row) => ({
+    id: row.id,
+    name: row.name,
+    type: row.section_id,
+    category: row.category,
+    preview_image_url: null,
+    structure: { snippets: [], layout: { type: "stack" } },
+    default_content: row.example_data ?? {},
+    is_builtin: false,
+    tags: [row.category],
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    // Library-specific fields
+    code: row.code,
+    theme_slug: row.theme_slug,
+    theme_section_id: row.section_id,
+  }));
 
-    if (!name || !type || !structure) {
-      return NextResponse.json({ error: "name, type, structure requis" }, { status: 400 });
-    }
-
-    const { data, error } = await supabase
-      .from("site_sections")
-      .insert({ name, type, category, structure, default_content: default_content ?? {}, tags: tags ?? [], is_builtin: false })
-      .select()
-      .single();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(data, { status: 201 });
-  } catch (err) {
-    return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
-  }
+  return NextResponse.json(sections);
 }
