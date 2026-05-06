@@ -16,37 +16,38 @@ function useCanvasPanZoom() {
   const [pan, setPan] = React.useState({ x: 60, y: 30 });
   const [scale, setScale] = React.useState(0.8);
   const isPanning = React.useRef(false);
+  const didPan = React.useRef(false);
   const lastPos = React.useRef({ x: 0, y: 0 });
-  const spaceHeld = React.useRef(false);
-
-  React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      spaceHeld.current = e.type === "keydown" && e.code === "Space";
-    };
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("keyup", onKey);
-    return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKey); };
-  }, []);
 
   const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1 || spaceHeld.current) {
+    if (e.button === 0 || e.button === 1) {
       isPanning.current = true;
+      didPan.current = false;
       lastPos.current = { x: e.clientX, y: e.clientY };
-      e.preventDefault();
+      if (e.button === 1) e.preventDefault();
     }
   };
   const onMouseMove = (e: React.MouseEvent) => {
     if (!isPanning.current) return;
-    setPan((p) => ({ x: p.x + e.clientX - lastPos.current.x, y: p.y + e.clientY - lastPos.current.y }));
+    const dx = e.clientX - lastPos.current.x;
+    const dy = e.clientY - lastPos.current.y;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) didPan.current = true;
+    if (didPan.current) {
+      setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
+    }
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
   const onMouseUp = () => { isPanning.current = false; };
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+    if (e.ctrlKey || e.metaKey) {
+      setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+    } else {
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
   };
 
-  return { pan, scale, onMouseDown, onMouseMove, onMouseUp, onWheel };
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel };
 }
 
 // ─── Panel sections ────────────────────────────────────────────────────────────
@@ -333,12 +334,14 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
 
       {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
       <div
-        className="flex-1 overflow-hidden relative"
+        className="flex-1 overflow-hidden relative select-none"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
+        onMouseLeave={canvas.onMouseUp}
         onWheel={canvas.onWheel}
-        onClick={() => dispatch({ type: "SELECT_INSTANCE", payload: null })}
+        onClick={() => { if (!canvas.didPan.current) dispatch({ type: "SELECT_INSTANCE", payload: null }); }}
+        style={{ cursor: "grab" }}
       >
         {/* Dot grid */}
         <div
@@ -457,8 +460,11 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
             Aperçu
           </button>
 
+          {/* Zoom hint */}
+          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll</span>
+
           {/* Zoom indicator */}
-          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none">
+          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm">
             {Math.round(canvas.scale * 100)}%
           </div>
         </div>

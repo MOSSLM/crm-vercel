@@ -53,9 +53,11 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       }
       const byPage = buildInstancesByPage(instancesMap);
       const firstPage = action.payload.sitemap[0]?.slug ?? "/";
+      // Merge loaded style guide with defaults to handle missing fields from old data
+      const safeStyleGuide = mergeDeep(DEFAULT_STYLE_GUIDE, action.payload.styleGuide) as StyleGuide;
       return {
         ...state,
-        styleGuide: action.payload.styleGuide,
+        styleGuide: safeStyleGuide,
         sitemap: action.payload.sitemap,
         instances: instancesMap,
         instancesByPage: byPage,

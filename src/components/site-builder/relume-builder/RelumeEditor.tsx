@@ -122,7 +122,7 @@ function RelumeEditorInner({
 
   // ─── AI Regenerate Section ────────────────────────────────────────────────────
 
-  const handleRegenerateSection = async (instanceId: string, prompt: string) => {
+  const handleRegenerateSection = async (instanceId: string, prompt: string, model = "claude-sonnet-4-6") => {
     const instance = state.instances[instanceId];
     const sectionDef = instance?.section_def ?? (instance?.section_id ? sectionDefs[instance.section_id] : null);
     if (!instance || !sectionDef) return;
@@ -137,6 +137,7 @@ function RelumeEditorInner({
           currentContent: instance.content,
           defaultContent: sectionDef.default_content,
           prompt,
+          model,
         }),
       });
       if (!res.ok) throw new Error("Erreur IA");
