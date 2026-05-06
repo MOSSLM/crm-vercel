@@ -143,7 +143,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     setAiStep("generating");
     try {
       const pageList = state.sitemap.map((p) => p.title).join(", ");
-      const res = await fetch("/api/site-builder-v2/ai/generate-sitemap", {
+      const res = await fetch("/api/site-builder/ai/generate-sitemap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -213,7 +213,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     setPageLoading(page.id);
     try {
       const context = pageContexts[page.id] ?? "";
-      const res = await fetch("/api/site-builder-v2/ai/regenerate-page", {
+      const res = await fetch("/api/site-builder/ai/regenerate-page", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

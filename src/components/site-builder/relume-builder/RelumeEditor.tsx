@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, WorkspaceId } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { RelumeBuilderProvider, useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { SiteVersionHistory } from "@/components/site-builder/SiteVersionHistory";
 import { SitemapWorkspace } from "./SitemapWorkspace";
 import { WireframeWorkspace } from "./WireframeWorkspace";
 import { StyleGuideWorkspace } from "./StyleGuideWorkspace";
@@ -76,16 +77,25 @@ function RelumeEditorInner({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch(`/api/site-builder-v2/sites/${siteId}`, {
+      await fetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ style_guide: state.styleGuide, sitemap: state.sitemap }),
       });
       const instances = Object.values(state.instances);
-      await fetch(`/api/site-builder-v2/sites/${siteId}/instances`, {
+      await fetch(`/api/site-builder/sites/${siteId}/instances`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instances }),
+      });
+      // Crée une snapshot de version à chaque sauvegarde
+      await fetch(`/api/site-builder/sites/${siteId}/versions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          style_guide: state.styleGuide,
+          sitemap: state.sitemap,
+        }),
       });
       dispatch({ type: "MARK_SAVED" });
       toast.success("Sauvegardé");
@@ -102,7 +112,7 @@ function RelumeEditorInner({
     if (!publishDomain.trim()) return;
     setPublishing(true);
     try {
-      const res = await fetch(`/api/site-builder-v2/sites/${siteId}/publish`, {
+      const res = await fetch(`/api/site-builder/sites/${siteId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subdomain: publishDomain.trim() }),
@@ -127,7 +137,7 @@ function RelumeEditorInner({
     const sectionDef = instance?.section_def ?? (instance?.section_id ? sectionDefs[instance.section_id] : null);
     if (!instance || !sectionDef) return;
     try {
-      const res = await fetch("/api/site-builder-v2/ai/regenerate-section", {
+      const res = await fetch("/api/site-builder/ai/regenerate-section", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -217,6 +227,9 @@ function RelumeEditorInner({
             )}
             {saving ? "Sauvegarde..." : "Enregistrer"}
           </button>
+
+          {/* Historique des versions */}
+          <SiteVersionHistory siteId={siteId} />
 
           {/* Share */}
           <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
