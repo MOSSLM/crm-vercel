@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   Plus, Globe, Layout, ToggleLeft, ToggleRight,
   Trash2, Eye, ExternalLink, Sparkles, X, Loader2,
-  CheckCircle, XCircle,
+  CheckCircle, XCircle, BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -213,6 +213,12 @@ function ThemeCard({
             ) : (
               <><ToggleLeft className="h-3.5 w-3.5" />Activer</>
             )}
+          </Button>
+
+          <Button asChild variant="ghost" size="icon" className="h-7 w-7" title="Bibliothèque de sections">
+            <Link href={`/themes/${theme.slug}/sections-library`}>
+              <BookOpen className="h-3.5 w-3.5" />
+            </Link>
           </Button>
 
           <Button asChild variant="ghost" size="icon" className="h-7 w-7">
