@@ -5,7 +5,7 @@ import {
   Laptop, Tablet, Smartphone, Layers, Sparkles,
   Move, Zap, Image as ImageIcon, Maximize2,
   ChevronDown, Play, Square, MoreHorizontal,
-  ZoomIn, ZoomOut
+  ZoomIn, ZoomOut, Eye, EyeOff
 } from "lucide-react";
 import type { SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
@@ -73,6 +73,7 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
   const canvas = useCanvasPanZoom();
   const [activePanel, setActivePanel] = React.useState<DesignPanel>("animations");
   const [panelOpen, setPanelOpen] = React.useState(true);
+  const [previewMode, setPreviewMode] = React.useState(false);
 
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
 
@@ -80,6 +81,62 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
     state.deviceView === "mobile" ? 390 :
     state.deviceView === "tablet" ? 768 :
     1200;
+
+  // ── Full-screen preview overlay ──────────────────────────────────────────────
+  if (previewMode) {
+    return (
+      <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+        {/* Exit button */}
+        <button
+          onClick={() => setPreviewMode(false)}
+          className="fixed top-4 right-4 z-50 flex items-center gap-1.5 px-3 py-2 bg-gray-900/90 text-white text-xs rounded-lg shadow-lg hover:bg-gray-900 transition-colors backdrop-blur"
+        >
+          <EyeOff size={13} />
+          Quitter l&apos;aperçu
+        </button>
+
+        {/* Page selector */}
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex gap-1 bg-gray-900/80 backdrop-blur rounded-lg p-1">
+          {state.sitemap.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug })}
+              className={`px-3 py-1 text-xs rounded-md transition-colors ${state.activePage === p.slug ? "bg-white text-gray-900 font-medium" : "text-white/60 hover:text-white"}`}
+            >
+              {p.title}
+            </button>
+          ))}
+        </div>
+
+        {/* Full-width page render */}
+        <div style={{ backgroundColor: state.styleGuide.colors.background }}>
+          {pageInstanceIds.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-32 text-center">
+              <Layers size={40} className="text-gray-200 mb-4" />
+              <p className="text-gray-400">Aucune section sur cette page</p>
+            </div>
+          ) : (
+            <div className="flex flex-col">
+              {pageInstanceIds.map((instanceId) => {
+                const instance = state.instances[instanceId];
+                if (!instance || instance.is_hidden) return null;
+                const secDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+                if (!secDef) return null;
+                return (
+                  <DynamicSectionRenderer
+                    key={instanceId}
+                    instance={{ ...instance, section_def: secDef }}
+                    sectionDef={secDef}
+                    styleGuide={state.styleGuide}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
@@ -460,8 +517,12 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
           </div>
 
           {/* Preview button */}
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-md shadow-sm text-gray-600 hover:bg-gray-50 transition-colors">
-            <Square size={11} />
+          <button
+            onClick={() => setPreviewMode(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-md shadow-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            title="Aperçu plein écran"
+          >
+            <Eye size={11} />
             Aperçu
           </button>
 

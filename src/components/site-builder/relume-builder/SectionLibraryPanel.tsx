@@ -11,12 +11,15 @@ interface SectionLibraryPanelProps {
 
 const CATEGORIES = [
   { id: "Tous", label: "Tous" },
+  { id: "navbar", label: "Navbar" },
   { id: "headers", label: "Headers" },
   { id: "heros", label: "Héros" },
   { id: "features", label: "Features" },
   { id: "layouts", label: "Layouts" },
-  { id: "testimonials", label: "Avis" },
+  { id: "about", label: "About" },
   { id: "logos", label: "Logos" },
+  { id: "reassurance", label: "Réassurance" },
+  { id: "testimonials", label: "Avis" },
   { id: "gallery", label: "Galerie" },
   { id: "faq", label: "FAQ" },
   { id: "cta", label: "CTA" },

@@ -43,14 +43,29 @@ export function LibrarySectionIframe({
     if (!iframe) return;
     const resize = () => {
       try {
-        const h = iframe.contentDocument?.documentElement?.scrollHeight;
-        if (h && h > minHeight) setHeight(h);
+        const doc = iframe.contentDocument;
+        if (!doc) return;
+        // force no scroll inside iframe
+        doc.body.style.overflow = "hidden";
+        const h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
+        if (h && h > 0) setHeight(h);
       } catch {
         // cross-origin — ignore
       }
     };
+    // ResizeObserver on the root element for reliable auto-sizing
+    try {
+      const win = iframe.contentWindow as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
+      const RO = win?.ResizeObserver;
+      if (RO && iframe.contentDocument?.body) {
+        const ro = new RO(resize);
+        ro.observe(iframe.contentDocument.body);
+      }
+    } catch { /* ignore */ }
     iframe.contentWindow?.addEventListener("resize", resize);
     resize();
+    // also re-check after a short delay for async renders
+    setTimeout(resize, 400);
   }, [minHeight]);
 
   if (!code?.trim()) return null;
@@ -60,8 +75,9 @@ export function LibrarySectionIframe({
       ref={iframeRef}
       srcDoc={srcDoc}
       sandbox="allow-scripts"
+      scrolling="no"
       className={className}
-      style={{ width: "100%", border: "none", height }}
+      style={{ width: "100%", border: "none", height, display: "block", overflow: "hidden" }}
       title="Section preview"
       onLoad={handleLoad}
     />
@@ -194,7 +210,7 @@ function buildHTML(
     :root {
       ${cssVars}
     }
-    body { margin: 0; font-family: var(--font-body, Inter, sans-serif); background: var(--color-background, #fff); color: var(--color-text, #111); }
+    html, body { margin: 0; overflow: hidden; font-family: var(--font-body, Inter, sans-serif); background: var(--color-background, #fff); color: var(--color-text, #111); }
     * { box-sizing: border-box; }
   <\/style>
 <\/head>
