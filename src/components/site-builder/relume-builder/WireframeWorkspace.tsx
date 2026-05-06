@@ -190,7 +190,7 @@ function SectionTypePicker({
   const [q, setQ] = React.useState("");
   const filtered = availableSections.filter((s) =>
     s.name.toLowerCase().includes(q.toLowerCase()) ||
-    s.category.toLowerCase().includes(q.toLowerCase())
+    (s.category ?? "").toLowerCase().includes(q.toLowerCase())
   );
 
   // Group by category
