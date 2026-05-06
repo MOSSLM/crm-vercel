@@ -219,36 +219,37 @@ function buildPreviewHTML(
 ): string {
   // Strip/replace imports for iframe preview
   const processedCode = code
-    // Remove all import statements (we provide React globally)
     .replace(/^import\s+.*?from\s+['"][^'"]+['"]\s*;?\s*$/gm, "")
-    // Remove "use client" directive
     .replace(/^['"]use client['"]\s*;?\s*$/gm, "")
-    // Replace `export default function X` -> `function X`
     .replace(/export\s+default\s+function\s+/g, "function ")
-    // Replace `export default class` -> `class`
     .replace(/export\s+default\s+class\s+/g, "class ")
-    // Remove standalone `export default SomeName;` and capture name
     .replace(/\nexport\s+default\s+(\w+)\s*;/g, "\n// exported: $1");
 
-  // Extract the component name (first function after stripping export default)
   const fnMatch =
     processedCode.match(/^function\s+(\w+)/m) ||
     processedCode.match(/^const\s+(\w+)\s*=\s*(?:React\.)?(?:memo\()?(?:\([^)]*\)|[^=]+)\s*=>/m);
   const componentName = fnMatch ? fnMatch[1] : null;
-
-  // Also try to find `// exported: SomeName`
   const exportedMatch = processedCode.match(/\/\/ exported:\s+(\w+)/);
   const renderName = exportedMatch ? exportedMatch[1] : componentName;
 
   const renderCall = renderName
-    ? `ReactDOM.createRoot(document.getElementById('root')).render(
-        React.createElement(${renderName}, {
-          tokens: {},
-          data: __exampleData,
-          variables: __variables
-        })
-      );`
+    ? `try {
+        ReactDOM.createRoot(document.getElementById('root')).render(
+          React.createElement(${renderName}, {
+            tokens: {},
+            data: window.__exampleData,
+            variables: window.__variables
+          })
+        );
+      } catch(err) {
+        document.getElementById('root').innerHTML =
+          '<pre style="padding:16px;color:#e74c3c;font-size:12px;white-space:pre-wrap">' +
+          err.message + '\\n' + (err.stack || '') + '</pre>';
+      }`
     : `document.getElementById('root').innerHTML = '<p style="padding:16px;color:#e74c3c;">Impossible de détecter le composant à rendre.</p>';`;
+
+  // JSON-encode so it's safely embedded in a plain <script> tag (no </script> escaping issues)
+  const componentSrc = JSON.stringify(`${processedCode}\n${renderCall}`);
 
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -259,34 +260,48 @@ function buildPreviewHTML(
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
-  <style>
-    body { margin: 0; }
-    * { box-sizing: border-box; }
-  </style>
-</head>
+  <style>body { margin: 0; } * { box-sizing: border-box; }<\/style>
+<\/head>
 <body>
-  <div id="root"></div>
-  <script type="text/babel" data-presets="react,typescript">
-    const __exampleData = ${JSON.stringify(exampleData)};
-    const __variables = ${JSON.stringify(variables)};
-
-    ${processedCode}
-
-    try {
-      ${renderCall}
-    } catch(err) {
-      document.getElementById('root').innerHTML =
-        '<pre style="padding:16px;color:#e74c3c;font-size:12px;white-space:pre-wrap">' +
-        err.message + '\\n' + (err.stack || '') + '<\/pre>';
-    }
+  <div id="root"><\/div>
+  <script>
+    window.__exampleData = ${JSON.stringify(exampleData)};
+    window.__variables = ${JSON.stringify(variables)};
+    window.__componentSrc = ${componentSrc};
   <\/script>
   <script>
+    // Filter cross-origin CDN noise; real errors are caught below
     window.addEventListener('error', function(e) {
-      document.getElementById('root').innerHTML =
-        '<pre style="padding:16px;color:#e74c3c;font-size:12px;white-space:pre-wrap">' +
-        e.message + '<\/pre>';
+      if (!e.message || e.message === 'Script error.') return;
+      var root = document.getElementById('root');
+      if (root && !root.firstChild) {
+        root.innerHTML = '<pre style="padding:16px;color:#e74c3c;font-size:12px;white-space:pre-wrap">' + e.message + '<\/pre>';
+      }
     });
+
+    function runComponent() {
+      try {
+        var result = Babel.transform(window.__componentSrc, {
+          presets: ['react', 'typescript'],
+          filename: 'component.tsx'
+        });
+        // Inject as inline script — same opaque origin as the iframe, so errors show properly
+        var s = document.createElement('script');
+        s.textContent = result.code;
+        document.head.appendChild(s);
+      } catch(err) {
+        document.getElementById('root').innerHTML =
+          '<pre style="padding:16px;color:#e74c3c;font-size:12px;white-space:pre-wrap">' +
+          (err.message || String(err)) + '<\/pre>';
+      }
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', runComponent);
+    } else {
+      runComponent();
+    }
   <\/script>
-</body>
-</html>`;
+<\/body>
+<\/html>`;
 }
