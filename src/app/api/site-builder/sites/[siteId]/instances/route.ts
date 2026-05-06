@@ -7,8 +7,14 @@ interface RouteContext {
   params: Promise<{ siteId: string }>;
 }
 
+interface LibraryRef {
+  theme_slug: string;
+  section_id: string;
+}
+
 /** GET /api/site-builder/sites/[siteId]/instances
- *  Returns all section instances for a site, with joined section_def */
+ *  Returns all section instances for a site.
+ *  For library sections (section_def is null), enriches with theme_sections data. */
 export async function GET(_req: Request, { params }: RouteContext) {
   const supabase = getSupabaseServiceClient();
   const { siteId } = await params;
@@ -24,7 +30,57 @@ export async function GET(_req: Request, { params }: RouteContext) {
     .order("sort_order");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
+
+  const instances = (data ?? []) as Array<Record<string, unknown>>;
+
+  // Collect library refs for instances that have no section_def (library sections)
+  const libRefs: LibraryRef[] = [];
+  for (const inst of instances) {
+    const content = inst.content as Record<string, unknown> | null;
+    if (!inst.section_def && content?.__library) {
+      libRefs.push(content.__library as LibraryRef);
+    }
+  }
+
+  if (libRefs.length > 0) {
+    const themeSlugs = [...new Set(libRefs.map((r) => r.theme_slug))];
+    const { data: themeSections } = await supabase
+      .from("theme_sections")
+      .select("*")
+      .in("theme_slug", themeSlugs);
+
+    const tsMap = new Map(
+      (themeSections ?? []).map((ts) => [`${ts.theme_slug}:${ts.section_id}`, ts])
+    );
+
+    for (const inst of instances) {
+      const content = inst.content as Record<string, unknown> | null;
+      if (!inst.section_def && content?.__library) {
+        const ref = content.__library as LibraryRef;
+        const ts = tsMap.get(`${ref.theme_slug}:${ref.section_id}`);
+        if (ts) {
+          inst.section_def = {
+            id: ts.id,
+            name: ts.name,
+            type: ts.section_id,
+            category: ts.category,
+            preview_image_url: null,
+            structure: { snippets: [], layout: { type: "stack" } },
+            default_content: ts.example_data ?? {},
+            is_builtin: false,
+            tags: [ts.category],
+            created_at: ts.created_at,
+            updated_at: ts.updated_at,
+            code: ts.code,
+            theme_slug: ts.theme_slug,
+            theme_section_id: ts.section_id,
+          };
+        }
+      }
+    }
+  }
+
+  return NextResponse.json(instances);
 }
 
 /** PUT /api/site-builder/sites/[siteId]/instances
@@ -47,7 +103,6 @@ export async function PUT(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "instances[] requis" }, { status: 400 });
   }
 
-  // Delete all existing instances for this site
   const { error: deleteError } = await supabase
     .from("site_section_instances")
     .delete()
@@ -59,7 +114,6 @@ export async function PUT(req: Request, { params }: RouteContext) {
     return NextResponse.json({ count: 0 });
   }
 
-  // Insert all new instances
   const toInsert = instances.map((inst) => ({
     id: inst.id,
     site_id: siteId,

@@ -3,6 +3,7 @@
 import React from "react";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
+import { LibrarySectionIframe } from "./LibrarySectionIframe";
 
 interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
@@ -95,6 +96,41 @@ export function DynamicSectionRenderer({
   selectedSnippetId,
   onSelectSnippet,
 }: DynamicSectionRendererProps) {
+  // Library section: render via iframe using the section code
+  if (sectionDef.code) {
+    const contentWithoutMeta = Object.fromEntries(
+      Object.entries(instance.content).filter(([k]) => !k.startsWith("__"))
+    );
+    const handleClick = editorMode ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); } : undefined;
+    return (
+      <div
+        onClick={handleClick}
+        data-section-id={instance.id}
+        style={{ position: "relative", cursor: editorMode ? "pointer" : undefined }}
+        className={editorMode ? "group/section" : ""}
+      >
+        {editorMode && (
+          <div
+            className="absolute inset-0 pointer-events-none z-10 transition-all"
+            style={{ border: selected ? "2px solid #3b82f6" : "2px solid transparent" }}
+          />
+        )}
+        {instance.is_hidden && editorMode && (
+          <div className="absolute top-2 right-2 text-xs bg-gray-800 text-white px-2 py-1 rounded z-20">
+            Masquée
+          </div>
+        )}
+        {(!instance.is_hidden || editorMode) && (
+          <LibrarySectionIframe
+            code={sectionDef.code}
+            content={{ ...sectionDef.default_content, ...contentWithoutMeta }}
+            styleGuide={styleGuide}
+          />
+        )}
+      </div>
+    );
+  }
+
   const { structure } = sectionDef;
   const content = { ...sectionDef.default_content, ...instance.content };
 

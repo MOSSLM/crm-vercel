@@ -30,11 +30,14 @@ export interface ChatMessage {
 }
 
 export const CATEGORIES: { id: string; label: string }[] = [
-  { id: "headers", label: "Headers" },
-  { id: "heros", label: "Heros" },
-  { id: "layouts", label: "Layouts" },
+  { id: "headers", label: "Headers / Navbar" },
+  { id: "heros", label: "Héros" },
   { id: "features", label: "Features" },
-  { id: "testimonials", label: "Testimonials" },
+  { id: "layouts", label: "Layouts / About" },
+  { id: "logos", label: "Logos / Réassurance" },
+  { id: "testimonials", label: "Avis / Testimonials" },
+  { id: "gallery", label: "Galerie" },
+  { id: "faq", label: "FAQ" },
   { id: "cta", label: "CTA" },
   { id: "footers", label: "Footers" },
   { id: "misc", label: "Divers" },
