@@ -218,7 +218,7 @@ function buildPreviewHTML(
   variables: Record<string, string>
 ): string {
   // Strip/replace imports for iframe preview
-  let processedCode = code
+  const processedCode = code
     // Remove all import statements (we provide React globally)
     .replace(/^import\s+.*?from\s+['"][^'"]+['"]\s*;?\s*$/gm, "")
     // Remove "use client" directive
