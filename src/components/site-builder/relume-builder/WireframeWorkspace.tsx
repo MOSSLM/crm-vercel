@@ -197,8 +197,9 @@ function SectionTypePicker({
   const groups = React.useMemo(() => {
     const map: Record<string, SiteSectionDef[]> = {};
     for (const s of filtered) {
-      if (!map[s.category]) map[s.category] = [];
-      map[s.category].push(s);
+      const key = s.category ?? "Other";
+      if (!map[key]) map[key] = [];
+      map[key].push(s);
     }
     return map;
   }, [filtered]);
