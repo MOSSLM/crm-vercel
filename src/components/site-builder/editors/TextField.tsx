@@ -19,7 +19,7 @@ export function TextField({ setting, value, onChange }: TextFieldProps) {
         className={`${base} px-2.5 py-2 resize-none`}
         rows={"rows" in setting ? setting.rows ?? 3 : 3}
         value={value ?? ""}
-        placeholder={"placeholder" in setting ? (setting.placeholder ?? "") : ""}
+        placeholder={"placeholder" in setting ? ((setting as { placeholder?: string }).placeholder ?? "") : ""}
         onChange={(e) => onChange(e.target.value)}
       />
     );
