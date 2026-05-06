@@ -68,7 +68,7 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
 function resolveColorSchemeVars(
   content: Record<string, unknown>,
   styleGuide: StyleGuide,
-): React.CSSProperties {
+): React.CSSProperties & Record<string, string> {
   const raw = content.__color_scheme;
   if (!raw || raw === "default") return {};
 
