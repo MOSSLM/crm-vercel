@@ -1,0 +1,546 @@
+"use client";
+
+import React from "react";
+import {
+  Sparkles, FileText, MoreHorizontal, Plus, Trash2,
+  ChevronRight, Send, Loader2, AlertCircle,
+  RotateCcw, Edit3
+} from "lucide-react";
+import { toast } from "sonner";
+import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
+import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { useCanvasPanZoom } from "./useCanvasPanZoom";
+import { AI_MODELS, ModelSelector, type AIModelId } from "./aiModels";
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+interface SitemapWorkspaceProps {
+  siteId: string;
+  enterpriseId?: number;
+  availableSections: SiteSectionDef[];
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: SitemapWorkspaceProps) {
+  const { state, dispatch } = useRelumeBuilder();
+  const canvas = useCanvasPanZoom({ initialPan: { x: 60, y: 60 }, initialScale: 1 });
+
+  // Global AI state
+  const [aiInput, setAiInput] = React.useState("");
+  const [aiLoading, setAiLoading] = React.useState(false);
+  const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");
+  const [selectedModel, setSelectedModel] = React.useState<AIModelId>("claude-sonnet-4-6");
+
+  // Per-page state
+  const [expandedPages, setExpandedPages] = React.useState<Set<string>>(new Set());
+  const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
+  const [pageContext, setPageContext] = React.useState<Record<string, string>>({});
+  const [pageContextOpen, setPageContextOpen] = React.useState<Record<string, boolean>>({});
+  const [pageRegenerating, setPageRegenerating] = React.useState<Record<string, boolean>>({});
+
+  // ─── Global AI Generation ────────────────────────────────────────────────────
+
+  const handleGenerate = async () => {
+    if (!aiInput.trim()) return;
+    setAiLoading(true);
+    setAiStep("generating");
+    try {
+      const pageList = state.sitemap.map((p) => p.title).join(", ");
+      const modelConfig = AI_MODELS.find((m) => m.id === selectedModel)!;
+      const res = await fetch("/api/site-builder-v2/ai/generate-sitemap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId,
+          enterpriseId,
+          description: aiInput,
+          pages: pageList,
+          availableSectionTypes: availableSections.map((s) => s.type),
+          model: selectedModel,
+          provider: modelConfig.provider,
+        }),
+      });
+      if (!res.ok) throw new Error("Erreur IA");
+      const data = await res.json();
+
+      if (data.styleGuide) dispatch({ type: "UPDATE_STYLE_GUIDE", payload: data.styleGuide });
+
+      if (data.sitemap?.length) {
+        for (const page of data.sitemap) {
+          const existing = state.sitemap.find((p) => p.slug === page.slug);
+          if (!existing) {
+            dispatch({ type: "ADD_PAGE", payload: { id: nanoid(), slug: page.slug, title: page.title, sections: page.sections ?? [] } });
+          } else {
+            dispatch({ type: "UPDATE_PAGE", payload: { id: existing.id, data: { sections: page.sections ?? [] } } });
+          }
+        }
+      }
+
+      if (data.instances?.length) {
+        for (const inst of data.instances) {
+          const secDef = availableSections.find((s) => s.type === inst.sectionType);
+          if (!secDef) continue;
+          dispatch({
+            type: "ADD_INSTANCE",
+            payload: {
+              instance: {
+                id: nanoid(),
+                site_id: siteId,
+                section_id: secDef.id,
+                section_def: secDef,
+                page_slug: inst.pageSlug ?? "/",
+                sort_order: inst.sortOrder ?? 0,
+                content: inst.content ?? {},
+                custom_style: {},
+                is_hidden: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+              pageSlug: inst.pageSlug ?? "/",
+            },
+          });
+        }
+      }
+
+      setAiStep("done");
+      toast.success("Sitemap généré !");
+    } catch {
+      setAiStep("error");
+      toast.error("Erreur lors de la génération");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
+  // ─── Per-page AI Regeneration ─────────────────────────────────────────────────
+
+  const handleRegeneratePage = async (page: SitemapPage) => {
+    setPageRegenerating((prev) => ({ ...prev, [page.id]: true }));
+    try {
+      const modelConfig = AI_MODELS.find((m) => m.id === selectedModel)!;
+      const context = pageContext[page.id] ?? "";
+      const res = await fetch("/api/site-builder-v2/ai/regenerate-page", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteId,
+          enterpriseId,
+          pageSlug: page.slug,
+          pageTitle: page.title,
+          currentSections: page.sections ?? [],
+          availableSectionTypes: availableSections.map((s) => s.type),
+          globalDescription: aiInput,
+          context,
+          model: selectedModel,
+          provider: modelConfig.provider,
+        }),
+      });
+      if (!res.ok) throw new Error("Erreur IA");
+      const data = await res.json();
+
+      if (data.sections) {
+        dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { sections: data.sections } } });
+      }
+
+      if (data.instances?.length) {
+        // Remove existing instances for this page
+        const existingIds = state.instancesByPage[page.slug] ?? [];
+        for (const id of existingIds) {
+          dispatch({ type: "REMOVE_INSTANCE", payload: id });
+        }
+        // Add new instances
+        for (const inst of data.instances) {
+          const secDef = availableSections.find((s) => s.type === inst.sectionType);
+          if (!secDef) continue;
+          dispatch({
+            type: "ADD_INSTANCE",
+            payload: {
+              instance: {
+                id: nanoid(),
+                site_id: siteId,
+                section_id: secDef.id,
+                section_def: secDef,
+                page_slug: page.slug,
+                sort_order: inst.sortOrder ?? 0,
+                content: inst.content ?? {},
+                custom_style: {},
+                is_hidden: false,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              },
+              pageSlug: page.slug,
+            },
+          });
+        }
+      }
+
+      toast.success(`Page "${page.title}" régénérée !`);
+    } catch {
+      toast.error("Erreur lors de la régénération");
+    } finally {
+      setPageRegenerating((prev) => ({ ...prev, [page.id]: false }));
+    }
+  };
+
+  // ─── Page management ─────────────────────────────────────────────────────────
+
+  const addPage = () => {
+    const id = nanoid();
+    const slug = `/page-${Date.now()}`;
+    dispatch({ type: "ADD_PAGE", payload: { id, slug, title: "Nouvelle page", sections: [] } });
+  };
+
+  const removePage = (id: string) => {
+    dispatch({ type: "REMOVE_PAGE", payload: id });
+  };
+
+  const toggleExpand = (id: string) => {
+    setExpandedPages((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const togglePageContext = (id: string) => {
+    setPageContextOpen((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // ─── SVG connector lines ──────────────────────────────────────────────────────
+
+  const PAGE_CARD_WIDTH = 280;
+  const PAGE_CARD_GAP = 40;
+  const ROOT_TOP = 60;
+  const PAGES_TOP = 200;
+
+  const pagePositions = state.sitemap.map((_, i) => ({
+    x: i * (PAGE_CARD_WIDTH + PAGE_CARD_GAP),
+    y: PAGES_TOP,
+  }));
+
+  const totalWidth = Math.max(
+    600,
+    state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP) + 120
+  );
+
+  const rootX = totalWidth / 2 - 80;
+
+  return (
+    <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
+
+      {/* ─ Left AI Panel ─────────────────────────────────────────────────────── */}
+      <div className="w-[280px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+        <div className="p-4 border-b border-gray-100">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles size={14} className="text-purple-500" />
+            <span className="text-sm font-semibold text-gray-900">Assistant IA</span>
+          </div>
+          <p className="text-xs text-gray-500">Décrivez votre activité pour générer votre sitemap automatiquement.</p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {!enterpriseId && (
+            <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+              <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
+              <span>Aucune entreprise liée. Les résultats seront génériques.</span>
+            </div>
+          )}
+
+          {/* Model selector */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-700">Modèle IA</label>
+            <ModelSelector value={selectedModel} onChange={setSelectedModel} />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-gray-700">Description de votre activité</label>
+            <textarea
+              value={aiInput}
+              onChange={(e) => setAiInput(e.target.value)}
+              placeholder="Ex: Entreprise de plomberie à Paris, spécialisée dans les rénovations de salles de bain et dépannages urgents..."
+              rows={5}
+              className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 text-gray-800 placeholder-gray-400"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-gray-700">Pages souhaitées</label>
+            <div className="flex flex-col gap-1">
+              {state.sitemap.map((page) => (
+                <div key={page.id} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded-md">
+                  <FileText size={11} className="text-gray-400" />
+                  <span className="text-xs text-gray-700">{page.title}</span>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={addPage}
+              className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 mt-1 pl-1"
+            >
+              <Plus size={11} />
+              Ajouter une page
+            </button>
+          </div>
+
+          {aiStep === "done" && (
+            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
+              Sitemap généré avec succès !
+            </div>
+          )}
+          {aiStep === "error" && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+              Une erreur est survenue. Réessayez.
+            </div>
+          )}
+        </div>
+
+        <div className="p-4 border-t border-gray-100">
+          <button
+            onClick={handleGenerate}
+            disabled={aiLoading || !aiInput.trim()}
+            className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+          >
+            {aiLoading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                Génération...
+              </>
+            ) : (
+              <>
+                <Send size={13} />
+                Générer le sitemap
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
+      <div
+        ref={canvas.containerRef}
+        className="flex-1 overflow-hidden relative cursor-default"
+        onMouseDown={canvas.onMouseDown}
+        onMouseMove={canvas.onMouseMove}
+        onMouseUp={canvas.onMouseUp}
+      >
+        {/* Dot grid background */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: "radial-gradient(circle, #c8c8c8 1px, transparent 1px)",
+            backgroundSize: "24px 24px",
+          }}
+        />
+
+        <div
+          style={{
+            transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.scale})`,
+            transformOrigin: "0 0",
+            position: "absolute",
+            width: totalWidth + 200,
+          }}
+        >
+          {/* SVG connector lines */}
+          <svg
+            style={{ position: "absolute", top: 0, left: 0, width: totalWidth + 200, height: 600, overflow: "visible", pointerEvents: "none" }}
+          >
+            {state.sitemap.map((page, i) => {
+              const pos = pagePositions[i];
+              const fromX = rootX + 80;
+              const fromY = ROOT_TOP + 36;
+              const toX = pos.x + PAGE_CARD_WIDTH / 2;
+              const toY = pos.y;
+              const midY = (fromY + toY) / 2;
+              return (
+                <path
+                  key={page.id}
+                  d={`M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`}
+                  stroke="#d1d5db"
+                  strokeWidth={1.5}
+                  fill="none"
+                  strokeDasharray="4 3"
+                />
+              );
+            })}
+          </svg>
+
+          {/* Root "Project" node */}
+          <div
+            style={{ position: "absolute", top: ROOT_TOP, left: rootX, width: 160 }}
+            className="bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm flex items-center gap-2"
+          >
+            <div className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center">
+              <FileText size={11} className="text-gray-500" />
+            </div>
+            <span className="text-sm font-semibold text-gray-800">Project</span>
+          </div>
+
+          {/* Page cards */}
+          {state.sitemap.map((page, i) => {
+            const pos = pagePositions[i];
+            const isExpanded = expandedPages.has(page.id);
+            const isContextOpen = pageContextOpen[page.id] ?? false;
+            const isRegenerating = pageRegenerating[page.id] ?? false;
+            const sections: SitemapSection[] = page.sections ?? [];
+
+            return (
+              <div
+                key={page.id}
+                style={{ position: "absolute", top: pos.y, left: pos.x, width: PAGE_CARD_WIDTH }}
+                className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden"
+              >
+                {/* Card header */}
+                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
+                  <div className="w-5 h-5 rounded bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <FileText size={10} className="text-blue-500" />
+                  </div>
+                  <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{page.title}</span>
+                  <div className="flex items-center gap-1">
+                    {/* Per-page AI regenerate */}
+                    <button
+                      onClick={() => handleRegeneratePage(page)}
+                      disabled={isRegenerating}
+                      className="p-1 hover:bg-purple-50 rounded text-purple-400 hover:text-purple-600 transition-colors"
+                      title="Régénérer cette page avec l'IA"
+                    >
+                      {isRegenerating ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Sparkles size={12} />
+                      )}
+                    </button>
+                    {/* Context toggle */}
+                    <button
+                      onClick={() => togglePageContext(page.id)}
+                      className={`p-1 hover:bg-gray-100 rounded transition-colors ${isContextOpen ? "text-blue-500" : "text-gray-400 hover:text-gray-600"}`}
+                      title="Ajouter du contexte pour cette page"
+                    >
+                      <Edit3 size={12} />
+                    </button>
+                    <button
+                      onClick={() => toggleExpand(page.id)}
+                      className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+                    >
+                      <ChevronRight size={12} className={`transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={() => setMenuOpen(menuOpen === page.id ? null : page.id)}
+                        className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+                      >
+                        <MoreHorizontal size={12} />
+                      </button>
+                      {menuOpen === page.id && (
+                        <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+                          <button
+                            onClick={() => { removePage(page.id); setMenuOpen(null); }}
+                            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 size={11} />
+                            Supprimer
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Per-page context input */}
+                {isContextOpen && (
+                  <div className="px-3 py-2 bg-blue-50/60 border-b border-blue-100">
+                    <p className="text-[10px] text-blue-600 font-medium mb-1">Contexte supplémentaire pour cette page</p>
+                    <textarea
+                      value={pageContext[page.id] ?? ""}
+                      onChange={(e) => setPageContext((prev) => ({ ...prev, [page.id]: e.target.value }))}
+                      placeholder="Ex: Focus sur les témoignages clients, inclure un formulaire de contact..."
+                      rows={3}
+                      className="w-full text-[10px] bg-white border border-blue-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-blue-400 text-gray-700 placeholder-gray-400"
+                    />
+                    <button
+                      onClick={() => handleRegeneratePage(page)}
+                      disabled={isRegenerating}
+                      className="mt-1.5 flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
+                    >
+                      {isRegenerating ? <Loader2 size={10} className="animate-spin" /> : <RotateCcw size={10} />}
+                      Régénérer cette page
+                    </button>
+                  </div>
+                )}
+
+                {/* Sections list */}
+                {sections.length > 0 && (
+                  <div className="divide-y divide-gray-50">
+                    {(isExpanded ? sections : sections.slice(0, 4)).map((sec) => (
+                      <div key={sec.id} className="px-3 py-2">
+                        <div className="text-xs font-medium text-gray-700 mb-0.5">{sec.name}</div>
+                        <div className="text-[10px] text-gray-400 leading-relaxed line-clamp-2">{sec.description}</div>
+                      </div>
+                    ))}
+                    {!isExpanded && sections.length > 4 && (
+                      <button
+                        onClick={() => toggleExpand(page.id)}
+                        className="w-full px-3 py-2 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 text-left"
+                      >
+                        +{sections.length - 4} sections de plus...
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {sections.length === 0 && (
+                  <div className="px-3 py-4 text-center">
+                    <p className="text-[10px] text-gray-400">Aucune section — générez le sitemap avec l&apos;IA</p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Add page button */}
+          <div style={{ position: "absolute", top: PAGES_TOP, left: state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP) }}>
+            <button
+              onClick={addPage}
+              className="w-10 h-10 bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors shadow-sm mt-3"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Controls bar */}
+        <div className="absolute bottom-4 right-4 flex items-center gap-2">
+          <button
+            onClick={canvas.resetView}
+            className="text-xs text-gray-500 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm hover:bg-gray-50 transition-colors"
+            title="Réinitialiser la vue"
+          >
+            ⊞ Reset
+          </button>
+          <div className="text-xs text-gray-400 bg-white border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none">
+            {Math.round(canvas.scale * 100)}%
+          </div>
+        </div>
+
+        {/* Pan hint */}
+        <div className="absolute bottom-4 left-4 text-[10px] text-gray-400 bg-white/80 border border-gray-200 rounded-md px-2 py-1 shadow-sm select-none pointer-events-none">
+          Espace + glisser pour naviguer · Molette pour zoomer
+        </div>
+
+        {/* Generation status */}
+        {aiLoading && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-gray-900 text-white text-xs px-4 py-2 rounded-full shadow-lg">
+            <Sparkles size={12} className="text-purple-400" />
+            Génération du sitemap...
+            <button
+              onClick={() => setAiLoading(false)}
+              className="ml-2 w-4 h-4 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
+            >
+              ×
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
