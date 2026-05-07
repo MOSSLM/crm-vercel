@@ -17,9 +17,9 @@ export function TextField({ setting, value, onChange }: TextFieldProps) {
     return (
       <textarea
         className={`${base} px-2.5 py-2 resize-none`}
-        rows={"rows" in setting ? setting.rows ?? 3 : 3}
+        rows={setting.rows ?? 3}
         value={value ?? ""}
-        placeholder={"placeholder" in setting ? (setting.placeholder ?? "") : ""}
+        placeholder={setting.placeholder ?? ""}
         onChange={(e) => onChange(e.target.value)}
       />
     );
@@ -30,7 +30,7 @@ export function TextField({ setting, value, onChange }: TextFieldProps) {
       type={setting.type === "url" ? "url" : "text"}
       className={`${base} px-2.5 py-1.5`}
       value={value ?? ""}
-      placeholder={"placeholder" in setting ? (setting.placeholder ?? "") : ""}
+      placeholder={setting.placeholder ?? ""}
       onChange={(e) => onChange(e.target.value)}
     />
   );

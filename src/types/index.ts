@@ -832,7 +832,7 @@ interface SectionFieldBase {
 }
 
 export interface SectionTextField extends SectionFieldBase { type: 'text' | 'url'; placeholder?: string; maxLength?: number; }
-export interface SectionTextareaField extends SectionFieldBase { type: 'textarea' | 'richtext'; rows?: number; maxLength?: number; }
+export interface SectionTextareaField extends SectionFieldBase { type: 'textarea' | 'richtext'; rows?: number; maxLength?: number; placeholder?: string; }
 export interface SectionNumberField extends SectionFieldBase { type: 'number'; min?: number; max?: number; step?: number; unit?: string; }
 export interface SectionRangeField extends SectionFieldBase { type: 'range'; min: number; max: number; step?: number; unit?: string; }
 export interface SectionColorField extends SectionFieldBase { type: 'color'; }
