@@ -58,6 +58,7 @@ export function SectionLibraryPanel({ sections }: SectionLibraryPanelProps) {
       page_slug: state.activePage,
       sort_order: (state.instancesByPage[state.activePage] ?? []).length,
       content: baseContent,
+      blocks: [],
       custom_style: {},
       is_hidden: false,
       created_at: new Date().toISOString(),

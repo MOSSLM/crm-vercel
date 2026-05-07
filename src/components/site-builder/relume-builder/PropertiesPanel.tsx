@@ -5,9 +5,11 @@ import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X, Se
 import type { SiteSectionInstance, SnippetDefinition } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
+import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
 import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
 import { getSchemaForSection } from "@/data/section-schemas";
 import type { ColorSchemePreset } from "@/lib/color-utils";
+import type { SectionPreset } from "@/types";
 
 interface PropertiesPanelProps {
   onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
@@ -44,6 +46,10 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
       type: "UPDATE_INSTANCE_CONTENT",
       payload: { id: instance.id, content: { [key]: value } },
     });
+  };
+
+  const applyPreset = (preset: SectionPreset) => {
+    dispatch({ type: "APPLY_PRESET", payload: { instanceId: instance.id, preset } });
   };
 
   // Determine which tabs are shown
@@ -118,20 +124,40 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
       {/* Tab Content */}
       <div className="flex-1 overflow-y-auto">
         {activeTab === "content" && (
-          <div className="px-4 py-3">
+          <div className="px-4 py-3 space-y-4">
+            {/* Presets selector (only when the schema declares any) */}
+            {schema?.presets && schema.presets.length > 0 && (
+              <PresetsPicker presets={schema.presets} onApply={applyPreset} />
+            )}
+
             {schema ? (
-              (() => {
-                const { contentFields } = splitSchemaFields(schema);
-                const contentOnlySchema = { ...schema, settings: contentFields };
-                return (
-                  <SchemaEditor
-                    schema={contentOnlySchema}
-                    content={instance.content}
-                    onUpdate={updateContent}
+              <>
+                {(() => {
+                  const { contentFields } = splitSchemaFields(schema);
+                  const contentOnlySchema = { ...schema, settings: contentFields };
+                  return (
+                    <SchemaEditor
+                      schema={contentOnlySchema}
+                      content={instance.content}
+                      onUpdate={updateContent}
+                      styleGuide={state.styleGuide}
+                    />
+                  );
+                })()}
+                {/* Blocks editor — only when schema declares blocks */}
+                {schema.blocks && schema.blocks.length > 0 && (
+                  <BlocksEditor
+                    schema={schema}
+                    blocks={instance.blocks ?? []}
                     styleGuide={state.styleGuide}
+                    onAdd={(blockType, settings) => dispatch({ type: "ADD_BLOCK", payload: { instanceId: instance.id, blockType, settings } })}
+                    onUpdate={(blockId, settings) => dispatch({ type: "UPDATE_BLOCK", payload: { instanceId: instance.id, blockId, settings } })}
+                    onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
+                    onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
+                    onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
                   />
-                );
-              })()
+                )}
+              </>
             ) : sectionDef.structure?.snippets?.length > 0 ? (
               <SnippetsEditor instance={instance} snippets={sectionDef.structure.snippets} />
             ) : (
@@ -153,15 +179,31 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
               />
             </div>
 
-            {/* Style fields from schema */}
+            {/* Layout fields from schema */}
+            {schema && (() => {
+              const { layoutFields } = splitSchemaFields(schema);
+              if (layoutFields.length === 0) return null;
+              return (
+                <div>
+                  <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Mise en page</div>
+                  <SchemaEditor
+                    schema={{ name: "layout", settings: layoutFields }}
+                    content={instance.content}
+                    onUpdate={updateContent}
+                    styleGuide={state.styleGuide}
+                  />
+                </div>
+              );
+            })()}
+
+            {/* Style fields from schema (excluding color scheme rendered above) */}
             {schema && (() => {
               const { styleFields } = splitSchemaFields(schema);
-              // Remove __color_scheme since we render it above
               const filteredStyle = styleFields.filter((f) => !("id" in f) || f.id !== "__color_scheme");
               if (filteredStyle.length === 0) return null;
               return (
                 <div>
-                  <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Mise en page</div>
+                  <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Style</div>
                   <SchemaEditor
                     schema={{ name: "style", settings: filteredStyle }}
                     content={instance.content}
@@ -514,6 +556,59 @@ function ArrayFieldEditor({ contentKey, items, onUpdate }: {
       >
         + Ajouter
       </button>
+    </div>
+  );
+}
+
+// ─── Presets Picker ───────────────────────────────────────────────────────────
+
+function PresetsPicker({ presets, onApply }: { presets: SectionPreset[]; onApply: (p: SectionPreset) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [confirmIndex, setConfirmIndex] = React.useState<number | null>(null);
+
+  return (
+    <div className="border border-white/10 rounded-md overflow-hidden bg-white/[0.02]">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-white/[0.04] transition-colors"
+      >
+        <div>
+          <div className="text-[11px] font-medium text-white/70">Presets</div>
+          <div className="text-[10px] text-white/30 mt-0.5">{presets.length} configuration{presets.length > 1 ? "s" : ""} prêt{presets.length > 1 ? "es" : "e"} à l&apos;emploi</div>
+        </div>
+        <Sparkles size={11} className="text-purple-400/60" />
+      </button>
+      {open && (
+        <div className="border-t border-white/5">
+          {presets.map((preset, i) => (
+            <div key={i} className="border-b border-white/5 last:border-b-0">
+              <button
+                onClick={() => setConfirmIndex(confirmIndex === i ? null : i)}
+                className="w-full text-left px-3 py-2 hover:bg-white/[0.04] transition-colors"
+              >
+                <div className="text-[11px] text-white/80">{preset.name}</div>
+                {preset.description && <div className="text-[10px] text-white/30 mt-0.5">{preset.description}</div>}
+              </button>
+              {confirmIndex === i && (
+                <div className="flex gap-2 px-3 pb-2">
+                  <button
+                    onClick={() => { onApply(preset); setConfirmIndex(null); setOpen(false); }}
+                    className="flex-1 text-[10px] py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded"
+                  >
+                    Appliquer (remplace le contenu)
+                  </button>
+                  <button
+                    onClick={() => setConfirmIndex(null)}
+                    className="text-[10px] py-1 px-2 text-white/40 hover:text-white/70"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

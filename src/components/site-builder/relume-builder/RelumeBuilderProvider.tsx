@@ -49,7 +49,9 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     case "LOAD": {
       const instancesMap: Record<string, SiteSectionInstance> = {};
       for (const inst of action.payload.instances) {
-        instancesMap[inst.id] = inst;
+        // Ensure `blocks` is always an array (DB column may be missing on old rows
+        // or not yet returned by the API).
+        instancesMap[inst.id] = { ...inst, blocks: Array.isArray(inst.blocks) ? inst.blocks : [] };
       }
       const byPage = buildInstancesByPage(instancesMap);
       const firstPage = action.payload.sitemap[0]?.slug ?? "/";
@@ -93,9 +95,14 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       const newIds = [...currentIds];
       newIds.splice(insertAt, 0, instance.id);
 
-      // Update sort_orders
+      // Update sort_orders + ensure blocks is always an array
       const newInstances = { ...state.instances };
-      newInstances[instance.id] = { ...instance, page_slug: pageSlug, sort_order: insertAt };
+      newInstances[instance.id] = {
+        ...instance,
+        blocks: Array.isArray(instance.blocks) ? instance.blocks : [],
+        page_slug: pageSlug,
+        sort_order: insertAt,
+      };
       for (let i = 0; i < newIds.length; i++) {
         newInstances[newIds[i]] = { ...newInstances[newIds[i]], sort_order: i };
       }
@@ -157,6 +164,117 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           [action.payload.id]: { ...inst, custom_style: { ...inst.custom_style, ...action.payload.style } },
         },
         isDirty: true,
+      };
+    }
+
+    case "ADD_BLOCK": {
+      const snapshot = takeSnapshot(state);
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const newBlock = {
+        id: nanoid(),
+        type: action.payload.blockType,
+        settings: action.payload.settings ?? {},
+      };
+      const blocks = [...inst.blocks];
+      const at = action.payload.index ?? blocks.length;
+      blocks.splice(at, 0, newBlock);
+      return {
+        ...state,
+        instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
+        isDirty: true,
+        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
+        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+      };
+    }
+
+    case "UPDATE_BLOCK": {
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const blocks = inst.blocks.map((b) =>
+        b.id === action.payload.blockId
+          ? { ...b, settings: { ...b.settings, ...action.payload.settings } }
+          : b
+      );
+      return {
+        ...state,
+        instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
+        isDirty: true,
+      };
+    }
+
+    case "REMOVE_BLOCK": {
+      const snapshot = takeSnapshot(state);
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const blocks = inst.blocks.filter((b) => b.id !== action.payload.blockId);
+      return {
+        ...state,
+        instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
+        isDirty: true,
+        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
+        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+      };
+    }
+
+    case "DUPLICATE_BLOCK": {
+      const snapshot = takeSnapshot(state);
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const idx = inst.blocks.findIndex((b) => b.id === action.payload.blockId);
+      if (idx < 0) return state;
+      const original = inst.blocks[idx];
+      const copy = { id: nanoid(), type: original.type, settings: { ...original.settings } };
+      const blocks = [...inst.blocks.slice(0, idx + 1), copy, ...inst.blocks.slice(idx + 1)];
+      return {
+        ...state,
+        instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
+        isDirty: true,
+        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
+        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+      };
+    }
+
+    case "REORDER_BLOCKS": {
+      const snapshot = takeSnapshot(state);
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const blocks = [...inst.blocks];
+      const [moved] = blocks.splice(action.payload.fromIndex, 1);
+      if (!moved) return state;
+      blocks.splice(action.payload.toIndex, 0, moved);
+      return {
+        ...state,
+        instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
+        isDirty: true,
+        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
+        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+      };
+    }
+
+    case "APPLY_PRESET": {
+      const snapshot = takeSnapshot(state);
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const { preset } = action.payload;
+      const newBlocks = (preset.blocks ?? []).map((b) => ({
+        id: nanoid(),
+        type: b.type,
+        settings: { ...(b.settings ?? {}) },
+      }));
+      return {
+        ...state,
+        instances: {
+          ...state.instances,
+          [inst.id]: {
+            ...inst,
+            content: { ...inst.content, ...(preset.settings ?? {}) },
+            blocks: newBlocks,
+          },
+        },
+        isDirty: true,
+        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
+        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
       };
     }
 
@@ -226,7 +344,13 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         const src = state.instances[instId];
         if (!src) continue;
         const newInstId = nanoid();
-        newInstances[newInstId] = { ...src, id: newInstId, page_slug: newSlug };
+        newInstances[newInstId] = {
+          ...src,
+          id: newInstId,
+          page_slug: newSlug,
+          // Deep-clone blocks with fresh ids so edits to the copy don't bleed back.
+          blocks: src.blocks.map((b) => ({ id: nanoid(), type: b.type, settings: { ...b.settings } })),
+        };
         newIds.push(newInstId);
       }
       return {

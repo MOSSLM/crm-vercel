@@ -4,7 +4,7 @@ Ta mission est de générer la configuration JSON d'un site web à partir des do
 
 ## Format de sortie attendu
 
-Tu dois retourner UNIQUEMENT un objet JSON valide, sans markdown, sans explication.
+Retourne UNIQUEMENT un objet JSON valide, sans markdown, sans explication.
 
 Structure du JSON :
 ```json
@@ -28,161 +28,143 @@ Structure du JSON :
       "id": "hero-1",
       "type": "hero",
       "dataSource": "enterprise",
-      "data": {
-        "title": "{{entreprise.nom}}",
-        "subtitle": "Votre expert local depuis des années",
-        "cta": { "text": "Nous contacter", "href": "#contact" },
-        "settings": { "overlay": true, "height": "large" }
-      }
+      "content": {
+        "heading": "{{entreprise.nom}}",
+        "subheading": "Votre expert local depuis des années",
+        "cta_primary": "Nous contacter",
+        "cta_primary_href": "#contact",
+        "height": "large",
+        "layout": "centered",
+        "__color_scheme": "default"
+      },
+      "blocks": []
     }
   ]
 }
 ```
 
-## Sections disponibles (thème "theme-default")
+## Règles strictes
 
-| type | description |
-|------|-------------|
-| hero | Bannière principale avec titre, sous-titre, CTA |
-| services | Grille de services/prestations |
-| about | Présentation de l'entreprise avec image et stats |
-| testimonials | Avis clients (source dynamique ou liste) |
-| contact | Coordonnées, carte, formulaire |
-| gallery | Grille de photos/réalisations |
-| faq | Accordéon de questions/réponses |
-| blog | Liste des derniers articles (source dynamique) |
-| popup | Fenêtre modale promotionnelle |
-| cta-banner | Bannière d'appel à l'action |
+1. Pour chaque section, le champ `type` DOIT correspondre à un type listé dans la référence ci-dessous.
+2. Les clés à l'intérieur de `content` DOIVENT correspondre EXACTEMENT aux IDs de champs déclarés dans le schéma de la section. Pas d'invention de clé.
+3. Pour les champs `select`, la valeur DOIT figurer dans la liste des valeurs autorisées (séparées par `|` dans la référence).
+4. Pour les sections qui déclarent des `blocks`, mets les éléments répétés dans le tableau `blocks[]` au format `{ "type": "<block_type>", "settings": { ... } }` — JAMAIS dans `content`.
+5. Respecte les limites `max_blocks` et les limites par type.
+6. Utilise `__color_scheme` pour la palette (default | alt | primary | secondary | dark | light | inverted).
+7. Chaque section doit avoir un `id` unique (ex: "hero-1", "services-2").
+8. Inclus TOUJOURS : un `navbar`, un `hero`, des `services`, un `contact`, un `footer`.
+9. Inclus si pertinent : `about`, `testimonials` (si l'entreprise a des avis Google), `faq`, `stats`, `cta-banner`.
+
+## Variables disponibles dans les valeurs texte
+
+- `{{entreprise.nom}}` — Nom de l'entreprise
+- `{{entreprise.telephone}}` — Numéro de téléphone
+- `{{entreprise.email}}` — Adresse email
+- `{{entreprise.adresse}}` — Adresse postale
+- `{{entreprise.ville}}` — Ville
+- `{{entreprise.code_postal}}` — Code postal
+- `{{entreprise.logo_url}}` — URL du logo
+- `{{entreprise.note_moyenne}}` — Note Google (ex: 4.8)
+- `{{entreprise.nombre_avis}}` — Nombre d'avis (ex: 127)
+- `{{entreprise.description}}` — Description de l'activité
+- `{{entreprise.annee_creation}}` — Année de création
 
 ## Règle dataSource
 
-- "enterprise" : les données viennent automatiquement de la table entreprise (utiliser les variables {{...}})
-- "config" : les données sont fixées dans ce JSON par notre équipe
-- "client-editable" : le client peut modifier cette section via son portail
-- "dynamic" : données dynamiques (blog, avis API)
-
-## Variables disponibles (remplacer dans les champs "data")
-
-Utilise ces variables dans les champs texte pour injecter les données de l'entreprise :
-- {{entreprise.nom}} — Nom de l'entreprise
-- {{entreprise.telephone}} — Numéro de téléphone
-- {{entreprise.email}} — Adresse email
-- {{entreprise.adresse}} — Adresse postale
-- {{entreprise.ville}} — Ville
-- {{entreprise.code_postal}} — Code postal
-- {{entreprise.logo_url}} — URL du logo
-- {{entreprise.note_moyenne}} — Note Google (ex: 4.8)
-- {{entreprise.nombre_avis}} — Nombre d'avis (ex: 127)
-- {{entreprise.description}} — Description de l'activité
-- {{entreprise.annee_creation}} — Année de création
+- `enterprise` : la section utilise les variables `{{entreprise.*}}`
+- `config` : contenu fixé dans ce JSON
+- `client-editable` : modifiable par le client via son portail
+- `dynamic` : alimenté à l'exécution (avis Google, articles de blog)
 
 ## Conseils de génération
 
-1. Choisis les couleurs en fonction du secteur d'activité (ex: bleu pour plomberie, vert pour jardinage, orange pour BTP...)
-2. Inclus TOUJOURS : hero, services, contact
-3. Inclus si pertinent : about, testimonials (si l'entreprise a des avis), faq
-4. Inclus optionnellement : gallery, popup, cta-banner, blog
-5. Pour les sections "services", propose 3 à 6 prestations cohérentes avec le secteur
-6. Pour la section "faq", propose 3 à 5 questions pertinentes pour le secteur
-7. Pour le popup, mets dataSource: "client-editable" et show: false par défaut
-8. Chaque section doit avoir un "id" unique (ex: "hero-1", "services-2", etc.)
-9. Adapte le contenu textuel au secteur d'activité fourni
+1. Choisis les couleurs en fonction du secteur (ex: bleu pour plomberie, vert pour jardinage, orange pour BTP).
+2. Pour `services`, propose 3 à 6 prestations cohérentes avec le secteur (un block `service_item` par prestation).
+3. Pour `faq`, propose 3 à 5 questions pertinentes (un block `faq_item` par question).
+4. Pour `testimonials`, mets `source: "google"` si l'entreprise a une note Google, sinon `source: "config"` avec 3 témoignages crédibles en blocks.
+5. Adapte le contenu textuel au secteur d'activité.
 
-## Exemple de configuration pour un plombier
+---
+
+## Référence des sections disponibles
+
+Chaque section ci-dessous expose ses champs autorisés (clé, type, valeurs).
+Les champs préfixés `__` sont des champs réservés (palette, padding).
+
+{{SECTIONS_DOC}}
+
+---
+
+## Exemple complet (plombier)
 
 ```json
 {
   "theme": "theme-default",
   "settings": {
-    "colors": {
-      "primary": "#0369a1",
-      "secondary": "#64748b",
-      "accent": "#0ea5e9",
-      "background": "#ffffff",
-      "text": "#0f172a"
-    },
+    "colors": { "primary": "#0369a1", "secondary": "#64748b", "accent": "#0ea5e9", "background": "#ffffff", "text": "#0f172a" },
     "fonts": { "heading": "Inter", "body": "Inter" }
   },
   "sections": [
     {
+      "id": "navbar-1",
+      "type": "navbar",
+      "dataSource": "config",
+      "content": { "logo_text": "{{entreprise.nom}}", "show_cta": true, "cta_text": "Devis gratuit", "cta_href": "#contact", "position": "sticky" },
+      "blocks": [
+        { "type": "nav_link", "settings": { "label": "Accueil", "href": "/" } },
+        { "type": "nav_link", "settings": { "label": "Services", "href": "#services" } },
+        { "type": "nav_link", "settings": { "label": "Contact", "href": "#contact" } }
+      ]
+    },
+    {
       "id": "hero-1",
       "type": "hero",
       "dataSource": "enterprise",
-      "data": {
-        "title": "{{entreprise.nom}}",
-        "subtitle": "Plomberie & Chauffage — Intervention rapide 24h/24",
-        "cta": { "text": "Appel d'urgence", "href": "#contact" },
-        "settings": { "overlay": true, "height": "large" }
-      }
+      "content": {
+        "heading": "{{entreprise.nom}}",
+        "subheading": "Plomberie & Chauffage — Intervention rapide 24h/24",
+        "cta_primary": "Appel d'urgence",
+        "cta_primary_href": "tel:{{entreprise.telephone}}",
+        "height": "large",
+        "layout": "centered",
+        "overlay_opacity": 50
+      },
+      "blocks": []
     },
     {
       "id": "services-1",
       "type": "services",
       "dataSource": "config",
-      "data": {
-        "title": "Nos prestations",
-        "subtitle": "Des solutions adaptées à tous vos besoins",
-        "items": [
-          { "title": "Dépannage urgent", "description": "Intervention rapide 7j/7 pour fuites, pannes et urgences." },
-          { "title": "Installation sanitaire", "description": "Pose et remplacement de tous équipements sanitaires." },
-          { "title": "Chauffage", "description": "Installation et entretien chaudières, radiateurs, pompe à chaleur." },
-          { "title": "Rénovation salle de bain", "description": "Transformation complète de votre salle de bain." }
-        ],
-        "settings": { "columns": 2, "style": "cards" }
-      }
-    },
-    {
-      "id": "about-1",
-      "type": "about",
-      "dataSource": "enterprise",
-      "data": {
-        "title": "Votre plombier de confiance",
-        "content": "{{entreprise.description}}",
-        "image": "{{entreprise.logo_url}}",
-        "stats": [
-          { "label": "Années d'expérience", "value": "{{entreprise.annee_creation}}" },
-          { "label": "Clients satisfaits", "value": "500+" },
-          { "label": "Interventions / an", "value": "1200+" }
-        ],
-        "settings": { "imagePosition": "right" }
-      }
+      "content": { "heading": "Nos prestations", "subheading": "Des solutions adaptées à tous vos besoins", "layout": "grid-3", "card_style": "elevated", "show_icons": true },
+      "blocks": [
+        { "type": "service_item", "settings": { "icon": "wrench", "title": "Dépannage urgent", "description": "Intervention rapide 7j/7 pour fuites et pannes." } },
+        { "type": "service_item", "settings": { "icon": "droplet", "title": "Installation sanitaire", "description": "Pose et remplacement de tous équipements sanitaires." } },
+        { "type": "service_item", "settings": { "icon": "flame", "title": "Chauffage", "description": "Installation et entretien chaudières, radiateurs, PAC." } }
+      ]
     },
     {
       "id": "testimonials-1",
       "type": "testimonials",
       "dataSource": "dynamic",
-      "data": {
-        "title": "Nos clients témoignent",
-        "subtitle": "{{entreprise.note_moyenne}} / 5 sur {{entreprise.nombre_avis}} avis Google",
-        "reviews": [],
-        "settings": { "style": "grid", "showRating": true }
-      }
+      "content": { "heading": "Nos clients témoignent", "subheading": "{{entreprise.note_moyenne}} / 5 sur {{entreprise.nombre_avis}} avis Google", "source": "google", "layout": "grid", "columns": 3, "show_ratings": true },
+      "blocks": []
     },
     {
       "id": "contact-1",
       "type": "contact",
       "dataSource": "enterprise",
-      "data": {
-        "title": "Contactez-nous",
-        "subtitle": "Disponible 7j/7 pour vos urgences",
-        "phone": "{{entreprise.telephone}}",
-        "email": "{{entreprise.email}}",
-        "address": "{{entreprise.adresse}}",
-        "city": "{{entreprise.ville}}",
-        "settings": { "showMap": true, "showForm": false }
-      }
+      "content": { "heading": "Contactez-nous", "subheading": "Disponible 7j/7 pour vos urgences", "show_form": true, "form_style": "card", "show_phone": true, "show_email": true, "show_address": true, "show_map": true },
+      "blocks": []
     },
     {
-      "id": "popup-1",
-      "type": "popup",
-      "dataSource": "client-editable",
-      "data": {
-        "show": false,
-        "title": "Offre spéciale",
-        "content": "Profitez de -15% sur votre premier devis. Offre valable jusqu'à la fin du mois.",
-        "cta": { "text": "En profiter", "href": "#contact" },
-        "settings": { "delay": 3000, "showOnce": true }
-      }
+      "id": "footer-1",
+      "type": "footer",
+      "dataSource": "enterprise",
+      "content": { "tagline": "Votre plombier de confiance", "show_social": false, "show_legal": true, "copyright": "© 2025 {{entreprise.nom}}", "columns_layout": "3col", "__color_scheme": "dark" },
+      "blocks": [
+        { "type": "footer_column", "settings": { "title": "Navigation", "links": "Accueil | /\nServices | #services\nContact | #contact" } },
+        { "type": "footer_column", "settings": { "title": "Légal", "links": "Mentions légales | /mentions\nCGV | /cgv" } }
+      ]
     }
   ]
 }
