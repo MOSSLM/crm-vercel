@@ -4,8 +4,10 @@ import React from "react";
 import {
   Laptop, Tablet, Smartphone, Layers, Sparkles,
   Move, Zap, Image as ImageIcon, Maximize2,
-  ChevronDown, Play, Square, MoreHorizontal,
-  ZoomIn, ZoomOut, Eye, EyeOff
+  ChevronDown, Play, MoreHorizontal,
+  ZoomIn, ZoomOut, Eye, EyeOff,
+  Type as TypeIcon, MousePointer, Box, ChevronRight,
+  Trash2
 } from "lucide-react";
 import type { SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
@@ -68,14 +70,45 @@ interface DesignWorkspaceProps {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+interface SelectedElement {
+  instanceId: string;
+  tag: string;
+  text: string;
+  path: number[];
+}
+
+function elementIcon(tag: string) {
+  if (/^h[1-6]$/.test(tag) || tag === "p" || tag === "span" || tag === "blockquote" || tag === "li") return TypeIcon;
+  if (tag === "img" || tag === "picture" || tag === "svg") return ImageIcon;
+  if (tag === "a" || tag === "button") return MousePointer;
+  return Box;
+}
+
 export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const canvas = useCanvasPanZoom();
   const [activePanel, setActivePanel] = React.useState<DesignPanel>("animations");
   const [panelOpen, setPanelOpen] = React.useState(true);
   const [previewMode, setPreviewMode] = React.useState(false);
+  const [layersOpen, setLayersOpen] = React.useState(true);
+  const [expandedInstances, setExpandedInstances] = React.useState<Set<string>>(new Set());
+  const [selectedElement, setSelectedElement] = React.useState<SelectedElement | null>(null);
 
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
+
+  const handleElementClick = React.useCallback((instanceId: string) => (info: { tag: string; text: string; path: number[] }) => {
+    dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
+    setSelectedElement({ instanceId, ...info });
+  }, [dispatch]);
+
+  const toggleInstanceExpanded = (id: string) => {
+    setExpandedInstances((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const deviceWidth =
     state.deviceView === "mobile" ? 390 :
@@ -484,6 +517,8 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
                         onSelect={() => dispatch({ type: "SELECT_INSTANCE", payload: instanceId })}
                         selectedSnippetId={isSelected ? state.selectedSnippetId : null}
                         onSelectSnippet={(id) => dispatch({ type: "SELECT_SNIPPET", payload: id })}
+                        selectionEnabled
+                        onElementClick={handleElementClick(instanceId)}
                       />
                       {isSelected && (
                         <div className="absolute top-0 left-0 z-30 bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-br font-medium">
@@ -540,6 +575,142 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
           </div>
         </div>
       </div>
+
+      {/* ─ Right: Layers panel (Framer-style) ─────────────────────────────────── */}
+      {layersOpen && (
+        <div className="w-[260px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
+            <div className="flex items-center gap-1.5">
+              <Layers size={12} className="text-gray-500" />
+              <span className="text-xs font-semibold text-gray-700">Calques</span>
+            </div>
+            <button
+              onClick={() => setLayersOpen(false)}
+              className="text-gray-400 hover:text-gray-600"
+              title="Masquer le panneau"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto px-1 py-2 text-[11px] text-gray-700">
+            {state.sitemap.map((page) => {
+              const ids = state.instancesByPage[page.slug] ?? [];
+              const isActive = page.slug === state.activePage;
+              return (
+                <div key={page.id} className="mb-1.5">
+                  <button
+                    onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: page.slug })}
+                    className={`flex items-center gap-1.5 w-full px-2 py-1 rounded-md ${isActive ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-700"}`}
+                  >
+                    <ChevronDown size={11} className="text-gray-400" />
+                    <span className="font-semibold flex-1 text-left truncate">{page.title}</span>
+                    <span className="text-[9px] text-gray-400">{ids.length}</span>
+                  </button>
+                  {isActive && (
+                    <div className="ml-2 border-l border-gray-100 pl-1">
+                      {ids.map((instanceId) => {
+                        const inst = state.instances[instanceId];
+                        if (!inst) return null;
+                        const def = inst.section_def ?? (inst.section_id ? sectionDefs[inst.section_id] : null);
+                        const isSel = state.selectedInstanceId === instanceId;
+                        const expanded = expandedInstances.has(instanceId);
+                        const blocks = inst.blocks ?? [];
+                        const elementSelectedHere = selectedElement?.instanceId === instanceId;
+                        return (
+                          <div key={instanceId} className="">
+                            <div
+                              className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"}`}
+                              onClick={() => {
+                                dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
+                                setSelectedElement(null);
+                              }}
+                            >
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleInstanceExpanded(instanceId); }}
+                                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                              >
+                                <ChevronRight size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+                              </button>
+                              <Box size={11} className="text-gray-400 flex-shrink-0" />
+                              <span className="flex-1 truncate text-[11px]">{def?.name ?? "Section"}</span>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
+                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
+                                title={inst.is_hidden ? "Afficher" : "Masquer"}
+                              >
+                                {inst.is_hidden ? <EyeOff size={10} /> : <Eye size={10} />}
+                              </button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); dispatch({ type: "REMOVE_INSTANCE", payload: instanceId }); }}
+                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
+                                title="Supprimer"
+                              >
+                                <Trash2 size={10} />
+                              </button>
+                            </div>
+                            {expanded && (
+                              <div className="ml-3 pl-2 border-l border-gray-100">
+                                {blocks.length === 0 && !elementSelectedHere && (
+                                  <div className="text-[10px] text-gray-300 px-1.5 py-1 italic">Aucun bloc — cliquez sur un élément dans la prévisualisation</div>
+                                )}
+                                {blocks.map((b, bIdx) => (
+                                  <div
+                                    key={b.id}
+                                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); }}
+                                    className="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-gray-50 text-[10px] text-gray-600 cursor-pointer"
+                                  >
+                                    <Box size={9} className="text-gray-300" />
+                                    <span className="truncate">{b.type} {bIdx + 1}</span>
+                                  </div>
+                                ))}
+                                {elementSelectedHere && selectedElement && (() => {
+                                  const Icon = elementIcon(selectedElement.tag);
+                                  return (
+                                    <div className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-blue-50 text-blue-700 text-[10px]">
+                                      <Icon size={10} />
+                                      <span className="font-semibold uppercase">{selectedElement.tag}</span>
+                                      <span className="truncate text-blue-500">{selectedElement.text || "—"}</span>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {ids.length === 0 && (
+                        <div className="px-2 py-1.5 text-[10px] text-gray-300 italic">Aucune section</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {selectedElement && (
+            <div className="border-t border-gray-100 p-3 bg-gray-50/50">
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Élément sélectionné</div>
+              {(() => { const Icon = elementIcon(selectedElement.tag); return (
+                <div className="flex items-center gap-1.5 text-xs text-gray-800">
+                  <Icon size={12} className="text-blue-500" />
+                  <span className="font-semibold uppercase">{selectedElement.tag}</span>
+                </div>
+              ); })()}
+              <div className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{selectedElement.text || "—"}</div>
+              <div className="text-[9px] text-gray-300 font-mono mt-1">chemin : {selectedElement.path.join(".")}</div>
+            </div>
+          )}
+        </div>
+      )}
+      {!layersOpen && (
+        <button
+          onClick={() => setLayersOpen(true)}
+          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-5 h-12 bg-white border border-gray-200 border-r-0 rounded-l-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
+          title="Afficher les calques"
+        >
+          <Layers size={12} />
+        </button>
+      )}
     </div>
   );
 }

@@ -73,10 +73,11 @@ function CompanyDropdown({
       setLoading(true);
       fetch("/api/site-builder/entreprises")
         .then((r) => r.json())
-        .then((data: Entreprise[]) => {
-          setCompanies(data);
+        .then((data: unknown) => {
+          const list = Array.isArray(data) ? (data as Entreprise[]) : [];
+          setCompanies(list);
           if (currentEnterpriseId) {
-            const found = data.find((c) => c.id === currentEnterpriseId);
+            const found = list.find((c) => c.id === currentEnterpriseId);
             if (found) setCurrentName(found.nom);
           }
         })
@@ -90,10 +91,11 @@ function CompanyDropdown({
     if (currentEnterpriseId && !currentName) {
       fetch("/api/site-builder/entreprises")
         .then((r) => r.json())
-        .then((data: Entreprise[]) => {
-          const found = data.find((c) => c.id === currentEnterpriseId);
+        .then((data: unknown) => {
+          const list = Array.isArray(data) ? (data as Entreprise[]) : [];
+          const found = list.find((c) => c.id === currentEnterpriseId);
           if (found) setCurrentName(found.nom);
-          setCompanies(data);
+          setCompanies(list);
         })
         .catch(() => {});
     }
@@ -651,7 +653,7 @@ function RelumeEditorInner({
           />
         )}
         {state.activeWorkspace === "style-guide" && (
-          <StyleGuideWorkspace />
+          <StyleGuideWorkspace sectionDefs={sectionDefs} />
         )}
         {state.activeWorkspace === "design" && (
           <DesignWorkspace

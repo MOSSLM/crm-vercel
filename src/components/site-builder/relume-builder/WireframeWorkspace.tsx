@@ -3,7 +3,7 @@
 import React from "react";
 import {
   Laptop, Tablet, Smartphone, Plus, Trash2, Layers,
-  Search, Sparkles, GripVertical, MoreHorizontal,
+  Search, Sparkles, MoreHorizontal,
   ChevronDown, RefreshCw, Loader2, MessageSquare, Send,
   ZoomIn, ZoomOut
 } from "lucide-react";
@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { type AIModelId, ModelDropdown } from "./SitemapWorkspace";
+import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -59,122 +60,6 @@ function useCanvasPanZoom(initialPan = { x: 40, y: 40 }) {
 // ─── Section type categories ──────────────────────────────────────────────────
 
 const CATEGORIES = ["Tous", "Hero", "Services", "Content", "Social Proof", "Contact", "CTA", "Media"];
-
-// ─── Wireframe block renderers ────────────────────────────────────────────────
-
-function WireframeBlock({ type, name }: { type: string; name: string }) {
-  const lname = (name + " " + type).toLowerCase();
-
-  if (lname.includes("hero")) {
-    return (
-      <div className="bg-gray-100 px-4 py-6 flex flex-col items-center gap-3">
-        <div className="w-2/3 h-3 bg-gray-300 rounded" />
-        <div className="w-1/2 h-2 bg-gray-200 rounded" />
-        <div className="w-1/3 h-2 bg-gray-200 rounded" />
-        <div className="flex gap-2 mt-1">
-          <div className="w-16 h-5 bg-gray-400 rounded" />
-          <div className="w-16 h-5 bg-gray-200 border border-gray-300 rounded" />
-        </div>
-        <div className="w-full h-20 bg-gray-200 rounded-lg mt-2 flex items-center justify-center">
-          <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center text-gray-400 text-xs">▶</div>
-        </div>
-      </div>
-    );
-  }
-
-  if (lname.includes("service") || lname.includes("feature")) {
-    return (
-      <div className="bg-white px-4 py-4 flex flex-col gap-2">
-        <div className="w-1/3 h-2 bg-gray-300 rounded" />
-        <div className="w-2/3 h-2 bg-gray-200 rounded" />
-        <div className="grid grid-cols-3 gap-2 mt-2">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="bg-gray-100 rounded p-2 flex flex-col gap-1">
-              <div className="w-5 h-5 bg-gray-300 rounded" />
-              <div className="w-full h-1.5 bg-gray-200 rounded" />
-              <div className="w-3/4 h-1.5 bg-gray-200 rounded" />
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (lname.includes("testimonial")) {
-    return (
-      <div className="bg-gray-50 px-4 py-4 flex flex-col gap-2">
-        <div className="w-1/3 h-2 bg-gray-300 rounded" />
-        <div className="grid grid-cols-3 gap-2 mt-1">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="bg-white border border-gray-100 rounded p-2 flex flex-col gap-1">
-              <div className="flex gap-1 mb-1">
-                {[0, 1, 2].map((s) => <div key={s} className="w-2 h-2 bg-amber-300 rounded-full" />)}
-              </div>
-              <div className="w-full h-1 bg-gray-200 rounded" />
-              <div className="w-full h-1 bg-gray-200 rounded" />
-              <div className="flex items-center gap-1 mt-1">
-                <div className="w-4 h-4 rounded-full bg-gray-200" />
-                <div className="w-10 h-1 bg-gray-200 rounded" />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (lname.includes("contact")) {
-    return (
-      <div className="bg-white px-4 py-4 flex flex-col gap-2">
-        <div className="w-1/3 h-2 bg-gray-300 rounded" />
-        <div className="flex gap-3 mt-1">
-          <div className="flex-1 flex flex-col gap-2">
-            <div className="w-full h-5 bg-gray-100 border border-gray-200 rounded" />
-            <div className="w-full h-5 bg-gray-100 border border-gray-200 rounded" />
-            <div className="w-full h-12 bg-gray-100 border border-gray-200 rounded" />
-            <div className="w-20 h-5 bg-gray-400 rounded" />
-          </div>
-          <div className="flex-1 bg-gray-100 rounded flex items-center justify-center">
-            <div className="text-gray-300 text-xs">📍</div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (lname.includes("faq")) {
-    return (
-      <div className="bg-white px-4 py-4 flex flex-col gap-1.5">
-        <div className="w-1/3 h-2 bg-gray-300 rounded mb-2" />
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="flex items-center justify-between p-2 border border-gray-100 rounded">
-            <div className="w-3/4 h-1.5 bg-gray-200 rounded" />
-            <div className="w-3 h-3 bg-gray-200 rounded-full" />
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (lname.includes("cta") || lname.includes("banner")) {
-    return (
-      <div className="bg-blue-600 px-4 py-4 flex flex-col items-center gap-2">
-        <div className="w-2/3 h-3 bg-blue-400 rounded" />
-        <div className="w-1/2 h-2 bg-blue-400/70 rounded" />
-        <div className="w-20 h-5 bg-white rounded mt-1" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white px-4 py-4 flex flex-col gap-2">
-      <div className="w-1/3 h-2 bg-gray-300 rounded" />
-      <div className="w-full h-2 bg-gray-200 rounded" />
-      <div className="w-3/4 h-2 bg-gray-200 rounded" />
-      <div className="w-full h-16 bg-gray-100 rounded mt-1" />
-    </div>
-  );
-}
 
 // ─── Section type picker with search ─────────────────────────────────────────
 
@@ -392,8 +277,8 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
     }
   };
 
-  const PAGE_COL_WIDTH = 240;
-  const PAGE_COL_GAP = 48;
+  const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
+  const activeInstanceIds = state.instancesByPage[state.activePage] ?? [];
 
   return (
     <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
@@ -519,202 +404,205 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
             transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.scale})`,
             transformOrigin: "0 0",
             position: "absolute",
-            display: "flex",
-            gap: PAGE_COL_GAP,
-            alignItems: "flex-start",
+            width: deviceWidth,
           }}
         >
-          {state.sitemap.map((page) => {
-            const instanceIds = state.instancesByPage[page.slug] ?? [];
-            const isPageAIOpen = pageAIOpen === page.id;
-            const isPageLoading = pageLoading === page.id;
-            const pageCtx = pageContexts[page.id] ?? "";
-
-            return (
-              <div
-                key={page.id}
-                style={{ width: PAGE_COL_WIDTH, flexShrink: 0 }}
-                className="flex flex-col"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Page header */}
-                <div
-                  className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-t-xl mb-0 cursor-pointer select-none"
-                  onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: page.slug })}
+          {/* Page selector tabs (above the rendered active page) */}
+          <div className="mb-3 flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
+              <Layers size={12} className="text-gray-400" />
+              <span className="text-xs font-medium text-gray-700">
+                {state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}
+              </span>
+            </div>
+            <div className="flex gap-1 flex-wrap">
+              {state.sitemap.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug })}
+                  className={`px-2.5 py-1 text-[10px] rounded-md border transition-colors ${state.activePage === p.slug ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}
                 >
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${state.activePage === page.slug ? "bg-blue-500" : "bg-gray-300"}`} />
-                  <span className="text-xs font-semibold text-gray-800 flex-1 truncate">{page.title}</span>
-                  {/* Per-page AI button */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setPageAIOpen(isPageAIOpen ? null : page.id); }}
-                    className={`p-1 rounded transition-colors flex-shrink-0 ${isPageAIOpen ? "text-purple-600 bg-purple-50" : "text-gray-400 hover:text-purple-600 hover:bg-purple-50"}`}
-                    title="Régénérer la page avec l'IA"
-                  >
-                    <Sparkles size={11} />
-                  </button>
+                  {p.title}
+                </button>
+              ))}
+            </div>
+            {/* Per-page AI shortcut */}
+            {(() => {
+              const page = state.sitemap.find((p) => p.slug === state.activePage);
+              if (!page) return null;
+              const isOpen = pageAIOpen === page.id;
+              return (
+                <button
+                  onClick={() => setPageAIOpen(isOpen ? null : page.id)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] rounded-md border transition-colors ${isOpen ? "border-purple-300 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+                >
+                  <Sparkles size={11} />
+                  Régénérer la page
+                </button>
+              );
+            })()}
+          </div>
+
+          {/* Per-page AI prompt */}
+          {(() => {
+            const page = state.sitemap.find((p) => p.slug === state.activePage);
+            if (!page || pageAIOpen !== page.id) return null;
+            const isLoading = pageLoading === page.id;
+            const ctx = pageContexts[page.id] ?? "";
+            return (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <MessageSquare size={10} className="text-purple-500" />
+                  <span className="text-[10px] font-semibold text-purple-700">Contexte pour {page.title}</span>
                 </div>
-
-                {/* Page AI panel */}
-                {isPageAIOpen && (
-                  <div className="bg-purple-50 border border-purple-200 border-t-0 px-3 py-2.5">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <MessageSquare size={10} className="text-purple-500" />
-                      <span className="text-[10px] font-semibold text-purple-700">Contexte pour {page.title}</span>
-                    </div>
-                    <textarea
-                      value={pageCtx}
-                      onChange={(e) => setPageContexts((prev) => ({ ...prev, [page.id]: e.target.value }))}
-                      placeholder="Instructions pour régénérer toutes les sections..."
-                      rows={2}
-                      className="w-full text-[10px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <button
-                      onClick={() => handleRegeneratePage(page.slug, page.id)}
-                      disabled={isPageLoading || instanceIds.length === 0}
-                      className="mt-1.5 w-full flex items-center justify-center gap-1 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
-                    >
-                      {isPageLoading ? <><Loader2 size={9} className="animate-spin" /> Génération...</> : <><RefreshCw size={9} /> Régénérer la page</>}
-                    </button>
-                  </div>
-                )}
-
-                {/* Page column body */}
-                <div className="bg-white border border-t-0 border-gray-200 rounded-b-xl overflow-hidden shadow-sm flex flex-col">
-                  {instanceIds.map((instanceId, idx) => {
-                    const instance = state.instances[instanceId];
-                    if (!instance) return null;
-                    const secDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
-                    const isSelected = state.selectedInstanceId === instanceId;
-                    const isSectionAIOpen = sectionAIOpen === instanceId;
-
-                    return (
-                      <div
-                        key={instanceId}
-                        className={`relative group border-b border-gray-100 last:border-b-0 ${isSelected ? "ring-2 ring-inset ring-blue-500" : ""}`}
-                        onClick={() => dispatch({ type: "SELECT_INSTANCE", payload: instanceId })}
-                      >
-                        {/* Wireframe block */}
-                        <WireframeBlock
-                          type={secDef?.type ?? ""}
-                          name={secDef?.name ?? "Section"}
-                        />
-
-                        {/* Section label + controls */}
-                        <div className="px-2 py-1.5 bg-white flex items-center gap-1.5 border-t border-gray-50">
-                          <GripVertical size={10} className="text-gray-300" />
-                          <span className="text-[10px] text-gray-500 flex-1 truncate font-medium">
-                            {secDef?.name ?? "Section"}
-                          </span>
-
-                          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {/* AI regenerate per section */}
-                            <div className="relative">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setSectionAIOpen(isSectionAIOpen ? null : instanceId); }}
-                                className={`p-0.5 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors ${isSectionAIOpen ? "text-purple-600" : ""}`}
-                                title="Régénérer avec l'IA"
-                              >
-                                <Sparkles size={9} />
-                              </button>
-                              {isSectionAIOpen && (
-                                <SectionAIPopover
-                                  instanceId={instanceId}
-                                  onRegenerate={async (prompt) => {
-                                    await onRegenerateSection?.(instanceId, prompt, selectedModel);
-                                  }}
-                                  onClose={() => setSectionAIOpen(null)}
-                                  model={selectedModel}
-                                  onModelChange={setSelectedModel}
-                                />
-                              )}
-                            </div>
-
-                            {/* Switch section type */}
-                            <div className="relative">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setSectionTypePicker(sectionTypePicker === instanceId ? null : instanceId); }}
-                                className="p-0.5 hover:bg-gray-100 rounded text-gray-400"
-                                title="Changer de section"
-                              >
-                                <RefreshCw size={9} />
-                              </button>
-                              {sectionTypePicker === instanceId && (
-                                <SectionTypePicker
-                                  availableSections={availableSections}
-                                  onSelect={(s) => swapSectionType(instanceId, s)}
-                                  onClose={() => setSectionTypePicker(null)}
-                                />
-                              )}
-                            </div>
-
-                            {/* More menu */}
-                            <div className="relative">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setSectionMenuOpen(sectionMenuOpen === instanceId ? null : instanceId); }}
-                                className="p-0.5 hover:bg-gray-100 rounded text-gray-400"
-                              >
-                                <MoreHorizontal size={9} />
-                              </button>
-                              {sectionMenuOpen === instanceId && (
-                                <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-xl z-30 py-1">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: page.slug, fromIndex: idx, toIndex: idx - 1 } });
-                                      setSectionMenuOpen(null);
-                                    }}
-                                    disabled={idx === 0}
-                                    className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                                  >
-                                    ↑ Monter
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: page.slug, fromIndex: idx, toIndex: idx + 1 } });
-                                      setSectionMenuOpen(null);
-                                    }}
-                                    disabled={idx === instanceIds.length - 1}
-                                    className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                                  >
-                                    ↓ Descendre
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      dispatch({ type: "REMOVE_INSTANCE", payload: instanceId });
-                                      setSectionMenuOpen(null);
-                                    }}
-                                    className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-red-600 hover:bg-red-50"
-                                  >
-                                    <Trash2 size={9} />
-                                    Supprimer
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* Add section button */}
-                  <button
-                    onClick={() => {
-                      dispatch({ type: "SET_ACTIVE_PAGE", payload: page.slug });
-                      setLeftPanel("library");
-                    }}
-                    className="flex items-center justify-center gap-1.5 py-3 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-dashed border-gray-200"
-                  >
-                    <Plus size={10} />
-                    Ajouter une section
-                  </button>
-                </div>
+                <textarea
+                  value={ctx}
+                  onChange={(e) => setPageContexts((prev) => ({ ...prev, [page.id]: e.target.value }))}
+                  placeholder="Instructions pour régénérer toutes les sections..."
+                  rows={2}
+                  className="w-full text-[11px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
+                />
+                <button
+                  onClick={() => handleRegeneratePage(page.slug, page.id)}
+                  disabled={isLoading || activeInstanceIds.length === 0}
+                  className="mt-1.5 w-full flex items-center justify-center gap-1 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
+                >
+                  {isLoading ? <><Loader2 size={9} className="animate-spin" /> Génération...</> : <><RefreshCw size={9} /> Régénérer la page</>}
+                </button>
               </div>
             );
-          })}
+          })()}
+
+          {/* Active page rendered at device width in B&W */}
+          <div
+            className="overflow-hidden shadow-2xl bg-white"
+            style={{ width: deviceWidth, borderRadius: 12 }}
+          >
+            {activeInstanceIds.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-24 text-center">
+                <Layers size={32} className="text-gray-200 mb-4" />
+                <p className="text-sm text-gray-400 mb-1">Aucune section sur cette page</p>
+                <p className="text-xs text-gray-300">Ajoutez des sections depuis la bibliothèque</p>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                {activeInstanceIds.map((instanceId, idx) => {
+                  const instance = state.instances[instanceId];
+                  if (!instance) return null;
+                  const secDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+                  if (!secDef) return null;
+                  const isSelected = state.selectedInstanceId === instanceId;
+                  const isSectionAIOpen = sectionAIOpen === instanceId;
+
+                  return (
+                    <div
+                      key={instanceId}
+                      className={`relative group ${isSelected ? "ring-2 ring-inset ring-blue-500" : ""}`}
+                      onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); }}
+                    >
+                      <DynamicSectionRenderer
+                        instance={{ ...instance, section_def: secDef }}
+                        sectionDef={secDef}
+                        styleGuide={state.styleGuide}
+                        wireframe
+                      />
+
+                      {/* Floating section toolbar */}
+                      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-white/95 backdrop-blur border border-gray-200 rounded-md shadow-sm px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-[10px] text-gray-500 px-1 font-medium">{secDef.name}</span>
+                        <div className="relative">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSectionAIOpen(isSectionAIOpen ? null : instanceId); }}
+                            className={`p-1 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors ${isSectionAIOpen ? "text-purple-600" : ""}`}
+                            title="Régénérer avec l'IA"
+                          >
+                            <Sparkles size={11} />
+                          </button>
+                          {isSectionAIOpen && (
+                            <SectionAIPopover
+                              instanceId={instanceId}
+                              onRegenerate={async (prompt) => { await onRegenerateSection?.(instanceId, prompt, selectedModel); }}
+                              onClose={() => setSectionAIOpen(null)}
+                              model={selectedModel}
+                              onModelChange={setSelectedModel}
+                            />
+                          )}
+                        </div>
+                        <div className="relative">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSectionTypePicker(sectionTypePicker === instanceId ? null : instanceId); }}
+                            className="p-1 hover:bg-gray-100 rounded text-gray-400"
+                            title="Changer de section"
+                          >
+                            <RefreshCw size={11} />
+                          </button>
+                          {sectionTypePicker === instanceId && (
+                            <SectionTypePicker
+                              availableSections={availableSections}
+                              onSelect={(s) => swapSectionType(instanceId, s)}
+                              onClose={() => setSectionTypePicker(null)}
+                            />
+                          )}
+                        </div>
+                        <div className="relative">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSectionMenuOpen(sectionMenuOpen === instanceId ? null : instanceId); }}
+                            className="p-1 hover:bg-gray-100 rounded text-gray-400"
+                          >
+                            <MoreHorizontal size={11} />
+                          </button>
+                          {sectionMenuOpen === instanceId && (
+                            <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-xl z-30 py-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx - 1 } });
+                                  setSectionMenuOpen(null);
+                                }}
+                                disabled={idx === 0}
+                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                ↑ Monter
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx + 1 } });
+                                  setSectionMenuOpen(null);
+                                }}
+                                disabled={idx === activeInstanceIds.length - 1}
+                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                ↓ Descendre
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  dispatch({ type: "REMOVE_INSTANCE", payload: instanceId });
+                                  setSectionMenuOpen(null);
+                                }}
+                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 size={9} />
+                                Supprimer
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                <button
+                  onClick={() => setLeftPanel("library")}
+                  className="flex items-center justify-center gap-1.5 py-4 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-dashed border-gray-200"
+                >
+                  <Plus size={12} />
+                  Ajouter une section
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Bottom controls */}

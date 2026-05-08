@@ -1,10 +1,11 @@
 "use client";
 
 import React from "react";
-import { Lock, Shuffle, Plus, Sun, Moon, ChevronDown, Eye, EyeOff, Type, Palette, Layout, Sliders, ChevronRight, Copy, Check } from "lucide-react";
-import type { StyleGuide } from "@/types";
+import { Shuffle, Plus, Sun, Moon, ChevronDown, Eye, EyeOff, Type, Palette, Layout, Sliders, ChevronRight, Check, Layers } from "lucide-react";
+import type { StyleGuide, SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { generateColorShades, isLightColor } from "@/lib/color-utils";
+import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -161,148 +162,52 @@ function ShadeStrip({ label, baseHex }: { label: string; baseHex: string }) {
 
 // ─── Live Preview ──────────────────────────────────────────────────────────────
 
-function LivePreview({ guide, fullscreen, onToggleFullscreen }: { guide: StyleGuide; fullscreen: boolean; onToggleFullscreen: () => void }) {
-  const btnFilled: React.CSSProperties = {
-    borderRadius: guide.buttons.borderRadius,
-    padding: guide.buttons.padding,
-    backgroundColor: guide.colors.primary,
-    color: isLight(guide.colors.primary) ? "#111" : "#fff",
-    border: "none",
-    fontFamily: guide.fonts.body + ", sans-serif",
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "default",
-    display: "inline-block",
-  };
+interface LivePreviewProps {
+  guide: StyleGuide;
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
+  sectionDefs: Record<string, SiteSectionDef>;
+}
 
-  const btnOutline: React.CSSProperties = {
-    ...btnFilled,
-    backgroundColor: "transparent",
-    color: guide.colors.text,
-    border: `1.5px solid ${guide.colors.text}40`,
-  };
+function LivePreview({ guide, fullscreen, onToggleFullscreen, sectionDefs }: LivePreviewProps) {
+  const { state } = useRelumeBuilder();
+  // Find the home page slug. Fall back to the first available page.
+  const homeSlug = state.sitemap.find((p) => p.slug === "/")?.slug
+    ?? state.sitemap[0]?.slug
+    ?? "/";
+  const homeInstanceIds = state.instancesByPage[homeSlug] ?? [];
 
-  const shadowMap: Record<string, string> = {
-    none: "none",
-    sm: "0 1px 2px rgba(0,0,0,0.06)",
-    md: "0 4px 6px -1px rgba(0,0,0,0.10)",
-    lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
-  };
-
-  const preview = (
-    <div style={{ fontFamily: guide.fonts.body + ", sans-serif", backgroundColor: guide.colors.background, color: guide.colors.text }}>
-      {/* Navbar */}
-      <div style={{ backgroundColor: guide.colors.background, borderBottom: `1px solid ${guide.colors.text}12` }}
-        className="flex items-center justify-between px-6 py-3">
-        <div className="flex items-center gap-4">
-          <div className="w-6 h-6 rounded-full" style={{ backgroundColor: guide.colors.primary }} />
-          <div className="flex items-center gap-5">
-            {["À propos", "Services", "Contact"].map((l) => (
-              <span key={l} className="text-xs" style={{ color: guide.colors.textMuted }}>{l}</span>
-            ))}
-          </div>
+  const realPreview = (
+    <div style={{ backgroundColor: guide.colors.background }}>
+      {homeInstanceIds.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center">
+          <Layers size={28} className="text-gray-200 mb-3" />
+          <p className="text-sm text-gray-400 mb-1">Aucune section sur la page d&apos;accueil</p>
+          <p className="text-xs text-gray-300">Ajoutez des sections dans le Wireframe pour prévisualiser ici.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button style={{ ...btnOutline, padding: "5px 12px", fontSize: 11 }}>Se connecter</button>
-          <button style={{ ...btnFilled, padding: "5px 12px", fontSize: 11 }}>Essai gratuit</button>
-        </div>
-      </div>
-
-      {/* Hero */}
-      <div className="px-6 py-10 flex gap-8" style={{ backgroundColor: guide.colors.background }}>
-        <div className="flex-1">
-          <div className="text-[10px] font-semibold mb-2 uppercase tracking-widest" style={{ color: guide.colors.primary }}>
-            Expertise
-          </div>
-          <h1 className="mb-3 leading-tight" style={{
-            fontFamily: guide.fonts.heading + ", sans-serif",
-            fontSize: 26, fontWeight: 800, color: guide.colors.text,
-          }}>
-            {guide.fonts.heading} pour votre succès
-          </h1>
-          <p className="mb-5 leading-relaxed text-xs" style={{ color: guide.colors.textMuted }}>
-            Depuis vingt ans, nous intervenons avec expertise et passion pour répondre à tous vos besoins.
-          </p>
-          <div className="flex gap-2 flex-wrap">
-            <button style={btnFilled}>Demander un devis</button>
-            <button style={btnOutline}>En savoir plus</button>
-          </div>
-        </div>
-        <div className="flex-shrink-0 rounded-xl flex items-center justify-center text-2xl"
-          style={{
-            width: 180, minHeight: 130,
-            backgroundColor: guide.colors.backgroundAlt,
-            borderRadius: guide.cards.borderRadius,
-            boxShadow: shadowMap[guide.cards.shadow] ?? "none",
-          }}>
-          🖼
-        </div>
-      </div>
-
-      {/* Features */}
-      <div className="px-6 py-8" style={{ backgroundColor: guide.colors.backgroundAlt }}>
-        <div className="text-[9px] uppercase tracking-wider mb-1 font-semibold" style={{ color: guide.colors.primary }}>Nos services</div>
-        <h2 className="mb-4" style={{ fontFamily: guide.fonts.heading + ", sans-serif", fontSize: 18, fontWeight: 700, color: guide.colors.text }}>
-          Tout ce dont vous avez besoin
-        </h2>
-        <div className="grid grid-cols-3 gap-3">
-          {["Climatisation", "Chauffage", "Plomberie"].map((s) => (
-            <div key={s} className="p-3" style={{
-              backgroundColor: guide.colors.background,
-              borderRadius: guide.cards.borderRadius,
-              boxShadow: shadowMap[guide.cards.shadow] ?? "none",
-            }}>
-              <div className="w-6 h-6 rounded mb-2 flex items-center justify-center"
-                style={{ backgroundColor: guide.colors.primary + "20", borderRadius: `calc(${guide.cards.borderRadius} * 0.6)` }}>
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: guide.colors.primary }} />
-              </div>
-              <div className="text-xs font-semibold mb-1" style={{ color: guide.colors.text, fontFamily: guide.fonts.heading + ", sans-serif" }}>{s}</div>
-              <div className="text-[9px] leading-relaxed" style={{ color: guide.colors.textMuted }}>
-                Service professionnel et rapide.
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* CTA */}
-      <div className="px-6 py-8 text-center" style={{ backgroundColor: guide.colors.primary }}>
-        <h2 className="mb-2" style={{
-          fontFamily: guide.fonts.heading + ", sans-serif",
-          fontSize: 18, fontWeight: 700,
-          color: isLight(guide.colors.primary) ? "#111" : "#fff",
-        }}>
-          Prêt à commencer ?
-        </h2>
-        <p className="text-xs mb-4" style={{ color: isLight(guide.colors.primary) ? "#11118888" : "#ffffff99" }}>
-          Contactez-nous dès aujourd&apos;hui pour obtenir votre devis gratuit.
-        </p>
-        <button style={{
-          ...btnFilled,
-          backgroundColor: isLight(guide.colors.primary) ? "#111" : "#fff",
-          color: isLight(guide.colors.primary) ? "#fff" : guide.colors.primary,
-        }}>
-          Obtenir un devis
-        </button>
-      </div>
-
-      {/* Footer */}
-      <div className="px-6 py-5 flex items-center justify-between"
-        style={{ backgroundColor: guide.colors.background, borderTop: `1px solid ${guide.colors.text}12` }}>
-        <div className="w-5 h-5 rounded-full" style={{ backgroundColor: guide.colors.primary }} />
-        <div className="flex gap-4">
-          {["Mentions légales", "Confidentialité", "Contact"].map((l) => (
-            <span key={l} className="text-[10px]" style={{ color: guide.colors.textMuted }}>{l}</span>
-          ))}
-        </div>
-      </div>
+      ) : (
+        homeInstanceIds.map((instanceId) => {
+          const instance = state.instances[instanceId];
+          if (!instance || instance.is_hidden) return null;
+          const secDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+          if (!secDef) return null;
+          return (
+            <DynamicSectionRenderer
+              key={instanceId}
+              instance={{ ...instance, section_def: secDef }}
+              sectionDef={secDef}
+              styleGuide={guide}
+            />
+          );
+        })
+      )}
     </div>
   );
 
   if (fullscreen) {
     return (
       <div className="fixed inset-0 z-50 bg-gray-900/80 flex items-center justify-center p-8">
-        <div className="relative w-full max-w-4xl max-h-full overflow-auto rounded-2xl shadow-2xl border border-white/10">
+        <div className="relative w-full max-w-6xl max-h-full overflow-auto rounded-2xl shadow-2xl border border-white/10 bg-white">
           <button
             onClick={onToggleFullscreen}
             className="absolute top-3 right-3 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-white"
@@ -310,7 +215,7 @@ function LivePreview({ guide, fullscreen, onToggleFullscreen }: { guide: StyleGu
           >
             <EyeOff size={16} />
           </button>
-          {preview}
+          {realPreview}
         </div>
       </div>
     );
@@ -319,7 +224,7 @@ function LivePreview({ guide, fullscreen, onToggleFullscreen }: { guide: StyleGu
   return (
     <div className="flex-1 overflow-y-auto bg-[#f5f5f5] relative">
       <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2 bg-white/80 backdrop-blur border-b border-gray-100">
-        <span className="text-xs font-medium text-gray-500">Aperçu en direct</span>
+        <span className="text-xs font-medium text-gray-500">Aperçu en direct · page d&apos;accueil</span>
         <button
           onClick={onToggleFullscreen}
           className="p-1.5 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-700"
@@ -329,13 +234,14 @@ function LivePreview({ guide, fullscreen, onToggleFullscreen }: { guide: StyleGu
         </button>
       </div>
       <div className="p-4">
-        <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm">
-          {preview}
+        <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+          {realPreview}
         </div>
       </div>
     </div>
   );
 }
+
 
 // ─── Tab type ──────────────────────────────────────────────────────────────────
 
@@ -343,7 +249,11 @@ type Tab = "colors" | "typography" | "ui" | "spacing";
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function StyleGuideWorkspace() {
+interface StyleGuideWorkspaceProps {
+  sectionDefs: Record<string, SiteSectionDef>;
+}
+
+export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const { styleGuide: guide } = state;
   const [darkMode, setDarkMode] = React.useState(false);
@@ -824,8 +734,13 @@ export function StyleGuideWorkspace() {
         </div>
       </div>
 
-      {/* ─ Right: Live Preview ──────────────────────────────────────────────── */}
-      <LivePreview guide={guide} fullscreen={previewFullscreen} onToggleFullscreen={() => setPreviewFullscreen(!previewFullscreen)} />
+      {/* ─ Right: Live Preview (real homepage) ──────────────────────────────── */}
+      <LivePreview
+        guide={guide}
+        fullscreen={previewFullscreen}
+        onToggleFullscreen={() => setPreviewFullscreen(!previewFullscreen)}
+        sectionDefs={sectionDefs}
+      />
     </div>
   );
 }

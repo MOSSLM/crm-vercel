@@ -22,6 +22,11 @@ interface DynamicSectionRendererProps {
   onSelect?: () => void;
   selectedSnippetId?: string | null;
   onSelectSnippet?: (id: string) => void;
+  /** Wireframe rendering: B&W with neutralised colors, real section layout. */
+  wireframe?: boolean;
+  /** Enable element click selection inside library iframes. */
+  selectionEnabled?: boolean;
+  onElementClick?: (info: { tag: string; text: string; path: number[] }) => void;
 }
 
 /** Convert StyleGuide into CSS custom properties object */
@@ -142,6 +147,9 @@ export function DynamicSectionRenderer({
   onSelect,
   selectedSnippetId,
   onSelectSnippet,
+  wireframe = false,
+  selectionEnabled = false,
+  onElementClick,
 }: DynamicSectionRendererProps) {
   // Filter out __ meta keys from content passed to section components
   const contentWithoutMeta = Object.fromEntries(
@@ -193,6 +201,9 @@ export function DynamicSectionRenderer({
               ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
             }}
             styleGuide={effectiveStyleGuide}
+            wireframe={wireframe}
+            selectionEnabled={selectionEnabled}
+            onElementClick={onElementClick}
           />
         )}
       </div>

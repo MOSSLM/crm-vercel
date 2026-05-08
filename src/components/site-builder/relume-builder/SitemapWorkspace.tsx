@@ -4,7 +4,7 @@ import React from "react";
 import {
   Sparkles, FileText, MoreHorizontal, Plus, Trash2,
   ChevronRight, Send, Loader2, AlertCircle, ChevronDown, RefreshCw, MessageSquare,
-  Copy, ZoomIn, ZoomOut, Maximize2
+  Copy, ZoomIn, ZoomOut, Maximize2, Search, X
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
@@ -141,6 +141,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [pageLoading, setPageLoading] = React.useState<string | null>(null);
   const [editingPageId, setEditingPageId] = React.useState<string | null>(null);
   const [editingTitle, setEditingTitle] = React.useState("");
+  const [pickerOpenForPage, setPickerOpenForPage] = React.useState<string | null>(null);
+  const [pickerSearch, setPickerSearch] = React.useState("");
 
   // ─── AI Generation (full sitemap) ──────────────────────────────────────────
 
@@ -293,6 +295,46 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const removePage = (id: string) => {
     dispatch({ type: "REMOVE_PAGE", payload: id });
   };
+
+  /** Manually add a section to a page (no AI). */
+  const addSectionToPage = (page: SitemapPage, sectionDef: SiteSectionDef) => {
+    const newSitemapEntry: SitemapSection = {
+      id: nanoid(),
+      name: sectionDef.name,
+      description: sectionDef.category ?? sectionDef.type,
+      type: sectionDef.type,
+    };
+    const updatedSections: SitemapSection[] = [...(page.sections ?? []), newSitemapEntry];
+    dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { sections: updatedSections } } });
+
+    const existingIds = state.instancesByPage[page.slug] ?? [];
+    dispatch({
+      type: "ADD_INSTANCE",
+      payload: {
+        instance: {
+          id: nanoid(),
+          site_id: siteId,
+          section_id: sectionDef.id,
+          section_def: sectionDef,
+          page_slug: page.slug,
+          sort_order: existingIds.length,
+          content: { ...sectionDef.default_content },
+          blocks: [],
+          custom_style: {},
+          is_hidden: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        pageSlug: page.slug,
+      },
+    });
+    toast.success(`${sectionDef.name} ajoutée à ${page.title}`);
+  };
+
+  const filteredSectionsForPicker = availableSections.filter((s) =>
+    s.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
+    (s.category ?? "").toLowerCase().includes(pickerSearch.toLowerCase())
+  );
 
   const toggleExpand = (id: string) => {
     setExpandedPages((prev) => {
@@ -624,10 +666,69 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                 )}
 
                 {sections.length === 0 && (
-                  <div className="px-3 py-4 text-center">
-                    <p className="text-[10px] text-gray-400">Aucune section — générez le sitemap avec l&apos;IA</p>
+                  <div className="px-3 py-3 text-center">
+                    <p className="text-[10px] text-gray-400">Aucune section — ajoutez-les manuellement ou générez avec l&apos;IA</p>
                   </div>
                 )}
+
+                {/* Manual section add */}
+                <div className="relative border-t border-gray-100">
+                  <button
+                    onClick={() => {
+                      setPickerOpenForPage(pickerOpenForPage === page.id ? null : page.id);
+                      setPickerSearch("");
+                    }}
+                    className="flex items-center justify-center gap-1.5 w-full py-2 text-[10px] text-gray-500 hover:bg-gray-50 transition-colors"
+                  >
+                    <Plus size={11} />
+                    Ajouter une section
+                  </button>
+                  {pickerOpenForPage === page.id && (
+                    <div
+                      className="absolute left-2 right-2 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-40 flex flex-col max-h-72"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="p-2 border-b border-gray-100 flex items-center gap-1.5">
+                        <Search size={11} className="text-gray-400 flex-shrink-0" />
+                        <input
+                          autoFocus
+                          value={pickerSearch}
+                          onChange={(e) => setPickerSearch(e.target.value)}
+                          placeholder="Rechercher une section…"
+                          className="flex-1 text-[11px] bg-transparent focus:outline-none text-gray-800 placeholder-gray-400"
+                        />
+                        <button
+                          onClick={() => setPickerOpenForPage(null)}
+                          className="text-gray-300 hover:text-gray-500"
+                          title="Fermer"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                      <div className="overflow-y-auto py-1">
+                        {filteredSectionsForPicker.length === 0 && (
+                          <p className="text-[10px] text-gray-400 text-center py-3">Aucune section</p>
+                        )}
+                        {filteredSectionsForPicker.map((sec) => (
+                          <button
+                            key={sec.id}
+                            onClick={() => {
+                              addSectionToPage(page, sec);
+                              setPickerOpenForPage(null);
+                            }}
+                            className="flex items-start gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[11px] text-gray-800 truncate">{sec.name}</div>
+                              <div className="text-[9px] text-gray-400 truncate">{sec.category ?? sec.type}</div>
+                            </div>
+                            <Plus size={10} className="text-gray-300 mt-1 flex-shrink-0" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}

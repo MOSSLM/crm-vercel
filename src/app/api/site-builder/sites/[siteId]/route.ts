@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
-import type { SiteConfig } from "@/types";
+import type { SiteConfig, StyleGuide, SitemapPage } from "@/types";
 
 export const dynamic = "force-dynamic";
 
@@ -28,11 +28,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { siteId } = await context.params;
   try {
     const body = await request.json();
-    const { name, description, site_config, enterprise_id } = body as {
+    const { name, description, site_config, enterprise_id, style_guide, sitemap } = body as {
       name?: string;
       description?: string;
       site_config?: SiteConfig;
       enterprise_id?: number | null;
+      style_guide?: StyleGuide;
+      sitemap?: SitemapPage[];
     };
 
     const patch: Record<string, unknown> = {};
@@ -40,6 +42,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (description !== undefined) patch.description = description;
     if (site_config !== undefined) patch.site_config = site_config;
     if (enterprise_id !== undefined) patch.enterprise_id = enterprise_id;
+    if (style_guide !== undefined) patch.style_guide = style_guide;
+    if (sitemap !== undefined) patch.sitemap = sitemap;
 
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "Aucun champ à mettre à jour" }, { status: 400 });
