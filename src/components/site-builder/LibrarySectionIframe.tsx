@@ -36,10 +36,11 @@ export function LibrarySectionIframe({
   onElementClick,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
-  // Start at a sensible height — sections that use min-h-screen are
-  // neutralised by the injected reset CSS, so we no longer need a 1200px
-  // fallback (which is what made every section look enormous).
-  const [height, setHeight] = React.useState(minHeight);
+  // Start the iframe at a real viewport height so that `100vh` /
+  // `min-h-screen` rules inside the rendered section have a meaningful
+  // reference. Once the content has actually rendered, we shrink (or
+  // grow) the iframe to fit the measured scrollHeight exactly.
+  const [height, setHeight] = React.useState(Math.max(minHeight, 720));
 
   const allVariables = React.useMemo(() => ({
     ...DEFAULT_VARIABLES,
@@ -50,6 +51,13 @@ export function LibrarySectionIframe({
     () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled }),
     [code, content, allVariables, styleGuide, wireframe, selectionEnabled]
   );
+
+  // Whenever the source changes, give the iframe a real viewport again so
+  // sections that rely on 100vh / min-h-screen render at the correct size
+  // before we measure them and shrink to fit.
+  React.useEffect(() => {
+    setHeight(Math.max(minHeight, 720));
+  }, [srcDoc, minHeight]);
 
   // Listen for element-click messages forwarded from inside the iframe.
   React.useEffect(() => {
@@ -68,31 +76,63 @@ export function LibrarySectionIframe({
   const handleLoad = React.useCallback(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
-    const resize = () => {
+    const cleanups: Array<() => void> = [];
+    let lastApplied = 0;
+    const measure = () => {
       try {
         const doc = iframe.contentDocument;
         if (!doc) return;
-        const h = doc.body.scrollHeight || doc.documentElement.scrollHeight;
-        if (h && h > 0) setHeight(h);
-      } catch {
-        // cross-origin — ignore
-      }
+        // Use the largest of body/html scrollHeight + a tiny buffer to avoid
+        // sub-pixel rounding cropping the last line of content.
+        const h = Math.max(
+          doc.body?.scrollHeight ?? 0,
+          doc.documentElement?.scrollHeight ?? 0,
+        );
+        if (h > 0 && Math.abs(h - lastApplied) > 1) {
+          lastApplied = h;
+          setHeight(h + 2);
+        }
+      } catch { /* cross-origin — ignore */ }
     };
-    // ResizeObserver on the root element for reliable auto-sizing
     try {
-      const win = iframe.contentWindow as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
-      const RO = win?.ResizeObserver;
-      if (RO && iframe.contentDocument?.body) {
-        const ro = new RO(resize);
-        ro.observe(iframe.contentDocument.body);
+      const win = iframe.contentWindow as (Window & {
+        ResizeObserver?: typeof ResizeObserver;
+        MutationObserver?: typeof MutationObserver;
+      }) | null;
+      const doc = iframe.contentDocument;
+      // ResizeObserver fires when the body or root node resizes.
+      if (win?.ResizeObserver && doc?.body && doc.documentElement) {
+        const ro = new win.ResizeObserver(measure);
+        ro.observe(doc.body);
+        ro.observe(doc.documentElement);
+        cleanups.push(() => ro.disconnect());
+      }
+      // MutationObserver fires when React mounts content into #root.
+      if (win?.MutationObserver && doc?.body) {
+        const mo = new win.MutationObserver(measure);
+        mo.observe(doc.body, { childList: true, subtree: true, attributes: true, characterData: true });
+        cleanups.push(() => mo.disconnect());
+      }
+      // Re-measure after every <img> finishes loading.
+      const imgs = doc?.images ? Array.from(doc.images) : [];
+      for (const img of imgs) {
+        if (img.complete) continue;
+        img.addEventListener("load", measure, { once: true });
+        img.addEventListener("error", measure, { once: true });
       }
     } catch { /* ignore */ }
-    iframe.contentWindow?.addEventListener("resize", resize);
-    resize();
-    // also re-check after a short delay for async renders
-    setTimeout(resize, 400);
-    setTimeout(resize, 1200);
-  }, [minHeight]);
+    iframe.contentWindow?.addEventListener("load", measure);
+    iframe.contentWindow?.addEventListener("resize", measure);
+    measure();
+    // Catch async renders (Babel transform, font loads, dynamic imports).
+    const delays = [80, 250, 600, 1500, 3000];
+    const timers = delays.map((d) => setTimeout(measure, d));
+    cleanups.push(() => timers.forEach(clearTimeout));
+    // Run all cleanups when the iframe reloads (srcDoc change → onLoad fires again).
+    iframe.contentWindow?.addEventListener("unload", () => {
+      cleanups.forEach((fn) => { try { fn(); } catch { /* ignore */ } });
+    }, { once: true });
+  }, []);
 
   if (!code?.trim()) return null;
 
@@ -255,16 +295,16 @@ function buildHTML(
       }
     : {};
 
-  // Reset CSS — neutralises styles that make sections render way too tall when
-  // hosted in an iframe (full viewport heights collapse to a sensible auto).
-  // Also overrides Tailwind utility classes so the Style Guide tokens
+  // Reset CSS — keeps document height flexible (auto) but does NOT force
+  // sections to collapse: we leave min-h-screen / 100vh intact, because the
+  // iframe is initialised at a real viewport height (~720px) so those rules
+  // resolve to a sensible value. Each section is then measured via
+  // scrollHeight and the iframe shrinks/grows to fit its content exactly.
+  // We still override Tailwind utility classes so the Style Guide tokens
   // (border-radius, shadow, fonts) apply even on legacy sections that never
   // referenced the CSS variables themselves.
   const resetCss = `
-    html, body { height: auto !important; min-height: 0 !important; }
-    body > * { min-height: 0 !important; }
-    .min-h-screen, .min-h-\\[100vh\\] { min-height: 0 !important; }
-    .h-screen, .h-\\[100vh\\] { height: auto !important; }
+    html, body { height: auto; min-height: 0; }
     /* Map common Tailwind radii to the active Style Guide token. */
     .rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl,
     .rounded-3xl, .rounded-sm, .rounded-full,
