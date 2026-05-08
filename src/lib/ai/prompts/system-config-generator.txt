@@ -84,6 +84,17 @@ Structure du JSON :
 4. Pour `testimonials`, mets `source: "google"` si l'entreprise a une note Google, sinon `source: "config"` avec 3 témoignages crédibles en blocks.
 5. Adapte le contenu textuel au secteur d'activité.
 
+## Tokens Style Guide (rappel)
+
+Toute section générée s'exécute dans un iframe avec ces variables CSS injectées par le builder :
+
+- Couleurs : `var(--color-primary | --color-secondary | --color-accent | --color-background | --color-bg-alt | --color-text | --color-text-muted)` plus les nuances `--color-primary-50` … `--color-primary-950`.
+- Polices : `var(--font-heading)` pour les titres, `var(--font-body)` pour le corps.
+- Boutons : `var(--btn-radius)`, `var(--btn-padding)` — interdits : valeurs codées en dur (`rounded-full`, `px-8 py-4`).
+- Cartes / images : `var(--card-radius)`, `var(--card-padding)`, `var(--card-shadow)`.
+- Espacements : `var(--section-padding)`, `var(--element-gap)`, `var(--max-content-width)`.
+- INTERDIT : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine d'une section. Préférer un padding vertical raisonnable basé sur `var(--section-padding)`.
+
 ---
 
 ## Référence des sections disponibles

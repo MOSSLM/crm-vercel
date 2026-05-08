@@ -37,6 +37,18 @@ Règles :
 - Pas de hooks complexes ni fetch
 - Si on te donne du code avec des imports ou exports nommés, réécris-le en respectant ces règles
 
+Style Guide — tokens à RESPECTER (sinon les réglages utilisateur ne s'appliquent pas) :
+- Couleurs : style={{ color: 'var(--color-primary)' }}, 'var(--color-secondary)', 'var(--color-accent)',
+  'var(--color-background)', 'var(--color-bg-alt)', 'var(--color-text)', 'var(--color-text-muted)'
+- Nuances : 'var(--color-primary-50)' … 'var(--color-primary-950)' (idem secondary / accent)
+- Police : style={{ fontFamily: 'var(--font-heading)' }} pour les titres, 'var(--font-body)' pour le corps
+- Boutons : style={{ borderRadius: 'var(--btn-radius)', padding: 'var(--btn-padding)' }} ; ne jamais coder
+  en dur des valeurs comme 'rounded-full' ou 'px-8 py-4'
+- Cartes / images : 'var(--card-radius)', 'var(--card-padding)', 'var(--card-shadow)'
+- Espacements : 'var(--section-padding)', 'var(--element-gap)', 'var(--max-content-width)'
+- INTERDIT : min-h-screen, h-screen, 100vh sur le conteneur racine ; utiliser des paddings raisonnables
+  (ex : style={{ paddingTop: 'var(--section-padding)', paddingBottom: 'var(--section-padding)' }})
+
 Réponse : \`\`\`tsx [code] \`\`\` puis 1-2 phrases d'explication.`;
 
 export async function POST(

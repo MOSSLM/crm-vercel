@@ -11,6 +11,12 @@ interface LibrarySectionIframeProps {
   variables?: Record<string, string>;
   className?: string;
   minHeight?: number;
+  /** Render in plain wireframe (B&W) mode — neutralises colors and fonts. */
+  wireframe?: boolean;
+  /** When true, click events inside the iframe forward an `element-click`
+   *  message via postMessage so the parent can implement element selection. */
+  selectionEnabled?: boolean;
+  onElementClick?: (info: { tag: string; text: string; path: number[] }) => void;
 }
 
 /**
@@ -25,10 +31,15 @@ export function LibrarySectionIframe({
   variables = {},
   className,
   minHeight = 200,
+  wireframe = false,
+  selectionEnabled = false,
+  onElementClick,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
-  // Start tall so sections using 100vh / min-h-screen get correct initial viewport
-  const [height, setHeight] = React.useState(Math.max(minHeight, 1200));
+  // Start at a sensible height — sections that use min-h-screen are
+  // neutralised by the injected reset CSS, so we no longer need a 1200px
+  // fallback (which is what made every section look enormous).
+  const [height, setHeight] = React.useState(minHeight);
 
   const allVariables = React.useMemo(() => ({
     ...DEFAULT_VARIABLES,
@@ -36,9 +47,23 @@ export function LibrarySectionIframe({
   }), [variables]);
 
   const srcDoc = React.useMemo(
-    () => buildHTML(code, content, allVariables, styleGuide),
-    [code, content, allVariables, styleGuide]
+    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled }),
+    [code, content, allVariables, styleGuide, wireframe, selectionEnabled]
   );
+
+  // Listen for element-click messages forwarded from inside the iframe.
+  React.useEffect(() => {
+    if (!selectionEnabled) return;
+    const handler = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as { __siteBuilder?: string; tag?: string; text?: string; path?: number[] };
+      if (data?.__siteBuilder === "element-click" && data.tag && data.path) {
+        onElementClick?.({ tag: data.tag, text: data.text ?? "", path: data.path });
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [selectionEnabled, onElementClick]);
 
   const handleLoad = React.useCallback(() => {
     const iframe = iframeRef.current;
@@ -47,7 +72,7 @@ export function LibrarySectionIframe({
       try {
         const doc = iframe.contentDocument;
         if (!doc) return;
-        const h = doc.documentElement.scrollHeight || doc.body.scrollHeight;
+        const h = doc.body.scrollHeight || doc.documentElement.scrollHeight;
         if (h && h > 0) setHeight(h);
       } catch {
         // cross-origin — ignore
@@ -66,6 +91,7 @@ export function LibrarySectionIframe({
     resize();
     // also re-check after a short delay for async renders
     setTimeout(resize, 400);
+    setTimeout(resize, 1200);
   }, [minHeight]);
 
   if (!code?.trim()) return null;
@@ -153,13 +179,20 @@ function styleGuideToCSSVars(sg: StyleGuide): string {
 
 // ─── Build the full iframe HTML ───────────────────────────────────────────────
 
+interface BuildOptions {
+  wireframe?: boolean;
+  selectionEnabled?: boolean;
+}
+
 function buildHTML(
   code: string,
   data: Record<string, unknown>,
   variables: Record<string, string>,
-  styleGuide?: StyleGuide
+  styleGuide?: StyleGuide,
+  options: BuildOptions = {},
 ): string {
   const cssVars = styleGuide ? styleGuideToCSSVars(styleGuide) : "";
+  const { wireframe = false, selectionEnabled = false } = options;
 
   // Extract export default name BEFORE stripping keywords
   const exportDefaultFnMatch = code.match(/export\s+default\s+function\s+([A-Z]\w*)/);
@@ -222,6 +255,58 @@ function buildHTML(
       }
     : {};
 
+  // Reset CSS — neutralises styles that make sections render way too tall when
+  // hosted in an iframe (full viewport heights collapse to a sensible auto).
+  // Also overrides Tailwind utility classes so the Style Guide tokens
+  // (border-radius, shadow, fonts) apply even on legacy sections that never
+  // referenced the CSS variables themselves.
+  const resetCss = `
+    html, body { height: auto !important; min-height: 0 !important; }
+    body > * { min-height: 0 !important; }
+    .min-h-screen, .min-h-\\[100vh\\] { min-height: 0 !important; }
+    .h-screen, .h-\\[100vh\\] { height: auto !important; }
+    /* Map common Tailwind radii to the active Style Guide token. */
+    .rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl,
+    .rounded-3xl, .rounded-sm, .rounded-full,
+    button, .btn, [role="button"], a.button {
+      border-radius: var(--btn-radius) !important;
+    }
+    /* Cards: any element styled like a card uses --card-radius. */
+    .card, [class*="shadow-"], .rounded-card { border-radius: var(--card-radius) !important; }
+    img, picture, video { border-radius: var(--card-radius); }
+    /* Apply font tokens globally so heading vs body fonts respect Style Guide. */
+    h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading, Inter, sans-serif) !important; }
+    body, p, span, a, button, input, textarea, select, li {
+      font-family: var(--font-body, Inter, sans-serif);
+    }
+  `;
+
+  const wireframeCss = wireframe ? `
+    /* Wireframe (B&W) overrides — keep layout but neutralise colors. */
+    :root {
+      --color-primary: #111827 !important;
+      --color-secondary: #6b7280 !important;
+      --color-accent: #374151 !important;
+      --color-background: #ffffff !important;
+      --color-bg-alt: #f3f4f6 !important;
+      --color-text: #111827 !important;
+      --color-text-muted: #6b7280 !important;
+    }
+    html, body { background: #fff !important; color: #111827 !important; }
+    *, *::before, *::after {
+      filter: grayscale(100%) !important;
+      box-shadow: none !important;
+      text-shadow: none !important;
+    }
+    img, video, svg, picture { filter: grayscale(100%) brightness(0.95) contrast(0.85) !important; }
+    a, button, [role="button"] { box-shadow: none !important; }
+  ` : "";
+
+  const selectionCss = selectionEnabled ? `
+    [data-sb-hover] { outline: 2px dashed rgba(59,130,246,.6) !important; outline-offset: 2px; cursor: pointer !important; }
+    [data-sb-selected] { outline: 2px solid #3b82f6 !important; outline-offset: 2px; }
+  ` : "";
+
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -238,6 +323,9 @@ function buildHTML(
     html, body { margin: 0; font-family: var(--font-body, Inter, sans-serif); background: var(--color-background, #fff); color: var(--color-text, #111); }
     body { overflow-x: hidden; }
     * { box-sizing: border-box; }
+    ${resetCss}
+    ${wireframeCss}
+    ${selectionCss}
   <\/style>
 <\/head>
 <body>
@@ -270,6 +358,51 @@ function buildHTML(
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
     else run();
   <\/script>
+  ${selectionEnabled ? `<script>
+    (function () {
+      var SELECTABLE = 'h1,h2,h3,h4,h5,h6,p,span,a,button,img,svg,picture,li,blockquote';
+      var lastSelected = null;
+      function pathOf(el) {
+        var path = [];
+        var node = el;
+        while (node && node.parentElement && node !== document.body) {
+          var parent = node.parentElement;
+          var idx = Array.prototype.indexOf.call(parent.children, node);
+          path.unshift(idx);
+          node = parent;
+        }
+        return path;
+      }
+      document.addEventListener('mouseover', function (e) {
+        var t = e.target;
+        if (!(t instanceof Element)) return;
+        if (!t.matches(SELECTABLE)) return;
+        t.setAttribute('data-sb-hover', '1');
+      }, true);
+      document.addEventListener('mouseout', function (e) {
+        var t = e.target;
+        if (!(t instanceof Element)) return;
+        t.removeAttribute('data-sb-hover');
+      }, true);
+      document.addEventListener('click', function (e) {
+        var t = e.target;
+        if (!(t instanceof Element)) return;
+        var el = t.closest(SELECTABLE);
+        if (!el) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (lastSelected) lastSelected.removeAttribute('data-sb-selected');
+        el.setAttribute('data-sb-selected', '1');
+        lastSelected = el;
+        parent.postMessage({
+          __siteBuilder: 'element-click',
+          tag: el.tagName.toLowerCase(),
+          text: (el.textContent || '').slice(0, 80),
+          path: pathOf(el)
+        }, '*');
+      }, true);
+    })();
+  <\/script>` : ""}
 <\/body>
 <\/html>`;
 }

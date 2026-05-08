@@ -508,6 +508,51 @@ L'IA est instruite de :
 3. Respecter les valeurs autorisées des `select`
 4. Respecter `max_blocks` et les limites par type
 
+### Tokens du Style Guide à respecter dans le code des sections
+
+Toute section générée (`theme_sections.code`) s'exécute dans un iframe alimenté
+par `LibrarySectionIframe`, qui injecte automatiquement les variables CSS du
+Style Guide (`StyleGuide` côté types, `styleGuideToCSSVars()` côté runtime).
+Pour que les réglages utilisateur (couleurs, polices, arrondi des boutons,
+ombre des cartes, padding des sections, …) prennent réellement effet, le code
+généré DOIT utiliser ces variables — sinon les valeurs codées en dur priment.
+
+| Token CSS                | Usage                                        |
+| ------------------------ | -------------------------------------------- |
+| `--color-primary`        | Couleur primaire                             |
+| `--color-secondary`      | Couleur secondaire                           |
+| `--color-accent`         | Couleur d'accent                             |
+| `--color-background`     | Fond principal                               |
+| `--color-bg-alt`         | Fond alternatif                              |
+| `--color-text`           | Texte par défaut                             |
+| `--color-text-muted`     | Texte secondaire                             |
+| `--color-primary-50…950` | Nuances générées (idem secondary / accent)   |
+| `--font-heading`         | Police des titres                            |
+| `--font-body`            | Police du corps                              |
+| `--btn-radius`           | Rayon des boutons                            |
+| `--btn-padding`          | Padding des boutons                          |
+| `--card-radius`          | Rayon des cartes / images                    |
+| `--card-padding`         | Padding des cartes                           |
+| `--card-shadow`          | Ombre des cartes (mappée depuis `none/sm/md/lg`) |
+| `--section-padding`      | Padding vertical des sections                |
+| `--element-gap`          | Gap entre éléments                           |
+| `--max-content-width`    | Largeur max du contenu                       |
+
+**Règles obligatoires pour les sections :**
+
+1. Boutons : `style={{ borderRadius: 'var(--btn-radius)', padding: 'var(--btn-padding)' }}`.
+2. Cartes / images : `style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}`.
+3. Polices : titres avec `fontFamily: 'var(--font-heading)'`, corps avec `'var(--font-body)'`.
+4. Couleurs : utiliser les `var(--color-*)` plutôt que des hex codés en dur.
+5. **Interdit** : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine — privilégier un
+   `paddingTop`/`paddingBottom` basé sur `var(--section-padding)`. Le runtime neutralise tout de
+   même `min-h-screen`/`100vh` pour éviter les sections géantes, mais éviter ces classes reste la
+   bonne pratique.
+
+Ces règles sont rappelées dans le prompt système (`src/lib/ai/prompts/system-config-generator.txt`)
+et dans le prompt par défaut du chat IA d'édition de section
+(`src/app/api/themes/[slug]/sections/[sectionId]/chat/route.ts`).
+
 ---
 
 ## Système de Couleurs — Nuances & Color Schemes
