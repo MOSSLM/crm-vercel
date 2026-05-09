@@ -8,7 +8,8 @@ import {
   Type as TypeIcon, MousePointer, Box, ChevronRight,
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
   ChevronUp, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify,
-  Settings2,
+  Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
+  ArrowUpDown,
 } from "lucide-react";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
@@ -19,6 +20,7 @@ import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeF
 import { getSchemaForSection } from "@/data/section-schemas";
 import type { ColorSchemePreset } from "@/lib/color-utils";
 import type { SectionPreset } from "@/types";
+import { SiteMenusPanel } from "./SiteMenusPanel";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -108,6 +110,81 @@ interface DesignWorkspaceProps {
   onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
 }
 
+// ─── Schema field node in layers ──────────────────────────────────────────────
+
+function schemaFieldIcon(type: string) {
+  if (type === "image_picker" || type === "image") return ImageIcon;
+  if (type === "url" || type === "link") return LinkIcon;
+  if (["header", "header_navigation", "navigation"].includes(type)) return Navigation;
+  if (["text", "textarea", "richtext", "html"].includes(type)) return TypeIcon;
+  return Box;
+}
+
+function LayersSchemaFields({
+  instance,
+  schema,
+  onSelectField,
+  focusedField,
+}: {
+  instance: SiteSectionInstance;
+  schema: ReturnType<typeof import("@/data/section-schemas").getSchemaForSection>;
+  onSelectField: (fieldId: string) => void;
+  focusedField: string | null;
+}) {
+  if (!schema) return null;
+  const fields = schema.settings ?? [];
+  const blocks = schema.blocks ?? [];
+  const visible = fields.filter(
+    (f) => "id" in f && !String(f.id).startsWith("__") && f.type !== "header"
+  );
+
+  return (
+    <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
+      {visible.map((f) => {
+        if (!("id" in f)) return null;
+        const Icon = schemaFieldIcon(f.type);
+        const isFocused = focusedField === f.id;
+        const rawVal = instance.content[f.id as string];
+        const preview = typeof rawVal === "string" ? rawVal.slice(0, 28) : "";
+        return (
+          <button
+            key={f.id as string}
+            onClick={(e) => { e.stopPropagation(); onSelectField(f.id as string); }}
+            className={`group flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[10px] text-left transition-colors ${isFocused ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-500"}`}
+          >
+            <Icon size={9} className="flex-shrink-0 text-gray-400" />
+            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 80 }}>{"label" in f ? String(f.label) : String(f.id)}</span>
+            {preview && <span className="truncate text-gray-400 text-[9px]">{preview}</span>}
+          </button>
+        );
+      })}
+      {blocks.map((blockDef) => {
+        const items = instance.blocks?.filter((b) => b.type === blockDef.type) ?? [];
+        return (
+          <div key={blockDef.type} className="mt-0.5">
+            <div className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] text-gray-400 font-semibold uppercase tracking-wider">
+              <Box size={8} />
+              {blockDef.name} ({items.length})
+            </div>
+            {items.map((item, idx) => {
+              const firstSetting = blockDef.settings?.[0];
+              const label = firstSetting && "id" in firstSetting
+                ? (item.settings[firstSetting.id as string] as string | undefined)?.slice(0, 24) ?? `Item ${idx + 1}`
+                : `Item ${idx + 1}`;
+              return (
+                <div key={item.id} className="flex items-center gap-1.5 px-1.5 py-0.5 ml-2 text-[10px] text-gray-400 rounded hover:bg-gray-50">
+                  <Box size={8} className="text-gray-300 flex-shrink-0" />
+                  <span className="truncate">{label}</span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWorkspaceProps) {
@@ -118,6 +195,9 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const [layersOpen, setLayersOpen] = React.useState(true);
   const [expandedInstances, setExpandedInstances] = React.useState<Set<string>>(new Set());
   const [selectedElement, setSelectedElement] = React.useState<SelectedElement | null>(null);
+  const [showMenusPanel, setShowMenusPanel] = React.useState(false);
+
+  const [focusedField, setFocusedField] = React.useState<string | null>(null);
 
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
   const selectedInstance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
@@ -133,6 +213,12 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  };
+
+  const handleLayerFieldSelect = (instanceId: string, fieldId: string) => {
+    dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
+    setSelectedElement(null);
+    setFocusedField(fieldId);
   };
 
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
@@ -184,6 +270,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                     instance={{ ...instance, section_def: secDef }}
                     sectionDef={secDef}
                     styleGuide={state.styleGuide}
+                    menus={state.menus}
                   />
                 );
               })}
@@ -203,10 +290,27 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
 
           {/* Panel header */}
           <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
-            {panelMode === "global" && (
+            {panelMode === "global" && !showMenusPanel && (
               <>
                 <Settings2 size={12} className="text-gray-400" />
-                <span className="text-xs font-semibold text-gray-700">Paramètres globaux</span>
+                <span className="text-xs font-semibold text-gray-700 flex-1">Paramètres globaux</span>
+                <button
+                  onClick={() => setShowMenusPanel(true)}
+                  className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                  title="Gérer les menus"
+                >
+                  <Navigation size={10} />
+                  Menus
+                </button>
+              </>
+            )}
+            {panelMode === "global" && showMenusPanel && (
+              <>
+                <Navigation size={12} className="text-blue-500" />
+                <span className="text-xs font-semibold text-gray-700 flex-1">Menus</span>
+                <button onClick={() => setShowMenusPanel(false)} className="text-gray-400 hover:text-gray-600">
+                  <X size={12} />
+                </button>
               </>
             )}
             {panelMode === "section" && selectedInstance && (
@@ -239,12 +343,15 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
 
           {/* Panel content */}
           <div className="flex-1 overflow-y-auto">
-            {panelMode === "global" && <GlobalPanel />}
+            {panelMode === "global" && !showMenusPanel && <GlobalPanel />}
+            {panelMode === "global" && showMenusPanel && <SiteMenusPanel />}
             {panelMode === "section" && selectedInstance && (
               <SectionPanel
                 instance={selectedInstance}
                 sectionDefs={sectionDefs}
                 onRegenerateSection={onRegenerateSection}
+                focusedField={focusedField}
+                onClearFocusedField={() => setFocusedField(null)}
               />
             )}
             {panelMode === "text" && selectedElement && (
@@ -346,6 +453,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         instance={{ ...instance, section_def: secDef }}
                         sectionDef={secDef}
                         styleGuide={state.styleGuide}
+                        menus={state.menus}
                         editorMode
                         selected={isSelected}
                         onSelect={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
@@ -428,7 +536,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                     onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: page.slug })}
                     className={`flex items-center gap-1.5 w-full px-2 py-1 rounded-md ${isActive ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-700"}`}
                   >
-                    <ChevronDown size={11} className="text-gray-400" />
+                    <ChevronDown size={11} className={`text-gray-400 transition-transform ${isActive ? "" : "-rotate-90"}`} />
                     <span className="font-semibold flex-1 text-left truncate">{page.title}</span>
                     <span className="text-[9px] text-gray-400">{ids.length}</span>
                   </button>
@@ -439,22 +547,31 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         if (!inst) return null;
                         const def = inst.section_def ?? (inst.section_id ? sectionDefs[inst.section_id] : null);
                         const isSel = state.selectedInstanceId === instanceId;
-                        const expanded = expandedInstances.has(instanceId);
-                        const elementSelectedHere = selectedElement?.instanceId === instanceId;
+                        const schema = def ? getSchemaForSection(def) : null;
+                        // Default all sections to expanded in layers
+                        const expanded = !expandedInstances.has(`collapsed-${instanceId}`);
                         return (
                           <div key={instanceId}>
                             <div
                               className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"}`}
-                              onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
+                              onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); setFocusedField(null); }}
                             >
                               <button
-                                onClick={(e) => { e.stopPropagation(); toggleInstanceExpanded(instanceId); }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedInstances((prev) => {
+                                    const next = new Set(prev);
+                                    const key = `collapsed-${instanceId}`;
+                                    if (next.has(key)) next.delete(key); else next.add(key);
+                                    return next;
+                                  });
+                                }}
                                 className="text-gray-400 hover:text-gray-600 flex-shrink-0"
                               >
                                 <ChevronRight size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
                               </button>
-                              <Box size={11} className="text-gray-400 flex-shrink-0" />
-                              <span className="flex-1 truncate text-[11px]">{def?.name ?? "Section"}</span>
+                              <Box size={11} className={`flex-shrink-0 ${isSel ? "text-blue-400" : "text-gray-400"}`} />
+                              <span className="flex-1 truncate text-[11px] font-medium">{def?.name ?? "Section"}</span>
                               <button
                                 onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
                                 className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
@@ -468,14 +585,22 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                                 <Trash2 size={10} />
                               </button>
                             </div>
-                            {expanded && elementSelectedHere && selectedElement && (() => {
+                            {expanded && schema && (
+                              <LayersSchemaFields
+                                instance={inst}
+                                schema={schema}
+                                focusedField={isSel ? focusedField : null}
+                                onSelectField={(fieldId) => handleLayerFieldSelect(instanceId, fieldId)}
+                              />
+                            )}
+                            {expanded && selectedElement?.instanceId === instanceId && (() => {
                               const Icon = elementIcon(selectedElement.tag);
                               return (
-                                <div className="ml-3 pl-2 border-l border-gray-100">
-                                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-blue-50 text-blue-700 text-[10px]">
+                                <div className="ml-3 pl-2 border-l border-gray-100 mt-0.5">
+                                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-purple-50 text-purple-700 text-[10px]">
                                     <Icon size={10} />
                                     <span className="font-semibold uppercase">{selectedElement.tag}</span>
-                                    <span className="truncate text-blue-500">{selectedElement.text || "—"}</span>
+                                    <span className="truncate text-purple-500">{selectedElement.text || "—"}</span>
                                   </div>
                                 </div>
                               );
@@ -694,13 +819,22 @@ function SectionPanel({
   instance,
   sectionDefs,
   onRegenerateSection,
+  focusedField,
+  onClearFocusedField,
 }: {
   instance: SiteSectionInstance;
   sectionDefs: Record<string, SiteSectionDef>;
   onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
+  focusedField?: string | null;
+  onClearFocusedField?: () => void;
 }) {
   const { state, dispatch } = useRelumeBuilder();
   const [activeTab, setActiveTab] = React.useState<SectionTab>("content");
+
+  // Jump to Content tab when a field is focused from layers
+  React.useEffect(() => {
+    if (focusedField) setActiveTab("content");
+  }, [focusedField]);
 
   const sectionDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
   const schema = sectionDef ? getSchemaForSection(sectionDef) : null;
@@ -827,7 +961,7 @@ function SectionPanel({
 
         {activeTab === "style" && (
           <>
-            {/* Palette de couleurs */}
+            {/* Color scheme */}
             <div>
               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Palette de couleurs</label>
               <ColorSchemeField
@@ -838,7 +972,16 @@ function SectionPanel({
               />
             </div>
 
-            {/* Schema style fields (dimensions, spacing, margins — from schema) */}
+            {/* Universal Dimensions */}
+            <Accordion title="Hauteur" icon={Maximize2} defaultOpen>
+              <UniversalHeightControls instance={instance} onUpdate={updateContent} />
+            </Accordion>
+
+            <Accordion title="Espacement" icon={ArrowUpDown} defaultOpen>
+              <UniversalSpacingControls instance={instance} onUpdate={updateContent} />
+            </Accordion>
+
+            {/* Schema style fields */}
             {schema && (() => {
               const { styleFields, layoutFields } = splitSchemaFields(schema);
               const filteredStyle = styleFields.filter(
@@ -984,6 +1127,124 @@ function TextElementPanel({
       <p className="text-[10px] text-gray-400 leading-relaxed bg-gray-50 rounded-md p-2">
         La sélection directe d&apos;éléments est disponible via les champs de contenu de la section (onglet Contenu).
       </p>
+    </div>
+  );
+}
+
+// ─── Universal Height Controls ────────────────────────────────────────────────
+
+type HeightMode = "auto" | "fullscreen" | "large" | "fixed";
+
+function UniversalHeightControls({
+  instance,
+  onUpdate,
+}: {
+  instance: SiteSectionInstance;
+  onUpdate: (key: string, value: unknown) => void;
+}) {
+  const heightMode = (instance.content.__height_mode as HeightMode) ?? "auto";
+  const heightValue = (instance.content.__height_value as string) ?? "400px";
+  const [localPx, setLocalPx] = React.useState(() => parseInt(heightValue) || 400);
+
+  const MODES: { id: HeightMode; label: string; desc: string }[] = [
+    { id: "auto", label: "Fit", desc: "Taille du contenu" },
+    { id: "fullscreen", label: "Fill", desc: "100% de l'écran" },
+    { id: "large", label: "Large", desc: "80% de l'écran" },
+    { id: "fixed", label: "Fixe", desc: "Hauteur personnalisée" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-1.5">
+        {MODES.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => onUpdate("__height_mode", m.id)}
+            className={`text-left px-2.5 py-2 rounded-lg border text-[10px] transition-colors ${heightMode === m.id ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+          >
+            <div className="font-semibold">{m.label}</div>
+            <div className={`text-[9px] ${heightMode === m.id ? "text-gray-300" : "text-gray-400"}`}>{m.desc}</div>
+          </button>
+        ))}
+      </div>
+      {heightMode === "fixed" && (
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
+            <span>Hauteur fixe</span>
+            <span className="font-mono text-gray-500">{localPx}px</span>
+          </label>
+          <input
+            type="range" min={100} max={1200} step={10} value={localPx}
+            onChange={(e) => { setLocalPx(+e.target.value); onUpdate("__height_value", `${e.target.value}px`); }}
+            className="w-full accent-gray-900"
+          />
+          <input
+            type="number" min={100} max={2000} value={localPx}
+            onChange={(e) => { const v = +e.target.value; setLocalPx(v); onUpdate("__height_value", `${v}px`); }}
+            className="mt-1 w-full bg-gray-50 border border-gray-200 rounded px-2 py-1 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Universal Spacing Controls ───────────────────────────────────────────────
+
+function SpacingRow({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
+        <span>{label}</span>
+        <span className="font-mono text-gray-500">{value}px</span>
+      </label>
+      <input
+        type="range" min={min} max={max} step={4} value={value}
+        onChange={(e) => onChange(+e.target.value)}
+        className="w-full accent-gray-900"
+      />
+    </div>
+  );
+}
+
+function UniversalSpacingControls({
+  instance,
+  onUpdate,
+}: {
+  instance: SiteSectionInstance;
+  onUpdate: (key: string, value: unknown) => void;
+}) {
+  const padTop = typeof instance.content.__padding_top === "number" ? instance.content.__padding_top as number : 80;
+  const padBottom = typeof instance.content.__padding_bottom === "number" ? instance.content.__padding_bottom as number : 80;
+  const padX = typeof instance.content.__padding_x === "number" ? instance.content.__padding_x as number : 24;
+  const marginTop = typeof instance.content.__margin_top === "number" ? instance.content.__margin_top as number : 0;
+  const marginBottom = typeof instance.content.__margin_bottom === "number" ? instance.content.__margin_bottom as number : 0;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Padding</div>
+        <SpacingRow label="Haut" value={padTop} min={0} max={240} onChange={(v) => onUpdate("__padding_top", v)} />
+        <SpacingRow label="Bas" value={padBottom} min={0} max={240} onChange={(v) => onUpdate("__padding_bottom", v)} />
+        <SpacingRow label="Horizontal" value={padX} min={0} max={120} onChange={(v) => onUpdate("__padding_x", v)} />
+      </div>
+      <div>
+        <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Marge</div>
+        <SpacingRow label="Haut" value={marginTop} min={-80} max={120} onChange={(v) => onUpdate("__margin_top", v)} />
+        <SpacingRow label="Bas" value={marginBottom} min={-80} max={120} onChange={(v) => onUpdate("__margin_bottom", v)} />
+      </div>
     </div>
   );
 }

@@ -7,12 +7,37 @@ import type {
   RelumeHistoryEntry,
   SiteSectionInstance,
   SitemapPage,
+  SiteMenus,
+  SiteMenuItem,
   StyleGuide,
   WorkspaceId,
 } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const DEFAULT_MENUS: SiteMenus = { nav: [], footer: [], footerLegal: [] };
+
+/** Build default nav menus from sitemap pages */
+function buildMenusFromSitemap(sitemap: SitemapPage[], existing: SiteMenus): SiteMenus {
+  const navItems: SiteMenuItem[] = sitemap.map((page) => ({
+    id: page.id,
+    label: page.title,
+    url: page.slug,
+  }));
+  // Only auto-populate if nav is empty
+  const nav = existing.nav.length === 0 ? navItems : existing.nav;
+  const footerLegal = existing.footerLegal.length === 0
+    ? [
+        { id: "legal-privacy", label: "Politique de confidentialité", url: "/confidentialite" },
+        { id: "legal-terms", label: "Mentions légales", url: "/mentions-legales" },
+      ]
+    : existing.footerLegal;
+  const footer = existing.footer.length === 0
+    ? sitemap.slice(0, 5).map((page) => ({ id: `footer-${page.id}`, label: page.title, url: page.slug }))
+    : existing.footer;
+  return { nav, footer, footerLegal };
+}
 
 function nanoid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -49,18 +74,18 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     case "LOAD": {
       const instancesMap: Record<string, SiteSectionInstance> = {};
       for (const inst of action.payload.instances) {
-        // Ensure `blocks` is always an array (DB column may be missing on old rows
-        // or not yet returned by the API).
         instancesMap[inst.id] = { ...inst, blocks: Array.isArray(inst.blocks) ? inst.blocks : [] };
       }
       const byPage = buildInstancesByPage(instancesMap);
       const firstPage = action.payload.sitemap[0]?.slug ?? "/";
-      // Merge loaded style guide with defaults to handle missing fields from old data
       const safeStyleGuide = mergeDeep(DEFAULT_STYLE_GUIDE, action.payload.styleGuide) as StyleGuide;
+      const rawMenus = action.payload.menus ?? DEFAULT_MENUS;
+      const menus = buildMenusFromSitemap(action.payload.sitemap, rawMenus);
       return {
         ...state,
         styleGuide: safeStyleGuide,
         sitemap: action.payload.sitemap,
+        menus,
         instances: instancesMap,
         instancesByPage: byPage,
         activePage: firstPage,
@@ -309,6 +334,19 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       };
     }
 
+    case "UPDATE_MENUS": {
+      return {
+        ...state,
+        menus: { ...state.menus, ...action.payload },
+        isDirty: true,
+      };
+    }
+
+    case "SYNC_MENUS_FROM_SITEMAP": {
+      const synced = buildMenusFromSitemap(state.sitemap, DEFAULT_MENUS);
+      return { ...state, menus: synced, isDirty: true };
+    }
+
     case "UPDATE_STYLE_GUIDE": {
       const snapshot = takeSnapshot(state);
       const newGuide = mergeDeep(state.styleGuide, action.payload) as StyleGuide;
@@ -482,6 +520,7 @@ const initialState: RelumeBuilderState = {
   siteName: "",
   styleGuide: DEFAULT_STYLE_GUIDE,
   sitemap: [{ id: "page-home", slug: "/", title: "Accueil" }],
+  menus: DEFAULT_MENUS,
   instances: {},
   instancesByPage: {},
   activePage: "/",

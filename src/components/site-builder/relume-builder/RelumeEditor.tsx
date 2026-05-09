@@ -2,11 +2,12 @@
 
 import React from "react";
 import {
-  Save, Globe, Check, Share2, Upload, Users,
-  Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2
+  Save, Globe, Check, Share2, Upload,
+  Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2,
+  Undo2, Redo2, Menu,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, WorkspaceId } from "@/types";
+import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { RelumeBuilderProvider, useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { SiteVersionHistory } from "@/components/site-builder/SiteVersionHistory";
@@ -27,6 +28,7 @@ export interface RelumeEditorProps {
   initialInstances?: SiteSectionInstance[];
   initialStyleGuide?: StyleGuide | null;
   initialSitemap?: SitemapPage[];
+  initialMenus?: SiteMenus | null;
 }
 
 export function RelumeEditor(props: RelumeEditorProps) {
@@ -362,6 +364,7 @@ function RelumeEditorInner({
   initialInstances = [],
   initialStyleGuide,
   initialSitemap,
+  initialMenus,
 }: RelumeEditorProps) {
   const { state, dispatch } = useRelumeBuilder();
   const [saving, setSaving] = React.useState(false);
@@ -382,39 +385,78 @@ function RelumeEditorInner({
       payload: {
         styleGuide: initialStyleGuide ?? DEFAULT_STYLE_GUIDE,
         sitemap: initialSitemap ?? [{ id: "page-home", slug: "/", title: "Accueil" }],
+        menus: initialMenus ?? undefined,
         instances: initialInstances.map((inst) => ({
           ...inst,
-          section_def: inst.section_id ? sectionDefs[inst.section_id] : undefined,
+          section_def: inst.section_id ? sectionDefs[inst.section_id] : (inst as unknown as { section_def?: SiteSectionDef }).section_def,
         })),
       },
     });
   }, [siteId]);
+
+  // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
+
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (!ctrl) return;
+      if (e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        dispatch({ type: "UNDO" });
+      } else if (e.key === "y" || (e.key === "z" && e.shiftKey)) {
+        e.preventDefault();
+        dispatch({ type: "REDO" });
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [dispatch]);
 
   // ─── Save ────────────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await fetch(`/api/site-builder/sites/${siteId}`, {
+      const r1 = await fetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ style_guide: state.styleGuide, sitemap: state.sitemap }),
+        body: JSON.stringify({
+          style_guide: state.styleGuide,
+          sitemap: state.sitemap,
+          site_config: { menus: state.menus },
+        }),
       });
-      const instances = Object.values(state.instances);
-      await fetch(`/api/site-builder/sites/${siteId}/instances`, {
+      if (!r1.ok) { const e = await r1.json(); throw new Error(e.error ?? "Erreur PATCH site"); }
+
+      const instances = Object.values(state.instances).map((inst) => ({
+        id: inst.id,
+        site_id: inst.site_id,
+        section_id: inst.section_id ?? null,
+        page_slug: inst.page_slug,
+        sort_order: inst.sort_order,
+        content: inst.content,
+        blocks: inst.blocks ?? [],
+        custom_style: inst.custom_style ?? {},
+        is_hidden: inst.is_hidden ?? false,
+      }));
+      const r2 = await fetch(`/api/site-builder/sites/${siteId}/instances`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ instances }),
       });
-      await fetch(`/api/site-builder/sites/${siteId}/versions`, {
+      if (!r2.ok) { const e = await r2.json(); throw new Error(e.error ?? "Erreur PUT instances"); }
+
+      // Version snapshot — non-blocking (ignore errors)
+      fetch(`/api/site-builder/sites/${siteId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ style_guide: state.styleGuide, sitemap: state.sitemap }),
-      });
+      }).catch(() => {});
+
       dispatch({ type: "MARK_SAVED" });
-      toast.success("Sauvegardé");
-    } catch {
-      toast.error("Erreur lors de la sauvegarde");
+      toast.success("Sauvegardé ✓");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Erreur lors de la sauvegarde");
     } finally {
       setSaving(false);
     }
@@ -550,6 +592,26 @@ function RelumeEditorInner({
 
         {/* Right actions */}
         <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+          {/* Undo / Redo */}
+          <div className="flex items-center border border-gray-200 rounded-md overflow-hidden">
+            <button
+              onClick={() => dispatch({ type: "UNDO" })}
+              disabled={state.historyIndex < 0}
+              title="Annuler (Ctrl+Z)"
+              className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-30 transition-colors"
+            >
+              <Undo2 size={13} />
+            </button>
+            <button
+              onClick={() => dispatch({ type: "REDO" })}
+              disabled={state.historyIndex >= state.history.length - 1}
+              title="Rétablir (Ctrl+Y)"
+              className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-30 transition-colors border-l border-gray-200"
+            >
+              <Redo2 size={13} />
+            </button>
+          </div>
+
           {/* Dirty indicator */}
           {state.isDirty && (
             <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
