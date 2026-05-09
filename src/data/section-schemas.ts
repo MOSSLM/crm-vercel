@@ -10,6 +10,7 @@ const colorSchemeField: SectionField = {
   group: 'style',
 };
 
+/** @deprecated Replaced by __padding_top/__padding_bottom. Kept for BC. */
 const paddingField = (defaultVal = 80): SectionField => ({
   type: 'range',
   id: '__padding_y',
@@ -29,6 +30,112 @@ const alignmentField = (defaultVal = 'center'): SectionField => ({
   default: defaultVal,
   group: 'layout',
 });
+
+// ─── Common layout/size fields (injected into every section schema) ───────────
+
+const heightModeField: SectionField = {
+  type: 'select',
+  id: '__height_mode',
+  label: 'Hauteur',
+  options: [
+    { label: 'Auto (contenu)', value: 'auto' },
+    { label: 'Plein écran (100vh)', value: 'fullscreen' },
+    { label: 'Grande (80vh)', value: 'large' },
+    { label: 'Fixe', value: 'fixed' },
+  ],
+  default: 'auto',
+  group: 'style',
+};
+
+const heightValueField: SectionField = {
+  type: 'text',
+  id: '__height_value',
+  label: 'Hauteur personnalisée',
+  placeholder: '500px — supporte px, vh, em, %',
+  group: 'style',
+  visible_if: { field: '__height_mode', equals: 'fixed' },
+};
+
+const paddingTopField: SectionField = {
+  type: 'range',
+  id: '__padding_top',
+  label: 'Padding haut',
+  min: 0,
+  max: 240,
+  step: 4,
+  unit: 'px',
+  default: 80,
+  group: 'style',
+};
+
+const paddingBottomField: SectionField = {
+  type: 'range',
+  id: '__padding_bottom',
+  label: 'Padding bas',
+  min: 0,
+  max: 240,
+  step: 4,
+  unit: 'px',
+  default: 80,
+  group: 'style',
+};
+
+const paddingXField: SectionField = {
+  type: 'range',
+  id: '__padding_x',
+  label: 'Padding gauche/droite',
+  min: 0,
+  max: 120,
+  step: 4,
+  unit: 'px',
+  default: 24,
+  group: 'style',
+};
+
+const marginTopField: SectionField = {
+  type: 'range',
+  id: '__margin_top',
+  label: 'Marge haut',
+  min: -80,
+  max: 120,
+  step: 4,
+  unit: 'px',
+  default: 0,
+  group: 'style',
+};
+
+const marginBottomField: SectionField = {
+  type: 'range',
+  id: '__margin_bottom',
+  label: 'Marge bas',
+  min: -80,
+  max: 120,
+  step: 4,
+  unit: 'px',
+  default: 0,
+  group: 'style',
+};
+
+/**
+ * Returns dimension + spacing fields appended to every section schema.
+ * @param skipHeight Pass true for sections that manage their own height (hero, navbar).
+ */
+function commonStyleFields(opts: { skipHeight?: boolean; defaultPadding?: number } = {}): SectionField[] {
+  const { skipHeight = false, defaultPadding = 80 } = opts;
+  const paddingTop: SectionField = { ...paddingTopField, default: defaultPadding };
+  const paddingBottom: SectionField = { ...paddingBottomField, default: defaultPadding };
+  return [
+    { type: 'header', content: 'Dimensions', group: 'style' },
+    ...(skipHeight ? [] : [heightModeField, heightValueField] as SectionField[]),
+    { type: 'header', content: 'Espacement interne', group: 'style' },
+    paddingTop,
+    paddingBottom,
+    paddingXField,
+    { type: 'header', content: 'Marges externes', group: 'style' },
+    marginTopField,
+    marginBottomField,
+  ];
+}
 
 // ─── 1. HERO ──────────────────────────────────────────────────────────────────
 
@@ -78,7 +185,7 @@ const heroSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(96),
+    ...commonStyleFields({ skipHeight: true, defaultPadding: 96 }),
   ],
   presets: [
     {
@@ -165,6 +272,7 @@ const navbarSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
+    ...commonStyleFields({ skipHeight: true, defaultPadding: 0 }),
   ],
   blocks: [navbarLinkBlock],
   presets: [
@@ -239,7 +347,7 @@ const servicesSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   blocks: [serviceItemBlock],
   presets: [
@@ -303,7 +411,7 @@ const testimonialsSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   blocks: [testimonialBlock],
   presets: [
@@ -365,7 +473,7 @@ const aboutSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   blocks: [aboutFeatureBlock],
   presets: [
@@ -431,7 +539,7 @@ const contactSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   presets: [
     {
@@ -479,8 +587,8 @@ const ctaBannerSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
     { type: 'image_picker', id: 'background_image', label: 'Image de fond (optionnel)', group: 'style' },
+    ...commonStyleFields(),
   ],
   presets: [
     {
@@ -537,7 +645,7 @@ const faqSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   blocks: [faqItemBlock],
   presets: [
@@ -597,7 +705,7 @@ const statsSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   blocks: [statItemBlock],
   presets: [
@@ -656,7 +764,7 @@ const gallerySchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   blocks: [galleryItemBlock],
   presets: [
@@ -716,7 +824,7 @@ const teamSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   blocks: [teamMemberBlock],
   presets: [
@@ -764,7 +872,7 @@ const logosSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(60),
+    ...commonStyleFields({ defaultPadding: 60 }),
   ],
   blocks: [logoItemBlock],
   presets: [
@@ -800,7 +908,7 @@ const blogSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(80),
+    ...commonStyleFields(),
   ],
   presets: [
     {
@@ -867,7 +975,7 @@ const footerSchema: SectionSchema = {
 
     { type: 'header', content: 'Style', group: 'style' },
     colorSchemeField,
-    paddingField(60),
+    ...commonStyleFields({ skipHeight: true, defaultPadding: 60 }),
   ],
   blocks: [footerColumnBlock],
   presets: [

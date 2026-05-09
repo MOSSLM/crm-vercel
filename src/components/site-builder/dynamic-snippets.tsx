@@ -67,7 +67,7 @@ export function SnippetRenderer({ snippet, content, selected, onSelect }: Snippe
 
   if (snippet.type === "button") {
     return wrap(
-      <a href={rp("href") || "#"} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "var(--btn-padding)", borderRadius: "var(--btn-radius)", backgroundColor: "var(--color-primary)", color: "#fff", textDecoration: "none", fontWeight: 600, border: "2px solid var(--color-primary)" }}>
+      <a href={rp("href") || "#"} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "var(--btn-padding)", borderRadius: "var(--btn-radius)", backgroundColor: "var(--btn-bg)", color: "var(--btn-text)", textDecoration: "none", fontWeight: 600, border: "2px solid var(--btn-border-color)" }}>
         {rp("text")}
       </a>
     );
@@ -77,11 +77,15 @@ export function SnippetRenderer({ snippet, content, selected, onSelect }: Snippe
     const buttons = (snippet.props.buttons ?? []) as Array<{ text?: string; href?: string; variant?: string }>;
     return wrap(
       <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", alignItems: "center" }}>
-        {buttons.map((btn, i) => (
-          <a key={i} href={btn.href || "#"} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "var(--btn-padding)", borderRadius: "var(--btn-radius)", backgroundColor: btn.variant === "outline" ? "transparent" : "var(--color-primary)", color: btn.variant === "outline" ? "var(--color-primary)" : "#fff", textDecoration: "none", fontWeight: 600, border: "2px solid var(--color-primary)" }}>
-            {btn.text}
-          </a>
-        ))}
+        {buttons.map((btn, i) => {
+          // Secondary/outline buttons always use outline style regardless of global style setting
+          const isOutline = btn.variant === "outline" || i > 0;
+          return (
+            <a key={i} href={btn.href || "#"} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "var(--btn-padding)", borderRadius: "var(--btn-radius)", backgroundColor: isOutline ? "transparent" : "var(--btn-bg)", color: isOutline ? "var(--color-primary)" : "var(--btn-text)", textDecoration: "none", fontWeight: 600, border: `2px solid ${isOutline ? "var(--color-primary)" : "var(--btn-border-color)"}` }}>
+              {btn.text}
+            </a>
+          );
+        })}
       </div>
     );
   }
@@ -194,7 +198,7 @@ export function SnippetRenderer({ snippet, content, selected, onSelect }: Snippe
         <input placeholder={rp("namePlaceholder") || "Votre nom"} style={{ padding: "10px 14px", borderRadius: "var(--btn-radius)", border: "1px solid var(--color-bg-alt)", fontFamily: "var(--font-body)", fontSize: "1rem", color: "var(--color-text)", backgroundColor: "var(--color-background)" }} />
         <input type="email" placeholder={rp("emailPlaceholder") || "Votre email"} style={{ padding: "10px 14px", borderRadius: "var(--btn-radius)", border: "1px solid var(--color-bg-alt)", fontFamily: "var(--font-body)", fontSize: "1rem", color: "var(--color-text)", backgroundColor: "var(--color-background)" }} />
         <textarea rows={4} placeholder={rp("messagePlaceholder") || "Votre message"} style={{ padding: "10px 14px", borderRadius: "var(--btn-radius)", border: "1px solid var(--color-bg-alt)", fontFamily: "var(--font-body)", fontSize: "1rem", color: "var(--color-text)", backgroundColor: "var(--color-background)", resize: "vertical" }} />
-        <button type="submit" style={{ padding: "var(--btn-padding)", borderRadius: "var(--btn-radius)", backgroundColor: "var(--color-primary)", color: "#fff", fontWeight: 600, border: "none", cursor: "pointer" }}>
+        <button type="submit" style={{ padding: "var(--btn-padding)", borderRadius: "var(--btn-radius)", backgroundColor: "var(--btn-bg)", color: "var(--btn-text)", fontWeight: 600, border: `2px solid var(--btn-border-color)`, cursor: "pointer" }}>
           {rp("submitText") || "Envoyer"}
         </button>
       </form>

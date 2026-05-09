@@ -8,6 +8,7 @@ import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter
 import {
   resolveColorScheme,
   generateShadeCSSVars,
+  getContrastColor,
   type ColorSchemePreset,
   type SectionColorScheme,
 } from "@/lib/color-utils";
@@ -54,9 +55,14 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     "--font-heading": sg.fonts.heading + ", Inter, sans-serif",
     "--font-body": sg.fonts.body + ", Inter, sans-serif",
     "--font-base-size": sg.fonts.baseSize,
-    // Buttons
+    // Buttons — bg/text/border computed from buttons.style so snippets react to style guide changes
     "--btn-radius": sg.buttons.borderRadius,
     "--btn-padding": sg.buttons.padding,
+    "--btn-bg": sg.buttons.style === "outline" ? "transparent"
+      : sg.buttons.style === "soft" ? sg.colors.primary + "22"
+      : sg.colors.primary,
+    "--btn-text": sg.buttons.style === "filled" ? getContrastColor(sg.colors.primary) : sg.colors.primary,
+    "--btn-border-color": sg.buttons.style === "soft" ? "transparent" : sg.colors.primary,
     // Cards
     "--card-radius": sg.cards.borderRadius,
     "--card-shadow": shadowMap[sg.cards.shadow] ?? shadowMap.md,
@@ -216,9 +222,34 @@ export function DynamicSectionRenderer({
 
   const cssVars = styleGuideToCSSVars(styleGuide);
 
-  // Apply padding from schema field __padding_y if set
+  // ── Height from schema __height_mode / __height_value ────────────────────────
+  const heightMode = instance.content.__height_mode as string | undefined;
+  const heightValue = instance.content.__height_value as string | undefined;
+  let minHeight: string | undefined;
+  if (heightMode === "fullscreen") minHeight = "100vh";
+  else if (heightMode === "large") minHeight = "80vh";
+  else if (heightMode === "fixed" && heightValue) minHeight = heightValue;
+
+  // ── Padding from schema: __padding_top / __padding_bottom > __padding_y > CSS var ──
   const paddingY = typeof instance.content.__padding_y === "number"
     ? `${instance.content.__padding_y}px`
+    : undefined;
+  const padTop = typeof instance.content.__padding_top === "number"
+    ? `${instance.content.__padding_top}px`
+    : paddingY;
+  const padBottom = typeof instance.content.__padding_bottom === "number"
+    ? `${instance.content.__padding_bottom}px`
+    : paddingY;
+  const padX = typeof instance.content.__padding_x === "number"
+    ? `${instance.content.__padding_x}px`
+    : undefined;
+
+  // ── Margin from schema ─────────────────────────────────────────────────────
+  const marginTop = typeof instance.content.__margin_top === "number"
+    ? `${instance.content.__margin_top}px`
+    : undefined;
+  const marginBottom = typeof instance.content.__margin_bottom === "number"
+    ? `${instance.content.__margin_bottom}px`
     : undefined;
 
   const padding = structure.padding ?? {};
@@ -226,10 +257,13 @@ export function DynamicSectionRenderer({
     ...cssVars,
     // Color scheme overrides (applied after base vars so they take precedence)
     ...colorSchemeVars,
-    paddingTop: paddingY ?? padding.top ?? "var(--section-padding)",
-    paddingBottom: paddingY ?? padding.bottom ?? "var(--section-padding)",
-    paddingLeft: padding.left ?? "24px",
-    paddingRight: padding.right ?? "24px",
+    paddingTop: padTop ?? padding.top ?? "var(--section-padding)",
+    paddingBottom: padBottom ?? padding.bottom ?? "var(--section-padding)",
+    paddingLeft: padX ?? padding.left ?? "24px",
+    paddingRight: padX ?? padding.right ?? "24px",
+    ...(minHeight ? { minHeight } : {}),
+    ...(marginTop ? { marginTop } : {}),
+    ...(marginBottom ? { marginBottom } : {}),
     backgroundColor: structure.background ?? "var(--color-background)",
     position: "relative",
     fontFamily: "var(--font-body)",
