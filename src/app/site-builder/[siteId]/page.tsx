@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { RelumeEditor } from "@/components/site-builder/relume-builder/RelumeEditor";
-import type { SiteV2, SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage } from "@/types";
+import type { SiteV2, SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus } from "@/types";
 
 export default function SiteBuilderV2Page() {
   const { siteId } = useParams<{ siteId: string }>();
@@ -62,6 +62,7 @@ export default function SiteBuilderV2Page() {
       initialInstances={instances}
       initialStyleGuide={(site as unknown as { style_guide?: StyleGuide }).style_guide ?? undefined}
       initialSitemap={(site as unknown as { sitemap?: SitemapPage[] }).sitemap ?? undefined}
+      initialMenus={(site as unknown as { site_config?: { menus?: SiteMenus } }).site_config?.menus ?? undefined}
     />
   );
 }

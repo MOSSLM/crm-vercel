@@ -1068,6 +1068,25 @@ export interface SitemapPage {
 
 export type WorkspaceId = 'sitemap' | 'wireframe' | 'style-guide' | 'design';
 
+// ── SITE MENUS ────────────────────────────────────────────────
+
+export interface SiteMenuItem {
+  id: string;
+  label: string;
+  url: string;
+  /** If true, open in a new tab */
+  external?: boolean;
+  /** Submenu items for megamenu */
+  children?: SiteMenuItem[];
+}
+
+export interface SiteMenus {
+  nav: SiteMenuItem[];
+  footer: SiteMenuItem[];
+  /** Extra footer links (legal, privacy, etc.) */
+  footerLegal: SiteMenuItem[];
+}
+
 // ── SITE VERSIONING ──────────────────────────────────────────
 
 export interface SiteVersion {
@@ -1087,6 +1106,7 @@ export interface RelumeBuilderState {
   siteName: string;
   styleGuide: StyleGuide;
   sitemap: SitemapPage[];
+  menus: SiteMenus;
   instances: Record<string, SiteSectionInstance>;
   instancesByPage: Record<string, string[]>;
   activePage: string;
@@ -1110,7 +1130,7 @@ export interface RelumeHistoryEntry {
 }
 
 export type RelumeBuilderAction =
-  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[] } }
+  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[]; menus?: SiteMenus } }
   | { type: 'SET_ACTIVE_PAGE'; payload: string }
   | { type: 'SET_DEVICE_VIEW'; payload: 'desktop' | 'tablet' | 'mobile' }
   | { type: 'SET_WORKSPACE'; payload: WorkspaceId }
@@ -1136,6 +1156,8 @@ export type RelumeBuilderAction =
   | { type: 'TOGGLE_AI_PANEL' }
   | { type: 'TOGGLE_STYLE_PANEL' }
   | { type: 'TOGGLE_LIBRARY' }
+  | { type: 'UPDATE_MENUS'; payload: Partial<SiteMenus> }
+  | { type: 'SYNC_MENUS_FROM_SITEMAP' }
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'MARK_SAVED' };

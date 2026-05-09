@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
+import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
 import { LibrarySectionIframe } from "./LibrarySectionIframe";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
@@ -19,6 +19,8 @@ interface DynamicSectionRendererProps {
   styleGuide: StyleGuide;
   /** Enterprise variables (entreprise.nom, entreprise.telephone, etc.) */
   variables?: Record<string, string>;
+  /** Site menus injected into navbar/footer sections automatically */
+  menus?: SiteMenus;
   /** Editor mode: shows selection highlight and click handlers */
   editorMode?: boolean;
   selected?: boolean;
@@ -146,11 +148,32 @@ function layoutToCSS(
   };
 }
 
+/** Derive menu content overrides for navigation/footer sections */
+function deriveMenuOverrides(
+  category: string | undefined,
+  menus: SiteMenus | undefined,
+): Record<string, unknown> {
+  if (!menus) return {};
+  if (category === "navigation") {
+    return {
+      links: menus.nav.map((item) => ({ label: item.label, href: item.url, external: item.external })),
+    };
+  }
+  if (category === "footer") {
+    return {
+      footerLinks: menus.footer.map((item) => ({ label: item.label, href: item.url })),
+      legalLinks: menus.footerLegal.map((item) => ({ label: item.label, href: item.url })),
+    };
+  }
+  return {};
+}
+
 export function DynamicSectionRenderer({
   instance,
   sectionDef,
   styleGuide,
   variables,
+  menus,
   editorMode,
   selected,
   onSelect,
@@ -165,6 +188,9 @@ export function DynamicSectionRenderer({
     Object.entries(instance.content).filter(([k]) => !k.startsWith("__"))
   );
 
+  // Menus override for navbar/footer sections (only when blocks have no nav_link content)
+  const menuOverrides = deriveMenuOverrides(sectionDef.category, menus);
+
   // Color scheme override computed from content.__color_scheme
   const colorSchemeVars = resolveColorSchemeVars(instance.content, styleGuide);
 
@@ -172,23 +198,44 @@ export function DynamicSectionRenderer({
   if (sectionDef.code) {
     const handleClick = editorMode ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); } : undefined;
 
-    // Merge color scheme into a modified styleGuide for the iframe
     const effectiveStyleGuide: StyleGuide = {
       ...styleGuide,
       colors: {
         ...styleGuide.colors,
-        // Apply color scheme overrides to the background/text colors passed to the iframe
         background: (colorSchemeVars["--color-background"] as string) || styleGuide.colors.background,
         text: (colorSchemeVars["--color-text"] as string) || styleGuide.colors.text,
         textMuted: (colorSchemeVars["--color-text-muted"] as string) || styleGuide.colors.textMuted,
       },
     };
 
+    // Compute wrapper height/spacing from content meta-keys (same as snippet sections)
+    const libHeightMode = instance.content.__height_mode as string | undefined;
+    const libHeightValue = instance.content.__height_value as string | undefined;
+    const libPadTop = typeof instance.content.__padding_top === "number" ? `${instance.content.__padding_top}px` : undefined;
+    const libPadBottom = typeof instance.content.__padding_bottom === "number" ? `${instance.content.__padding_bottom}px` : undefined;
+    const libMarginTop = typeof instance.content.__margin_top === "number" ? `${instance.content.__margin_top}px` : undefined;
+    const libMarginBottom = typeof instance.content.__margin_bottom === "number" ? `${instance.content.__margin_bottom}px` : undefined;
+    let libMinHeight: string | undefined;
+    if (libHeightMode === "fullscreen") libMinHeight = "100vh";
+    else if (libHeightMode === "large") libMinHeight = "80vh";
+    else if (libHeightMode === "fixed" && libHeightValue) libMinHeight = libHeightValue;
+
+    const wrapperStyle: React.CSSProperties = {
+      position: "relative",
+      cursor: editorMode ? "pointer" : undefined,
+      ...(libMinHeight ? { minHeight: libMinHeight } : {}),
+      ...(libPadTop ? { paddingTop: libPadTop } : {}),
+      ...(libPadBottom ? { paddingBottom: libPadBottom } : {}),
+      ...(libMarginTop ? { marginTop: libMarginTop } : {}),
+      ...(libMarginBottom ? { marginBottom: libMarginBottom } : {}),
+      ...((instance.custom_style ?? {}) as React.CSSProperties),
+    };
+
     return (
       <div
         onClick={handleClick}
         data-section-id={instance.id}
-        style={{ position: "relative", cursor: editorMode ? "pointer" : undefined }}
+        style={wrapperStyle}
         className={editorMode ? "group/section" : ""}
       >
         {editorMode && (
@@ -207,6 +254,7 @@ export function DynamicSectionRenderer({
             code={sectionDef.code}
             content={{
               ...sectionDef.default_content,
+              ...menuOverrides,
               ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
             }}
             styleGuide={effectiveStyleGuide}
@@ -222,7 +270,7 @@ export function DynamicSectionRenderer({
 
   const { structure } = sectionDef;
   const adapted = adaptContentForRender(instance.content, instance.blocks ?? []);
-  const content = { ...sectionDef.default_content, ...adapted };
+  const content = { ...sectionDef.default_content, ...menuOverrides, ...adapted };
 
   const cssVars = styleGuideToCSSVars(styleGuide);
 
