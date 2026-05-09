@@ -17,6 +17,8 @@ interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
   sectionDef: SiteSectionDef;
   styleGuide: StyleGuide;
+  /** Enterprise variables (entreprise.nom, entreprise.telephone, etc.) */
+  variables?: Record<string, string>;
   /** Editor mode: shows selection highlight and click handlers */
   editorMode?: boolean;
   selected?: boolean;
@@ -148,6 +150,7 @@ export function DynamicSectionRenderer({
   instance,
   sectionDef,
   styleGuide,
+  variables,
   editorMode,
   selected,
   onSelect,
@@ -207,6 +210,7 @@ export function DynamicSectionRenderer({
               ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
             }}
             styleGuide={effectiveStyleGuide}
+            variables={variables}
             wireframe={wireframe}
             selectionEnabled={selectionEnabled}
             onElementClick={onElementClick}

@@ -6,6 +6,7 @@ export interface ThemeSection {
   name: string;
   code: string;
   example_data: Record<string, unknown>;
+  schema?: Record<string, unknown> | null;
   sort_order: number;
   created_at: string;
   updated_at: string;

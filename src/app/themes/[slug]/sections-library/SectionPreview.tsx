@@ -1,16 +1,20 @@
 "use client";
 
 import React from "react";
-import { Loader2, Monitor, Tablet, Smartphone, RefreshCw } from "lucide-react";
+import { Loader2, Monitor, Tablet, Smartphone, RefreshCw, Sliders } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { FieldRenderer } from "@/components/site-builder/editors/FieldRenderer";
+import type { SectionField } from "@/types";
+import { DEFAULT_STYLE_GUIDE } from "@/types";
 
 type Device = "desktop" | "tablet" | "mobile";
 
 interface Props {
   code: string;
   sectionId: string | null;
+  schema?: Record<string, unknown> | null;
 }
 
 const DEVICE_WIDTHS: Record<Device, string> = {
@@ -45,35 +49,56 @@ const DEFAULT_VARIABLES: Record<string, string> = {
   "entreprise.logo_url": "https://via.placeholder.com/200x60?text=LOGO",
 };
 
-export default function SectionPreview({ code, sectionId }: Props) {
+export default function SectionPreview({ code, sectionId, schema }: Props) {
   const [device, setDevice] = React.useState<Device>("desktop");
   const [compiling, setCompiling] = React.useState(false);
   const [srcDoc, setSrcDoc] = React.useState<string>("");
   const [compileError, setCompileError] = React.useState<string | null>(null);
+  const [exampleData, setExampleData] = React.useState<Record<string, unknown>>(DEFAULT_EXAMPLE_DATA);
   const [exampleDataStr, setExampleDataStr] = React.useState(
     JSON.stringify(DEFAULT_EXAMPLE_DATA, null, 2)
   );
   const [showDataEditor, setShowDataEditor] = React.useState(false);
+  const [showDesignPanel, setShowDesignPanel] = React.useState(false);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const schemaSettings = React.useMemo(() => {
+    if (!schema) return null;
+    const settings = (schema as { settings?: unknown }).settings;
+    if (!Array.isArray(settings)) return null;
+    return settings as SectionField[];
+  }, [schema]);
+
+  // Sync exampleDataStr → exampleData
+  const handleDataStrChange = (val: string) => {
+    setExampleDataStr(val);
+    try {
+      const parsed = JSON.parse(val);
+      setExampleData(parsed);
+    } catch {
+      /* keep last valid */
+    }
+  };
+
+  // Update one field in exampleData from the design panel
+  const handleFieldChange = (id: string, value: unknown) => {
+    setExampleData((prev) => {
+      const next = { ...prev, [id]: value };
+      setExampleDataStr(JSON.stringify(next, null, 2));
+      return next;
+    });
+  };
+
   const compile = React.useCallback(
-    async (sourceCode: string, dataStr: string) => {
+    (sourceCode: string, data: Record<string, unknown>) => {
       if (!sourceCode.trim()) {
         setSrcDoc("");
         return;
       }
       setCompiling(true);
       setCompileError(null);
-
       try {
-        let exampleData: Record<string, unknown> = DEFAULT_EXAMPLE_DATA;
-        try {
-          exampleData = JSON.parse(dataStr);
-        } catch {
-          /* use default */
-        }
-
-        const html = buildPreviewHTML(sourceCode, exampleData, DEFAULT_VARIABLES);
+        const html = buildPreviewHTML(sourceCode, data, DEFAULT_VARIABLES);
         setSrcDoc(html);
       } catch (e: unknown) {
         setCompileError(e instanceof Error ? e.message : "Erreur de compilation");
@@ -84,16 +109,16 @@ export default function SectionPreview({ code, sectionId }: Props) {
     []
   );
 
-  // Debounced recompile on code change
+  // Debounced recompile on code or data change
   React.useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      compile(code, exampleDataStr);
+      compile(code, exampleData);
     }, 500);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [code, exampleDataStr, compile]);
+  }, [code, exampleData, compile]);
 
   if (!sectionId) {
     return (
@@ -109,12 +134,23 @@ export default function SectionPreview({ code, sectionId }: Props) {
       <div className="flex items-center gap-1 px-2 py-1.5 border-b border-zinc-800 flex-shrink-0">
         <span className="text-xs text-zinc-500 flex-1">Preview</span>
         {compiling && <Loader2 className="h-3 w-3 animate-spin text-zinc-500" />}
+        {schemaSettings && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className={`h-6 w-6 ${showDesignPanel ? "text-blue-400" : "text-zinc-500"} hover:text-white`}
+            onClick={() => { setShowDesignPanel((v) => !v); setShowDataEditor(false); }}
+            title="Panneau design"
+          >
+            <Sliders className="h-3 w-3" />
+          </Button>
+        )}
         <Button
           size="icon"
           variant="ghost"
           className={`h-6 w-6 ${showDataEditor ? "text-blue-400" : "text-zinc-500"} hover:text-white`}
-          onClick={() => setShowDataEditor((v) => !v)}
-          title="Éditer les données d'exemple"
+          onClick={() => { setShowDataEditor((v) => !v); setShowDesignPanel(false); }}
+          title="Éditer les données d'exemple (JSON)"
         >
           <span className="text-[10px] font-mono">{"{ }"}</span>
         </Button>
@@ -122,7 +158,7 @@ export default function SectionPreview({ code, sectionId }: Props) {
           size="icon"
           variant="ghost"
           className="h-6 w-6 text-zinc-500 hover:text-white"
-          onClick={() => compile(code, exampleDataStr)}
+          onClick={() => compile(code, exampleData)}
           title="Rafraîchir"
         >
           <RefreshCw className="h-3 w-3" />
@@ -147,7 +183,27 @@ export default function SectionPreview({ code, sectionId }: Props) {
         </div>
       </div>
 
-      {/* Data editor panel */}
+      {/* Design panel */}
+      {showDesignPanel && schemaSettings && (
+        <div className="border-b border-zinc-800 bg-zinc-950 flex-shrink-0 max-h-56 overflow-y-auto">
+          <div className="px-2 pt-1 pb-0.5 text-[10px] text-zinc-500 uppercase tracking-wider sticky top-0 bg-zinc-950">
+            Données — Design
+          </div>
+          <div className="px-2 pb-2 space-y-2">
+            {schemaSettings.map((field, i) => (
+              <FieldRenderer
+                key={"id" in field ? (field as { id: string }).id : i}
+                field={field}
+                value={"id" in field ? exampleData[(field as { id: string }).id] : undefined}
+                onChange={(val) => "id" in field && handleFieldChange((field as { id: string }).id, val)}
+                styleGuide={DEFAULT_STYLE_GUIDE}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Data editor panel (JSON) */}
       {showDataEditor && (
         <div className="border-b border-zinc-800 bg-zinc-950 flex-shrink-0">
           <div className="px-2 pt-1 pb-0.5 text-[10px] text-zinc-500 uppercase tracking-wider">
@@ -155,7 +211,7 @@ export default function SectionPreview({ code, sectionId }: Props) {
           </div>
           <Textarea
             value={exampleDataStr}
-            onChange={(e) => setExampleDataStr(e.target.value)}
+            onChange={(e) => handleDataStrChange(e.target.value)}
             className="font-mono text-xs bg-zinc-950 border-0 text-zinc-300 resize-none h-32 rounded-none focus-visible:ring-0"
             spellCheck={false}
           />

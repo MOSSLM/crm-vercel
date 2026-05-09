@@ -32,10 +32,19 @@ Variables : variables['entreprise.nom|telephone|email|adresse|ville|code_postal|
 
 Règles :
 - export default function OBLIGATOIRE — jamais export const, export type, ni imports
+- Un seul export default function dans tout le fichier — JAMAIS deux
 - Tailwind mobile-first (sm: md: lg:), pas de CSS inline
 - Textes statiques → variables['entreprise.*'] ou data.*
 - Pas de hooks complexes ni fetch
 - Si on te donne du code avec des imports ou exports nommés, réécris-le en respectant ces règles
+
+INTERDIT absolument :
+- export default function Schema(...) — le schéma est géré dans un onglet séparé, ne jamais l'intégrer dans le TSX
+- Deux export default dans le même fichier
+- min-h-screen, h-screen, 100vh sur le conteneur racine
+
+OBLIGATOIRE :
+- Définir un fond sur le conteneur racine : style={{ backgroundColor: 'var(--color-background)' }}
 
 Style Guide — tokens à RESPECTER (sinon les réglages utilisateur ne s'appliquent pas) :
 - Couleurs : style={{ color: 'var(--color-primary)' }}, 'var(--color-secondary)', 'var(--color-accent)',
@@ -46,8 +55,6 @@ Style Guide — tokens à RESPECTER (sinon les réglages utilisateur ne s'appliq
   en dur des valeurs comme 'rounded-full' ou 'px-8 py-4'
 - Cartes / images : 'var(--card-radius)', 'var(--card-padding)', 'var(--card-shadow)'
 - Espacements : 'var(--section-padding)', 'var(--element-gap)', 'var(--max-content-width)'
-- INTERDIT : min-h-screen, h-screen, 100vh sur le conteneur racine ; utiliser des paddings raisonnables
-  (ex : style={{ paddingTop: 'var(--section-padding)', paddingBottom: 'var(--section-padding)' }})
 
 Réponse : \`\`\`tsx [code] \`\`\` puis 1-2 phrases d'explication.`;
 
