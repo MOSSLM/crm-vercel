@@ -305,7 +305,14 @@ export const SECTION_SCHEMAS: Record<string, SectionSchema> = {
 | ID | Comportement |
 |----|-------------|
 | `__color_scheme` | Sélecteur de palette appliqué comme CSS vars override au niveau section |
-| `__padding_y` | Override de `paddingTop`/`paddingBottom` de la section |
+| `__padding_y` | Override de `paddingTop`/`paddingBottom` de la section (legacy, préférer `__padding_top/bottom`) |
+| `__padding_top` | Padding haut en px (priorité sur `__padding_y` et le CSS var global) |
+| `__padding_bottom` | Padding bas en px |
+| `__padding_x` | Padding gauche/droite en px |
+| `__margin_top` | Marge haut en px |
+| `__margin_bottom` | Marge bas en px |
+| `__height_mode` | Hauteur : `auto` \| `fullscreen` (100vh) \| `large` (80vh) \| `fixed` |
+| `__height_value` | Valeur de hauteur fixe (ex: `500px`, `60vh`) — actif si `__height_mode=fixed` |
 | `__library` | Référence vers une section bibliothèque (theme_sections), géré au runtime |
 
 ### Sections built-in avec schema
@@ -531,6 +538,9 @@ généré DOIT utiliser ces variables — sinon les valeurs codées en dur prime
 | `--font-body`            | Police du corps                              |
 | `--btn-radius`           | Rayon des boutons                            |
 | `--btn-padding`          | Padding des boutons                          |
+| `--btn-bg`               | Fond des boutons primaires (calculé depuis `buttons.style` : filled/outline/soft) |
+| `--btn-text`             | Couleur du texte des boutons primaires (contraste auto) |
+| `--btn-border-color`     | Couleur de bordure des boutons primaires     |
 | `--card-radius`          | Rayon des cartes / images                    |
 | `--card-padding`         | Padding des cartes                           |
 | `--card-shadow`          | Ombre des cartes (mappée depuis `none/sm/md/lg`) |
@@ -540,7 +550,7 @@ généré DOIT utiliser ces variables — sinon les valeurs codées en dur prime
 
 **Règles obligatoires pour les sections :**
 
-1. Boutons : `style={{ borderRadius: 'var(--btn-radius)', padding: 'var(--btn-padding)' }}`.
+1. Boutons : `style={{ borderRadius: 'var(--btn-radius)', padding: 'var(--btn-padding)', backgroundColor: 'var(--btn-bg)', color: 'var(--btn-text)', border: '2px solid var(--btn-border-color)' }}`. Ne jamais coder `backgroundColor: '#xxx'` ou `color: '#fff'` en dur sur un bouton principal.
 2. Cartes / images : `style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}`.
 3. Polices : titres avec `fontFamily: 'var(--font-heading)'`, corps avec `'var(--font-body)'`.
 4. Couleurs : utiliser les `var(--color-*)` plutôt que des hex codés en dur.
@@ -605,6 +615,56 @@ La section Navbar expose des paramètres spécifiques via son schema :
 | `hide_on_scroll_down` | `true` \| `false` | Masquer quand scroll vers le bas |
 
 Ces valeurs sont stockées dans `instance.content` et doivent être lues par le composant de rendu de la section navbar.
+
+---
+
+## Design Workspace — Panneau Contextuel
+
+Le panneau gauche du Design Workspace s'adapte à ce qui est sélectionné.
+
+### Mode A — Rien de sélectionné : Outils globaux
+
+Accordéons empilés (pas de tabs) :
+
+- **Animations & Transitions** — type d'animation au chargement/scroll, durée, délai, transitions de page
+- **Style global** — padding sections, gap éléments, largeur max contenu (dispatche `UPDATE_STYLE_GUIDE`)
+
+### Mode B — Section sélectionnée : Éditeur de propriétés
+
+Tabs **Contenu | Style | IA** :
+
+- **Contenu** : champs du schema (`group: 'content'`) + presets si disponibles
+- **Style** : Palette de couleurs + champs `group: 'style'` + `group: 'layout'` (dont les champs dimensions/espacement générés par `commonStyleFields()`)
+- **IA** : régénération du contenu de la section via l'IA
+
+L'onglet Style affiche automatiquement les champs `__height_mode`, `__padding_top/bottom`, `__padding_x`, `__margin_top/bottom` issus de `commonStyleFields()`.
+
+### Mode C — Élément texte sélectionné : Éditeur inline
+
+Quand un `h1`–`h6`, `p`, `span` ou `blockquote` est sélectionné via click dans le canvas :
+- Zone de texte pour modifier le contenu
+- Contrôles gras / italique / soulignement
+- Alignement (gauche/centre/droite/justifié)
+- Taille (slider) et couleur
+
+### `commonStyleFields(opts?)` — Champs partagés
+
+Tous les schemas incluent automatiquement ces champs via `commonStyleFields()` :
+
+```typescript
+import { commonStyleFields } from '@/data/section-schemas';
+
+const monSchema: SectionSchema = {
+  settings: [
+    // ... champs métier ...
+    ...commonStyleFields({ skipHeight: false, defaultPadding: 80 }),
+  ],
+};
+```
+
+Options :
+- `skipHeight?: boolean` — pour les sections dont la hauteur ne doit pas être modifiable (navbar, footer)
+- `defaultPadding?: number` — valeur par défaut du padding vertical en px
 
 ---
 

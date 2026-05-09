@@ -90,7 +90,7 @@ Toute section générée s'exécute dans un iframe avec ces variables CSS inject
 
 - Couleurs : `var(--color-primary | --color-secondary | --color-accent | --color-background | --color-bg-alt | --color-text | --color-text-muted)` plus les nuances `--color-primary-50` … `--color-primary-950`.
 - Polices : `var(--font-heading)` pour les titres, `var(--font-body)` pour le corps.
-- Boutons : `var(--btn-radius)`, `var(--btn-padding)` — interdits : valeurs codées en dur (`rounded-full`, `px-8 py-4`).
+- Boutons : `var(--btn-radius)`, `var(--btn-padding)`, `var(--btn-bg)`, `var(--btn-text)`, `var(--btn-border-color)` — interdits : valeurs codées en dur (`rounded-full`, `px-8 py-4`, `bg-blue-600`, `text-white` sur un bouton). Les vars `--btn-bg/text/border-color` sont calculées automatiquement depuis le style de bouton choisi par l'utilisateur (filled/outline/soft).
 - Cartes / images : `var(--card-radius)`, `var(--card-padding)`, `var(--card-shadow)`.
 - Espacements : `var(--section-padding)`, `var(--element-gap)`, `var(--max-content-width)`.
 - INTERDIT : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine d'une section. Préférer un padding vertical raisonnable basé sur `var(--section-padding)`.
@@ -100,7 +100,13 @@ Toute section générée s'exécute dans un iframe avec ces variables CSS inject
 ## Référence des sections disponibles
 
 Chaque section ci-dessous expose ses champs autorisés (clé, type, valeurs).
-Les champs préfixés `__` sont des champs réservés (palette, padding).
+Les champs préfixés `__` sont des champs réservés :
+- `__color_scheme` : palette de la section (default | alt | primary | secondary | dark | light | inverted)
+- `__height_mode` : hauteur de la section (auto | fullscreen | large | fixed)
+- `__height_value` : valeur si `__height_mode=fixed` (ex: "500px", "60vh")
+- `__padding_top`, `__padding_bottom` : padding vertical en px (nombre, ex: 80)
+- `__padding_x` : padding horizontal en px
+- `__margin_top`, `__margin_bottom` : marges en px
 
 {{SECTIONS_DOC}}
 

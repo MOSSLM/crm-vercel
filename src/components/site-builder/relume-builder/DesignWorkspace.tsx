@@ -2,16 +2,23 @@
 
 import React from "react";
 import {
-  Laptop, Tablet, Smartphone, Layers, Sparkles,
-  Move, Zap, Image as ImageIcon, Maximize2,
-  ChevronDown, Play, MoreHorizontal,
+  Laptop, Tablet, Smartphone, Layers,
+  Move, Zap, ChevronDown, Play,
   ZoomIn, ZoomOut, Eye, EyeOff,
   Type as TypeIcon, MousePointer, Box, ChevronRight,
-  Trash2
+  Trash2, FileText, Palette, Sparkles, RefreshCw, X,
+  ChevronUp, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  Settings2,
 } from "lucide-react";
-import type { SiteSectionDef } from "@/types";
+import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
+import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
+import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
+import { getSchemaForSection } from "@/data/section-schemas";
+import type { ColorSchemePreset } from "@/lib/color-utils";
+import type { SectionPreset } from "@/types";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -35,9 +42,7 @@ function useCanvasPanZoom() {
     const dx = e.clientX - lastPos.current.x;
     const dy = e.clientY - lastPos.current.y;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) didPan.current = true;
-    if (didPan.current) {
-      setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
-    }
+    if (didPan.current) setPan((p) => ({ x: p.x + dx, y: p.y + dy }));
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
   const onMouseUp = () => { isPanning.current = false; };
@@ -49,7 +54,6 @@ function useCanvasPanZoom() {
       setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
     }
   };
-
   const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
   const zoomOut = () => setScale((s) => Math.max(0.2, parseFloat((s - 0.1).toFixed(2))));
   const resetZoom = () => { setScale(0.8); setPan({ x: 60, y: 30 }); };
@@ -57,18 +61,7 @@ function useCanvasPanZoom() {
   return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel, zoomIn, zoomOut, resetZoom };
 }
 
-// ─── Panel sections ────────────────────────────────────────────────────────────
-
-type DesignPanel = "animations" | "transitions" | "spacing" | "images";
-
-// ─── Props ────────────────────────────────────────────────────────────────────
-
-interface DesignWorkspaceProps {
-  sectionDefs: Record<string, SiteSectionDef>;
-  onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
-}
-
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Selected element info ────────────────────────────────────────────────────
 
 interface SelectedElement {
   instanceId: string;
@@ -79,15 +72,47 @@ interface SelectedElement {
 
 function elementIcon(tag: string) {
   if (/^h[1-6]$/.test(tag) || tag === "p" || tag === "span" || tag === "blockquote" || tag === "li") return TypeIcon;
-  if (tag === "img" || tag === "picture" || tag === "svg") return ImageIcon;
+  if (tag === "img" || tag === "picture" || tag === "svg") return Layers;
   if (tag === "a" || tag === "button") return MousePointer;
   return Box;
 }
 
-export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
+// ─── Accordion helper ─────────────────────────────────────────────────────────
+
+function Accordion({ title, icon: Icon, defaultOpen = true, children }: {
+  title: string;
+  icon?: React.ElementType;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div className="border-b border-gray-100 last:border-b-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        {Icon && <Icon size={12} className="text-gray-400 flex-shrink-0" />}
+        <span className="text-xs font-semibold text-gray-700 flex-1">{title}</span>
+        <ChevronDown size={12} className={`text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="px-4 pb-4 space-y-4">{children}</div>}
+    </div>
+  );
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+interface DesignWorkspaceProps {
+  sectionDefs: Record<string, SiteSectionDef>;
+  onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
+
+export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const canvas = useCanvasPanZoom();
-  const [activePanel, setActivePanel] = React.useState<DesignPanel>("animations");
   const [panelOpen, setPanelOpen] = React.useState(true);
   const [previewMode, setPreviewMode] = React.useState(false);
   const [layersOpen, setLayersOpen] = React.useState(true);
@@ -95,6 +120,7 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
   const [selectedElement, setSelectedElement] = React.useState<SelectedElement | null>(null);
 
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
+  const selectedInstance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
 
   const handleElementClick = React.useCallback((instanceId: string) => (info: { tag: string; text: string; path: number[] }) => {
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
@@ -104,22 +130,23 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
   const toggleInstanceExpanded = (id: string) => {
     setExpandedInstances((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
-  const deviceWidth =
-    state.deviceView === "mobile" ? 390 :
-    state.deviceView === "tablet" ? 768 :
-    1200;
+  const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
 
-  // ── Full-screen preview overlay ──────────────────────────────────────────────
+  // Determine left panel mode
+  const panelMode: "global" | "section" | "text" =
+    selectedElement && /^(h[1-6]|p|span|blockquote|li)$/.test(selectedElement.tag) ? "text" :
+    selectedInstance ? "section" :
+    "global";
+
+  // ── Full-screen preview ──────────────────────────────────────────────────────
   if (previewMode) {
     return (
       <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
-        {/* Exit button */}
         <button
           onClick={() => setPreviewMode(false)}
           className="fixed top-4 right-4 z-50 flex items-center gap-1.5 px-3 py-2 bg-gray-900/90 text-white text-xs rounded-lg shadow-lg hover:bg-gray-900 transition-colors backdrop-blur"
@@ -127,8 +154,6 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
           <EyeOff size={13} />
           Quitter l&apos;aperçu
         </button>
-
-        {/* Page selector */}
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex gap-1 bg-gray-900/80 backdrop-blur rounded-lg p-1">
           {state.sitemap.map((p) => (
             <button
@@ -140,8 +165,6 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
             </button>
           ))}
         </div>
-
-        {/* Full-width page render */}
         <div style={{ backgroundColor: state.styleGuide.colors.background }}>
           {pageInstanceIds.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-32 text-center">
@@ -174,246 +197,62 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
   return (
     <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
 
-      {/* ─ Left Panel ──────────────────────────────────────────────────────────── */}
+      {/* ─ Left Panel (context-sensitive) ───────────────────────────────────── */}
       {panelOpen && (
-        <div className="w-[260px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+        <div className="w-[280px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
 
-          {/* Panel tabs */}
-          <div className="border-b border-gray-100">
-            <div className="flex overflow-x-auto scrollbar-hide">
-              {([
-                { id: "animations", label: "Animations", icon: Zap },
-                { id: "transitions", label: "Transitions", icon: Move },
-                { id: "spacing", label: "Espacement", icon: Maximize2 },
-                { id: "images", label: "Images", icon: ImageIcon },
-              ] as const).map(({ id, label, icon: Icon }) => (
+          {/* Panel header */}
+          <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
+            {panelMode === "global" && (
+              <>
+                <Settings2 size={12} className="text-gray-400" />
+                <span className="text-xs font-semibold text-gray-700">Paramètres globaux</span>
+              </>
+            )}
+            {panelMode === "section" && selectedInstance && (
+              <>
+                <Box size={12} className="text-blue-500" />
+                <span className="text-xs font-semibold text-gray-800 flex-1 truncate">
+                  {(selectedInstance.section_def ?? (selectedInstance.section_id ? sectionDefs[selectedInstance.section_id] : null))?.name ?? "Section"}
+                </span>
                 <button
-                  key={id}
-                  onClick={() => setActivePanel(id)}
-                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium transition-colors border-b-2 ${activePanel === id ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-600"}`}
+                  onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: null }); setSelectedElement(null); }}
+                  className="text-gray-400 hover:text-gray-600"
                 >
-                  <Icon size={11} />
-                  {label}
+                  <X size={12} />
                 </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4">
-
-            {activePanel === "animations" && (
-              <div className="space-y-5">
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Entrée des sections</label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {["Fondu", "Glisser bas", "Glisser gauche", "Zoom", "Aucun"].map((anim) => (
-                      <button
-                        key={anim}
-                        className="px-2 py-2 text-[10px] text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors text-left"
-                      >
-                        {anim}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Durée</label>
-                  <input
-                    type="range"
-                    min={200}
-                    max={1200}
-                    defaultValue={600}
-                    step={100}
-                    className="w-full accent-gray-900"
-                  />
-                  <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-                    <span>200ms</span>
-                    <span>600ms</span>
-                    <span>1200ms</span>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Déclencheur</label>
-                  <div className="flex gap-1.5">
-                    {["Au chargement", "Au scroll", "Au survol"].map((t) => (
-                      <button
-                        key={t}
-                        className={`flex-1 px-2 py-1.5 text-[10px] rounded-md border transition-colors ${t === "Au scroll" ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Délai entre sections</label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={300}
-                    defaultValue={100}
-                    step={25}
-                    className="w-full accent-gray-900"
-                  />
-                </div>
-
-                <div className="pt-2 border-t border-gray-100">
-                  <button className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700">
-                    <Play size={11} />
-                    Prévisualiser les animations
-                  </button>
-                </div>
-              </div>
+              </>
             )}
-
-            {activePanel === "transitions" && (
-              <div className="space-y-5">
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Transition de page</label>
-                  <div className="space-y-1.5">
-                    {["Aucune", "Fondu", "Glissement horizontal", "Zoom arrière"].map((t) => (
-                      <button
-                        key={t}
-                        className={`w-full text-left px-3 py-2 text-xs rounded-lg border transition-colors ${t === "Fondu" ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Easing</label>
-                  <div className="flex flex-col gap-1.5">
-                    {["ease-in-out", "ease-out", "ease-in", "linear", "spring"].map((e) => (
-                      <button
-                        key={e}
-                        className={`flex items-center justify-between px-3 py-1.5 text-xs rounded-md border transition-colors ${e === "ease-in-out" ? "bg-gray-100 border-gray-300 text-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-                      >
-                        <span>{e}</span>
-                        <span className="text-[9px] w-16 h-3 border-b border-gray-400" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activePanel === "spacing" && (
-              <div className="space-y-5">
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Espacement global</label>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-[10px] text-gray-500 mb-1 flex justify-between">
-                        <span>Padding section</span>
-                        <span className="font-mono">{state.styleGuide.spacing.sectionPadding}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min={40}
-                        max={160}
-                        value={parseInt(state.styleGuide.spacing.sectionPadding)}
-                        onChange={(e) =>
-                          dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, sectionPadding: `${e.target.value}px` } } })
-                        }
-                        className="w-full accent-gray-900"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] text-gray-500 mb-1 flex justify-between">
-                        <span>Gap éléments</span>
-                        <span className="font-mono">{state.styleGuide.spacing.elementGap}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min={8}
-                        max={64}
-                        value={parseInt(state.styleGuide.spacing.elementGap)}
-                        onChange={(e) =>
-                          dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, elementGap: `${e.target.value}px` } } })
-                        }
-                        className="w-full accent-gray-900"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Sections sur cette page</label>
-                  <div className="space-y-1">
-                    {pageInstanceIds.map((id) => {
-                      const inst = state.instances[id];
-                      const def = inst?.section_def ?? (inst?.section_id ? sectionDefs[inst.section_id] : null);
-                      if (!inst || !def) return null;
-                      return (
-                        <div key={id} className="flex items-center justify-between px-2 py-1.5 rounded-md hover:bg-gray-50 group">
-                          <span className="text-xs text-gray-600">{def.name}</span>
-                          <button className="opacity-0 group-hover:opacity-100 transition-opacity">
-                            <MoreHorizontal size={12} className="text-gray-400" />
-                          </button>
-                        </div>
-                      );
-                    })}
-                    {pageInstanceIds.length === 0 && (
-                      <p className="text-xs text-gray-400 text-center py-4">Aucune section sur cette page</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activePanel === "images" && (
-              <div className="space-y-5">
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Images de la page</label>
-                  {pageInstanceIds.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-4">Aucune section sur cette page</p>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-2">
-                      {pageInstanceIds.map((id) => (
-                        <div
-                          key={id}
-                          className="aspect-video bg-gray-100 border border-gray-200 rounded-lg flex items-center justify-center hover:bg-gray-150 cursor-pointer group relative overflow-hidden"
-                        >
-                          <ImageIcon size={16} className="text-gray-300 group-hover:text-gray-400 transition-colors" />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors flex items-end p-1 opacity-0 group-hover:opacity-100">
-                            <span className="text-[9px] text-gray-600 bg-white/80 px-1 py-0.5 rounded truncate">Remplacer</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="text-xs font-semibold text-gray-700 mb-3 block">Qualité d&apos;export</label>
-                  <div className="flex gap-1.5">
-                    {["72 dpi", "150 dpi", "300 dpi"].map((q) => (
-                      <button
-                        key={q}
-                        className={`flex-1 py-1.5 text-[10px] rounded-md border transition-colors ${q === "150 dpi" ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+            {panelMode === "text" && selectedElement && (
+              <>
+                <TypeIcon size={12} className="text-purple-500" />
+                <span className="text-xs font-semibold text-gray-800 flex-1">&lt;{selectedElement.tag}&gt; Texte</span>
+                <button
+                  onClick={() => setSelectedElement(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={12} />
+                </button>
+              </>
             )}
           </div>
 
-          {/* AI suggestion strip */}
-          <div className="p-3 border-t border-gray-100 bg-purple-50/50">
-            <div className="flex items-start gap-2">
-              <Sparkles size={12} className="text-purple-500 flex-shrink-0 mt-0.5" />
-              <p className="text-[10px] text-purple-700 leading-relaxed">
-                Conseil : Les animations au scroll augmentent l&apos;engagement de 23% en moyenne.
-              </p>
-            </div>
+          {/* Panel content */}
+          <div className="flex-1 overflow-y-auto">
+            {panelMode === "global" && <GlobalPanel />}
+            {panelMode === "section" && selectedInstance && (
+              <SectionPanel
+                instance={selectedInstance}
+                sectionDefs={sectionDefs}
+                onRegenerateSection={onRegenerateSection}
+              />
+            )}
+            {panelMode === "text" && selectedElement && (
+              <TextElementPanel
+                element={selectedElement}
+                instance={selectedInstance}
+              />
+            )}
           </div>
         </div>
       )}
@@ -422,12 +261,12 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
       <button
         onClick={() => setPanelOpen(!panelOpen)}
         className="absolute z-20 w-5 h-12 bg-white border border-gray-200 border-l-0 rounded-r-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm top-1/2 -translate-y-1/2"
-        style={{ left: panelOpen ? 260 : 0 }}
+        style={{ left: panelOpen ? 280 : 0 }}
       >
         <ChevronDown size={12} className={`transition-transform ${panelOpen ? "-rotate-90" : "rotate-90"}`} />
       </button>
 
-      {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
+      {/* ─ Canvas ──────────────────────────────────────────────────────────── */}
       <div
         className="flex-1 overflow-hidden relative select-none"
         onMouseDown={canvas.onMouseDown}
@@ -435,7 +274,7 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
         onMouseUp={canvas.onMouseUp}
         onMouseLeave={canvas.onMouseUp}
         onWheel={canvas.onWheel}
-        onClick={() => { if (!canvas.didPan.current) dispatch({ type: "SELECT_INSTANCE", payload: null }); }}
+        onClick={() => { if (!canvas.didPan.current) { dispatch({ type: "SELECT_INSTANCE", payload: null }); setSelectedElement(null); } }}
         style={{ cursor: "grab" }}
       >
         {/* Dot grid */}
@@ -463,12 +302,11 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
                 {state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}
               </span>
             </div>
-            {/* Page selector */}
             <div className="flex gap-1">
               {state.sitemap.map((p) => (
                 <button
                   key={p.id}
-                  onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug })}
+                  onClick={(e) => { e.stopPropagation(); dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug }); }}
                   className={`px-2.5 py-1 text-[10px] rounded-md border transition-colors ${state.activePage === p.slug ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}
                 >
                   {p.title}
@@ -480,11 +318,7 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
           {/* Styled canvas */}
           <div
             className="overflow-hidden shadow-2xl"
-            style={{
-              width: deviceWidth,
-              borderRadius: 12,
-              backgroundColor: state.styleGuide.colors.background,
-            }}
+            style={{ width: deviceWidth, borderRadius: 12, backgroundColor: state.styleGuide.colors.background }}
           >
             {pageInstanceIds.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -506,7 +340,7 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
                       key={instanceId}
                       className="relative cursor-pointer"
                       style={{ outline: isSelected ? "2px solid #3b82f6" : "2px solid transparent" }}
-                      onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); }}
+                      onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
                     >
                       <DynamicSectionRenderer
                         instance={{ ...instance, section_def: secDef }}
@@ -514,7 +348,7 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
                         styleGuide={state.styleGuide}
                         editorMode
                         selected={isSelected}
-                        onSelect={() => dispatch({ type: "SELECT_INSTANCE", payload: instanceId })}
+                        onSelect={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
                         selectedSnippetId={isSelected ? state.selectedSnippetId : null}
                         onSelectSnippet={(id) => dispatch({ type: "SELECT_SNIPPET", payload: id })}
                         selectionEnabled
@@ -535,7 +369,6 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
 
         {/* Bottom controls */}
         <div className="absolute bottom-4 right-4 flex items-center gap-2">
-          {/* Device switcher */}
           <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
             {(["desktop", "tablet", "mobile"] as const).map((device) => {
               const Icon = device === "desktop" ? Laptop : device === "tablet" ? Tablet : Smartphone;
@@ -550,8 +383,6 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
               );
             })}
           </div>
-
-          {/* Preview button */}
           <button
             onClick={() => setPreviewMode(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-md shadow-sm text-gray-600 hover:bg-gray-50 transition-colors"
@@ -560,35 +391,30 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
             <Eye size={11} />
             Aperçu
           </button>
-
           <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll</span>
           <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
-            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Dézoomer">
+            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors">
               <ZoomOut size={12} />
             </button>
-            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center" title="Réinitialiser">
+            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center">
               {Math.round(canvas.scale * 100)}%
             </button>
-            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Zoomer">
+            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors">
               <ZoomIn size={12} />
             </button>
           </div>
         </div>
       </div>
 
-      {/* ─ Right: Layers panel (Framer-style) ─────────────────────────────────── */}
+      {/* ─ Right: Layers panel ──────────────────────────────────────────────── */}
       {layersOpen && (
-        <div className="w-[260px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
+        <div className="w-[240px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
             <div className="flex items-center gap-1.5">
               <Layers size={12} className="text-gray-500" />
               <span className="text-xs font-semibold text-gray-700">Calques</span>
             </div>
-            <button
-              onClick={() => setLayersOpen(false)}
-              className="text-gray-400 hover:text-gray-600"
-              title="Masquer le panneau"
-            >
+            <button onClick={() => setLayersOpen(false)} className="text-gray-400 hover:text-gray-600">
               <ChevronRight size={14} />
             </button>
           </div>
@@ -614,16 +440,12 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
                         const def = inst.section_def ?? (inst.section_id ? sectionDefs[inst.section_id] : null);
                         const isSel = state.selectedInstanceId === instanceId;
                         const expanded = expandedInstances.has(instanceId);
-                        const blocks = inst.blocks ?? [];
                         const elementSelectedHere = selectedElement?.instanceId === instanceId;
                         return (
-                          <div key={instanceId} className="">
+                          <div key={instanceId}>
                             <div
                               className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"}`}
-                              onClick={() => {
-                                dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
-                                setSelectedElement(null);
-                              }}
+                              onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
                             >
                               <button
                                 onClick={(e) => { e.stopPropagation(); toggleInstanceExpanded(instanceId); }}
@@ -636,45 +458,28 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
                               <button
                                 onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
                                 className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
-                                title={inst.is_hidden ? "Afficher" : "Masquer"}
                               >
                                 {inst.is_hidden ? <EyeOff size={10} /> : <Eye size={10} />}
                               </button>
                               <button
                                 onClick={(e) => { e.stopPropagation(); dispatch({ type: "REMOVE_INSTANCE", payload: instanceId }); }}
                                 className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
-                                title="Supprimer"
                               >
                                 <Trash2 size={10} />
                               </button>
                             </div>
-                            {expanded && (
-                              <div className="ml-3 pl-2 border-l border-gray-100">
-                                {blocks.length === 0 && !elementSelectedHere && (
-                                  <div className="text-[10px] text-gray-300 px-1.5 py-1 italic">Aucun bloc — cliquez sur un élément dans la prévisualisation</div>
-                                )}
-                                {blocks.map((b, bIdx) => (
-                                  <div
-                                    key={b.id}
-                                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); }}
-                                    className="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-gray-50 text-[10px] text-gray-600 cursor-pointer"
-                                  >
-                                    <Box size={9} className="text-gray-300" />
-                                    <span className="truncate">{b.type} {bIdx + 1}</span>
+                            {expanded && elementSelectedHere && selectedElement && (() => {
+                              const Icon = elementIcon(selectedElement.tag);
+                              return (
+                                <div className="ml-3 pl-2 border-l border-gray-100">
+                                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-blue-50 text-blue-700 text-[10px]">
+                                    <Icon size={10} />
+                                    <span className="font-semibold uppercase">{selectedElement.tag}</span>
+                                    <span className="truncate text-blue-500">{selectedElement.text || "—"}</span>
                                   </div>
-                                ))}
-                                {elementSelectedHere && selectedElement && (() => {
-                                  const Icon = elementIcon(selectedElement.tag);
-                                  return (
-                                    <div className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-blue-50 text-blue-700 text-[10px]">
-                                      <Icon size={10} />
-                                      <span className="font-semibold uppercase">{selectedElement.tag}</span>
-                                      <span className="truncate text-blue-500">{selectedElement.text || "—"}</span>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-                            )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -687,26 +492,12 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
               );
             })}
           </div>
-          {selectedElement && (
-            <div className="border-t border-gray-100 p-3 bg-gray-50/50">
-              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Élément sélectionné</div>
-              {(() => { const Icon = elementIcon(selectedElement.tag); return (
-                <div className="flex items-center gap-1.5 text-xs text-gray-800">
-                  <Icon size={12} className="text-blue-500" />
-                  <span className="font-semibold uppercase">{selectedElement.tag}</span>
-                </div>
-              ); })()}
-              <div className="text-[11px] text-gray-500 mt-0.5 line-clamp-2">{selectedElement.text || "—"}</div>
-              <div className="text-[9px] text-gray-300 font-mono mt-1">chemin : {selectedElement.path.join(".")}</div>
-            </div>
-          )}
         </div>
       )}
       {!layersOpen && (
         <button
           onClick={() => setLayersOpen(true)}
           className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-5 h-12 bg-white border border-gray-200 border-r-0 rounded-l-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
-          title="Afficher les calques"
         >
           <Layers size={12} />
         </button>
@@ -714,3 +505,625 @@ export function DesignWorkspace({ sectionDefs }: DesignWorkspaceProps) {
     </div>
   );
 }
+
+// ─── Mode A: Global panel (nothing selected) ──────────────────────────────────
+
+function GlobalPanel() {
+  const { state, dispatch } = useRelumeBuilder();
+
+  const ANIMATION_TYPES = ["Fondu", "Glisser bas", "Glisser gauche", "Zoom", "Aucun"];
+  const TRIGGER_TYPES = ["Au chargement", "Au scroll", "Au survol"];
+  const TRANSITION_TYPES = ["Aucune", "Fondu", "Glissement horizontal", "Zoom arrière"];
+  const EASING_TYPES = ["ease-in-out", "ease-out", "ease-in", "linear", "spring"];
+
+  const [anim, setAnim] = React.useState("Fondu");
+  const [animDuration, setAnimDuration] = React.useState(600);
+  const [trigger, setTrigger] = React.useState("Au scroll");
+  const [animDelay, setAnimDelay] = React.useState(100);
+  const [transition, setTransition] = React.useState("Fondu");
+  const [easing, setEasing] = React.useState("ease-in-out");
+
+  const MAX_WIDTHS: { label: string; value: string }[] = [
+    { label: "Étroit (800px)", value: "800px" },
+    { label: "Normal (1200px)", value: "1200px" },
+    { label: "Large (1440px)", value: "1440px" },
+    { label: "Plein (100%)", value: "100%" },
+  ];
+
+  return (
+    <div className="divide-y divide-gray-100">
+      {/* Animations & Transitions — stacked */}
+      <Accordion title="Animations & Transitions" icon={Zap} defaultOpen>
+        {/* Animations section */}
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Animation d&apos;entrée</label>
+          <div className="grid grid-cols-2 gap-1.5">
+            {ANIMATION_TYPES.map((a) => (
+              <button
+                key={a}
+                onClick={() => setAnim(a)}
+                className={`px-2 py-2 text-[10px] rounded-lg border transition-colors text-left ${a === anim ? "bg-gray-900 text-white border-gray-900" : "text-gray-600 border-gray-200 hover:bg-gray-50"}`}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
+            <span>Durée</span><span className="font-mono text-gray-500">{animDuration}ms</span>
+          </label>
+          <input
+            type="range" min={200} max={1200} value={animDuration} step={100}
+            onChange={(e) => setAnimDuration(+e.target.value)}
+            className="w-full accent-gray-900"
+          />
+          <div className="flex justify-between text-[9px] text-gray-400 mt-1">
+            <span>200ms</span><span>1200ms</span>
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Déclencheur</label>
+          <div className="flex gap-1.5">
+            {TRIGGER_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTrigger(t)}
+                className={`flex-1 px-1 py-1.5 text-[9px] rounded-md border transition-colors ${t === trigger ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
+            <span>Délai entre sections</span><span className="font-mono text-gray-500">{animDelay}ms</span>
+          </label>
+          <input
+            type="range" min={0} max={300} value={animDelay} step={25}
+            onChange={(e) => setAnimDelay(+e.target.value)}
+            className="w-full accent-gray-900"
+          />
+        </div>
+
+        {/* Separator */}
+        <div className="border-t border-gray-100 pt-3">
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Transition de page</label>
+          <div className="space-y-1.5">
+            {TRANSITION_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => setTransition(t)}
+                className={`w-full text-left px-3 py-2 text-[10px] rounded-lg border transition-colors ${t === transition ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Easing</label>
+          <div className="flex flex-col gap-1">
+            {EASING_TYPES.map((e) => (
+              <button
+                key={e}
+                onClick={() => setEasing(e)}
+                className={`flex items-center justify-between px-3 py-1.5 text-[10px] rounded-md border transition-colors ${e === easing ? "bg-gray-100 border-gray-300 text-gray-900 font-medium" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 pt-1">
+          <Play size={11} />
+          Prévisualiser les animations
+        </button>
+      </Accordion>
+
+      {/* Global style */}
+      <Accordion title="Style global" icon={Palette} defaultOpen>
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
+            <span>Padding sections</span>
+            <span className="font-mono text-gray-500">{state.styleGuide.spacing.sectionPadding}</span>
+          </label>
+          <input
+            type="range" min={40} max={160}
+            value={parseInt(state.styleGuide.spacing.sectionPadding)}
+            onChange={(e) =>
+              dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, sectionPadding: `${e.target.value}px` } } })
+            }
+            className="w-full accent-gray-900"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
+            <span>Gap éléments</span>
+            <span className="font-mono text-gray-500">{state.styleGuide.spacing.elementGap}</span>
+          </label>
+          <input
+            type="range" min={8} max={64}
+            value={parseInt(state.styleGuide.spacing.elementGap)}
+            onChange={(e) =>
+              dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, elementGap: `${e.target.value}px` } } })
+            }
+            className="w-full accent-gray-900"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Largeur maximale du contenu</label>
+          <select
+            value={state.styleGuide.spacing.maxContentWidth}
+            onChange={(e) =>
+              dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, maxContentWidth: e.target.value } } })
+            }
+            className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs text-gray-700 bg-white focus:outline-none focus:border-blue-400"
+          >
+            {MAX_WIDTHS.map((w) => (
+              <option key={w.value} value={w.value}>{w.label}</option>
+            ))}
+          </select>
+        </div>
+      </Accordion>
+
+      {/* AI tip */}
+      <div className="p-3 bg-purple-50/50">
+        <div className="flex items-start gap-2">
+          <Sparkles size={12} className="text-purple-500 flex-shrink-0 mt-0.5" />
+          <p className="text-[10px] text-purple-700 leading-relaxed">
+            Sélectionnez une section pour modifier son contenu et son style.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Mode B: Section properties panel ────────────────────────────────────────
+
+type SectionTab = "content" | "style" | "ai";
+
+function SectionPanel({
+  instance,
+  sectionDefs,
+  onRegenerateSection,
+}: {
+  instance: SiteSectionInstance;
+  sectionDefs: Record<string, SiteSectionDef>;
+  onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
+}) {
+  const { state, dispatch } = useRelumeBuilder();
+  const [activeTab, setActiveTab] = React.useState<SectionTab>("content");
+
+  const sectionDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+  const schema = sectionDef ? getSchemaForSection(sectionDef) : null;
+  const ids = state.instancesByPage[instance.page_slug] ?? [];
+  const idx = ids.indexOf(instance.id);
+
+  const updateContent = (key: string, value: unknown) => {
+    dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [key]: value } } });
+  };
+
+  const applyPreset = (preset: SectionPreset) => {
+    dispatch({ type: "APPLY_PRESET", payload: { instanceId: instance.id, preset } });
+  };
+
+  const moveUp = () => {
+    if (idx <= 0) return;
+    dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: instance.page_slug, fromIndex: idx, toIndex: idx - 1 } });
+  };
+  const moveDown = () => {
+    if (idx >= ids.length - 1) return;
+    dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: instance.page_slug, fromIndex: idx, toIndex: idx + 1 } });
+  };
+
+  const TABS: { id: SectionTab; label: string; icon: React.ElementType }[] = [
+    { id: "content", label: "Contenu", icon: FileText },
+    { id: "style", label: "Style", icon: Palette },
+    { id: "ai", label: "IA", icon: Sparkles },
+  ];
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Section actions */}
+      <div className="px-3 py-2 border-b border-gray-100 flex gap-1 flex-shrink-0">
+        <button
+          onClick={() => dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instance.id })}
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded hover:bg-gray-50"
+        >
+          {instance.is_hidden ? <Eye size={11} /> : <EyeOff size={11} />}
+          {instance.is_hidden ? "Afficher" : "Masquer"}
+        </button>
+        <button
+          disabled={idx <= 0}
+          onClick={moveUp}
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded hover:bg-gray-50 disabled:opacity-30"
+          title="Monter"
+        >
+          <ChevronUp size={11} />
+        </button>
+        <button
+          disabled={idx >= ids.length - 1}
+          onClick={moveDown}
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded hover:bg-gray-50 disabled:opacity-30"
+          title="Descendre"
+        >
+          <ChevronDown size={11} />
+        </button>
+        <button
+          onClick={() => dispatch({ type: "REMOVE_INSTANCE", payload: instance.id })}
+          className="flex items-center gap-1 text-xs text-red-400/70 hover:text-red-500 px-2 py-1.5 rounded hover:bg-red-50 ml-auto"
+        >
+          <Trash2 size={11} />
+          Suppr.
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b border-gray-100 flex-shrink-0">
+        {TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => setActiveTab(id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs transition-colors border-b-2 ${
+              activeTab === id
+                ? "border-blue-500 text-blue-600"
+                : "border-transparent text-gray-400 hover:text-gray-600"
+            }`}
+          >
+            <Icon size={11} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {activeTab === "content" && (
+          <>
+            {/* Presets */}
+            {schema?.presets && schema.presets.length > 0 && (
+              <PresetsPicker presets={schema.presets} onApply={applyPreset} />
+            )}
+            {/* Content fields */}
+            {schema ? (
+              <>
+                {(() => {
+                  const { contentFields } = splitSchemaFields(schema);
+                  return contentFields.length > 0 ? (
+                    <SchemaEditor
+                      schema={{ name: "content", settings: contentFields }}
+                      content={instance.content}
+                      onUpdate={updateContent}
+                      styleGuide={state.styleGuide}
+                    />
+                  ) : null;
+                })()}
+                {schema.blocks && schema.blocks.length > 0 && (
+                  <BlocksEditor
+                    schema={schema}
+                    blocks={instance.blocks ?? []}
+                    styleGuide={state.styleGuide}
+                    onAdd={(blockType, settings) => dispatch({ type: "ADD_BLOCK", payload: { instanceId: instance.id, blockType, settings } })}
+                    onUpdate={(blockId, settings) => dispatch({ type: "UPDATE_BLOCK", payload: { instanceId: instance.id, blockId, settings } })}
+                    onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
+                    onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
+                    onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
+                  />
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-gray-400 text-center py-4">Aucun schéma défini pour cette section.</p>
+            )}
+          </>
+        )}
+
+        {activeTab === "style" && (
+          <>
+            {/* Palette de couleurs */}
+            <div>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Palette de couleurs</label>
+              <ColorSchemeField
+                setting={{ type: "color_scheme", id: "__color_scheme", label: "Palette" }}
+                value={(instance.content.__color_scheme as string) ?? "default"}
+                onChange={(preset: ColorSchemePreset) => updateContent("__color_scheme", preset)}
+                styleGuide={state.styleGuide}
+              />
+            </div>
+
+            {/* Schema style fields (dimensions, spacing, margins — from schema) */}
+            {schema && (() => {
+              const { styleFields, layoutFields } = splitSchemaFields(schema);
+              const filteredStyle = styleFields.filter(
+                (f) => !("id" in f) || (f.id !== "__color_scheme" && f.id !== "__padding_y")
+              );
+              const allStyleFields = [...filteredStyle, ...layoutFields];
+              if (allStyleFields.length === 0) return null;
+              return (
+                <SchemaEditor
+                  schema={{ name: "style", settings: allStyleFields }}
+                  content={instance.content}
+                  onUpdate={updateContent}
+                  styleGuide={state.styleGuide}
+                />
+              );
+            })()}
+
+            {/* Advanced CSS overrides */}
+            <div>
+              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">CSS avancé</label>
+              <CustomStyleEditor instance={instance} />
+            </div>
+          </>
+        )}
+
+        {activeTab === "ai" && (
+          onRegenerateSection ? (
+            <AIRegenerateSection instanceId={instance.id} onRegenerate={onRegenerateSection} />
+          ) : (
+            <div className="text-center py-6 space-y-2">
+              <Sparkles size={20} className="text-purple-400/30 mx-auto" />
+              <p className="text-xs text-gray-400">Régénération IA non disponible</p>
+            </div>
+          )
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Mode C: Text element inline editor ──────────────────────────────────────
+
+function TextElementPanel({
+  element,
+  instance,
+}: {
+  element: SelectedElement;
+  instance: SiteSectionInstance | null;
+}) {
+  const { dispatch } = useRelumeBuilder();
+  const [text, setText] = React.useState(element.text);
+  const [align, setAlign] = React.useState<"left" | "center" | "right" | "justify">("left");
+  const [bold, setBold] = React.useState(false);
+  const [italic, setItalic] = React.useState(false);
+  const [fontSize, setFontSize] = React.useState(16);
+  const [color, setColor] = React.useState("#111827");
+
+  const applyText = () => {
+    if (!instance) return;
+    // Best-effort: update a matching content key from the text
+    const key = Object.keys(instance.content).find((k) => instance.content[k] === element.text);
+    if (key) {
+      dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [key]: text } } });
+    }
+  };
+
+  const ALIGNS: { value: "left" | "center" | "right" | "justify"; icon: React.ElementType }[] = [
+    { value: "left", icon: AlignLeft },
+    { value: "center", icon: AlignCenter },
+    { value: "right", icon: AlignRight },
+    { value: "justify", icon: AlignJustify },
+  ];
+
+  return (
+    <div className="p-4 space-y-4">
+      <div>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Contenu</label>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={applyText}
+          rows={4}
+          className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
+        />
+        <button
+          onClick={applyText}
+          className="mt-1.5 w-full py-1.5 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors font-medium"
+        >
+          Appliquer
+        </button>
+      </div>
+
+      <div className="flex gap-1.5">
+        <button
+          onClick={() => setBold(!bold)}
+          className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${bold ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+        >
+          <Bold size={12} />
+        </button>
+        <button
+          onClick={() => setItalic(!italic)}
+          className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${italic ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+        >
+          <Italic size={12} />
+        </button>
+        <div className="flex gap-0.5 ml-auto">
+          {ALIGNS.map(({ value, icon: Icon }) => (
+            <button
+              key={value}
+              onClick={() => setAlign(value)}
+              className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${align === value ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+            >
+              <Icon size={12} />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
+          <span>Taille</span><span className="font-mono">{fontSize}px</span>
+        </label>
+        <input
+          type="range" min={10} max={72} value={fontSize} step={1}
+          onChange={(e) => setFontSize(+e.target.value)}
+          className="w-full accent-gray-900"
+        />
+      </div>
+
+      <div>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Couleur</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            className="w-8 h-8 rounded border border-gray-200 cursor-pointer"
+          />
+          <span className="text-xs font-mono text-gray-600">{color}</span>
+        </div>
+      </div>
+
+      <p className="text-[10px] text-gray-400 leading-relaxed bg-gray-50 rounded-md p-2">
+        La sélection directe d&apos;éléments est disponible via les champs de contenu de la section (onglet Contenu).
+      </p>
+    </div>
+  );
+}
+
+// ─── Custom Style Editor ──────────────────────────────────────────────────────
+
+function CustomStyleEditor({ instance }: { instance: SiteSectionInstance }) {
+  const { dispatch } = useRelumeBuilder();
+  const style = (instance.custom_style ?? {}) as Record<string, string>;
+
+  const updateStyle = (key: string, value: string) => {
+    dispatch({ type: "UPDATE_INSTANCE_STYLE", payload: { id: instance.id, style: { [key]: value } } });
+  };
+
+  const commonProps = [
+    { key: "borderRadius", label: "Border radius", placeholder: "0px" },
+    { key: "boxShadow", label: "Box shadow", placeholder: "0 4px 24px rgba(0,0,0,.1)" },
+    { key: "border", label: "Bordure", placeholder: "1px solid #e5e7eb" },
+  ];
+
+  return (
+    <div className="space-y-2">
+      {commonProps.map(({ key, label, placeholder }) => (
+        <div key={key}>
+          <label className="text-[10px] text-gray-500 block mb-1">{label}</label>
+          <input
+            type="text"
+            value={style[key] ?? ""}
+            placeholder={placeholder}
+            onChange={(e) => updateStyle(key, e.target.value)}
+            className="w-full bg-gray-50 border border-gray-200 rounded px-2.5 py-1.5 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-400"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Presets Picker ───────────────────────────────────────────────────────────
+
+function PresetsPicker({ presets, onApply }: { presets: SectionPreset[]; onApply: (p: SectionPreset) => void }) {
+  const [open, setOpen] = React.useState(false);
+  const [confirmIndex, setConfirmIndex] = React.useState<number | null>(null);
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50/50">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-100/50 transition-colors"
+      >
+        <div>
+          <div className="text-[11px] font-medium text-gray-700">Presets</div>
+          <div className="text-[10px] text-gray-400">{presets.length} configuration{presets.length > 1 ? "s" : ""} disponible{presets.length > 1 ? "s" : ""}</div>
+        </div>
+        <Sparkles size={11} className="text-purple-400" />
+      </button>
+      {open && (
+        <div className="border-t border-gray-200">
+          {presets.map((preset, i) => (
+            <div key={i} className="border-b border-gray-100 last:border-b-0">
+              <button
+                onClick={() => setConfirmIndex(confirmIndex === i ? null : i)}
+                className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors"
+              >
+                <div className="text-[11px] font-medium text-gray-800">{preset.name}</div>
+                {preset.description && <div className="text-[10px] text-gray-400 mt-0.5">{preset.description}</div>}
+              </button>
+              {confirmIndex === i && (
+                <div className="flex gap-2 px-3 pb-2">
+                  <button
+                    onClick={() => { onApply(preset); setConfirmIndex(null); setOpen(false); }}
+                    className="flex-1 text-[10px] py-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 rounded"
+                  >
+                    Appliquer (remplace le contenu)
+                  </button>
+                  <button
+                    onClick={() => setConfirmIndex(null)}
+                    className="text-[10px] py-1 px-2 text-gray-500 hover:text-gray-700"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── AI Section Regeneration ──────────────────────────────────────────────────
+
+function AIRegenerateSection({
+  instanceId,
+  onRegenerate,
+}: {
+  instanceId: string;
+  onRegenerate: (id: string, prompt: string) => Promise<void>;
+}) {
+  const [prompt, setPrompt] = React.useState("");
+  const [loading, setLoading] = React.useState(false);
+
+  const handleRegenerate = async () => {
+    setLoading(true);
+    try {
+      await onRegenerate(instanceId, prompt);
+      setPrompt("");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Sparkles size={12} className="text-purple-500" />
+        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">IA Copywriting</span>
+      </div>
+      <textarea
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        placeholder="Ex: rends ce contenu plus professionnel et dynamique..."
+        rows={3}
+        className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-purple-400 resize-none"
+      />
+      <button
+        onClick={handleRegenerate}
+        disabled={loading || !prompt.trim()}
+        className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium bg-purple-500/10 text-purple-600 border border-purple-200 hover:bg-purple-500/20 rounded-lg transition-all disabled:opacity-50"
+      >
+        {loading ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
+        {loading ? "Génération..." : "Régénérer le contenu"}
+      </button>
+      <p className="text-[10px] text-gray-400 text-center leading-relaxed">
+        L&apos;IA réécrira le contenu de cette section en conservant la structure.
+      </p>
+    </div>
+  );
+}
+
+// Suppress unused import warnings
+void Move;

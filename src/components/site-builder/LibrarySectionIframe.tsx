@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { StyleGuide } from "@/types";
-import { generateColorShades } from "@/lib/color-utils";
+import { generateColorShades, getContrastColor } from "@/lib/color-utils";
 
 interface LibrarySectionIframeProps {
   code: string;
@@ -202,6 +202,9 @@ function styleGuideToCSSVars(sg: StyleGuide): string {
     `--font-base-size: ${sg.fonts.baseSize};`,
     `--btn-radius: ${sg.buttons.borderRadius};`,
     `--btn-padding: ${sg.buttons.padding};`,
+    `--btn-bg: ${sg.buttons.style === "outline" ? "transparent" : sg.buttons.style === "soft" ? sg.colors.primary + "22" : sg.colors.primary};`,
+    `--btn-text: ${sg.buttons.style === "filled" ? getContrastColor(sg.colors.primary) : sg.colors.primary};`,
+    `--btn-border-color: ${sg.buttons.style === "soft" ? "transparent" : sg.colors.primary};`,
     `--card-radius: ${sg.cards.borderRadius};`,
     `--card-shadow: ${shadowMap[sg.cards.shadow] ?? shadowMap.md};`,
     `--card-padding: ${sg.cards.padding};`,
