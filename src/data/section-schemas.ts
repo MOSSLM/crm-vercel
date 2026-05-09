@@ -1,4 +1,4 @@
-import type { SectionField, SectionSchema, SiteSectionDef, SectionBlockSchema, SectionPreset } from '@/types';
+import type { SectionField, SectionRangeField, SectionSchema, SiteSectionDef, SectionBlockSchema, SectionPreset } from '@/types';
 
 // ─── Shared field helpers ─────────────────────────────────────────────────────
 
@@ -122,8 +122,8 @@ const marginBottomField: SectionField = {
  */
 function commonStyleFields(opts: { skipHeight?: boolean; defaultPadding?: number } = {}): SectionField[] {
   const { skipHeight = false, defaultPadding = 80 } = opts;
-  const paddingTop: SectionField = { ...paddingTopField, default: defaultPadding };
-  const paddingBottom: SectionField = { ...paddingBottomField, default: defaultPadding };
+  const paddingTop: SectionField = { ...(paddingTopField as SectionRangeField), default: defaultPadding };
+  const paddingBottom: SectionField = { ...(paddingBottomField as SectionRangeField), default: defaultPadding };
   return [
     { type: 'header', content: 'Dimensions', group: 'style' },
     ...(skipHeight ? [] : [heightModeField, heightValueField] as SectionField[]),
