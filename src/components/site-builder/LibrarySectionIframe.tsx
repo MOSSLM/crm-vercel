@@ -363,7 +363,7 @@ function buildHTML(
     :root {
       ${cssVars}
     }
-    html, body { margin: 0; font-family: var(--font-body, Inter, sans-serif); background: var(--color-background, #fff); color: var(--color-text, #111); }
+    html, body { margin: 0; font-family: var(--font-body, Inter, sans-serif); background: transparent; color: var(--color-text, #111); }
     body { overflow-x: hidden; }
     * { box-sizing: border-box; }
     ${resetCss}

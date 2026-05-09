@@ -23,10 +23,27 @@ export default function Nom({ tokens={}, data={}, variables={} }: Props)
 Variables : variables['entreprise.nom|telephone|email|adresse|ville|code_postal|description|annee_creation|note_moyenne|nombre_avis|logo_url']
 
 Règles :
-- export default function obligatoire, pas d'imports React
+- export default function OBLIGATOIRE — jamais export const, export type, ni imports
+- Un seul export default function dans tout le fichier — JAMAIS deux
 - Tailwind mobile-first (sm: md: lg:), pas de CSS inline
 - Textes statiques → variables['entreprise.*'] ou data.*
 - Pas de hooks complexes ni fetch
+- Si on te donne du code avec des imports ou exports nommés, réécris-le en respectant ces règles
+
+INTERDIT absolument :
+- export default function Schema(...) — le schéma est géré dans un onglet séparé, ne jamais l'intégrer dans le TSX
+- Deux export default dans le même fichier
+- min-h-screen, h-screen, 100vh sur le conteneur racine
+
+OBLIGATOIRE :
+- Définir un fond sur le conteneur racine : style={{ backgroundColor: 'var(--color-background)' }}
+
+Style Guide — tokens à RESPECTER :
+- Couleurs : style={{ color: 'var(--color-primary)' }}, 'var(--color-secondary)', 'var(--color-accent)',
+  'var(--color-background)', 'var(--color-bg-alt)', 'var(--color-text)', 'var(--color-text-muted)'
+- Police : style={{ fontFamily: 'var(--font-heading)' }} pour les titres, 'var(--font-body)' pour le corps
+- Boutons : style={{ borderRadius: 'var(--btn-radius)', padding: 'var(--btn-padding)' }}
+- Espacements : 'var(--section-padding)', 'var(--element-gap)', 'var(--max-content-width)'
 
 Réponse : \`\`\`tsx [code] \`\`\` puis 1-2 phrases d'explication.`;
 

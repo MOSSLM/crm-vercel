@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
+/**
+ * Removes rogue `export default function Schema(...)` blocks and deduplicates
+ * multiple `export default` declarations, keeping only the first one.
+ */
+function sanitizeCode(code: string): string {
+  // Remove export default function Schema blocks (including body)
+  let result = code.replace(
+    /export\s+default\s+function\s+Schema\s*\([^)]*\)\s*\{[^]*?\n\}/gm,
+    ""
+  );
+
+  // If there are still multiple export default function/class/identifier, keep only first
+  const exportDefaultRegex = /export\s+default\s+(?:function\s+\w+|class\s+\w+|\w+)/g;
+  const matches = [...result.matchAll(exportDefaultRegex)];
+  if (matches.length > 1) {
+    // Strip all but the first occurrence
+    let skipped = 0;
+    result = result.replace(exportDefaultRegex, (match) => {
+      skipped++;
+      return skipped === 1 ? match : match.replace(/^export\s+default\s+/, "");
+    });
+  }
+
+  return result.trim();
+}
+
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ slug: string; sectionId: string }> };
@@ -27,10 +53,15 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const body = await req.json();
   const supabase = getSupabaseServiceClient();
 
-  const allowed = ["name", "category", "code", "example_data", "sort_order", "section_id"];
+  const allowed = ["name", "category", "code", "example_data", "sort_order", "section_id", "schema"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (key in body) updates[key] = body[key];
+  }
+
+  // Sanitize code: remove duplicate export default function Schema blocks
+  if (typeof updates.code === "string") {
+    updates.code = sanitizeCode(updates.code);
   }
 
   if (Object.keys(updates).length === 0) {

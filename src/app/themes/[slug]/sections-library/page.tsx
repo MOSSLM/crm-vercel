@@ -14,6 +14,7 @@ import SectionEditor from "./SectionEditor";
 import SectionPreview from "./SectionPreview";
 import SectionChat from "./SectionChat";
 import SectionSettings from "./SectionSettings";
+import SectionSchemaEditor from "./SectionSchemaEditor";
 import type { ThemeSection } from "./types";
 
 interface PageProps {
@@ -29,6 +30,8 @@ export default function SectionsLibraryPage({ params }: PageProps) {
   const [saving, setSaving] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [activeTab, setActiveTab] = React.useState<"editor" | "schema">("editor");
+  const [schema, setSchema] = React.useState<Record<string, unknown> | null>(null);
 
   // Resolve params
   React.useEffect(() => {
@@ -55,12 +58,12 @@ export default function SectionsLibraryPage({ params }: PageProps) {
   }, [slug, loadSections]);
 
   const handleSelectSection = (section: ThemeSection) => {
-    // Warn if unsaved changes
     if (unsaved && activeSection) {
       if (!confirm("Des modifications non sauvegardées seront perdues. Continuer ?")) return;
     }
     setActiveSection(section);
     setCode(section.code);
+    setSchema((section.schema as Record<string, unknown> | null | undefined) ?? null);
     setUnsaved(false);
   };
 
@@ -105,6 +108,28 @@ export default function SectionsLibraryPage({ params }: PageProps) {
     setCode(newCode);
     if (activeSection) setUnsaved(true);
   };
+
+  const handleSchemaSave = React.useCallback(async (newSchema: Record<string, unknown>) => {
+    if (!activeSection || !slug) return;
+    const res = await fetch(
+      `/api/themes/${slug}/sections/${activeSection.section_id}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schema: newSchema }),
+      }
+    );
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error ?? "Erreur de sauvegarde du schéma");
+    }
+    const updated: ThemeSection = await res.json();
+    setSchema((updated.schema as Record<string, unknown> | null | undefined) ?? null);
+    setActiveSection(updated);
+    setSections((prev) =>
+      prev.map((s) => (s.section_id === updated.section_id ? updated : s))
+    );
+  }, [activeSection, slug]);
 
   const handleRefresh = () => {
     if (slug) loadSections(slug);
@@ -179,16 +204,57 @@ export default function SectionsLibraryPage({ params }: PageProps) {
 
               <PanelResizeHandle className="w-px bg-zinc-800 hover:bg-blue-500 transition-colors cursor-col-resize" />
 
-              {/* Center: Monaco Editor */}
+              {/* Center: Editor / Schema tabs */}
               <Panel defaultSize={50} minSize={25}>
-                <SectionEditor
-                  code={code}
-                  onChange={handleCodeChange}
-                  onSave={handleSave}
-                  saving={saving}
-                  unsaved={unsaved}
-                  sectionId={activeSection?.section_id ?? null}
-                />
+                <div className="flex flex-col h-full">
+                  {/* Tab bar */}
+                  <div className="flex items-center gap-0 border-b border-zinc-800 flex-shrink-0 px-2 pt-1">
+                    <button
+                      onClick={() => setActiveTab("editor")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+                        activeTab === "editor"
+                          ? "bg-zinc-800 text-white"
+                          : "text-zinc-500 hover:text-zinc-300"
+                      }`}
+                    >
+                      Éditeur
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("schema")}
+                      className={`px-3 py-1.5 text-xs font-medium rounded-t transition-colors ${
+                        activeTab === "schema"
+                          ? "bg-zinc-800 text-white"
+                          : "text-zinc-500 hover:text-zinc-300"
+                      }`}
+                    >
+                      Schéma
+                      {schema && (
+                        <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-green-500 align-middle" />
+                      )}
+                    </button>
+                  </div>
+                  {/* Tab content */}
+                  <div className="flex-1 min-h-0">
+                    {activeTab === "editor" ? (
+                      <SectionEditor
+                        code={code}
+                        onChange={handleCodeChange}
+                        onSave={handleSave}
+                        saving={saving}
+                        unsaved={unsaved}
+                        sectionId={activeSection?.section_id ?? null}
+                      />
+                    ) : (
+                      <SectionSchemaEditor
+                        themeSlug={slug}
+                        sectionId={activeSection?.section_id ?? null}
+                        code={code}
+                        schema={schema}
+                        onSchemaSave={handleSchemaSave}
+                      />
+                    )}
+                  </div>
+                </div>
               </Panel>
 
               <PanelResizeHandle className="w-px bg-zinc-800 hover:bg-blue-500 transition-colors cursor-col-resize" />
@@ -198,6 +264,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
                 <SectionPreview
                   code={code}
                   sectionId={activeSection?.section_id ?? null}
+                  schema={schema}
                 />
               </Panel>
             </PanelGroup>

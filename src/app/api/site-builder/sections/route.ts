@@ -46,6 +46,7 @@ export async function GET(req: Request) {
     code: row.code,
     theme_slug: row.theme_slug,
     theme_section_id: row.section_id,
+    schema: row.schema ?? undefined,
   }));
 
   return NextResponse.json(sections);
