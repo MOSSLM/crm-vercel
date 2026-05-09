@@ -11,7 +11,7 @@ import {
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
   ArrowUpDown,
 } from "lucide-react";
-import type { SiteSectionDef, SiteSectionInstance } from "@/types";
+import type { SiteSectionDef, SiteSectionInstance, SectionField } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
@@ -134,26 +134,26 @@ function LayersSchemaFields({
   if (!schema) return null;
   const fields = schema.settings ?? [];
   const blocks = schema.blocks ?? [];
+  type FieldWithId = SectionField & { id: string; label?: string };
   const visible = fields.filter(
-    (f) => "id" in f && !String(f.id).startsWith("__") && f.type !== "header"
+    (f): f is FieldWithId => "id" in f && !String((f as FieldWithId).id).startsWith("__")
   );
 
   return (
     <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
       {visible.map((f) => {
-        if (!("id" in f)) return null;
         const Icon = schemaFieldIcon(f.type);
         const isFocused = focusedField === f.id;
-        const rawVal = instance.content[f.id as string];
+        const rawVal = instance.content[f.id];
         const preview = typeof rawVal === "string" ? rawVal.slice(0, 28) : "";
         return (
           <button
-            key={f.id as string}
-            onClick={(e) => { e.stopPropagation(); onSelectField(f.id as string); }}
+            key={f.id}
+            onClick={(e) => { e.stopPropagation(); onSelectField(f.id); }}
             className={`group flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[10px] text-left transition-colors ${isFocused ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-500"}`}
           >
             <Icon size={9} className="flex-shrink-0 text-gray-400" />
-            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 80 }}>{"label" in f ? String(f.label) : String(f.id)}</span>
+            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 80 }}>{f.label ? String(f.label) : f.id}</span>
             {preview && <span className="truncate text-gray-400 text-[9px]">{preview}</span>}
           </button>
         );
