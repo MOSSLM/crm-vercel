@@ -404,16 +404,16 @@ function buildHTML(
     (function(){
       var last=0;
       function nat(){
-        /* Temporarily remove viewport-height classes so scrollHeight reflects
-           real content size, not the current viewport/iframe height. */
+        var root=document.getElementById('root');
+        if(!root)return 0;
+        /* Suppress viewport-fill classes to break the circular dependency:
+           min-h-screen=100vh=iframe height → measure=iframe height → resize → loop.
+           getBoundingClientRect().height gives the real rendered height of the React
+           tree, unlike body.scrollHeight which is always >= clientHeight (viewport). */
         var s=document.createElement('style');
-        s.textContent='.min-h-screen{min-height:0!important}.h-screen{height:auto!important}html,body{height:auto!important;min-height:0!important}';
+        s.textContent='.min-h-screen{min-height:0!important}.h-screen{height:auto!important}';
         document.head.appendChild(s);
-        /* Reading scrollHeight forces a synchronous reflow with the above style. */
-        var h=Math.max(
-          document.body?document.body.scrollHeight:0,
-          document.documentElement?document.documentElement.scrollHeight:0
-        );
+        var h=Math.ceil(root.getBoundingClientRect().height);
         document.head.removeChild(s);
         return h;
       }

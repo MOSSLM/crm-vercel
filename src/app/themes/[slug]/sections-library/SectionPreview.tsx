@@ -380,13 +380,12 @@ function buildPreviewHTML(
     (function(){
       var last=0;
       function nat(){
+        var root=document.getElementById('root');
+        if(!root)return 0;
         var s=document.createElement('style');
-        s.textContent='.min-h-screen{min-height:0!important}.h-screen{height:auto!important}html,body{height:auto!important;min-height:0!important}';
+        s.textContent='.min-h-screen{min-height:0!important}.h-screen{height:auto!important}';
         document.head.appendChild(s);
-        var h=Math.max(
-          document.body?document.body.scrollHeight:0,
-          document.documentElement?document.documentElement.scrollHeight:0
-        );
+        var h=Math.ceil(root.getBoundingClientRect().height);
         document.head.removeChild(s);
         return h;
       }
