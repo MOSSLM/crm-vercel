@@ -59,79 +59,30 @@ export function LibrarySectionIframe({
     setHeight(Math.max(minHeight, 720));
   }, [srcDoc, minHeight]);
 
-  // Listen for element-click messages forwarded from inside the iframe.
+  // Listen for messages from inside the iframe:
+  // - "element-click" for element selection (when selectionEnabled)
+  // - "iframe-height" for auto-resize (always active)
   React.useEffect(() => {
-    if (!selectionEnabled) return;
     const handler = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as { __siteBuilder?: string; tag?: string; text?: string; path?: number[] };
-      if (data?.__siteBuilder === "element-click" && data.tag && data.path) {
+      const data = event.data as { __siteBuilder?: string; tag?: string; text?: string; path?: number[]; height?: number };
+      if (selectionEnabled && data?.__siteBuilder === "element-click" && data.tag && data.path) {
         onElementClick?.({ tag: data.tag, text: data.text ?? "", path: data.path });
+      }
+      if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
+        setHeight(Math.max(Math.ceil(data.height) + 2, minHeight));
       }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [selectionEnabled, onElementClick]);
+  }, [selectionEnabled, onElementClick, minHeight]);
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   const handleLoad = React.useCallback(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    const cleanups: Array<() => void> = [];
-    let lastApplied = 0;
-    const measure = () => {
-      try {
-        const doc = iframe.contentDocument;
-        if (!doc) return;
-        // Use the largest of body/html scrollHeight + a tiny buffer to avoid
-        // sub-pixel rounding cropping the last line of content.
-        const h = Math.max(
-          doc.body?.scrollHeight ?? 0,
-          doc.documentElement?.scrollHeight ?? 0,
-        );
-        if (h > 0 && Math.abs(h - lastApplied) > 1) {
-          lastApplied = h;
-          setHeight(h + 2);
-        }
-      } catch { /* cross-origin — ignore */ }
-    };
-    try {
-      const win = iframe.contentWindow as (Window & {
-        ResizeObserver?: typeof ResizeObserver;
-        MutationObserver?: typeof MutationObserver;
-      }) | null;
-      const doc = iframe.contentDocument;
-      // ResizeObserver fires when the body or root node resizes.
-      if (win?.ResizeObserver && doc?.body && doc.documentElement) {
-        const ro = new win.ResizeObserver(measure);
-        ro.observe(doc.body);
-        ro.observe(doc.documentElement);
-        cleanups.push(() => ro.disconnect());
-      }
-      // MutationObserver fires when React mounts content into #root.
-      if (win?.MutationObserver && doc?.body) {
-        const mo = new win.MutationObserver(measure);
-        mo.observe(doc.body, { childList: true, subtree: true, attributes: true, characterData: true });
-        cleanups.push(() => mo.disconnect());
-      }
-      // Re-measure after every <img> finishes loading.
-      const imgs = doc?.images ? Array.from(doc.images) : [];
-      for (const img of imgs) {
-        if (img.complete) continue;
-        img.addEventListener("load", measure, { once: true });
-        img.addEventListener("error", measure, { once: true });
-      }
-    } catch { /* ignore */ }
-    iframe.contentWindow?.addEventListener("load", measure);
-    iframe.contentWindow?.addEventListener("resize", measure);
-    measure();
-    // Catch async renders (Babel transform, font loads, dynamic imports).
-    const delays = [80, 250, 600, 1500, 3000];
-    const timers = delays.map((d) => setTimeout(measure, d));
-    cleanups.push(() => timers.forEach(clearTimeout));
-    // Run all cleanups when the iframe reloads (srcDoc change → onLoad fires again).
-    iframe.contentWindow?.addEventListener("unload", () => {
-      cleanups.forEach((fn) => { try { fn(); } catch { /* ignore */ } });
-    }, { once: true });
+    // Height measurement is done via postMessage from the height reporter
+    // script injected inside the iframe HTML (see buildHTML). No external
+    // scrollHeight polling needed — it would be incorrect for sections that
+    // use min-h-screen (those report the viewport height, not content height).
   }, []);
 
   if (!code?.trim()) return null;
@@ -446,6 +397,55 @@ function buildHTML(
       }, true);
     })();
   <\/script>` : ""}
+  <script>
+    /* Height reporter: measures natural content height (without viewport-fill
+       constraints like min-h-screen) and sends it to the parent frame so the
+       iframe element can be resized to fit its content exactly. */
+    (function(){
+      var last=0;
+      function nat(){
+        /* Temporarily remove viewport-height classes so scrollHeight reflects
+           real content size, not the current viewport/iframe height. */
+        var s=document.createElement('style');
+        s.textContent='.min-h-screen{min-height:0!important}.h-screen{height:auto!important}html,body{height:auto!important;min-height:0!important}';
+        document.head.appendChild(s);
+        /* Reading scrollHeight forces a synchronous reflow with the above style. */
+        var h=Math.max(
+          document.body?document.body.scrollHeight:0,
+          document.documentElement?document.documentElement.scrollHeight:0
+        );
+        document.head.removeChild(s);
+        return h;
+      }
+      function rpt(){
+        var h=nat();
+        if(h>0&&Math.abs(h-last)>1){
+          last=h;
+          try{parent.postMessage({__siteBuilder:'iframe-height',height:h},'*')}catch(e){}
+        }
+      }
+      function init(){
+        /* Poll at key moments to catch async Babel transform + React render. */
+        [50,200,500,1200,2500,4000].forEach(function(d){setTimeout(rpt,d)});
+        /* ResizeObserver on #root fires whenever React re-renders content. */
+        if(window.ResizeObserver){
+          var ro=new ResizeObserver(function(){setTimeout(rpt,16)});
+          var r=document.getElementById('root');
+          if(r){ro.observe(r)}
+          else if(document.body){
+            var mo=new MutationObserver(function(){
+              var r2=document.getElementById('root');
+              if(r2){ro.observe(r2);mo.disconnect()}
+            });
+            mo.observe(document.body,{childList:true});
+          }
+        }
+      }
+      if(document.readyState==='loading'){
+        document.addEventListener('DOMContentLoaded',init);
+      }else{init()}
+    })();
+  <\/script>
 <\/body>
 <\/html>`;
 }

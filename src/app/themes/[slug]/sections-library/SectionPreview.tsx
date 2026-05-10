@@ -53,6 +53,7 @@ export default function SectionPreview({ code, sectionId, schema }: Props) {
   const [device, setDevice] = React.useState<Device>("desktop");
   const [compiling, setCompiling] = React.useState(false);
   const [srcDoc, setSrcDoc] = React.useState<string>("");
+  const [iframeHeight, setIframeHeight] = React.useState(720);
   const [compileError, setCompileError] = React.useState<string | null>(null);
   const [exampleData, setExampleData] = React.useState<Record<string, unknown>>(DEFAULT_EXAMPLE_DATA);
   const [exampleDataStr, setExampleDataStr] = React.useState(
@@ -61,6 +62,25 @@ export default function SectionPreview({ code, sectionId, schema }: Props) {
   const [showDataEditor, setShowDataEditor] = React.useState(false);
   const [showDesignPanel, setShowDesignPanel] = React.useState(false);
   const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iframeRef = React.useRef<HTMLIFrameElement>(null);
+
+  // Reset height when srcDoc changes so a fresh measurement always happens.
+  React.useEffect(() => {
+    setIframeHeight(720);
+  }, [srcDoc]);
+
+  // Listen for height reports from inside the iframe.
+  React.useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as { __siteBuilder?: string; height?: number };
+      if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
+        setIframeHeight(Math.ceil(data.height) + 2);
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, []);
 
   const schemaSettings = React.useMemo(() => {
     if (!schema) return null;
@@ -235,28 +255,13 @@ export default function SectionPreview({ code, sectionId, schema }: Props) {
           >
             {srcDoc ? (
               <iframe
+                ref={iframeRef}
                 srcDoc={srcDoc}
                 sandbox="allow-scripts"
                 scrolling="no"
-                className="w-full border-0"
-                style={{ height: "1200px", overflow: "hidden" }}
+                className="w-full border-0 block"
+                style={{ height: iframeHeight, overflow: "hidden" }}
                 title={`Preview ${sectionId}`}
-                onLoad={(e) => {
-                  const iframe = e.currentTarget;
-                  const resize = () => {
-                    try {
-                      const h = iframe.contentDocument?.documentElement?.scrollHeight ||
-                                iframe.contentDocument?.body?.scrollHeight;
-                      if (h && h > 0) iframe.style.height = `${h}px`;
-                    } catch {
-                      /* cross-origin */
-                    }
-                  };
-                  iframe.contentWindow?.addEventListener("resize", resize);
-                  resize();
-                  setTimeout(resize, 400);
-                  setTimeout(resize, 1000);
-                }}
               />
             ) : (
               <div className="flex items-center justify-center h-48 text-zinc-400 text-sm">
@@ -329,7 +334,7 @@ function buildPreviewHTML(
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"><\/script>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>
-  <style>html, body { margin: 0; } body { overflow-x: hidden; } * { box-sizing: border-box; }<\/style>
+  <style>html, body { margin: 0; height: auto; min-height: 0; } body { overflow-x: hidden; } * { box-sizing: border-box; }<\/style>
 <\/head>
 <body>
   <div id="root"><\/div>
@@ -370,6 +375,45 @@ function buildPreviewHTML(
     } else {
       runComponent();
     }
+  <\/script>
+  <script>
+    (function(){
+      var last=0;
+      function nat(){
+        var s=document.createElement('style');
+        s.textContent='.min-h-screen{min-height:0!important}.h-screen{height:auto!important}html,body{height:auto!important;min-height:0!important}';
+        document.head.appendChild(s);
+        var h=Math.max(
+          document.body?document.body.scrollHeight:0,
+          document.documentElement?document.documentElement.scrollHeight:0
+        );
+        document.head.removeChild(s);
+        return h;
+      }
+      function rpt(){
+        var h=nat();
+        if(h>0&&Math.abs(h-last)>1){
+          last=h;
+          try{parent.postMessage({__siteBuilder:'iframe-height',height:h},'*')}catch(e){}
+        }
+      }
+      function init(){
+        [50,200,500,1200,2500,4000].forEach(function(d){setTimeout(rpt,d)});
+        if(window.ResizeObserver){
+          var ro=new ResizeObserver(function(){setTimeout(rpt,16)});
+          var r=document.getElementById('root');
+          if(r){ro.observe(r)}
+          else if(document.body){
+            var mo=new MutationObserver(function(){
+              var r2=document.getElementById('root');
+              if(r2){ro.observe(r2);mo.disconnect()}
+            });
+            mo.observe(document.body,{childList:true});
+          }
+        }
+      }
+      if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',init)}else{init()}
+    })();
   <\/script>
 <\/body>
 <\/html>`;
