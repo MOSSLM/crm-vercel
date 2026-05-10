@@ -70,7 +70,7 @@ export function LibrarySectionIframe({
         onElementClick?.({ tag: data.tag, text: data.text ?? "", path: data.path });
       }
       if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
-        setHeight(Math.max(Math.ceil(data.height) + 2, minHeight));
+        setHeight(Math.ceil(data.height) + 2);
       }
     };
     window.addEventListener("message", handler);
