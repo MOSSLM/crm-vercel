@@ -30,7 +30,7 @@ export function LibrarySectionIframe({
   styleGuide,
   variables = {},
   className,
-  minHeight = 200,
+  minHeight = 1,
   wireframe = false,
   selectionEnabled = false,
   onElementClick,
