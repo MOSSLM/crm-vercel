@@ -68,6 +68,7 @@ export const PRODUCTION_ITEMS: NavItem[] = [
   { title: "Tâches", icon: ListChecks, href: "/production/taches" },
   { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
   { title: "Templates", icon: LayoutTemplate, href: "/production/templates" },
+  { title: "Site Builder", icon: Layout, href: "/site-builder" },
   { title: "Apps", icon: AppWindow, href: "/production/apps" },
   { title: "Objectifs", icon: Target, href: "/objectifs" },
 ];
@@ -104,7 +105,7 @@ export const MESSAGERIE_ITEMS: NavItem[] = [];
 export function getCategoryFromPath(pathname: string): TopCategoryKey {
   if (pathname.startsWith("/automations")) return "automations";
   if (pathname.startsWith("/calendar")) return "calendar";
-  if (pathname.startsWith("/production") || pathname.startsWith("/objectifs")) return "production";
+  if (pathname.startsWith("/production") || pathname.startsWith("/objectifs") || pathname.startsWith("/site-builder")) return "production";
   if (
     pathname.startsWith("/companies") ||
     pathname.startsWith("/contacts") ||
