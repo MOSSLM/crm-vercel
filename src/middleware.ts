@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 const CRM_SUBDOMAINS = new Set(["app", "www", "admin", "crm", "api"]);
 
 // Main app hostname (without port) — override via NEXT_PUBLIC_APP_DOMAIN env var
-const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "monsupercrm.fr";
+const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "samadigitalstudio.fr";
 
 export function middleware(request: NextRequest) {
   const host = request.headers.get("host") ?? "";

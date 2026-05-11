@@ -118,7 +118,7 @@ export default function PortailPage() {
           </div>
           {portalData.subdomain && (
             <a
-              href={`https://${portalData.subdomain}.monsupercrm.fr`}
+              href={`https://${portalData.subdomain}.samadigitalstudio.fr`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-blue-600 hover:underline"

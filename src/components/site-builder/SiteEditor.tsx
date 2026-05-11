@@ -633,13 +633,13 @@ const SiteEditor: React.FC<SiteEditorProps> = ({
                 {isPublished && publishedSubdomain && (
                   <div className="border-t border-white/10 px-4 py-3 flex-shrink-0">
                     <a
-                      href={`https://${publishedSubdomain}.monsupercrm.fr`}
+                      href={`https://${publishedSubdomain}.samadigitalstudio.fr`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-1"
                     >
                       <Globe className="h-3 w-3" />
-                      {publishedSubdomain}.monsupercrm.fr ↗
+                      {publishedSubdomain}.samadigitalstudio.fr ↗
                     </a>
                   </div>
                 )}
@@ -664,7 +664,7 @@ const SiteEditor: React.FC<SiteEditorProps> = ({
                 <Globe className="h-3 w-3 text-white/25 shrink-0" />
                 <span className="flex-1 truncate font-mono">
                   {isPublished && publishedSubdomain
-                    ? `https://${publishedSubdomain}.monsupercrm.fr${activePage?.slug ?? "/"}`
+                    ? `https://${publishedSubdomain}.samadigitalstudio.fr${activePage?.slug ?? "/"}`
                     : `preview${activePage?.slug ?? "/"}`
                   }
                 </span>

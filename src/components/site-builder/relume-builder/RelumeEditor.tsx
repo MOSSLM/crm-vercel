@@ -478,7 +478,7 @@ function RelumeEditorInner({
         throw new Error(err.error ?? "Erreur");
       }
       setShowPublish(false);
-      toast.success(`Site publié sur ${publishDomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "monsupercrm.fr"}`);
+      toast.success(`Site publié sur ${publishDomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur de publication");
     } finally {
@@ -683,7 +683,7 @@ function RelumeEditorInner({
                     placeholder="mon-site"
                     className="flex-1 bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs text-gray-900 font-mono focus:outline-none focus:border-blue-500"
                   />
-                  <span className="text-xs text-gray-400">.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "site.fr"}</span>
+                  <span className="text-xs text-gray-400">.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}</span>
                 </div>
                 <button
                   onClick={handlePublish}
