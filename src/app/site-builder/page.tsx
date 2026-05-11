@@ -123,13 +123,13 @@ export default function SiteBuilderV2ListPage() {
                 <h3 className="font-semibold truncate mb-1">{site.name}</h3>
                 {site.published_subdomain && (
                   <a
-                    href={`https://${site.published_subdomain}.monsupercrm.fr`}
+                    href={`https://${site.published_subdomain}.samadigitalstudio.fr`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-xs text-blue-600 hover:underline"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {site.published_subdomain}.monsupercrm.fr ↗
+                    {site.published_subdomain}.samadigitalstudio.fr ↗
                   </a>
                 )}
                 <div className="flex gap-2 mt-4">
