@@ -1,5 +1,5 @@
 import React from "react";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { styleGuideToCSSVars } from "./DynamicSectionRenderer";
@@ -13,10 +13,7 @@ interface DynamicPageRendererProps {
 
 /** Server component: renders a dynamic-sections page for the public site */
 export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide }: DynamicPageRendererProps) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const supabase = getSupabaseServiceClient();
 
   // Fetch instances with joined section definitions
   const { data: instanceRows } = await supabase
@@ -132,7 +129,7 @@ function getLayoutStyle(layout: SiteSectionDef["structure"]["layout"]): React.CS
   };
 }
 
-// ─── Static snippet (SSR, no interactivity) ───────────────────────────────────
+// ─── Static snippet (SSR, no interactivity) ────────────────────────────────────────────
 
 import type { SnippetDefinition } from "@/types";
 
@@ -216,7 +213,7 @@ function StaticSnippet({ snippet, content, guide }: { snippet: SnippetDefinition
         {testimonials.map((t, i) => (
           <div key={i} style={{ backgroundColor: guide.colors.backgroundAlt, borderRadius: guide.cards.borderRadius, padding: guide.cards.padding }}>
             {t.rating && <div style={{ color: "#f59e0b", marginBottom: "8px" }}>{"★".repeat(t.rating)}</div>}
-            {t.text && <p style={{ color: guide.colors.textMuted, fontStyle: "italic", fontSize: "0.875rem", margin: "0 0 12px 0" }}>"{t.text}"</p>}
+            {t.text && <p style={{ color: guide.colors.textMuted, fontStyle: "italic", fontSize: "0.875rem", margin: "0 0 12px 0" }}>"{ t.text}"</p>}
             {t.name && <div style={{ fontWeight: 600, color: guide.colors.text, fontSize: "0.875rem" }}>{t.name}</div>}
             {t.role && <div style={{ color: guide.colors.textMuted, fontSize: "0.75rem" }}>{t.role}</div>}
           </div>

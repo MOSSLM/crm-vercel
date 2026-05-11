@@ -1,7 +1,7 @@
 import React from "react";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
+import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import { resolveSite, fetchBlogPosts } from "@/lib/site-resolver";
 import SectionRenderer from "@/components/site-builder/SectionRenderer";
 import { DynamicPageRenderer } from "@/components/site-builder/DynamicPageRenderer";
@@ -39,11 +39,8 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
 
   const { config, enterpriseVariables, siteId } = site;
 
-  // ─── Dynamic sections mode: check if site has section instances ───────────────
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
+  // ─── Dynamic sections mode: check if site has section instances ─────────────────────
+  const supabase = getSupabaseServiceClient();
 
   const { count } = await supabase
     .from("site_section_instances")
@@ -60,7 +57,7 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
     );
   }
 
-  // ─── Legacy mode (site_config JSON) ──────────────────────────────────────────
+  // ─── Legacy mode (site_config JSON) ────────────────────────────────────────────
   const sections = config.sections ?? [];
   const hasBlog = sections.some((s) => s.type === "blog" && !s.hidden);
   const blogPosts = hasBlog ? await fetchBlogPosts(siteId) : [];
