@@ -55,6 +55,22 @@ export async function resolveSite(
     sections: [],
   };
 
+  // V2 sites store design tokens in style_guide, not in site_config.settings
+  if (!config.settings) {
+    const sg = (siteRow.style_guide as StyleGuide) ?? null;
+    config = {
+      ...config,
+      settings: {
+        colors: sg?.colors
+          ? { primary: sg.colors.primary, secondary: sg.colors.secondary, accent: sg.colors.accent, background: sg.colors.background, text: sg.colors.text }
+          : { primary: "#1a56db", secondary: "#6b7280", accent: "#f59e0b", background: "#ffffff", text: "#111827" },
+        fonts: sg?.fonts
+          ? { heading: sg.fonts.heading, body: sg.fonts.body }
+          : { heading: "Inter", body: "Inter" },
+      },
+    };
+  }
+
   // Fetch enterprise variables if linked
   const vars: Record<string, string> = {};
   let companyName: string | undefined;
