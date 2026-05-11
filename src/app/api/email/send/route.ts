@@ -84,6 +84,7 @@ export async function POST(req: Request) {
       subject: payload.subject,
       body_html: payload.body_html,
       body_text: payload.body_text ?? null,
+      type: payload.type ?? null,
       status,
       error_message: errorMessage ?? null,
     });

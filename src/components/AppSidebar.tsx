@@ -9,7 +9,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -42,6 +41,8 @@ import {
   Package,
   ClipboardList,
   MessageSquare,
+  Zap,
+  BookOpen,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
@@ -109,6 +110,10 @@ export const AppSidebar = () => {
     { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
     { title: "Audits", icon: ClipboardList, href: "/opportunities" },
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
+    { title: "Sites V2", icon: Layout, href: "/site-builder" },
+    { title: "Thèmes", icon: Layout, href: "/themes" },
+    { title: "Créateur de sections", icon: BookOpen, href: "/sections-library" },
+    { title: "Docs Thèmes", icon: Layout, href: "/docs/themes" },
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
@@ -138,9 +143,6 @@ export const AppSidebar = () => {
       <SidebarContent>
         {focusItems ? (
           <SidebarGroup>
-            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-muted-foreground px-3 py-2">
-              {view === "prospection" ? "Mode Sales" : "Mode Qualification"}
-            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {focusItems.map((item) => (
@@ -172,6 +174,31 @@ export const AppSidebar = () => {
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
+                  {/* Automations — top-level shortcut */}
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={isActive("/automations")}>
+                      <Link href="/automations">
+                        <Zap className="h-4 w-4" />
+                        <span>Automatisations</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            {/* Automatisation */}
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={isActive("/workflows")}>
+                      <Link href="/workflows">
+                        <Zap className="h-4 w-4" />
+                        <span>Automatisation</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
@@ -248,7 +275,7 @@ export const AppSidebar = () => {
                       <SidebarMenuSub>
                         {actionItems.map((item) => (
                           <SidebarMenuSubItem key={item.href}>
-                            <SidebarMenuSubButton asChild isActive={isActive(item.href)}>
+                            <SidebarMenuSubButton asChild isActive={isActive(item.activeHref ?? item.href)}>
                               <Link href={item.href}>
                                 <item.icon className="h-4 w-4" />
                                 <span>{item.title}</span>
@@ -268,7 +295,6 @@ export const AppSidebar = () => {
 
       {/* Footer */}
       <SidebarFooter className="border-t border-sidebar-border p-3">
-        {/* User info */}
         {user?.name && (
           <div className="flex items-center gap-2 px-1 py-2 mb-1">
             <UserAvatar name={user.name} />
