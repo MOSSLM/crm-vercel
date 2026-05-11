@@ -12,6 +12,7 @@ import {
   FolderOpen,
   ListChecks,
   LayoutTemplate,
+  LayoutDashboard,
   AppWindow,
   Magnet,
   Search,
@@ -68,7 +69,7 @@ export const PRODUCTION_ITEMS: NavItem[] = [
   { title: "Tâches", icon: ListChecks, href: "/production/taches" },
   { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
   { title: "Templates", icon: LayoutTemplate, href: "/production/templates" },
-  { title: "Site Builder", icon: Layout, href: "/site-builder" },
+  { title: "Site Builder", icon: LayoutDashboard, href: "/site-builder" },
   { title: "Apps", icon: AppWindow, href: "/production/apps" },
   { title: "Objectifs", icon: Target, href: "/objectifs" },
 ];
