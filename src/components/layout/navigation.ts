@@ -14,9 +14,7 @@ import {
   LayoutTemplate,
   LayoutDashboard,
   AppWindow,
-  Magnet,
   Search,
-  Package,
   CheckCircle,
   Share2,
   Ban,
@@ -26,7 +24,6 @@ import {
   Plug,
   Globe,
   Palette,
-  BookOpen,
   Phone,
 } from "lucide-react";
 
@@ -61,32 +58,26 @@ export const CRM_ITEMS: NavItem[] = [
   { title: "Contacts", icon: Users, href: "/contacts" },
   { title: "Opportunités", icon: Target, href: "/opportunities" },
   { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
-  { title: "Offres", icon: Package, href: "/offres" },
 ];
 
 export const PRODUCTION_ITEMS: NavItem[] = [
   { title: "Projets", icon: FolderOpen, href: "/production/projets" },
   { title: "Tâches", icon: ListChecks, href: "/production/taches" },
-  { title: "Lead Magnets", icon: Magnet, href: "/production/lead-magnets" },
   { title: "Templates", icon: LayoutTemplate, href: "/production/templates" },
   { title: "Site Builder", icon: LayoutDashboard, href: "/site-builder" },
   { title: "Apps", icon: AppWindow, href: "/production/apps" },
-  { title: "Objectifs", icon: Target, href: "/objectifs" },
 ];
 
 export const ACTION_ITEMS: NavItem[] = [
   { title: "Sprint CRM", icon: CheckSquare, href: "/actions/sprint" },
   { title: "Qualification", icon: CheckSquare, href: "/qualification" },
   { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
-  { title: "Services", icon: Package, href: "/services-entreprises" },
   { title: "Nouvelle recherche", icon: Search, href: "/search/new" },
-  { title: "Résultats", icon: BarChart3, href: "/results" },
   { title: "Réseaux", icon: Share2, href: "/networks" },
   { title: "Blacklist", icon: Ban, href: "/blacklist" },
   { title: "Duplicats", icon: Copy, href: "/duplicates" },
   { title: "Sites", icon: Globe, href: "/site-builder" },
   { title: "Thèmes", icon: Palette, href: "/themes" },
-  { title: "Docs Thèmes", icon: BookOpen, href: "/docs/themes" },
 ];
 
 export const AUTOMATIONS_ITEMS: NavItem[] = [
@@ -106,7 +97,7 @@ export const MESSAGERIE_ITEMS: NavItem[] = [];
 export function getCategoryFromPath(pathname: string): TopCategoryKey {
   if (pathname.startsWith("/automations")) return "automations";
   if (pathname.startsWith("/calendar")) return "calendar";
-  if (pathname.startsWith("/production") || pathname.startsWith("/objectifs") || pathname.startsWith("/site-builder")) return "production";
+  if (pathname.startsWith("/production") || pathname.startsWith("/site-builder")) return "production";
   if (
     pathname.startsWith("/companies") ||
     pathname.startsWith("/contacts") ||
@@ -120,16 +111,13 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     pathname.startsWith("/actions/sprint") ||
     pathname.startsWith("/qualification") ||
     pathname.startsWith("/qualified") ||
-    pathname.startsWith("/services-entreprises") ||
     pathname.startsWith("/search") ||
-    pathname.startsWith("/results") ||
     pathname.startsWith("/networks") ||
     pathname.startsWith("/blacklist") ||
     pathname.startsWith("/duplicates") ||
     pathname.startsWith("/site-builder") ||
     pathname.startsWith("/themes") ||
-    pathname.startsWith("/sections-library") ||
-    pathname.startsWith("/docs/themes")
+    pathname.startsWith("/sections-library")
   ) {
     return "actions";
   }

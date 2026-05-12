@@ -33,9 +33,11 @@ import {
 import { toast } from 'sonner';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
 import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
-
 import logger from '../utils/logger';
 import { normalizeServiceTags } from '../utils/serviceTags';
+
+type UrlFilter = 'all' | 'with-url' | 'without-url';
+
 export const QualificationPage: React.FC = () => {
   const sourceOptions = [
     { value: 'google_search', label: 'Google Search' },
@@ -61,7 +63,7 @@ export const QualificationPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSources, setSelectedSources] = useState<string[]>(() => sourceOptions.map((option) => option.value));
   const [showQualified, setShowQualified] = useState(false);
-  const [showOnlyWithUrl, setShowOnlyWithUrl] = useState(false);
+  const [urlFilter, setUrlFilter] = useState<UrlFilter>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -90,7 +92,11 @@ export const QualificationPage: React.FC = () => {
 
     const matchesQualification = showQualified ? company.qualifie : !company.qualifie;
 
-    const matchesUrl = !showOnlyWithUrl || Boolean(company.canonical_url?.trim());
+    const hasUrl = Boolean(company.canonical_url?.trim());
+    const matchesUrl =
+      urlFilter === 'all' ||
+      (urlFilter === 'with-url' && hasUrl) ||
+      (urlFilter === 'without-url' && !hasUrl);
     
     const hideByDuplicate =
       !showDuplicates &&
@@ -111,7 +117,7 @@ export const QualificationPage: React.FC = () => {
   // Reset to first page when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, selectedSources, showQualified, showOnlyWithUrl, showHiddenCompanies]);
+  }, [searchTerm, selectedSources, showQualified, urlFilter, showHiddenCompanies]);
 
   const toggleSource = (source: string) => {
     setSelectedSources((previous) =>
@@ -457,13 +463,18 @@ export const QualificationPage: React.FC = () => {
               </div>
             </details>
 
-            <div className="flex items-center gap-2 px-2.5 py-2 border border-border rounded-md bg-card">
-              <Label htmlFor="url-filter" className="text-xs md:text-sm">Avec URL uniquement</Label>
-              <Switch
-                id="url-filter"
-                checked={showOnlyWithUrl}
-                onCheckedChange={setShowOnlyWithUrl}
-              />
+            <div className="min-w-[180px] space-y-1">
+              <Label htmlFor="url-filter" className="text-xs md:text-sm">Filtre URL</Label>
+              <Select value={urlFilter} onValueChange={(value) => setUrlFilter(value as UrlFilter)}>
+                <SelectTrigger id="url-filter" className="h-9 bg-card">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les entreprises</SelectItem>
+                  <SelectItem value="with-url">Avec URL uniquement</SelectItem>
+                  <SelectItem value="without-url">Sans URL uniquement</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex items-center gap-2 px-2.5 py-2 border border-border rounded-md bg-card">
@@ -778,7 +789,7 @@ export const QualificationPage: React.FC = () => {
             <Target className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
             <h3 className="font-medium mb-2">Aucune entreprise trouvée</h3>
             <p className="text-muted-foreground">
-              {searchTerm || showOnlyWithUrl || selectedSources.length !== sourceOptions.length || showQualified 
+              {searchTerm || urlFilter !== 'all' || selectedSources.length !== sourceOptions.length || showQualified 
                 ? 'Modifiez vos filtres pour voir plus d\'entreprises'
                 : 'Lancez une recherche pour découvrir des entreprises'
               }

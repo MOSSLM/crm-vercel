@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
@@ -32,7 +33,10 @@ import {
   Smartphone,
   Mail,
   Phone,
-  Building
+  Building,
+  BarChart3,
+  BookOpen,
+  Target
 } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { THEME_PRESETS, ThemePreset } from './themePresets';
@@ -80,6 +84,44 @@ export const SettingsPage: React.FC = () => {
           Gérez votre profil, vos préférences et la configuration de l'application
         </p>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Accès rapides paramètres</CardTitle>
+          <CardDescription>
+            Ces pages restent disponibles depuis les paramètres pour garder la navigation principale plus légère.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          <Button asChild variant="outline" className="h-auto justify-start p-4">
+            <Link href="/docs/themes" className="flex w-full items-start gap-3">
+              <BookOpen className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="space-y-1 text-left">
+                <span className="block font-medium">Docs thèmes</span>
+                <span className="block text-xs text-muted-foreground">Documentation des thèmes.</span>
+              </span>
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="h-auto justify-start p-4">
+            <Link href="/results" className="flex w-full items-start gap-3">
+              <BarChart3 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="space-y-1 text-left">
+                <span className="block font-medium">Results</span>
+                <span className="block text-xs text-muted-foreground">Historique des résultats.</span>
+              </span>
+            </Link>
+          </Button>
+          <Button asChild variant="outline" className="h-auto justify-start p-4">
+            <Link href="/objectifs" className="flex w-full items-start gap-3">
+              <Target className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="space-y-1 text-left">
+                <span className="block font-medium">Objectifs</span>
+                <span className="block text-xs text-muted-foreground">Suivi des objectifs.</span>
+              </span>
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="profile" className="w-full">
         <TabsList className="grid w-full grid-cols-2 gap-1 md:grid-cols-5">
