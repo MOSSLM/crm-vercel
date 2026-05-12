@@ -31,14 +31,11 @@ import {
   Share2,
   Ban,
   Copy,
-  PenLine,
-  Magnet,
   GitBranch,
   Users,
   Building,
   Target,
   Layout,
-  Package,
   ClipboardList,
   MessageSquare,
   Zap,
@@ -84,7 +81,6 @@ export const AppSidebar = () => {
     { title: "Dashboard qualification", icon: BarChart3, href: "/qualification/dashboard" },
     { title: "Sprint CRM", icon: CheckSquare, href: "/opportunities" },
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified" },
-    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Réseaux", icon: Share2, href: "/networks" },
     { title: "Blacklist", icon: Ban, href: "/blacklist" },
     { title: "Duplicats", icon: Copy, href: "/duplicates" },
@@ -96,24 +92,17 @@ export const AppSidebar = () => {
     { title: "Opportunités", icon: Target, href: "/opportunities" },
     { title: "Qualifiés", icon: CheckCircle, href: "/qualified?mode=cold_call", activeHref: "/qualified" },
     { title: "Contacts", icon: Users, href: "/contacts" },
-    { title: "Offres", icon: Package, href: "/offres" },
     { title: "Messagerie", icon: MessageSquare, href: "/messagerie" },
   ];
 
   const actionItems: SidebarNavItem[] = [
     { title: "Sprint CRM", icon: CheckSquare, href: "/actions/sprint" },
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
-    { title: "Services entreprises", icon: Package, href: "/services-entreprises" },
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
-    { title: "Results", icon: Package, href: "/results" },
-    { title: "Copywriting", icon: PenLine, href: "/production/copywriting" },
-    { title: "Lead magnet", icon: Magnet, href: "/production/lead-magnet" },
     { title: "Audits", icon: ClipboardList, href: "/opportunities" },
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
-    { title: "Sites V2", icon: Layout, href: "/site-builder" },
     { title: "Thèmes", icon: Layout, href: "/themes" },
     { title: "Créateur de sections", icon: BookOpen, href: "/sections-library" },
-    { title: "Docs Thèmes", icon: Layout, href: "/docs/themes" },
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
