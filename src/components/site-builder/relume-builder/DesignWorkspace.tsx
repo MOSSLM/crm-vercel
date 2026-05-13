@@ -9,8 +9,9 @@ import {
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
   ChevronUp, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
-  ArrowUpDown,
+  ArrowUpDown, Square, CheckSquare,
 } from "lucide-react";
+import { BulkAIDialog } from "./BulkAIDialog";
 import type { SiteSectionDef, SiteSectionInstance, SectionField } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
@@ -243,6 +244,9 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const [showMenusPanel, setShowMenusPanel] = React.useState(false);
 
   const [focusedField, setFocusedField] = React.useState<string | null>(null);
+  const [bulkSelectMode, setBulkSelectMode] = React.useState(false);
+  const [bulkSelected, setBulkSelected] = React.useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = React.useState(false);
 
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
   const selectedInstance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
@@ -264,6 +268,26 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
     setSelectedElement(null);
     setFocusedField(fieldId);
+  };
+
+  const toggleBulkSelectMode = () => {
+    setBulkSelectMode((v) => { if (v) setBulkSelected(new Set()); return !v; });
+  };
+
+  const toggleBulkItem = (instanceId: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(instanceId)) next.delete(instanceId); else next.add(instanceId);
+      return next;
+    });
+  };
+
+  const handleApplyBulk = (updates: Array<{ id: string; content: Record<string, unknown> }>) => {
+    updates.forEach(({ id, content }) => {
+      dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id, content: { ...state.instances[id]?.content, ...content } } });
+    });
+    setBulkSelected(new Set());
+    setBulkSelectMode(false);
   };
 
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
@@ -327,8 +351,26 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     );
   }
 
+  const bulkInstances = React.useMemo(() => {
+    return Array.from(bulkSelected).flatMap((id) => {
+      const instance = state.instances[id];
+      if (!instance) return [];
+      const def = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+      return [{ instance, def }];
+    });
+  }, [bulkSelected, state.instances, sectionDefs]);
+
   return (
     <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
+
+      {/* ─ Bulk AI Dialog ───────────────────────────────────────────────────── */}
+      <BulkAIDialog
+        open={bulkDialogOpen}
+        onClose={() => setBulkDialogOpen(false)}
+        instances={bulkInstances}
+        onApplyAll={handleApplyBulk}
+        variableContext={state.variableContext}
+      />
 
       {/* ─ Left Panel (context-sensitive) ───────────────────────────────────── */}
       {panelOpen && (
@@ -572,9 +614,23 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
               <Layers size={12} className="text-gray-500" />
               <span className="text-xs font-semibold text-gray-700">Calques</span>
             </div>
-            <button onClick={() => setLayersOpen(false)} className="text-gray-400 hover:text-gray-600">
-              <ChevronRight size={14} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={toggleBulkSelectMode}
+                title={bulkSelectMode ? "Quitter la sélection multiple" : "Sélection multiple pour IA groupée"}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                  bulkSelectMode
+                    ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                <Sparkles size={10} />
+                {bulkSelectMode ? "Sélection" : "IA ×N"}
+              </button>
+              <button onClick={() => setLayersOpen(false)} className="text-gray-400 hover:text-gray-600 ml-1">
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto px-1 py-2 text-[11px] text-gray-700">
             {state.sitemap.map((page) => {
@@ -603,37 +659,64 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         return (
                           <div key={instanceId}>
                             <div
-                              className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"}`}
-                              onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); setFocusedField(null); }}
+                              className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${
+                                bulkSelectMode && bulkSelected.has(instanceId)
+                                  ? "bg-purple-50 text-purple-700"
+                                  : isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                              }`}
+                              onClick={() => {
+                                if (bulkSelectMode) {
+                                  toggleBulkItem(instanceId);
+                                } else {
+                                  dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
+                                  setSelectedElement(null);
+                                  setFocusedField(null);
+                                }
+                              }}
                             >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedInstances((prev) => {
-                                    const next = new Set(prev);
-                                    const key = `collapsed-${instanceId}`;
-                                    if (next.has(key)) next.delete(key); else next.add(key);
-                                    return next;
-                                  });
-                                }}
-                                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                              >
-                                <ChevronRight size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-                              </button>
-                              <Box size={11} className={`flex-shrink-0 ${isSel ? "text-blue-400" : "text-gray-400"}`} />
+                              {bulkSelectMode ? (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleBulkItem(instanceId); }}
+                                  className="flex-shrink-0 text-purple-400"
+                                >
+                                  {bulkSelected.has(instanceId)
+                                    ? <CheckSquare size={11} className="text-purple-600" />
+                                    : <Square size={11} className="text-gray-300" />}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedInstances((prev) => {
+                                      const next = new Set(prev);
+                                      const key = `collapsed-${instanceId}`;
+                                      if (next.has(key)) next.delete(key); else next.add(key);
+                                      return next;
+                                    });
+                                  }}
+                                  className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                >
+                                  <ChevronRight size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+                                </button>
+                              )}
+                              <Box size={11} className={`flex-shrink-0 ${bulkSelectMode && bulkSelected.has(instanceId) ? "text-purple-400" : isSel ? "text-blue-400" : "text-gray-400"}`} />
                               <span className="flex-1 truncate text-[11px] font-medium">{def?.name ?? "Section"}</span>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
-                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
-                              >
-                                {inst.is_hidden ? <EyeOff size={10} /> : <Eye size={10} />}
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); dispatch({ type: "REMOVE_INSTANCE", payload: instanceId }); }}
-                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
-                              >
-                                <Trash2 size={10} />
-                              </button>
+                              {!bulkSelectMode && (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
+                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
+                                  >
+                                    {inst.is_hidden ? <EyeOff size={10} /> : <Eye size={10} />}
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "REMOVE_INSTANCE", payload: instanceId }); }}
+                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
+                                </>
+                              )}
                             </div>
                             {expanded && (
                               schema ? (
@@ -675,6 +758,34 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
               );
             })}
           </div>
+
+          {/* Bulk AI action bar */}
+          {bulkSelectMode && (
+            <div className={`border-t border-gray-100 px-3 py-2.5 flex flex-col gap-2 ${bulkSelected.size > 0 ? "bg-purple-50" : "bg-gray-50"}`}>
+              {bulkSelected.size === 0 ? (
+                <p className="text-[10px] text-gray-400 text-center">Cochez des sections pour les régénérer en groupe</p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-purple-700">{bulkSelected.size} section{bulkSelected.size !== 1 ? "s" : ""}</span>
+                    <button
+                      onClick={() => setBulkSelected(new Set())}
+                      className="text-[10px] text-gray-400 hover:text-gray-600"
+                    >
+                      Tout décocher
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setBulkDialogOpen(true)}
+                    className="flex items-center justify-center gap-1.5 w-full py-1.5 text-xs font-semibold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    <Sparkles size={11} />
+                    Régénérer avec IA
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
       {!layersOpen && (
