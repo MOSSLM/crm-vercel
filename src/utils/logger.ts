@@ -1,5 +1,5 @@
-declare const Deno: { env: { get(key: string): string | undefined } };
-
+// @ts-expect-error - The global `Deno` variable is only available in Deno runtimes
+// and is intentionally checked here to support both Node and Deno.
 const isProd =
   (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') ||
   (typeof Deno !== 'undefined' && Deno.env.get('NODE_ENV') === 'production');
