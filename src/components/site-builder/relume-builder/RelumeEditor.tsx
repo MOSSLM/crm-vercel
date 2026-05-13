@@ -11,6 +11,7 @@ import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, Site
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { RelumeBuilderProvider, useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { useSiteAutosave } from "@/hooks/useSiteAutosave";
+import { useGoogleFonts } from "./StyleGuideWorkspace";
 import { SiteVersionHistory } from "@/components/site-builder/SiteVersionHistory";
 import { SitemapWorkspace } from "./SitemapWorkspace";
 import { WireframeWorkspace } from "./WireframeWorkspace";
@@ -376,6 +377,9 @@ function RelumeEditorInner({
     state,
     onSaved: () => dispatch({ type: "MARK_SAVED" }),
   });
+
+  // Load selected fonts globally so all workspaces render them correctly
+  useGoogleFonts([state.styleGuide.fonts.heading, state.styleGuide.fonts.body]);
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
   const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
