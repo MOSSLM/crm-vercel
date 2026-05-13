@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { RelumeBuilderProvider, useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { useSiteAutosave } from "@/hooks/useSiteAutosave";
 import { SiteVersionHistory } from "@/components/site-builder/SiteVersionHistory";
 import { SitemapWorkspace } from "./SitemapWorkspace";
 import { WireframeWorkspace } from "./WireframeWorkspace";
@@ -369,6 +370,12 @@ function RelumeEditorInner({
   const { state, dispatch } = useRelumeBuilder();
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
+
+  const { status: autosaveStatus } = useSiteAutosave({
+    siteId,
+    state,
+    onSaved: () => dispatch({ type: "MARK_SAVED" }),
+  });
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
   const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
@@ -612,8 +619,24 @@ function RelumeEditorInner({
             </button>
           </div>
 
-          {/* Dirty indicator */}
-          {state.isDirty && (
+          {/* Autosave / dirty indicator */}
+          {autosaveStatus === "saving" && (
+            <span className="flex items-center gap-1 text-xs text-gray-400 px-2 py-0.5">
+              <div className="w-2.5 h-2.5 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+              Sauvegarde...
+            </span>
+          )}
+          {autosaveStatus === "saved" && (
+            <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+              Sauvegardé ✓
+            </span>
+          )}
+          {autosaveStatus === "error" && (
+            <span className="text-xs text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+              Erreur de sauvegarde
+            </span>
+          )}
+          {autosaveStatus === "idle" && state.isDirty && (
             <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
               Non sauvegardé
             </span>

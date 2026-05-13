@@ -1127,6 +1127,8 @@ export interface RelumeHistoryEntry {
   instancesByPage: Record<string, string[]>;
   styleGuide: StyleGuide;
   sitemap: SitemapPage[];
+  /** Coalescing key — if the incoming entry has the same tag as the last entry, replace instead of append */
+  _tag?: string;
 }
 
 export type RelumeBuilderAction =
