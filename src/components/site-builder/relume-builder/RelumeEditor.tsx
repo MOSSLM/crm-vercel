@@ -558,6 +558,7 @@ function RelumeEditorInner({
           defaultContent: sectionDef.default_content,
           prompt,
           model,
+          variableContext: state.variableContext,
         }),
       });
       if (!res.ok) throw new Error("Erreur IA");

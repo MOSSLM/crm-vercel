@@ -12,6 +12,7 @@ interface RegeneratePageRequest {
   pageContext?: string;
   availableSectionTypes: string[];
   model?: string;
+  variableContext?: Record<string, string>;
 }
 
 async function callAI(systemPrompt: string, userPrompt: string, model: string): Promise<string> {
@@ -58,7 +59,18 @@ export async function POST(req: Request) {
   const supabase = getSupabaseServiceClient();
   try {
     const body = (await req.json()) as RegeneratePageRequest;
-    const { siteId, enterpriseId, pageSlug, pageTitle, globalDescription, pageContext, availableSectionTypes, model = "claude-sonnet-4-6" } = body;
+    const { siteId, enterpriseId, pageSlug, pageTitle, globalDescription, pageContext, availableSectionTypes, model = "claude-sonnet-4-6", variableContext } = body;
+    void siteId;
+
+    // Build variable token hint for the AI
+    const variableHint = variableContext && Object.keys(variableContext).length > 0
+      ? `\nVARIABLES DISPONIBLES — utilise ces tokens pour les données d'entreprise :\n${
+          Object.entries(variableContext)
+            .filter(([k]) => !k.startsWith("company."))
+            .map(([k, v]) => `  {{ ${k} }} → "${v}"`)
+            .join("\n")
+        }`
+      : "";
 
     let enterpriseInfo = "";
     if (enterpriseId) {
@@ -73,7 +85,7 @@ export async function POST(req: Request) {
     }
 
     const systemPrompt = `Tu es un expert en création de sites web. Tu génères le contenu d'une page spécifique en JSON.
-Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.`;
+Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.${variableHint}`;
 
     const userPrompt = `Page: "${pageTitle}" (${pageSlug})
 

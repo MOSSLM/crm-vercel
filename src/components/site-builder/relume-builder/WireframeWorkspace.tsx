@@ -12,6 +12,7 @@ import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { type AIModelId, ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
+import { VariableTextarea } from "./VariableTextarea";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
@@ -154,6 +155,7 @@ function SectionAIPopover({
   model: AIModelId;
   onModelChange: (m: AIModelId) => void;
 }) {
+  const { state } = useRelumeBuilder();
   const [prompt, setPrompt] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -167,6 +169,8 @@ function SectionAIPopover({
     }
   };
 
+  void instanceId;
+
   return (
     <div
       className="absolute right-0 top-full mt-1 w-56 bg-white border border-purple-200 rounded-xl shadow-xl z-40 p-3"
@@ -178,13 +182,15 @@ function SectionAIPopover({
       </div>
       <ModelDropdown value={model} onChange={onModelChange} />
       <div className="mt-2" />
-      <textarea
+      <VariableTextarea
         value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
+        onChange={setPrompt}
         placeholder="Instructions spécifiques (optionnel)..."
         rows={3}
         autoFocus
         className="w-full text-[10px] bg-gray-50 border border-gray-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
+        variables={state.variableContext}
+        variant="light"
       />
       <div className="flex gap-1.5 mt-2">
         <button
@@ -456,12 +462,14 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                   <MessageSquare size={10} className="text-purple-500" />
                   <span className="text-[10px] font-semibold text-purple-700">Contexte pour {page.title}</span>
                 </div>
-                <textarea
+                <VariableTextarea
                   value={ctx}
-                  onChange={(e) => setPageContexts((prev) => ({ ...prev, [page.id]: e.target.value }))}
+                  onChange={(v) => setPageContexts((prev) => ({ ...prev, [page.id]: v }))}
                   placeholder="Instructions pour régénérer toutes les sections..."
                   rows={2}
                   className="w-full text-[11px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
+                  variables={state.variableContext}
+                  variant="light"
                 />
                 <button
                   onClick={() => handleRegeneratePage(page.slug, page.id)}
