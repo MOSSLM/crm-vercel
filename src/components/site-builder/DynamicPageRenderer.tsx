@@ -2,10 +2,45 @@ import React from "react";
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
-import { styleGuideToCSSVars } from "./DynamicSectionRenderer";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
-import { getContrastColor } from "@/lib/color-utils";
+import { getContrastColor, generateShadeCSSVars } from "@/lib/color-utils";
 import type { ReviewItem } from "@/lib/site-resolver";
+
+// Pure server-safe version of styleGuideToCSSVars (no "use client" dependency)
+function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
+  const shadowMap: Record<string, string> = {
+    none: "none",
+    sm: "0 1px 2px rgba(0,0,0,0.05)",
+    md: "0 4px 6px -1px rgba(0,0,0,0.10)",
+    lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
+  };
+  return {
+    "--color-primary": sg.colors.primary,
+    "--color-secondary": sg.colors.secondary,
+    "--color-accent": sg.colors.accent,
+    "--color-background": sg.colors.background,
+    "--color-bg-alt": sg.colors.backgroundAlt,
+    "--color-text": sg.colors.text,
+    "--color-text-muted": sg.colors.textMuted,
+    "--font-heading": sg.fonts.heading + ", Inter, sans-serif",
+    "--font-body": sg.fonts.body + ", Inter, sans-serif",
+    "--font-base-size": sg.fonts.baseSize,
+    "--btn-radius": sg.buttons.borderRadius,
+    "--btn-padding": sg.buttons.padding,
+    "--btn-bg": sg.buttons.style === "outline" ? "transparent"
+      : sg.buttons.style === "soft" ? sg.colors.primary + "22"
+      : sg.colors.primary,
+    "--btn-text": sg.buttons.style === "filled" ? getContrastColor(sg.colors.primary) : sg.colors.primary,
+    "--btn-border-color": sg.buttons.style === "soft" ? "transparent" : sg.colors.primary,
+    "--card-radius": sg.cards.borderRadius,
+    "--card-shadow": shadowMap[sg.cards.shadow] ?? shadowMap.md,
+    "--card-padding": sg.cards.padding,
+    "--section-padding": sg.spacing.sectionPadding,
+    "--element-gap": sg.spacing.elementGap,
+    "--max-content-width": sg.spacing.maxContentWidth,
+    ...generateShadeCSSVars(sg.colors),
+  } as React.CSSProperties;
+}
 
 interface DynamicPageRendererProps {
   siteId: string;
