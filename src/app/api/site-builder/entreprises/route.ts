@@ -20,7 +20,7 @@ export async function GET() {
   const list = (companies ?? []) as Array<{ id: number; nom: string }>;
 
   // Fetch which companies have a pret_pour_lm=true lead magnet project
-  let pretIds = new Set<number>();
+  const pretIds = new Set<number>();
   if (list.length > 0) {
     const { data: projects } = await supabase
       .from("lead_magnet_projects")
