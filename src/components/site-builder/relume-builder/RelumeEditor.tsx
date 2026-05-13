@@ -26,6 +26,7 @@ export interface RelumeEditorProps {
   siteId: string;
   siteName: string;
   enterpriseId?: number;
+  initialProjectId?: string;
   isPublished?: boolean;
   publishedSubdomain?: string;
   initialSections?: SiteSectionDef[];
@@ -173,6 +174,97 @@ function CompanyDropdown({
   );
 }
 
+// ─── Project Dropdown ─────────────────────────────────────────────────────────
+
+interface LMProject {
+  id: string;
+  override_city: string | null;
+  override_location: string | null;
+  override_entreprise_name: string | null;
+  statut: string | null;
+}
+
+function ProjectDropdown({
+  enterpriseId,
+  currentProjectId,
+  onSelect,
+}: {
+  enterpriseId?: number;
+  currentProjectId?: string;
+  onSelect: (id: string | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const [projects, setProjects] = React.useState<LMProject[]>([]);
+  const [loading, setLoading] = React.useState(false);
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!enterpriseId) { setProjects([]); return; }
+    setLoading(true);
+    fetch(`/api/site-builder/lead-magnet-projects?enterprise=${enterpriseId}`)
+      .then((r) => r.json())
+      .then((data: unknown) => { if (Array.isArray(data)) setProjects(data as LMProject[]); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [enterpriseId]);
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const current = projects.find((p) => p.id === currentProjectId);
+  const label = current
+    ? (current.override_city ?? current.override_location ?? `Projet ${current.id.slice(0, 6)}`)
+    : "Projet LM";
+
+  if (!enterpriseId) return null;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 px-3 py-1 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors max-w-[160px]"
+        title="Lier un lead magnet project (ville SEO + avis)"
+      >
+        <span className="truncate">{loading ? "…" : label}</span>
+        <ChevronDown size={12} className="flex-shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+          <div className="p-1 max-h-60 overflow-y-auto">
+            <button
+              className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-gray-50 rounded"
+              onClick={() => { onSelect(null); setOpen(false); }}
+            >
+              — Aucun projet
+            </button>
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                className={`w-full text-left px-3 py-2 text-xs rounded hover:bg-gray-50 ${p.id === currentProjectId ? "font-semibold text-gray-900" : "text-gray-700"}`}
+                onClick={() => { onSelect(p.id); setOpen(false); }}
+              >
+                <span className="font-medium">{p.override_city ?? p.override_location ?? p.id.slice(0, 8)}</span>
+                {p.override_entreprise_name && (
+                  <span className="ml-1 text-gray-400">· {p.override_entreprise_name}</span>
+                )}
+                {p.statut && <span className="ml-1 text-gray-400">({p.statut})</span>}
+              </button>
+            ))}
+            {!loading && projects.length === 0 && (
+              <p className="text-xs text-gray-400 text-center py-3">Aucun projet trouvé</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Save As Theme Dialog ─────────────────────────────────────────────────────
 
 function SaveAsThemeDialog({
@@ -254,6 +346,7 @@ function RelumeEditorInner({
   siteId,
   siteName,
   enterpriseId: initialEnterpriseId,
+  initialProjectId,
   isPublished,
   publishedSubdomain,
   initialSections = [],
@@ -277,13 +370,15 @@ function RelumeEditorInner({
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
   const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
+  const [projectId, setProjectId] = React.useState<string | undefined>(initialProjectId);
   const [showSaveTheme, setShowSaveTheme] = React.useState(false);
   const [themeLibraryOpen, setThemeLibraryOpen] = React.useState(false);
 
-  // Fetch and store enterprise variable context whenever the linked enterprise changes
-  const fetchVariables = React.useCallback((id: number | undefined) => {
+  // Fetch and store enterprise variable context whenever the linked enterprise/project changes
+  const fetchVariables = React.useCallback((id: number | undefined, pid?: string) => {
     if (!id) { dispatch({ type: "SET_VARIABLE_CONTEXT", payload: {} }); return; }
-    fetch(`/api/site-builder/variables?enterprise=${id}`)
+    const url = `/api/site-builder/variables?enterprise=${id}${pid ? `&project=${pid}` : ""}`;
+    fetch(url)
       .then((r) => r.json())
       .then((data: unknown) => {
         if (data && typeof data === "object" && !Array.isArray(data)) {
@@ -295,8 +390,8 @@ function RelumeEditorInner({
 
   // Load on mount if an enterprise is already linked
   React.useEffect(() => {
-    if (initialEnterpriseId) fetchVariables(initialEnterpriseId);
-  }, [initialEnterpriseId, fetchVariables]);
+    if (initialEnterpriseId) fetchVariables(initialEnterpriseId, initialProjectId);
+  }, [initialEnterpriseId, initialProjectId, fetchVariables]);
 
   const sectionDefs = React.useMemo(
     () => Object.fromEntries(initialSections.map((s) => [s.id, s])),
@@ -414,16 +509,32 @@ function RelumeEditorInner({
 
   const handleSelectCompany = async (id: number | null) => {
     setEnterpriseId(id ?? undefined);
-    fetchVariables(id ?? undefined);
+    setProjectId(undefined); // reset project when company changes
+    fetchVariables(id ?? undefined, undefined);
     try {
       await fetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enterprise_id: id }),
+        body: JSON.stringify({ enterprise_id: id, lead_magnet_project_id: null }),
       });
       toast.success(id ? "Entreprise liée" : "Entreprise dissociée");
     } catch {
       toast.error("Erreur lors de la liaison");
+    }
+  };
+
+  const handleSelectProject = async (id: string | null) => {
+    setProjectId(id ?? undefined);
+    fetchVariables(enterpriseId, id ?? undefined);
+    try {
+      await fetch(`/api/site-builder/sites/${siteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lead_magnet_project_id: id }),
+      });
+      toast.success(id ? "Projet LM lié" : "Projet LM dissocié");
+    } catch {
+      toast.error("Erreur lors de la liaison du projet");
     }
   };
 
@@ -557,6 +668,13 @@ function RelumeEditorInner({
         <CompanyDropdown
           currentEnterpriseId={enterpriseId}
           onSelect={(id, _nom) => handleSelectCompany(id)}
+        />
+
+        {/* Lead magnet project picker (ville SEO + avis) */}
+        <ProjectDropdown
+          enterpriseId={enterpriseId}
+          currentProjectId={projectId}
+          onSelect={handleSelectProject}
         />
 
         {/* Center workspace tabs */}

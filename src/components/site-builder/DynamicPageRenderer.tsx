@@ -4,15 +4,19 @@ import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { styleGuideToCSSVars } from "./DynamicSectionRenderer";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
+import { getContrastColor } from "@/lib/color-utils";
+import type { ReviewItem } from "@/lib/site-resolver";
 
 interface DynamicPageRendererProps {
   siteId: string;
   pageSlug: string;
   styleGuide?: StyleGuide | null;
+  variables?: Record<string, string>;
+  reviews?: ReviewItem[];
 }
 
 /** Server component: renders a dynamic-sections page for the public site */
-export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide }: DynamicPageRendererProps) {
+export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [] }: DynamicPageRendererProps) {
   const supabase = getSupabaseServiceClient();
 
   // Fetch instances with joined section definitions
@@ -45,7 +49,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide }: Dyna
         const sectionDef = instance.section_def;
         if (!sectionDef) return null;
         return (
-          <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} />
+          <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} variables={variables} reviews={reviews} />
         );
       })}
     </div>
@@ -54,10 +58,11 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide }: Dyna
 
 // ─── Static section renderer (server-side, no editor chrome) ─────────────────
 
-function resolveVal(val: unknown, content: Record<string, unknown>): unknown {
+function resolveVal(val: unknown, content: Record<string, unknown>, variables: Record<string, string> = {}): unknown {
   if (typeof val !== "string") return val;
   return val.replace(/\{\{([^}]+)\}\}/g, (_, key) => {
-    const resolved = content[key.trim()];
+    const k = key.trim();
+    const resolved = content[k] ?? variables[k];
     return resolved !== undefined && resolved !== null ? String(resolved) : "";
   });
 }
@@ -66,12 +71,26 @@ interface DynamicSectionPublicProps {
   instance: SiteSectionInstance;
   sectionDef: SiteSectionDef;
   guide: StyleGuide;
+  variables?: Record<string, string>;
+  reviews?: ReviewItem[];
 }
 
-function DynamicSectionPublic({ instance, sectionDef, guide }: DynamicSectionPublicProps) {
+function DynamicSectionPublic({ instance, sectionDef, guide, variables = {}, reviews = [] }: DynamicSectionPublicProps) {
   const { structure } = sectionDef;
   const adapted = adaptContentForRender(instance.content ?? {}, instance.blocks ?? []);
   const content = { ...sectionDef.default_content, ...adapted };
+
+  // Auto-inject reviews into testimonial sections when the site has linked reviews
+  // and the section content hasn't been manually overridden with real testimonials.
+  if (reviews.length > 0 && sectionDef.type === "testimonials") {
+    const existing = content.testimonials as Array<unknown> | undefined;
+    const isPlaceholder = !existing || existing.length === 0 ||
+      (existing.length > 0 && typeof existing[0] === "object" &&
+        (existing[0] as Record<string, string>).name?.startsWith("Marie"));
+    if (isPlaceholder) {
+      content.testimonials = reviews;
+    }
+  }
   const cssVars = styleGuideToCSSVars(guide);
 
   const padding = structure.padding ?? {};
@@ -98,7 +117,7 @@ function DynamicSectionPublic({ instance, sectionDef, guide }: DynamicSectionPub
     <section style={sectionStyle}>
       <div style={innerStyle}>
         {structure.snippets.map((snippet) => (
-          <StaticSnippet key={snippet.id} snippet={snippet} content={content} guide={guide} />
+          <StaticSnippet key={snippet.id} snippet={snippet} content={content} guide={guide} variables={variables} reviews={reviews} />
         ))}
       </div>
     </section>
@@ -133,8 +152,8 @@ function getLayoutStyle(layout: SiteSectionDef["structure"]["layout"]): React.CS
 
 import type { SnippetDefinition } from "@/types";
 
-function StaticSnippet({ snippet, content, guide }: { snippet: SnippetDefinition; content: Record<string, unknown>; guide: StyleGuide }) {
-  const rp = (key: string) => String(resolveVal(snippet.props[key], content) ?? "");
+function StaticSnippet({ snippet, content, guide, variables = {}, reviews = [] }: { snippet: SnippetDefinition; content: Record<string, unknown>; guide: StyleGuide; variables?: Record<string, string>; reviews?: ReviewItem[] }) {
+  const rp = (key: string) => String(resolveVal(snippet.props[key], content, variables) ?? "");
 
   if (snippet.type === "heading") {
     const Tag = `h${Math.min(Math.max(parseInt(rp("level")) || 2, 1), 6)}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
@@ -166,8 +185,12 @@ function StaticSnippet({ snippet, content, guide }: { snippet: SnippetDefinition
   }
 
   if (snippet.type === "button") {
+    const btnStyle = guide.buttons.style;
+    const btnBg = btnStyle === "outline" ? "transparent" : btnStyle === "soft" ? guide.colors.primary + "22" : guide.colors.primary;
+    const btnText = btnStyle === "filled" ? getContrastColor(guide.colors.primary) : guide.colors.primary;
+    const btnBorder = btnStyle === "soft" ? "transparent" : guide.colors.primary;
     return (
-      <a href={rp("href") || "#"} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: guide.buttons.padding, borderRadius: guide.buttons.borderRadius, backgroundColor: guide.colors.primary, color: "#fff", textDecoration: "none", fontWeight: 600, border: `2px solid ${guide.colors.primary}` }}>
+      <a href={rp("href") || "#"} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", padding: guide.buttons.padding, borderRadius: guide.buttons.borderRadius, backgroundColor: btnBg, color: btnText, textDecoration: "none", fontWeight: 600, border: `2px solid ${btnBorder}` }}>
         {rp("text")}
       </a>
     );
@@ -184,7 +207,7 @@ function StaticSnippet({ snippet, content, guide }: { snippet: SnippetDefinition
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: guide.spacing.elementGap, flex: snippet.props.flex as number | undefined }}>
         {snippet.children.map((child) => (
-          <StaticSnippet key={child.id} snippet={child} content={content} guide={guide} />
+          <StaticSnippet key={child.id} snippet={child} content={content} guide={guide} variables={variables} reviews={reviews} />
         ))}
       </div>
     );
@@ -206,7 +229,8 @@ function StaticSnippet({ snippet, content, guide }: { snippet: SnippetDefinition
   }
 
   if (snippet.type === "testimonial-grid") {
-    const testimonials = (content[snippet.props.testimonials as string] ?? snippet.props.testimonials) as Array<{ name?: string; role?: string; text?: string; rating?: number }> ?? [];
+    const fromContent = (content[snippet.props.testimonials as string] ?? snippet.props.testimonials) as Array<{ name?: string; role?: string; text?: string; rating?: number }> | undefined;
+    const testimonials = (fromContent && fromContent.length > 0 ? fromContent : reviews.length > 0 ? reviews : []) as Array<{ name?: string; role?: string; text?: string; rating?: number }>;
     const cols = Number(snippet.props.columns) || 3;
     return (
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gap: guide.spacing.elementGap, width: "100%" }}>

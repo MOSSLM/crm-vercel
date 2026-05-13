@@ -37,7 +37,7 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
   const site = await resolveSite(subdomain, host);
   if (!site) notFound();
 
-  const { config, enterpriseVariables, siteId } = site;
+  const { config, enterpriseVariables, siteId, reviews } = site;
 
   // ─── Dynamic sections mode: check if site has section instances ─────────────────────
   const supabase = getSupabaseServiceClient();
@@ -53,6 +53,8 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
         siteId={siteId}
         pageSlug={pageSlug}
         styleGuide={site.styleGuide}
+        variables={enterpriseVariables}
+        reviews={reviews}
       />
     );
   }

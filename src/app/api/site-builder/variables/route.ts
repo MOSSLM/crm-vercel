@@ -19,26 +19,34 @@ type EnterpriseVariablesRow = {
   canonical_url: string | null;
 };
 
+type ProjectRow = {
+  override_entreprise_name: string | null;
+  override_city: string | null;
+  override_location: string | null;
+  override_phone: string | null;
+  override_email: string | null;
+  override_address: string | null;
+  variables: Record<string, string> | null;
+};
+
+type ReviewRow = {
+  author_name: string | null;
+  review_text: string | null;
+  rating: number | null;
+};
+
 /**
- * GET /api/site-builder/variables?enterprise=<id>
+ * GET /api/site-builder/variables?enterprise=<id>[&project=<uuid>]
  *
- * Returns a flat Record<string, string> of template variables resolved from
- * the selected enterprise (and, optionally, its linked opportunities / lead
- * magnet projects).  The keys match the `entreprise.*` namespace already used
- * by LibrarySectionIframe's DEFAULT_VARIABLES, so library sections substitute
- * them automatically when the variable context is non-empty.
- *
- * Example response:
- * {
- *   "entreprise.nom": "Acme Plomberie",
- *   "entreprise.ville": "Lyon",
- *   "entreprise.telephone": "04 78 00 00 00",
- *   ...
- * }
+ * Returns a flat Record<string, string> of template variables. When a
+ * lead_magnet_project_id is supplied, project overrides (city, phone, etc.)
+ * take precedence over entreprise values, and active reviews are included as
+ * a JSON-stringified array under the key "__reviews".
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const enterpriseIdRaw = searchParams.get("enterprise");
+  const projectId = searchParams.get("project");
 
   if (!enterpriseIdRaw) {
     return NextResponse.json({}, { status: 200 });
@@ -51,33 +59,65 @@ export async function GET(req: Request) {
 
   const supabase = getSupabaseServiceClient();
 
-  const { data, error } = await supabase
-    .from("entreprises")
-    .select(
-      "nom, ville, telephone, email, adresse, code_postal, pays, " +
-      "service_tags, note_moyenne, nombre_avis, logo_url, " +
-      "site_web_canonique, canonical_url"
-    )
-    .eq("id", enterpriseId)
-    .single();
+  const [entResult, projectResult, reviewsResult] = await Promise.all([
+    supabase
+      .from("entreprises")
+      .select(
+        "nom:name, ville, telephone, email, adresse, code_postal, pays, " +
+        "service_tags, note_moyenne, nombre_avis, logo_url, " +
+        "site_web_canonique, canonical_url"
+      )
+      .eq("id", enterpriseId)
+      .single(),
 
-  if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? "Not found" }, { status: 404 });
+    projectId
+      ? supabase
+          .from("lead_magnet_projects")
+          .select(
+            "override_entreprise_name, override_city, override_location, " +
+            "override_phone, override_email, override_address, variables"
+          )
+          .eq("id", projectId)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
+
+    projectId
+      ? supabase
+          .from("lead_magnet_reviews")
+          .select("author_name, review_text, rating")
+          .eq("lead_magnet_project_id", projectId)
+          .eq("is_active", true)
+          .order("display_order", { ascending: true })
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+
+  if (entResult.error || !entResult.data) {
+    return NextResponse.json({ error: entResult.error?.message ?? "Not found" }, { status: 404 });
   }
 
-  const ent = data as unknown as EnterpriseVariablesRow;
+  const ent = entResult.data as unknown as EnterpriseVariablesRow;
+  const proj = projectResult.data as unknown as ProjectRow | null;
+  const reviews = (reviewsResult.data ?? []) as ReviewRow[];
 
-  // Build service string from tags array
   const services = Array.isArray(ent.service_tags)
     ? (ent.service_tags as string[]).join(", ")
     : (typeof ent.service_tags === "string" ? ent.service_tags : "");
 
+  // Project overrides take priority over entreprise values
+  const nom = proj?.override_entreprise_name ?? ent.nom ?? "";
+  const ville = proj?.override_city ?? ent.ville ?? "";
+  const telephone = proj?.override_phone ?? ent.telephone ?? "";
+  const email = proj?.override_email ?? ent.email ?? "";
+  const adresse = proj?.override_address ?? ent.adresse ?? "";
+
   const variables: Record<string, string> = {
-    "entreprise.nom":         ent.nom ?? "",
-    "entreprise.ville":       ent.ville ?? "",
-    "entreprise.telephone":   ent.telephone ?? "",
-    "entreprise.email":       ent.email ?? "",
-    "entreprise.adresse":     ent.adresse ?? "",
+    "entreprise.nom":         nom,
+    "entreprise.ville":       ville,
+    "entreprise.ville_seo":   proj?.override_city ?? "",
+    "entreprise.location":    proj?.override_location ?? ville,
+    "entreprise.telephone":   telephone,
+    "entreprise.email":       email,
+    "entreprise.adresse":     adresse,
     "entreprise.code_postal": ent.code_postal ?? "",
     "entreprise.pays":        ent.pays ?? "France",
     "entreprise.services":    services,
@@ -85,18 +125,37 @@ export async function GET(req: Request) {
     "entreprise.nombre_avis": String(ent.nombre_avis ?? ""),
     "entreprise.logo_url":    ent.logo_url ?? "",
     "entreprise.site_web":    ent.site_web_canonique ?? ent.canonical_url ?? "",
-    // Convenience aliases used by some section templates
-    "company.name":    ent.nom ?? "",
-    "company.city":    ent.ville ?? "",
-    "company.phone":   ent.telephone ?? "",
-    "company.email":   ent.email ?? "",
-    "company.address": [ent.adresse, ent.ville].filter(Boolean).join(", "),
+    // Convenience aliases
+    "company.name":    nom,
+    "company.city":    ville,
+    "company.phone":   telephone,
+    "company.email":   email,
+    "company.address": [adresse, ville].filter(Boolean).join(", "),
     "company.rating":  String(ent.note_moyenne ?? ""),
     "company.reviews": String(ent.nombre_avis ?? ""),
     "company.services":services,
     "company.logo":    ent.logo_url ?? "",
     "company.website": ent.site_web_canonique ?? ent.canonical_url ?? "",
   };
+
+  // Merge free-form project variables (lower priority than named overrides)
+  if (proj?.variables && typeof proj.variables === "object") {
+    for (const [k, v] of Object.entries(proj.variables)) {
+      if (!(k in variables)) variables[k] = String(v);
+    }
+  }
+
+  // Reviews as structured array for testimonial sections
+  if (reviews.length > 0) {
+    const reviewsArray = reviews.map((r) => ({
+      name: r.author_name ?? "",
+      role: "",
+      text: r.review_text ?? "",
+      rating: Number(r.rating ?? 5),
+      avatar: "",
+    }));
+    variables["__reviews"] = JSON.stringify(reviewsArray);
+  }
 
   return NextResponse.json(variables);
 }
