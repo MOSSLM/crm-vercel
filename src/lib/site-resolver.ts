@@ -16,6 +16,16 @@ export interface ReviewItem {
   avatar: string;
 }
 
+type LeadMagnetProjectOverridesRow = {
+  override_entreprise_name: string | null;
+  override_city: string | null;
+  override_location: string | null;
+  override_phone: string | null;
+  override_email: string | null;
+  override_address: string | null;
+  variables: Record<string, unknown> | null;
+};
+
 export interface ResolvedSite {
   siteId: string;
   config: SiteConfig;
@@ -153,7 +163,7 @@ export async function resolveSite(
       if (proj.override_address) vars["entreprise.adresse"] = proj.override_address;
       // Merge free-form variables bag
       if (proj.variables && typeof proj.variables === "object") {
-        for (const [k, v] of Object.entries(proj.variables as Record<string, unknown>)) {
+        for (const [k, v] of Object.entries(proj.variables)) {
           vars[k] = String(v);
         }
       }
