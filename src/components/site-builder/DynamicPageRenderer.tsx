@@ -5,6 +5,7 @@ import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 import { getContrastColor, generateShadeCSSVars } from "@/lib/color-utils";
 import type { ReviewItem } from "@/lib/site-resolver";
+import { LibrarySectionIframe } from "./LibrarySectionIframe";
 
 // Pure server-safe version of styleGuideToCSSVars (no "use client" dependency)
 function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
@@ -66,7 +67,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     .eq("is_hidden", false)
     .order("sort_order");
 
-  const instances = (instanceRows ?? []) as (SiteSectionInstance & { section_def: SiteSectionDef })[];
+  const instances = (instanceRows ?? []) as (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
   const guide = styleGuide ?? DEFAULT_STYLE_GUIDE;
   const cssVars = styleGuideToCSSVars(guide);
 
@@ -78,10 +79,46 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     );
   }
 
+  // Collect library refs (section_def is null) and fetch their theme_sections code
+  const libRefs = instances
+    .map((inst) => (inst.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined)
+    .filter((ref): ref is { theme_slug: string; section_id: string } => Boolean(ref));
+
+  const themeSectionMap = new Map<string, { code: string; example_data: Record<string, unknown> | null }>();
+  if (libRefs.length > 0) {
+    const themeSlugs = [...new Set(libRefs.map((r) => r.theme_slug))];
+    const { data: themeSections } = await supabase
+      .from("theme_sections")
+      .select("theme_slug, section_id, code, example_data")
+      .in("theme_slug", themeSlugs);
+    for (const ts of themeSections ?? []) {
+      themeSectionMap.set(`${ts.theme_slug}:${ts.section_id}`, { code: ts.code, example_data: ts.example_data });
+    }
+  }
+
   return (
     <div style={{ ...cssVars, fontFamily: "var(--font-body)", color: "var(--color-text)" } as React.CSSProperties}>
       {instances.map((instance) => {
         const sectionDef = instance.section_def;
+        const libRef = (instance.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined;
+
+        // Library section: render via iframe (client component)
+        if (libRef) {
+          const ts = themeSectionMap.get(`${libRef.theme_slug}:${libRef.section_id}`);
+          if (!ts?.code) return null;
+          const content = { ...(ts.example_data ?? {}), ...(instance.content as Record<string, unknown> ?? {}) };
+          return (
+            <LibrarySectionIframe
+              key={instance.id}
+              code={ts.code}
+              content={content}
+              styleGuide={guide}
+              variables={variables}
+            />
+          );
+        }
+
+        // Native section with structure: render server-side
         if (!sectionDef) return null;
         return (
           <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} variables={variables} reviews={reviews} />
