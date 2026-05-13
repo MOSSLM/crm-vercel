@@ -298,6 +298,16 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     selectedInstance ? "section" :
     "global";
 
+  // Must be before any early return to satisfy rules-of-hooks
+  const bulkInstances = React.useMemo(() => {
+    return Array.from(bulkSelected).flatMap((id) => {
+      const instance = state.instances[id];
+      if (!instance) return [];
+      const def = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+      return [{ instance, def }];
+    });
+  }, [bulkSelected, state.instances, sectionDefs]);
+
   // ── Full-screen preview ──────────────────────────────────────────────────────
   if (previewMode) {
     return (
@@ -350,15 +360,6 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
       </div>
     );
   }
-
-  const bulkInstances = React.useMemo(() => {
-    return Array.from(bulkSelected).flatMap((id) => {
-      const instance = state.instances[id];
-      if (!instance) return [];
-      const def = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
-      return [{ instance, def }];
-    });
-  }, [bulkSelected, state.instances, sectionDefs]);
 
   return (
     <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
