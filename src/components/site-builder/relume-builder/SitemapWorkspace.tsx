@@ -187,17 +187,21 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
         for (const inst of data.instances) {
           const secDef = availableSections.find((s) => s.type === inst.sectionType);
           if (!secDef) continue;
+          const baseContent: Record<string, unknown> = { ...(inst.content ?? {}) };
+          if (secDef.theme_slug && secDef.theme_section_id) {
+            baseContent.__library = { theme_slug: secDef.theme_slug, section_id: secDef.theme_section_id };
+          }
           dispatch({
             type: "ADD_INSTANCE",
             payload: {
               instance: {
                 id: nanoid(),
                 site_id: siteId,
-                section_id: secDef.id,
+                section_id: null,
                 section_def: secDef,
                 page_slug: inst.pageSlug ?? "/",
                 sort_order: inst.sortOrder ?? 0,
-                content: inst.content ?? {},
+                content: baseContent,
                 blocks: Array.isArray(inst.blocks) ? inst.blocks : [],
                 custom_style: {},
                 is_hidden: false,
@@ -257,17 +261,21 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
         for (const inst of data.instances) {
           const secDef = availableSections.find((s) => s.type === inst.sectionType);
           if (!secDef) continue;
+          const baseContent: Record<string, unknown> = { ...(inst.content ?? {}) };
+          if (secDef.theme_slug && secDef.theme_section_id) {
+            baseContent.__library = { theme_slug: secDef.theme_slug, section_id: secDef.theme_section_id };
+          }
           dispatch({
             type: "ADD_INSTANCE",
             payload: {
               instance: {
                 id: nanoid(),
                 site_id: siteId,
-                section_id: secDef.id,
+                section_id: null,
                 section_def: secDef,
                 page_slug: page.slug,
                 sort_order: inst.sortOrder ?? 0,
-                content: inst.content ?? {},
+                content: baseContent,
                 blocks: Array.isArray(inst.blocks) ? inst.blocks : [],
                 custom_style: {},
                 is_hidden: false,
@@ -312,17 +320,21 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { sections: updatedSections } } });
 
     const existingIds = state.instancesByPage[page.slug] ?? [];
+    const baseContent: Record<string, unknown> = { ...sectionDef.default_content };
+    if (sectionDef.theme_slug && sectionDef.theme_section_id) {
+      baseContent.__library = { theme_slug: sectionDef.theme_slug, section_id: sectionDef.theme_section_id };
+    }
     dispatch({
       type: "ADD_INSTANCE",
       payload: {
         instance: {
           id: nanoid(),
           site_id: siteId,
-          section_id: sectionDef.id,
+          section_id: null,
           section_def: sectionDef,
           page_slug: page.slug,
           sort_order: existingIds.length,
-          content: { ...sectionDef.default_content },
+          content: baseContent,
           blocks: [],
           custom_style: {},
           is_hidden: false,

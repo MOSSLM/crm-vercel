@@ -236,13 +236,17 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
   });
 
   const addSection = (pageSlug: string, sectionDef: SiteSectionDef) => {
+    const baseContent: Record<string, unknown> = { ...sectionDef.default_content };
+    if (sectionDef.theme_slug && sectionDef.theme_section_id) {
+      baseContent.__library = { theme_slug: sectionDef.theme_slug, section_id: sectionDef.theme_section_id };
+    }
     const newInstance: SiteSectionInstance = {
       id: nanoid(),
       site_id: state.siteId,
-      section_id: sectionDef.id,
+      section_id: null,
       page_slug: pageSlug,
       sort_order: (state.instancesByPage[pageSlug] ?? []).length,
-      content: { ...sectionDef.default_content },
+      content: baseContent,
       blocks: [],
       custom_style: {},
       is_hidden: false,
