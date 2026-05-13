@@ -142,7 +142,15 @@ export async function resolveSite(
         .order("display_order", { ascending: true }),
     ]);
 
-    const proj = projResult.data as unknown as LeadMagnetProjectOverridesRow | null;
+    const proj = projResult.data as {
+      override_entreprise_name: string | null;
+      override_city: string | null;
+      override_location: string | null;
+      override_phone: string | null;
+      override_email: string | null;
+      override_address: string | null;
+      variables: Record<string, unknown> | null;
+    } | null;
     if (proj) {
       if (proj.override_entreprise_name) {
         vars["entreprise.nom"] = proj.override_entreprise_name;
