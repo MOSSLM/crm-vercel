@@ -1,0 +1,48 @@
+import type { RelumeBuilderState, StyleGuide, SitemapPage, SiteMenus } from "@/types";
+
+export interface SerializedInstance {
+  section_id: string;
+  sort_order: number;
+  content: Record<string, unknown>;
+  blocks: Array<{ type: string; settings: Record<string, unknown> }>;
+  custom_style: Record<string, string>;
+  is_hidden: boolean;
+}
+
+export interface SerializedThemeConfig {
+  styleGuide: StyleGuide;
+  sitemap: SitemapPage[];
+  menus: SiteMenus;
+  instancesByPage: Record<string, SerializedInstance[]>;
+  version: 1;
+}
+
+export function serializeTheme(state: RelumeBuilderState): SerializedThemeConfig {
+  const instancesByPage: Record<string, SerializedInstance[]> = {};
+
+  for (const [pageSlug, ids] of Object.entries(state.instancesByPage)) {
+    instancesByPage[pageSlug] = ids
+      .map((id) => state.instances[id])
+      .filter(Boolean)
+      .map((inst) => ({
+        section_id: inst.section_id,
+        sort_order: inst.sort_order,
+        content: inst.content,
+        blocks: (inst.blocks ?? []).map((b) => ({ type: b.type, settings: b.settings })),
+        custom_style: (inst.custom_style ?? {}) as Record<string, string>,
+        is_hidden: inst.is_hidden,
+      }));
+  }
+
+  return {
+    version: 1,
+    styleGuide: state.styleGuide,
+    sitemap: state.sitemap,
+    menus: state.menus,
+    instancesByPage,
+  };
+}
+
+export function countThemeSections(config: SerializedThemeConfig): number {
+  return Object.values(config.instancesByPage).reduce((sum, arr) => sum + arr.length, 0);
+}

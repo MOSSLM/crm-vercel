@@ -4,12 +4,14 @@ import React from "react";
 import {
   Save, Globe, Check, Share2, Upload,
   Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2,
-  Undo2, Redo2, Menu,
+  Undo2, Redo2,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { RelumeBuilderProvider, useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { serializeTheme, type SerializedThemeConfig } from "@/lib/site-builder/theme-serializer";
+import { ThemeLibraryDialog } from "./ThemeLibraryDialog";
 import { useSiteAutosave } from "@/hooks/useSiteAutosave";
 import { useGoogleFonts } from "./StyleGuideWorkspace";
 import { SiteVersionHistory } from "@/components/site-builder/SiteVersionHistory";
@@ -46,14 +48,6 @@ export function RelumeEditor(props: RelumeEditorProps) {
 interface Entreprise {
   id: number;
   nom: string;
-}
-
-// ─── Theme type ───────────────────────────────────────────────────────────────
-
-interface ThemeEntry {
-  slug: string;
-  name: string;
-  is_enabled?: boolean;
 }
 
 // ─── Company Dropdown ─────────────────────────────────────────────────────────
@@ -184,42 +178,26 @@ function CompanyDropdown({
 function SaveAsThemeDialog({
   open,
   onClose,
-  styleGuide,
+  onSave,
 }: {
   open: boolean;
   onClose: () => void;
-  styleGuide: StyleGuide;
+  onSave: (name: string, description: string) => Promise<void>;
 }) {
   const [name, setName] = React.useState("");
-  const [slug, setSlug] = React.useState("");
+  const [description, setDescription] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
   if (!open) return null;
 
   const handleSave = async () => {
-    if (!name.trim() || !slug.trim()) return;
+    if (!name.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/themes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          slug: slug.trim(),
-          description: `Thème créé depuis le site builder`,
-          style_guide: styleGuide,
-        }),
-      });
-      if (!res.ok) {
-        const e = await res.json();
-        throw new Error(e.error ?? "Erreur");
-      }
-      toast.success(`Thème "${name}" enregistré ! Visible dans /themes.`);
+      await onSave(name.trim(), description.trim());
       setName("");
-      setSlug("");
+      setDescription("");
       onClose();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur");
     } finally {
       setSaving(false);
     }
@@ -239,21 +217,18 @@ function SaveAsThemeDialog({
             <input
               autoFocus
               value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (!slug) setSlug(e.target.value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, ""));
-              }}
+              onChange={(e) => setName(e.target.value)}
               placeholder="Mon thème pro"
               className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
           </div>
           <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Identifiant (slug)</label>
+            <label className="text-xs font-medium text-gray-600 block mb-1">Description (optionnel)</label>
             <input
-              value={slug}
-              onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
-              placeholder="mon-theme-pro"
-              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-400"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Un thème professionnel pour..."
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
             />
           </div>
         </div>
@@ -261,7 +236,7 @@ function SaveAsThemeDialog({
           <button onClick={onClose} className="flex-1 py-2 text-sm text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50">Annuler</button>
           <button
             onClick={handleSave}
-            disabled={saving || !name.trim() || !slug.trim()}
+            disabled={saving || !name.trim()}
             className="flex-1 py-2 text-sm font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-700 disabled:opacity-50"
           >
             {saving ? "Enregistrement..." : "Enregistrer"}
@@ -272,87 +247,6 @@ function SaveAsThemeDialog({
   );
 }
 
-// ─── Load Theme Dropdown ──────────────────────────────────────────────────────
-
-function LoadThemeDropdown({ onLoadTheme }: { onLoadTheme: (theme: ThemeEntry & { style_guide?: StyleGuide }) => void }) {
-  const [open, setOpen] = React.useState(false);
-  const [themes, setThemes] = React.useState<ThemeEntry[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const ref = React.useRef<HTMLDivElement>(null);
-
-  React.useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const handleOpen = async () => {
-    setOpen(!open);
-    if (themes.length === 0) {
-      setLoading(true);
-      try {
-        const res = await fetch("/api/themes");
-        const data: ThemeEntry[] = await res.json();
-        setThemes(data);
-      } catch {
-        toast.error("Erreur chargement thèmes");
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
-  const handleSelect = async (theme: ThemeEntry) => {
-    try {
-      const res = await fetch(`/api/themes/${theme.slug}`);
-      if (!res.ok) throw new Error("Thème introuvable");
-      const fullTheme = await res.json();
-      onLoadTheme(fullTheme);
-      setOpen(false);
-      toast.success(`Thème "${theme.name}" chargé`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erreur");
-    }
-  };
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={handleOpen}
-        className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-      >
-        <Palette size={12} />
-        Thème
-        <ChevronDown size={10} className="text-gray-400" />
-      </button>
-      {open && (
-        <div className="absolute top-full right-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1">
-          <div className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">Charger un thème</div>
-          {loading && (
-            <div className="flex justify-center py-3">
-              <Loader2 size={14} className="animate-spin text-gray-400" />
-            </div>
-          )}
-          {!loading && themes.map((t) => (
-            <button
-              key={t.slug}
-              onClick={() => handleSelect(t)}
-              className="flex items-center gap-2 w-full px-3 py-2 text-xs text-gray-700 hover:bg-gray-50 text-left"
-            >
-              <Palette size={10} className="text-gray-400" />
-              {t.name}
-            </button>
-          ))}
-          {!loading && themes.length === 0 && (
-            <p className="text-xs text-gray-400 text-center py-3">Aucun thème disponible</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Inner Editor ─────────────────────────────────────────────────────────────
 
@@ -384,6 +278,7 @@ function RelumeEditorInner({
   const [showPublish, setShowPublish] = React.useState(false);
   const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
   const [showSaveTheme, setShowSaveTheme] = React.useState(false);
+  const [themeLibraryOpen, setThemeLibraryOpen] = React.useState(false);
 
   // Fetch and store enterprise variable context whenever the linked enterprise changes
   const fetchVariables = React.useCallback((id: number | undefined) => {
@@ -532,12 +427,59 @@ function RelumeEditorInner({
     }
   };
 
-  // ─── Load theme ───────────────────────────────────────────────────────────────
+  // ─── Apply theme from library ─────────────────────────────────────────────────
 
-  const handleLoadTheme = (theme: { style_guide?: StyleGuide }) => {
-    if (theme.style_guide) {
-      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: theme.style_guide });
+  const handleApplyTheme = (config: SerializedThemeConfig) => {
+    const flatInstances: SiteSectionInstance[] = [];
+    for (const [pageSlug, serialized] of Object.entries(config.instancesByPage)) {
+      for (const s of serialized) {
+        const id = nanoid();
+        flatInstances.push({
+          id,
+          site_id: siteId,
+          section_id: s.section_id,
+          section_def: sectionDefs[s.section_id] ?? undefined,
+          page_slug: pageSlug,
+          sort_order: s.sort_order,
+          content: s.content,
+          blocks: s.blocks,
+          custom_style: s.custom_style,
+          is_hidden: s.is_hidden,
+        });
+      }
     }
+    dispatch({
+      type: "LOAD",
+      payload: {
+        styleGuide: config.styleGuide,
+        sitemap: config.sitemap,
+        menus: config.menus,
+        instances: flatInstances,
+      },
+    });
+    toast.success("Thème appliqué");
+  };
+
+  // ─── Save as theme ────────────────────────────────────────────────────────────
+
+  const handleSaveTheme = async (name: string, description: string) => {
+    const config = serializeTheme(state);
+    const res = await fetch("/api/site-builder/themes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        description: description || undefined,
+        config,
+        enterprise_id: enterpriseId,
+        is_public: false,
+      }),
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      throw new Error(e.error ?? "Erreur");
+    }
+    toast.success(`Thème "${name}" enregistré`);
   };
 
   // ─── AI Regenerate Section ────────────────────────────────────────────────────
@@ -584,7 +526,13 @@ function RelumeEditorInner({
       <SaveAsThemeDialog
         open={showSaveTheme}
         onClose={() => setShowSaveTheme(false)}
-        styleGuide={state.styleGuide}
+        onSave={handleSaveTheme}
+      />
+      <ThemeLibraryDialog
+        open={themeLibraryOpen}
+        onClose={() => setThemeLibraryOpen(false)}
+        onApply={handleApplyTheme}
+        enterpriseId={enterpriseId}
       />
 
       {/* ─ Top Bar ─────────────────────────────────────────────────────────── */}
@@ -685,8 +633,15 @@ function RelumeEditorInner({
           {/* Historique des versions */}
           <SiteVersionHistory siteId={siteId} />
 
-          {/* Load theme */}
-          <LoadThemeDropdown onLoadTheme={handleLoadTheme} />
+          {/* Theme library */}
+          <button
+            onClick={() => setThemeLibraryOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+            title="Bibliothèque de thèmes"
+          >
+            <Palette size={12} />
+            Thèmes
+          </button>
 
           {/* Save as theme */}
           <button
@@ -695,7 +650,7 @@ function RelumeEditorInner({
             title="Enregistrer comme thème réutilisable"
           >
             <Bookmark size={12} />
-            Thème
+            Sauver
           </button>
 
           {/* Share */}
@@ -775,5 +730,3 @@ function RelumeEditorInner({
   );
 }
 
-// suppress unused import warnings
-void nanoid;
