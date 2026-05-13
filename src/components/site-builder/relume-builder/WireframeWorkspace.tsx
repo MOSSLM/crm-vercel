@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { type AIModelId, ModelDropdown } from "./SitemapWorkspace";
+import { useAIModel } from "@/hooks/useAIModel";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
@@ -216,7 +217,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
   const [sectionMenuOpen, setSectionMenuOpen] = React.useState<string | null>(null);
   const [sectionTypePicker, setSectionTypePicker] = React.useState<string | null>(null);
   const [sectionAIOpen, setSectionAIOpen] = React.useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = React.useState<AIModelId>("claude-sonnet-4-6");
+  const [selectedModel, setSelectedModel] = useAIModel();
   const [pageAIOpen, setPageAIOpen] = React.useState<string | null>(null);
   const [pageContexts, setPageContexts] = React.useState<Record<string, string>>({});
   const [pageLoading, setPageLoading] = React.useState<string | null>(null);

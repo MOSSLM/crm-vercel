@@ -9,6 +9,7 @@ import {
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { useAIModel } from "@/hooks/useAIModel";
 
 // ─── AI Model config ──────────────────────────────────────────────────────────
 
@@ -133,7 +134,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");
   const [expandedPages, setExpandedPages] = React.useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = React.useState<AIModelId>("claude-sonnet-4-6");
+  const [selectedModel, setSelectedModel] = useAIModel();
 
   // Per-page state: context text + per-page loading
   const [pageContexts, setPageContexts] = React.useState<Record<string, string>>({});

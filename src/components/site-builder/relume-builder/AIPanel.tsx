@@ -4,6 +4,8 @@ import React from "react";
 import { Sparkles, X, Loader2, Check, AlertCircle } from "lucide-react";
 import type { SiteSectionInstance, SiteSectionDef } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { ModelDropdown } from "./SitemapWorkspace";
+import { useAIModel } from "@/hooks/useAIModel";
 
 interface AIPanelProps {
   siteId: string;
@@ -21,6 +23,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
   const [step, setStep] = React.useState<Step>("idle");
   const [error, setError] = React.useState<string | null>(null);
   const [preview, setPreview] = React.useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useAIModel();
 
   const generate = async () => {
     setStep("generating");
@@ -37,6 +40,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
           description,
           pages: pagesInput.split(",").map((p) => p.trim()).filter(Boolean),
           availableSectionIds: availableSections.map((s) => ({ id: s.id, type: s.type, name: s.name, category: s.category })),
+          model: selectedModel,
         }),
       });
 
@@ -156,6 +160,11 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
             <p className="text-xs text-white/30 mb-3">
               L'IA génère le plan du site, choisit les sections et rédige le contenu pour chaque page.
             </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-white/50 block mb-1">Modèle IA</label>
+            <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
           </div>
 
           <div>
