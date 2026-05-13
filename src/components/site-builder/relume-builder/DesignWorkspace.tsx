@@ -271,6 +271,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                     sectionDef={secDef}
                     styleGuide={state.styleGuide}
                     menus={state.menus}
+                    variables={state.variableContext}
                   />
                 );
               })}
@@ -454,6 +455,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         sectionDef={secDef}
                         styleGuide={state.styleGuide}
                         menus={state.menus}
+                        variables={state.variableContext}
                         editorMode
                         selected={isSelected}
                         onSelect={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}

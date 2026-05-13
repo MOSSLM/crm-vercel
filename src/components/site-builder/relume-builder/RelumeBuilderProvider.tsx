@@ -487,6 +487,9 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     case "MARK_SAVED":
       return { ...state, isDirty: false };
 
+    case "SET_VARIABLE_CONTEXT":
+      return { ...state, variableContext: action.payload };
+
     default:
       return state;
   }
@@ -545,6 +548,7 @@ const initialState: RelumeBuilderState = {
   isDirty: false,
   history: [],
   historyIndex: -1,
+  variableContext: {},
 };
 
 interface RelumeBuilderProviderProps {

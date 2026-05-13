@@ -677,6 +677,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
               instance={{ ...instance, section_def: secDef }}
               sectionDef={secDef}
               styleGuide={guide}
+              variables={state.variableContext}
             />
           );
         })

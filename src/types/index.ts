@@ -1120,6 +1120,8 @@ export interface RelumeBuilderState {
   isDirty: boolean;
   history: RelumeHistoryEntry[];
   historyIndex: number;
+  /** Resolved enterprise variables for template substitution, e.g. { "entreprise.nom": "Acme" } */
+  variableContext: Record<string, string>;
 }
 
 export interface RelumeHistoryEntry {
@@ -1162,4 +1164,5 @@ export type RelumeBuilderAction =
   | { type: 'SYNC_MENUS_FROM_SITEMAP' }
   | { type: 'UNDO' }
   | { type: 'REDO' }
-  | { type: 'MARK_SAVED' };
+  | { type: 'MARK_SAVED' }
+  | { type: 'SET_VARIABLE_CONTEXT'; payload: Record<string, string> };

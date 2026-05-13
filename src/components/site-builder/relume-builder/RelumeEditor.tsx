@@ -385,6 +385,24 @@ function RelumeEditorInner({
   const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
   const [showSaveTheme, setShowSaveTheme] = React.useState(false);
 
+  // Fetch and store enterprise variable context whenever the linked enterprise changes
+  const fetchVariables = React.useCallback((id: number | undefined) => {
+    if (!id) { dispatch({ type: "SET_VARIABLE_CONTEXT", payload: {} }); return; }
+    fetch(`/api/site-builder/variables?enterprise=${id}`)
+      .then((r) => r.json())
+      .then((data: unknown) => {
+        if (data && typeof data === "object" && !Array.isArray(data)) {
+          dispatch({ type: "SET_VARIABLE_CONTEXT", payload: data as Record<string, string> });
+        }
+      })
+      .catch(() => {});
+  }, [dispatch]);
+
+  // Load on mount if an enterprise is already linked
+  React.useEffect(() => {
+    if (initialEnterpriseId) fetchVariables(initialEnterpriseId);
+  }, [initialEnterpriseId, fetchVariables]);
+
   const sectionDefs = React.useMemo(
     () => Object.fromEntries(initialSections.map((s) => [s.id, s])),
     [initialSections]
@@ -501,6 +519,7 @@ function RelumeEditorInner({
 
   const handleSelectCompany = async (id: number | null) => {
     setEnterpriseId(id ?? undefined);
+    fetchVariables(id ?? undefined);
     try {
       await fetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
