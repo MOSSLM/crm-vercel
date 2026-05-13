@@ -28,11 +28,12 @@ export async function PATCH(request: Request, context: RouteContext) {
   const { siteId } = await context.params;
   try {
     const body = await request.json();
-    const { name, description, site_config, enterprise_id, style_guide, sitemap } = body as {
+    const { name, description, site_config, enterprise_id, lead_magnet_project_id, style_guide, sitemap } = body as {
       name?: string;
       description?: string;
       site_config?: SiteConfig;
       enterprise_id?: number | null;
+      lead_magnet_project_id?: string | null;
       style_guide?: StyleGuide;
       sitemap?: SitemapPage[];
     };
@@ -42,6 +43,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (description !== undefined) patch.description = description;
     if (site_config !== undefined) patch.site_config = site_config;
     if (enterprise_id !== undefined) patch.enterprise_id = enterprise_id;
+    if (lead_magnet_project_id !== undefined) patch.lead_magnet_project_id = lead_magnet_project_id;
     if (style_guide !== undefined) patch.style_guide = style_guide;
     if (sitemap !== undefined) patch.sitemap = sitemap;
 

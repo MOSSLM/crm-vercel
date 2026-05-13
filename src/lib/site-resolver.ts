@@ -8,6 +8,14 @@ function getServiceClient() {
   return createClient(url, key, { auth: { persistSession: false } });
 }
 
+export interface ReviewItem {
+  name: string;
+  role: string;
+  text: string;
+  rating: number;
+  avatar: string;
+}
+
 export interface ResolvedSite {
   siteId: string;
   config: SiteConfig;
@@ -18,6 +26,7 @@ export interface ResolvedSite {
   isPublished: boolean;
   styleGuide?: StyleGuide | null;
   hasDynamicSections?: boolean;
+  reviews?: ReviewItem[];
 }
 
 // Resolve a site by subdomain or custom domain
@@ -31,7 +40,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, site_config, style_guide"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide"
     )
     .eq("is_published", true);
 
@@ -103,6 +112,58 @@ export async function resolveSite(
     }
   }
 
+  // Load lead magnet project overrides and reviews
+  let reviews: ReviewItem[] = [];
+  if (siteRow.lead_magnet_project_id) {
+    const [projResult, reviewsResult] = await Promise.all([
+      supabase
+        .from("lead_magnet_projects")
+        .select(
+          "override_entreprise_name, override_city, override_location, " +
+          "override_phone, override_email, override_address, variables"
+        )
+        .eq("id", siteRow.lead_magnet_project_id)
+        .single(),
+      supabase
+        .from("lead_magnet_reviews")
+        .select("author_name, review_text, rating")
+        .eq("lead_magnet_project_id", siteRow.lead_magnet_project_id)
+        .eq("is_active", true)
+        .order("display_order", { ascending: true }),
+    ]);
+
+    const proj = projResult.data;
+    if (proj) {
+      if (proj.override_entreprise_name) {
+        vars["entreprise.nom"] = proj.override_entreprise_name;
+        companyName = proj.override_entreprise_name;
+      }
+      if (proj.override_city) vars["entreprise.ville_seo"] = proj.override_city;
+      if (proj.override_location) vars["entreprise.location"] = proj.override_location;
+      if (proj.override_phone) { vars["entreprise.telephone"] = proj.override_phone; phone = proj.override_phone; }
+      if (proj.override_email) vars["entreprise.email"] = proj.override_email;
+      if (proj.override_address) vars["entreprise.adresse"] = proj.override_address;
+      // Merge free-form variables bag
+      if (proj.variables && typeof proj.variables === "object") {
+        for (const [k, v] of Object.entries(proj.variables as Record<string, unknown>)) {
+          vars[k] = String(v);
+        }
+      }
+    }
+
+    reviews = ((reviewsResult.data ?? []) as Array<{ author_name: string | null; review_text: string | null; rating: number | null }>).map((r) => ({
+      name: r.author_name ?? "",
+      role: "",
+      text: r.review_text ?? "",
+      rating: Number(r.rating ?? 5),
+      avatar: "",
+    }));
+
+    if (reviews.length > 0) {
+      vars["__reviews"] = JSON.stringify(reviews);
+    }
+  }
+
   // Merge client overrides into section data
   const { data: overrides } = await supabase
     .from("client_overrides")
@@ -131,6 +192,7 @@ export async function resolveSite(
     phone,
     isPublished: siteRow.is_published,
     styleGuide: (siteRow.style_guide as StyleGuide) ?? null,
+    reviews,
   };
 }
 

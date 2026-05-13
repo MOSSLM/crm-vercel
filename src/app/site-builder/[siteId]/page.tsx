@@ -51,18 +51,21 @@ export default function SiteBuilderV2Page() {
     );
   }
 
+  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus }; lead_magnet_project_id?: string };
+
   return (
     <RelumeEditor
       siteId={site.id}
       siteName={site.name}
       enterpriseId={site.enterprise_id ?? undefined}
+      initialProjectId={siteExtra.lead_magnet_project_id ?? undefined}
       isPublished={!!site.is_published}
       publishedSubdomain={site.published_subdomain ?? undefined}
       initialSections={sections}
       initialInstances={instances}
-      initialStyleGuide={(site as unknown as { style_guide?: StyleGuide }).style_guide ?? undefined}
-      initialSitemap={(site as unknown as { sitemap?: SitemapPage[] }).sitemap ?? undefined}
-      initialMenus={(site as unknown as { site_config?: { menus?: SiteMenus } }).site_config?.menus ?? undefined}
+      initialStyleGuide={siteExtra.style_guide ?? undefined}
+      initialSitemap={siteExtra.sitemap ?? undefined}
+      initialMenus={siteExtra.site_config?.menus ?? undefined}
     />
   );
 }
