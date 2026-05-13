@@ -4,7 +4,7 @@ import React from "react";
 import {
   Save, Globe, Check, Share2, Upload,
   Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2,
-  Undo2, Redo2,
+  Undo2, Redo2, ArrowUpDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId } from "@/types";
@@ -49,6 +49,7 @@ export function RelumeEditor(props: RelumeEditorProps) {
 interface Entreprise {
   id: number;
   nom: string;
+  pret_pour_lm?: boolean;
 }
 
 // ─── Company Dropdown ─────────────────────────────────────────────────────────
@@ -65,39 +66,32 @@ function CompanyDropdown({
   const [companies, setCompanies] = React.useState<Entreprise[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [currentName, setCurrentName] = React.useState<string>("");
+  const [sortByLm, setSortByLm] = React.useState(false);
   const ref = React.useRef<HTMLDivElement>(null);
 
+  const loadCompanies = React.useCallback(() => {
+    setLoading(true);
+    fetch("/api/site-builder/entreprises")
+      .then((r) => r.json())
+      .then((data: unknown) => {
+        const list = Array.isArray(data) ? (data as Entreprise[]) : [];
+        setCompanies(list);
+        if (currentEnterpriseId) {
+          const found = list.find((c) => c.id === currentEnterpriseId);
+          if (found) setCurrentName(found.nom);
+        }
+      })
+      .catch(() => toast.error("Erreur chargement entreprises"))
+      .finally(() => setLoading(false));
+  }, [currentEnterpriseId]);
+
   React.useEffect(() => {
-    if (open && companies.length === 0) {
-      setLoading(true);
-      fetch("/api/site-builder/entreprises")
-        .then((r) => r.json())
-        .then((data: unknown) => {
-          const list = Array.isArray(data) ? (data as Entreprise[]) : [];
-          setCompanies(list);
-          if (currentEnterpriseId) {
-            const found = list.find((c) => c.id === currentEnterpriseId);
-            if (found) setCurrentName(found.nom);
-          }
-        })
-        .catch(() => toast.error("Erreur chargement entreprises"))
-        .finally(() => setLoading(false));
-    }
+    if (open && companies.length === 0) loadCompanies();
   }, [open]);
 
   // Load current name on mount
   React.useEffect(() => {
-    if (currentEnterpriseId && !currentName) {
-      fetch("/api/site-builder/entreprises")
-        .then((r) => r.json())
-        .then((data: unknown) => {
-          const list = Array.isArray(data) ? (data as Entreprise[]) : [];
-          const found = list.find((c) => c.id === currentEnterpriseId);
-          if (found) setCurrentName(found.nom);
-          setCompanies(list);
-        })
-        .catch(() => {});
-    }
+    if (currentEnterpriseId && !currentName) loadCompanies();
   }, [currentEnterpriseId]);
 
   // Close on outside click
@@ -109,9 +103,18 @@ function CompanyDropdown({
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const filtered = companies.filter((c) =>
-    c.nom.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = React.useMemo(() => {
+    const matched = companies.filter((c) =>
+      c.nom.toLowerCase().includes(search.toLowerCase())
+    );
+    if (sortByLm) {
+      return [...matched].sort((a, b) => {
+        if (a.pret_pour_lm === b.pret_pour_lm) return a.nom.localeCompare(b.nom);
+        return a.pret_pour_lm ? -1 : 1;
+      });
+    }
+    return matched;
+  }, [companies, search, sortByLm]);
 
   return (
     <div ref={ref} className="relative">
@@ -125,9 +128,9 @@ function CompanyDropdown({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-64 bg-white border border-gray-200 rounded-xl shadow-xl z-50">
-          <div className="p-2 border-b border-gray-100">
-            <div className="relative">
+        <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-xl shadow-xl z-50">
+          <div className="p-2 border-b border-gray-100 flex items-center gap-2">
+            <div className="relative flex-1">
               <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 autoFocus
@@ -137,8 +140,16 @@ function CompanyDropdown({
                 className="w-full pl-7 pr-2 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
               />
             </div>
+            <button
+              onClick={() => setSortByLm((v) => !v)}
+              title={sortByLm ? "Tri : Prêts LM en premier" : "Tri : A–Z"}
+              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-md text-xs border transition-colors ${sortByLm ? "bg-green-50 border-green-300 text-green-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+            >
+              <ArrowUpDown size={10} />
+              {sortByLm ? "LM" : "A–Z"}
+            </button>
           </div>
-          <div className="max-h-48 overflow-y-auto py-1">
+          <div className="max-h-56 overflow-y-auto py-1">
             {loading && (
               <div className="flex items-center justify-center py-4">
                 <Loader2 size={14} className="animate-spin text-gray-400" />
@@ -160,14 +171,22 @@ function CompanyDropdown({
                 className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-gray-50 ${c.id === currentEnterpriseId ? "text-blue-600 font-medium" : "text-gray-700"}`}
               >
                 <Building2 size={10} className="text-gray-400 flex-shrink-0" />
-                {c.nom}
-                {c.id === currentEnterpriseId && <span className="ml-auto text-blue-500">✓</span>}
+                <span className="flex-1 truncate">{c.nom}</span>
+                {c.pret_pour_lm && (
+                  <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-green-100 text-green-700 font-medium">LM</span>
+                )}
+                {c.id === currentEnterpriseId && <span className="flex-shrink-0 text-blue-500">✓</span>}
               </button>
             ))}
             {!loading && filtered.length === 0 && (
               <p className="text-xs text-gray-400 text-center py-3">Aucune entreprise trouvée</p>
             )}
           </div>
+          {!loading && companies.length > 0 && (
+            <div className="px-3 py-1.5 border-t border-gray-100 text-[10px] text-gray-400">
+              {filtered.length} / {companies.length} entreprises qualifiées
+            </div>
+          )}
         </div>
       )}
     </div>
