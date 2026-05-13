@@ -54,7 +54,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabase
     .from("entreprises")
     .select(
-      "nom, ville, telephone, email, adresse, code_postal, pays, " +
+      "nom:name, ville, telephone, email, adresse, code_postal, pays, " +
       "service_tags, note_moyenne, nombre_avis, logo_url, " +
       "site_web_canonique, canonical_url"
     )

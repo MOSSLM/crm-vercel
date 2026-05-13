@@ -261,9 +261,16 @@ function buildHTML(
     html, body { height: auto; min-height: 0; }
     /* Map common Tailwind radii to the active Style Guide token. */
     .rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl,
-    .rounded-3xl, .rounded-sm, .rounded-full,
+    .rounded-3xl, .rounded-sm, .rounded-full {
+      border-radius: var(--btn-radius) !important;
+    }
+    /* Force button style (filled/outline/soft) from Style Guide tokens. */
     button, .btn, [role="button"], a.button {
       border-radius: var(--btn-radius) !important;
+      background-color: var(--btn-bg) !important;
+      color: var(--btn-text) !important;
+      border: 2px solid var(--btn-border-color) !important;
+      padding: var(--btn-padding) !important;
     }
     /* Cards: any element styled like a card uses --card-radius. */
     .card, [class*="shadow-"], .rounded-card { border-radius: var(--card-radius) !important; }

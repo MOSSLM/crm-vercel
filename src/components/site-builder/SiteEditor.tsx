@@ -25,7 +25,7 @@ import type {
 } from "@/types";
 
 function nanoid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return crypto.randomUUID();
 }
 
 type Device = "Desktop" | "Tablet" | "Mobile";

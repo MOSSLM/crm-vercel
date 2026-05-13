@@ -53,6 +53,7 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
         siteId={siteId}
         pageSlug={pageSlug}
         styleGuide={site.styleGuide}
+        variables={enterpriseVariables}
       />
     );
   }

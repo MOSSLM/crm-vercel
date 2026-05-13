@@ -40,7 +40,7 @@ function buildMenusFromSitemap(sitemap: SitemapPage[], existing: SiteMenus): Sit
 }
 
 function nanoid() {
-  return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+  return crypto.randomUUID();
 }
 
 function buildInstancesByPage(instances: Record<string, SiteSectionInstance>): Record<string, string[]> {
