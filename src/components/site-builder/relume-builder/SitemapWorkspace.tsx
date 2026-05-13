@@ -9,6 +9,8 @@ import {
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { useAIModel } from "@/hooks/useAIModel";
+import { VariableTextarea } from "./VariableTextarea";
 
 // ─── AI Model config ──────────────────────────────────────────────────────────
 
@@ -133,7 +135,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");
   const [expandedPages, setExpandedPages] = React.useState<Set<string>>(new Set());
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = React.useState<AIModelId>("claude-sonnet-4-6");
+  const [selectedModel, setSelectedModel] = useAIModel();
 
   // Per-page state: context text + per-page loading
   const [pageContexts, setPageContexts] = React.useState<Record<string, string>>({});
@@ -162,6 +164,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           pages: pageList,
           availableSectionTypes: availableSections.map((s) => s.type),
           model: selectedModel,
+          variableContext: state.variableContext,
         }),
       });
       if (!res.ok) throw new Error("Erreur IA");
@@ -235,6 +238,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           pageContext: context,
           availableSectionTypes: availableSections.map((s) => s.type),
           model: selectedModel,
+          variableContext: state.variableContext,
         }),
       });
       if (!res.ok) throw new Error("Erreur IA");
@@ -392,12 +396,14 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
 
           <div className="space-y-2">
             <label className="text-xs font-medium text-gray-700">Description de votre activité</label>
-            <textarea
+            <VariableTextarea
               value={aiInput}
-              onChange={(e) => setAiInput(e.target.value)}
+              onChange={setAiInput}
               placeholder="Ex: Entreprise de plomberie à Paris, spécialisée dans les rénovations de salles de bain et dépannages urgents..."
               rows={5}
               className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 text-gray-800 placeholder-gray-400"
+              variables={state.variableContext}
+              variant="light"
             />
           </div>
 
@@ -623,13 +629,14 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                       <MessageSquare size={10} className="text-purple-500" />
                       <span className="text-[10px] font-semibold text-purple-700">Contexte pour cette page</span>
                     </div>
-                    <textarea
+                    <VariableTextarea
                       value={pageCtx}
-                      onChange={(e) => setPageContexts((prev) => ({ ...prev, [page.id]: e.target.value }))}
+                      onChange={(v) => setPageContexts((prev) => ({ ...prev, [page.id]: v }))}
                       placeholder={`Instructions spécifiques pour "${page.title}"...`}
                       rows={3}
                       className="w-full text-[10px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
-                      onClick={(e) => e.stopPropagation()}
+                      variables={state.variableContext}
+                      variant="light"
                     />
                     <button
                       onClick={() => handleRegeneratePage(page)}

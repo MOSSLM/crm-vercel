@@ -8,15 +8,26 @@ interface RegenerateRequest {
   defaultContent: Record<string, unknown>;
   prompt?: string;
   model?: string;
+  variableContext?: Record<string, string>;
 }
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as RegenerateRequest;
-    const { sectionType, currentContent, defaultContent, prompt, model = "claude-sonnet-4-6" } = body;
+    const { sectionType, currentContent, defaultContent, prompt, model = "claude-sonnet-4-6", variableContext } = body;
+
+    // Build variable token hint for the AI
+    const variableHint = variableContext && Object.keys(variableContext).length > 0
+      ? `\nVARIABLES DISPONIBLES — utilise ces tokens exacts au lieu de valeurs en dur pour les données d'entreprise :\n${
+          Object.entries(variableContext)
+            .filter(([k]) => !k.startsWith("company."))
+            .map(([k, v]) => `  {{ ${k} }} → "${v}"`)
+            .join("\n")
+        }\nExemple : écris "Appelez {{ entreprise.nom }} au {{ entreprise.telephone }}" au lieu de noms/numéros réels.`
+      : "";
 
     const systemPrompt = `Tu es un expert en copywriting web. Tu régénères le contenu d'une section de site web.
-Tu réponds UNIQUEMENT avec un JSON valide contenant les nouvelles valeurs pour les clés de contenu.`;
+Tu réponds UNIQUEMENT avec un JSON valide contenant les nouvelles valeurs pour les clés de contenu.${variableHint}`;
 
     const userPrompt = `
 Section type : ${sectionType}

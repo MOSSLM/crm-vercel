@@ -56,12 +56,28 @@ function buildInstancesByPage(instances: Record<string, SiteSectionInstance>): R
   return byPage;
 }
 
-function takeSnapshot(state: RelumeBuilderState): RelumeHistoryEntry {
+function takeSnapshot(state: RelumeBuilderState, tag?: string): RelumeHistoryEntry {
   return {
     instances: { ...state.instances },
     instancesByPage: { ...state.instancesByPage },
     styleGuide: { ...state.styleGuide },
     sitemap: [...state.sitemap],
+    _tag: tag,
+  };
+}
+
+/** Push a snapshot onto the history stack, coalescing if the last entry shares the same tag. */
+function pushHistory(state: RelumeBuilderState, snapshot: RelumeHistoryEntry): Pick<RelumeBuilderState, 'history' | 'historyIndex'> {
+  const base = state.history.slice(0, state.historyIndex + 1);
+  const last = base[base.length - 1];
+  // Coalesce: if the incoming entry has a tag that matches the last entry's tag, replace it.
+  const stack = (snapshot._tag && last?._tag === snapshot._tag)
+    ? [...base.slice(0, -1), snapshot]
+    : [...base, snapshot];
+  const trimmed = stack.slice(-MAX_HISTORY);
+  return {
+    history: trimmed,
+    historyIndex: trimmed.length - 1,
   };
 }
 
@@ -138,8 +154,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         instancesByPage: { ...state.instancesByPage, [pageSlug]: newIds },
         selectedInstanceId: instance.id,
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -158,8 +173,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         instancesByPage: { ...state.instancesByPage, [pageSlug]: newIds },
         selectedInstanceId: state.selectedInstanceId === action.payload ? null : state.selectedInstanceId,
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -174,14 +188,14 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           [action.payload.id]: { ...inst, content: { ...inst.content, ...action.payload.content } },
         },
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
     case "UPDATE_INSTANCE_STYLE": {
       const inst = state.instances[action.payload.id];
       if (!inst) return state;
+      const snapshot = takeSnapshot(state, `style:${action.payload.id}`);
       return {
         ...state,
         instances: {
@@ -189,6 +203,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           [action.payload.id]: { ...inst, custom_style: { ...inst.custom_style, ...action.payload.style } },
         },
         isDirty: true,
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -208,14 +223,14 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         ...state,
         instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
     case "UPDATE_BLOCK": {
       const inst = state.instances[action.payload.instanceId];
       if (!inst) return state;
+      const snapshot = takeSnapshot(state, `block:${action.payload.instanceId}:${action.payload.blockId}`);
       const blocks = inst.blocks.map((b) =>
         b.id === action.payload.blockId
           ? { ...b, settings: { ...b.settings, ...action.payload.settings } }
@@ -225,6 +240,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         ...state,
         instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
         isDirty: true,
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -237,8 +253,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         ...state,
         instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -255,8 +270,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         ...state,
         instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -272,8 +286,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         ...state,
         instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -298,8 +311,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           },
         },
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -316,14 +328,14 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         instances: newInstances,
         instancesByPage: { ...state.instancesByPage, [pageSlug]: ids },
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
     case "TOGGLE_INSTANCE_VISIBILITY": {
       const inst = state.instances[action.payload];
       if (!inst) return state;
+      const snapshot = takeSnapshot(state);
       return {
         ...state,
         instances: {
@@ -331,6 +343,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           [action.payload]: { ...inst, is_hidden: !inst.is_hidden },
         },
         isDirty: true,
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -354,8 +367,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         ...state,
         styleGuide: newGuide,
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -398,8 +410,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         instancesByPage: { ...state.instancesByPage, [newSlug]: newIds },
         activePage: newSlug,
         isDirty: true,
-        history: [...state.history.slice(0, state.historyIndex + 1), snapshot].slice(-MAX_HISTORY),
-        historyIndex: Math.min(state.historyIndex + 1, MAX_HISTORY - 1),
+        ...pushHistory(state, snapshot),
       };
     }
 
@@ -476,6 +487,9 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     case "MARK_SAVED":
       return { ...state, isDirty: false };
 
+    case "SET_VARIABLE_CONTEXT":
+      return { ...state, variableContext: action.payload };
+
     default:
       return state;
   }
@@ -534,6 +548,7 @@ const initialState: RelumeBuilderState = {
   isDirty: false,
   history: [],
   historyIndex: -1,
+  variableContext: {},
 };
 
 interface RelumeBuilderProviderProps {

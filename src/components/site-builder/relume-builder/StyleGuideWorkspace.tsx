@@ -1,18 +1,21 @@
 "use client";
 
 import React from "react";
-import { Shuffle, Plus, Sun, Moon, ChevronDown, Eye, EyeOff, Type, Palette, Layout, Sliders, ChevronRight, Check, Layers } from "lucide-react";
+import {
+  X, Copy, Check, Shuffle, ChevronDown, Eye, EyeOff, Layers,
+} from "lucide-react";
 import type { StyleGuide, SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { generateColorShades, isLightColor } from "@/lib/color-utils";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const GOOGLE_FONTS = [
   "Inter", "Roboto", "Open Sans", "Lato", "Poppins", "Montserrat",
   "Nunito", "Nunito Sans", "Raleway", "Playfair Display", "Merriweather",
   "Arimo", "Source Sans 3", "DM Sans", "Work Sans", "Outfit",
+  "Plus Jakarta Sans", "Sora", "Unbounded", "Space Grotesk",
 ];
 
 const COLOR_PALETTES = [
@@ -22,80 +25,160 @@ const COLOR_PALETTES = [
   { name: "Sunset", hex: "#FF7043" },
   { name: "Mint", hex: "#4CAF7D" },
   { name: "Lavender", hex: "#A78BFA" },
+  { name: "Rose", hex: "#F43F5E" },
+  { name: "Teal", hex: "#14B8A6" },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+const SHADE_STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
 
-function hexToHsl(hex: string): [number, number, number] {
-  const r = parseInt(hex.slice(1, 3), 16) / 255;
-  const g = parseInt(hex.slice(3, 5), 16) / 255;
-  const b = parseInt(hex.slice(5, 7), 16) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
-  const l = (max + min) / 2;
-  if (max === min) return [0, 0, Math.round(l * 100)];
-  const d = max - min;
-  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-  let h = 0;
-  if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
-  else if (max === g) h = ((b - r) / d + 2) / 6;
-  else h = ((r - g) / d + 4) / 6;
-  return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
-}
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function isLight(hex: string): boolean {
+  if (!hex || hex.length < 7) return true;
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return (r * 299 + g * 587 + b * 114) / 1000 > 128;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">{children}</h3>;
+function isValidHex(hex: string): boolean {
+  return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(hex);
 }
 
-interface ColorSwatchProps {
-  label: string;
-  hex: string;
-  onChange: (hex: string) => void;
-  small?: boolean;
+// ── Google Fonts Loader ───────────────────────────────────────────────────────
+
+export function useGoogleFonts(families: string[]) {
+  const key = families.filter(Boolean).join(",");
+  React.useEffect(() => {
+    const toLoad = [...new Set(families)].filter(Boolean);
+    toLoad.forEach((family) => {
+      const id = `gfont-${family.replace(/\s+/g, "-").toLowerCase()}`;
+      if (document.getElementById(id)) return;
+      const link = document.createElement("link");
+      link.id = id;
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;500;600;700&display=swap`;
+      document.head.appendChild(link);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 }
 
-function ColorSwatch({ label, hex, onChange, small }: ColorSwatchProps) {
-  const light = isLight(hex);
-  const [hsl] = React.useState(() => hexToHsl(hex));
+// ── Modal Wrapper ─────────────────────────────────────────────────────────────
+
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  // Close on Escape
+  React.useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onClose]);
 
   return (
-    <div className={`relative group rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 ${small ? "w-20" : "w-[140px]"}`} style={{ minHeight: small ? 80 : 120 }}>
-      <div className="relative flex flex-col justify-between p-2.5 pt-3 h-full" style={{ backgroundColor: hex, minHeight: small ? 80 : 120 }}>
-        <span className={`text-[10px] font-semibold ${light ? "text-black/60" : "text-white/80"}`}>{label}</span>
-        <div className="flex items-end justify-between mt-auto">
-          <span className={`text-[9px] font-mono ${light ? "text-black/50" : "text-white/60"}`}>{hex.slice(1).toUpperCase()}</span>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+          <span className="font-semibold text-gray-900 text-sm">{title}</span>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-400 hover:text-gray-700 rounded-md hover:bg-gray-100 transition-colors"
+          >
+            <X size={14} />
+          </button>
         </div>
-        {/* Hue gradient bar */}
-        <div
-          className="absolute bottom-0 left-0 right-0 h-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ background: `linear-gradient(to right, hsl(0,${hsl[1]}%,${hsl[2]}%), hsl(60,${hsl[1]}%,${hsl[2]}%), hsl(120,${hsl[1]}%,${hsl[2]}%), hsl(180,${hsl[1]}%,${hsl[2]}%), hsl(240,${hsl[1]}%,${hsl[2]}%), hsl(300,${hsl[1]}%,${hsl[2]}%), hsl(360,${hsl[1]}%,${hsl[2]}%))` }}
-        />
+        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">{children}</div>
       </div>
-      <input
-        type="color"
-        value={hex}
-        onChange={(e) => onChange(e.target.value)}
-        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-        title={`Modifier ${label}`}
-      />
     </div>
   );
 }
 
-// ─── Shade Strip ──────────────────────────────────────────────────────────────
+// ── Hex Color Input ───────────────────────────────────────────────────────────
 
-const SHADE_STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
+function HexColorInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (hex: string) => void;
+}) {
+  const [draft, setDraft] = React.useState(value);
+  const [copied, setCopied] = React.useState(false);
+
+  React.useEffect(() => { setDraft(value); }, [value]);
+
+  const commit = (v: string) => {
+    const clean = v.startsWith("#") ? v : `#${v}`;
+    if (isValidHex(clean)) { onChange(clean); setDraft(clean); }
+    else setDraft(value);
+  };
+
+  const copy = () => {
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-gray-500">{label}</label>
+      <div className="flex items-center gap-2">
+        {/* Color swatch + native picker overlay */}
+        <div className="relative flex-shrink-0">
+          <div
+            className="w-10 h-10 rounded-lg border-2 border-white shadow-md"
+            style={{ backgroundColor: isValidHex(draft) ? draft : value }}
+          />
+          <input
+            type="color"
+            value={isValidHex(draft) ? draft : value}
+            onChange={(e) => { setDraft(e.target.value); onChange(e.target.value); }}
+            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+          />
+        </div>
+        {/* Hex text input */}
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }}
+          placeholder="#000000"
+          spellCheck={false}
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+        />
+        {/* Copy button */}
+        <button
+          onClick={copy}
+          className="p-2 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
+          title="Copier #hex"
+        >
+          {copied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Shade Strip ───────────────────────────────────────────────────────────────
 
 function ShadeStrip({ label, baseHex }: { label: string; baseHex: string }) {
-  const [expanded, setExpanded] = React.useState(false);
   const [copiedHex, setCopiedHex] = React.useState<string | null>(null);
   const shades = React.useMemo(() => generateColorShades(baseHex), [baseHex]);
 
@@ -108,146 +191,433 @@ function ShadeStrip({ label, baseHex }: { label: string; baseHex: string }) {
 
   return (
     <div className="space-y-1.5">
-      <button
-        onClick={() => setExpanded((e) => !e)}
-        className="flex items-center gap-1.5 text-[11px] text-gray-500 hover:text-gray-700 transition-colors"
-      >
-        <ChevronRight size={11} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-        Nuances {label}
-      </button>
-
-      {/* Compact strip — always visible */}
-      <div className="flex gap-0.5 h-4 rounded overflow-hidden">
+      <span className="text-[11px] text-gray-400 font-medium">{label}</span>
+      <div className="flex gap-0.5 h-5 rounded-md overflow-hidden">
         {SHADE_STOPS.map((stop) => (
           <div
             key={stop}
-            className="flex-1 cursor-pointer hover:ring-1 hover:ring-white hover:ring-offset-0 hover:z-10 transition-all"
+            className="flex-1 cursor-pointer transition-opacity hover:opacity-80 flex items-center justify-center"
             style={{ backgroundColor: shades[stop] }}
-            title={`${label}-${stop}: ${shades[stop]}`}
+            title={`${stop}: ${shades[stop]}`}
             onClick={() => copyHex(shades[stop])}
+          >
+            {copiedHex === shades[stop] && (
+              <Check size={6} style={{ color: isLightColor(shades[stop]) ? "#000" : "#fff" }} />
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Zone Card ─────────────────────────────────────────────────────────────────
+
+function ZoneCard({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left border border-gray-200 rounded-xl p-3.5 hover:border-gray-300 hover:bg-gray-50/50 transition-all group"
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+          {title}
+        </span>
+        <ChevronDown
+          size={11}
+          className="text-gray-300 group-hover:text-gray-500 transition-colors -rotate-90"
+        />
+      </div>
+      {children}
+    </button>
+  );
+}
+
+// ── Modal: Colors ─────────────────────────────────────────────────────────────
+
+function ColorsModal({
+  guide,
+  onUpdate,
+  onClose,
+}: {
+  guide: StyleGuide;
+  onUpdate: (key: keyof StyleGuide["colors"], v: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Modal title="Couleurs" onClose={onClose}>
+      {/* Palette shuffle */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-600">Couleurs de marque</span>
+        <button
+          onClick={() => {
+            const p = COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)];
+            onUpdate("primary", p.hex);
+          }}
+          className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+        >
+          <Shuffle size={10} />
+          Aléatoire
+        </button>
+      </div>
+
+      {/* Brand colors */}
+      <div className="grid grid-cols-3 gap-3">
+        {(["primary", "secondary", "accent"] as const).map((key) => (
+          <HexColorInput
+            key={key}
+            label={{ primary: "Primaire", secondary: "Secondaire", accent: "Accent" }[key]}
+            value={guide.colors[key]}
+            onChange={(v) => onUpdate(key, v)}
           />
         ))}
       </div>
 
-      {/* Expanded detail */}
-      {expanded && (
-        <div className="grid grid-cols-11 gap-1 pt-1">
-          {SHADE_STOPS.map((stop) => {
-            const hex = shades[stop];
-            const isCopied = copiedHex === hex;
-            return (
-              <button
-                key={stop}
-                onClick={() => copyHex(hex)}
-                className="group flex flex-col items-center gap-0.5"
-                title={`Copier ${hex}`}
-              >
-                <div
-                  className="w-full aspect-square rounded-md border border-black/5 group-hover:scale-105 transition-transform flex items-center justify-center"
-                  style={{ backgroundColor: hex }}
-                >
-                  {isCopied && (
-                    <Check size={8} style={{ color: isLightColor(hex) ? "#000" : "#fff" }} />
-                  )}
-                </div>
-                <span className="text-[7px] text-gray-400 leading-none">{stop}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+      {/* BG + text colors */}
+      <div className="grid grid-cols-2 gap-3">
+        {(
+          [
+            ["background", "Background"],
+            ["backgroundAlt", "Fond alt."],
+            ["text", "Texte"],
+            ["textMuted", "Texte atténué"],
+          ] as const
+        ).map(([key, label]) => (
+          <HexColorInput
+            key={key}
+            label={label}
+            value={guide.colors[key]}
+            onChange={(v) => onUpdate(key, v)}
+          />
+        ))}
+      </div>
 
-// ─── Live Preview ──────────────────────────────────────────────────────────────
-
-interface LivePreviewProps {
-  guide: StyleGuide;
-  fullscreen: boolean;
-  onToggleFullscreen: () => void;
-  sectionDefs: Record<string, SiteSectionDef>;
-}
-
-function LivePreview({ guide, fullscreen, onToggleFullscreen, sectionDefs }: LivePreviewProps) {
-  const { state } = useRelumeBuilder();
-  // Find the home page slug. Fall back to the first available page.
-  const homeSlug = state.sitemap.find((p) => p.slug === "/")?.slug
-    ?? state.sitemap[0]?.slug
-    ?? "/";
-  const homeInstanceIds = state.instancesByPage[homeSlug] ?? [];
-
-  const realPreview = (
-    <div style={{ backgroundColor: guide.colors.background }}>
-      {homeInstanceIds.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-24 text-center">
-          <Layers size={28} className="text-gray-200 mb-3" />
-          <p className="text-sm text-gray-400 mb-1">Aucune section sur la page d&apos;accueil</p>
-          <p className="text-xs text-gray-300">Ajoutez des sections dans le Wireframe pour prévisualiser ici.</p>
-        </div>
-      ) : (
-        homeInstanceIds.map((instanceId) => {
-          const instance = state.instances[instanceId];
-          if (!instance || instance.is_hidden) return null;
-          const secDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
-          if (!secDef) return null;
-          return (
-            <DynamicSectionRenderer
-              key={instanceId}
-              instance={{ ...instance, section_def: secDef }}
-              sectionDef={secDef}
-              styleGuide={guide}
-            />
-          );
-        })
-      )}
-    </div>
-  );
-
-  if (fullscreen) {
-    return (
-      <div className="fixed inset-0 z-50 bg-gray-900/80 flex items-center justify-center p-8">
-        <div className="relative w-full max-w-6xl max-h-full overflow-auto rounded-2xl shadow-2xl border border-white/10 bg-white">
-          <button
-            onClick={onToggleFullscreen}
-            className="absolute top-3 right-3 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-white"
-            title="Quitter le plein écran"
-          >
-            <EyeOff size={16} />
-          </button>
-          {realPreview}
+      {/* Shade strips */}
+      <div className="pt-1 border-t border-gray-100">
+        <p className="text-[11px] text-gray-400 mb-2.5">Nuances (cliquer pour copier)</p>
+        <div className="space-y-2">
+          <ShadeStrip label="Primaire" baseHex={guide.colors.primary} />
+          <ShadeStrip label="Secondaire" baseHex={guide.colors.secondary} />
+          <ShadeStrip label="Accent" baseHex={guide.colors.accent} />
         </div>
       </div>
-    );
-  }
+
+      {/* Palette chips */}
+      <div>
+        <p className="text-[11px] text-gray-400 mb-2">Palettes suggérées</p>
+        <div className="flex gap-2 flex-wrap">
+          {COLOR_PALETTES.map((p) => (
+            <button
+              key={p.hex}
+              onClick={() => onUpdate("primary", p.hex)}
+              className="w-8 h-8 rounded-full border-2 border-white shadow hover:scale-110 transition-transform"
+              style={{ backgroundColor: p.hex }}
+              title={p.name}
+            />
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Modal: Font ───────────────────────────────────────────────────────────────
+
+function FontModal({
+  role,
+  guide,
+  onUpdate,
+  onClose,
+}: {
+  role: "heading" | "body";
+  guide: StyleGuide;
+  onUpdate: (v: string) => void;
+  onClose: () => void;
+}) {
+  const current = role === "heading" ? guide.fonts.heading : guide.fonts.body;
+  const [search, setSearch] = React.useState("");
+  const filtered = GOOGLE_FONTS.filter((f) =>
+    f.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Load all list fonts so previews render
+  useGoogleFonts(GOOGLE_FONTS);
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f5f5f5] relative">
-      <div className="sticky top-0 z-10 flex items-center justify-between px-4 py-2 bg-white/80 backdrop-blur border-b border-gray-100">
-        <span className="text-xs font-medium text-gray-500">Aperçu en direct · page d&apos;accueil</span>
+    <Modal
+      title={role === "heading" ? "Police de titres" : "Police de corps"}
+      onClose={onClose}
+    >
+      {/* Search + shuffle */}
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Rechercher..."
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+        />
         <button
-          onClick={onToggleFullscreen}
-          className="p-1.5 hover:bg-gray-100 rounded-md transition-colors text-gray-400 hover:text-gray-700"
-          title="Plein écran"
+          onClick={() => {
+            const f = GOOGLE_FONTS[Math.floor(Math.random() * GOOGLE_FONTS.length)];
+            onUpdate(f);
+          }}
+          className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-400 hover:text-gray-700 transition-colors"
+          title="Police aléatoire"
         >
-          <Eye size={14} />
+          <Shuffle size={14} />
         </button>
       </div>
-      <div className="p-4">
-        <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white">
-          {realPreview}
-        </div>
+
+      {/* Current font preview */}
+      <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+        {role === "heading" ? (
+          <p className="text-2xl font-bold text-gray-900 leading-tight" style={{ fontFamily: current }}>
+            {current}
+          </p>
+        ) : (
+          <>
+            <p className="text-base text-gray-800" style={{ fontFamily: current }}>{current}</p>
+            <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: current }}>Aa Bb Cc — 0123456789</p>
+          </>
+        )}
       </div>
-    </div>
+
+      {/* Base size (body only) */}
+      {role === "body" && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs font-medium text-gray-500">Taille de base</label>
+            <span className="text-xs font-mono text-gray-400">{guide.fonts.baseSize}</span>
+          </div>
+          <input
+            type="range" min={12} max={20}
+            value={parseInt(guide.fonts.baseSize)}
+            onChange={(e) => {
+              /* dispatch handled by parent via onUpdate — only font family here */
+            }}
+            className="w-full accent-gray-900"
+            disabled
+          />
+          <p className="text-[10px] text-gray-300 mt-1">Modifiable dans l&apos;onglet Espacement</p>
+        </div>
+      )}
+
+      {/* Font list */}
+      <div className="space-y-0.5 max-h-52 overflow-y-auto -mx-1 pr-1">
+        {filtered.map((f) => (
+          <button
+            key={f}
+            onClick={() => onUpdate(f)}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm text-left transition-colors ${
+              f === current
+                ? "bg-gray-900 text-white"
+                : "text-gray-700 hover:bg-gray-50"
+            }`}
+            style={{ fontFamily: f }}
+          >
+            {f}
+            {f === current && <Check size={12} />}
+          </button>
+        ))}
+      </div>
+    </Modal>
   );
 }
 
+// ── Modal: Buttons ────────────────────────────────────────────────────────────
 
-// ─── Tab type ──────────────────────────────────────────────────────────────────
+function ButtonsModal({
+  guide,
+  onUpdate,
+  onClose,
+}: {
+  guide: StyleGuide;
+  onUpdate: (updates: Partial<StyleGuide["buttons"]>) => void;
+  onClose: () => void;
+}) {
+  const b = guide.buttons;
+  const previewStyle = (style: "filled" | "outline" | "soft"): React.CSSProperties => ({
+    borderRadius: b.borderRadius,
+    padding: b.padding,
+    backgroundColor:
+      style === "soft"
+        ? guide.colors.primary + "22"
+        : style === "filled"
+        ? guide.colors.primary
+        : "transparent",
+    color:
+      style === "filled"
+        ? isLight(guide.colors.primary) ? "#111" : "#fff"
+        : guide.colors.primary,
+    border: style === "outline" ? `1.5px solid ${guide.colors.primary}` : "none",
+    fontFamily: guide.fonts.body + ", sans-serif",
+    fontSize: 13,
+    fontWeight: 600,
+    display: "inline-block",
+    cursor: "default",
+  });
 
-type Tab = "colors" | "typography" | "ui" | "spacing";
+  return (
+    <Modal title="Style des boutons" onClose={onClose}>
+      {/* Style selector */}
+      <div>
+        <label className="text-xs font-medium text-gray-500 block mb-2">Style</label>
+        <div className="flex gap-2">
+          {(["filled", "outline", "soft"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => onUpdate({ style: s })}
+              className={`flex-1 py-2 text-xs rounded-lg border transition-colors ${
+                b.style === s
+                  ? "bg-gray-900 text-white border-gray-900"
+                  : "border-gray-200 text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              {s === "filled" ? "Plein" : s === "outline" ? "Contour" : "Doux"}
+            </button>
+          ))}
+        </div>
+      </div>
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+      {/* Border radius */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-medium text-gray-500">Arrondi</label>
+          <span className="text-xs font-mono text-gray-400">{b.borderRadius}</span>
+        </div>
+        <input
+          type="range" min={0} max={32}
+          value={parseInt(b.borderRadius)}
+          onChange={(e) => onUpdate({ borderRadius: `${e.target.value}px` })}
+          className="w-full accent-gray-900 mb-2"
+        />
+        <div className="flex gap-1.5">
+          {[
+            { label: "Carré", val: "0px" },
+            { label: "Petit", val: "4px" },
+            { label: "Moyen", val: "8px" },
+            { label: "Large", val: "16px" },
+            { label: "Pilule", val: "999px" },
+          ].map(({ label, val }) => (
+            <button
+              key={val}
+              onClick={() => onUpdate({ borderRadius: val })}
+              className={`flex-1 py-1 text-[10px] rounded border transition-colors ${
+                b.borderRadius === val
+                  ? "bg-gray-900 text-white border-gray-900"
+                  : "border-gray-200 text-gray-400 hover:bg-gray-50"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Live preview */}
+      <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+        <p className="text-[11px] text-gray-400 mb-3">Aperçu</p>
+        <div className="flex flex-wrap gap-3 items-center">
+          <div style={previewStyle(b.style)}>Bouton principal</div>
+          <div style={previewStyle("outline")}>Secondaire</div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Modal: Cards ──────────────────────────────────────────────────────────────
+
+function CardsModal({
+  guide,
+  onUpdate,
+  onClose,
+}: {
+  guide: StyleGuide;
+  onUpdate: (updates: Partial<StyleGuide["cards"]>) => void;
+  onClose: () => void;
+}) {
+  const c = guide.cards;
+  const shadowMap: Record<string, string> = {
+    none: "none",
+    sm: "0 1px 2px rgba(0,0,0,0.06)",
+    md: "0 4px 6px rgba(0,0,0,0.1)",
+    lg: "0 10px 15px rgba(0,0,0,0.1)",
+  };
+
+  return (
+    <Modal title="Cartes &amp; images" onClose={onClose}>
+      {/* Radius — independent of button radius */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-medium text-gray-500">Arrondi des cartes</label>
+          <span className="text-xs font-mono text-gray-400">{c.borderRadius}</span>
+        </div>
+        <input
+          type="range" min={0} max={32}
+          value={parseInt(c.borderRadius)}
+          onChange={(e) => onUpdate({ borderRadius: `${e.target.value}px` })}
+          className="w-full accent-gray-900"
+        />
+        <p className="text-[10px] text-gray-300 mt-1">
+          Indépendant de l&apos;arrondi des boutons
+        </p>
+      </div>
+
+      {/* Shadow */}
+      <div>
+        <label className="text-xs font-medium text-gray-500 block mb-2">Ombre</label>
+        <div className="flex gap-1.5">
+          {(["none", "sm", "md", "lg"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => onUpdate({ shadow: s })}
+              className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${
+                c.shadow === s
+                  ? "bg-gray-900 text-white border-gray-900"
+                  : "border-gray-200 text-gray-500 hover:bg-gray-50"
+              }`}
+            >
+              {s === "none" ? "Aucune" : s.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Preview */}
+      <div>
+        <p className="text-[11px] text-gray-400 mb-2">Aperçu</p>
+        <div className="flex gap-2">
+          {["#EBF5FB", "#E9F7EF", "#F5EEF8"].map((bg, i) => (
+            <div
+              key={i}
+              className="flex-1 h-16"
+              style={{
+                backgroundColor: bg,
+                borderRadius: c.borderRadius,
+                boxShadow: shadowMap[c.shadow] ?? "none",
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
+type ModalId = "colors" | "heading" | "body" | "buttons" | "cards" | null;
 
 interface StyleGuideWorkspaceProps {
   sectionDefs: Record<string, SiteSectionDef>;
@@ -256,491 +626,295 @@ interface StyleGuideWorkspaceProps {
 export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const { styleGuide: guide } = state;
-  const [darkMode, setDarkMode] = React.useState(false);
-  const [fontDropdownOpen, setFontDropdownOpen] = React.useState<"heading" | "body" | null>(null);
-  const [activeTab, setActiveTab] = React.useState<Tab>("colors");
+  const [activeModal, setActiveModal] = React.useState<ModalId>(null);
   const [previewFullscreen, setPreviewFullscreen] = React.useState(false);
+
+  // Load currently selected fonts in the browser so previews render correctly
+  useGoogleFonts([guide.fonts.heading, guide.fonts.body]);
 
   const updateColor = (key: keyof StyleGuide["colors"], hex: string) =>
     dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { colors: { ...guide.colors, [key]: hex } } });
 
-  const updateFont = (role: "heading" | "body", font: string) => {
-    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { fonts: { ...guide.fonts, [role]: font } } });
-    setFontDropdownOpen(null);
-  };
+  const updateFont = (role: "heading" | "body", value: string) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { fonts: { ...guide.fonts, [role]: value } } });
 
-  const shuffleColors = () => {
-    const palette = COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)];
-    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { colors: { ...guide.colors, primary: palette.hex } } });
-  };
+  const updateButtons = (updates: Partial<StyleGuide["buttons"]>) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { buttons: { ...guide.buttons, ...updates } } });
 
-  const shuffleFonts = () => {
-    const h = GOOGLE_FONTS[Math.floor(Math.random() * GOOGLE_FONTS.length)];
-    const b = GOOGLE_FONTS[Math.floor(Math.random() * GOOGLE_FONTS.length)];
-    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { fonts: { ...guide.fonts, heading: h, body: b } } });
-  };
+  const updateCards = (updates: Partial<StyleGuide["cards"]>) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { cards: { ...guide.cards, ...updates } } });
 
-  const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-    { id: "colors", label: "Couleurs", icon: Palette },
-    { id: "typography", label: "Typographie", icon: Type },
-    { id: "ui", label: "UI", icon: Layout },
-    { id: "spacing", label: "Espacement", icon: Sliders },
-  ];
+  const close = () => setActiveModal(null);
+
+  // Live preview content
+  const homeSlug =
+    state.sitemap.find((p) => p.slug === "/")?.slug ??
+    state.sitemap[0]?.slug ??
+    "/";
+  const homeInstanceIds = state.instancesByPage[homeSlug] ?? [];
+
+  const livePreview = (
+    <div style={{ backgroundColor: guide.colors.background }}>
+      {homeInstanceIds.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-24 text-center px-8">
+          <Layers size={28} className="text-gray-200 mb-3" />
+          <p className="text-sm text-gray-400 mb-1">Aucune section sur la page d&apos;accueil</p>
+          <p className="text-xs text-gray-300">
+            Ajoutez des sections dans le Wireframe pour prévisualiser ici.
+          </p>
+        </div>
+      ) : (
+        homeInstanceIds.map((id) => {
+          const instance = state.instances[id];
+          if (!instance || instance.is_hidden) return null;
+          const secDef =
+            instance.section_def ??
+            (instance.section_id ? sectionDefs[instance.section_id] : null);
+          if (!secDef) return null;
+          return (
+            <DynamicSectionRenderer
+              key={id}
+              instance={{ ...instance, section_def: secDef }}
+              sectionDef={secDef}
+              styleGuide={guide}
+              variables={state.variableContext}
+            />
+          );
+        })
+      )}
+    </div>
+  );
 
   return (
     <div className="flex h-full bg-white overflow-hidden">
 
-      {/* ─ Left: Style controls ─────────────────────────────────────────────── */}
-      <div className="w-[52%] flex-shrink-0 flex flex-col border-r border-gray-200 overflow-hidden">
+      {/* ── Modals ──────────────────────────────────────────────────────────── */}
+      {activeModal === "colors" && (
+        <ColorsModal guide={guide} onUpdate={updateColor} onClose={close} />
+      )}
+      {activeModal === "heading" && (
+        <FontModal
+          role="heading"
+          guide={guide}
+          onUpdate={(v) => updateFont("heading", v)}
+          onClose={close}
+        />
+      )}
+      {activeModal === "body" && (
+        <FontModal
+          role="body"
+          guide={guide}
+          onUpdate={(v) => updateFont("body", v)}
+          onClose={close}
+        />
+      )}
+      {activeModal === "buttons" && (
+        <ButtonsModal guide={guide} onUpdate={updateButtons} onClose={close} />
+      )}
+      {activeModal === "cards" && (
+        <CardsModal guide={guide} onUpdate={updateCards} onClose={close} />
+      )}
 
-        {/* Top bar */}
-        <div className="flex items-center justify-between px-5 py-2.5 border-b border-gray-100 bg-gray-50/60">
-          <div className="flex items-center border border-gray-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => setDarkMode(false)}
-              className={`p-1.5 transition-colors ${!darkMode ? "bg-white shadow-sm text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
-              title="Mode clair"
-            >
-              <Sun size={13} />
-            </button>
-            <button
-              onClick={() => setDarkMode(true)}
-              className={`p-1.5 transition-colors ${darkMode ? "bg-white shadow-sm text-gray-900" : "text-gray-400 hover:text-gray-600"}`}
-              title="Mode sombre"
-            >
-              <Moon size={13} />
-            </button>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={shuffleColors}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors bg-white"
-            >
-              <Shuffle size={11} />
-              Couleurs
-            </button>
-            <button
-              onClick={shuffleFonts}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors bg-white"
-            >
-              <Shuffle size={11} />
-              Polices
-            </button>
-          </div>
+      {/* ── Left: Zone layout ───────────────────────────────────────────────── */}
+      <div className="w-[42%] flex-shrink-0 flex flex-col border-r border-gray-200 overflow-hidden">
+
+        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
+          <span className="text-xs font-semibold text-gray-700">Style Guide</span>
+          <span className="text-[10px] text-gray-400">Cliquez une zone pour modifier</span>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-gray-100">
-          {TABS.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-medium transition-colors border-b-2 ${
-                activeTab === id
-                  ? "border-gray-900 text-gray-900 bg-white"
-                  : "border-transparent text-gray-400 hover:text-gray-600 hover:bg-gray-50/50"
-              }`}
-            >
-              <Icon size={11} />
-              {label}
-            </button>
-          ))}
-        </div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
 
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6">
-
-          {/* ── Colors tab ──────────────────────────────────────────────────── */}
-          {activeTab === "colors" && (
-            <>
-              <div>
-                <SectionLabel>Couleurs de marque</SectionLabel>
-                <div className="flex gap-2 flex-wrap mb-3">
-                  <ColorSwatch label="Primaire" hex={guide.colors.primary} onChange={(h) => updateColor("primary", h)} />
-                  <ColorSwatch label="Secondaire" hex={guide.colors.secondary} onChange={(h) => updateColor("secondary", h)} />
-                  <ColorSwatch label="Accent" hex={guide.colors.accent} onChange={(h) => updateColor("accent", h)} />
+          {/* COLORS — full width zone */}
+          <ZoneCard title="Couleurs" onClick={() => setActiveModal("colors")}>
+            <div className="flex gap-2 flex-wrap">
+              {(
+                [
+                  { key: "primary", label: "Primaire" },
+                  { key: "secondary", label: "Secondaire" },
+                  { key: "accent", label: "Accent" },
+                  { key: "background", label: "BG" },
+                  { key: "text", label: "Texte" },
+                ] as const
+              ).map(({ key, label }) => (
+                <div key={key} className="flex flex-col items-center gap-1">
                   <div
-                    className="rounded-xl border-2 border-dashed border-gray-200 flex items-center justify-center cursor-pointer hover:border-gray-300 transition-colors flex-shrink-0 w-10"
-                    style={{ minHeight: 120 }}
-                  >
-                    <Plus size={14} className="text-gray-300" />
-                  </div>
-                </div>
-                {/* Shade scales for brand colors */}
-                <div className="space-y-3 pt-1 border-t border-gray-100">
-                  <ShadeStrip label="Primaire" baseHex={guide.colors.primary} />
-                  <ShadeStrip label="Secondaire" baseHex={guide.colors.secondary} />
-                  <ShadeStrip label="Accent" baseHex={guide.colors.accent} />
-                </div>
-              </div>
-
-              <div>
-                <SectionLabel>Arrière-plans</SectionLabel>
-                <div className="flex gap-2 flex-wrap">
-                  <ColorSwatch label="Background" hex={guide.colors.background} onChange={(h) => updateColor("background", h)} small />
-                  <ColorSwatch label="Alt" hex={guide.colors.backgroundAlt} onChange={(h) => updateColor("backgroundAlt", h)} small />
-                </div>
-              </div>
-
-              <div>
-                <SectionLabel>Textes</SectionLabel>
-                <div className="flex gap-2 flex-wrap">
-                  <ColorSwatch label="Texte" hex={guide.colors.text} onChange={(h) => updateColor("text", h)} small />
-                  <ColorSwatch label="Discret" hex={guide.colors.textMuted} onChange={(h) => updateColor("textMuted", h)} small />
-                </div>
-              </div>
-
-              <div>
-                <SectionLabel>Palettes suggérées</SectionLabel>
-                <div className="flex gap-2 flex-wrap">
-                  {COLOR_PALETTES.map((p) => (
-                    <button
-                      key={p.hex}
-                      onClick={() => updateColor("primary", p.hex)}
-                      className="w-8 h-8 rounded-full border-2 border-white shadow-sm hover:scale-110 transition-transform"
-                      style={{ backgroundColor: p.hex }}
-                      title={p.name}
-                    />
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ── Typography tab ──────────────────────────────────────────────── */}
-          {activeTab === "typography" && (
-            <>
-              <div>
-                <SectionLabel>Police de titre</SectionLabel>
-                <div className="relative">
-                  <div
-                    className="border border-gray-200 rounded-xl p-4 bg-white cursor-pointer hover:border-gray-300 transition-colors"
-                    onClick={() => setFontDropdownOpen(fontDropdownOpen === "heading" ? null : "heading")}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-gray-500 font-medium">Heading</span>
-                      <ChevronDown size={12} className={`text-gray-400 transition-transform ${fontDropdownOpen === "heading" ? "rotate-180" : ""}`} />
-                    </div>
-                    <p className="text-3xl font-bold text-gray-900 leading-tight" style={{ fontFamily: guide.fonts.heading }}>
-                      {guide.fonts.heading}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <div className="w-4 h-4 rounded bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                        <span className="text-white text-[7px] font-bold">G</span>
-                      </div>
-                      <span className="text-[10px] text-gray-400">Google Fonts · Gratuit</span>
-                    </div>
-                  </div>
-                  {fontDropdownOpen === "heading" && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-52 overflow-y-auto py-1">
-                      {GOOGLE_FONTS.map((f) => (
-                        <button
-                          key={f}
-                          onClick={() => updateFont("heading", f)}
-                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
-                          style={{ fontFamily: f }}
-                        >
-                          {f}
-                          {f === guide.fonts.heading && <span className="text-blue-500 text-xs">✓</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <SectionLabel>Police de corps</SectionLabel>
-                <div className="relative">
-                  <div
-                    className="border border-gray-200 rounded-xl p-4 bg-white cursor-pointer hover:border-gray-300 transition-colors"
-                    onClick={() => setFontDropdownOpen(fontDropdownOpen === "body" ? null : "body")}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-gray-500 font-medium">Body</span>
-                      <ChevronDown size={12} className={`text-gray-400 transition-transform ${fontDropdownOpen === "body" ? "rotate-180" : ""}`} />
-                    </div>
-                    <p className="text-xl text-gray-900 leading-tight" style={{ fontFamily: guide.fonts.body }}>
-                      {guide.fonts.body}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: guide.fonts.body }}>
-                      Aa Bb Cc — 0123456789
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-2">
-                      <div className="w-4 h-4 rounded bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
-                        <span className="text-white text-[7px] font-bold">G</span>
-                      </div>
-                      <span className="text-[10px] text-gray-400">Google Fonts · Gratuit</span>
-                    </div>
-                  </div>
-                  {fontDropdownOpen === "body" && (
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-52 overflow-y-auto py-1">
-                      {GOOGLE_FONTS.map((f) => (
-                        <button
-                          key={f}
-                          onClick={() => updateFont("body", f)}
-                          className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center justify-between"
-                          style={{ fontFamily: f }}
-                        >
-                          {f}
-                          {f === guide.fonts.body && <span className="text-blue-500 text-xs">✓</span>}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div>
-                <SectionLabel>Taille de base</SectionLabel>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range"
-                    min={12}
-                    max={20}
-                    value={parseInt(guide.fonts.baseSize)}
-                    onChange={(e) =>
-                      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { fonts: { ...guide.fonts, baseSize: `${e.target.value}px` } } })
-                    }
-                    className="flex-1 accent-gray-900"
+                    className="w-8 h-8 rounded-lg border border-gray-200 shadow-sm"
+                    style={{ backgroundColor: guide.colors[key] }}
                   />
-                  <span className="text-xs font-mono text-gray-500 w-8 text-right">{guide.fonts.baseSize}</span>
+                  <span className="text-[9px] text-gray-400 leading-none">{label}</span>
                 </div>
-                <div className="mt-3 p-3 rounded-lg bg-gray-50 border border-gray-100">
-                  <p className="font-semibold" style={{ fontSize: parseInt(guide.fonts.baseSize) * 1.5, fontFamily: guide.fonts.heading, color: guide.colors.text }}>
-                    Titre principal
-                  </p>
-                  <p style={{ fontSize: parseInt(guide.fonts.baseSize), fontFamily: guide.fonts.body, color: guide.colors.textMuted, marginTop: 4 }}>
-                    Texte de paragraphe en taille normale.
-                  </p>
-                  <p style={{ fontSize: parseInt(guide.fonts.baseSize) * 0.85, fontFamily: guide.fonts.body, color: guide.colors.textMuted, marginTop: 2 }}>
-                    Texte secondaire plus discret.
-                  </p>
-                </div>
-              </div>
-            </>
-          )}
+              ))}
+            </div>
+          </ZoneCard>
 
-          {/* ── UI tab ──────────────────────────────────────────────────────── */}
-          {activeTab === "ui" && (
-            <>
-              <div>
-                <SectionLabel>Style des boutons</SectionLabel>
-                <div className="flex gap-2 mb-4">
-                  {(["filled", "outline", "soft"] as const).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { buttons: { ...guide.buttons, style: s } } })}
-                      className={`flex-1 py-2 text-xs rounded-lg border transition-colors capitalize ${guide.buttons.style === s ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
+          {/* TYPOGRAPHY — side by side */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <ZoneCard title="Titre" onClick={() => setActiveModal("heading")}>
+              <p
+                className="text-lg font-bold text-gray-800 truncate leading-tight"
+                style={{ fontFamily: guide.fonts.heading }}
+              >
+                {guide.fonts.heading}
+              </p>
+            </ZoneCard>
+            <ZoneCard title="Corps" onClick={() => setActiveModal("body")}>
+              <p
+                className="text-sm text-gray-600 truncate leading-tight"
+                style={{ fontFamily: guide.fonts.body }}
+              >
+                {guide.fonts.body}
+              </p>
+              <p className="text-[10px] text-gray-400 mt-0.5" style={{ fontFamily: guide.fonts.body }}>
+                Aa Bb Cc
+              </p>
+            </ZoneCard>
+          </div>
 
-                <div className="p-4 rounded-xl border border-gray-100 bg-gray-50 flex flex-wrap gap-2 items-center">
-                  {/* Primary button preview */}
-                  <button style={{
-                    borderRadius: guide.buttons.borderRadius,
-                    padding: guide.buttons.padding,
-                    backgroundColor: guide.buttons.style === "soft"
-                      ? guide.colors.primary + "20"
+          {/* BUTTONS + CARDS — side by side */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <ZoneCard title="Boutons" onClick={() => setActiveModal("buttons")}>
+              <div
+                className="inline-flex items-center justify-center text-xs font-semibold"
+                style={{
+                  borderRadius: guide.buttons.borderRadius,
+                  padding: guide.buttons.padding,
+                  backgroundColor:
+                    guide.buttons.style === "soft"
+                      ? guide.colors.primary + "22"
                       : guide.buttons.style === "filled"
-                        ? guide.colors.primary
-                        : "transparent",
-                    color: guide.buttons.style === "filled"
-                      ? (isLight(guide.colors.primary) ? "#111" : "#fff")
+                      ? guide.colors.primary
+                      : "transparent",
+                  color:
+                    guide.buttons.style === "filled"
+                      ? isLight(guide.colors.primary) ? "#111" : "#fff"
                       : guide.colors.primary,
-                    border: guide.buttons.style === "outline" ? `1.5px solid ${guide.colors.primary}` : "none",
-                    fontFamily: guide.fonts.body + ", sans-serif",
-                    fontSize: 12, fontWeight: 600, cursor: "default",
-                  }}>
-                    Bouton principal
-                  </button>
-                  {/* Secondary */}
-                  <button style={{
-                    borderRadius: guide.buttons.borderRadius,
-                    padding: guide.buttons.padding,
-                    backgroundColor: "transparent",
-                    color: guide.colors.text,
-                    border: `1.5px solid ${guide.colors.text}30`,
-                    fontFamily: guide.fonts.body + ", sans-serif",
-                    fontSize: 12, fontWeight: 500, cursor: "default",
-                  }}>
-                    Secondaire
-                  </button>
-                </div>
+                  border:
+                    guide.buttons.style === "outline"
+                      ? `1.5px solid ${guide.colors.primary}`
+                      : "none",
+                  fontFamily: guide.fonts.body,
+                }}
+              >
+                Bouton
               </div>
+            </ZoneCard>
+            <ZoneCard title="Cartes" onClick={() => setActiveModal("cards")}>
+              <div className="flex gap-1.5">
+                {["#EBF5FB", "#E9F7EF", "#F5EEF8"].map((bg, i) => (
+                  <div
+                    key={i}
+                    className="flex-1 h-8"
+                    style={{
+                      backgroundColor: bg,
+                      borderRadius: guide.cards.borderRadius,
+                      boxShadow: {
+                        none: "none",
+                        sm: "0 1px 2px rgba(0,0,0,0.06)",
+                        md: "0 4px 6px rgba(0,0,0,0.08)",
+                        lg: "0 8px 12px rgba(0,0,0,0.1)",
+                      }[guide.cards.shadow] ?? "none",
+                    }}
+                  />
+                ))}
+              </div>
+            </ZoneCard>
+          </div>
 
-              <div>
-                <SectionLabel>Arrondi des boutons</SectionLabel>
-                <div className="flex items-center gap-3">
+          {/* SPACING — compact inline (no modal needed) */}
+          <div className="border border-gray-200 rounded-xl p-3.5">
+            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block mb-3">
+              Espacement
+            </span>
+            <div className="space-y-3">
+              {(
+                [
+                  { label: "Section padding", key: "sectionPadding" as const, min: 40, max: 160 },
+                  { label: "Gap éléments", key: "elementGap" as const, min: 8, max: 64 },
+                ]
+              ).map(({ label, key, min, max }) => (
+                <div key={key}>
+                  <div className="flex justify-between mb-1">
+                    <span className="text-[11px] text-gray-500">{label}</span>
+                    <span className="text-[11px] font-mono text-gray-400">{guide.spacing[key]}</span>
+                  </div>
                   <input
                     type="range"
-                    min={0}
-                    max={32}
-                    value={parseInt(guide.buttons.borderRadius)}
+                    min={min}
+                    max={max}
+                    value={parseInt(guide.spacing[key])}
                     onChange={(e) =>
-                      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { buttons: { ...guide.buttons, borderRadius: `${e.target.value}px` } } })
+                      dispatch({
+                        type: "UPDATE_STYLE_GUIDE",
+                        payload: { spacing: { ...guide.spacing, [key]: `${e.target.value}px` } },
+                      })
                     }
-                    className="flex-1 accent-gray-900"
+                    className="w-full accent-gray-900"
                   />
-                  <span className="text-xs font-mono text-gray-500 w-8 text-right">{guide.buttons.borderRadius}</span>
                 </div>
-                <div className="flex gap-1.5 mt-2">
-                  {[{ label: "Carré", val: "0px" }, { label: "Petit", val: "4px" }, { label: "Moyen", val: "8px" }, { label: "Large", val: "16px" }, { label: "Pilule", val: "999px" }].map(({ label, val }) => (
-                    <button
-                      key={val}
-                      onClick={() => dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { buttons: { ...guide.buttons, borderRadius: val } } })}
-                      className={`flex-1 py-1 text-[10px] rounded border transition-colors ${guide.buttons.borderRadius === val ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:bg-gray-50"}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              ))}
+            </div>
+          </div>
 
-              <div>
-                <SectionLabel>Cartes &amp; images</SectionLabel>
-                <div>
-                  <label className="text-xs text-gray-500 mb-2 flex justify-between">
-                    <span>Arrondi</span>
-                    <span className="font-mono">{guide.cards.borderRadius}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={0}
-                    max={32}
-                    value={parseInt(guide.cards.borderRadius)}
-                    onChange={(e) =>
-                      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { cards: { ...guide.cards, borderRadius: `${e.target.value}px` } } })
-                    }
-                    className="w-full accent-gray-900 mb-3"
-                  />
-                  <label className="text-xs text-gray-500 mb-2 block">Ombre</label>
-                  <div className="flex gap-1.5">
-                    {(["none", "sm", "md", "lg"] as const).map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { cards: { ...guide.cards, shadow: s } } })}
-                        className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${guide.cards.shadow === s ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {/* Card preview */}
-                <div className="mt-3 flex gap-2">
-                  {["bg-blue-100", "bg-green-100", "bg-purple-100"].map((c, i) => (
-                    <div
-                      key={i}
-                      className={`flex-1 aspect-square ${c}`}
-                      style={{
-                        borderRadius: guide.cards.borderRadius,
-                        boxShadow: { none: "none", sm: "0 1px 2px rgba(0,0,0,0.06)", md: "0 4px 6px rgba(0,0,0,0.1)", lg: "0 10px 15px rgba(0,0,0,0.1)" }[guide.cards.shadow] ?? "none",
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ── Spacing tab ─────────────────────────────────────────────────── */}
-          {activeTab === "spacing" && (
-            <>
-              <div>
-                <SectionLabel>Padding des sections</SectionLabel>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range" min={40} max={160}
-                    value={parseInt(guide.spacing.sectionPadding)}
-                    onChange={(e) =>
-                      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...guide.spacing, sectionPadding: `${e.target.value}px` } } })
-                    }
-                    className="flex-1 accent-gray-900"
-                  />
-                  <span className="text-xs font-mono text-gray-500 w-12 text-right">{guide.spacing.sectionPadding}</span>
-                </div>
-              </div>
-              <div>
-                <SectionLabel>Gap entre éléments</SectionLabel>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range" min={8} max={64}
-                    value={parseInt(guide.spacing.elementGap)}
-                    onChange={(e) =>
-                      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...guide.spacing, elementGap: `${e.target.value}px` } } })
-                    }
-                    className="flex-1 accent-gray-900"
-                  />
-                  <span className="text-xs font-mono text-gray-500 w-12 text-right">{guide.spacing.elementGap}</span>
-                </div>
-              </div>
-              <div>
-                <SectionLabel>Largeur max du contenu</SectionLabel>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="range" min={800} max={1600} step={50}
-                    value={parseInt(guide.spacing.maxContentWidth)}
-                    onChange={(e) =>
-                      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...guide.spacing, maxContentWidth: `${e.target.value}px` } } })
-                    }
-                    className="flex-1 accent-gray-900"
-                  />
-                  <span className="text-xs font-mono text-gray-500 w-16 text-right">{guide.spacing.maxContentWidth}</span>
-                </div>
-              </div>
-
-              {/* Visual spacing guide */}
-              <div>
-                <SectionLabel>Visualisation</SectionLabel>
-                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="bg-gray-50 flex items-center justify-center"
-                    style={{ paddingTop: Math.round(parseInt(guide.spacing.sectionPadding) * 0.15), paddingBottom: Math.round(parseInt(guide.spacing.sectionPadding) * 0.15) }}>
-                    <div className="flex flex-col items-center" style={{ gap: parseInt(guide.spacing.elementGap) * 0.3 }}>
-                      <div className="h-2 rounded bg-gray-300" style={{ width: Math.min(parseInt(guide.spacing.maxContentWidth) * 0.13, 120) }} />
-                      <div className="h-1.5 rounded bg-gray-200" style={{ width: Math.min(parseInt(guide.spacing.maxContentWidth) * 0.1, 90) }} />
-                      <div className="h-1 rounded bg-gray-200" style={{ width: Math.min(parseInt(guide.spacing.maxContentWidth) * 0.08, 70) }} />
-                    </div>
-                  </div>
-                  <div className="px-3 py-2 bg-white flex justify-between text-[10px] text-gray-400 border-t border-gray-100">
-                    <span>Section: {guide.spacing.sectionPadding}</span>
-                    <span>Gap: {guide.spacing.elementGap}</span>
-                    <span>Max: {guide.spacing.maxContentWidth}</span>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Reset button */}
-        <div className="p-4 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between">
-          <span className="text-[10px] text-gray-400">Les changements sont appliqués en temps réel</span>
+          {/* Reset */}
           <button
-            onClick={() => {
+            onClick={() =>
               dispatch({
                 type: "UPDATE_STYLE_GUIDE",
                 payload: {
-                  colors: { primary: "#1a56db", secondary: "#6875f5", accent: "#e3a008", background: "#ffffff", backgroundAlt: "#f9fafb", text: "#111827", textMuted: "#6b7280" },
+                  colors: {
+                    primary: "#1a56db",
+                    secondary: "#6875f5",
+                    accent: "#e3a008",
+                    background: "#ffffff",
+                    backgroundAlt: "#f9fafb",
+                    text: "#111827",
+                    textMuted: "#6b7280",
+                  },
                 },
-              });
-            }}
-            className="text-[10px] text-gray-400 hover:text-gray-600 underline transition-colors"
+              })
+            }
+            className="w-full text-[11px] text-gray-400 hover:text-gray-600 transition-colors py-2 border border-gray-100 rounded-lg hover:bg-gray-50"
           >
-            Réinitialiser
+            Réinitialiser les couleurs
           </button>
         </div>
       </div>
 
-      {/* ─ Right: Live Preview (real homepage) ──────────────────────────────── */}
-      <LivePreview
-        guide={guide}
-        fullscreen={previewFullscreen}
-        onToggleFullscreen={() => setPreviewFullscreen(!previewFullscreen)}
-        sectionDefs={sectionDefs}
-      />
+      {/* ── Right: Live Preview ─────────────────────────────────────────────── */}
+      {previewFullscreen ? (
+        <div className="fixed inset-0 z-50 bg-gray-900/80 flex items-center justify-center p-8">
+          <div className="relative w-full max-w-6xl max-h-full overflow-auto rounded-2xl shadow-2xl bg-white">
+            <button
+              onClick={() => setPreviewFullscreen(false)}
+              className="absolute top-3 right-3 z-10 p-2 bg-black/20 hover:bg-black/30 rounded-lg text-white transition-colors"
+            >
+              <EyeOff size={14} />
+            </button>
+            {livePreview}
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 bg-white/80 border-b border-gray-100 flex-shrink-0">
+            <span className="text-xs font-medium text-gray-500">
+              Aperçu en direct · page d&apos;accueil
+            </span>
+            <button
+              onClick={() => setPreviewFullscreen(true)}
+              className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
+              title="Plein écran"
+            >
+              <Eye size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto bg-[#f5f5f5] p-4">
+            <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+              {livePreview}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

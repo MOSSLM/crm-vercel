@@ -18,13 +18,14 @@ interface GenerateRequest {
   availableSectionIds?: SectionRef[];
   availableSectionTypes?: string[];
   model?: string;
+  variableContext?: Record<string, string>;
 }
 
 export async function POST(req: Request) {
   const supabase = getSupabaseServiceClient();
   try {
     const body = (await req.json()) as GenerateRequest;
-    const { siteId, enterpriseId, description, pages, availableSectionIds, availableSectionTypes, model = "claude-sonnet-4-6" } = body;
+    const { siteId, enterpriseId, description, pages, availableSectionIds, availableSectionTypes, model = "claude-sonnet-4-6", variableContext } = body;
     void availableSectionTypes;
 
     if (!description?.trim()) {
@@ -58,10 +59,20 @@ Données entreprise :
       category: s.category,
     })));
 
+    // Build variable token hint for the AI
+    const variableHint = variableContext && Object.keys(variableContext).length > 0
+      ? `\nVARIABLES DISPONIBLES — utilise ces tokens exacts pour les données d'entreprise dans le contenu :\n${
+          Object.entries(variableContext)
+            .filter(([k]) => !k.startsWith("company."))
+            .map(([k, v]) => `  {{ ${k} }} → "${v}"`)
+            .join("\n")
+        }\nExemple : écris "{{ entreprise.nom }}" au lieu du nom réel de l'entreprise.`
+      : "";
+
     const systemPrompt = `Tu es un expert en création de sites web professionnels.
 Tu génères des configurations de sites complets en JSON pour un système de builder.
 Tu dois choisir les meilleures sections de la bibliothèque disponible et écrire du contenu professionnel en français.
-Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.`;
+Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.${variableHint}`;
 
     const userPrompt = `
 Description de l'entreprise :
@@ -117,9 +128,10 @@ Réponds avec ce format JSON exact :
 
 IMPORTANT:
 - Utilise uniquement les IDs de sections fournis dans la liste
-- Le contenu doit remplir les clés correspondant aux placeholders {{clé}} des sections
+- Le contenu doit remplir les clés correspondant aux placeholders des sections
 - Écris en français, style professionnel et convaincant
 - Adapte le style guide aux couleurs de l'entreprise si pertinent
+- Si des variables sont disponibles, utilise les tokens {{ entreprise.* }} pour les données dynamiques
 `.trim();
 
     let text: string;

@@ -9,8 +9,9 @@ import {
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
   ChevronUp, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
-  ArrowUpDown,
+  ArrowUpDown, Square, CheckSquare,
 } from "lucide-react";
+import { BulkAIDialog } from "./BulkAIDialog";
 import type { SiteSectionDef, SiteSectionInstance, SectionField } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
@@ -21,6 +22,9 @@ import { getSchemaForSection } from "@/data/section-schemas";
 import type { ColorSchemePreset } from "@/lib/color-utils";
 import type { SectionPreset } from "@/types";
 import { SiteMenusPanel } from "./SiteMenusPanel";
+import { ModelDropdown } from "./SitemapWorkspace";
+import { useAIModel } from "@/hooks/useAIModel";
+import { VariableTextarea } from "./VariableTextarea";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -107,7 +111,7 @@ function Accordion({ title, icon: Icon, defaultOpen = true, children }: {
 
 interface DesignWorkspaceProps {
   sectionDefs: Record<string, SiteSectionDef>;
-  onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
+  onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
 }
 
 // ─── Schema field node in layers ──────────────────────────────────────────────
@@ -185,6 +189,48 @@ function LayersSchemaFields({
   );
 }
 
+// ─── Schema-less layers fallback ─────────────────────────────────────────────
+
+function LayersContentFields({
+  instance,
+  onSelectField,
+  focusedField,
+}: {
+  instance: SiteSectionInstance;
+  onSelectField: (fieldId: string) => void;
+  focusedField: string | null;
+}) {
+  const keys = Object.keys(instance.content).filter(
+    (k) =>
+      !k.startsWith("__") &&
+      (typeof instance.content[k] === "string" || typeof instance.content[k] === "number")
+  );
+  if (keys.length === 0) return null;
+
+  return (
+    <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
+      {keys.map((key) => {
+        const val = instance.content[key];
+        const preview = String(val).slice(0, 28);
+        const isFocused = focusedField === key;
+        const isImageUrl = typeof val === "string" && (val.startsWith("http") || val.includes(".png") || val.includes(".jpg"));
+        const Icon = isImageUrl ? ImageIcon : TypeIcon;
+        return (
+          <button
+            key={key}
+            onClick={(e) => { e.stopPropagation(); onSelectField(key); }}
+            className={`flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[10px] text-left transition-colors ${isFocused ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-500"}`}
+          >
+            <Icon size={9} className="flex-shrink-0 text-gray-400" />
+            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 80 }}>{key}</span>
+            {preview && <span className="truncate text-gray-400 text-[9px]">{preview}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWorkspaceProps) {
@@ -198,6 +244,9 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const [showMenusPanel, setShowMenusPanel] = React.useState(false);
 
   const [focusedField, setFocusedField] = React.useState<string | null>(null);
+  const [bulkSelectMode, setBulkSelectMode] = React.useState(false);
+  const [bulkSelected, setBulkSelected] = React.useState<Set<string>>(new Set());
+  const [bulkDialogOpen, setBulkDialogOpen] = React.useState(false);
 
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
   const selectedInstance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
@@ -219,6 +268,26 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
     setSelectedElement(null);
     setFocusedField(fieldId);
+  };
+
+  const toggleBulkSelectMode = () => {
+    setBulkSelectMode((v) => { if (v) setBulkSelected(new Set()); return !v; });
+  };
+
+  const toggleBulkItem = (instanceId: string) => {
+    setBulkSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(instanceId)) next.delete(instanceId); else next.add(instanceId);
+      return next;
+    });
+  };
+
+  const handleApplyBulk = (updates: Array<{ id: string; content: Record<string, unknown> }>) => {
+    updates.forEach(({ id, content }) => {
+      dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id, content: { ...state.instances[id]?.content, ...content } } });
+    });
+    setBulkSelected(new Set());
+    setBulkSelectMode(false);
   };
 
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
@@ -271,6 +340,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                     sectionDef={secDef}
                     styleGuide={state.styleGuide}
                     menus={state.menus}
+                    variables={state.variableContext}
                   />
                 );
               })}
@@ -281,8 +351,26 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     );
   }
 
+  const bulkInstances = React.useMemo(() => {
+    return Array.from(bulkSelected).flatMap((id) => {
+      const instance = state.instances[id];
+      if (!instance) return [];
+      const def = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+      return [{ instance, def }];
+    });
+  }, [bulkSelected, state.instances, sectionDefs]);
+
   return (
     <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
+
+      {/* ─ Bulk AI Dialog ───────────────────────────────────────────────────── */}
+      <BulkAIDialog
+        open={bulkDialogOpen}
+        onClose={() => setBulkDialogOpen(false)}
+        instances={bulkInstances}
+        onApplyAll={handleApplyBulk}
+        variableContext={state.variableContext}
+      />
 
       {/* ─ Left Panel (context-sensitive) ───────────────────────────────────── */}
       {panelOpen && (
@@ -446,7 +534,10 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                     <div
                       key={instanceId}
                       className="relative cursor-pointer"
-                      style={{ outline: isSelected ? "2px solid #3b82f6" : "2px solid transparent" }}
+                      style={{
+                        outline: isSelected ? "2px solid #3b82f6" : "2px solid transparent",
+                        ...(instance.custom_style as React.CSSProperties ?? {}),
+                      }}
                       onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
                     >
                       <DynamicSectionRenderer
@@ -454,6 +545,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         sectionDef={secDef}
                         styleGuide={state.styleGuide}
                         menus={state.menus}
+                        variables={state.variableContext}
                         editorMode
                         selected={isSelected}
                         onSelect={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
@@ -522,9 +614,23 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
               <Layers size={12} className="text-gray-500" />
               <span className="text-xs font-semibold text-gray-700">Calques</span>
             </div>
-            <button onClick={() => setLayersOpen(false)} className="text-gray-400 hover:text-gray-600">
-              <ChevronRight size={14} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={toggleBulkSelectMode}
+                title={bulkSelectMode ? "Quitter la sélection multiple" : "Sélection multiple pour IA groupée"}
+                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
+                  bulkSelectMode
+                    ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
+                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                <Sparkles size={10} />
+                {bulkSelectMode ? "Sélection" : "IA ×N"}
+              </button>
+              <button onClick={() => setLayersOpen(false)} className="text-gray-400 hover:text-gray-600 ml-1">
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto px-1 py-2 text-[11px] text-gray-700">
             {state.sitemap.map((page) => {
@@ -553,45 +659,80 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         return (
                           <div key={instanceId}>
                             <div
-                              className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"}`}
-                              onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); setFocusedField(null); }}
+                              className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${
+                                bulkSelectMode && bulkSelected.has(instanceId)
+                                  ? "bg-purple-50 text-purple-700"
+                                  : isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
+                              }`}
+                              onClick={() => {
+                                if (bulkSelectMode) {
+                                  toggleBulkItem(instanceId);
+                                } else {
+                                  dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
+                                  setSelectedElement(null);
+                                  setFocusedField(null);
+                                }
+                              }}
                             >
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setExpandedInstances((prev) => {
-                                    const next = new Set(prev);
-                                    const key = `collapsed-${instanceId}`;
-                                    if (next.has(key)) next.delete(key); else next.add(key);
-                                    return next;
-                                  });
-                                }}
-                                className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                              >
-                                <ChevronRight size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
-                              </button>
-                              <Box size={11} className={`flex-shrink-0 ${isSel ? "text-blue-400" : "text-gray-400"}`} />
+                              {bulkSelectMode ? (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); toggleBulkItem(instanceId); }}
+                                  className="flex-shrink-0 text-purple-400"
+                                >
+                                  {bulkSelected.has(instanceId)
+                                    ? <CheckSquare size={11} className="text-purple-600" />
+                                    : <Square size={11} className="text-gray-300" />}
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedInstances((prev) => {
+                                      const next = new Set(prev);
+                                      const key = `collapsed-${instanceId}`;
+                                      if (next.has(key)) next.delete(key); else next.add(key);
+                                      return next;
+                                    });
+                                  }}
+                                  className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                >
+                                  <ChevronRight size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+                                </button>
+                              )}
+                              <Box size={11} className={`flex-shrink-0 ${bulkSelectMode && bulkSelected.has(instanceId) ? "text-purple-400" : isSel ? "text-blue-400" : "text-gray-400"}`} />
                               <span className="flex-1 truncate text-[11px] font-medium">{def?.name ?? "Section"}</span>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
-                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
-                              >
-                                {inst.is_hidden ? <EyeOff size={10} /> : <Eye size={10} />}
-                              </button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); dispatch({ type: "REMOVE_INSTANCE", payload: instanceId }); }}
-                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
-                              >
-                                <Trash2 size={10} />
-                              </button>
+                              {!bulkSelectMode && (
+                                <>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
+                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
+                                  >
+                                    {inst.is_hidden ? <EyeOff size={10} /> : <Eye size={10} />}
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "REMOVE_INSTANCE", payload: instanceId }); }}
+                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
+                                </>
+                              )}
                             </div>
-                            {expanded && schema && (
-                              <LayersSchemaFields
-                                instance={inst}
-                                schema={schema}
-                                focusedField={isSel ? focusedField : null}
-                                onSelectField={(fieldId) => handleLayerFieldSelect(instanceId, fieldId)}
-                              />
+                            {expanded && (
+                              schema ? (
+                                <LayersSchemaFields
+                                  instance={inst}
+                                  schema={schema}
+                                  focusedField={isSel ? focusedField : null}
+                                  onSelectField={(fieldId) => handleLayerFieldSelect(instanceId, fieldId)}
+                                />
+                              ) : (
+                                <LayersContentFields
+                                  instance={inst}
+                                  focusedField={isSel ? focusedField : null}
+                                  onSelectField={(fieldId) => handleLayerFieldSelect(instanceId, fieldId)}
+                                />
+                              )
                             )}
                             {expanded && selectedElement?.instanceId === instanceId && (() => {
                               const Icon = elementIcon(selectedElement.tag);
@@ -617,6 +758,34 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
               );
             })}
           </div>
+
+          {/* Bulk AI action bar */}
+          {bulkSelectMode && (
+            <div className={`border-t border-gray-100 px-3 py-2.5 flex flex-col gap-2 ${bulkSelected.size > 0 ? "bg-purple-50" : "bg-gray-50"}`}>
+              {bulkSelected.size === 0 ? (
+                <p className="text-[10px] text-gray-400 text-center">Cochez des sections pour les régénérer en groupe</p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-semibold text-purple-700">{bulkSelected.size} section{bulkSelected.size !== 1 ? "s" : ""}</span>
+                    <button
+                      onClick={() => setBulkSelected(new Set())}
+                      className="text-[10px] text-gray-400 hover:text-gray-600"
+                    >
+                      Tout décocher
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setBulkDialogOpen(true)}
+                    className="flex items-center justify-center gap-1.5 w-full py-1.5 text-xs font-semibold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    <Sparkles size={11} />
+                    Régénérer avec IA
+                  </button>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
       {!layersOpen && (
@@ -824,7 +993,7 @@ function SectionPanel({
 }: {
   instance: SiteSectionInstance;
   sectionDefs: Record<string, SiteSectionDef>;
-  onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
+  onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
   focusedField?: string | null;
   onClearFocusedField?: () => void;
 }) {
@@ -998,6 +1167,9 @@ function SectionPanel({
                 />
               );
             })()}
+
+            {/* Per-section color overrides via CSS vars */}
+            <SectionColorOverrides instance={instance} />
 
             {/* Advanced CSS overrides */}
             <div>
@@ -1343,15 +1515,17 @@ function AIRegenerateSection({
   onRegenerate,
 }: {
   instanceId: string;
-  onRegenerate: (id: string, prompt: string) => Promise<void>;
+  onRegenerate: (id: string, prompt: string, model: string) => Promise<void>;
 }) {
+  const { state } = useRelumeBuilder();
   const [prompt, setPrompt] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [selectedModel, setSelectedModel] = useAIModel();
 
   const handleRegenerate = async () => {
     setLoading(true);
     try {
-      await onRegenerate(instanceId, prompt);
+      await onRegenerate(instanceId, prompt, selectedModel);
       setPrompt("");
     } finally {
       setLoading(false);
@@ -1364,12 +1538,18 @@ function AIRegenerateSection({
         <Sparkles size={12} className="text-purple-500" />
         <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">IA Copywriting</span>
       </div>
-      <textarea
+      <div>
+        <label className="text-[10px] text-gray-500 block mb-1">Modèle IA</label>
+        <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
+      </div>
+      <VariableTextarea
         value={prompt}
-        onChange={(e) => setPrompt(e.target.value)}
+        onChange={setPrompt}
         placeholder="Ex: rends ce contenu plus professionnel et dynamique..."
         rows={3}
         className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-purple-400 resize-none"
+        variables={state.variableContext}
+        variant="light"
       />
       <button
         onClick={handleRegenerate}
@@ -1386,5 +1566,77 @@ function AIRegenerateSection({
   );
 }
 
-// Suppress unused import warnings
+// ─── Per-section color overrides (stored as CSS vars in custom_style) ────────
+
+const SECTION_COLOR_OVERRIDES: { cssVar: string; label: string }[] = [
+  { cssVar: "--color-primary", label: "Couleur principale" },
+  { cssVar: "--color-background", label: "Fond de section" },
+  { cssVar: "--color-text", label: "Couleur du texte" },
+  { cssVar: "--color-secondary", label: "Couleur secondaire" },
+];
+
+function SectionColorOverrides({ instance }: { instance: SiteSectionInstance }) {
+  const { dispatch } = useRelumeBuilder();
+  const style = (instance.custom_style ?? {}) as Record<string, string>;
+  const [open, setOpen] = React.useState(false);
+
+  const updateVar = (cssVar: string, value: string) => {
+    dispatch({ type: "UPDATE_INSTANCE_STYLE", payload: { id: instance.id, style: { [cssVar]: value } } });
+  };
+
+  const hasOverrides = SECTION_COLOR_OVERRIDES.some((o) => style[o.cssVar] && style[o.cssVar] !== "");
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-gray-50 transition-colors"
+      >
+        <div>
+          <div className="text-[11px] font-medium text-gray-700">Couleurs de section</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">
+            {hasOverrides ? "Surcharges actives" : "Utilise le style global"}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {hasOverrides && <span className="w-2 h-2 rounded-full bg-blue-500" />}
+          <ChevronDown size={11} className={`text-gray-400 transition-transform ${open ? "rotate-180" : ""}`} />
+        </div>
+      </button>
+      {open && (
+        <div className="border-t border-gray-100 px-3 pb-3 pt-2 space-y-2">
+          {SECTION_COLOR_OVERRIDES.map(({ cssVar, label }) => (
+            <div key={cssVar} className="flex items-center gap-2">
+              <input
+                type="color"
+                value={style[cssVar] ?? "#000000"}
+                onChange={(e) => updateVar(cssVar, e.target.value)}
+                className="w-7 h-7 rounded border border-gray-200 cursor-pointer flex-shrink-0"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="text-[10px] text-gray-700 font-medium">{label}</div>
+                {style[cssVar] && (
+                  <div className="text-[9px] font-mono text-gray-400">{style[cssVar]}</div>
+                )}
+              </div>
+              {style[cssVar] && (
+                <button
+                  onClick={() => updateVar(cssVar, "")}
+                  className="text-gray-300 hover:text-red-400 transition-colors"
+                  title="Supprimer la surcharge"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+          ))}
+          <p className="text-[9px] text-gray-400 leading-relaxed pt-1">
+            Ces couleurs remplacent le style global uniquement pour cette section.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 void Move;

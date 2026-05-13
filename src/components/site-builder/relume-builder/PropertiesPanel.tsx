@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X, Settings, Palette, FileText } from "lucide-react";
 import type { SiteSectionInstance, SnippetDefinition } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
+import { ModelDropdown } from "./SitemapWorkspace";
+import { useAIModel } from "@/hooks/useAIModel";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
 import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
 import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
@@ -12,7 +14,7 @@ import type { ColorSchemePreset } from "@/lib/color-utils";
 import type { SectionPreset } from "@/types";
 
 interface PropertiesPanelProps {
-  onRegenerateSection?: (instanceId: string, prompt: string) => Promise<void>;
+  onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
 }
 
 type TabId = "content" | "style" | "ai";
@@ -225,7 +227,7 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
         {activeTab === "ai" && (
           <div className="px-4 py-3">
             {onRegenerateSection ? (
-              <AIRegenerateSection instanceId={instance.id} onRegenerate={onRegenerateSection} />
+              <AIRegenerateSection instanceId={instance.id} onRegenerate={(id, prompt, model) => onRegenerateSection(id, prompt, model)} />
             ) : (
               <div className="text-center py-6 space-y-2">
                 <Sparkles size={20} className="text-purple-400/30 mx-auto" />
@@ -618,15 +620,16 @@ function PresetsPicker({ presets, onApply }: { presets: SectionPreset[]; onApply
 function AIRegenerateSection({
   instanceId, onRegenerate,
 }: {
-  instanceId: string; onRegenerate: (id: string, prompt: string) => Promise<void>;
+  instanceId: string; onRegenerate: (id: string, prompt: string, model: string) => Promise<void>;
 }) {
   const [prompt, setPrompt] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [selectedModel, setSelectedModel] = useAIModel();
 
   const handleRegenerate = async () => {
     setLoading(true);
     try {
-      await onRegenerate(instanceId, prompt);
+      await onRegenerate(instanceId, prompt, selectedModel);
       setPrompt("");
     } finally {
       setLoading(false);
@@ -638,6 +641,10 @@ function AIRegenerateSection({
       <div className="flex items-center gap-2">
         <Sparkles size={12} className="text-purple-400" />
         <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">IA Copywriting</span>
+      </div>
+      <div>
+        <label className="text-[11px] text-white/40 block mb-1">Modèle IA</label>
+        <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
       </div>
       <textarea
         value={prompt}

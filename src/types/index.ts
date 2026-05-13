@@ -1120,6 +1120,8 @@ export interface RelumeBuilderState {
   isDirty: boolean;
   history: RelumeHistoryEntry[];
   historyIndex: number;
+  /** Resolved enterprise variables for template substitution, e.g. { "entreprise.nom": "Acme" } */
+  variableContext: Record<string, string>;
 }
 
 export interface RelumeHistoryEntry {
@@ -1127,6 +1129,8 @@ export interface RelumeHistoryEntry {
   instancesByPage: Record<string, string[]>;
   styleGuide: StyleGuide;
   sitemap: SitemapPage[];
+  /** Coalescing key — if the incoming entry has the same tag as the last entry, replace instead of append */
+  _tag?: string;
 }
 
 export type RelumeBuilderAction =
@@ -1160,4 +1164,5 @@ export type RelumeBuilderAction =
   | { type: 'SYNC_MENUS_FROM_SITEMAP' }
   | { type: 'UNDO' }
   | { type: 'REDO' }
-  | { type: 'MARK_SAVED' };
+  | { type: 'MARK_SAVED' }
+  | { type: 'SET_VARIABLE_CONTEXT'; payload: Record<string, string> };
