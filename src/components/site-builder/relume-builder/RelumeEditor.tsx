@@ -434,6 +434,7 @@ function RelumeEditorInner({
     for (const [pageSlug, serialized] of Object.entries(config.instancesByPage)) {
       for (const s of serialized) {
         const id = nanoid();
+        const createdAt = new Date().toISOString();
         flatInstances.push({
           id,
           site_id: siteId,
@@ -442,9 +443,15 @@ function RelumeEditorInner({
           page_slug: pageSlug,
           sort_order: s.sort_order,
           content: s.content,
-          blocks: s.blocks,
+          blocks: s.blocks.map((block) => ({
+            id: block.id ?? nanoid(),
+            type: block.type,
+            settings: block.settings,
+          })),
           custom_style: s.custom_style,
           is_hidden: s.is_hidden,
+          created_at: createdAt,
+          updated_at: createdAt,
         });
       }
     }

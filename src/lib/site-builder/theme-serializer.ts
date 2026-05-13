@@ -4,7 +4,7 @@ export interface SerializedInstance {
   section_id: string;
   sort_order: number;
   content: Record<string, unknown>;
-  blocks: Array<{ type: string; settings: Record<string, unknown> }>;
+  blocks: Array<{ id?: string; type: string; settings: Record<string, unknown> }>;
   custom_style: Record<string, string>;
   is_hidden: boolean;
 }
@@ -24,14 +24,18 @@ export function serializeTheme(state: RelumeBuilderState): SerializedThemeConfig
     instancesByPage[pageSlug] = ids
       .map((id) => state.instances[id])
       .filter(Boolean)
-      .map((inst) => ({
-        section_id: inst.section_id,
-        sort_order: inst.sort_order,
-        content: inst.content,
-        blocks: (inst.blocks ?? []).map((b) => ({ type: b.type, settings: b.settings })),
-        custom_style: (inst.custom_style ?? {}) as Record<string, string>,
-        is_hidden: inst.is_hidden,
-      }));
+      .flatMap((inst) => {
+        if (!inst.section_id) return [];
+
+        return [{
+          section_id: inst.section_id,
+          sort_order: inst.sort_order,
+          content: inst.content,
+          blocks: (inst.blocks ?? []).map((b) => ({ id: b.id, type: b.type, settings: b.settings })),
+          custom_style: (inst.custom_style ?? {}) as Record<string, string>,
+          is_hidden: inst.is_hidden,
+        }];
+      });
   }
 
   return {

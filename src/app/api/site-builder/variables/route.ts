@@ -3,6 +3,22 @@ import { getSupabaseServiceClient } from "@/lib/supabase-service";
 
 export const dynamic = "force-dynamic";
 
+type EnterpriseVariablesRow = {
+  nom: string | null;
+  ville: string | null;
+  telephone: string | null;
+  email: string | null;
+  adresse: string | null;
+  code_postal: string | null;
+  pays: string | null;
+  service_tags: string[] | string | null;
+  note_moyenne: number | string | null;
+  nombre_avis: number | string | null;
+  logo_url: string | null;
+  site_web_canonique: string | null;
+  canonical_url: string | null;
+};
+
 /**
  * GET /api/site-builder/variables?enterprise=<id>
  *
@@ -35,7 +51,7 @@ export async function GET(req: Request) {
 
   const supabase = getSupabaseServiceClient();
 
-  const { data: ent, error } = await supabase
+  const { data, error } = await supabase
     .from("entreprises")
     .select(
       "nom, ville, telephone, email, adresse, code_postal, pays, " +
@@ -45,9 +61,11 @@ export async function GET(req: Request) {
     .eq("id", enterpriseId)
     .single();
 
-  if (error || !ent) {
+  if (error || !data) {
     return NextResponse.json({ error: error?.message ?? "Not found" }, { status: 404 });
   }
+
+  const ent = data as unknown as EnterpriseVariablesRow;
 
   // Build service string from tags array
   const services = Array.isArray(ent.service_tags)
