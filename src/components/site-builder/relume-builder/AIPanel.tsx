@@ -109,13 +109,17 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
         const sectionDef = sectionById[sectionData.section_id];
         if (!sectionDef) continue;
 
+        const baseContent: Record<string, unknown> = { ...(sectionData.content ?? {}) };
+        if (sectionDef.theme_slug && sectionDef.theme_section_id) {
+          baseContent.__library = { theme_slug: sectionDef.theme_slug, section_id: sectionDef.theme_section_id };
+        }
         const instance: SiteSectionInstance = {
           id: nanoid(),
           site_id: siteId,
-          section_id: sectionDef.id,
+          section_id: null,
           page_slug: page.slug,
           sort_order: idx,
-          content: sectionData.content ?? {},
+          content: baseContent,
           blocks: Array.isArray(sectionData.blocks) ? sectionData.blocks : [],
           custom_style: {},
           is_hidden: false,

@@ -264,8 +264,12 @@ function buildHTML(
     .rounded-3xl, .rounded-sm, .rounded-full {
       border-radius: var(--btn-radius) !important;
     }
-    /* Force button style (filled/outline/soft) from Style Guide tokens. */
-    button, .btn, [role="button"], a.button {
+    /* Force button style (filled/outline/soft) from Style Guide tokens.
+       Matches <button>, classed buttons, and anchors styled like buttons
+       (Relume sections use <a> with inline backgroundColor/borderRadius —
+        plain text links have neither so they're left alone). */
+    button, .btn, [role="button"], a.button,
+    a[style*="background"], a[style*="border-radius"] {
       border-radius: var(--btn-radius) !important;
       background-color: var(--btn-bg) !important;
       color: var(--btn-text) !important;
