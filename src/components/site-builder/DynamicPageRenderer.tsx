@@ -3,7 +3,7 @@ import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
-import { generateShadeCSSVars } from "@/lib/color-utils";
+import { generateShadeCSSVars, getContrastColor } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
 import type { ReviewItem } from "@/lib/site-resolver";
 import { LibrarySectionIframe } from "./LibrarySectionIframe";
