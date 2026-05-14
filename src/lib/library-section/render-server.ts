@@ -1,13 +1,12 @@
 /**
  * Server-only: evaluates pre-compiled section JS and renders it to an HTML string
- * via react-dom/server renderToString.
+ * via react-dom/server renderToString loaded at runtime.
  *
  * try/catch per section: a broken section renders an empty string so the rest
  * of the page is unaffected.
  */
 import "server-only";
 import React from "react";
-import { renderToString } from "react-dom/server";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
 
@@ -22,6 +21,16 @@ export interface RenderSectionOptions {
 export interface RenderSectionResult {
   html: string;
   error?: string;
+}
+
+function getRenderToString() {
+  // Hide react-dom/server from Next's Server Component compiler. The public
+  // site intentionally renders user-authored library sections to static markup,
+  // but importing react-dom/server statically in the RSC graph fails production
+  // builds. Loading it at runtime keeps the module server-only without forcing
+  // webpack to parse it as part of the component graph.
+  const runtimeRequire = Function("return require")() as NodeJS.Require;
+  return (runtimeRequire("react-dom/server") as typeof import("react-dom/server")).renderToString;
 }
 
 export function renderSectionToHTML(options: RenderSectionOptions): RenderSectionResult {
@@ -83,7 +92,7 @@ export function renderSectionToHTML(options: RenderSectionOptions): RenderSectio
       return { html: "", error: "Evaluated value is not a function" };
     }
 
-    const html = renderToString(
+    const html = getRenderToString()(
       React.createElement(Component, { tokens, data, variables })
     );
 

@@ -1,6 +1,6 @@
 /**
  * Server-only: generates a minimal Tailwind CSS string for a set of class tokens
- * using @tailwindcss/postcss programmatically.
+ * using @tailwindcss/postcss programmatically at runtime.
  *
  * Strategy:
  *  1. Write the class tokens to a temp HTML file in /tmp so Tailwind can scan them.
@@ -43,10 +43,16 @@ export async function generateTailwindCSS(classTokens: string[]): Promise<string
 async function _compile(unique: string[], key: string): Promise<string> {
   const tmpFile = join(tmpdir(), `tw-lib-${key}.html`);
   try {
-    // postcss and @tailwindcss/postcss are devDeps but installed on Vercel during
-    // the build step and available at runtime in the Next.js Node.js runtime.
-    const postcss = (await import("postcss")).default;
-    const twPlugin = (await import("@tailwindcss/postcss")).default;
+    // Keep Tailwind's native oxide/lightningcss packages out of the RSC webpack
+    // graph. Static/dynamic imports make Next try to parse `.node` binaries during
+    // `next build`; runtime require preserves server-only JIT generation.
+    const runtimeRequire = Function("return require")() as NodeJS.Require;
+    const postcssModule = runtimeRequire("postcss") as typeof import("postcss") & { default?: typeof import("postcss") };
+    const tailwindModule = runtimeRequire("@tailwindcss/postcss") as {
+      default?: import("postcss").PluginCreator<unknown>;
+    } & import("postcss").PluginCreator<unknown>;
+    const postcss = postcssModule.default ?? postcssModule;
+    const twPlugin = tailwindModule.default ?? tailwindModule;
 
     // Write classes as HTML content so Tailwind's scanner picks them up
     await writeFile(tmpFile, `<div class="${unique.join(" ")}"></div>`);
