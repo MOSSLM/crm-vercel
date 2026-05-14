@@ -104,9 +104,22 @@ Every visible string **must** come from `window.__data` or be interpolated with 
 </a>
 ```
 
-### 2. Every `<button>`, `<a>`, `<input>`, `<form>` must map to a schema field
+### 2. Interactive elements should bind to a content key, ideally with `data-field-id`
 
-Interactive elements must have a corresponding field in the section schema. Use composite types for buttons, links, and inputs. This ensures they are editable in the Properties Panel.
+The builder edits any element you click in the canvas — texts, images, buttons, links, inputs, forms — **without** needing a schema declaration. It works in two layers:
+
+- **Resolved binding** (preferred): when an element value matches a key in `content` or in a block's `settings`, that key is updated directly. Add `data-field-id="<key>"` on the element to make the binding explicit (no value matching required):
+
+  ```tsx
+  <h1 data-field-id="heading">{v(data.heading)}</h1>
+  <a data-field-id="cta_primary" className="cta-primary" href={v(data.cta_primary?.href)}>
+    {v(data.cta_primary?.label)}
+  </a>
+  ```
+
+  This is the safest path — fast, deterministic, and robust to translation or duplicated text.
+
+- **DOM-path override** (fallback): when no content key matches the clicked value (i.e. the element is hardcoded), the editor stores the user's edit in `content.__overrides[<DOM path>] = { kind, value }`. The iframe applies these overrides after every React render. Use this only as a safety net — explicit bindings are preferable.
 
 ### 3. CTA buttons must use `.cta-primary` / `.cta-secondary`
 
@@ -151,6 +164,21 @@ Available CSS vars: `--color-primary`, `--color-secondary`, `--color-accent`, `-
 ### 7. Animation — use `__animation_*` keys (read-only in section code)
 
 Animations are applied at the canvas level by `AnimatedSection`. Section code does not need to handle them.
+
+### 8. DOM classification rules (how the editor figures out the element kind)
+
+When the user clicks an element in the canvas, the iframe classifies it into a *kind* that determines which editor opens:
+
+| DOM | kind | Editor opened |
+|---|---|---|
+| `<img>`, `<picture>`, child `<svg>` of `<picture>` | `image` | Image picker (upload / library / URL) |
+| `<button>`, `<a class="cta-primary">`, `<a class="cta-secondary">`, `<a class="btn">`, `<a class="button">`, `<a role="button">` | `button` | Label + href + target + style overrides |
+| `<a>` (any other) | `link` | Label + href + target |
+| `<input>`, `<textarea>` | `input` | Placeholder + type + name + required |
+| `<form>` | `form` | Action + method |
+| `<h1>..<h6>`, `<p>`, `<span>`, `<li>`, `<blockquote>`, `<label>` | `text` | VariableTextarea |
+
+**Implication for section authors**: if you want a clickable element to be classified as a *button* rather than a generic link, give it `cta-primary`, `cta-secondary`, or `btn` class. If you want a heading to be its own row in the Layers panel rather than nested inside a `<p>`, give it a real `<h1>..<h6>` tag.
 
 ---
 

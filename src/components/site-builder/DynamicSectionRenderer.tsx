@@ -3,7 +3,7 @@
 import React from "react";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
-import { LibrarySectionIframe } from "./LibrarySectionIframe";
+import { LibrarySectionIframe, type IframeElementClickInfo } from "./LibrarySectionIframe";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 import {
   resolveColorScheme,
@@ -31,7 +31,7 @@ interface DynamicSectionRendererProps {
   wireframe?: boolean;
   /** Enable element click selection inside library iframes. */
   selectionEnabled?: boolean;
-  onElementClick?: (info: { tag: string; text: string; path: number[] }) => void;
+  onElementClick?: (info: IframeElementClickInfo) => void;
 }
 
 /** Convert StyleGuide into CSS custom properties object */

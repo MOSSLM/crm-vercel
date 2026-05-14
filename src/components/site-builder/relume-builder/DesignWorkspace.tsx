@@ -7,14 +7,16 @@ import {
   ZoomIn, ZoomOut, Eye, EyeOff,
   Type as TypeIcon, MousePointer, Box, ChevronRight,
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
-  ChevronUp, AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  ChevronUp,
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
   ArrowUpDown, Square, CheckSquare,
 } from "lucide-react";
 import { BulkAIDialog } from "./BulkAIDialog";
-import type { SiteSectionDef, SiteSectionInstance, SectionField } from "@/types";
+import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import type { IframeElementClickInfo } from "../LibrarySectionIframe";
+import { ElementPanel } from "./element-panels/ElementPanel";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
 import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
 import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
@@ -71,11 +73,31 @@ function useCanvasPanZoom() {
 
 // ─── Selected element info ────────────────────────────────────────────────────
 
+export type ElementKind = "text" | "image" | "button" | "link" | "input" | "form";
+
+export interface ElementAttrs {
+  src?: string;
+  alt?: string;
+  href?: string;
+  target?: string;
+  className?: string;
+  inputType?: string;
+  placeholder?: string;
+  name?: string;
+  value?: string;
+  required?: boolean;
+  action?: string;
+  method?: string;
+}
+
 interface SelectedElement {
   instanceId: string;
+  kind: ElementKind;
   tag: string;
   text: string;
   path: number[];
+  attrs: ElementAttrs;
+  fieldId: string | null;
 }
 
 function elementIcon(tag: string) {
@@ -116,19 +138,7 @@ interface DesignWorkspaceProps {
   onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
 }
 
-// ─── Schema field node in layers ──────────────────────────────────────────────
-
-function schemaFieldIcon(type: string) {
-  if (type === "image_picker" || type === "image" || type === "video_url") return ImageIcon;
-  if (type === "page_link" || type === "url") return LinkIcon;
-  if (type === "link") return LinkIcon;
-  if (type === "button") return MousePointer;
-  if (type === "input" || type === "textarea_input") return Square;
-  if (type === "form") return Layers;
-  if (["header", "header_navigation", "navigation"].includes(type)) return Navigation;
-  if (["text", "textarea", "richtext", "html"].includes(type)) return TypeIcon;
-  return Box;
-}
+// ─── Schema-free layers tree ──────────────────────────────────────────────────
 
 function fieldPreview(value: unknown): string {
   if (typeof value === "string") return value.slice(0, 28);
@@ -141,147 +151,128 @@ function fieldPreview(value: unknown): string {
   return "";
 }
 
-function LayersSchemaFields({
+/**
+ * Infer an element kind from a content value. Used by the schema-free layers
+ * panel to pick a typed icon and to build a synthetic SelectedElement when
+ * the user clicks a layer (so the right ElementPanel opens immediately).
+ */
+function inferKindFromValue(val: unknown): ElementKind {
+  if (typeof val === "string") {
+    const isImage = val.startsWith("http") && /\.(png|jpg|jpeg|webp|gif|svg|avif)/i.test(val);
+    return isImage ? "image" : "text";
+  }
+  if (val && typeof val === "object" && !Array.isArray(val)) {
+    const v = val as Record<string, unknown>;
+    if ("action" in v || "method" in v) return "form";
+    if ("input_type" in v || ("placeholder" in v && "name" in v)) return "input";
+    if ("href" in v && "label" in v && ("target" in v || "style_overrides" in v)) return "button";
+    if ("href" in v && "label" in v) return "link";
+    if ("src" in v) return "image";
+  }
+  return "text";
+}
+
+function kindIcon(kind: ElementKind): React.ElementType {
+  switch (kind) {
+    case "image": return ImageIcon;
+    case "button": return MousePointer;
+    case "link": return LinkIcon;
+    case "input":
+    case "form": return Square;
+    case "text":
+    default: return TypeIcon;
+  }
+}
+
+/**
+ * Unified, schema-free layers tree. Walks instance.content (excluding __keys)
+ * and each block's settings recursively. Each row maps to a kind-typed icon
+ * and on click builds a synthetic SelectedElement so the kind-routed
+ * ElementPanel opens directly — no schema dependency anywhere.
+ *
+ * Schema, when present, is used solely to read prettier labels via
+ * schema.settings.find(s => s.id === key)?.label.
+ */
+function LayersFields({
   instance,
   schema,
   onSelectField,
   focusedField,
 }: {
   instance: SiteSectionInstance;
-  schema: ReturnType<typeof import("@/data/section-schemas").getSchemaForSection>;
-  onSelectField: (fieldId: string) => void;
+  schema: ReturnType<typeof import("@/data/section-schemas").getSchemaForSection> | null;
+  onSelectField: (fieldId: string, kind: ElementKind, blockId?: string) => void;
   focusedField: string | null;
 }) {
-  if (!schema) return null;
-  const fields = schema.settings ?? [];
-  const blocks = schema.blocks ?? [];
-  type FieldWithId = SectionField & { id: string; label?: string };
-  const visible = fields.filter(
-    (f): f is FieldWithId =>
-      f.type !== "header" &&
-      f.type !== "paragraph" &&
-      "id" in f &&
-      !String(f.id).startsWith("__")
-  );
+  const labelFor = (key: string): string => {
+    if (!schema) return key;
+    const f = (schema.settings ?? []).find((s) => "id" in s && (s as { id: string }).id === key) as { label?: string } | undefined;
+    return f?.label ? String(f.label) : key;
+  };
+  const blockLabelFor = (blockType: string, key: string): string => {
+    if (!schema) return key;
+    const blockDef = (schema.blocks ?? []).find((b) => b.type === blockType);
+    if (!blockDef) return key;
+    const f = (blockDef.settings ?? []).find((s) => "id" in s && (s as { id: string }).id === key) as { label?: string } | undefined;
+    return f?.label ? String(f.label) : key;
+  };
+
+  const renderRow = (key: string, val: unknown, blockId: string | undefined, depth: number) => {
+    const kind = inferKindFromValue(val);
+    const Icon = kindIcon(kind);
+    const preview = fieldPreview(val);
+    const focusKey = blockId ? `${blockId}.${key}` : key;
+    const isFocused = focusedField === focusKey;
+    const label = blockId ? blockLabelFor(instance.blocks.find((b) => b.id === blockId)?.type ?? "", key) : labelFor(key);
+    return (
+      <button
+        key={focusKey}
+        onClick={(e) => { e.stopPropagation(); onSelectField(focusKey, kind, blockId); }}
+        className={`flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[10px] text-left transition-colors ${isFocused ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-500"}`}
+        style={{ paddingLeft: `${6 + depth * 8}px` }}
+      >
+        <Icon size={9} className="flex-shrink-0 text-gray-400" />
+        <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 90 }}>{label}</span>
+        {preview && <span className="truncate text-gray-400 text-[9px]">{preview}</span>}
+      </button>
+    );
+  };
+
+  const editableKeys = (settings: Record<string, unknown>) =>
+    Object.keys(settings).filter(
+      (k) =>
+        !k.startsWith("__") &&
+        (typeof settings[k] === "string" ||
+          typeof settings[k] === "number" ||
+          (settings[k] !== null && typeof settings[k] === "object" && !Array.isArray(settings[k]))),
+    );
 
   return (
     <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
-      {visible.map((f) => {
-        const Icon = schemaFieldIcon(f.type);
-        const isFocused = focusedField === f.id;
-        const preview = fieldPreview(instance.content[f.id]);
-        return (
-          <button
-            key={f.id}
-            onClick={(e) => { e.stopPropagation(); onSelectField(f.id); }}
-            className={`group flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[10px] text-left transition-colors ${isFocused ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-500"}`}
-          >
-            <Icon size={9} className="flex-shrink-0 text-gray-400" />
-            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 80 }}>{f.label ? String(f.label) : f.id}</span>
-            {preview && <span className="truncate text-gray-400 text-[9px]">{preview}</span>}
-          </button>
-        );
-      })}
-      {blocks.map((blockDef) => {
-        const items = instance.blocks?.filter((b) => b.type === blockDef.type) ?? [];
-        return (
-          <div key={blockDef.type} className="mt-0.5">
-            <div className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] text-gray-400 font-semibold uppercase tracking-wider">
-              <Box size={8} />
-              {blockDef.name} ({items.length})
-            </div>
-            {items.map((item, idx) => {
-              // Preview: first string-typed setting value
-              const firstStrSetting = blockDef.settings?.find(
-                (s) => "id" in s && typeof item.settings[s.id as string] === "string"
-              );
-              const label = firstStrSetting && "id" in firstStrSetting
-                ? (item.settings[firstStrSetting.id as string] as string).slice(0, 24)
-                : `Item ${idx + 1}`;
-              return (
-                <div key={item.id} className="ml-2 mt-0.5">
-                  <div className="flex items-center gap-1.5 px-1.5 py-0.5 text-[10px] text-gray-400 rounded">
-                    <Box size={8} className="text-gray-300 flex-shrink-0" />
-                    <span className="truncate font-medium">{label}</span>
-                  </div>
-                  {/* Block sub-fields */}
-                  <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
-                    {blockDef.settings
-                      ?.filter((s): s is FieldWithId => s.type !== "header" && s.type !== "paragraph" && "id" in s)
-                      .map((s) => {
-                        const BIcon = schemaFieldIcon(s.type);
-                        const bPreview = fieldPreview(item.settings[s.id]);
-                        return (
-                          <div
-                            key={s.id}
-                            className="flex items-center gap-1.5 px-1.5 py-0.5 text-[9px] text-gray-400 rounded hover:bg-gray-50"
-                          >
-                            <BIcon size={8} className="flex-shrink-0 text-gray-300" />
-                            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 60 }}>{s.label ? String(s.label) : s.id}</span>
-                            {bPreview && <span className="truncate text-gray-300 text-[9px]">{bPreview}</span>}
-                          </div>
-                        );
-                      })}
-                  </div>
+      {editableKeys(instance.content).map((key) => renderRow(key, instance.content[key], undefined, 0))}
+
+      {/* Blocks recursively */}
+      {(instance.blocks ?? []).length > 0 && (
+        <div className="mt-1 pt-1 border-t border-gray-100">
+          {instance.blocks.map((block, idx) => {
+            const firstStr = Object.values(block.settings).find((v) => typeof v === "string") as string | undefined;
+            const blockLabel = firstStr ? firstStr.slice(0, 24) : `${block.type} ${idx + 1}`;
+            return (
+              <div key={block.id} className="mt-0.5">
+                <div className="flex items-center gap-1 px-1.5 py-0.5 text-[9px] text-gray-400 font-semibold uppercase tracking-wider">
+                  <Box size={8} />
+                  <span className="truncate">{blockLabel}</span>
                 </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Schema-less layers fallback ─────────────────────────────────────────────
-
-function LayersContentFields({
-  instance,
-  onSelectField,
-  focusedField,
-}: {
-  instance: SiteSectionInstance;
-  onSelectField: (fieldId: string) => void;
-  focusedField: string | null;
-}) {
-  const keys = Object.keys(instance.content).filter(
-    (k) =>
-      !k.startsWith("__") &&
-      (typeof instance.content[k] === "string" ||
-        typeof instance.content[k] === "number" ||
-        (instance.content[k] !== null && typeof instance.content[k] === "object" && !Array.isArray(instance.content[k])))
-  );
-  if (keys.length === 0) return null;
-
-  return (
-    <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
-      {keys.map((key) => {
-        const val = instance.content[key];
-        const preview = fieldPreview(val);
-        const isFocused = focusedField === key;
-        let Icon = TypeIcon;
-        if (typeof val === "string") {
-          const isImage = val.startsWith("http") && /\.(png|jpg|jpeg|webp|gif|svg|avif)/i.test(val);
-          Icon = isImage ? ImageIcon : TypeIcon;
-        } else if (val && typeof val === "object") {
-          const v = val as Record<string, unknown>;
-          if ("href" in v && "label" in v && "target" in v && "style_overrides" in v) Icon = MousePointer;
-          else if ("href" in v && "label" in v) Icon = LinkIcon;
-          else if ("input_type" in v || "placeholder" in v) Icon = Square;
-          else if ("action" in v || "method" in v) Icon = Layers;
-        }
-        return (
-          <button
-            key={key}
-            onClick={(e) => { e.stopPropagation(); onSelectField(key); }}
-            className={`flex items-center gap-1.5 w-full px-1.5 py-1 rounded text-[10px] text-left transition-colors ${isFocused ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-500"}`}
-          >
-            <Icon size={9} className="flex-shrink-0 text-gray-400" />
-            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 80 }}>{key}</span>
-            {preview && <span className="truncate text-gray-400 text-[9px]">{preview}</span>}
-          </button>
-        );
-      })}
+                <div className="ml-1">
+                  {editableKeys(block.settings).map((key) =>
+                    renderRow(key, block.settings[key], block.id, 1),
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -306,7 +297,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
   const selectedInstance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
 
-  const handleElementClick = React.useCallback((instanceId: string) => (info: { tag: string; text: string; path: number[] }) => {
+  const handleElementClick = React.useCallback((instanceId: string) => (info: IframeElementClickInfo) => {
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
     setSelectedElement({ instanceId, ...info });
   }, [dispatch]);
@@ -319,14 +310,52 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     });
   };
 
-  const handleLayerFieldSelect = (instanceId: string, fieldId: string) => {
+  const handleLayerFieldSelect = (
+    instanceId: string,
+    focusKey: string,
+    kind: ElementKind,
+    blockId?: string,
+  ) => {
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
-    setSelectedElement(null);
-    setFocusedField(fieldId);
-    // Scroll the left panel to the matching field after a brief delay
-    requestAnimationFrame(() => {
-      const el = document.querySelector(`[data-field-id="${CSS.escape(fieldId)}"]`);
-      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    setFocusedField(focusKey);
+    // Build a synthetic SelectedElement so the kind-routed ElementPanel opens.
+    // fieldId carries the actual content key (strip any blockId prefix).
+    const actualKey = blockId ? focusKey.split(".").slice(1).join(".") : focusKey;
+    const inst = state.instances[instanceId];
+    let text = "";
+    let attrs: ElementAttrs = {};
+    if (inst) {
+      const settings = blockId
+        ? inst.blocks.find((b) => b.id === blockId)?.settings ?? {}
+        : inst.content;
+      const val = settings[actualKey];
+      if (typeof val === "string") {
+        if (kind === "image") attrs = { src: val };
+        else if (kind === "link" || kind === "button") attrs = { href: val };
+        else text = val;
+      } else if (val && typeof val === "object") {
+        const obj = val as Record<string, unknown>;
+        text = (obj.label as string) ?? "";
+        attrs = {
+          href: obj.href as string | undefined,
+          target: obj.target as string | undefined,
+          src: obj.src as string | undefined,
+          placeholder: obj.placeholder as string | undefined,
+          name: obj.name as string | undefined,
+          inputType: obj.input_type as string | undefined,
+          action: obj.action as string | undefined,
+          method: obj.method as string | undefined,
+        };
+      }
+    }
+    setSelectedElement({
+      instanceId,
+      kind,
+      tag: kind === "image" ? "img" : kind === "button" || kind === "link" ? "a" : kind === "input" ? "input" : kind === "form" ? "form" : "p",
+      text,
+      path: [],
+      attrs,
+      fieldId: actualKey,
     });
   };
 
@@ -353,8 +382,9 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
 
   // Determine left panel mode
-  const panelMode: "global" | "section" | "text" =
-    selectedElement && /^(h[1-6]|p|span|blockquote|li)$/.test(selectedElement.tag) ? "text" :
+  // "element" = an element inside a section was clicked (any kind: text, image, button, link, input, form)
+  const panelMode: "global" | "section" | "element" =
+    selectedElement ? "element" :
     selectedInstance ? "section" :
     "global";
 
@@ -476,10 +506,15 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                 </button>
               </>
             )}
-            {panelMode === "text" && selectedElement && (
+            {panelMode === "element" && selectedElement && (
               <>
-                <TypeIcon size={12} className="text-purple-500" />
-                <span className="text-xs font-semibold text-gray-800 flex-1">&lt;{selectedElement.tag}&gt; Texte</span>
+                {(() => {
+                  const Icon = elementIcon(selectedElement.tag);
+                  return <Icon size={12} className="text-purple-500" />;
+                })()}
+                <span className="text-xs font-semibold text-gray-800 flex-1">
+                  &lt;{selectedElement.tag}&gt; {selectedElement.kind}
+                </span>
                 <button
                   onClick={() => setSelectedElement(null)}
                   className="text-gray-400 hover:text-gray-600"
@@ -503,8 +538,8 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                 onClearFocusedField={() => setFocusedField(null)}
               />
             )}
-            {panelMode === "text" && selectedElement && (
-              <TextElementPanel
+            {panelMode === "element" && selectedElement && selectedInstance && (
+              <ElementPanel
                 element={selectedElement}
                 instance={selectedInstance}
               />
@@ -780,20 +815,14 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                               )}
                             </div>
                             {expanded && (
-                              schema ? (
-                                <LayersSchemaFields
-                                  instance={inst}
-                                  schema={schema}
-                                  focusedField={isSel ? focusedField : null}
-                                  onSelectField={(fieldId) => handleLayerFieldSelect(instanceId, fieldId)}
-                                />
-                              ) : (
-                                <LayersContentFields
-                                  instance={inst}
-                                  focusedField={isSel ? focusedField : null}
-                                  onSelectField={(fieldId) => handleLayerFieldSelect(instanceId, fieldId)}
-                                />
-                              )
+                              <LayersFields
+                                instance={inst}
+                                schema={schema ?? null}
+                                focusedField={isSel ? focusedField : null}
+                                onSelectField={(focusKey, kind, blockId) =>
+                                  handleLayerFieldSelect(instanceId, focusKey, kind, blockId)
+                                }
+                              />
                             )}
                             {expanded && selectedElement?.instanceId === instanceId && (() => {
                               const Icon = elementIcon(selectedElement.tag);
@@ -1070,11 +1099,19 @@ function SectionPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {activeTab === "content" && (
           <>
+            {/* Click-to-edit hint */}
+            <div className="flex items-start gap-2 px-2.5 py-2 bg-blue-50 border border-blue-100 rounded text-[10px] text-blue-700">
+              <MousePointer size={11} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Cliquez sur un titre, image, bouton ou champ dans le canvas pour ouvrir directement son éditeur — pas besoin de schéma. Le panneau ci-dessous reste disponible pour les sections avec schéma déclaré.
+              </span>
+            </div>
+
             {/* Presets */}
             {schema?.presets && schema.presets.length > 0 && (
               <PresetsPicker presets={schema.presets} onApply={applyPreset} />
             )}
-            {/* Content fields */}
+            {/* Content fields (when schema is declared) */}
             {schema ? (
               <>
                 {(() => {
@@ -1106,7 +1143,9 @@ function SectionPanel({
                 )}
               </>
             ) : (
-              <p className="text-xs text-gray-400 text-center py-4">Aucun schéma défini pour cette section.</p>
+              <p className="text-xs text-gray-400 text-center py-4">
+                Pas de schéma déclaré — cliquez directement sur un élément du canvas, ou utilisez le panneau Layers.
+              </p>
             )}
           </>
         )}
@@ -1179,83 +1218,6 @@ function SectionPanel({
   );
 }
 
-// ─── Mode C: Text element inline editor ──────────────────────────────────────
-
-function TextElementPanel({
-  element,
-  instance,
-}: {
-  element: SelectedElement;
-  instance: SiteSectionInstance | null;
-}) {
-  const { state, dispatch } = useRelumeBuilder();
-
-  // Resolve the content key that holds this text (best-effort match)
-  const contentKey = React.useMemo(() => {
-    if (!instance) return null;
-    return Object.keys(instance.content).find((k) => instance.content[k] === element.text) ?? null;
-  }, [instance, element.text]);
-
-  const currentValue = contentKey && instance ? (instance.content[contentKey] as string) ?? element.text : element.text;
-
-  const dispatchText = (val: string) => {
-    if (!instance || !contentKey) return;
-    dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [contentKey]: val } } });
-  };
-
-  const ALIGNS: { value: "left" | "center" | "right" | "justify"; icon: React.ElementType }[] = [
-    { value: "left", icon: AlignLeft },
-    { value: "center", icon: AlignCenter },
-    { value: "right", icon: AlignRight },
-    { value: "justify", icon: AlignJustify },
-  ];
-
-  return (
-    <div className="p-4 space-y-4">
-      <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Contenu</label>
-        {contentKey ? (
-          <VariableTextarea
-            value={currentValue}
-            onChange={dispatchText}
-            placeholder="Texte de l'élément…"
-            rows={4}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-            variables={state.variableContext}
-            variant="light"
-          />
-        ) : (
-          <>
-            <textarea
-              defaultValue={element.text}
-              rows={4}
-              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-              readOnly
-            />
-            <p className="mt-1 text-[10px] text-amber-600 bg-amber-50 rounded px-2 py-1">
-              Ce texte est défini dans le code de la section. Modifiez-le via l&apos;onglet Contenu.
-            </p>
-          </>
-        )}
-      </div>
-
-      {contentKey && (
-        <div className="flex gap-0.5 ml-auto w-fit">
-          {ALIGNS.map(({ value, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              className="flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors border-gray-200 text-gray-600 hover:bg-gray-50"
-              title={`Aligner ${value}`}
-            >
-              <Icon size={12} />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Universal Height Controls ────────────────────────────────────────────────
 

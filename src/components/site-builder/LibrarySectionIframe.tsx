@@ -5,6 +5,32 @@ import type { StyleGuide } from "@/types";
 import { generateColorShades } from "@/lib/color-utils";
 import { buildCtaCSSVars, CTA_CSS_RULES } from "@/lib/button-style";
 
+export type IframeElementKind = "text" | "image" | "button" | "link" | "input" | "form";
+
+export interface IframeElementAttrs {
+  src?: string;
+  alt?: string;
+  href?: string;
+  target?: string;
+  className?: string;
+  inputType?: string;
+  placeholder?: string;
+  name?: string;
+  value?: string;
+  required?: boolean;
+  action?: string;
+  method?: string;
+}
+
+export interface IframeElementClickInfo {
+  kind: IframeElementKind;
+  tag: string;
+  text: string;
+  path: number[];
+  attrs: IframeElementAttrs;
+  fieldId: string | null;
+}
+
 interface LibrarySectionIframeProps {
   code: string;
   content?: Record<string, unknown>;
@@ -17,7 +43,7 @@ interface LibrarySectionIframeProps {
   /** When true, click events inside the iframe forward an `element-click`
    *  message via postMessage so the parent can implement element selection. */
   selectionEnabled?: boolean;
-  onElementClick?: (info: { tag: string; text: string; path: number[] }) => void;
+  onElementClick?: (info: IframeElementClickInfo) => void;
   /** Public site mode: start at 1px and grow up (no 720px initial flash). */
   publicMode?: boolean;
 }
@@ -68,9 +94,25 @@ export function LibrarySectionIframe({
   React.useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as { __siteBuilder?: string; tag?: string; text?: string; path?: number[]; height?: number };
+      const data = event.data as {
+        __siteBuilder?: string;
+        kind?: IframeElementKind;
+        tag?: string;
+        text?: string;
+        path?: number[];
+        attrs?: IframeElementAttrs;
+        fieldId?: string | null;
+        height?: number;
+      };
       if (selectionEnabled && data?.__siteBuilder === "element-click" && data.tag && data.path) {
-        onElementClick?.({ tag: data.tag, text: data.text ?? "", path: data.path });
+        onElementClick?.({
+          kind: data.kind ?? "text",
+          tag: data.tag,
+          text: data.text ?? "",
+          path: data.path,
+          attrs: data.attrs ?? {},
+          fieldId: data.fieldId ?? null,
+        });
       }
       if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
         setHeight(Math.ceil(data.height) + 2);
@@ -364,7 +406,69 @@ function buildHTML(
     window.__data = ${JSON.stringify(data)};
     window.__variables = ${JSON.stringify(variables)};
     window.__tokens = ${JSON.stringify(tokens)};
+    window.__overrides = ${JSON.stringify((data.__overrides as Record<string, unknown>) ?? {})};
     window.__src = ${src};
+  <\/script>
+  <script>
+    /* Override applicator — applies content.__overrides[pathStr] after each
+       React render so elements hardcoded in section code can still be edited.
+       Each override entry: { kind: 'text'|'image'|'link_href'|'button_href'|'attr', value: string, meta?: { attrName?: string } } */
+    (function () {
+      function nodeAtPath(path) {
+        var node = document.getElementById('root');
+        if (!node || !node.firstElementChild) return null;
+        node = node.firstElementChild;
+        for (var i = 0; i < path.length; i++) {
+          if (!node || !node.children || !node.children[path[i]]) return null;
+          node = node.children[path[i]];
+        }
+        return node;
+      }
+      function applyOne(pathStr, entry) {
+        var path = pathStr.split('.').map(function (s) { return parseInt(s, 10); }).filter(function (n) { return !isNaN(n); });
+        var el = nodeAtPath(path);
+        if (!el) return;
+        var kind = entry && entry.kind;
+        var value = entry && entry.value;
+        if (typeof value !== 'string') return;
+        if (kind === 'text') {
+          if (el.textContent !== value) el.textContent = value;
+        } else if (kind === 'image') {
+          if (el.getAttribute('src') !== value) el.setAttribute('src', value);
+        } else if (kind === 'link_href' || kind === 'button_href') {
+          if (el.getAttribute('href') !== value) el.setAttribute('href', value);
+        } else if (kind === 'attr' && entry.meta && entry.meta.attrName) {
+          el.setAttribute(entry.meta.attrName, value);
+        }
+      }
+      function applyAll() {
+        var overrides = window.__overrides || {};
+        for (var key in overrides) {
+          if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+            try { applyOne(key, overrides[key]); } catch (_) {}
+          }
+        }
+      }
+      window.__applyOverrides = applyAll;
+      var debounceTimer = null;
+      function scheduleApply() {
+        if (debounceTimer) return;
+        debounceTimer = setTimeout(function () { debounceTimer = null; applyAll(); }, 16);
+      }
+      function init() {
+        applyAll();
+        var root = document.getElementById('root');
+        if (root && window.MutationObserver) {
+          var mo = new MutationObserver(scheduleApply);
+          mo.observe(root, { childList: true, subtree: true, characterData: true, attributes: true });
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+    })();
   <\/script>
   <script>
     window.addEventListener('error', function(e) {
@@ -390,8 +494,10 @@ function buildHTML(
   <\/script>
   ${selectionEnabled ? `<script>
     (function () {
-      var SELECTABLE = 'h1,h2,h3,h4,h5,h6,p,span,a,button,img,svg,picture,li,blockquote';
+      var SELECTABLE = 'h1,h2,h3,h4,h5,h6,p,span,a,button,img,svg,picture,li,blockquote,label,input,textarea,form';
+      var BTN_CLASS_RE = /(^|\\s)(cta-primary|cta-secondary|btn|button)(\\s|$)/i;
       var lastSelected = null;
+
       function pathOf(el) {
         var path = [];
         var node = el;
@@ -403,6 +509,44 @@ function buildHTML(
         }
         return path;
       }
+
+      function classify(el) {
+        var tag = el.tagName.toLowerCase();
+        if (tag === 'img' || tag === 'picture') return 'image';
+        if (tag === 'svg' && el.parentElement && el.parentElement.tagName.toLowerCase() === 'picture') return 'image';
+        if (tag === 'button') return 'button';
+        if (tag === 'a') {
+          var cls = el.getAttribute('class') || '';
+          if (BTN_CLASS_RE.test(cls) || el.getAttribute('role') === 'button') return 'button';
+          return 'link';
+        }
+        if (tag === 'input' || tag === 'textarea') return 'input';
+        if (tag === 'form') return 'form';
+        return 'text';
+      }
+
+      function attrsFor(kind, el) {
+        var a = {};
+        if (kind === 'image') {
+          a.src = el.getAttribute('src') || '';
+          a.alt = el.getAttribute('alt') || '';
+        } else if (kind === 'button' || kind === 'link') {
+          a.href = el.getAttribute('href') || '';
+          a.target = el.getAttribute('target') || '_self';
+          a.className = el.getAttribute('class') || '';
+        } else if (kind === 'input') {
+          a.inputType = el.getAttribute('type') || (el.tagName.toLowerCase() === 'textarea' ? 'textarea' : 'text');
+          a.placeholder = el.getAttribute('placeholder') || '';
+          a.name = el.getAttribute('name') || '';
+          a.value = el.value || '';
+          a.required = el.hasAttribute('required');
+        } else if (kind === 'form') {
+          a.action = el.getAttribute('action') || '';
+          a.method = (el.getAttribute('method') || 'GET').toUpperCase();
+        }
+        return a;
+      }
+
       document.addEventListener('mouseover', function (e) {
         var t = e.target;
         if (!(t instanceof Element)) return;
@@ -424,11 +568,15 @@ function buildHTML(
         if (lastSelected) lastSelected.removeAttribute('data-sb-selected');
         el.setAttribute('data-sb-selected', '1');
         lastSelected = el;
+        var kind = classify(el);
         parent.postMessage({
           __siteBuilder: 'element-click',
+          kind: kind,
           tag: el.tagName.toLowerCase(),
-          text: (el.textContent || '').slice(0, 80),
-          path: pathOf(el)
+          text: (el.textContent || '').slice(0, 200),
+          path: pathOf(el),
+          attrs: attrsFor(kind, el),
+          fieldId: el.getAttribute('data-field-id') || null
         }, '*');
       }, true);
     })();
