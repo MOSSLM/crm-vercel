@@ -42,15 +42,16 @@ export function SchemaEditor({
       {fields.map((field, i) => {
         const id = "id" in field ? field.id : `__${i}`;
         return (
-          <FieldRenderer
-            key={id}
-            field={field}
-            value={content[id]}
-            onChange={(val) => onUpdate(id, val)}
-            styleGuide={styleGuide}
-            variables={variables}
-            siteId={siteId}
-          />
+          <div key={id} data-field-id={id}>
+            <FieldRenderer
+              field={field}
+              value={content[id]}
+              onChange={(val) => onUpdate(id, val)}
+              styleGuide={styleGuide}
+              variables={variables}
+              siteId={siteId}
+            />
+          </div>
         );
       })}
     </div>

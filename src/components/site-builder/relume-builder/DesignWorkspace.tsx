@@ -117,11 +117,26 @@ interface DesignWorkspaceProps {
 // ─── Schema field node in layers ──────────────────────────────────────────────
 
 function schemaFieldIcon(type: string) {
-  if (type === "image_picker" || type === "image") return ImageIcon;
-  if (type === "url" || type === "link") return LinkIcon;
+  if (type === "image_picker" || type === "image" || type === "video_url") return ImageIcon;
+  if (type === "page_link" || type === "url") return LinkIcon;
+  if (type === "link") return LinkIcon;
+  if (type === "button") return MousePointer;
+  if (type === "input" || type === "textarea_input") return Square;
+  if (type === "form") return Layers;
   if (["header", "header_navigation", "navigation"].includes(type)) return Navigation;
   if (["text", "textarea", "richtext", "html"].includes(type)) return TypeIcon;
   return Box;
+}
+
+function fieldPreview(value: unknown): string {
+  if (typeof value === "string") return value.slice(0, 28);
+  if (value && typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    if (typeof v.label === "string") return v.label.slice(0, 28);
+    if (typeof v.placeholder === "string") return v.placeholder.slice(0, 28);
+    if (typeof v.href === "string") return v.href.slice(0, 28);
+  }
+  return "";
 }
 
 function LayersSchemaFields({
@@ -140,7 +155,11 @@ function LayersSchemaFields({
   const blocks = schema.blocks ?? [];
   type FieldWithId = SectionField & { id: string; label?: string };
   const visible = fields.filter(
-    (f): f is FieldWithId => "id" in f && !String((f as FieldWithId).id).startsWith("__")
+    (f): f is FieldWithId =>
+      "id" in f &&
+      !String((f as FieldWithId).id).startsWith("__") &&
+      f.type !== "header" &&
+      f.type !== "paragraph"
   );
 
   return (
@@ -148,8 +167,7 @@ function LayersSchemaFields({
       {visible.map((f) => {
         const Icon = schemaFieldIcon(f.type);
         const isFocused = focusedField === f.id;
-        const rawVal = instance.content[f.id];
-        const preview = typeof rawVal === "string" ? rawVal.slice(0, 28) : "";
+        const preview = fieldPreview(instance.content[f.id]);
         return (
           <button
             key={f.id}
@@ -171,14 +189,38 @@ function LayersSchemaFields({
               {blockDef.name} ({items.length})
             </div>
             {items.map((item, idx) => {
-              const firstSetting = blockDef.settings?.[0];
-              const label = firstSetting && "id" in firstSetting
-                ? (item.settings[firstSetting.id as string] as string | undefined)?.slice(0, 24) ?? `Item ${idx + 1}`
+              // Preview: first string-typed setting value
+              const firstStrSetting = blockDef.settings?.find(
+                (s) => "id" in s && typeof item.settings[s.id as string] === "string"
+              );
+              const label = firstStrSetting && "id" in firstStrSetting
+                ? (item.settings[firstStrSetting.id as string] as string).slice(0, 24)
                 : `Item ${idx + 1}`;
               return (
-                <div key={item.id} className="flex items-center gap-1.5 px-1.5 py-0.5 ml-2 text-[10px] text-gray-400 rounded hover:bg-gray-50">
-                  <Box size={8} className="text-gray-300 flex-shrink-0" />
-                  <span className="truncate">{label}</span>
+                <div key={item.id} className="ml-2 mt-0.5">
+                  <div className="flex items-center gap-1.5 px-1.5 py-0.5 text-[10px] text-gray-400 rounded">
+                    <Box size={8} className="text-gray-300 flex-shrink-0" />
+                    <span className="truncate font-medium">{label}</span>
+                  </div>
+                  {/* Block sub-fields */}
+                  <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
+                    {blockDef.settings
+                      ?.filter((s): s is FieldWithId => "id" in s && s.type !== "header" && s.type !== "paragraph")
+                      .map((s) => {
+                        const BIcon = schemaFieldIcon(s.type);
+                        const bPreview = fieldPreview(item.settings[s.id]);
+                        return (
+                          <div
+                            key={s.id}
+                            className="flex items-center gap-1.5 px-1.5 py-0.5 text-[9px] text-gray-400 rounded hover:bg-gray-50"
+                          >
+                            <BIcon size={8} className="flex-shrink-0 text-gray-300" />
+                            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 60 }}>{s.label ? String(s.label) : s.id}</span>
+                            {bPreview && <span className="truncate text-gray-300 text-[9px]">{bPreview}</span>}
+                          </div>
+                        );
+                      })}
+                  </div>
                 </div>
               );
             })}
@@ -203,7 +245,9 @@ function LayersContentFields({
   const keys = Object.keys(instance.content).filter(
     (k) =>
       !k.startsWith("__") &&
-      (typeof instance.content[k] === "string" || typeof instance.content[k] === "number")
+      (typeof instance.content[k] === "string" ||
+        typeof instance.content[k] === "number" ||
+        (instance.content[k] !== null && typeof instance.content[k] === "object" && !Array.isArray(instance.content[k])))
   );
   if (keys.length === 0) return null;
 
@@ -211,10 +255,19 @@ function LayersContentFields({
     <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
       {keys.map((key) => {
         const val = instance.content[key];
-        const preview = String(val).slice(0, 28);
+        const preview = fieldPreview(val);
         const isFocused = focusedField === key;
-        const isImageUrl = typeof val === "string" && (val.startsWith("http") || val.includes(".png") || val.includes(".jpg"));
-        const Icon = isImageUrl ? ImageIcon : TypeIcon;
+        let Icon = TypeIcon;
+        if (typeof val === "string") {
+          const isImage = val.startsWith("http") && /\.(png|jpg|jpeg|webp|gif|svg|avif)/i.test(val);
+          Icon = isImage ? ImageIcon : TypeIcon;
+        } else if (val && typeof val === "object") {
+          const v = val as Record<string, unknown>;
+          if ("href" in v && "label" in v && "target" in v && "style_overrides" in v) Icon = MousePointer;
+          else if ("href" in v && "label" in v) Icon = LinkIcon;
+          else if ("input_type" in v || "placeholder" in v) Icon = Square;
+          else if ("action" in v || "method" in v) Icon = Layers;
+        }
         return (
           <button
             key={key}
@@ -268,6 +321,11 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
     setSelectedElement(null);
     setFocusedField(fieldId);
+    // Scroll the left panel to the matching field after a brief delay
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-field-id="${CSS.escape(fieldId)}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
   };
 
   const toggleBulkSelectMode = () => {
