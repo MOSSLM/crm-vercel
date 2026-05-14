@@ -27,7 +27,15 @@ export async function POST(req: Request) {
       : "";
 
     const systemPrompt = `Tu es un expert en copywriting web. Tu régénères le contenu d'une section de site web.
-Tu réponds UNIQUEMENT avec un JSON valide contenant les nouvelles valeurs pour les clés de contenu.${variableHint}`;
+Tu réponds UNIQUEMENT avec un JSON valide contenant les nouvelles valeurs pour les clés de contenu.
+
+TYPES DE CHAMPS COMPOSITES — certaines clés stockent des objets, pas des chaînes :
+- button : { label: string, href?: string, target?: "_self"|"_blank" }
+- link   : { label: string, href?: string, target?: "_self"|"_blank" }
+- input  : { input_type?: string, placeholder?: string, label?: string, name?: string, required?: boolean }
+- form   : { action?: string, method?: "GET"|"POST", submit_label?: string, success_message?: string }
+Pour ces champs, génère un objet complet. Pour les champs texte simples, génère une chaîne.
+NE modifie PAS les clés __animation_*, __color_scheme, __padding_y (réservées au style).${variableHint}`;
 
     const userPrompt = `
 Section type : ${sectionType}
@@ -38,8 +46,9 @@ ${JSON.stringify({ ...defaultContent, ...currentContent }, null, 2)}
 ${prompt ? `Instruction de l'utilisateur : ${prompt}` : "Améliore ce contenu pour le rendre plus professionnel et convaincant."}
 
 Génère un nouveau contenu en conservant exactement les mêmes clés.
-Réponds avec un JSON contenant uniquement les clés à mettre à jour (tu peux omettre les clés non textuelles comme les tableaux).
-Exemples de clés : heading, subheading, badge_text, body, cta_text, section_label, etc.
+Réponds avec un JSON contenant uniquement les clés à mettre à jour.
+Exemples de clés simples : heading, subheading, badge_text, body, section_label.
+Exemples de clés composites : cta_primary → { label, href }, email_field → { input_type, placeholder, label }.
 `.trim();
 
     let text: string;

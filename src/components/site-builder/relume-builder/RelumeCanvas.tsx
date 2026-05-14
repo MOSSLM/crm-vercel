@@ -5,6 +5,8 @@ import { Plus, Trash2, Eye, EyeOff, GripVertical } from "lucide-react";
 import type { SiteSectionDef } from "@/types";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
+import AnimatedSection from "../AnimatedSection";
+import type { SectionAnimation } from "@/types";
 
 interface RelumeCanvasProps {
   sectionDefs: Record<string, SiteSectionDef>;
@@ -52,16 +54,39 @@ export function RelumeCanvas({ sectionDefs, onAddSection }: RelumeCanvasProps) {
                   idx={idx}
                   total={pageInstanceIds.length}
                 >
-                  <DynamicSectionRenderer
-                    instance={{ ...instance, section_def: sectionDef }}
-                    sectionDef={sectionDef}
-                    styleGuide={state.styleGuide}
-                    editorMode={true}
-                    selected={isSelected}
-                    onSelect={() => dispatch({ type: "SELECT_INSTANCE", payload: instanceId })}
-                    selectedSnippetId={isSelected ? state.selectedSnippetId : null}
-                    onSelectSnippet={(id) => dispatch({ type: "SELECT_SNIPPET", payload: id })}
-                  />
+                  <AnimatedSection
+                    animation={
+                      (instance.content?.__animation_type as SectionAnimation) ??
+                      state.styleGuide.animations?.defaultType ??
+                      "none"
+                    }
+                    duration={
+                      (instance.content?.__animation_duration as number) ??
+                      state.styleGuide.animations?.defaultDuration ??
+                      600
+                    }
+                    delay={
+                      (instance.content?.__animation_delay as number) ??
+                      state.styleGuide.animations?.defaultDelay ??
+                      0
+                    }
+                    easing={
+                      (instance.content?.__animation_easing as string) ??
+                      state.styleGuide.animations?.defaultEasing ??
+                      "ease-out"
+                    }
+                  >
+                    <DynamicSectionRenderer
+                      instance={{ ...instance, section_def: sectionDef }}
+                      sectionDef={sectionDef}
+                      styleGuide={state.styleGuide}
+                      editorMode={true}
+                      selected={isSelected}
+                      onSelect={() => dispatch({ type: "SELECT_INSTANCE", payload: instanceId })}
+                      selectedSnippetId={isSelected ? state.selectedSnippetId : null}
+                      onSelectSnippet={(id) => dispatch({ type: "SELECT_SNIPPET", payload: id })}
+                    />
+                  </AnimatedSection>
                 </CanvasSectionWrapper>
               );
             })}

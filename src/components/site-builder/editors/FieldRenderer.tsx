@@ -1,7 +1,11 @@
 "use client";
 
 import React from "react";
-import type { SectionField, StyleGuide } from "@/types";
+import type {
+  SectionField, StyleGuide,
+  ButtonFieldValue, LinkFieldValue, InputFieldValue,
+  TextareaInputFieldValue, FormFieldValue,
+} from "@/types";
 import { TextField } from "./TextField";
 import { RangeField } from "./RangeField";
 import { SelectField } from "./SelectField";
@@ -11,6 +15,10 @@ import { ColorPickerField } from "./ColorPickerField";
 import { ColorSchemeField } from "./ColorSchemeField";
 import { ImagePickerField } from "./ImagePickerField";
 import { FontPickerField } from "./FontPickerField";
+import { ButtonField } from "./ButtonField";
+import { LinkField } from "./LinkField";
+import { InputField, TextareaInputField } from "./InputField";
+import { FormField } from "./FormField";
 import type { ColorSchemePreset } from "@/lib/color-utils";
 
 interface FieldRendererProps {
@@ -18,9 +26,11 @@ interface FieldRendererProps {
   value: unknown;
   onChange: (val: unknown) => void;
   styleGuide: StyleGuide;
+  variables?: Record<string, string>;
+  siteId?: string;
 }
 
-export function FieldRenderer({ field, value, onChange, styleGuide }: FieldRendererProps) {
+export function FieldRenderer({ field, value, onChange, styleGuide, variables, siteId }: FieldRendererProps) {
   // Non-input separators
   if (field.type === "header") {
     return (
@@ -31,6 +41,70 @@ export function FieldRenderer({ field, value, onChange, styleGuide }: FieldRende
   }
   if (field.type === "paragraph") {
     return <p className="text-[11px] text-white/40 leading-relaxed">{field.content}</p>;
+  }
+
+  // Composite element fields — render their own label inside
+  switch (field.type) {
+    case "button":
+      return (
+        <div>
+          <div className="text-[11px] text-white/60 mb-1.5">{field.label}</div>
+          <ButtonField
+            setting={field}
+            value={(value as ButtonFieldValue) ?? {}}
+            onChange={(v) => onChange(v)}
+            variables={variables}
+          />
+        </div>
+      );
+    case "link":
+      return (
+        <div>
+          <div className="text-[11px] text-white/60 mb-1.5">{field.label}</div>
+          <LinkField
+            setting={field}
+            value={(value as LinkFieldValue) ?? {}}
+            onChange={(v) => onChange(v)}
+            variables={variables}
+          />
+        </div>
+      );
+    case "input":
+      return (
+        <div>
+          <div className="text-[11px] text-white/60 mb-1.5">{field.label}</div>
+          <InputField
+            setting={field}
+            value={(value as InputFieldValue) ?? {}}
+            onChange={(v) => onChange(v)}
+            variables={variables}
+          />
+        </div>
+      );
+    case "textarea_input":
+      return (
+        <div>
+          <div className="text-[11px] text-white/60 mb-1.5">{field.label}</div>
+          <TextareaInputField
+            setting={field}
+            value={(value as TextareaInputFieldValue) ?? {}}
+            onChange={(v) => onChange(v)}
+            variables={variables}
+          />
+        </div>
+      );
+    case "form":
+      return (
+        <div>
+          <div className="text-[11px] text-white/60 mb-1.5">{field.label}</div>
+          <FormField
+            setting={field}
+            value={(value as FormFieldValue) ?? {}}
+            onChange={(v) => onChange(v)}
+            variables={variables}
+          />
+        </div>
+      );
   }
 
   const label = (
@@ -54,6 +128,7 @@ export function FieldRenderer({ field, value, onChange, styleGuide }: FieldRende
           setting={field}
           value={(value as string) ?? ""}
           onChange={(v) => onChange(v)}
+          variables={variables}
         />
       );
       break;
@@ -131,6 +206,7 @@ export function FieldRenderer({ field, value, onChange, styleGuide }: FieldRende
           setting={field}
           value={(value as string) ?? ""}
           onChange={(v) => onChange(v)}
+          siteId={siteId}
         />
       );
       break;

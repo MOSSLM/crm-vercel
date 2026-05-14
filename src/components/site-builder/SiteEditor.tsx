@@ -40,8 +40,11 @@ const ANIMATION_LABELS: Record<SectionAnimation, string> = {
   none: "Aucune",
   "fade-in": "Fondu",
   "slide-up": "Glisse haut",
+  "slide-down": "Glisse bas",
   "slide-in-left": "Glisse gauche",
   "slide-in-right": "Glisse droite",
+  "zoom-in": "Zoom +",
+  "zoom-out": "Zoom −",
 };
 
 interface SiteEditorProps {

@@ -3,11 +3,11 @@
 import React from "react";
 import {
   Laptop, Tablet, Smartphone, Layers,
-  Move, Zap, ChevronDown, Play,
+  Move, Zap, ChevronDown,
   ZoomIn, ZoomOut, Eye, EyeOff,
   Type as TypeIcon, MousePointer, Box, ChevronRight,
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
-  ChevronUp, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  ChevronUp, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
   ArrowUpDown, Square, CheckSquare,
 } from "lucide-react";
@@ -25,6 +25,8 @@ import { SiteMenusPanel } from "./SiteMenusPanel";
 import { ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
+import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
+import type { SectionAnimation } from "@/types";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -117,11 +119,26 @@ interface DesignWorkspaceProps {
 // ─── Schema field node in layers ──────────────────────────────────────────────
 
 function schemaFieldIcon(type: string) {
-  if (type === "image_picker" || type === "image") return ImageIcon;
-  if (type === "url" || type === "link") return LinkIcon;
+  if (type === "image_picker" || type === "image" || type === "video_url") return ImageIcon;
+  if (type === "page_link" || type === "url") return LinkIcon;
+  if (type === "link") return LinkIcon;
+  if (type === "button") return MousePointer;
+  if (type === "input" || type === "textarea_input") return Square;
+  if (type === "form") return Layers;
   if (["header", "header_navigation", "navigation"].includes(type)) return Navigation;
   if (["text", "textarea", "richtext", "html"].includes(type)) return TypeIcon;
   return Box;
+}
+
+function fieldPreview(value: unknown): string {
+  if (typeof value === "string") return value.slice(0, 28);
+  if (value && typeof value === "object") {
+    const v = value as Record<string, unknown>;
+    if (typeof v.label === "string") return v.label.slice(0, 28);
+    if (typeof v.placeholder === "string") return v.placeholder.slice(0, 28);
+    if (typeof v.href === "string") return v.href.slice(0, 28);
+  }
+  return "";
 }
 
 function LayersSchemaFields({
@@ -140,7 +157,11 @@ function LayersSchemaFields({
   const blocks = schema.blocks ?? [];
   type FieldWithId = SectionField & { id: string; label?: string };
   const visible = fields.filter(
-    (f): f is FieldWithId => "id" in f && !String((f as FieldWithId).id).startsWith("__")
+    (f): f is FieldWithId =>
+      "id" in f &&
+      !String((f as FieldWithId).id).startsWith("__") &&
+      f.type !== "header" &&
+      f.type !== "paragraph"
   );
 
   return (
@@ -148,8 +169,7 @@ function LayersSchemaFields({
       {visible.map((f) => {
         const Icon = schemaFieldIcon(f.type);
         const isFocused = focusedField === f.id;
-        const rawVal = instance.content[f.id];
-        const preview = typeof rawVal === "string" ? rawVal.slice(0, 28) : "";
+        const preview = fieldPreview(instance.content[f.id]);
         return (
           <button
             key={f.id}
@@ -171,14 +191,38 @@ function LayersSchemaFields({
               {blockDef.name} ({items.length})
             </div>
             {items.map((item, idx) => {
-              const firstSetting = blockDef.settings?.[0];
-              const label = firstSetting && "id" in firstSetting
-                ? (item.settings[firstSetting.id as string] as string | undefined)?.slice(0, 24) ?? `Item ${idx + 1}`
+              // Preview: first string-typed setting value
+              const firstStrSetting = blockDef.settings?.find(
+                (s) => "id" in s && typeof item.settings[s.id as string] === "string"
+              );
+              const label = firstStrSetting && "id" in firstStrSetting
+                ? (item.settings[firstStrSetting.id as string] as string).slice(0, 24)
                 : `Item ${idx + 1}`;
               return (
-                <div key={item.id} className="flex items-center gap-1.5 px-1.5 py-0.5 ml-2 text-[10px] text-gray-400 rounded hover:bg-gray-50">
-                  <Box size={8} className="text-gray-300 flex-shrink-0" />
-                  <span className="truncate">{label}</span>
+                <div key={item.id} className="ml-2 mt-0.5">
+                  <div className="flex items-center gap-1.5 px-1.5 py-0.5 text-[10px] text-gray-400 rounded">
+                    <Box size={8} className="text-gray-300 flex-shrink-0" />
+                    <span className="truncate font-medium">{label}</span>
+                  </div>
+                  {/* Block sub-fields */}
+                  <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
+                    {blockDef.settings
+                      ?.filter((s): s is FieldWithId => "id" in s && s.type !== "header" && s.type !== "paragraph")
+                      .map((s) => {
+                        const BIcon = schemaFieldIcon(s.type);
+                        const bPreview = fieldPreview(item.settings[s.id]);
+                        return (
+                          <div
+                            key={s.id}
+                            className="flex items-center gap-1.5 px-1.5 py-0.5 text-[9px] text-gray-400 rounded hover:bg-gray-50"
+                          >
+                            <BIcon size={8} className="flex-shrink-0 text-gray-300" />
+                            <span className="font-medium truncate flex-shrink-0" style={{ maxWidth: 60 }}>{s.label ? String(s.label) : s.id}</span>
+                            {bPreview && <span className="truncate text-gray-300 text-[9px]">{bPreview}</span>}
+                          </div>
+                        );
+                      })}
+                  </div>
                 </div>
               );
             })}
@@ -203,7 +247,9 @@ function LayersContentFields({
   const keys = Object.keys(instance.content).filter(
     (k) =>
       !k.startsWith("__") &&
-      (typeof instance.content[k] === "string" || typeof instance.content[k] === "number")
+      (typeof instance.content[k] === "string" ||
+        typeof instance.content[k] === "number" ||
+        (instance.content[k] !== null && typeof instance.content[k] === "object" && !Array.isArray(instance.content[k])))
   );
   if (keys.length === 0) return null;
 
@@ -211,10 +257,19 @@ function LayersContentFields({
     <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
       {keys.map((key) => {
         const val = instance.content[key];
-        const preview = String(val).slice(0, 28);
+        const preview = fieldPreview(val);
         const isFocused = focusedField === key;
-        const isImageUrl = typeof val === "string" && (val.startsWith("http") || val.includes(".png") || val.includes(".jpg"));
-        const Icon = isImageUrl ? ImageIcon : TypeIcon;
+        let Icon = TypeIcon;
+        if (typeof val === "string") {
+          const isImage = val.startsWith("http") && /\.(png|jpg|jpeg|webp|gif|svg|avif)/i.test(val);
+          Icon = isImage ? ImageIcon : TypeIcon;
+        } else if (val && typeof val === "object") {
+          const v = val as Record<string, unknown>;
+          if ("href" in v && "label" in v && "target" in v && "style_overrides" in v) Icon = MousePointer;
+          else if ("href" in v && "label" in v) Icon = LinkIcon;
+          else if ("input_type" in v || "placeholder" in v) Icon = Square;
+          else if ("action" in v || "method" in v) Icon = Layers;
+        }
         return (
           <button
             key={key}
@@ -268,6 +323,11 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
     setSelectedElement(null);
     setFocusedField(fieldId);
+    // Scroll the left panel to the matching field after a brief delay
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-field-id="${CSS.escape(fieldId)}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
   };
 
   const toggleBulkSelectMode = () => {
@@ -806,17 +866,9 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
 function GlobalPanel() {
   const { state, dispatch } = useRelumeBuilder();
 
-  const ANIMATION_TYPES = ["Fondu", "Glisser bas", "Glisser gauche", "Zoom", "Aucun"];
-  const TRIGGER_TYPES = ["Au chargement", "Au scroll", "Au survol"];
-  const TRANSITION_TYPES = ["Aucune", "Fondu", "Glissement horizontal", "Zoom arrière"];
-  const EASING_TYPES = ["ease-in-out", "ease-out", "ease-in", "linear", "spring"];
-
-  const [anim, setAnim] = React.useState("Fondu");
-  const [animDuration, setAnimDuration] = React.useState(600);
-  const [trigger, setTrigger] = React.useState("Au scroll");
-  const [animDelay, setAnimDelay] = React.useState(100);
-  const [transition, setTransition] = React.useState("Fondu");
-  const [easing, setEasing] = React.useState("ease-in-out");
+  const anims = state.styleGuide.animations ?? {};
+  const updateAnims = (patch: Record<string, unknown>) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { animations: { ...anims, ...patch } } });
 
   const MAX_WIDTHS: { label: string; value: string }[] = [
     { label: "Étroit (800px)", value: "800px" },
@@ -828,98 +880,24 @@ function GlobalPanel() {
   return (
     <div className="divide-y divide-gray-100">
       {/* Animations & Transitions — stacked */}
-      <Accordion title="Animations & Transitions" icon={Zap} defaultOpen>
-        {/* Animations section */}
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Animation d&apos;entrée</label>
-          <div className="grid grid-cols-2 gap-1.5">
-            {ANIMATION_TYPES.map((a) => (
-              <button
-                key={a}
-                onClick={() => setAnim(a)}
-                className={`px-2 py-2 text-[10px] rounded-lg border transition-colors text-left ${a === anim ? "bg-gray-900 text-white border-gray-900" : "text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-              >
-                {a}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-            <span>Durée</span><span className="font-mono text-gray-500">{animDuration}ms</span>
-          </label>
-          <input
-            type="range" min={200} max={1200} value={animDuration} step={100}
-            onChange={(e) => setAnimDuration(+e.target.value)}
-            className="w-full accent-gray-900"
-          />
-          <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-            <span>200ms</span><span>1200ms</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Déclencheur</label>
-          <div className="flex gap-1.5">
-            {TRIGGER_TYPES.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTrigger(t)}
-                className={`flex-1 px-1 py-1.5 text-[9px] rounded-md border transition-colors ${t === trigger ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-            <span>Délai entre sections</span><span className="font-mono text-gray-500">{animDelay}ms</span>
-          </label>
-          <input
-            type="range" min={0} max={300} value={animDelay} step={25}
-            onChange={(e) => setAnimDelay(+e.target.value)}
-            className="w-full accent-gray-900"
-          />
-        </div>
-
-        {/* Separator */}
-        <div className="border-t border-gray-100 pt-3">
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Transition de page</label>
-          <div className="space-y-1.5">
-            {TRANSITION_TYPES.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTransition(t)}
-                className={`w-full text-left px-3 py-2 text-[10px] rounded-lg border transition-colors ${t === transition ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Easing</label>
-          <div className="flex flex-col gap-1">
-            {EASING_TYPES.map((e) => (
-              <button
-                key={e}
-                onClick={() => setEasing(e)}
-                className={`flex items-center justify-between px-3 py-1.5 text-[10px] rounded-md border transition-colors ${e === easing ? "bg-gray-100 border-gray-300 text-gray-900 font-medium" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <button className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 pt-1">
-          <Play size={11} />
-          Prévisualiser les animations
-        </button>
+      <Accordion title="Animations par défaut" icon={Zap} defaultOpen>
+        <p className="text-[10px] text-gray-400 mb-3">
+          Appliqué à chaque section qui n&apos;a pas d&apos;animation personnalisée (onglet Anim. du panneau de section).
+        </p>
+        <AnimationFieldEditor
+          type={anims.defaultType ?? "none"}
+          duration={anims.defaultDuration ?? 600}
+          delay={anims.defaultDelay ?? 0}
+          easing={anims.defaultEasing ?? "ease-out"}
+          onUpdate={({ type, duration, delay, easing }) =>
+            updateAnims({
+              defaultType: type,
+              defaultDuration: duration,
+              defaultDelay: delay,
+              defaultEasing: easing,
+            })
+          }
+        />
       </Accordion>
 
       {/* Global style */}
@@ -1107,6 +1085,8 @@ function SectionPanel({
                       content={instance.content}
                       onUpdate={updateContent}
                       styleGuide={state.styleGuide}
+                      variables={state.variableContext}
+                      siteId={state.siteId}
                     />
                   ) : null;
                 })()}
@@ -1120,6 +1100,8 @@ function SectionPanel({
                     onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 )}
               </>
@@ -1165,6 +1147,8 @@ function SectionPanel({
                   content={instance.content}
                   onUpdate={updateContent}
                   styleGuide={state.styleGuide}
+                  variables={state.variableContext}
+                  siteId={state.siteId}
                 />
               );
             })()}
@@ -1204,21 +1188,19 @@ function TextElementPanel({
   element: SelectedElement;
   instance: SiteSectionInstance | null;
 }) {
-  const { dispatch } = useRelumeBuilder();
-  const [text, setText] = React.useState(element.text);
-  const [align, setAlign] = React.useState<"left" | "center" | "right" | "justify">("left");
-  const [bold, setBold] = React.useState(false);
-  const [italic, setItalic] = React.useState(false);
-  const [fontSize, setFontSize] = React.useState(16);
-  const [color, setColor] = React.useState("#111827");
+  const { state, dispatch } = useRelumeBuilder();
 
-  const applyText = () => {
-    if (!instance) return;
-    // Best-effort: update a matching content key from the text
-    const key = Object.keys(instance.content).find((k) => instance.content[k] === element.text);
-    if (key) {
-      dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [key]: text } } });
-    }
+  // Resolve the content key that holds this text (best-effort match)
+  const contentKey = React.useMemo(() => {
+    if (!instance) return null;
+    return Object.keys(instance.content).find((k) => instance.content[k] === element.text) ?? null;
+  }, [instance, element.text]);
+
+  const currentValue = contentKey && instance ? (instance.content[contentKey] as string) ?? element.text : element.text;
+
+  const dispatchText = (val: string) => {
+    if (!instance || !contentKey) return;
+    dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [contentKey]: val } } });
   };
 
   const ALIGNS: { value: "left" | "center" | "right" | "justify"; icon: React.ElementType }[] = [
@@ -1232,74 +1214,45 @@ function TextElementPanel({
     <div className="p-4 space-y-4">
       <div>
         <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Contenu</label>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={applyText}
-          rows={4}
-          className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-        />
-        <button
-          onClick={applyText}
-          className="mt-1.5 w-full py-1.5 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors font-medium"
-        >
-          Appliquer
-        </button>
+        {contentKey ? (
+          <VariableTextarea
+            value={currentValue}
+            onChange={dispatchText}
+            placeholder="Texte de l'élément…"
+            rows={4}
+            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
+            variables={state.variableContext}
+            variant="light"
+          />
+        ) : (
+          <>
+            <textarea
+              defaultValue={element.text}
+              rows={4}
+              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
+              readOnly
+            />
+            <p className="mt-1 text-[10px] text-amber-600 bg-amber-50 rounded px-2 py-1">
+              Ce texte est défini dans le code de la section. Modifiez-le via l&apos;onglet Contenu.
+            </p>
+          </>
+        )}
       </div>
 
-      <div className="flex gap-1.5">
-        <button
-          onClick={() => setBold(!bold)}
-          className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${bold ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-        >
-          <Bold size={12} />
-        </button>
-        <button
-          onClick={() => setItalic(!italic)}
-          className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${italic ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-        >
-          <Italic size={12} />
-        </button>
-        <div className="flex gap-0.5 ml-auto">
+      {contentKey && (
+        <div className="flex gap-0.5 ml-auto w-fit">
           {ALIGNS.map(({ value, icon: Icon }) => (
             <button
               key={value}
-              onClick={() => setAlign(value)}
-              className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${align === value ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+              type="button"
+              className="flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors border-gray-200 text-gray-600 hover:bg-gray-50"
+              title={`Aligner ${value}`}
             >
               <Icon size={12} />
             </button>
           ))}
         </div>
-      </div>
-
-      <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-          <span>Taille</span><span className="font-mono">{fontSize}px</span>
-        </label>
-        <input
-          type="range" min={10} max={72} value={fontSize} step={1}
-          onChange={(e) => setFontSize(+e.target.value)}
-          className="w-full accent-gray-900"
-        />
-      </div>
-
-      <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Couleur</label>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className="w-8 h-8 rounded border border-gray-200 cursor-pointer"
-          />
-          <span className="text-xs font-mono text-gray-600">{color}</span>
-        </div>
-      </div>
-
-      <p className="text-[10px] text-gray-400 leading-relaxed bg-gray-50 rounded-md p-2">
-        La sélection directe d&apos;éléments est disponible via les champs de contenu de la section (onglet Contenu).
-      </p>
+      )}
     </div>
   );
 }

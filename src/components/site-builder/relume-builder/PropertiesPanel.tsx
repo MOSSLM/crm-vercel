@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X, Settings, Palette, FileText } from "lucide-react";
+import { Trash2, Eye, EyeOff, ChevronUp, ChevronDown, Sparkles, RefreshCw, X, Settings, Palette, FileText, Zap } from "lucide-react";
 import type { SiteSectionInstance, SnippetDefinition } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { ModelDropdown } from "./SitemapWorkspace";
@@ -11,17 +11,19 @@ import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
 import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
 import { getSchemaForSection } from "@/data/section-schemas";
 import type { ColorSchemePreset } from "@/lib/color-utils";
-import type { SectionPreset } from "@/types";
+import type { SectionAnimation, SectionPreset } from "@/types";
+import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
 
 interface PropertiesPanelProps {
   onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
 }
 
-type TabId = "content" | "style" | "ai";
+type TabId = "content" | "style" | "animation" | "ai";
 
 const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
   { id: "content", label: "Contenu", icon: FileText },
   { id: "style", label: "Style", icon: Palette },
+  { id: "animation", label: "Anim.", icon: Zap },
   { id: "ai", label: "IA", icon: Sparkles },
 ];
 
@@ -143,6 +145,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                       content={instance.content}
                       onUpdate={updateContent}
                       styleGuide={state.styleGuide}
+                      variables={state.variableContext}
+                      siteId={state.siteId}
                     />
                   );
                 })()}
@@ -157,6 +161,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 )}
               </>
@@ -193,6 +199,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     content={instance.content}
                     onUpdate={updateContent}
                     styleGuide={state.styleGuide}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 </div>
               );
@@ -211,6 +219,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     content={instance.content}
                     onUpdate={updateContent}
                     styleGuide={state.styleGuide}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 </div>
               );
@@ -221,6 +231,23 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
               <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Avancé</div>
               <CustomStyleEditor instance={instance} />
             </div>
+          </div>
+        )}
+
+        {activeTab === "animation" && (
+          <div className="px-4 py-4">
+            <AnimationFieldEditor
+              type={(instance.content.__animation_type as SectionAnimation) ?? "none"}
+              duration={(instance.content.__animation_duration as number) ?? 600}
+              delay={(instance.content.__animation_delay as number) ?? 0}
+              easing={(instance.content.__animation_easing as string) ?? "ease-out"}
+              onUpdate={({ type, duration, delay, easing }) => {
+                if (type !== undefined) updateContent("__animation_type", type);
+                if (duration !== undefined) updateContent("__animation_duration", duration);
+                if (delay !== undefined) updateContent("__animation_delay", delay);
+                if (easing !== undefined) updateContent("__animation_easing", easing);
+              }}
+            />
           </div>
         )}
 
