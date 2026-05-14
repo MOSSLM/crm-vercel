@@ -55,17 +55,60 @@ export const templateSectionSchema: SectionSchema = {
 
 // ─── Section component (used in iframe via buildHTML) ─────────────────────────
 
-// This function is called with (text, variables) to resolve {{ variable }} tokens.
-function applyVariables(text, variables) {
-  if (!text || !variables) return text ?? "";
-  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => variables[key] ?? `{{ ${key} }}`);
+type TemplateVariables = Record<string, string | number | boolean | null | undefined>;
+
+interface TemplateButtonData {
+  label?: string;
+  href?: string;
+  target?: "_self" | "_blank";
 }
 
-export default function TemplateSection({ data = {}, variables = {}, tokens = {} }) {
-  const v = (str) => applyVariables(str, variables);
+interface TemplateInputData {
+  input_type?: string;
+  placeholder?: string;
+  label?: string;
+  name?: string;
+  required?: boolean;
+}
+
+interface TemplateFormData {
+  action?: string;
+  method?: string;
+  submit_label?: string;
+}
+
+interface TemplateSectionData {
+  layout?: string;
+  badge?: string;
+  heading?: string;
+  body?: string;
+  cta_primary?: TemplateButtonData;
+  cta_secondary?: TemplateButtonData;
+  show_image?: boolean;
+  image?: string;
+  contact_form?: TemplateFormData;
+  email_field?: TemplateInputData;
+}
+
+interface TemplateSectionProps {
+  data?: TemplateSectionData;
+  variables?: TemplateVariables;
+  tokens?: Record<string, unknown>;
+}
+
+// This function is called with (text, variables) to resolve {{ variable }} tokens.
+function applyVariables(text: unknown, variables: TemplateVariables): string {
+  const value = text == null ? "" : String(text);
+  return value.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key: string) =>
+    variables[key] == null ? `{{ ${key} }}` : String(variables[key])
+  );
+}
+
+export default function TemplateSection({ data = {}, variables = {}, tokens = {} }: TemplateSectionProps) {
+  const v = (str: unknown) => applyVariables(str, variables);
 
   // Composite button helper
-  const renderButton = (btn, className) => {
+  const renderButton = (btn: TemplateButtonData | undefined, className: string) => {
     if (!btn || !btn.label) return null;
     return (
       <a
