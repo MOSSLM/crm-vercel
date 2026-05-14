@@ -1,35 +1,100 @@
 "use client";
 
-import React, { useState } from "react";
-import { ImageIcon, Link, X, Upload } from "lucide-react";
+import React, { useState, useEffect, useCallback } from "react";
+import { ImageIcon, Link, X, Upload, Library, Loader2, Trash2 } from "lucide-react";
 import type { SectionImagePickerField } from "@/types";
+
+interface AssetItem {
+  id: string;
+  public_url: string;
+  filename: string;
+  size?: number;
+  mime_type?: string;
+}
 
 interface ImagePickerFieldProps {
   setting: SectionImagePickerField;
   value: string;
   onChange: (url: string) => void;
+  siteId?: string;
 }
 
-export function ImagePickerField({ setting, value, onChange }: ImagePickerFieldProps) {
-  const [tab, setTab] = useState<"url" | "upload">("url");
+type Tab = "url" | "upload" | "library";
+
+export function ImagePickerField({ setting, value, onChange, siteId }: ImagePickerFieldProps) {
+  const [tab, setTab] = useState<Tab>("url");
   const [open, setOpen] = useState(false);
   const [urlInput, setUrlInput] = useState(value ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [assets, setAssets] = useState<AssetItem[]>([]);
+  const [loadingAssets, setLoadingAssets] = useState(false);
 
   const hasImage = value && value.length > 0;
 
+  const fetchAssets = useCallback(async () => {
+    if (!siteId) return;
+    setLoadingAssets(true);
+    try {
+      const res = await fetch(`/api/site-builder/assets?site=${encodeURIComponent(siteId)}`);
+      if (res.ok) setAssets(await res.json());
+    } finally {
+      setLoadingAssets(false);
+    }
+  }, [siteId]);
+
+  useEffect(() => {
+    if (open && tab === "library") fetchAssets();
+  }, [open, tab, fetchAssets]);
+
   function handleUrlConfirm() {
-    onChange(urlInput);
+    onChange(urlInput.trim());
     setOpen(false);
   }
 
-  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Convert to object URL for preview; in production would upload to Supabase
-    const objectUrl = URL.createObjectURL(file);
-    onChange(objectUrl);
-    setOpen(false);
+
+    if (!siteId) {
+      // Fallback: object URL (no storage)
+      onChange(URL.createObjectURL(file));
+      setOpen(false);
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/site-builder/assets?site=${encodeURIComponent(siteId)}`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const asset: AssetItem = await res.json();
+      onChange(asset.public_url);
+      setAssets((prev) => [asset, ...prev]);
+      setOpen(false);
+    } catch (err) {
+      console.error("Upload failed:", err);
+    } finally {
+      setUploading(false);
+    }
   }
+
+  async function handleDeleteAsset(asset: AssetItem, e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm(`Supprimer "${asset.filename}" ?`)) return;
+    await fetch(`/api/site-builder/assets/${asset.id}`, { method: "DELETE" });
+    setAssets((prev) => prev.filter((a) => a.id !== asset.id));
+    if (value === asset.public_url) onChange("");
+  }
+
+  const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
+    { id: "url", label: "URL", icon: Link },
+    { id: "upload", label: "Upload", icon: Upload },
+    ...(siteId ? [{ id: "library" as Tab, label: "Bibliothèque", icon: Library }] : []),
+  ];
 
   return (
     <div className="space-y-1.5">
@@ -40,7 +105,7 @@ export function ImagePickerField({ setting, value, onChange }: ImagePickerFieldP
           <img src={value} alt="" className="w-full h-24 object-cover" />
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
             <button
-              onClick={() => setOpen(true)}
+              onClick={() => { setUrlInput(value); setOpen(true); }}
               className="text-xs text-white bg-white/20 hover:bg-white/30 px-2 py-1 rounded backdrop-blur-sm"
             >
               Modifier
@@ -69,15 +134,16 @@ export function ImagePickerField({ setting, value, onChange }: ImagePickerFieldP
           {/* Tabs */}
           <div className="flex items-center justify-between">
             <div className="flex gap-1">
-              {(["url", "upload"] as const).map((t) => (
+              {tabs.map(({ id, label, icon: Icon }) => (
                 <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`text-[10px] px-2 py-1 rounded transition-colors ${
-                    tab === t ? "bg-white/15 text-white" : "text-white/40 hover:text-white/60"
+                  key={id}
+                  onClick={() => setTab(id)}
+                  className={`text-[10px] px-2 py-1 rounded transition-colors flex items-center gap-1 ${
+                    tab === id ? "bg-white/15 text-white" : "text-white/40 hover:text-white/60"
                   }`}
                 >
-                  {t === "url" ? <><Link size={9} className="inline mr-1" />URL</> : <><Upload size={9} className="inline mr-1" />Upload</>}
+                  <Icon size={9} />
+                  {label}
                 </button>
               ))}
             </div>
@@ -86,6 +152,7 @@ export function ImagePickerField({ setting, value, onChange }: ImagePickerFieldP
             </button>
           </div>
 
+          {/* URL tab */}
           {tab === "url" && (
             <div className="space-y-1.5">
               <input
@@ -109,14 +176,67 @@ export function ImagePickerField({ setting, value, onChange }: ImagePickerFieldP
             </div>
           )}
 
+          {/* Upload tab */}
           {tab === "upload" && (
             <label className="block cursor-pointer">
-              <div className="w-full h-16 border border-dashed border-white/15 rounded-lg flex flex-col items-center justify-center gap-1.5 text-white/30 hover:border-blue-400/40 hover:text-white/50 transition-all">
-                <Upload size={16} />
-                <span className="text-[10px]">Cliquer ou déposer un fichier</span>
-              </div>
-              <input type="file" accept="image/*" className="sr-only" onChange={handleFileUpload} />
+              {uploading ? (
+                <div className="w-full h-16 flex items-center justify-center gap-2 text-white/40 text-xs">
+                  <Loader2 size={14} className="animate-spin" />
+                  Upload en cours…
+                </div>
+              ) : (
+                <div className="w-full h-16 border border-dashed border-white/15 rounded-lg flex flex-col items-center justify-center gap-1.5 text-white/30 hover:border-blue-400/40 hover:text-white/50 transition-all">
+                  <Upload size={16} />
+                  <span className="text-[10px]">Cliquer ou déposer un fichier</span>
+                  <span className="text-[9px] text-white/20">JPEG, PNG, WebP, GIF — max 10 Mo</span>
+                </div>
+              )}
+              <input type="file" accept="image/*" className="sr-only" onChange={handleFileUpload} disabled={uploading} />
             </label>
+          )}
+
+          {/* Library tab */}
+          {tab === "library" && (
+            <div>
+              {loadingAssets ? (
+                <div className="flex items-center justify-center py-6 text-white/30 gap-2 text-xs">
+                  <Loader2 size={14} className="animate-spin" />
+                  Chargement…
+                </div>
+              ) : assets.length === 0 ? (
+                <div className="text-center py-6 text-white/30 text-xs">
+                  Aucune image uploadée pour ce site.
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-1.5 max-h-44 overflow-y-auto">
+                  {assets.map((asset) => (
+                    <div
+                      key={asset.id}
+                      className={`relative group rounded cursor-pointer overflow-hidden border-2 transition-all ${
+                        value === asset.public_url ? "border-blue-400" : "border-transparent hover:border-white/30"
+                      }`}
+                      onClick={() => { onChange(asset.public_url); setOpen(false); }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={asset.public_url} alt={asset.filename} className="w-full h-16 object-cover" />
+                      <button
+                        onClick={(e) => handleDeleteAsset(asset, e)}
+                        className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500/80 text-white rounded p-0.5"
+                        title="Supprimer"
+                      >
+                        <Trash2 size={9} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button
+                onClick={fetchAssets}
+                className="mt-2 w-full text-[10px] text-white/30 hover:text-white/60 transition-colors"
+              >
+                Actualiser
+              </button>
+            </div>
           )}
         </div>
       )}
