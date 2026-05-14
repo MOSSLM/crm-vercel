@@ -1099,11 +1099,19 @@ function SectionPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {activeTab === "content" && (
           <>
+            {/* Click-to-edit hint */}
+            <div className="flex items-start gap-2 px-2.5 py-2 bg-blue-50 border border-blue-100 rounded text-[10px] text-blue-700">
+              <MousePointer size={11} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Cliquez sur un titre, image, bouton ou champ dans le canvas pour ouvrir directement son éditeur — pas besoin de schéma. Le panneau ci-dessous reste disponible pour les sections avec schéma déclaré.
+              </span>
+            </div>
+
             {/* Presets */}
             {schema?.presets && schema.presets.length > 0 && (
               <PresetsPicker presets={schema.presets} onApply={applyPreset} />
             )}
-            {/* Content fields */}
+            {/* Content fields (when schema is declared) */}
             {schema ? (
               <>
                 {(() => {
@@ -1135,7 +1143,9 @@ function SectionPanel({
                 )}
               </>
             ) : (
-              <p className="text-xs text-gray-400 text-center py-4">Aucun schéma défini pour cette section.</p>
+              <p className="text-xs text-gray-400 text-center py-4">
+                Pas de schéma déclaré — cliquez directement sur un élément du canvas, ou utilisez le panneau Layers.
+              </p>
             )}
           </>
         )}
