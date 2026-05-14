@@ -6,7 +6,10 @@ import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter
 import { generateShadeCSSVars, getContrastColor } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
 import type { ReviewItem } from "@/lib/site-resolver";
-import { LibrarySectionIframe } from "./LibrarySectionIframe";
+import { extractClassTokens } from "@/lib/library-section/preprocess";
+import { generateTailwindCSS } from "@/lib/library-section/tailwind-jit";
+import { LibrarySectionInline } from "./LibrarySectionInline";
+import { LibrarySectionHydrator } from "./LibrarySectionHydrator";
 
 const SHADOW_MAP: Record<string, string> = {
   none: "none",
@@ -50,6 +53,45 @@ function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
   } as React.CSSProperties;
 }
 
+// Scoped reset applied only inside [data-lsi] wrappers, so library sections
+// inherit the style guide tokens without polluting native sections.
+const LIBRARY_SCOPED_CSS = `
+[data-lsi] * { box-sizing: border-box; }
+[data-lsi] h1,[data-lsi] h2,[data-lsi] h3,[data-lsi] h4,[data-lsi] h5,[data-lsi] h6 {
+  font-family: var(--font-heading, Inter, sans-serif) !important;
+}
+[data-lsi] body,[data-lsi] p,[data-lsi] span,[data-lsi] a,
+[data-lsi] button,[data-lsi] input,[data-lsi] textarea,[data-lsi] select,[data-lsi] li {
+  font-family: var(--font-body, Inter, sans-serif);
+}
+[data-lsi] .card,[data-lsi] [class*="shadow-"],[data-lsi] .rounded-card {
+  border-radius: var(--card-radius) !important;
+}
+[data-lsi] img,[data-lsi] picture,[data-lsi] video {
+  border-radius: var(--card-image-radius);
+}
+[data-lsi] .cta-primary {
+  background-color: var(--btn-primary-bg) !important;
+  color: var(--btn-primary-text) !important;
+  border: var(--btn-primary-border-width) solid var(--btn-primary-border-color) !important;
+  border-radius: var(--btn-primary-radius) !important;
+  padding: var(--btn-primary-padding) !important;
+  box-shadow: var(--btn-primary-shadow) !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+[data-lsi] .cta-secondary {
+  background-color: var(--btn-secondary-bg) !important;
+  color: var(--btn-secondary-text) !important;
+  border: var(--btn-secondary-border-width) solid var(--btn-secondary-border-color) !important;
+  border-radius: var(--btn-secondary-radius) !important;
+  padding: var(--btn-secondary-padding) !important;
+  box-shadow: var(--btn-secondary-shadow) !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+[data-lsi] .cta-primary:hover { filter: brightness(0.92); transform: translateY(-1px); }
+[data-lsi] .cta-secondary:hover { filter: brightness(0.96); transform: translateY(-1px); }
+`;
+
 interface DynamicPageRendererProps {
   siteId: string;
   pageSlug: string;
@@ -67,12 +109,10 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
   let instances: (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
 
   if (preloadedInstances) {
-    // Use the published snapshot directly, filter to requested page
     instances = (preloadedInstances as (SiteSectionInstance & { section_def: SiteSectionDef | null })[])
       .filter((inst) => inst.page_slug === pageSlug && !inst.is_hidden)
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   } else {
-    // Fetch live instances with joined section definitions
     const { data: instanceRows } = await supabase
       .from("site_section_instances")
       .select(`
@@ -85,6 +125,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
       .order("sort_order");
     instances = (instanceRows ?? []) as (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
   }
+
   const guide = styleGuide ?? DEFAULT_STYLE_GUIDE;
   const cssVars = styleGuideToCSSVars(guide);
 
@@ -96,7 +137,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     );
   }
 
-  // Collect library refs (section_def is null) and fetch their theme_sections code
+  // Collect library refs and fetch their theme_sections code
   const libRefs = instances
     .map((inst) => (inst.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined)
     .filter((ref): ref is { theme_slug: string; section_id: string } => Boolean(ref));
@@ -113,25 +154,47 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     }
   }
 
+  // Aggregate Tailwind class tokens from all library section codes and
+  // generate a single CSS blob for the page (cached by token hash).
+  const hasLibrarySections = libRefs.length > 0;
+  let tailwindCss = "";
+  if (hasLibrarySections) {
+    const allTokens: string[] = [];
+    for (const ts of themeSectionMap.values()) {
+      allTokens.push(...extractClassTokens(ts.code ?? ""));
+    }
+    tailwindCss = await generateTailwindCSS(allTokens);
+  }
+
   return (
     <div style={{ ...cssVars, fontFamily: "var(--font-body)", color: "var(--color-text)" } as React.CSSProperties}>
+      {/* Inject library-section styles once for the whole page */}
+      {hasLibrarySections && (
+        <style
+          data-library-styles
+          dangerouslySetInnerHTML={{
+            __html: tailwindCss + LIBRARY_SCOPED_CSS,
+          }}
+        />
+      )}
+
       {instances.map((instance) => {
         const sectionDef = instance.section_def;
         const libRef = (instance.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined;
 
-        // Library section: render via iframe (client component)
+        // Library section: render inline (SSR) — no iframe
         if (libRef) {
           const ts = themeSectionMap.get(`${libRef.theme_slug}:${libRef.section_id}`);
           if (!ts?.code) return null;
           const content = { ...(ts.example_data ?? {}), ...(instance.content as Record<string, unknown> ?? {}) };
           return (
-            <LibrarySectionIframe
+            <LibrarySectionInline
               key={instance.id}
+              instanceId={instance.id}
               code={ts.code}
               content={content}
               styleGuide={guide}
               variables={variables}
-              publicMode
             />
           );
         }
@@ -142,6 +205,9 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
           <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} variables={variables} reviews={reviews} />
         );
       })}
+
+      {/* Mount interactive React on each library section after hydration */}
+      {hasLibrarySections && <LibrarySectionHydrator />}
     </div>
   );
 }
@@ -170,8 +236,6 @@ function DynamicSectionPublic({ instance, sectionDef, guide, variables = {}, rev
   const adapted = adaptContentForRender(instance.content ?? {}, instance.blocks ?? []);
   const content = { ...sectionDef.default_content, ...adapted };
 
-  // Auto-inject reviews into testimonial sections when the site has linked reviews
-  // and the section content hasn't been manually overridden with real testimonials.
   if (reviews.length > 0 && sectionDef.type === "testimonials") {
     const existing = content.testimonials as Array<unknown> | undefined;
     const isPlaceholder = !existing || existing.length === 0 ||
