@@ -4,10 +4,20 @@
  * Client Component: picks up the JSON hydration payloads emitted by
  * LibrarySectionInline and mounts interactive React trees on each section div.
  *
+ * After hydration, applies any content.__overrides (DOM-path edits) with
+ * variable interpolation so the published site reflects user edits typed
+ * into elements that aren't bound to a data.xxx key in the section code.
+ *
  * No @babel/standalone needed client-side — the JS is already compiled.
  */
 import React, { useEffect } from "react";
 import { hydrateRoot } from "react-dom/client";
+
+interface OverrideEntry {
+  kind: "text" | "image" | "link_href" | "button_href" | "attr";
+  value: string;
+  meta?: { attrName?: string };
+}
 
 interface SectionPayload {
   instanceId: string;
@@ -18,11 +28,69 @@ interface SectionPayload {
   tokens: Record<string, unknown>;
 }
 
+function interpolateVariables(text: string, variables: Record<string, string>): string {
+  if (typeof text !== "string" || !text) return text;
+  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
+    const v = variables[key];
+    return v != null ? v : "";
+  });
+}
+
+function nodeAtPath(root: Element, path: number[]): Element | null {
+  let node: Element | null = root;
+  for (const idx of path) {
+    if (!node || !node.children || !node.children[idx]) return null;
+    node = node.children[idx];
+  }
+  return node;
+}
+
+function applyOverridesToContainer(
+  container: Element,
+  overrides: Record<string, OverrideEntry>,
+  variables: Record<string, string>,
+): void {
+  // Section components render a single root element inside the container,
+  // matching the DOM path numbering used at edit time.
+  const root = container.firstElementChild;
+  if (!root) return;
+  for (const pathStr of Object.keys(overrides)) {
+    const entry = overrides[pathStr];
+    if (!entry || typeof entry.value !== "string") continue;
+    const path = pathStr.split(".").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
+    const el = nodeAtPath(root, path);
+    if (!el) continue;
+    const value = interpolateVariables(entry.value, variables);
+    try {
+      switch (entry.kind) {
+        case "text":
+          if (el.textContent !== value) el.textContent = value;
+          break;
+        case "image":
+          if (el.getAttribute("src") !== value) el.setAttribute("src", value);
+          break;
+        case "link_href":
+        case "button_href":
+          if (el.getAttribute("href") !== value) el.setAttribute("href", value);
+          break;
+        case "attr":
+          if (entry.meta?.attrName) el.setAttribute(entry.meta.attrName, value);
+          break;
+      }
+    } catch {
+      // Swallow per-override errors so the page keeps rendering.
+    }
+  }
+}
+
 export function LibrarySectionHydrator() {
   useEffect(() => {
     const scripts = document.querySelectorAll<HTMLScriptElement>(
       "script[type='application/json'][data-lsi-id]"
     );
+
+    // Track observers so we clean them up on unmount.
+    const observers: MutationObserver[] = [];
 
     scripts.forEach((script) => {
       const instanceId = script.dataset.lsiId;
@@ -40,6 +108,9 @@ export function LibrarySectionHydrator() {
 
       const container = document.querySelector<HTMLElement>(`[data-lsi="${instanceId}"]`);
       if (!container) return;
+
+      const overrides = (data?.__overrides as Record<string, OverrideEntry> | undefined) ?? {};
+      const hasOverrides = Object.keys(overrides).length > 0;
 
       try {
         // Re-evaluate the pre-compiled JS in the same scope as the server.
@@ -87,7 +158,27 @@ export function LibrarySectionHydrator() {
           err
         );
       }
+
+      // Apply DOM-path overrides AFTER hydration so React's first render
+      // doesn't wipe them out. Then watch the container so any later
+      // re-render re-applies them.
+      if (hasOverrides) {
+        const apply = () => applyOverridesToContainer(container, overrides, variables);
+        apply();
+        if (typeof MutationObserver !== "undefined") {
+          let scheduled = false;
+          const observer = new MutationObserver(() => {
+            if (scheduled) return;
+            scheduled = true;
+            setTimeout(() => { scheduled = false; apply(); }, 16);
+          });
+          observer.observe(container, { childList: true, subtree: true, characterData: true, attributes: true });
+          observers.push(observer);
+        }
+      }
     });
+
+    return () => observers.forEach((o) => o.disconnect());
   // Run once on mount — SSR payloads are static
   }, []);
 

@@ -412,8 +412,16 @@ function buildHTML(
   <script>
     /* Override applicator — applies content.__overrides[pathStr] after each
        React render so elements hardcoded in section code can still be edited.
-       Each override entry: { kind: 'text'|'image'|'link_href'|'button_href'|'attr', value: string, meta?: { attrName?: string } } */
+       Each override entry: { kind: 'text'|'image'|'link_href'|'button_href'|'attr', value: string, meta?: { attrName?: string } }
+       The value may contain {{ variable }} tokens that are interpolated from window.__variables. */
     (function () {
+      function applyVars(text) {
+        if (typeof text !== 'string' || !text) return text;
+        var vars = window.__variables || {};
+        return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, function (_, key) {
+          return vars[key] != null ? vars[key] : '';
+        });
+      }
       function nodeAtPath(path) {
         var node = document.getElementById('root');
         if (!node || !node.firstElementChild) return null;
@@ -429,8 +437,9 @@ function buildHTML(
         var el = nodeAtPath(path);
         if (!el) return;
         var kind = entry && entry.kind;
-        var value = entry && entry.value;
-        if (typeof value !== 'string') return;
+        var raw = entry && entry.value;
+        if (typeof raw !== 'string') return;
+        var value = applyVars(raw);
         if (kind === 'text') {
           if (el.textContent !== value) el.textContent = value;
         } else if (kind === 'image') {
