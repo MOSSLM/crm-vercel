@@ -7,7 +7,7 @@ import {
   ZoomIn, ZoomOut, Eye, EyeOff,
   Type as TypeIcon, MousePointer, Box, ChevronRight,
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
-  ChevronUp, Bold, Italic, AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  ChevronUp, AlignLeft, AlignCenter, AlignRight, AlignJustify,
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
   ArrowUpDown, Square, CheckSquare,
 } from "lucide-react";
@@ -1210,21 +1210,19 @@ function TextElementPanel({
   element: SelectedElement;
   instance: SiteSectionInstance | null;
 }) {
-  const { dispatch } = useRelumeBuilder();
-  const [text, setText] = React.useState(element.text);
-  const [align, setAlign] = React.useState<"left" | "center" | "right" | "justify">("left");
-  const [bold, setBold] = React.useState(false);
-  const [italic, setItalic] = React.useState(false);
-  const [fontSize, setFontSize] = React.useState(16);
-  const [color, setColor] = React.useState("#111827");
+  const { state, dispatch } = useRelumeBuilder();
 
-  const applyText = () => {
-    if (!instance) return;
-    // Best-effort: update a matching content key from the text
-    const key = Object.keys(instance.content).find((k) => instance.content[k] === element.text);
-    if (key) {
-      dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [key]: text } } });
-    }
+  // Resolve the content key that holds this text (best-effort match)
+  const contentKey = React.useMemo(() => {
+    if (!instance) return null;
+    return Object.keys(instance.content).find((k) => instance.content[k] === element.text) ?? null;
+  }, [instance, element.text]);
+
+  const currentValue = contentKey && instance ? (instance.content[contentKey] as string) ?? element.text : element.text;
+
+  const dispatchText = (val: string) => {
+    if (!instance || !contentKey) return;
+    dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [contentKey]: val } } });
   };
 
   const ALIGNS: { value: "left" | "center" | "right" | "justify"; icon: React.ElementType }[] = [
@@ -1238,74 +1236,45 @@ function TextElementPanel({
     <div className="p-4 space-y-4">
       <div>
         <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Contenu</label>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={applyText}
-          rows={4}
-          className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-        />
-        <button
-          onClick={applyText}
-          className="mt-1.5 w-full py-1.5 text-xs bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors font-medium"
-        >
-          Appliquer
-        </button>
+        {contentKey ? (
+          <VariableTextarea
+            value={currentValue}
+            onChange={dispatchText}
+            placeholder="Texte de l'élément…"
+            rows={4}
+            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
+            variables={state.variableContext}
+            variant="light"
+          />
+        ) : (
+          <>
+            <textarea
+              defaultValue={element.text}
+              rows={4}
+              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
+              readOnly
+            />
+            <p className="mt-1 text-[10px] text-amber-600 bg-amber-50 rounded px-2 py-1">
+              Ce texte est défini dans le code de la section. Modifiez-le via l&apos;onglet Contenu.
+            </p>
+          </>
+        )}
       </div>
 
-      <div className="flex gap-1.5">
-        <button
-          onClick={() => setBold(!bold)}
-          className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${bold ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-        >
-          <Bold size={12} />
-        </button>
-        <button
-          onClick={() => setItalic(!italic)}
-          className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${italic ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-        >
-          <Italic size={12} />
-        </button>
-        <div className="flex gap-0.5 ml-auto">
+      {contentKey && (
+        <div className="flex gap-0.5 ml-auto w-fit">
           {ALIGNS.map(({ value, icon: Icon }) => (
             <button
               key={value}
-              onClick={() => setAlign(value)}
-              className={`flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors ${align === value ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+              type="button"
+              className="flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors border-gray-200 text-gray-600 hover:bg-gray-50"
+              title={`Aligner ${value}`}
             >
               <Icon size={12} />
             </button>
           ))}
         </div>
-      </div>
-
-      <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-          <span>Taille</span><span className="font-mono">{fontSize}px</span>
-        </label>
-        <input
-          type="range" min={10} max={72} value={fontSize} step={1}
-          onChange={(e) => setFontSize(+e.target.value)}
-          className="w-full accent-gray-900"
-        />
-      </div>
-
-      <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Couleur</label>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => setColor(e.target.value)}
-            className="w-8 h-8 rounded border border-gray-200 cursor-pointer"
-          />
-          <span className="text-xs font-mono text-gray-600">{color}</span>
-        </div>
-      </div>
-
-      <p className="text-[10px] text-gray-400 leading-relaxed bg-gray-50 rounded-md p-2">
-        La sélection directe d&apos;éléments est disponible via les champs de contenu de la section (onglet Contenu).
-      </p>
+      )}
     </div>
   );
 }
