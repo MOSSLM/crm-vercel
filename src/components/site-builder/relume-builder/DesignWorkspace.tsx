@@ -7,7 +7,7 @@ import {
   ZoomIn, ZoomOut, Eye, EyeOff,
   Type as TypeIcon, MousePointer, Box, ChevronRight,
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
-  ChevronUp, AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  ChevronUp,
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
   ArrowUpDown, Square, CheckSquare,
 } from "lucide-react";
@@ -16,6 +16,7 @@ import type { SiteSectionDef, SiteSectionInstance, SectionField } from "@/types"
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 import type { IframeElementClickInfo } from "../LibrarySectionIframe";
+import { ElementPanel } from "./element-panels/ElementPanel";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
 import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
 import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
@@ -374,8 +375,9 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
 
   // Determine left panel mode
-  const panelMode: "global" | "section" | "text" =
-    selectedElement && /^(h[1-6]|p|span|blockquote|li)$/.test(selectedElement.tag) ? "text" :
+  // "element" = an element inside a section was clicked (any kind: text, image, button, link, input, form)
+  const panelMode: "global" | "section" | "element" =
+    selectedElement ? "element" :
     selectedInstance ? "section" :
     "global";
 
@@ -497,10 +499,15 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                 </button>
               </>
             )}
-            {panelMode === "text" && selectedElement && (
+            {panelMode === "element" && selectedElement && (
               <>
-                <TypeIcon size={12} className="text-purple-500" />
-                <span className="text-xs font-semibold text-gray-800 flex-1">&lt;{selectedElement.tag}&gt; Texte</span>
+                {(() => {
+                  const Icon = elementIcon(selectedElement.tag);
+                  return <Icon size={12} className="text-purple-500" />;
+                })()}
+                <span className="text-xs font-semibold text-gray-800 flex-1">
+                  &lt;{selectedElement.tag}&gt; {selectedElement.kind}
+                </span>
                 <button
                   onClick={() => setSelectedElement(null)}
                   className="text-gray-400 hover:text-gray-600"
@@ -524,8 +531,8 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                 onClearFocusedField={() => setFocusedField(null)}
               />
             )}
-            {panelMode === "text" && selectedElement && (
-              <TextElementPanel
+            {panelMode === "element" && selectedElement && selectedInstance && (
+              <ElementPanel
                 element={selectedElement}
                 instance={selectedInstance}
               />
@@ -1200,83 +1207,6 @@ function SectionPanel({
   );
 }
 
-// ─── Mode C: Text element inline editor ──────────────────────────────────────
-
-function TextElementPanel({
-  element,
-  instance,
-}: {
-  element: SelectedElement;
-  instance: SiteSectionInstance | null;
-}) {
-  const { state, dispatch } = useRelumeBuilder();
-
-  // Resolve the content key that holds this text (best-effort match)
-  const contentKey = React.useMemo(() => {
-    if (!instance) return null;
-    return Object.keys(instance.content).find((k) => instance.content[k] === element.text) ?? null;
-  }, [instance, element.text]);
-
-  const currentValue = contentKey && instance ? (instance.content[contentKey] as string) ?? element.text : element.text;
-
-  const dispatchText = (val: string) => {
-    if (!instance || !contentKey) return;
-    dispatch({ type: "UPDATE_INSTANCE_CONTENT", payload: { id: instance.id, content: { [contentKey]: val } } });
-  };
-
-  const ALIGNS: { value: "left" | "center" | "right" | "justify"; icon: React.ElementType }[] = [
-    { value: "left", icon: AlignLeft },
-    { value: "center", icon: AlignCenter },
-    { value: "right", icon: AlignRight },
-    { value: "justify", icon: AlignJustify },
-  ];
-
-  return (
-    <div className="p-4 space-y-4">
-      <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Contenu</label>
-        {contentKey ? (
-          <VariableTextarea
-            value={currentValue}
-            onChange={dispatchText}
-            placeholder="Texte de l'élément…"
-            rows={4}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-            variables={state.variableContext}
-            variant="light"
-          />
-        ) : (
-          <>
-            <textarea
-              defaultValue={element.text}
-              rows={4}
-              className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-              readOnly
-            />
-            <p className="mt-1 text-[10px] text-amber-600 bg-amber-50 rounded px-2 py-1">
-              Ce texte est défini dans le code de la section. Modifiez-le via l&apos;onglet Contenu.
-            </p>
-          </>
-        )}
-      </div>
-
-      {contentKey && (
-        <div className="flex gap-0.5 ml-auto w-fit">
-          {ALIGNS.map(({ value, icon: Icon }) => (
-            <button
-              key={value}
-              type="button"
-              className="flex items-center justify-center w-8 h-8 rounded border text-xs transition-colors border-gray-200 text-gray-600 hover:bg-gray-50"
-              title={`Aligner ${value}`}
-            >
-              <Icon size={12} />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Universal Height Controls ────────────────────────────────────────────────
 
