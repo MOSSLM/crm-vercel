@@ -1,7 +1,17 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // typescript: { ignoreBuildErrors: true }, // (optionnel) à éviter si possible
+  // Packages that ship native binaries or otherwise can't be bundled by webpack.
+  // Used at runtime by src/lib/library-section/* for server-side TSX/Tailwind
+  // compilation of library sections.
+  serverExternalPackages: [
+    "@babel/standalone",
+    "@tailwindcss/postcss",
+    "@tailwindcss/oxide",
+    "@tailwindcss/node",
+    "lightningcss",
+    "postcss",
+  ],
 };
 
 export default nextConfig;
