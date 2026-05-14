@@ -15,6 +15,7 @@ import { BulkAIDialog } from "./BulkAIDialog";
 import type { SiteSectionDef, SiteSectionInstance, SectionField } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import type { IframeElementClickInfo } from "../LibrarySectionIframe";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
 import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
 import { ColorSchemeField } from "@/components/site-builder/editors/ColorSchemeField";
@@ -71,11 +72,31 @@ function useCanvasPanZoom() {
 
 // ─── Selected element info ────────────────────────────────────────────────────
 
+export type ElementKind = "text" | "image" | "button" | "link" | "input" | "form";
+
+export interface ElementAttrs {
+  src?: string;
+  alt?: string;
+  href?: string;
+  target?: string;
+  className?: string;
+  inputType?: string;
+  placeholder?: string;
+  name?: string;
+  value?: string;
+  required?: boolean;
+  action?: string;
+  method?: string;
+}
+
 interface SelectedElement {
   instanceId: string;
+  kind: ElementKind;
   tag: string;
   text: string;
   path: number[];
+  attrs: ElementAttrs;
+  fieldId: string | null;
 }
 
 function elementIcon(tag: string) {
@@ -306,7 +327,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
   const selectedInstance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
 
-  const handleElementClick = React.useCallback((instanceId: string) => (info: { tag: string; text: string; path: number[] }) => {
+  const handleElementClick = React.useCallback((instanceId: string) => (info: IframeElementClickInfo) => {
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
     setSelectedElement({ instanceId, ...info });
   }, [dispatch]);
