@@ -7,9 +7,15 @@
  */
 import "server-only";
 import React from "react";
-import { renderToString } from "react-dom/server";
+import { createRequire } from "node:module";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
+
+// Next.js's webpack rejects top-level `react-dom/server` imports inside
+// server components. Load it via Node's createRequire at runtime instead —
+// this module is "server-only" so the bundle never reaches the client.
+const nodeRequire = createRequire(import.meta.url);
+const { renderToString } = nodeRequire("react-dom/server") as typeof import("react-dom/server");
 
 export interface RenderSectionOptions {
   js: string;
