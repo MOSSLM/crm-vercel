@@ -64,8 +64,10 @@ function applyVariables(text, variables) {
 export default function TemplateSection({ data = {}, variables = {}, tokens = {} }) {
   const v = (str) => applyVariables(str, variables);
 
-  // Composite button helper
-  const renderButton = (btn, className) => {
+  // Composite button helper. `fieldId` is the content key — passing it as
+  // `data-field-id` lets the click-to-edit pipeline bind directly to the
+  // right key without value matching.
+  const renderButton = (btn, className, fieldId) => {
     if (!btn || !btn.label) return null;
     return (
       <a
@@ -73,6 +75,7 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
         target={btn.target ?? "_self"}
         className={className}
         rel={btn.target === "_blank" ? "noopener noreferrer" : undefined}
+        data-field-id={fieldId}
       >
         {v(btn.label)}
       </a>
@@ -101,6 +104,7 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
         <div style={{ flex: 1 }}>
           {data.badge && (
             <span
+              data-field-id="badge"
               style={{
                 display: "inline-block",
                 backgroundColor: "var(--color-primary)",
@@ -116,6 +120,7 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
           )}
 
           <h2
+            data-field-id="heading"
             style={{
               fontFamily: "var(--font-heading)",
               fontSize: "2rem",
@@ -130,6 +135,7 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
 
           {data.body && (
             <p
+              data-field-id="body"
               style={{
                 fontFamily: "var(--font-body)",
                 color: "var(--color-text-muted)",
@@ -143,8 +149,8 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
 
           {/* CTA buttons */}
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-            {renderButton(data.cta_primary, "cta-primary")}
-            {renderButton(data.cta_secondary, "cta-secondary")}
+            {renderButton(data.cta_primary, "cta-primary", "cta_primary")}
+            {renderButton(data.cta_secondary, "cta-secondary", "cta_secondary")}
           </div>
         </div>
 
@@ -152,6 +158,7 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
         {data.show_image !== false && data.image && (
           <div style={{ flex: 1 }}>
             <img
+              data-field-id="image"
               src={data.image}
               alt={v(data.heading ?? "")}
               style={{
@@ -176,6 +183,7 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
             }}
           >
             <form
+              data-field-id="contact_form"
               action={v(data.contact_form.action ?? "#")}
               method={data.contact_form.method ?? "POST"}
             >
@@ -199,6 +207,7 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
                     </label>
                   )}
                   <input
+                    data-field-id="email_field"
                     type={data.email_field.input_type ?? "email"}
                     placeholder={v(data.email_field.placeholder ?? "")}
                     name={data.email_field.name ?? "email"}
