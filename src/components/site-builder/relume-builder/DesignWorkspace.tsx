@@ -158,10 +158,10 @@ function LayersSchemaFields({
   type FieldWithId = SectionField & { id: string; label?: string };
   const visible = fields.filter(
     (f): f is FieldWithId =>
-      "id" in f &&
-      !String((f as FieldWithId).id).startsWith("__") &&
       f.type !== "header" &&
-      f.type !== "paragraph"
+      f.type !== "paragraph" &&
+      "id" in f &&
+      !String(f.id).startsWith("__")
   );
 
   return (
@@ -207,7 +207,7 @@ function LayersSchemaFields({
                   {/* Block sub-fields */}
                   <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
                     {blockDef.settings
-                      ?.filter((s): s is FieldWithId => "id" in s && s.type !== "header" && s.type !== "paragraph")
+                      ?.filter((s): s is FieldWithId => s.type !== "header" && s.type !== "paragraph" && "id" in s)
                       .map((s) => {
                         const BIcon = schemaFieldIcon(s.type);
                         const bPreview = fieldPreview(item.settings[s.id]);
