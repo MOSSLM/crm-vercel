@@ -90,7 +90,12 @@ Toute section générée s'exécute dans un iframe avec ces variables CSS inject
 
 - Couleurs : `var(--color-primary | --color-secondary | --color-accent | --color-background | --color-bg-alt | --color-text | --color-text-muted)` plus les nuances `--color-primary-50` … `--color-primary-950`.
 - Polices : `var(--font-heading)` pour les titres, `var(--font-body)` pour le corps.
-- Boutons : `var(--btn-radius)`, `var(--btn-padding)`, `var(--btn-bg)`, `var(--btn-text)`, `var(--btn-border-color)` — interdits : valeurs codées en dur (`rounded-full`, `px-8 py-4`, `bg-blue-600`, `text-white` sur un bouton). Les vars `--btn-bg/text/border-color` sont calculées automatiquement depuis le style de bouton choisi par l'utilisateur (filled/outline/soft).
+- **Boutons CTA — convention opt-in par classe** :
+  - Bouton d'action PRINCIPAL → ajouter `cta-primary` à la className. Les tokens du Style Guide (bg/text/border/radius/padding/shadow) s'appliquent automatiquement via `!important`.
+  - Bouton d'action SECONDAIRE (lien fléché "En savoir plus", "Voir détails"…) → ajouter `cta-secondary`.
+  - Boutons qui ne sont PAS des CTAs (toggles FAQ, flèches slider, dots, hamburger, fermer modal…) → AUCUNE classe `cta-*`. Ils gardent leur style natif.
+  - Tokens disponibles si style manuel nécessaire : `--btn-primary-bg/text/border-color/border-width/radius/padding/shadow` (idem `--btn-secondary-*`). Alias legacy : `--btn-bg/text/radius/padding/border-color` (pointent vers les valeurs primaires).
+  - INTERDITS sur un CTA : valeurs codées en dur (`rounded-full`, `px-8 py-4`, `bg-blue-600`, `text-white`) — les tokens s'en chargent.
 - Cartes / images : `var(--card-radius)`, `var(--card-padding)`, `var(--card-shadow)`.
 - Espacements : `var(--section-padding)`, `var(--element-gap)`, `var(--max-content-width)`.
 - INTERDIT : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine d'une section. Préférer un padding vertical raisonnable basé sur `var(--section-padding)`.

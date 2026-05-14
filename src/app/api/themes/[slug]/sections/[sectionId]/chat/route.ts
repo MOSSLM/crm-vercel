@@ -51,10 +51,31 @@ Style Guide — tokens à RESPECTER (sinon les réglages utilisateur ne s'appliq
   'var(--color-background)', 'var(--color-bg-alt)', 'var(--color-text)', 'var(--color-text-muted)'
 - Nuances : 'var(--color-primary-50)' … 'var(--color-primary-950)' (idem secondary / accent)
 - Police : style={{ fontFamily: 'var(--font-heading)' }} pour les titres, 'var(--font-body)' pour le corps
-- Boutons : style={{ borderRadius: 'var(--btn-radius)', padding: 'var(--btn-padding)' }} ; ne jamais coder
-  en dur des valeurs comme 'rounded-full' ou 'px-8 py-4'
 - Cartes / images : 'var(--card-radius)', 'var(--card-padding)', 'var(--card-shadow)'
 - Espacements : 'var(--section-padding)', 'var(--element-gap)', 'var(--max-content-width)'
+
+Boutons CTA — convention OPT-IN par classe (CRITIQUE) :
+- Bouton d'action PRINCIPAL (ex: "Nous contacter", "Demander un devis", "Acheter") → ajoute la classe
+  \`cta-primary\` à sa className. Le runtime applique automatiquement bg/text/border/radius/padding/shadow
+  depuis le Style Guide via !important — n'ajoute PAS d'inline styles pour background/color/border sur
+  ces éléments, ils seront overridés.
+- Bouton d'action SECONDAIRE (ex: "En savoir plus", "Voir les détails", lien fléché à côté du CTA principal)
+  → ajoute la classe \`cta-secondary\`.
+- Boutons qui ne sont PAS des CTAs (toggles FAQ/accordion, flèches précédent/suivant de slider/carousel,
+  dots de pagination, hamburger menu, boutons "fermer" de modal, icônes interactives) → AUCUNE classe cta-*.
+  Ils gardent leur style Tailwind natif. Sinon ils deviendraient de gros boutons CTA cassant le design.
+- Exemple correct :
+  \`\`\`tsx
+  <a href="#contact" className="cta-primary inline-block font-semibold text-sm">Nous contacter</a>
+  <a href="#services" className="cta-secondary inline-flex items-center gap-1 text-sm">En savoir plus</a>
+  <button onClick={toggle} className="flex items-center justify-between w-full py-4"> {/* FAQ — pas de cta-* */}
+    {question} <ChevronDown />
+  </button>
+  \`\`\`
+- Tokens disponibles si tu as besoin de styler manuellement un CTA atypique (rare) :
+  \`--btn-primary-bg\`, \`--btn-primary-text\`, \`--btn-primary-border-color\`, \`--btn-primary-border-width\`,
+  \`--btn-primary-radius\`, \`--btn-primary-padding\`, \`--btn-primary-shadow\` (idem \`--btn-secondary-*\`).
+  Les alias legacy \`--btn-radius\`, \`--btn-bg\`, etc. pointent vers les valeurs primaires.
 
 Réponse : \`\`\`tsx [code] \`\`\` puis 1-2 phrases d'explication.`;
 
