@@ -559,7 +559,15 @@ export interface OpportuniteOffre {
 
 export type SectionDataSource = 'enterprise' | 'config' | 'client-editable' | 'dynamic';
 
-export type SectionAnimation = 'none' | 'fade-in' | 'slide-up' | 'slide-in-left' | 'slide-in-right';
+export type SectionAnimation =
+  | 'none'
+  | 'fade-in'
+  | 'slide-up'
+  | 'slide-down'
+  | 'slide-in-left'
+  | 'slide-in-right'
+  | 'zoom-in'
+  | 'zoom-out';
 
 export interface SectionDefinition {
   type: string;
@@ -1114,6 +1122,12 @@ export interface StyleGuide {
     elementGap: string;
     maxContentWidth: string;
   };
+  animations?: {
+    defaultType?: SectionAnimation;
+    defaultDuration?: number;
+    defaultDelay?: number;
+    defaultEasing?: string;
+  };
 }
 
 export const DEFAULT_STYLE_GUIDE: StyleGuide = {
@@ -1167,6 +1181,12 @@ export const DEFAULT_STYLE_GUIDE: StyleGuide = {
     sectionPadding: '80px',
     elementGap: '24px',
     maxContentWidth: '1200px',
+  },
+  animations: {
+    defaultType: 'none',
+    defaultDuration: 600,
+    defaultDelay: 0,
+    defaultEasing: 'ease-out',
   },
 };
 

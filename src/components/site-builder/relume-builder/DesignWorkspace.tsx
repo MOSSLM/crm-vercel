@@ -3,7 +3,7 @@
 import React from "react";
 import {
   Laptop, Tablet, Smartphone, Layers,
-  Move, Zap, ChevronDown, Play,
+  Move, Zap, ChevronDown,
   ZoomIn, ZoomOut, Eye, EyeOff,
   Type as TypeIcon, MousePointer, Box, ChevronRight,
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
@@ -25,6 +25,8 @@ import { SiteMenusPanel } from "./SiteMenusPanel";
 import { ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
+import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
+import type { SectionAnimation } from "@/types";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -864,17 +866,9 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
 function GlobalPanel() {
   const { state, dispatch } = useRelumeBuilder();
 
-  const ANIMATION_TYPES = ["Fondu", "Glisser bas", "Glisser gauche", "Zoom", "Aucun"];
-  const TRIGGER_TYPES = ["Au chargement", "Au scroll", "Au survol"];
-  const TRANSITION_TYPES = ["Aucune", "Fondu", "Glissement horizontal", "Zoom arrière"];
-  const EASING_TYPES = ["ease-in-out", "ease-out", "ease-in", "linear", "spring"];
-
-  const [anim, setAnim] = React.useState("Fondu");
-  const [animDuration, setAnimDuration] = React.useState(600);
-  const [trigger, setTrigger] = React.useState("Au scroll");
-  const [animDelay, setAnimDelay] = React.useState(100);
-  const [transition, setTransition] = React.useState("Fondu");
-  const [easing, setEasing] = React.useState("ease-in-out");
+  const anims = state.styleGuide.animations ?? {};
+  const updateAnims = (patch: Record<string, unknown>) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { animations: { ...anims, ...patch } } });
 
   const MAX_WIDTHS: { label: string; value: string }[] = [
     { label: "Étroit (800px)", value: "800px" },
@@ -886,98 +880,24 @@ function GlobalPanel() {
   return (
     <div className="divide-y divide-gray-100">
       {/* Animations & Transitions — stacked */}
-      <Accordion title="Animations & Transitions" icon={Zap} defaultOpen>
-        {/* Animations section */}
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Animation d&apos;entrée</label>
-          <div className="grid grid-cols-2 gap-1.5">
-            {ANIMATION_TYPES.map((a) => (
-              <button
-                key={a}
-                onClick={() => setAnim(a)}
-                className={`px-2 py-2 text-[10px] rounded-lg border transition-colors text-left ${a === anim ? "bg-gray-900 text-white border-gray-900" : "text-gray-600 border-gray-200 hover:bg-gray-50"}`}
-              >
-                {a}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-            <span>Durée</span><span className="font-mono text-gray-500">{animDuration}ms</span>
-          </label>
-          <input
-            type="range" min={200} max={1200} value={animDuration} step={100}
-            onChange={(e) => setAnimDuration(+e.target.value)}
-            className="w-full accent-gray-900"
-          />
-          <div className="flex justify-between text-[9px] text-gray-400 mt-1">
-            <span>200ms</span><span>1200ms</span>
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Déclencheur</label>
-          <div className="flex gap-1.5">
-            {TRIGGER_TYPES.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTrigger(t)}
-                className={`flex-1 px-1 py-1.5 text-[9px] rounded-md border transition-colors ${t === trigger ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-            <span>Délai entre sections</span><span className="font-mono text-gray-500">{animDelay}ms</span>
-          </label>
-          <input
-            type="range" min={0} max={300} value={animDelay} step={25}
-            onChange={(e) => setAnimDelay(+e.target.value)}
-            className="w-full accent-gray-900"
-          />
-        </div>
-
-        {/* Separator */}
-        <div className="border-t border-gray-100 pt-3">
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Transition de page</label>
-          <div className="space-y-1.5">
-            {TRANSITION_TYPES.map((t) => (
-              <button
-                key={t}
-                onClick={() => setTransition(t)}
-                className={`w-full text-left px-3 py-2 text-[10px] rounded-lg border transition-colors ${t === transition ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-600 hover:bg-gray-50"}`}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Easing</label>
-          <div className="flex flex-col gap-1">
-            {EASING_TYPES.map((e) => (
-              <button
-                key={e}
-                onClick={() => setEasing(e)}
-                className={`flex items-center justify-between px-3 py-1.5 text-[10px] rounded-md border transition-colors ${e === easing ? "bg-gray-100 border-gray-300 text-gray-900 font-medium" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
-              >
-                {e}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <button className="flex items-center gap-2 text-xs text-blue-600 hover:text-blue-700 pt-1">
-          <Play size={11} />
-          Prévisualiser les animations
-        </button>
+      <Accordion title="Animations par défaut" icon={Zap} defaultOpen>
+        <p className="text-[10px] text-gray-400 mb-3">
+          Appliqué à chaque section qui n&apos;a pas d&apos;animation personnalisée (onglet Anim. du panneau de section).
+        </p>
+        <AnimationFieldEditor
+          type={anims.defaultType ?? "none"}
+          duration={anims.defaultDuration ?? 600}
+          delay={anims.defaultDelay ?? 0}
+          easing={anims.defaultEasing ?? "ease-out"}
+          onUpdate={({ type, duration, delay, easing }) =>
+            updateAnims({
+              defaultType: type,
+              defaultDuration: duration,
+              defaultDelay: delay,
+              defaultEasing: easing,
+            })
+          }
+        />
       </Accordion>
 
       {/* Global style */}
