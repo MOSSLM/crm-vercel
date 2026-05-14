@@ -51,7 +51,7 @@ export default function SiteBuilderV2Page() {
     );
   }
 
-  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus }; lead_magnet_project_id?: string };
+  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus }; lead_magnet_project_id?: string; published_at?: string | null };
 
   return (
     <RelumeEditor
@@ -61,6 +61,7 @@ export default function SiteBuilderV2Page() {
       initialProjectId={siteExtra.lead_magnet_project_id ?? undefined}
       isPublished={!!site.is_published}
       publishedSubdomain={site.published_subdomain ?? undefined}
+      publishedAt={siteExtra.published_at ?? null}
       initialSections={sections}
       initialInstances={instances}
       initialStyleGuide={siteExtra.style_guide ?? undefined}

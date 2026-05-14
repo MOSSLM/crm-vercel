@@ -3,19 +3,28 @@ import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
-import { generateShadeCSSVars } from "@/lib/color-utils";
+import { generateShadeCSSVars, getContrastColor } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
 import type { ReviewItem } from "@/lib/site-resolver";
 import { LibrarySectionIframe } from "./LibrarySectionIframe";
 
+const SHADOW_MAP: Record<string, string> = {
+  none: "none",
+  sm: "0 1px 2px rgba(0,0,0,0.05)",
+  md: "0 4px 6px -1px rgba(0,0,0,0.10)",
+  lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
+};
+
+function resolveCardShadow(cards: StyleGuide["cards"]): string {
+  if (cards.shadowCustom) {
+    const s = cards.shadowCustom;
+    return `${s.x}px ${s.y}px ${s.blur}px ${s.spread}px ${s.color}`;
+  }
+  return SHADOW_MAP[cards.shadow] ?? SHADOW_MAP.md;
+}
+
 // Pure server-safe version of styleGuideToCSSVars (no "use client" dependency)
 function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
-  const shadowMap: Record<string, string> = {
-    none: "none",
-    sm: "0 1px 2px rgba(0,0,0,0.05)",
-    md: "0 4px 6px -1px rgba(0,0,0,0.10)",
-    lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
-  };
   return {
     "--color-primary": sg.colors.primary,
     "--color-secondary": sg.colors.secondary,
@@ -28,8 +37,11 @@ function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     "--font-body": sg.fonts.body + ", Inter, sans-serif",
     "--font-base-size": sg.fonts.baseSize,
     "--card-radius": sg.cards.borderRadius,
-    "--card-shadow": shadowMap[sg.cards.shadow] ?? shadowMap.md,
+    "--card-shadow": resolveCardShadow(sg.cards),
     "--card-padding": sg.cards.padding,
+    "--card-border-width": sg.cards.borderWidth ?? "0px",
+    "--card-border-color": sg.cards.borderColor ?? "transparent",
+    "--card-image-radius": sg.cards.imageRadius ?? sg.cards.borderRadius,
     "--section-padding": sg.spacing.sectionPadding,
     "--element-gap": sg.spacing.elementGap,
     "--max-content-width": sg.spacing.maxContentWidth,
@@ -44,25 +56,35 @@ interface DynamicPageRendererProps {
   styleGuide?: StyleGuide | null;
   variables?: Record<string, string>;
   reviews?: ReviewItem[];
+  /** Pre-loaded published snapshot of instances. When provided, skips the DB query. */
+  preloadedInstances?: Array<unknown> | null;
 }
 
 /** Server component: renders a dynamic-sections page for the public site */
-export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [] }: DynamicPageRendererProps) {
+export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], preloadedInstances }: DynamicPageRendererProps) {
   const supabase = getSupabaseServiceClient();
 
-  // Fetch instances with joined section definitions
-  const { data: instanceRows } = await supabase
-    .from("site_section_instances")
-    .select(`
-      *,
-      section_def:site_sections (*)
-    `)
-    .eq("site_id", siteId)
-    .eq("page_slug", pageSlug)
-    .eq("is_hidden", false)
-    .order("sort_order");
+  let instances: (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
 
-  const instances = (instanceRows ?? []) as (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
+  if (preloadedInstances) {
+    // Use the published snapshot directly, filter to requested page
+    instances = (preloadedInstances as (SiteSectionInstance & { section_def: SiteSectionDef | null })[])
+      .filter((inst) => inst.page_slug === pageSlug && !inst.is_hidden)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  } else {
+    // Fetch live instances with joined section definitions
+    const { data: instanceRows } = await supabase
+      .from("site_section_instances")
+      .select(`
+        *,
+        section_def:site_sections (*)
+      `)
+      .eq("site_id", siteId)
+      .eq("page_slug", pageSlug)
+      .eq("is_hidden", false)
+      .order("sort_order");
+    instances = (instanceRows ?? []) as (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
+  }
   const guide = styleGuide ?? DEFAULT_STYLE_GUIDE;
   const cssVars = styleGuideToCSSVars(guide);
 
@@ -109,6 +131,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
               content={content}
               styleGuide={guide}
               variables={variables}
+              publicMode
             />
           );
         }

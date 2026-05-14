@@ -18,6 +18,8 @@ interface LibrarySectionIframeProps {
    *  message via postMessage so the parent can implement element selection. */
   selectionEnabled?: boolean;
   onElementClick?: (info: { tag: string; text: string; path: number[] }) => void;
+  /** Public site mode: start at 1px and grow up (no 720px initial flash). */
+  publicMode?: boolean;
 }
 
 /**
@@ -35,13 +37,13 @@ export function LibrarySectionIframe({
   wireframe = false,
   selectionEnabled = false,
   onElementClick,
+  publicMode = false,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
-  // Start the iframe at a real viewport height so that `100vh` /
-  // `min-h-screen` rules inside the rendered section have a meaningful
-  // reference. Once the content has actually rendered, we shrink (or
-  // grow) the iframe to fit the measured scrollHeight exactly.
-  const [height, setHeight] = React.useState(Math.max(minHeight, 720));
+  // In editor mode: start at a real viewport height so min-h-screen sections
+  // have a meaningful reference before we measure and resize.
+  // In public mode: start at 1px and grow — no collapsing flash on the live site.
+  const [height, setHeight] = React.useState(publicMode ? Math.max(minHeight, 1) : Math.max(minHeight, 720));
 
   const allVariables = React.useMemo(() => ({
     ...DEFAULT_VARIABLES,
@@ -57,8 +59,8 @@ export function LibrarySectionIframe({
   // sections that rely on 100vh / min-h-screen render at the correct size
   // before we measure them and shrink to fit.
   React.useEffect(() => {
-    setHeight(Math.max(minHeight, 720));
-  }, [srcDoc, minHeight]);
+    setHeight(publicMode ? Math.max(minHeight, 1) : Math.max(minHeight, 720));
+  }, [srcDoc, minHeight, publicMode]);
 
   // Listen for messages from inside the iframe:
   // - "element-click" for element selection (when selectionEnabled)
@@ -123,14 +125,22 @@ const DEFAULT_VARIABLES: Record<string, string> = {
 
 // ─── StyleGuide → CSS custom properties ─────────────────────────────────────
 
-function styleGuideToCSSVars(sg: StyleGuide): string {
-  const shadowMap: Record<string, string> = {
-    none: "none",
-    sm: "0 1px 2px rgba(0,0,0,0.05)",
-    md: "0 4px 6px -1px rgba(0,0,0,0.10)",
-    lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
-  };
+const IFRAME_SHADOW_MAP: Record<string, string> = {
+  none: "none",
+  sm: "0 1px 2px rgba(0,0,0,0.05)",
+  md: "0 4px 6px -1px rgba(0,0,0,0.10)",
+  lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
+};
 
+function resolveIframeCardShadow(cards: StyleGuide["cards"]): string {
+  if (cards.shadowCustom) {
+    const s = cards.shadowCustom;
+    return `${s.x}px ${s.y}px ${s.blur}px ${s.spread}px ${s.color}`;
+  }
+  return IFRAME_SHADOW_MAP[cards.shadow] ?? IFRAME_SHADOW_MAP.md;
+}
+
+function styleGuideToCSSVars(sg: StyleGuide): string {
   // Generate shade vars for primary, secondary, accent
   const shadeEntries: string[] = [];
   const shadeTargets = { primary: sg.colors.primary, secondary: sg.colors.secondary, accent: sg.colors.accent };
@@ -158,8 +168,11 @@ function styleGuideToCSSVars(sg: StyleGuide): string {
     `--font-base-size: ${sg.fonts.baseSize};`,
     ...ctaEntries,
     `--card-radius: ${sg.cards.borderRadius};`,
-    `--card-shadow: ${shadowMap[sg.cards.shadow] ?? shadowMap.md};`,
+    `--card-shadow: ${resolveIframeCardShadow(sg.cards)};`,
     `--card-padding: ${sg.cards.padding};`,
+    `--card-border-width: ${sg.cards.borderWidth ?? "0px"};`,
+    `--card-border-color: ${sg.cards.borderColor ?? "transparent"};`,
+    `--card-image-radius: ${sg.cards.imageRadius ?? sg.cards.borderRadius};`,
     `--section-padding: ${sg.spacing.sectionPadding};`,
     `--element-gap: ${sg.spacing.elementGap};`,
     `--max-content-width: ${sg.spacing.maxContentWidth};`,
@@ -267,7 +280,7 @@ function buildHTML(
     }
     /* Cards: any element styled like a card uses --card-radius. */
     .card, [class*="shadow-"], .rounded-card { border-radius: var(--card-radius) !important; }
-    img, picture, video { border-radius: var(--card-radius); }
+    img, picture, video { border-radius: var(--card-image-radius); }
     /* CTA-only button style — opt-in via class on the element */
     ${CTA_CSS_RULES}
   `;

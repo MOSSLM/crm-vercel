@@ -766,6 +766,21 @@ function ButtonsModal({
 
 // ── Modal: Cards ──────────────────────────────────────────────────────────────
 
+const CARD_SHADOW_PRESETS: Record<string, string> = {
+  none: "none",
+  sm: "0 1px 2px rgba(0,0,0,0.06)",
+  md: "0 4px 6px rgba(0,0,0,0.1)",
+  lg: "0 10px 15px rgba(0,0,0,0.1)",
+};
+
+function resolveCardShadowPreview(cards: StyleGuide["cards"]): string {
+  if (cards.shadowCustom) {
+    const s = cards.shadowCustom;
+    return `${s.x}px ${s.y}px ${s.blur}px ${s.spread}px ${s.color}`;
+  }
+  return CARD_SHADOW_PRESETS[cards.shadow] ?? "none";
+}
+
 function CardsModal({
   guide,
   onUpdate,
@@ -776,16 +791,12 @@ function CardsModal({
   onClose: () => void;
 }) {
   const c = guide.cards;
-  const shadowMap: Record<string, string> = {
-    none: "none",
-    sm: "0 1px 2px rgba(0,0,0,0.06)",
-    md: "0 4px 6px rgba(0,0,0,0.1)",
-    lg: "0 10px 15px rgba(0,0,0,0.1)",
-  };
+  const isCustomShadow = !!c.shadowCustom;
+  const sc = c.shadowCustom ?? { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(0,0,0,0.12)" };
 
   return (
     <Modal title="Cartes &amp; images" onClose={onClose}>
-      {/* Radius — independent of button radius */}
+      {/* Card radius */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <label className="text-xs font-medium text-gray-500">Arrondi des cartes</label>
@@ -797,28 +808,128 @@ function CardsModal({
           onChange={(e) => onUpdate({ borderRadius: `${e.target.value}px` })}
           className="w-full accent-gray-900"
         />
-        <p className="text-[10px] text-gray-300 mt-1">
-          Indépendant de l&apos;arrondi des boutons
-        </p>
       </div>
 
-      {/* Shadow */}
+      {/* Image radius */}
       <div>
-        <label className="text-xs font-medium text-gray-500 block mb-2">Ombre</label>
-        <div className="flex gap-1.5">
-          {(["none", "sm", "md", "lg"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => onUpdate({ shadow: s })}
-              className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${
-                c.shadow === s
-                  ? "bg-gray-900 text-white border-gray-900"
-                  : "border-gray-200 text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              {s === "none" ? "Aucune" : s.toUpperCase()}
-            </button>
-          ))}
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-medium text-gray-500">Arrondi des images</label>
+          <span className="text-xs font-mono text-gray-400">{c.imageRadius ?? c.borderRadius}</span>
+        </div>
+        <input
+          type="range" min={0} max={32}
+          value={parseInt(c.imageRadius ?? c.borderRadius)}
+          onChange={(e) => onUpdate({ imageRadius: `${e.target.value}px` })}
+          className="w-full accent-gray-900"
+        />
+        <p className="text-[10px] text-gray-300 mt-1">Indépendant de l&apos;arrondi des cartes</p>
+      </div>
+
+      {/* Shadow mode toggle */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs font-medium text-gray-500">Ombre</label>
+          <button
+            onClick={() => onUpdate({ shadowCustom: isCustomShadow ? null : sc })}
+            className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
+              isCustomShadow ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:bg-gray-50"
+            }`}
+          >
+            {isCustomShadow ? "✦ Personnalisée" : "Personnaliser"}
+          </button>
+        </div>
+        {!isCustomShadow ? (
+          <div className="flex gap-1.5">
+            {(["none", "sm", "md", "lg"] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => onUpdate({ shadow: s })}
+                className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${
+                  c.shadow === s
+                    ? "bg-gray-900 text-white border-gray-900"
+                    : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                {s === "none" ? "Aucune" : s.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {(
+              [
+                { key: "x" as const, label: "Décalage X", min: -40, max: 40 },
+                { key: "y" as const, label: "Décalage Y", min: -20, max: 60 },
+                { key: "blur" as const, label: "Flou", min: 0, max: 80 },
+                { key: "spread" as const, label: "Extension", min: -20, max: 40 },
+              ] as const
+            ).map(({ key, label, min, max }) => (
+              <div key={key}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] text-gray-400">{label}</span>
+                  <span className="text-[10px] font-mono text-gray-400">{sc[key]}px</span>
+                </div>
+                <input
+                  type="range" min={min} max={max}
+                  value={sc[key]}
+                  onChange={(e) =>
+                    onUpdate({ shadowCustom: { ...sc, [key]: Number(e.target.value) } })
+                  }
+                  className="w-full accent-gray-900"
+                />
+              </div>
+            ))}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-gray-400">Couleur</span>
+              <input
+                type="color"
+                value={sc.color.startsWith("rgba") ? "#000000" : sc.color}
+                onChange={(e) =>
+                  onUpdate({ shadowCustom: { ...sc, color: e.target.value + "1f" } })
+                }
+                className="w-8 h-6 rounded cursor-pointer border border-gray-200"
+              />
+              <input
+                type="text"
+                value={sc.color}
+                onChange={(e) => onUpdate({ shadowCustom: { ...sc, color: e.target.value } })}
+                className="flex-1 text-[10px] font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1"
+                placeholder="rgba(0,0,0,0.12)"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Border */}
+      <div>
+        <label className="text-xs font-medium text-gray-500 block mb-2">Bordure</label>
+        <div className="flex gap-2 items-center">
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[10px] text-gray-400">Épaisseur</span>
+              <span className="text-[10px] font-mono text-gray-400">{c.borderWidth ?? "0px"}</span>
+            </div>
+            <input
+              type="range" min={0} max={8}
+              value={parseInt(c.borderWidth ?? "0")}
+              onChange={(e) => onUpdate({ borderWidth: `${e.target.value}px` })}
+              className="w-full accent-gray-900"
+            />
+          </div>
+          <div className="flex flex-col items-center gap-1">
+            <span className="text-[10px] text-gray-400">Couleur</span>
+            <input
+              type="color"
+              value={
+                (c.borderColor ?? "transparent").startsWith("rgba")
+                  ? "#e5e7eb"
+                  : (c.borderColor ?? "#e5e7eb")
+              }
+              onChange={(e) => onUpdate({ borderColor: e.target.value })}
+              className="w-8 h-6 rounded cursor-pointer border border-gray-200"
+            />
+          </div>
         </div>
       </div>
 
@@ -833,7 +944,8 @@ function CardsModal({
               style={{
                 backgroundColor: bg,
                 borderRadius: c.borderRadius,
-                boxShadow: shadowMap[c.shadow] ?? "none",
+                boxShadow: resolveCardShadowPreview(c),
+                border: `${c.borderWidth ?? "0px"} solid ${c.borderColor ?? "transparent"}`,
               }}
             />
           ))}
@@ -1055,12 +1167,8 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
                     style={{
                       backgroundColor: bg,
                       borderRadius: guide.cards.borderRadius,
-                      boxShadow: {
-                        none: "none",
-                        sm: "0 1px 2px rgba(0,0,0,0.06)",
-                        md: "0 4px 6px rgba(0,0,0,0.08)",
-                        lg: "0 8px 12px rgba(0,0,0,0.1)",
-                      }[guide.cards.shadow] ?? "none",
+                      boxShadow: resolveCardShadowPreview(guide.cards),
+                      border: `${guide.cards.borderWidth ?? "0px"} solid ${guide.cards.borderColor ?? "transparent"}`,
                     }}
                   />
                 ))}
