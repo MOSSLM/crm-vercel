@@ -863,13 +863,82 @@ export interface SectionSocialLinksField extends SectionFieldBase {
   platforms?: Array<'facebook' | 'instagram' | 'linkedin' | 'twitter' | 'youtube' | 'tiktok'>;
 }
 
+// ─── Composite editable element fields ───────────────────────────────────────
+
+/** Stored as content[id] = { label, href, target, style_overrides } */
+export interface SectionButtonField extends SectionFieldBase {
+  type: 'button';
+  /** Button variant hint for the default style. */
+  variant?: 'primary' | 'secondary' | 'ghost' | 'link';
+}
+export interface ButtonFieldValue {
+  label?: string;
+  href?: string;
+  target?: '_self' | '_blank';
+  style_overrides?: {
+    bg?: string;
+    text?: string;
+    border?: string;
+    radius?: string;
+  };
+}
+
+/** Stored as content[id] = { label, href, target } */
+export interface SectionLinkField extends SectionFieldBase {
+  type: 'link';
+}
+export interface LinkFieldValue {
+  label?: string;
+  href?: string;
+  target?: '_self' | '_blank';
+}
+
+/** Stored as content[id] = { input_type, placeholder, default_value, label, name, required } */
+export interface SectionInputField extends SectionFieldBase {
+  type: 'input';
+}
+export interface InputFieldValue {
+  input_type?: 'text' | 'email' | 'tel' | 'number' | 'password' | 'url' | 'date';
+  placeholder?: string;
+  default_value?: string;
+  label?: string;
+  name?: string;
+  required?: boolean;
+}
+
+/** Like SectionInputField but multi-line */
+export interface SectionTextareaInputField extends SectionFieldBase {
+  type: 'textarea_input';
+}
+export interface TextareaInputFieldValue {
+  placeholder?: string;
+  default_value?: string;
+  label?: string;
+  name?: string;
+  rows?: number;
+  required?: boolean;
+}
+
+/** Stored as content[id] = { action, method, submit_label, success_message } */
+export interface SectionFormField extends SectionFieldBase {
+  type: 'form';
+}
+export interface FormFieldValue {
+  action?: string;
+  method?: 'GET' | 'POST';
+  submit_label?: string;
+  success_message?: string;
+}
+
 export type SectionField =
   | SectionTextField | SectionTextareaField | SectionNumberField
   | SectionRangeField | SectionColorField | SectionColorSchemeField
   | SectionImagePickerField | SectionSelectField | SectionCheckboxField
   | SectionAlignmentField | SectionFontField | SectionHeaderField | SectionParagraphField
   | SectionPageLinkField | SectionIconPickerField | SectionEnterpriseFieldField
-  | SectionReviewSourceField | SectionSocialLinksField;
+  | SectionReviewSourceField | SectionSocialLinksField
+  | SectionButtonField | SectionLinkField | SectionInputField
+  | SectionTextareaInputField | SectionFormField;
 
 export interface SectionBlockSchema {
   type: string;

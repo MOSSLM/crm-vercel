@@ -14,6 +14,8 @@ interface SchemaEditorProps {
   filterTypes?: string[];
   /** Exclude fields matching these ids (e.g. '__color_scheme' is handled separately) */
   excludeIds?: string[];
+  variables?: Record<string, string>;
+  siteId?: string;
 }
 
 export function SchemaEditor({
@@ -23,6 +25,8 @@ export function SchemaEditor({
   styleGuide,
   filterTypes,
   excludeIds = [],
+  variables,
+  siteId,
 }: SchemaEditorProps) {
   const fields = schema.settings.filter((f) => {
     if (excludeIds.includes("id" in f ? f.id : "")) return false;
@@ -44,6 +48,8 @@ export function SchemaEditor({
             value={content[id]}
             onChange={(val) => onUpdate(id, val)}
             styleGuide={styleGuide}
+            variables={variables}
+            siteId={siteId}
           />
         );
       })}

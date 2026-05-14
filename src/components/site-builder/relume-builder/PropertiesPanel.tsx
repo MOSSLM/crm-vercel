@@ -143,6 +143,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                       content={instance.content}
                       onUpdate={updateContent}
                       styleGuide={state.styleGuide}
+                      variables={state.variableContext}
+                      siteId={state.siteId}
                     />
                   );
                 })()}
@@ -157,6 +159,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 )}
               </>
@@ -193,6 +197,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     content={instance.content}
                     onUpdate={updateContent}
                     styleGuide={state.styleGuide}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 </div>
               );
@@ -211,6 +217,8 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     content={instance.content}
                     onUpdate={updateContent}
                     styleGuide={state.styleGuide}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 </div>
               );

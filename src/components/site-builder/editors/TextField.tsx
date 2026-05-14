@@ -7,9 +7,10 @@ interface TextFieldProps {
   setting: SectionTextField | SectionTextareaField;
   value: string;
   onChange: (val: string) => void;
+  variables?: Record<string, string>;
 }
 
-export function TextField({ setting, value, onChange }: TextFieldProps) {
+export function TextField({ setting, value, onChange, variables }: TextFieldProps) {
   const base =
     "w-full bg-white/5 border border-white/10 rounded text-white text-xs placeholder-white/20 focus:outline-none focus:border-white/30 focus:bg-white/8 transition-colors";
 

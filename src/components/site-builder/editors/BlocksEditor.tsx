@@ -15,6 +15,8 @@ interface BlocksEditorProps {
   onRemove: (blockId: string) => void;
   onDuplicate: (blockId: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
+  variables?: Record<string, string>;
+  siteId?: string;
 }
 
 export function BlocksEditor({
@@ -26,6 +28,8 @@ export function BlocksEditor({
   onRemove,
   onDuplicate,
   onReorder,
+  variables,
+  siteId,
 }: BlocksEditorProps) {
   const [expandedId, setExpandedId] = React.useState<string | null>(blocks[0]?.id ?? null);
 
@@ -120,6 +124,8 @@ export function BlocksEditor({
                   content={block.settings}
                   onUpdate={(key, value) => onUpdate(block.id, { [key]: value })}
                   styleGuide={styleGuide}
+                  variables={variables}
+                  siteId={siteId}
                 />
               </div>
             )}

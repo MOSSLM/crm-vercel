@@ -1107,6 +1107,8 @@ function SectionPanel({
                       content={instance.content}
                       onUpdate={updateContent}
                       styleGuide={state.styleGuide}
+                      variables={state.variableContext}
+                      siteId={state.siteId}
                     />
                   ) : null;
                 })()}
@@ -1120,6 +1122,8 @@ function SectionPanel({
                     onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
+                    variables={state.variableContext}
+                    siteId={state.siteId}
                   />
                 )}
               </>
@@ -1165,6 +1169,8 @@ function SectionPanel({
                   content={instance.content}
                   onUpdate={updateContent}
                   styleGuide={state.styleGuide}
+                  variables={state.variableContext}
+                  siteId={state.siteId}
                 />
               );
             })()}
