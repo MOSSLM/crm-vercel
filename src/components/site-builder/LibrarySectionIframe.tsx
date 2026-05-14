@@ -2,7 +2,8 @@
 
 import React from "react";
 import type { StyleGuide } from "@/types";
-import { generateColorShades, getContrastColor } from "@/lib/color-utils";
+import { generateColorShades } from "@/lib/color-utils";
+import { buildCtaCSSVars, CTA_CSS_RULES } from "@/lib/button-style";
 
 interface LibrarySectionIframeProps {
   code: string;
@@ -140,6 +141,10 @@ function styleGuideToCSSVars(sg: StyleGuide): string {
     }
   }
 
+  // CTA tokens (primary + secondary + legacy --btn-* aliases)
+  const ctaVars = buildCtaCSSVars(sg);
+  const ctaEntries = Object.entries(ctaVars).map(([k, v]) => `${k}: ${v};`);
+
   return [
     `--color-primary: ${sg.colors.primary};`,
     `--color-secondary: ${sg.colors.secondary};`,
@@ -151,11 +156,7 @@ function styleGuideToCSSVars(sg: StyleGuide): string {
     `--font-heading: ${sg.fonts.heading}, Inter, sans-serif;`,
     `--font-body: ${sg.fonts.body}, Inter, sans-serif;`,
     `--font-base-size: ${sg.fonts.baseSize};`,
-    `--btn-radius: ${sg.buttons.borderRadius};`,
-    `--btn-padding: ${sg.buttons.padding};`,
-    `--btn-bg: ${sg.buttons.style === "outline" ? "transparent" : sg.buttons.style === "soft" ? sg.colors.primary + "22" : sg.colors.primary};`,
-    `--btn-text: ${sg.buttons.style === "filled" ? getContrastColor(sg.colors.primary) : sg.colors.primary};`,
-    `--btn-border-color: ${sg.buttons.style === "soft" ? "transparent" : sg.colors.primary};`,
+    ...ctaEntries,
     `--card-radius: ${sg.cards.borderRadius};`,
     `--card-shadow: ${shadowMap[sg.cards.shadow] ?? shadowMap.md};`,
     `--card-padding: ${sg.cards.padding};`,
@@ -251,39 +252,24 @@ function buildHTML(
 
   // Reset CSS — keeps document height flexible (auto) but does NOT force
   // sections to collapse: we leave min-h-screen / 100vh intact, because the
-  // iframe is initialised at a real viewport height (~720px) so those rules
-  // resolve to a sensible value. Each section is then measured via
-  // scrollHeight and the iframe shrinks/grows to fit its content exactly.
   // We still override Tailwind utility classes so the Style Guide tokens
   // (border-radius, shadow, fonts) apply even on legacy sections that never
   // referenced the CSS variables themselves.
+  // IMPORTANT: only `.cta-primary` and `.cta-secondary` get button token
+  // overrides — other interactive elements (FAQ toggles, slider arrows, etc.)
+  // keep their native styles.
   const resetCss = `
     html, body { height: auto; min-height: 0; }
-    /* Map common Tailwind radii to the active Style Guide token. */
-    .rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl,
-    .rounded-3xl, .rounded-sm, .rounded-full {
-      border-radius: var(--btn-radius) !important;
-    }
-    /* Force button style (filled/outline/soft) from Style Guide tokens.
-       Matches <button>, classed buttons, and anchors styled like buttons
-       (Relume sections use <a> with inline backgroundColor/borderRadius —
-        plain text links have neither so they're left alone). */
-    button, .btn, [role="button"], a.button,
-    a[style*="background"], a[style*="border-radius"] {
-      border-radius: var(--btn-radius) !important;
-      background-color: var(--btn-bg) !important;
-      color: var(--btn-text) !important;
-      border: 2px solid var(--btn-border-color) !important;
-      padding: var(--btn-padding) !important;
-    }
-    /* Cards: any element styled like a card uses --card-radius. */
-    .card, [class*="shadow-"], .rounded-card { border-radius: var(--card-radius) !important; }
-    img, picture, video { border-radius: var(--card-radius); }
     /* Apply font tokens globally so heading vs body fonts respect Style Guide. */
     h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading, Inter, sans-serif) !important; }
     body, p, span, a, button, input, textarea, select, li {
       font-family: var(--font-body, Inter, sans-serif);
     }
+    /* Cards: any element styled like a card uses --card-radius. */
+    .card, [class*="shadow-"], .rounded-card { border-radius: var(--card-radius) !important; }
+    img, picture, video { border-radius: var(--card-radius); }
+    /* CTA-only button style — opt-in via class on the element */
+    ${CTA_CSS_RULES}
   `;
 
   const wireframeCss = wireframe ? `

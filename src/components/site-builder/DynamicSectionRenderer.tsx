@@ -8,10 +8,10 @@ import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter
 import {
   resolveColorScheme,
   generateShadeCSSVars,
-  getContrastColor,
   type ColorSchemePreset,
   type SectionColorScheme,
 } from "@/lib/color-utils";
+import { buildCtaCSSVars } from "@/lib/button-style";
 
 interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
@@ -43,11 +43,10 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
   };
 
-  // Generate shade CSS vars for primary, secondary, accent
   const shadeVars = generateShadeCSSVars(sg.colors);
+  const ctaVars = buildCtaCSSVars(sg);
 
   return {
-    // Core colors
     "--color-primary": sg.colors.primary,
     "--color-secondary": sg.colors.secondary,
     "--color-accent": sg.colors.accent,
@@ -55,27 +54,16 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     "--color-bg-alt": sg.colors.backgroundAlt,
     "--color-text": sg.colors.text,
     "--color-text-muted": sg.colors.textMuted,
-    // Typography
     "--font-heading": sg.fonts.heading + ", Inter, sans-serif",
     "--font-body": sg.fonts.body + ", Inter, sans-serif",
     "--font-base-size": sg.fonts.baseSize,
-    // Buttons — bg/text/border computed from buttons.style so snippets react to style guide changes
-    "--btn-radius": sg.buttons.borderRadius,
-    "--btn-padding": sg.buttons.padding,
-    "--btn-bg": sg.buttons.style === "outline" ? "transparent"
-      : sg.buttons.style === "soft" ? sg.colors.primary + "22"
-      : sg.colors.primary,
-    "--btn-text": sg.buttons.style === "filled" ? getContrastColor(sg.colors.primary) : sg.colors.primary,
-    "--btn-border-color": sg.buttons.style === "soft" ? "transparent" : sg.colors.primary,
-    // Cards
     "--card-radius": sg.cards.borderRadius,
     "--card-shadow": shadowMap[sg.cards.shadow] ?? shadowMap.md,
     "--card-padding": sg.cards.padding,
-    // Spacing
     "--section-padding": sg.spacing.sectionPadding,
     "--element-gap": sg.spacing.elementGap,
     "--max-content-width": sg.spacing.maxContentWidth,
-    // Shade scales (--color-primary-50 ... --color-primary-950, etc.)
+    ...ctaVars,
     ...shadeVars,
   } as React.CSSProperties;
 }

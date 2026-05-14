@@ -979,6 +979,28 @@ export interface SiteSectionInstance {
    */
 }
 
+/** Box-shadow components for a button variant */
+export interface ButtonShadow {
+  x: number;        // px offset
+  y: number;        // px offset
+  blur: number;     // px
+  spread: number;   // px
+  color: string;    // hex (with optional alpha) or rgba()
+}
+
+/** Fully-resolved button variant — primary/secondary specs derive from this */
+export interface ButtonVariant {
+  style: 'filled' | 'outline' | 'soft' | 'ghost';
+  bg?: string;           // overrides derived bg
+  text?: string;         // overrides derived text color
+  borderColor?: string;  // overrides derived border
+  borderWidth: string;   // e.g. "2px"
+  borderRadius: string;
+  padding: string;
+  shadow?: ButtonShadow | null;
+  hoverEffect?: 'darken' | 'lift' | 'scale' | 'none';
+}
+
 /** Global style design tokens stored in sites.style_guide */
 export interface StyleGuide {
   colors: {
@@ -997,10 +1019,16 @@ export interface StyleGuide {
     scale?: number;
   };
   buttons: {
+    /** Legacy / primary CTA shorthand — also serves as default for `primary` */
     borderRadius: string;
     padding: string;
     style: 'filled' | 'outline' | 'soft';
     hoverEffect?: 'darken' | 'lift' | 'none';
+    /** Optional per-variant overrides; missing fields fall back to legacy/derived */
+    primary?: Partial<ButtonVariant>;
+    secondary?: Partial<ButtonVariant>;
+    /** Preset name applied last; UI helper, not used at runtime */
+    preset?: string;
   };
   cards: {
     borderRadius: string;
@@ -1035,6 +1063,23 @@ export const DEFAULT_STYLE_GUIDE: StyleGuide = {
     padding: '12px 24px',
     style: 'filled',
     hoverEffect: 'darken',
+    primary: {
+      style: 'filled',
+      borderWidth: '2px',
+      borderRadius: '8px',
+      padding: '12px 24px',
+      shadow: null,
+      hoverEffect: 'darken',
+    },
+    secondary: {
+      style: 'outline',
+      borderWidth: '2px',
+      borderRadius: '8px',
+      padding: '12px 24px',
+      shadow: null,
+      hoverEffect: 'lift',
+    },
+    preset: 'modern',
   },
   cards: {
     borderRadius: '12px',

@@ -524,40 +524,116 @@ Pour que les réglages utilisateur (couleurs, polices, arrondi des boutons,
 ombre des cartes, padding des sections, …) prennent réellement effet, le code
 généré DOIT utiliser ces variables — sinon les valeurs codées en dur priment.
 
-| Token CSS                | Usage                                        |
-| ------------------------ | -------------------------------------------- |
-| `--color-primary`        | Couleur primaire                             |
-| `--color-secondary`      | Couleur secondaire                           |
-| `--color-accent`         | Couleur d'accent                             |
-| `--color-background`     | Fond principal                               |
-| `--color-bg-alt`         | Fond alternatif                              |
-| `--color-text`           | Texte par défaut                             |
-| `--color-text-muted`     | Texte secondaire                             |
-| `--color-primary-50…950` | Nuances générées (idem secondary / accent)   |
-| `--font-heading`         | Police des titres                            |
-| `--font-body`            | Police du corps                              |
-| `--btn-radius`           | Rayon des boutons                            |
-| `--btn-padding`          | Padding des boutons                          |
-| `--btn-bg`               | Fond des boutons primaires (calculé depuis `buttons.style` : filled/outline/soft) |
-| `--btn-text`             | Couleur du texte des boutons primaires (contraste auto) |
-| `--btn-border-color`     | Couleur de bordure des boutons primaires     |
-| `--card-radius`          | Rayon des cartes / images                    |
-| `--card-padding`         | Padding des cartes                           |
-| `--card-shadow`          | Ombre des cartes (mappée depuis `none/sm/md/lg`) |
-| `--section-padding`      | Padding vertical des sections                |
-| `--element-gap`          | Gap entre éléments                           |
-| `--max-content-width`    | Largeur max du contenu                       |
+| Token CSS                     | Usage                                                  |
+| ----------------------------- | ------------------------------------------------------ |
+| `--color-primary`             | Couleur primaire                                       |
+| `--color-secondary`           | Couleur secondaire                                     |
+| `--color-accent`              | Couleur d'accent                                       |
+| `--color-background`          | Fond principal                                         |
+| `--color-bg-alt`              | Fond alternatif                                        |
+| `--color-text`                | Texte par défaut                                       |
+| `--color-text-muted`          | Texte secondaire                                       |
+| `--color-primary-50…950`      | Nuances générées (idem secondary / accent)             |
+| `--font-heading`              | Police des titres                                      |
+| `--font-body`                 | Police du corps                                        |
+| `--btn-primary-bg`            | Fond du bouton principal CTA                           |
+| `--btn-primary-text`          | Texte du bouton principal                              |
+| `--btn-primary-border-color`  | Bordure du bouton principal                            |
+| `--btn-primary-border-width`  | Épaisseur de bordure du bouton principal               |
+| `--btn-primary-radius`        | Arrondi du bouton principal                            |
+| `--btn-primary-padding`       | Padding du bouton principal                            |
+| `--btn-primary-shadow`        | Ombre du bouton principal                              |
+| `--btn-secondary-bg`          | Fond du bouton secondaire CTA                          |
+| `--btn-secondary-text`        | Texte du bouton secondaire                             |
+| `--btn-secondary-border-color`| Bordure du bouton secondaire                           |
+| `--btn-secondary-border-width`| Épaisseur de bordure du bouton secondaire              |
+| `--btn-secondary-radius`      | Arrondi du bouton secondaire                           |
+| `--btn-secondary-padding`     | Padding du bouton secondaire                           |
+| `--btn-secondary-shadow`      | Ombre du bouton secondaire                             |
+| `--btn-bg` / `--btn-text` etc.| **Alias legacy** → pointent vers les vars primaires    |
+| `--card-radius`               | Rayon des cartes / images                              |
+| `--card-padding`              | Padding des cartes                                     |
+| `--card-shadow`               | Ombre des cartes (mappée depuis `none/sm/md/lg`)       |
+| `--section-padding`           | Padding vertical des sections                          |
+| `--element-gap`               | Gap entre éléments                                     |
+| `--max-content-width`         | Largeur max du contenu                                 |
+
+### Convention boutons CTA — opt-in par classe
+
+**Seuls les éléments marqués `.cta-primary` ou `.cta-secondary` reçoivent les tokens bouton.**
+Les autres éléments interactifs (toggles FAQ, flèches de slider, boutons hamburger, dots de pagination, etc.) gardent leur style natif.
+
+```tsx
+{/* ✅ Bouton d'action principal → reçoit les tokens du Style Guide */}
+<a href="#contact" className="cta-primary inline-block font-semibold text-sm">
+  Nous contacter
+</a>
+
+{/* ✅ Bouton d'action secondaire */}
+<a href="#services" className="cta-secondary inline-flex items-center gap-1 font-semibold text-sm">
+  En savoir plus <ArrowRight size={14} />
+</a>
+
+{/* ✅ Bouton FAQ — PAS de cta-*, garde son style natif */}
+<button onClick={toggle} className="flex items-center justify-between w-full py-4">
+  {question} <ChevronDown />
+</button>
+
+{/* ✅ Flèche de slider — PAS de cta-* */}
+<button onClick={prev} className="p-2 rounded-full bg-gray-100">
+  <ChevronLeft />
+</button>
+```
+
+Le runtime injecte automatiquement ces règles CSS dans l'iframe :
+```css
+.cta-primary  { background-color: var(--btn-primary-bg)  !important; color: var(--btn-primary-text)  !important; ... }
+.cta-secondary { background-color: var(--btn-secondary-bg) !important; color: var(--btn-secondary-text) !important; ... }
+```
 
 **Règles obligatoires pour les sections :**
 
-1. Boutons : `style={{ borderRadius: 'var(--btn-radius)', padding: 'var(--btn-padding)', backgroundColor: 'var(--btn-bg)', color: 'var(--btn-text)', border: '2px solid var(--btn-border-color)' }}`. Ne jamais coder `backgroundColor: '#xxx'` ou `color: '#fff'` en dur sur un bouton principal.
-2. Cartes / images : `style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}`.
-3. Polices : titres avec `fontFamily: 'var(--font-heading)'`, corps avec `'var(--font-body)'`.
-4. Couleurs : utiliser les `var(--color-*)` plutôt que des hex codés en dur.
-5. **Interdit** : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine — privilégier un
+1. **Boutons CTA** : ajouter `cta-primary` (bouton principal) ou `cta-secondary` (bouton secondaire) à la `className`. Ne jamais coder `backgroundColor: '#xxx'` ou `color: '#fff'` en dur sur un CTA — les tokens CSS s'en chargent.
+2. **Autres boutons** : ne pas ajouter `cta-*` aux éléments non-CTA (FAQ, slider, menu, etc.).
+3. Cartes / images : `style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}`.
+4. Polices : titres avec `fontFamily: 'var(--font-heading)'`, corps avec `'var(--font-body)'`.
+5. Couleurs : utiliser les `var(--color-*)` plutôt que des hex codés en dur.
+6. **Interdit** : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine — privilégier un
    `paddingTop`/`paddingBottom` basé sur `var(--section-padding)`. Le runtime neutralise tout de
    même `min-h-screen`/`100vh` pour éviter les sections géantes, mais éviter ces classes reste la
    bonne pratique.
+
+### Style Guide — boutons : schéma étendu
+
+Le Style Guide supporte désormais des boutons primaire/secondaire indépendants, avec contrôle complet :
+
+```ts
+buttons: {
+  // Legacy (raccourci primaire — toujours utilisé comme fallback)
+  borderRadius: '8px',
+  padding: '12px 24px',
+  style: 'filled',
+  // Variants détaillés (optionnels, remplacent les valeurs legacy si présents)
+  primary: {
+    style: 'filled' | 'outline' | 'soft' | 'ghost',
+    bg?: string,          // couleur exacte (null = auto depuis style + primary)
+    text?: string,
+    borderColor?: string,
+    borderWidth: '2px',
+    borderRadius: '8px',
+    padding: '12px 24px',
+    shadow?: { x, y, blur, spread, color } | null,
+    hoverEffect?: 'darken' | 'lift' | 'scale' | 'none',
+  },
+  secondary: { /* même structure */ },
+  preset?: 'modern' | 'minimal' | 'pill' | 'sharp' | 'bold' | 'soft' | 'elevated' | 'glass' | 'playful' | 'custom',
+}
+```
+
+Le Style Guide Workspace expose un modal "Boutons CTA" avec :
+- **Sélecteur de preset** (9 presets prêts à l'emploi + "Custom")
+- **Onglets Principal / Secondaire**
+- Par onglet : style, couleurs (fond/texte/bordure) avec overrides, épaisseur de bordure, arrondi, padding, ombre (toggle + x/y/blur/spread/couleur)
 
 Ces règles sont rappelées dans le prompt système (`src/lib/ai/prompts/system-config-generator.txt`)
 et dans le prompt par défaut du chat IA d'édition de section
