@@ -406,7 +406,69 @@ function buildHTML(
     window.__data = ${JSON.stringify(data)};
     window.__variables = ${JSON.stringify(variables)};
     window.__tokens = ${JSON.stringify(tokens)};
+    window.__overrides = ${JSON.stringify((data.__overrides as Record<string, unknown>) ?? {})};
     window.__src = ${src};
+  <\/script>
+  <script>
+    /* Override applicator — applies content.__overrides[pathStr] after each
+       React render so elements hardcoded in section code can still be edited.
+       Each override entry: { kind: 'text'|'image'|'link_href'|'button_href'|'attr', value: string, meta?: { attrName?: string } } */
+    (function () {
+      function nodeAtPath(path) {
+        var node = document.getElementById('root');
+        if (!node || !node.firstElementChild) return null;
+        node = node.firstElementChild;
+        for (var i = 0; i < path.length; i++) {
+          if (!node || !node.children || !node.children[path[i]]) return null;
+          node = node.children[path[i]];
+        }
+        return node;
+      }
+      function applyOne(pathStr, entry) {
+        var path = pathStr.split('.').map(function (s) { return parseInt(s, 10); }).filter(function (n) { return !isNaN(n); });
+        var el = nodeAtPath(path);
+        if (!el) return;
+        var kind = entry && entry.kind;
+        var value = entry && entry.value;
+        if (typeof value !== 'string') return;
+        if (kind === 'text') {
+          if (el.textContent !== value) el.textContent = value;
+        } else if (kind === 'image') {
+          if (el.getAttribute('src') !== value) el.setAttribute('src', value);
+        } else if (kind === 'link_href' || kind === 'button_href') {
+          if (el.getAttribute('href') !== value) el.setAttribute('href', value);
+        } else if (kind === 'attr' && entry.meta && entry.meta.attrName) {
+          el.setAttribute(entry.meta.attrName, value);
+        }
+      }
+      function applyAll() {
+        var overrides = window.__overrides || {};
+        for (var key in overrides) {
+          if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+            try { applyOne(key, overrides[key]); } catch (_) {}
+          }
+        }
+      }
+      window.__applyOverrides = applyAll;
+      var debounceTimer = null;
+      function scheduleApply() {
+        if (debounceTimer) return;
+        debounceTimer = setTimeout(function () { debounceTimer = null; applyAll(); }, 16);
+      }
+      function init() {
+        applyAll();
+        var root = document.getElementById('root');
+        if (root && window.MutationObserver) {
+          var mo = new MutationObserver(scheduleApply);
+          mo.observe(root, { childList: true, subtree: true, characterData: true, attributes: true });
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+    })();
   <\/script>
   <script>
     window.addEventListener('error', function(e) {
