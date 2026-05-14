@@ -4,9 +4,15 @@ import React from "react";
 import {
   X, Copy, Check, Shuffle, ChevronDown, Eye, EyeOff, Layers,
 } from "lucide-react";
-import type { StyleGuide, SiteSectionDef } from "@/types";
+import type { StyleGuide, ButtonVariant, SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { generateColorShades, isLightColor } from "@/lib/color-utils";
+import {
+  BUTTON_PRESETS,
+  resolvePrimaryVariant,
+  resolveSecondaryVariant,
+  variantToCSSVars,
+} from "@/lib/button-style";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -434,6 +440,218 @@ function FontModal({
   );
 }
 
+// ── Variant Editor ────────────────────────────────────────────────────────────
+
+function ShadowInput({
+  shadow,
+  onChange,
+}: {
+  shadow: ButtonVariant["shadow"];
+  onChange: (s: ButtonVariant["shadow"]) => void;
+}) {
+  const s = shadow ?? { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(0,0,0,0.15)" };
+  const enabled = !!shadow;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <label className="text-xs font-medium text-gray-500">Ombre</label>
+        <button
+          onClick={() => onChange(enabled ? null : s)}
+          className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? "bg-gray-900" : "bg-gray-200"}`}
+        >
+          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${enabled ? "translate-x-4" : "translate-x-0.5"}`} />
+        </button>
+      </div>
+      {enabled && (
+        <div className="space-y-2 pl-1">
+          {(["x", "y", "blur", "spread"] as const).map((k) => (
+            <div key={k} className="flex items-center gap-2">
+              <span className="text-[10px] text-gray-400 w-10 shrink-0">{k === "x" ? "X" : k === "y" ? "Y" : k === "blur" ? "Flou" : "Étale"}</span>
+              <input
+                type="range"
+                min={k === "x" || k === "y" ? -20 : 0}
+                max={k === "blur" ? 40 : k === "spread" ? 20 : 20}
+                value={s[k]}
+                onChange={(e) => onChange({ ...s, [k]: Number(e.target.value) })}
+                className="flex-1 accent-gray-900"
+              />
+              <span className="text-[10px] font-mono text-gray-400 w-7 text-right">{s[k]}px</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-400 w-10 shrink-0">Couleur</span>
+            <div className="relative">
+              <div className="w-7 h-5 rounded border border-gray-200" style={{ backgroundColor: s.color }} />
+              <input
+                type="color"
+                value={s.color.startsWith("rgba") ? "#888888" : s.color}
+                onChange={(e) => onChange({ ...s, color: e.target.value + "40" })}
+                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+              />
+            </div>
+            <input
+              type="text"
+              value={s.color}
+              onChange={(e) => onChange({ ...s, color: e.target.value })}
+              className="flex-1 border border-gray-200 rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-blue-400"
+              placeholder="rgba(0,0,0,0.15)"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VariantEditor({
+  label,
+  variant,
+  baseColor,
+  onChange,
+}: {
+  label: string;
+  variant: ButtonVariant;
+  baseColor: string;
+  onChange: (v: Partial<ButtonVariant>) => void;
+}) {
+  const styles: Array<{ id: ButtonVariant["style"]; label: string }> = [
+    { id: "filled", label: "Plein" },
+    { id: "outline", label: "Contour" },
+    { id: "soft", label: "Doux" },
+    { id: "ghost", label: "Ghost" },
+  ];
+
+  // Resolve preview colors
+  const vars = variantToCSSVars(variant, baseColor, "--p");
+
+  const previewStyle: React.CSSProperties = {
+    backgroundColor: vars["--p-bg"],
+    color: vars["--p-text"],
+    border: `${variant.borderWidth} solid ${vars["--p-border-color"]}`,
+    borderRadius: variant.borderRadius,
+    padding: variant.padding,
+    boxShadow: vars["--p-shadow"] === "none" ? undefined : vars["--p-shadow"],
+    fontFamily: "Inter, sans-serif",
+    fontSize: 12,
+    fontWeight: 600,
+    display: "inline-flex",
+    alignItems: "center",
+    cursor: "default",
+    userSelect: "none",
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+
+      {/* Style */}
+      <div className="flex gap-1.5">
+        {styles.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onChange({ style: s.id })}
+            className={`flex-1 py-1.5 text-[10px] rounded-lg border transition-colors ${
+              variant.style === s.id
+                ? "bg-gray-900 text-white border-gray-900"
+                : "border-gray-200 text-gray-500 hover:bg-gray-50"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Color overrides */}
+      <div className="grid grid-cols-3 gap-2">
+        {(["bg", "text", "borderColor"] as const).map((field) => {
+          const fieldLabel = { bg: "Fond", text: "Texte", borderColor: "Bordure" }[field];
+          const autoVal = vars[`--p-${field === "borderColor" ? "border-color" : field}`];
+          const current = variant[field] ?? autoVal;
+          return (
+            <div key={field} className="space-y-1">
+              <label className="text-[9px] text-gray-400">{fieldLabel}</label>
+              <div className="flex items-center gap-1">
+                <div className="relative">
+                  <div className="w-6 h-6 rounded border border-gray-200" style={{ backgroundColor: current }} />
+                  <input
+                    type="color"
+                    value={current}
+                    onChange={(e) => onChange({ [field]: e.target.value })}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                </div>
+                {variant[field] && (
+                  <button
+                    onClick={() => onChange({ [field]: undefined })}
+                    title="Auto"
+                    className="text-[9px] text-gray-300 hover:text-red-400"
+                  >✕</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Border width */}
+      <div className="flex items-center gap-3">
+        <label className="text-[10px] text-gray-400 w-20 shrink-0">Bordure</label>
+        <input
+          type="range" min={0} max={6}
+          value={parseInt(variant.borderWidth)}
+          onChange={(e) => onChange({ borderWidth: `${e.target.value}px` })}
+          className="flex-1 accent-gray-900"
+        />
+        <span className="text-[10px] font-mono text-gray-400 w-7 text-right">{variant.borderWidth}</span>
+      </div>
+
+      {/* Border radius */}
+      <div>
+        <div className="flex items-center gap-3 mb-1.5">
+          <label className="text-[10px] text-gray-400 w-20 shrink-0">Arrondi</label>
+          <input
+            type="range" min={0} max={32}
+            value={Math.min(parseInt(variant.borderRadius), 32)}
+            onChange={(e) => onChange({ borderRadius: `${e.target.value}px` })}
+            className="flex-1 accent-gray-900"
+          />
+          <span className="text-[10px] font-mono text-gray-400 w-10 text-right">{variant.borderRadius}</span>
+        </div>
+        <div className="flex gap-1.5">
+          {[{ l: "Carré", v: "0px" }, { l: "Sm", v: "4px" }, { l: "Md", v: "8px" }, { l: "Lg", v: "16px" }, { l: "Pilule", v: "999px" }].map(({ l, v }) => (
+            <button key={v} onClick={() => onChange({ borderRadius: v })}
+              className={`flex-1 py-1 text-[9px] rounded border transition-colors ${variant.borderRadius === v ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:bg-gray-50"}`}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Padding */}
+      <div className="flex items-center gap-3">
+        <label className="text-[10px] text-gray-400 w-20 shrink-0">Padding</label>
+        <input
+          type="text"
+          value={variant.padding}
+          onChange={(e) => onChange({ padding: e.target.value })}
+          className="flex-1 border border-gray-200 rounded px-2 py-1 text-[10px] font-mono focus:outline-none focus:border-blue-400"
+          placeholder="12px 24px"
+        />
+      </div>
+
+      {/* Shadow */}
+      <ShadowInput shadow={variant.shadow} onChange={(s) => onChange({ shadow: s })} />
+
+      {/* Preview */}
+      <div className="flex items-center gap-3 pt-1">
+        <span className="text-[10px] text-gray-400">Aperçu</span>
+        <div style={previewStyle}>Bouton CTA</div>
+      </div>
+    </div>
+  );
+}
+
 // ── Modal: Buttons ────────────────────────────────────────────────────────────
 
 function ButtonsModal({
@@ -445,92 +663,102 @@ function ButtonsModal({
   onUpdate: (updates: Partial<StyleGuide["buttons"]>) => void;
   onClose: () => void;
 }) {
-  const b = guide.buttons;
-  const previewStyle = (style: "filled" | "outline" | "soft"): React.CSSProperties => ({
-    borderRadius: b.borderRadius,
-    padding: b.padding,
-    backgroundColor:
-      style === "soft"
-        ? guide.colors.primary + "22"
-        : style === "filled"
-        ? guide.colors.primary
-        : "transparent",
-    color:
-      style === "filled"
-        ? isLight(guide.colors.primary) ? "#111" : "#fff"
-        : guide.colors.primary,
-    border: style === "outline" ? `1.5px solid ${guide.colors.primary}` : "none",
-    fontFamily: guide.fonts.body + ", sans-serif",
-    fontSize: 13,
-    fontWeight: 600,
-    display: "inline-block",
-    cursor: "default",
-  });
+  const [tab, setTab] = React.useState<"primary" | "secondary">("primary");
+  const primary = resolvePrimaryVariant(guide);
+  const secondary = resolveSecondaryVariant(guide);
+  const currentPreset = guide.buttons.preset ?? "modern";
+
+  const applyPreset = (id: string) => {
+    const preset = BUTTON_PRESETS.find((p) => p.id === id);
+    if (!preset) return;
+    onUpdate({
+      // Update legacy fields from preset primary
+      style: preset.primary.style === "ghost" ? "outline" : preset.primary.style,
+      borderRadius: preset.primary.borderRadius,
+      padding: preset.primary.padding,
+      primary: preset.primary,
+      secondary: preset.secondary,
+      preset: id,
+    });
+  };
+
+  const updatePrimary = (updates: Partial<ButtonVariant>) => {
+    const merged = { ...primary, ...updates };
+    onUpdate({
+      style: merged.style === "ghost" ? "outline" : merged.style,
+      borderRadius: merged.borderRadius,
+      padding: merged.padding,
+      primary: merged,
+      preset: "custom",
+    });
+  };
+
+  const updateSecondary = (updates: Partial<ButtonVariant>) => {
+    onUpdate({ secondary: { ...secondary, ...updates }, preset: "custom" });
+  };
 
   return (
-    <Modal title="Style des boutons" onClose={onClose}>
-      {/* Style selector */}
+    <Modal title="Boutons CTA" onClose={onClose}>
+      {/* Preset selector */}
       <div>
-        <label className="text-xs font-medium text-gray-500 block mb-2">Style</label>
-        <div className="flex gap-2">
-          {(["filled", "outline", "soft"] as const).map((s) => (
+        <label className="text-xs font-medium text-gray-500 block mb-2">Preset</label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {BUTTON_PRESETS.map((p) => (
             <button
-              key={s}
-              onClick={() => onUpdate({ style: s })}
-              className={`flex-1 py-2 text-xs rounded-lg border transition-colors ${
-                b.style === s
+              key={p.id}
+              onClick={() => applyPreset(p.id)}
+              className={`py-1.5 text-xs rounded-lg border transition-colors ${
+                currentPreset === p.id
                   ? "bg-gray-900 text-white border-gray-900"
                   : "border-gray-200 text-gray-500 hover:bg-gray-50"
               }`}
             >
-              {s === "filled" ? "Plein" : s === "outline" ? "Contour" : "Doux"}
+              {p.label}
             </button>
           ))}
+          {currentPreset === "custom" && (
+            <button className="py-1.5 text-xs rounded-lg border bg-blue-50 border-blue-300 text-blue-700">
+              Custom
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Border radius */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-medium text-gray-500">Arrondi</label>
-          <span className="text-xs font-mono text-gray-400">{b.borderRadius}</span>
-        </div>
-        <input
-          type="range" min={0} max={32}
-          value={parseInt(b.borderRadius)}
-          onChange={(e) => onUpdate({ borderRadius: `${e.target.value}px` })}
-          className="w-full accent-gray-900 mb-2"
+      {/* Tab switcher */}
+      <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+        {(["primary", "secondary"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 py-2 text-xs font-medium transition-colors ${
+              tab === t ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-50"
+            }`}
+          >
+            {t === "primary" ? "Bouton principal" : "Bouton secondaire"}
+          </button>
+        ))}
+      </div>
+
+      {/* Variant editor */}
+      {tab === "primary" ? (
+        <VariantEditor
+          label="Principal (cta-primary)"
+          variant={primary}
+          baseColor={guide.colors.primary}
+          onChange={updatePrimary}
         />
-        <div className="flex gap-1.5">
-          {[
-            { label: "Carré", val: "0px" },
-            { label: "Petit", val: "4px" },
-            { label: "Moyen", val: "8px" },
-            { label: "Large", val: "16px" },
-            { label: "Pilule", val: "999px" },
-          ].map(({ label, val }) => (
-            <button
-              key={val}
-              onClick={() => onUpdate({ borderRadius: val })}
-              className={`flex-1 py-1 text-[10px] rounded border transition-colors ${
-                b.borderRadius === val
-                  ? "bg-gray-900 text-white border-gray-900"
-                  : "border-gray-200 text-gray-400 hover:bg-gray-50"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
+      ) : (
+        <VariantEditor
+          label="Secondaire (cta-secondary)"
+          variant={secondary}
+          baseColor={guide.colors.secondary}
+          onChange={updateSecondary}
+        />
+      )}
 
-      {/* Live preview */}
-      <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
-        <p className="text-[11px] text-gray-400 mb-3">Aperçu</p>
-        <div className="flex flex-wrap gap-3 items-center">
-          <div style={previewStyle(b.style)}>Bouton principal</div>
-          <div style={previewStyle("outline")}>Secondaire</div>
-        </div>
+      {/* Convention reminder */}
+      <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-[10px] text-blue-600 leading-relaxed">
+        <strong>Convention :</strong> ajoutez la classe <code className="bg-blue-100 px-1 rounded">cta-primary</code> ou <code className="bg-blue-100 px-1 rounded">cta-secondary</code> sur vos boutons d&apos;action pour que ces styles s&apos;appliquent. Les autres boutons (FAQ, slider, menu…) conservent leur style natif.
       </div>
     </Modal>
   );
@@ -773,30 +1001,49 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
 
           {/* BUTTONS + CARDS — side by side */}
           <div className="grid grid-cols-2 gap-2.5">
-            <ZoneCard title="Boutons" onClick={() => setActiveModal("buttons")}>
-              <div
-                className="inline-flex items-center justify-center text-xs font-semibold"
-                style={{
-                  borderRadius: guide.buttons.borderRadius,
-                  padding: guide.buttons.padding,
-                  backgroundColor:
-                    guide.buttons.style === "soft"
-                      ? guide.colors.primary + "22"
-                      : guide.buttons.style === "filled"
-                      ? guide.colors.primary
-                      : "transparent",
-                  color:
-                    guide.buttons.style === "filled"
-                      ? isLight(guide.colors.primary) ? "#111" : "#fff"
-                      : guide.colors.primary,
-                  border:
-                    guide.buttons.style === "outline"
-                      ? `1.5px solid ${guide.colors.primary}`
-                      : "none",
-                  fontFamily: guide.fonts.body,
-                }}
-              >
-                Bouton
+            <ZoneCard title="Boutons CTA" onClick={() => setActiveModal("buttons")}>
+              <div className="flex flex-wrap gap-1.5">
+                {/* Primary preview */}
+                {(() => {
+                  const p = resolvePrimaryVariant(guide);
+                  const pv = variantToCSSVars(p, guide.colors.primary, "--p");
+                  return (
+                    <div
+                      className="inline-flex items-center justify-center text-[10px] font-semibold"
+                      style={{
+                        borderRadius: p.borderRadius,
+                        padding: "6px 12px",
+                        backgroundColor: pv["--p-bg"],
+                        color: pv["--p-text"],
+                        border: `${p.borderWidth} solid ${pv["--p-border-color"]}`,
+                      }}
+                    >
+                      Principal
+                    </div>
+                  );
+                })()}
+                {/* Secondary preview */}
+                {(() => {
+                  const s = resolveSecondaryVariant(guide);
+                  const sv = variantToCSSVars(s, guide.colors.secondary, "--s");
+                  return (
+                    <div
+                      className="inline-flex items-center justify-center text-[10px] font-semibold"
+                      style={{
+                        borderRadius: s.borderRadius,
+                        padding: "6px 12px",
+                        backgroundColor: sv["--s-bg"],
+                        color: sv["--s-text"],
+                        border: `${s.borderWidth} solid ${sv["--s-border-color"]}`,
+                      }}
+                    >
+                      Secondaire
+                    </div>
+                  );
+                })()}
+                {guide.buttons.preset && guide.buttons.preset !== "custom" && (
+                  <span className="text-[9px] text-gray-400 self-end">{guide.buttons.preset}</span>
+                )}
               </div>
             </ZoneCard>
             <ZoneCard title="Cartes" onClick={() => setActiveModal("cards")}>

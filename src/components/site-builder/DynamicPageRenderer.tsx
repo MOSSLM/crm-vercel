@@ -3,7 +3,8 @@ import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
-import { getContrastColor, generateShadeCSSVars } from "@/lib/color-utils";
+import { generateShadeCSSVars } from "@/lib/color-utils";
+import { buildCtaCSSVars } from "@/lib/button-style";
 import type { ReviewItem } from "@/lib/site-resolver";
 import { LibrarySectionIframe } from "./LibrarySectionIframe";
 
@@ -26,19 +27,13 @@ function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     "--font-heading": sg.fonts.heading + ", Inter, sans-serif",
     "--font-body": sg.fonts.body + ", Inter, sans-serif",
     "--font-base-size": sg.fonts.baseSize,
-    "--btn-radius": sg.buttons.borderRadius,
-    "--btn-padding": sg.buttons.padding,
-    "--btn-bg": sg.buttons.style === "outline" ? "transparent"
-      : sg.buttons.style === "soft" ? sg.colors.primary + "22"
-      : sg.colors.primary,
-    "--btn-text": sg.buttons.style === "filled" ? getContrastColor(sg.colors.primary) : sg.colors.primary,
-    "--btn-border-color": sg.buttons.style === "soft" ? "transparent" : sg.colors.primary,
     "--card-radius": sg.cards.borderRadius,
     "--card-shadow": shadowMap[sg.cards.shadow] ?? shadowMap.md,
     "--card-padding": sg.cards.padding,
     "--section-padding": sg.spacing.sectionPadding,
     "--element-gap": sg.spacing.elementGap,
     "--max-content-width": sg.spacing.maxContentWidth,
+    ...buildCtaCSSVars(sg),
     ...generateShadeCSSVars(sg.colors),
   } as React.CSSProperties;
 }
