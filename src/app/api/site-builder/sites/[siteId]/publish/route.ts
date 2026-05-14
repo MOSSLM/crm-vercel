@@ -28,7 +28,22 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const updatePayload: Record<string, unknown> = { is_published: true };
+    // Snapshot current draft → published columns
+    const [{ data: currentSite }, { data: currentInstances }] = await Promise.all([
+      supabase.from("sites").select("style_guide, sitemap, site_config").eq("id", siteId).single(),
+      supabase.from("site_section_instances")
+        .select("*, section_def:site_sections (*)")
+        .eq("site_id", siteId)
+        .order("page_slug").order("sort_order"),
+    ]);
+
+    const updatePayload: Record<string, unknown> = {
+      is_published: true,
+      published_style_guide: currentSite?.style_guide ?? null,
+      published_sitemap: currentSite?.sitemap ?? null,
+      published_instances: currentInstances ?? [],
+      published_at: new Date().toISOString(),
+    };
     if (subdomain) updatePayload.published_subdomain = subdomain;
     if (domain) updatePayload.published_domain = domain;
 

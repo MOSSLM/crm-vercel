@@ -35,6 +35,10 @@ export interface ResolvedSite {
   phone?: string;
   isPublished: boolean;
   styleGuide?: StyleGuide | null;
+  /** Published snapshot of style_guide (set by "Publish" action) */
+  publishedStyleGuide?: StyleGuide | null;
+  /** Published snapshot of all section instances (set by "Publish" action) */
+  publishedInstances?: Array<unknown> | null;
   hasDynamicSections?: boolean;
   reviews?: ReviewItem[];
 }
@@ -50,7 +54,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_instances"
     )
     .eq("is_published", true);
 
@@ -210,6 +214,8 @@ export async function resolveSite(
     phone,
     isPublished: siteRow.is_published,
     styleGuide: (siteRow.style_guide as StyleGuide) ?? null,
+    publishedStyleGuide: (siteRow.published_style_guide as StyleGuide) ?? null,
+    publishedInstances: (siteRow.published_instances as Array<unknown>) ?? null,
     reviews,
   };
 }

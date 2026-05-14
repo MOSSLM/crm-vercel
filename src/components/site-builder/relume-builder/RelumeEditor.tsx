@@ -34,6 +34,8 @@ export interface RelumeEditorProps {
   initialStyleGuide?: StyleGuide | null;
   initialSitemap?: SitemapPage[];
   initialMenus?: SiteMenus | null;
+  /** ISO timestamp of the last publish. Used to show "unpublished changes" indicator. */
+  publishedAt?: string | null;
 }
 
 export function RelumeEditor(props: RelumeEditorProps) {
@@ -368,6 +370,7 @@ function RelumeEditorInner({
   initialProjectId,
   isPublished,
   publishedSubdomain,
+  publishedAt,
   initialSections = [],
   initialInstances = [],
   initialStyleGuide,
@@ -377,11 +380,18 @@ function RelumeEditorInner({
   const { state, dispatch } = useRelumeBuilder();
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
+  // True once autosave has fired since the last publish → indicates unpublished draft changes
+  const [hasDraftChanges, setHasDraftChanges] = React.useState(false);
+  // Unused `publishedAt` kept for future "modified since X" display
+  void publishedAt;
 
   const { status: autosaveStatus } = useSiteAutosave({
     siteId,
     state,
-    onSaved: () => dispatch({ type: "MARK_SAVED" }),
+    onSaved: () => {
+      dispatch({ type: "MARK_SAVED" });
+      if (isPublished) setHasDraftChanges(true);
+    },
   });
 
   // Load selected fonts globally so all workspaces render them correctly
@@ -516,6 +526,7 @@ function RelumeEditorInner({
         throw new Error(err.error ?? "Erreur");
       }
       setShowPublish(false);
+      setHasDraftChanges(false);
       toast.success(`Site publié sur ${publishDomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur de publication");
@@ -813,14 +824,37 @@ function RelumeEditorInner({
           <div className="relative">
             <button
               onClick={() => setShowPublish(!showPublish)}
-              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-700 transition-colors"
+              className="relative flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-700 transition-colors"
             >
               <Globe size={12} />
               {isPublished ? "Republier" : "Publier"}
+              {hasDraftChanges && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-white" title="Modifications non publiées" />
+              )}
             </button>
             {showPublish && (
-              <div className="absolute top-full right-0 mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-50">
-                <div className="text-sm font-semibold mb-3 text-gray-900">Publier le site</div>
+              <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-50">
+                <div className="text-sm font-semibold mb-1 text-gray-900">
+                  {isPublished ? "Publier les modifications" : "Publier le site"}
+                </div>
+                {isPublished && publishedSubdomain && (
+                  <p className="text-[11px] text-gray-400 mb-3">
+                    Actuellement en ligne sur{" "}
+                    <a
+                      href={`https://${publishedSubdomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-500 hover:underline"
+                    >
+                      {publishedSubdomain}.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}
+                    </a>
+                  </p>
+                )}
+                {hasDraftChanges && (
+                  <div className="flex items-start gap-2 p-2 mb-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <span className="text-amber-500 text-[11px] leading-tight">⚠ Des modifications non publiées existent. Publiez pour les mettre en ligne.</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1 mb-3">
                   <input
                     type="text"
@@ -836,7 +870,7 @@ function RelumeEditorInner({
                   disabled={publishing || !publishDomain.trim()}
                   className="w-full py-2 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
                 >
-                  {publishing ? "Publication..." : "Publier"}
+                  {publishing ? "Publication en cours…" : isPublished ? "Mettre à jour le site live" : "Publier"}
                 </button>
               </div>
             )}

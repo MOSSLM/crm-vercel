@@ -1034,6 +1034,11 @@ export interface StyleGuide {
     borderRadius: string;
     shadow: 'none' | 'sm' | 'md' | 'lg';
     padding: string;
+    shadowCustom?: { x: number; y: number; blur: number; spread: number; color: string } | null;
+    borderWidth?: string;
+    borderColor?: string;
+    /** Independent image/media border radius; falls back to borderRadius if not set */
+    imageRadius?: string;
   };
   spacing: {
     sectionPadding: string;
@@ -1085,6 +1090,9 @@ export const DEFAULT_STYLE_GUIDE: StyleGuide = {
     borderRadius: '12px',
     shadow: 'md',
     padding: '24px',
+    shadowCustom: null,
+    borderWidth: '0px',
+    borderColor: 'rgba(0,0,0,0.08)',
   },
   spacing: {
     sectionPadding: '80px',

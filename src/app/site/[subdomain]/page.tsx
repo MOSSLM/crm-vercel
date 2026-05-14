@@ -37,11 +37,27 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
   const site = await resolveSite(subdomain, host);
   if (!site) notFound();
 
-  const { config, enterpriseVariables, siteId, reviews } = site;
+  const { config, enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide } = site;
+  const effectiveStyleGuide = publishedStyleGuide ?? styleGuide;
 
-  // ─── Dynamic sections mode: check if site has section instances ─────────────────────
+  // ─── Dynamic sections mode ────────────────────────────────────────────────────
+  // Prefer the published snapshot (set when user clicks "Publish") so that
+  // in-progress edits don't leak to the live site.
+  if (publishedInstances && publishedInstances.length > 0) {
+    return (
+      <DynamicPageRenderer
+        siteId={siteId}
+        pageSlug={pageSlug}
+        styleGuide={effectiveStyleGuide}
+        variables={enterpriseVariables}
+        reviews={reviews}
+        preloadedInstances={publishedInstances}
+      />
+    );
+  }
+
+  // Fallback: query live instances (sites not yet re-published after migration)
   const supabase = getSupabaseServiceClient();
-
   const { count } = await supabase
     .from("site_section_instances")
     .select("id", { count: "exact", head: true })
@@ -52,7 +68,7 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
       <DynamicPageRenderer
         siteId={siteId}
         pageSlug={pageSlug}
-        styleGuide={site.styleGuide}
+        styleGuide={effectiveStyleGuide}
         variables={enterpriseVariables}
         reviews={reviews}
       />

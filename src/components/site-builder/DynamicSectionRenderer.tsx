@@ -35,14 +35,22 @@ interface DynamicSectionRendererProps {
 }
 
 /** Convert StyleGuide into CSS custom properties object */
-export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
-  const shadowMap: Record<string, string> = {
-    none: "none",
-    sm: "0 1px 2px rgba(0,0,0,0.05)",
-    md: "0 4px 6px -1px rgba(0,0,0,0.10)",
-    lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
-  };
+const DSR_SHADOW_MAP: Record<string, string> = {
+  none: "none",
+  sm: "0 1px 2px rgba(0,0,0,0.05)",
+  md: "0 4px 6px -1px rgba(0,0,0,0.10)",
+  lg: "0 10px 15px -3px rgba(0,0,0,0.10)",
+};
 
+function resolveCardShadowDSR(cards: StyleGuide["cards"]): string {
+  if (cards.shadowCustom) {
+    const s = cards.shadowCustom;
+    return `${s.x}px ${s.y}px ${s.blur}px ${s.spread}px ${s.color}`;
+  }
+  return DSR_SHADOW_MAP[cards.shadow] ?? DSR_SHADOW_MAP.md;
+}
+
+export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
   const shadeVars = generateShadeCSSVars(sg.colors);
   const ctaVars = buildCtaCSSVars(sg);
 
@@ -58,8 +66,11 @@ export function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     "--font-body": sg.fonts.body + ", Inter, sans-serif",
     "--font-base-size": sg.fonts.baseSize,
     "--card-radius": sg.cards.borderRadius,
-    "--card-shadow": shadowMap[sg.cards.shadow] ?? shadowMap.md,
+    "--card-shadow": resolveCardShadowDSR(sg.cards),
     "--card-padding": sg.cards.padding,
+    "--card-border-width": sg.cards.borderWidth ?? "0px",
+    "--card-border-color": sg.cards.borderColor ?? "transparent",
+    "--card-image-radius": sg.cards.imageRadius ?? sg.cards.borderRadius,
     "--section-padding": sg.spacing.sectionPadding,
     "--element-gap": sg.spacing.elementGap,
     "--max-content-width": sg.spacing.maxContentWidth,
