@@ -13,6 +13,11 @@ import { getSchemaForSection } from "@/data/section-schemas";
 import type { ColorSchemePreset } from "@/lib/color-utils";
 import type { SectionAnimation, SectionPreset } from "@/types";
 import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
+import {
+  resolveNavbarLayout,
+  DEFAULT_NAVBAR_LAYOUT,
+  type NavbarPosition,
+} from "@/lib/site-builder/position-layout";
 
 interface PropertiesPanelProps {
   onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
@@ -176,6 +181,11 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
 
         {activeTab === "style" && (
           <div className="px-4 py-3 space-y-4">
+            {/* Position settings — only for navbar sections */}
+            {sectionDef.category === "navigation" && (
+              <NavbarPositionPanel instance={instance} updateContent={updateContent} />
+            )}
+
             {/* Color Scheme */}
             <div>
               <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Palette de couleurs</div>
@@ -263,6 +273,77 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Navbar Position Panel ────────────────────────────────────────────────────
+
+function NavbarPositionPanel({
+  instance,
+  updateContent,
+}: {
+  instance: SiteSectionInstance;
+  updateContent: (key: string, value: unknown) => void;
+}) {
+  const layout = resolveNavbarLayout(instance.content);
+  const setLayout = (patch: Partial<typeof layout>) => {
+    updateContent("__layout", { ...layout, ...patch });
+  };
+  const reset = () => updateContent("__layout", DEFAULT_NAVBAR_LAYOUT);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest">Position</div>
+        <button
+          onClick={reset}
+          className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
+          title="Réinitialiser"
+        >
+          Reset
+        </button>
+      </div>
+      <div className="space-y-3 bg-white/[0.02] border border-white/5 rounded-lg p-3">
+        <label className="block">
+          <span className="text-[11px] text-white/50 mb-1 block">Comportement</span>
+          <select
+            value={layout.position}
+            onChange={(e) => setLayout({ position: e.target.value as NavbarPosition })}
+            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1.5 text-xs text-white/90 focus:outline-none focus:border-blue-400/60"
+          >
+            <option value="static">Static (défile avec la page)</option>
+            <option value="sticky">Sticky (colle en haut au scroll)</option>
+            <option value="fixed">Fixed (toujours en haut)</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-[11px] text-white/50 mb-1 block">Décalage haut (px)</span>
+          <input
+            type="number"
+            value={layout.topOffset}
+            onChange={(e) => setLayout({ topOffset: Number(e.target.value) || 0 })}
+            disabled={layout.position === "static"}
+            className="w-full bg-black/30 border border-white/10 rounded px-2 py-1.5 text-xs text-white/90 focus:outline-none focus:border-blue-400/60 disabled:opacity-40"
+          />
+        </label>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <span className="text-[11px] text-white/50">Headroom (cacher au scroll)</span>
+          <input
+            type="checkbox"
+            checked={layout.headroom}
+            onChange={(e) => setLayout({ headroom: e.target.checked })}
+            disabled={layout.position === "static"}
+            className="accent-blue-500 disabled:opacity-40"
+          />
+        </label>
+
+        <p className="text-[10px] text-white/30 leading-relaxed">
+          Visible sur le site déployé. L&apos;éditeur affiche la navbar à plat pour faciliter l&apos;édition.
+        </p>
       </div>
     </div>
   );

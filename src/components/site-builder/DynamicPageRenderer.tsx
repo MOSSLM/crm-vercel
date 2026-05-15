@@ -6,6 +6,11 @@ import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter
 import { generateShadeCSSVars, getContrastColor } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
 import { deriveMenuOverrides } from "@/lib/site-builder/menu-overrides";
+import {
+  resolveNavbarLayout,
+  buildNavbarWrapperStyle,
+  HEADROOM_SCRIPT,
+} from "@/lib/site-builder/position-layout";
 import type { ReviewItem } from "@/lib/site-resolver";
 import { extractClassTokens } from "@/lib/library-section/preprocess";
 import { generateTailwindCSS } from "@/lib/library-section/tailwind-jit";
@@ -211,6 +216,9 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
         const sectionDef = instance.section_def;
         const libRef = (instance.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined;
         const menuOverrides = deriveMenuOverrides(sectionDef?.category, menus ?? undefined);
+        const isNavbar = sectionDef?.category === "navigation";
+        const navLayout = isNavbar ? resolveNavbarLayout(instance.content as Record<string, unknown>) : null;
+        const navWrapperStyle = navLayout ? buildNavbarWrapperStyle(navLayout) : undefined;
 
         // Library section: render inline (SSR) — no iframe
         if (libRef) {
@@ -221,7 +229,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
             ...(instance.content as Record<string, unknown> ?? {}),
             ...menuOverrides,
           };
-          return (
+          const node = (
             <LibrarySectionInline
               key={instance.id}
               instanceId={instance.id}
@@ -231,14 +239,47 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
               variables={variables}
             />
           );
+          if (navLayout && navLayout.position !== "static") {
+            return (
+              <div
+                key={instance.id}
+                data-navbar-wrapper={instance.id}
+                data-headroom={navLayout.headroom ? "1" : undefined}
+                style={navWrapperStyle}
+              >
+                {node}
+              </div>
+            );
+          }
+          return node;
         }
 
         // Native section with structure: render server-side
         if (!sectionDef) return null;
-        return (
+        const native = (
           <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} variables={variables} reviews={reviews} menuOverrides={menuOverrides} />
         );
+        if (navLayout && navLayout.position !== "static") {
+          return (
+            <div
+              key={instance.id}
+              data-navbar-wrapper={instance.id}
+              data-headroom={navLayout.headroom ? "1" : undefined}
+              style={navWrapperStyle}
+            >
+              {native}
+            </div>
+          );
+        }
+        return native;
       })}
+
+      {/* Headroom: hide-on-scroll-down for sticky/fixed navbars */}
+      {instances.some(
+        (i) => i.section_def?.category === "navigation" && resolveNavbarLayout(i.content as Record<string, unknown>).headroom,
+      ) && (
+        <script dangerouslySetInnerHTML={{ __html: HEADROOM_SCRIPT }} />
+      )}
 
       {/* Mount interactive React on each library section after hydration */}
       {hasLibrarySections && <LibrarySectionHydrator />}
