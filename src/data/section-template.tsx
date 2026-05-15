@@ -110,7 +110,11 @@ export default function TemplateSection({ data = {}, variables = {}, tokens = {}
   // Composite button helper. `fieldId` is the content key — passing it as
   // `data-field-id` lets the click-to-edit pipeline bind directly to the
   // right key without value matching.
-  const renderButton = (btn: TemplateButtonData | undefined, className: string, fieldId: string) => {
+  const renderButton = (
+    btn: { label?: string; href?: string; target?: string } | undefined,
+    className: string,
+    fieldId: string,
+  ) => {
     if (!btn || !btn.label) return null;
     return (
       <a
