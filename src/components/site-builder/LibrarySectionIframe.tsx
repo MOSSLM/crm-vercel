@@ -34,6 +34,15 @@ export interface IframeElementClickInfo {
   fieldId: string | null;
 }
 
+export interface IframeDomTreeNode {
+  tag: string;
+  kind: IframeElementKind;
+  text: string;
+  attrs: IframeElementAttrs;
+  path: number[];
+  children: IframeDomTreeNode[];
+}
+
 interface LibrarySectionIframeProps {
   code: string;
   content?: Record<string, unknown>;
@@ -51,6 +60,9 @@ interface LibrarySectionIframeProps {
    *  message via postMessage so the parent can implement element selection. */
   selectionEnabled?: boolean;
   onElementClick?: (info: IframeElementClickInfo) => void;
+  /** Receives the current DOM tree of the rendered section (editor only,
+   *  requires selectionEnabled). Updated whenever the tree mutates. */
+  onDomTree?: (tree: IframeDomTreeNode) => void;
   /** Public site mode: start at 1px and grow up (no 720px initial flash). */
   publicMode?: boolean;
 }
@@ -71,6 +83,7 @@ export function LibrarySectionIframe({
   wireframe = false,
   selectionEnabled = false,
   onElementClick,
+  onDomTree,
   publicMode = false,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
@@ -99,8 +112,16 @@ export function LibrarySectionIframe({
   // change. The first push happens on the iframe-ready message (handled
   // below) so the initial state is consistent with subsequent updates.
   React.useEffect(() => {
-    if (!isReadyRef.current) return;
     const win = iframeRef.current?.contentWindow;
+    if (typeof console !== "undefined") {
+      console.debug("[SB:post] update-data", {
+        ready: isReadyRef.current,
+        hasWindow: !!win,
+        contentKeys: Object.keys(content).length,
+        overrideCount: Object.keys(overrides ?? {}).length,
+      });
+    }
+    if (!isReadyRef.current) return;
     if (!win) return;
     win.postMessage(
       { __siteBuilder: "update-data", data: content, variables: allVariables, overrides: overrides ?? {} },
@@ -133,7 +154,11 @@ export function LibrarySectionIframe({
         attrs?: IframeElementAttrs;
         fieldId?: string | null;
         height?: number;
+        tree?: IframeDomTreeNode;
       };
+      if (selectionEnabled && data?.__siteBuilder === "dom-tree" && data.tree) {
+        onDomTree?.(data.tree);
+      }
       if (selectionEnabled && data?.__siteBuilder === "element-click" && data.tag && data.path) {
         onElementClick?.({
           kind: data.kind ?? "text",
@@ -149,6 +174,12 @@ export function LibrarySectionIframe({
       }
       if (data?.__siteBuilder === "iframe-ready") {
         isReadyRef.current = true;
+        if (typeof console !== "undefined") {
+          console.debug("[SB:post] iframe-ready → initial push", {
+            contentKeys: Object.keys(content).length,
+            overrideCount: Object.keys(overrides ?? {}).length,
+          });
+        }
         // Push the current runtime state now that the iframe is alive.
         iframeRef.current?.contentWindow?.postMessage(
           { __siteBuilder: "update-data", data: content, variables: allVariables, overrides: overrides ?? {} },
@@ -158,7 +189,7 @@ export function LibrarySectionIframe({
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [selectionEnabled, onElementClick, minHeight, content, allVariables, overrides]);
+  }, [selectionEnabled, onElementClick, onDomTree, minHeight, content, allVariables, overrides]);
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   const handleLoad = React.useCallback(() => {
@@ -337,6 +368,17 @@ function buildHTML(
     ? `try {
         var __root = ReactDOM.createRoot(document.getElementById('root'));
         function __render() {
+          try {
+            var __d = window.__data || {};
+            var __keys = Object.keys(__d);
+            var __sample = {};
+            for (var __i = 0; __i < Math.min(__keys.length, 4); __i++) {
+              var __k = __keys[__i];
+              var __v = __d[__k];
+              __sample[__k] = (typeof __v === 'string') ? __v.slice(0, 40) : (typeof __v);
+            }
+            console.debug('[SB:render]', { keys: __keys.length, sample: __sample, overrides: Object.keys(window.__overrides || {}).length });
+          } catch(_) {}
           __root.render(
             React.createElement(${renderName}, {
               tokens: window.__tokens,
@@ -495,6 +537,9 @@ function buildHTML(
           if (el.textContent !== value) el.textContent = value;
         } else if (kind === 'image') {
           if (el.getAttribute('src') !== value) el.setAttribute('src', value);
+        } else if (kind === 'bg_image') {
+          var bg = value ? ('url("' + value.replace(/"/g, '\\"') + '")') : 'none';
+          if (el.style.backgroundImage !== bg) el.style.backgroundImage = bg;
         } else if (kind === 'link_href' || kind === 'button_href') {
           if (el.getAttribute('href') !== value) el.setAttribute('href', value);
         } else if (kind === 'attr' && entry.meta && entry.meta.attrName) {
@@ -535,6 +580,13 @@ function buildHTML(
       window.addEventListener('message', function (e) {
         var msg = e.data;
         if (!msg || msg.__siteBuilder !== 'update-data') return;
+        try {
+          console.debug('[SB:recv] update-data', {
+            dataKeys: msg.data ? Object.keys(msg.data).length : 0,
+            overrideCount: msg.overrides ? Object.keys(msg.overrides).length : 0,
+            hasRerender: typeof window.__rerender === 'function'
+          });
+        } catch(_) {}
         if (msg.data) window.__data = msg.data;
         if (msg.variables) window.__variables = msg.variables;
         window.__overrides = msg.overrides || {};
@@ -572,9 +624,16 @@ function buildHTML(
       var lastSelected = null;
 
       function pathOf(el) {
+        // Build a path of child-indexes from the section root down to el.
+        // The override applicator starts at #root.firstElementChild and walks
+        // children by index, so the section root itself must NOT contribute.
+        // Returns [] when el === section root; [0] when el is the section
+        // root's first child; etc.
         var path = [];
+        var rootHost = document.getElementById('root');
+        if (!rootHost) return path;
         var node = el;
-        while (node && node.parentElement && node !== document.body) {
+        while (node && node.parentElement && node.parentElement !== rootHost) {
           var parent = node.parentElement;
           var idx = Array.prototype.indexOf.call(parent.children, node);
           path.unshift(idx);
@@ -645,6 +704,80 @@ function buildHTML(
         if (el) return el;
         return findBgImageAncestor(t);
       }
+
+      function nodeKind(el) {
+        return classify(el);
+      }
+
+      function nodeAttrs(kind, el) {
+        return attrsFor(kind, el);
+      }
+
+      var SKIP_TAGS = { script: 1, style: 1, noscript: 1, template: 1 };
+
+      function shortText(el) {
+        // Prefer the first direct text node so we don't capture deep nested text.
+        for (var i = 0; i < el.childNodes.length; i++) {
+          var c = el.childNodes[i];
+          if (c.nodeType === 3 /* TEXT_NODE */) {
+            var t = (c.nodeValue || '').trim();
+            if (t) return t.length > 60 ? t.slice(0, 60) + '…' : t;
+          }
+        }
+        var fallback = (el.textContent || '').trim();
+        if (!fallback) return '';
+        return fallback.length > 60 ? fallback.slice(0, 60) + '…' : fallback;
+      }
+
+      function buildDomTree(el, path, depth) {
+        if (!el || depth > 10) return null;
+        var tag = el.tagName ? el.tagName.toLowerCase() : '';
+        if (SKIP_TAGS[tag]) return null;
+        // Honour display:none — Layers should reflect what the user sees.
+        try {
+          var cs = window.getComputedStyle(el);
+          if (cs && cs.display === 'none') return null;
+        } catch (_) {}
+        var kind = nodeKind(el);
+        var node = {
+          tag: tag,
+          kind: kind,
+          text: shortText(el),
+          attrs: nodeAttrs(kind, el),
+          path: path,
+          children: []
+        };
+        var kids = el.children || [];
+        for (var i = 0; i < kids.length; i++) {
+          var child = buildDomTree(kids[i], path.concat([i]), depth + 1);
+          if (child) node.children.push(child);
+        }
+        return node;
+      }
+
+      function sendDomTree() {
+        var root = document.getElementById('root');
+        if (!root || !root.firstElementChild) return;
+        try {
+          var tree = buildDomTree(root.firstElementChild, [], 0);
+          if (!tree) return;
+          parent.postMessage({ __siteBuilder: 'dom-tree', tree: tree }, '*');
+        } catch (_) {}
+      }
+      var treeTimer = null;
+      function scheduleTree() {
+        if (treeTimer) clearTimeout(treeTimer);
+        treeTimer = setTimeout(function () { treeTimer = null; sendDomTree(); }, 120);
+      }
+      // Initial send: poll until #root is populated by React.
+      [60, 220, 600, 1300, 2600].forEach(function (d) { setTimeout(sendDomTree, d); });
+      // Re-send on mutations (debounced) so layer tree stays in sync with edits.
+      (function () {
+        var root = document.getElementById('root');
+        if (!root || !window.MutationObserver) return;
+        var mo = new MutationObserver(scheduleTree);
+        mo.observe(root, { childList: true, subtree: true, characterData: true, attributes: true });
+      })();
 
       document.addEventListener('mouseover', function (e) {
         var t = e.target;

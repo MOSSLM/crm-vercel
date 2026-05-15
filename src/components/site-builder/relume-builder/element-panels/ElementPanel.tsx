@@ -54,6 +54,21 @@ function useDispatcher(instance: SiteSectionInstance) {
   const { dispatch } = useRelumeBuilder();
   return React.useCallback(
     (location: BindingLocation, patch: Record<string, unknown>) => {
+      if (typeof console !== "undefined") {
+        const keys = Object.keys(patch);
+        const preview = keys
+          .map((k) => {
+            const v = patch[k];
+            return `${k}=${typeof v === "string" ? v.slice(0, 40) : JSON.stringify(v).slice(0, 40)}`;
+          })
+          .join(", ");
+        console.debug("[SB:dispatch] content", {
+          scope: location.scope,
+          blockId: location.scope === "block" ? location.blockId : undefined,
+          instanceId: instance.id,
+          patch: preview,
+        });
+      }
       if (location.scope === "block") {
         dispatch({
           type: "UPDATE_BLOCK",
@@ -91,6 +106,13 @@ function setOverride(
     }
   } else {
     next[compositeKey] = entry;
+  }
+  if (typeof console !== "undefined") {
+    console.debug("[SB:dispatch] override", {
+      key: compositeKey,
+      value: entry ? String(entry.value).slice(0, 60) : "(cleared)",
+      totalOverrides: Object.keys(next).length,
+    });
   }
   dispatch({ scope: "instance" }, { __overrides: next });
 }
@@ -200,6 +222,9 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
   const { state } = useRelumeBuilder();
   const dispatch = useDispatcher(instance);
 
+  const isBackground = element.attrs.isBackground === true;
+  const overrideKind = isBackground ? "bg_image" : "image";
+
   let currentValue = element.attrs.src ?? "";
   let isFromVariable = false;
   if (binding.strategy === "direct" || binding.strategy === "field-id") {
@@ -208,11 +233,15 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
     if (typeof v === "string") currentValue = v;
     else isFromVariable = true; // key undefined → image comes from variable fallback
   } else if (binding.strategy === "override") {
-    const ov = readOverride(instance, binding.pathStr, "image");
+    const ov = readOverride(instance, binding.pathStr, overrideKind)
+      ?? readOverride(instance, binding.pathStr, isBackground ? "image" : "bg_image");
     if (ov !== undefined) currentValue = ov;
   }
 
   const onChange = (url: string) => {
+    if (typeof console !== "undefined") {
+      console.debug("[SB:dispatch] image", { strategy: binding.strategy, isBackground, key: ("key" in binding ? binding.key : binding.pathStr), value: url.slice(0, 60) });
+    }
     if (binding.strategy === "direct" || binding.strategy === "field-id") {
       dispatch(binding.location, { [binding.key]: url });
     } else if (binding.strategy === "composite") {
@@ -220,7 +249,7 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
       const existing = compositeRead(settings, binding.key);
       dispatch(binding.location, { [binding.key]: { ...existing, src: url } });
     } else if (binding.strategy === "override") {
-      setOverride(instance, dispatch, binding.pathStr, { kind: "image", value: url });
+      setOverride(instance, dispatch, binding.pathStr, { kind: overrideKind, value: url });
     }
   };
 

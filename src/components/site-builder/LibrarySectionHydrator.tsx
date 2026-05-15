@@ -14,7 +14,7 @@ import React, { useEffect } from "react";
 import { hydrateRoot } from "react-dom/client";
 
 interface OverrideEntry {
-  kind: "text" | "image" | "link_href" | "button_href" | "attr";
+  kind: "text" | "image" | "bg_image" | "link_href" | "button_href" | "attr";
   value: string;
   meta?: { attrName?: string };
 }
@@ -72,6 +72,13 @@ function applyOverridesToContainer(
         case "image":
           if (el.getAttribute("src") !== value) el.setAttribute("src", value);
           break;
+        case "bg_image": {
+          const bg = value ? `url("${value.replace(/"/g, '\\"')}")` : "none";
+          if (el instanceof HTMLElement && el.style.backgroundImage !== bg) {
+            el.style.backgroundImage = bg;
+          }
+          break;
+        }
         case "link_href":
         case "button_href":
           if (el.getAttribute("href") !== value) el.setAttribute("href", value);
