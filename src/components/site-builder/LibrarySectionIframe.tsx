@@ -115,11 +115,18 @@ export function LibrarySectionIframe({
   React.useEffect(() => {
     const win = iframeRef.current?.contentWindow;
     if (typeof console !== "undefined") {
+      const varKeys = Object.keys(allVariables);
       console.debug("[SB:post] update-data", {
         ready: isReadyRef.current,
         hasWindow: !!win,
         contentKeys: Object.keys(content).length,
         overrideCount: Object.keys(overrides ?? {}).length,
+      });
+      console.debug("[SB:iframe-vars]", {
+        ready: isReadyRef.current,
+        count: varKeys.length,
+        sample: varKeys.slice(0, 5),
+        hasEntrepriseNom: typeof allVariables["entreprise.nom"] === "string" && allVariables["entreprise.nom"] !== "Votre Entreprise",
       });
     }
     if (!isReadyRef.current) return;

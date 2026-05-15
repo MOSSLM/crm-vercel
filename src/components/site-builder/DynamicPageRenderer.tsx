@@ -75,9 +75,14 @@ const LIBRARY_SCOPED_CSS = `
 [data-lsi] img,[data-lsi] picture,[data-lsi] video {
   border-radius: var(--card-image-radius);
 }
-/* Prevent images escaping their container on the deployed site (iframe
-   benefits from Tailwind CDN's image reset; SSR pages need this scoped fix). */
-[data-lsi] img,[data-lsi] video { max-width: 100%; height: auto; }
+/* Prevent images escaping their container on the deployed site. We avoid
+   !important on height so sections that explicitly size their images via
+   classes like `h-full` (e.g. carousel tiles in Layout414) keep working —
+   forcing `height: auto !important` would distort their aspect ratios and
+   make the parent `overflow: hidden` clip the bottom (= reported "rounded
+   only on top" bug). The synchronously-loaded Tailwind CDN provides the
+   same defaults via its preflight. */
+[data-lsi] img,[data-lsi] picture,[data-lsi] video { max-width: 100%; }
 [data-lsi] .cta-primary {
   background-color: var(--btn-primary-bg) !important;
   color: var(--btn-primary-text) !important;
@@ -187,10 +192,13 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
           />
           {/* Tailwind CDN as a runtime fallback — generateTailwindCSS extracts
               class tokens via regex and misses ternaries, template-string
-              interpolations, and object-map classes. The CDN script picks
-              those up on the client so the deployed site matches the iframe
-              preview. Loaded async so it doesn't block first paint. */}
-          <script src="https://cdn.tailwindcss.com" async />
+              interpolations, and object-map classes. Loaded SYNCHRONOUSLY
+              (no async / defer) so it's available before the browser paints
+              the section HTML. With `async`, the first paint used incomplete
+              CSS → images rendered at natural size, layout flashed when CDN
+              caught up. Synchronous costs ~200-300ms TTFB but yields stable,
+              consistent rendering across reloads. */}
+          <script src="https://cdn.tailwindcss.com" />
         </>
       )}
 
