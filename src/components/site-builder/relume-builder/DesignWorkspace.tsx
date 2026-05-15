@@ -198,11 +198,13 @@ function kindIcon(kind: ElementKind): React.ElementType {
 function LayersFields({
   instance,
   schema,
+  sectionDef,
   onSelectField,
   focusedField,
 }: {
   instance: SiteSectionInstance;
   schema: ReturnType<typeof import("@/data/section-schemas").getSchemaForSection> | null;
+  sectionDef: SiteSectionDef | null;
   onSelectField: (fieldId: string, kind: ElementKind, blockId?: string) => void;
   focusedField: string | null;
 }) {
@@ -240,23 +242,59 @@ function LayersFields({
     );
   };
 
-  const editableKeys = (settings: Record<string, unknown>) =>
-    Object.keys(settings).filter(
-      (k) =>
-        !k.startsWith("__") &&
-        (typeof settings[k] === "string" ||
-          typeof settings[k] === "number" ||
-          (settings[k] !== null && typeof settings[k] === "object" && !Array.isArray(settings[k]))),
-    );
+  // Build the effective row list by merging three sources, in order:
+  //   1. section schema settings (declared fields, even when content is empty)
+  //   2. sectionDef.default_content (catalog defaults)
+  //   3. instance.content (user-set values, win)
+  // Keep an ordered list of unique keys so the panel reflects authoring intent.
+  const effectiveKeysOf = (
+    settings: Record<string, unknown>,
+    defaults: Record<string, unknown> | undefined,
+    schemaIds: string[],
+  ): { key: string; val: unknown }[] => {
+    const seen = new Set<string>();
+    const ordered: string[] = [];
+    const push = (k: string) => { if (!seen.has(k)) { seen.add(k); ordered.push(k); } };
+    for (const id of schemaIds) push(id);
+    if (defaults) for (const k of Object.keys(defaults)) push(k);
+    for (const k of Object.keys(settings)) push(k);
+    return ordered
+      .filter((k) => !k.startsWith("__"))
+      .map((k) => {
+        const v = settings[k] ?? defaults?.[k];
+        return { key: k, val: v };
+      })
+      .filter(({ val }) =>
+        typeof val === "string" ||
+        typeof val === "number" ||
+        (val !== null && typeof val === "object" && !Array.isArray(val)),
+      );
+  };
+
+  const schemaIds = (schema?.settings ?? [])
+    .filter((s) => "id" in s)
+    .map((s) => (s as { id: string }).id);
+  const instanceRows = effectiveKeysOf(instance.content, sectionDef?.default_content, schemaIds);
 
   return (
     <div className="ml-3 pl-2 border-l border-gray-100 space-y-0.5">
-      {editableKeys(instance.content).map((key) => renderRow(key, instance.content[key], undefined, 0))}
+      {instanceRows.length === 0 && (instance.blocks ?? []).length === 0 ? (
+        <p className="px-1.5 py-2 text-[10px] text-gray-400 italic">
+          Aucun champ détecté — clique directement dans le canvas pour éditer.
+        </p>
+      ) : (
+        instanceRows.map(({ key, val }) => renderRow(key, val, undefined, 0))
+      )}
 
       {/* Blocks recursively */}
       {(instance.blocks ?? []).length > 0 && (
         <div className="mt-1 pt-1 border-t border-gray-100">
           {instance.blocks.map((block, idx) => {
+            const blockSchema = schema?.blocks?.find((b) => b.type === block.type);
+            const blockSchemaIds = (blockSchema?.settings ?? [])
+              .filter((s) => "id" in s)
+              .map((s) => (s as { id: string }).id);
+            const blockRows = effectiveKeysOf(block.settings, undefined, blockSchemaIds);
             const firstStr = Object.values(block.settings).find((v) => typeof v === "string") as string | undefined;
             const blockLabel = firstStr ? firstStr.slice(0, 24) : `${block.type} ${idx + 1}`;
             return (
@@ -266,9 +304,7 @@ function LayersFields({
                   <span className="truncate">{blockLabel}</span>
                 </div>
                 <div className="ml-1">
-                  {editableKeys(block.settings).map((key) =>
-                    renderRow(key, block.settings[key], block.id, 1),
-                  )}
+                  {blockRows.map(({ key, val }) => renderRow(key, val, block.id, 1))}
                 </div>
               </div>
             );
@@ -820,6 +856,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                               <LayersFields
                                 instance={inst}
                                 schema={schema ?? null}
+                                sectionDef={def ?? null}
                                 focusedField={isSel ? focusedField : null}
                                 onSelectField={(focusKey, kind, blockId) =>
                                   handleLayerFieldSelect(instanceId, focusKey, kind, blockId)
