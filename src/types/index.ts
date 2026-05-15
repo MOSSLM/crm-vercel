@@ -1264,6 +1264,12 @@ export interface RelumeBuilderState {
   historyIndex: number;
   /** Resolved enterprise variables for template substitution, e.g. { "entreprise.nom": "Acme" } */
   variableContext: Record<string, string>;
+  /**
+   * Live preview of a section replacement. When set, the canvas renders the
+   * targeted instance using `sectionDef` (and a synthesised content) without
+   * persisting the change. Confirm dispatches REPLACE_INSTANCE; cancel clears.
+   */
+  previewReplace?: { instanceId: string; sectionDef: SiteSectionDef } | null;
 }
 
 export interface RelumeHistoryEntry {
@@ -1307,4 +1313,6 @@ export type RelumeBuilderAction =
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'MARK_SAVED' }
-  | { type: 'SET_VARIABLE_CONTEXT'; payload: Record<string, string> };
+  | { type: 'SET_VARIABLE_CONTEXT'; payload: Record<string, string> }
+  | { type: 'REPLACE_INSTANCE'; payload: { instanceId: string; sectionDef: SiteSectionDef } }
+  | { type: 'SET_PREVIEW_REPLACE'; payload: { instanceId: string; sectionDef: SiteSectionDef } | null };

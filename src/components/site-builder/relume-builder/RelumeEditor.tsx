@@ -900,6 +900,7 @@ function RelumeEditorInner({
         {state.activeWorkspace === "design" && (
           <DesignWorkspace
             sectionDefs={sectionDefs}
+            availableSections={initialSections}
             onRegenerateSection={handleRegenerateSection}
           />
         )}

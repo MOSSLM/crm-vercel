@@ -177,6 +177,41 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       };
     }
 
+    case "REPLACE_INSTANCE": {
+      const { instanceId, sectionDef } = action.payload;
+      const inst = state.instances[instanceId];
+      if (!inst || !sectionDef) return state;
+      const snapshot = takeSnapshot(state);
+      const baseContent: Record<string, unknown> = { ...(sectionDef.default_content as Record<string, unknown>) };
+      const isLibrary = !!(sectionDef.theme_slug && sectionDef.theme_section_id);
+      if (isLibrary) {
+        baseContent.__library = {
+          theme_slug: sectionDef.theme_slug!,
+          section_id: sectionDef.theme_section_id!,
+        };
+      }
+      return {
+        ...state,
+        instances: {
+          ...state.instances,
+          [instanceId]: {
+            ...inst,
+            section_def: sectionDef,
+            section_id: isLibrary ? null : (sectionDef.id ?? null),
+            content: baseContent,
+            blocks: [],
+          },
+        },
+        previewReplace: null,
+        isDirty: true,
+        ...pushHistory(state, snapshot),
+      };
+    }
+
+    case "SET_PREVIEW_REPLACE": {
+      return { ...state, previewReplace: action.payload };
+    }
+
     case "UPDATE_INSTANCE_CONTENT": {
       const snapshot = takeSnapshot(state);
       const inst = state.instances[action.payload.id];
@@ -549,6 +584,7 @@ const initialState: RelumeBuilderState = {
   history: [],
   historyIndex: -1,
   variableContext: {},
+  previewReplace: null,
 };
 
 interface RelumeBuilderProviderProps {

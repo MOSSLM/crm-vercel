@@ -1,7 +1,6 @@
 import React from "react";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import { resolveSite } from "@/lib/site-resolver";
 import { DynamicPageRenderer } from "@/components/site-builder/DynamicPageRenderer";
 import type { Metadata } from "next";
@@ -36,47 +35,25 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
   const site = await resolveSite(subdomain, host);
   if (!site) notFound();
 
-  const { enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide } = site;
+  const { enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide, menus } = site;
   const effectiveStyleGuide = publishedStyleGuide ?? styleGuide;
 
-  // Prefer the published snapshot (set when user clicks "Publish") so that
-  // in-progress edits don't leak to the live site.
-  if (publishedInstances && publishedInstances.length > 0) {
-    return (
-      <DynamicPageRenderer
-        siteId={siteId}
-        pageSlug={pageSlug}
-        styleGuide={effectiveStyleGuide}
-        variables={enterpriseVariables}
-        reviews={reviews}
-        preloadedInstances={publishedInstances}
-      />
-    );
-  }
+  // resolveSite() already enforces a strict snapshot lock: it returns null
+  // when published_variables / published_instances are missing. Reaching
+  // here means we have a valid snapshot to render.
+  if (!publishedInstances || publishedInstances.length === 0) notFound();
 
-  // Fallback for sites not yet re-published since the dynamic-sections
-  // migration — render directly from the live `site_section_instances`
-  // table. Only reached if a site exists with instances but `is_published`
-  // was set before the snapshot columns were introduced.
-  const supabase = getSupabaseServiceClient();
-  const { count } = await supabase
-    .from("site_section_instances")
-    .select("id", { count: "exact", head: true })
-    .eq("site_id", siteId);
-
-  if ((count ?? 0) > 0) {
-    return (
-      <DynamicPageRenderer
-        siteId={siteId}
-        pageSlug={pageSlug}
-        styleGuide={effectiveStyleGuide}
-        variables={enterpriseVariables}
-        reviews={reviews}
-      />
-    );
-  }
-
-  notFound();
+  return (
+    <DynamicPageRenderer
+      siteId={siteId}
+      pageSlug={pageSlug}
+      styleGuide={effectiveStyleGuide}
+      variables={enterpriseVariables}
+      reviews={reviews}
+      menus={menus}
+      preloadedInstances={publishedInstances}
+    />
+  );
 }
 
 // ISR: revalidate every 60 seconds

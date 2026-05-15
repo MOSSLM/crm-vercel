@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import type { SiteConfig, SiteSection, BlogPost, StyleGuide } from "@/types";
+import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus } from "@/types";
 import {
-  resolveEnterpriseVariables,
   deriveLayoutFieldsFromVariables,
   type ReviewItem,
 } from "@/lib/site-builder/resolve-variables";
@@ -30,6 +29,10 @@ export interface ResolvedSite {
   publishedInstances?: Array<unknown> | null;
   hasDynamicSections?: boolean;
   reviews?: ReviewItem[];
+  /** Published snapshot of site_config (set by "Publish"). Contains menus. */
+  publishedSiteConfig?: Partial<SiteConfig> & { menus?: SiteMenus } | null;
+  /** Convenience accessor: menus extracted from the published snapshot. */
+  menus?: SiteMenus | null;
 }
 
 // Resolve a site by subdomain or custom domain
@@ -43,7 +46,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_instances, published_variables, published_reviews"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_instances, published_variables, published_reviews"
     )
     .eq("is_published", true);
 
@@ -83,38 +86,30 @@ export async function resolveSite(
     };
   }
 
-  // Prefer the publish-time snapshot so the deployed site is frozen between
-  // publishes. Live CRM edits (entreprises.name, lead_magnet_reviews, etc.)
-  // only propagate after the user clicks "Publier" again.
-  // Legacy sites published before this column existed have null snapshots:
-  // fall back to a live resolution for those.
+  // Strict snapshot lock: a published site MUST have published_variables and
+  // published_instances set. Otherwise we'd serve live CRM data and leak
+  // unpublished edits (logos, reviews, entreprise.name…) to the deployed site.
+  // Run the admin backfill endpoint to populate snapshots for legacy sites,
+  // or republish the site from the builder.
   const snapshotVars = (siteRow as { published_variables?: Record<string, string> | null }).published_variables;
   const snapshotReviews = (siteRow as { published_reviews?: ReviewItem[] | null }).published_reviews;
+  const snapshotInstances = (siteRow as { published_instances?: Array<unknown> | null }).published_instances;
 
-  let vars: Record<string, string>;
-  let reviews: ReviewItem[];
-  let companyName: string | undefined;
-  let logoUrl: string | undefined;
-  let phone: string | undefined;
-
-  if (snapshotVars && Object.keys(snapshotVars).length > 0) {
-    vars = { ...snapshotVars };
-    reviews = Array.isArray(snapshotReviews) ? snapshotReviews : [];
-    const layout = deriveLayoutFieldsFromVariables(vars);
-    companyName = layout.companyName;
-    logoUrl = layout.logoUrl;
-    phone = layout.phone;
-  } else {
-    const resolved = await resolveEnterpriseVariables(supabase, {
-      enterprise_id: siteRow.enterprise_id ?? null,
-      lead_magnet_project_id: siteRow.lead_magnet_project_id ?? null,
-    });
-    vars = resolved.variables;
-    reviews = resolved.reviews;
-    companyName = resolved.companyName;
-    logoUrl = resolved.logoUrl;
-    phone = resolved.phone;
+  if (!snapshotVars || Object.keys(snapshotVars).length === 0 || !snapshotInstances) {
+    console.warn(
+      `[site-resolver] site ${siteRow.id} is published but missing snapshots ` +
+        `(vars=${!!snapshotVars}, instances=${!!snapshotInstances}). ` +
+        `Refusing to fall back to live data. Republish or run /api/site-builder/admin/backfill-snapshots.`
+    );
+    return null;
   }
+
+  const vars: Record<string, string> = { ...snapshotVars };
+  const reviews: ReviewItem[] = Array.isArray(snapshotReviews) ? snapshotReviews : [];
+  const layout = deriveLayoutFieldsFromVariables(vars);
+  const companyName = layout.companyName;
+  const logoUrl = layout.logoUrl;
+  const phone = layout.phone;
 
   // Merge client overrides into section data
   const { data: overrides } = await supabase
@@ -135,6 +130,10 @@ export async function resolveSite(
     };
   }
 
+  const publishedSiteConfig =
+    (siteRow as { published_site_config?: (Partial<SiteConfig> & { menus?: SiteMenus }) | null }).published_site_config ?? null;
+  const menus = publishedSiteConfig?.menus ?? null;
+
   return {
     siteId: siteRow.id,
     config,
@@ -146,6 +145,8 @@ export async function resolveSite(
     styleGuide: (siteRow.style_guide as StyleGuide) ?? null,
     publishedStyleGuide: (siteRow.published_style_guide as StyleGuide) ?? null,
     publishedInstances: (siteRow.published_instances as Array<unknown>) ?? null,
+    publishedSiteConfig,
+    menus,
     reviews,
   };
 }
