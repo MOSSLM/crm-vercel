@@ -35,7 +35,7 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
   const site = await resolveSite(subdomain, host);
   if (!site) notFound();
 
-  const { enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide } = site;
+  const { enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide, menus } = site;
   const effectiveStyleGuide = publishedStyleGuide ?? styleGuide;
 
   // resolveSite() already enforces a strict snapshot lock: it returns null
@@ -50,6 +50,7 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
       styleGuide={effectiveStyleGuide}
       variables={enterpriseVariables}
       reviews={reviews}
+      menus={menus}
       preloadedInstances={publishedInstances}
     />
   );

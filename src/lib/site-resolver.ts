@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { SiteConfig, SiteSection, BlogPost, StyleGuide } from "@/types";
+import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus } from "@/types";
 import {
   deriveLayoutFieldsFromVariables,
   type ReviewItem,
@@ -29,6 +29,10 @@ export interface ResolvedSite {
   publishedInstances?: Array<unknown> | null;
   hasDynamicSections?: boolean;
   reviews?: ReviewItem[];
+  /** Published snapshot of site_config (set by "Publish"). Contains menus. */
+  publishedSiteConfig?: Partial<SiteConfig> & { menus?: SiteMenus } | null;
+  /** Convenience accessor: menus extracted from the published snapshot. */
+  menus?: SiteMenus | null;
 }
 
 // Resolve a site by subdomain or custom domain
@@ -42,7 +46,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_instances, published_variables, published_reviews"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_instances, published_variables, published_reviews"
     )
     .eq("is_published", true);
 
@@ -126,6 +130,10 @@ export async function resolveSite(
     };
   }
 
+  const publishedSiteConfig =
+    (siteRow as { published_site_config?: (Partial<SiteConfig> & { menus?: SiteMenus }) | null }).published_site_config ?? null;
+  const menus = publishedSiteConfig?.menus ?? null;
+
   return {
     siteId: siteRow.id,
     config,
@@ -137,6 +145,8 @@ export async function resolveSite(
     styleGuide: (siteRow.style_guide as StyleGuide) ?? null,
     publishedStyleGuide: (siteRow.published_style_guide as StyleGuide) ?? null,
     publishedInstances: (siteRow.published_instances as Array<unknown>) ?? null,
+    publishedSiteConfig,
+    menus,
     reviews,
   };
 }

@@ -55,6 +55,7 @@ export async function POST(request: Request, context: RouteContext) {
       is_published: true,
       published_style_guide: currentSite?.style_guide ?? null,
       published_sitemap: currentSite?.sitemap ?? null,
+      published_site_config: currentSite?.site_config ?? null,
       published_instances: currentInstances ?? [],
       published_variables: publishedVariables,
       published_reviews: publishedReviews,

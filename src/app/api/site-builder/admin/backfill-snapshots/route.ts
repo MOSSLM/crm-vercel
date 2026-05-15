@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
   const { data: sites, error } = await supabase
     .from("sites")
-    .select("id, name, enterprise_id, lead_magnet_project_id, published_variables, published_instances, published_reviews")
+    .select("id, name, enterprise_id, lead_magnet_project_id, site_config, published_variables, published_instances, published_reviews, published_site_config")
     .eq("is_published", true);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -43,7 +43,8 @@ export async function POST(request: Request) {
   const targets = (sites ?? []).filter((s) => {
     const vars = s.published_variables as Record<string, unknown> | null;
     const insts = s.published_instances as unknown[] | null;
-    return !vars || Object.keys(vars).length === 0 || !insts;
+    const cfg = s.published_site_config as Record<string, unknown> | null;
+    return !vars || Object.keys(vars).length === 0 || !insts || !cfg;
   });
 
   const results: BackfillResult[] = [];
@@ -52,8 +53,13 @@ export async function POST(request: Request) {
     try {
       const needsVars = !site.published_variables || Object.keys(site.published_variables as object).length === 0;
       const needsInstances = !site.published_instances;
+      const needsConfig = !site.published_site_config;
 
       const updatePayload: Record<string, unknown> = {};
+
+      if (needsConfig) {
+        updatePayload.published_site_config = site.site_config ?? null;
+      }
 
       if (needsVars) {
         const { variables, reviews } = await resolveEnterpriseVariables(supabase, {

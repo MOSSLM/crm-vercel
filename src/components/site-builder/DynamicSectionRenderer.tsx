@@ -12,6 +12,7 @@ import {
   type SectionColorScheme,
 } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
+import { deriveMenuOverrides } from "@/lib/site-builder/menu-overrides";
 
 interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
@@ -146,26 +147,6 @@ function layoutToCSS(
     gap: layout.gap ?? "var(--element-gap)",
     alignItems: alignMap[layout.align ?? "left"] ?? "flex-start",
   };
-}
-
-/** Derive menu content overrides for navigation/footer sections */
-function deriveMenuOverrides(
-  category: string | undefined,
-  menus: SiteMenus | undefined,
-): Record<string, unknown> {
-  if (!menus) return {};
-  if (category === "navigation") {
-    return {
-      links: menus.nav.map((item) => ({ label: item.label, href: item.url, external: item.external })),
-    };
-  }
-  if (category === "footer") {
-    return {
-      footerLinks: menus.footer.map((item) => ({ label: item.label, href: item.url })),
-      legalLinks: menus.footerLegal.map((item) => ({ label: item.label, href: item.url })),
-    };
-  }
-  return {};
 }
 
 export function DynamicSectionRenderer({

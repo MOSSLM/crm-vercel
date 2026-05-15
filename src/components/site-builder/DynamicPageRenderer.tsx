@@ -1,10 +1,11 @@
 import React from "react";
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
-import type { SiteSectionInstance, SiteSectionDef, StyleGuide } from "@/types";
+import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 import { generateShadeCSSVars, getContrastColor } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
+import { deriveMenuOverrides } from "@/lib/site-builder/menu-overrides";
 import type { ReviewItem } from "@/lib/site-resolver";
 import { extractClassTokens } from "@/lib/library-section/preprocess";
 import { generateTailwindCSS } from "@/lib/library-section/tailwind-jit";
@@ -111,12 +112,14 @@ interface DynamicPageRendererProps {
   styleGuide?: StyleGuide | null;
   variables?: Record<string, string>;
   reviews?: ReviewItem[];
+  /** Global site menus snapshot. Injected into navbar/footer sections. */
+  menus?: SiteMenus | null;
   /** Pre-loaded published snapshot of instances. When provided, skips the DB query. */
   preloadedInstances?: Array<unknown> | null;
 }
 
 /** Server component: renders a dynamic-sections page for the public site */
-export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], preloadedInstances }: DynamicPageRendererProps) {
+export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances }: DynamicPageRendererProps) {
   const supabase = getSupabaseServiceClient();
 
   let instances: (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
@@ -207,12 +210,17 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
       {instances.map((instance) => {
         const sectionDef = instance.section_def;
         const libRef = (instance.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined;
+        const menuOverrides = deriveMenuOverrides(sectionDef?.category, menus ?? undefined);
 
         // Library section: render inline (SSR) — no iframe
         if (libRef) {
           const ts = themeSectionMap.get(`${libRef.theme_slug}:${libRef.section_id}`);
           if (!ts?.code) return null;
-          const content = { ...(ts.example_data ?? {}), ...(instance.content as Record<string, unknown> ?? {}) };
+          const content = {
+            ...(ts.example_data ?? {}),
+            ...(instance.content as Record<string, unknown> ?? {}),
+            ...menuOverrides,
+          };
           return (
             <LibrarySectionInline
               key={instance.id}
@@ -228,7 +236,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
         // Native section with structure: render server-side
         if (!sectionDef) return null;
         return (
-          <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} variables={variables} reviews={reviews} />
+          <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} variables={variables} reviews={reviews} menuOverrides={menuOverrides} />
         );
       })}
 
@@ -255,12 +263,13 @@ interface DynamicSectionPublicProps {
   guide: StyleGuide;
   variables?: Record<string, string>;
   reviews?: ReviewItem[];
+  menuOverrides?: Record<string, unknown>;
 }
 
-function DynamicSectionPublic({ instance, sectionDef, guide, variables = {}, reviews = [] }: DynamicSectionPublicProps) {
+function DynamicSectionPublic({ instance, sectionDef, guide, variables = {}, reviews = [], menuOverrides = {} }: DynamicSectionPublicProps) {
   const { structure } = sectionDef;
   const adapted = adaptContentForRender(instance.content ?? {}, instance.blocks ?? []);
-  const content = { ...sectionDef.default_content, ...adapted };
+  const content = { ...sectionDef.default_content, ...adapted, ...menuOverrides };
 
   if (reviews.length > 0 && sectionDef.type === "testimonials") {
     const existing = content.testimonials as Array<unknown> | undefined;
