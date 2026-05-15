@@ -12,6 +12,7 @@
  */
 import React, { useEffect } from "react";
 import { hydrateRoot } from "react-dom/client";
+import { interpolateData } from "@/lib/library-section/interpolate";
 
 interface OverrideEntry {
   kind: "text" | "image" | "bg_image" | "link_href" | "button_href" | "attr";
@@ -158,9 +159,12 @@ export function LibrarySectionHydrator() {
 
         if (typeof Component !== "function") return;
 
+        // Mirror SSR's pre-interpolation so React's hydrated tree matches
+        // the HTML the server emitted (no token-revert flash).
+        const interpolatedData = interpolateData(data, variables);
         hydrateRoot(
           container,
-          React.createElement(Component, { tokens, data, variables })
+          React.createElement(Component, { tokens, data: interpolatedData, variables })
         );
       } catch (err) {
         console.warn(
@@ -175,6 +179,12 @@ export function LibrarySectionHydrator() {
       if (hasOverrides) {
         const apply = () => applyOverridesToContainer(container, overrides, variables);
         apply();
+        if (typeof console !== "undefined") {
+          console.debug("[SB:public]", {
+            instanceId,
+            overrideCount: Object.keys(overrides).length,
+          });
+        }
         if (typeof MutationObserver !== "undefined") {
           let scheduled = false;
           const observer = new MutationObserver(() => {
