@@ -54,9 +54,12 @@ function applyOverridesToContainer(
   // matching the DOM path numbering used at edit time.
   const root = container.firstElementChild;
   if (!root) return;
-  for (const pathStr of Object.keys(overrides)) {
-    const entry = overrides[pathStr];
+  for (const key of Object.keys(overrides)) {
+    const entry = overrides[key];
     if (!entry || typeof entry.value !== "string") continue;
+    // Strip optional ":<kind>[:<attrName>]" suffix from the key.
+    const colonIdx = key.indexOf(":");
+    const pathStr = colonIdx === -1 ? key : key.slice(0, colonIdx);
     const path = pathStr.split(".").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
     const el = nodeAtPath(root, path);
     if (!el) continue;

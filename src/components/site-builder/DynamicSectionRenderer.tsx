@@ -256,6 +256,7 @@ export function DynamicSectionRenderer({
               ...menuOverrides,
               ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
             }}
+            overrides={instance.content.__overrides as Record<string, unknown> | undefined}
             styleGuide={effectiveStyleGuide}
             variables={variables}
             wireframe={wireframe}

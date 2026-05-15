@@ -20,6 +20,9 @@ export interface IframeElementAttrs {
   required?: boolean;
   action?: string;
   method?: string;
+  /** True when the "image" kind was inferred from a CSS background-image
+   *  rather than an `<img src>` attribute. */
+  isBackground?: boolean;
 }
 
 export interface IframeElementClickInfo {
@@ -34,6 +37,10 @@ export interface IframeElementClickInfo {
 interface LibrarySectionIframeProps {
   code: string;
   content?: Record<string, unknown>;
+  /** Per-instance DOM-path overrides (content.__overrides). Pulled out of
+   *  `content` so the section component doesn't see them as `data` keys
+   *  while the iframe applicator still picks them up post-render. */
+  overrides?: Record<string, unknown>;
   styleGuide?: StyleGuide;
   variables?: Record<string, string>;
   className?: string;
@@ -56,6 +63,7 @@ interface LibrarySectionIframeProps {
 export function LibrarySectionIframe({
   code,
   content = {},
+  overrides,
   styleGuide,
   variables = {},
   className,
@@ -76,15 +84,37 @@ export function LibrarySectionIframe({
     ...variables,
   }), [variables]);
 
+  // srcDoc only depends on the iframe shell (code, theme, mode). Runtime
+  // data (content, variables, overrides) is pushed via postMessage so the
+  // iframe never reloads + Babel never recompiles during user edits.
   const srcDoc = React.useMemo(
-    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled }),
-    [code, content, allVariables, styleGuide, wireframe, selectionEnabled]
+    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [code, styleGuide, wireframe, selectionEnabled],
   );
+
+  const isReadyRef = React.useRef(false);
+
+  // Push data updates to the iframe whenever content / variables / overrides
+  // change. The first push happens on the iframe-ready message (handled
+  // below) so the initial state is consistent with subsequent updates.
+  React.useEffect(() => {
+    if (!isReadyRef.current) return;
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage(
+      { __siteBuilder: "update-data", data: content, variables: allVariables, overrides: overrides ?? {} },
+      "*",
+    );
+  }, [content, allVariables, overrides]);
 
   // Whenever the source changes, give the iframe a real viewport again so
   // sections that rely on 100vh / min-h-screen render at the correct size
-  // before we measure them and shrink to fit.
+  // before we measure them and shrink to fit. Also reset ready flag — the
+  // new srcDoc is a fresh iframe and we need to wait for its iframe-ready
+  // message before pushing data again.
   React.useEffect(() => {
+    isReadyRef.current = false;
     setHeight(publicMode ? Math.max(minHeight, 1) : Math.max(minHeight, 720));
   }, [srcDoc, minHeight, publicMode]);
 
@@ -117,10 +147,18 @@ export function LibrarySectionIframe({
       if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
         setHeight(Math.ceil(data.height) + 2);
       }
+      if (data?.__siteBuilder === "iframe-ready") {
+        isReadyRef.current = true;
+        // Push the current runtime state now that the iframe is alive.
+        iframeRef.current?.contentWindow?.postMessage(
+          { __siteBuilder: "update-data", data: content, variables: allVariables, overrides: overrides ?? {} },
+          "*",
+        );
+      }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [selectionEnabled, onElementClick, minHeight]);
+  }, [selectionEnabled, onElementClick, minHeight, content, allVariables, overrides]);
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   const handleLoad = React.useCallback(() => {
@@ -256,6 +294,7 @@ function buildGoogleFontsLinks(styleGuide?: StyleGuide): string {
 interface BuildOptions {
   wireframe?: boolean;
   selectionEnabled?: boolean;
+  overrides?: Record<string, unknown>;
 }
 
 function buildHTML(
@@ -265,6 +304,7 @@ function buildHTML(
   styleGuide?: StyleGuide,
   options: BuildOptions = {},
 ): string {
+  const overridesPayload = options.overrides ?? {};
   const cssVars = styleGuide ? styleGuideToCSSVars(styleGuide) : "";
   const googleFontsLinks = buildGoogleFontsLinks(styleGuide);
   const { wireframe = false, selectionEnabled = false } = options;
@@ -295,13 +335,20 @@ function buildHTML(
 
   const renderCall = renderName
     ? `try {
-        ReactDOM.createRoot(document.getElementById('root')).render(
-          React.createElement(${renderName}, {
-            tokens: window.__tokens,
-            data: window.__data,
-            variables: window.__variables
-          })
-        );
+        var __root = ReactDOM.createRoot(document.getElementById('root'));
+        function __render() {
+          __root.render(
+            React.createElement(${renderName}, {
+              tokens: window.__tokens,
+              data: window.__data,
+              variables: window.__variables
+            })
+          );
+        }
+        window.__rerender = __render;
+        __render();
+        // Tell parent we're ready to receive runtime data updates.
+        try { parent.postMessage({ __siteBuilder: 'iframe-ready' }, '*'); } catch(e) {}
       } catch(err) {
         document.getElementById('root').innerHTML =
           '<pre style="padding:16px;color:#e74c3c;font-size:12px;white-space:pre-wrap">' +
@@ -406,7 +453,7 @@ function buildHTML(
     window.__data = ${JSON.stringify(data)};
     window.__variables = ${JSON.stringify(variables)};
     window.__tokens = ${JSON.stringify(tokens)};
-    window.__overrides = ${JSON.stringify((data.__overrides as Record<string, unknown>) ?? {})};
+    window.__overrides = ${JSON.stringify(overridesPayload)};
     window.__src = ${src};
   <\/script>
   <script>
@@ -432,7 +479,11 @@ function buildHTML(
         }
         return node;
       }
-      function applyOne(pathStr, entry) {
+      function applyOne(key, entry) {
+        // Keys may carry a kind suffix: "<dotPath>:<kind>" or
+        // "<dotPath>:attr:<attrName>". Strip the suffix to recover the path.
+        var colonIdx = key.indexOf(':');
+        var pathStr = colonIdx === -1 ? key : key.slice(0, colonIdx);
         var path = pathStr.split('.').map(function (s) { return parseInt(s, 10); }).filter(function (n) { return !isNaN(n); });
         var el = nodeAtPath(path);
         if (!el) return;
@@ -477,6 +528,19 @@ function buildHTML(
       } else {
         init();
       }
+
+      // Parent → iframe: refresh runtime data without rebuilding srcDoc.
+      // The shell HTML (Babel + section code) is stable; only data,
+      // variables and overrides change as the user types.
+      window.addEventListener('message', function (e) {
+        var msg = e.data;
+        if (!msg || msg.__siteBuilder !== 'update-data') return;
+        if (msg.data) window.__data = msg.data;
+        if (msg.variables) window.__variables = msg.variables;
+        window.__overrides = msg.overrides || {};
+        if (typeof window.__rerender === 'function') window.__rerender();
+        applyAll();
+      });
     })();
   <\/script>
   <script>
@@ -519,6 +583,21 @@ function buildHTML(
         return path;
       }
 
+      function extractBgUrl(el) {
+        var bg = window.getComputedStyle(el).backgroundImage;
+        if (!bg || bg === 'none') return null;
+        var m = bg.match(/url\\((['"]?)(.+?)\\1\\)/);
+        return m ? m[2] : null;
+      }
+      function findBgImageAncestor(el) {
+        var node = el;
+        for (var i = 0; i < 6 && node && node !== document.body; i++) {
+          if (extractBgUrl(node)) return node;
+          node = node.parentElement;
+        }
+        return null;
+      }
+
       function classify(el) {
         var tag = el.tagName.toLowerCase();
         if (tag === 'img' || tag === 'picture') return 'image';
@@ -531,14 +610,17 @@ function buildHTML(
         }
         if (tag === 'input' || tag === 'textarea') return 'input';
         if (tag === 'form') return 'form';
+        if (extractBgUrl(el)) return 'image';
         return 'text';
       }
 
       function attrsFor(kind, el) {
         var a = {};
         if (kind === 'image') {
-          a.src = el.getAttribute('src') || '';
+          var bgUrl = extractBgUrl(el);
+          a.src = el.getAttribute('src') || bgUrl || '';
           a.alt = el.getAttribute('alt') || '';
+          if (bgUrl) a.isBackground = true;
         } else if (kind === 'button' || kind === 'link') {
           a.href = el.getAttribute('href') || '';
           a.target = el.getAttribute('target') || '_self';
@@ -556,21 +638,32 @@ function buildHTML(
         return a;
       }
 
+      function resolveTarget(t) {
+        // Prefer an inline SELECTABLE match. Fall back to the nearest ancestor
+        // with a background-image so headers / banners are clickable.
+        var el = t.closest(SELECTABLE);
+        if (el) return el;
+        return findBgImageAncestor(t);
+      }
+
       document.addEventListener('mouseover', function (e) {
         var t = e.target;
         if (!(t instanceof Element)) return;
-        if (!t.matches(SELECTABLE)) return;
-        t.setAttribute('data-sb-hover', '1');
+        var el = resolveTarget(t);
+        if (!el) return;
+        el.setAttribute('data-sb-hover', '1');
       }, true);
       document.addEventListener('mouseout', function (e) {
         var t = e.target;
         if (!(t instanceof Element)) return;
         t.removeAttribute('data-sb-hover');
+        var anc = findBgImageAncestor(t);
+        if (anc) anc.removeAttribute('data-sb-hover');
       }, true);
       document.addEventListener('click', function (e) {
         var t = e.target;
         if (!(t instanceof Element)) return;
-        var el = t.closest(SELECTABLE);
+        var el = resolveTarget(t);
         if (!el) return;
         e.preventDefault();
         e.stopPropagation();
