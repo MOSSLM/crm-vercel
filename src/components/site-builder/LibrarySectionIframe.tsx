@@ -34,6 +34,10 @@ export interface IframeElementClickInfo {
 interface LibrarySectionIframeProps {
   code: string;
   content?: Record<string, unknown>;
+  /** Per-instance DOM-path overrides (content.__overrides). Pulled out of
+   *  `content` so the section component doesn't see them as `data` keys
+   *  while the iframe applicator still picks them up post-render. */
+  overrides?: Record<string, unknown>;
   styleGuide?: StyleGuide;
   variables?: Record<string, string>;
   className?: string;
@@ -56,6 +60,7 @@ interface LibrarySectionIframeProps {
 export function LibrarySectionIframe({
   code,
   content = {},
+  overrides,
   styleGuide,
   variables = {},
   className,
@@ -77,8 +82,8 @@ export function LibrarySectionIframe({
   }), [variables]);
 
   const srcDoc = React.useMemo(
-    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled }),
-    [code, content, allVariables, styleGuide, wireframe, selectionEnabled]
+    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides }),
+    [code, content, allVariables, styleGuide, wireframe, selectionEnabled, overrides]
   );
 
   // Whenever the source changes, give the iframe a real viewport again so
@@ -256,6 +261,7 @@ function buildGoogleFontsLinks(styleGuide?: StyleGuide): string {
 interface BuildOptions {
   wireframe?: boolean;
   selectionEnabled?: boolean;
+  overrides?: Record<string, unknown>;
 }
 
 function buildHTML(
@@ -265,6 +271,7 @@ function buildHTML(
   styleGuide?: StyleGuide,
   options: BuildOptions = {},
 ): string {
+  const overridesPayload = options.overrides ?? {};
   const cssVars = styleGuide ? styleGuideToCSSVars(styleGuide) : "";
   const googleFontsLinks = buildGoogleFontsLinks(styleGuide);
   const { wireframe = false, selectionEnabled = false } = options;
@@ -406,7 +413,7 @@ function buildHTML(
     window.__data = ${JSON.stringify(data)};
     window.__variables = ${JSON.stringify(variables)};
     window.__tokens = ${JSON.stringify(tokens)};
-    window.__overrides = ${JSON.stringify((data.__overrides as Record<string, unknown>) ?? {})};
+    window.__overrides = ${JSON.stringify(overridesPayload)};
     window.__src = ${src};
   <\/script>
   <script>
