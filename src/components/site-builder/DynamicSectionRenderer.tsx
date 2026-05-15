@@ -3,7 +3,7 @@
 import React from "react";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
-import { LibrarySectionIframe, type IframeElementClickInfo } from "./LibrarySectionIframe";
+import { LibrarySectionIframe, type IframeElementClickInfo, type IframeDomTreeNode } from "./LibrarySectionIframe";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 import {
   resolveColorScheme,
@@ -32,6 +32,7 @@ interface DynamicSectionRendererProps {
   /** Enable element click selection inside library iframes. */
   selectionEnabled?: boolean;
   onElementClick?: (info: IframeElementClickInfo) => void;
+  onDomTree?: (tree: IframeDomTreeNode) => void;
 }
 
 /** Convert StyleGuide into CSS custom properties object */
@@ -181,6 +182,7 @@ export function DynamicSectionRenderer({
   wireframe = false,
   selectionEnabled = false,
   onElementClick,
+  onDomTree,
 }: DynamicSectionRendererProps) {
   // Filter out __ meta keys from content passed to section components
   const contentWithoutMeta = Object.fromEntries(
@@ -262,6 +264,7 @@ export function DynamicSectionRenderer({
             wireframe={wireframe}
             selectionEnabled={selectionEnabled}
             onElementClick={onElementClick}
+            onDomTree={onDomTree}
           />
         )}
       </div>

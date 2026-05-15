@@ -15,7 +15,7 @@ import { BulkAIDialog } from "./BulkAIDialog";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
-import type { IframeElementClickInfo } from "../LibrarySectionIframe";
+import type { IframeElementClickInfo, IframeDomTreeNode } from "../LibrarySectionIframe";
 import { ElementPanel } from "./element-panels/ElementPanel";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
 import { BlocksEditor } from "@/components/site-builder/editors/BlocksEditor";
@@ -195,19 +195,100 @@ function kindIcon(kind: ElementKind): React.ElementType {
  * Schema, when present, is used solely to read prettier labels via
  * schema.settings.find(s => s.id === key)?.label.
  */
+function DomLayerRow({
+  node,
+  depth,
+  selectedPath,
+  onSelect,
+}: {
+  node: IframeDomTreeNode;
+  depth: number;
+  selectedPath: string | null;
+  onSelect: (node: IframeDomTreeNode) => void;
+}) {
+  const [open, setOpen] = React.useState(depth < 2);
+  const Icon = kindIcon(node.kind as ElementKind);
+  const hasChildren = node.children && node.children.length > 0;
+  const pathKey = node.path.join(".");
+  const isSel = selectedPath === pathKey;
+  const previewText = node.text || (node.attrs.alt as string | undefined) || "";
+  return (
+    <div>
+      <div
+        className={`group flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors ${
+          isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-600"
+        }`}
+        style={{ paddingLeft: `${6 + depth * 8}px` }}
+      >
+        {hasChildren ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
+            className="text-gray-400 hover:text-gray-700 flex-shrink-0"
+          >
+            <ChevronRight size={9} className={`transition-transform ${open ? "rotate-90" : ""}`} />
+          </button>
+        ) : (
+          <span className="w-[9px] flex-shrink-0" />
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onSelect(node); }}
+          className="flex items-center gap-1 flex-1 min-w-0 text-left"
+        >
+          <Icon size={9} className="flex-shrink-0 text-gray-400" />
+          <span className="font-mono text-[9px] text-gray-400 flex-shrink-0">{node.tag}</span>
+          {previewText && <span className="truncate text-gray-500">{previewText}</span>}
+        </button>
+      </div>
+      {open && hasChildren && (
+        <div>
+          {node.children.map((child) => (
+            <DomLayerRow
+              key={child.path.join(".")}
+              node={child}
+              depth={depth + 1}
+              selectedPath={selectedPath}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LayersFields({
   instance,
   schema,
   sectionDef,
   onSelectField,
   focusedField,
+  domTree,
+  selectedDomPath,
+  onSelectDomNode,
 }: {
   instance: SiteSectionInstance;
   schema: ReturnType<typeof import("@/data/section-schemas").getSchemaForSection> | null;
   sectionDef: SiteSectionDef | null;
   onSelectField: (fieldId: string, kind: ElementKind, blockId?: string) => void;
   focusedField: string | null;
+  domTree: IframeDomTreeNode | null;
+  selectedDomPath: string | null;
+  onSelectDomNode: (node: IframeDomTreeNode) => void;
 }) {
+  // ─── DOM-driven render: prefer the live tree from the iframe ────────────────
+  if (domTree) {
+    return (
+      <div className="ml-3 pl-2 border-l border-gray-100 space-y-0">
+        <DomLayerRow
+          node={domTree}
+          depth={0}
+          selectedPath={selectedDomPath}
+          onSelect={onSelectDomNode}
+        />
+      </div>
+    );
+  }
+  // ─── Fallback: schema/content while waiting for the iframe tree ─────────────
   const labelFor = (key: string): string => {
     if (!schema) return key;
     const f = (schema.settings ?? []).find((s) => "id" in s && (s as { id: string }).id === key) as { label?: string } | undefined;
@@ -326,6 +407,14 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const [expandedInstances, setExpandedInstances] = React.useState<Set<string>>(new Set());
   const [selectedElement, setSelectedElement] = React.useState<SelectedElement | null>(null);
   const [showMenusPanel, setShowMenusPanel] = React.useState(false);
+  const [domTreeByInstance, setDomTreeByInstance] = React.useState<Record<string, IframeDomTreeNode>>({});
+
+  const handleDomTree = React.useCallback(
+    (instanceId: string) => (tree: IframeDomTreeNode) => {
+      setDomTreeByInstance((prev) => ({ ...prev, [instanceId]: tree }));
+    },
+    [],
+  );
 
   const [focusedField, setFocusedField] = React.useState<string | null>(null);
   const [bulkSelectMode, setBulkSelectMode] = React.useState(false);
@@ -339,6 +428,23 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
     dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
     setSelectedElement({ instanceId, ...info });
   }, [dispatch]);
+
+  const handleSelectDomNode = React.useCallback(
+    (instanceId: string) => (node: IframeDomTreeNode) => {
+      dispatch({ type: "SELECT_INSTANCE", payload: instanceId });
+      setFocusedField(null);
+      setSelectedElement({
+        instanceId,
+        kind: node.kind,
+        tag: node.tag,
+        text: node.text,
+        path: node.path,
+        attrs: node.attrs,
+        fieldId: null,
+      });
+    },
+    [dispatch],
+  );
 
   const toggleInstanceExpanded = (id: string) => {
     setExpandedInstances((prev) => {
@@ -687,6 +793,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         onSelectSnippet={(id) => dispatch({ type: "SELECT_SNIPPET", payload: id })}
                         selectionEnabled
                         onElementClick={handleElementClick(instanceId)}
+                        onDomTree={handleDomTree(instanceId)}
                       />
                       {isSelected && (
                         <div className="absolute top-0 left-0 z-30 bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-br font-medium">
@@ -861,6 +968,13 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                                 onSelectField={(focusKey, kind, blockId) =>
                                   handleLayerFieldSelect(instanceId, focusKey, kind, blockId)
                                 }
+                                domTree={domTreeByInstance[instanceId] ?? null}
+                                selectedDomPath={
+                                  isSel && selectedElement?.path?.length
+                                    ? selectedElement.path.join(".")
+                                    : null
+                                }
+                                onSelectDomNode={handleSelectDomNode(instanceId)}
                               />
                             )}
                             {expanded && selectedElement?.instanceId === instanceId && (() => {
