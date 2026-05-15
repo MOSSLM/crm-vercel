@@ -9,8 +9,15 @@ import {
   Trash2, FileText, Palette, Sparkles, RefreshCw, X,
   ChevronUp,
   Settings2, Link as LinkIcon, Image as ImageIcon, Navigation, Maximize2,
-  ArrowUpDown, Square, CheckSquare,
+  ArrowUpDown, Square, CheckSquare, Repeat,
 } from "lucide-react";
+import { SectionPickerModal } from "./SectionPickerModal";
+import {
+  resolveNavbarLayout,
+  DEFAULT_NAVBAR_LAYOUT,
+  type NavbarPosition,
+} from "@/lib/site-builder/position-layout";
+import { NAVBAR_CATEGORIES } from "@/lib/site-builder/menu-overrides";
 import { BulkAIDialog } from "./BulkAIDialog";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
@@ -137,6 +144,8 @@ function Accordion({ title, icon: Icon, defaultOpen = true, children }: {
 
 interface DesignWorkspaceProps {
   sectionDefs: Record<string, SiteSectionDef>;
+  /** Full library of sections — needed to power the Replace flow. */
+  availableSections?: SiteSectionDef[];
   onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
 }
 
@@ -398,7 +407,7 @@ function LayersFields({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWorkspaceProps) {
+export function DesignWorkspace({ sectionDefs, availableSections = [], onRegenerateSection }: DesignWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const canvas = useCanvasPanZoom();
   const [panelOpen, setPanelOpen] = React.useState(true);
@@ -420,6 +429,12 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   const [bulkSelectMode, setBulkSelectMode] = React.useState(false);
   const [bulkSelected, setBulkSelected] = React.useState<Set<string>>(new Set());
   const [bulkDialogOpen, setBulkDialogOpen] = React.useState(false);
+  const [replaceTargetId, setReplaceTargetId] = React.useState<string | null>(null);
+
+  const replaceTargetInstance = replaceTargetId ? state.instances[replaceTargetId] : null;
+  const replaceTargetDef = replaceTargetInstance
+    ? (replaceTargetInstance.section_def ?? (replaceTargetInstance.section_id ? sectionDefs[replaceTargetInstance.section_id] : null))
+    : null;
 
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
   const selectedInstance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
@@ -598,6 +613,30 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
   return (
     <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
 
+      {/* ─ Section Picker Modal (Replace flow) ──────────────────────────────── */}
+      <SectionPickerModal
+        open={!!replaceTargetId}
+        sections={availableSections}
+        initialCategory={replaceTargetDef?.category ?? null}
+        onHover={(secDef) =>
+          replaceTargetId
+            ? dispatch({
+                type: "SET_PREVIEW_REPLACE",
+                payload: secDef ? { instanceId: replaceTargetId, sectionDef: secDef } : null,
+              })
+            : undefined
+        }
+        onPick={(secDef) => {
+          if (!replaceTargetId) return;
+          dispatch({ type: "REPLACE_INSTANCE", payload: { instanceId: replaceTargetId, sectionDef: secDef } });
+          setReplaceTargetId(null);
+        }}
+        onClose={() => {
+          dispatch({ type: "SET_PREVIEW_REPLACE", payload: null });
+          setReplaceTargetId(null);
+        }}
+      />
+
       {/* ─ Bulk AI Dialog ───────────────────────────────────────────────────── */}
       <BulkAIDialog
         open={bulkDialogOpen}
@@ -680,6 +719,7 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                 onRegenerateSection={onRegenerateSection}
                 focusedField={focusedField}
                 onClearFocusedField={() => setFocusedField(null)}
+                onReplace={() => setReplaceTargetId(selectedInstance.id)}
               />
             )}
             {panelMode === "element" && selectedElement && selectedInstance && (
@@ -766,8 +806,25 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                 {pageInstanceIds.map((instanceId) => {
                   const instance = state.instances[instanceId];
                   if (!instance || instance.is_hidden) return null;
-                  const secDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+                  const originalDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
+                  // Live swap when this instance is being previewed in the picker modal.
+                  const isPreviewed = state.previewReplace?.instanceId === instanceId;
+                  const previewDef = isPreviewed ? state.previewReplace!.sectionDef : null;
+                  const secDef = previewDef ?? originalDef;
                   if (!secDef) return null;
+                  const previewContent: Record<string, unknown> = previewDef
+                    ? {
+                        ...(previewDef.default_content as Record<string, unknown>),
+                        ...(previewDef.theme_slug && previewDef.theme_section_id
+                          ? {
+                              __library: {
+                                theme_slug: previewDef.theme_slug,
+                                section_id: previewDef.theme_section_id,
+                              },
+                            }
+                          : {}),
+                      }
+                    : instance.content;
                   const isSelected = state.selectedInstanceId === instanceId;
 
                   return (
@@ -775,13 +832,13 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                       key={instanceId}
                       className="relative cursor-pointer"
                       style={{
-                        outline: isSelected ? "2px solid #3b82f6" : "2px solid transparent",
+                        outline: isPreviewed ? "2px dashed #a855f7" : isSelected ? "2px solid #3b82f6" : "2px solid transparent",
                         ...(instance.custom_style as React.CSSProperties ?? {}),
                       }}
                       onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
                     >
                       <DynamicSectionRenderer
-                        instance={{ ...instance, section_def: secDef }}
+                        instance={{ ...instance, section_def: secDef, content: previewContent, blocks: previewDef ? [] : instance.blocks }}
                         sectionDef={secDef}
                         styleGuide={state.styleGuide}
                         menus={state.menus}
@@ -791,11 +848,16 @@ export function DesignWorkspace({ sectionDefs, onRegenerateSection }: DesignWork
                         onSelect={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
                         selectedSnippetId={isSelected ? state.selectedSnippetId : null}
                         onSelectSnippet={(id) => dispatch({ type: "SELECT_SNIPPET", payload: id })}
-                        selectionEnabled
+                        selectionEnabled={!isPreviewed}
                         onElementClick={handleElementClick(instanceId)}
                         onDomTree={handleDomTree(instanceId)}
                       />
-                      {isSelected && (
+                      {isPreviewed && (
+                        <div className="absolute top-0 left-0 z-30 bg-purple-500 text-white text-[9px] px-2 py-0.5 rounded-br font-medium">
+                          Aperçu: {previewDef!.name}
+                        </div>
+                      )}
+                      {!isPreviewed && isSelected && (
                         <div className="absolute top-0 left-0 z-30 bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-br font-medium">
                           {secDef.name}
                         </div>
@@ -1151,12 +1213,14 @@ function SectionPanel({
   onRegenerateSection,
   focusedField,
   onClearFocusedField,
+  onReplace,
 }: {
   instance: SiteSectionInstance;
   sectionDefs: Record<string, SiteSectionDef>;
   onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
   focusedField?: string | null;
   onClearFocusedField?: () => void;
+  onReplace?: () => void;
 }) {
   const { state, dispatch } = useRelumeBuilder();
   const [activeTab, setActiveTab] = React.useState<SectionTab>("content");
@@ -1221,6 +1285,16 @@ function SectionPanel({
         >
           <ChevronDown size={11} />
         </button>
+        {onReplace && (
+          <button
+            onClick={onReplace}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 px-2 py-1.5 rounded hover:bg-blue-50"
+            title="Remplacer la section"
+          >
+            <Repeat size={11} />
+            Remplacer
+          </button>
+        )}
         <button
           onClick={() => dispatch({ type: "REMOVE_INSTANCE", payload: instance.id })}
           className="flex items-center gap-1 text-xs text-red-400/70 hover:text-red-500 px-2 py-1.5 rounded hover:bg-red-50 ml-auto"
@@ -1305,6 +1379,11 @@ function SectionPanel({
 
         {activeTab === "style" && (
           <>
+            {/* Position settings — navbar only */}
+            {sectionDef?.category && NAVBAR_CATEGORIES.has(sectionDef.category) && (
+              <NavbarPositionPanel instance={instance} updateContent={updateContent} />
+            )}
+
             {/* Color scheme */}
             <div>
               <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Palette de couleurs</label>
@@ -1709,3 +1788,74 @@ function SectionColorOverrides({ instance }: { instance: SiteSectionInstance }) 
 }
 
 void Move;
+
+// ─── Navbar Position Panel ────────────────────────────────────────────────────
+
+function NavbarPositionPanel({
+  instance,
+  updateContent,
+}: {
+  instance: SiteSectionInstance;
+  updateContent: (key: string, value: unknown) => void;
+}) {
+  const layout = resolveNavbarLayout(instance.content);
+  const setLayout = (patch: Partial<typeof layout>) => {
+    updateContent("__layout", { ...layout, ...patch });
+  };
+  const reset = () => updateContent("__layout", DEFAULT_NAVBAR_LAYOUT);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Position</label>
+        <button
+          onClick={reset}
+          className="text-[10px] text-gray-400 hover:text-gray-700 transition-colors"
+          title="Réinitialiser"
+        >
+          Reset
+        </button>
+      </div>
+      <div className="space-y-2.5 bg-gray-50 border border-gray-200 rounded-lg p-3">
+        <label className="block">
+          <span className="text-[11px] text-gray-600 mb-1 block">Comportement</span>
+          <select
+            value={layout.position}
+            onChange={(e) => setLayout({ position: e.target.value as NavbarPosition })}
+            className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
+          >
+            <option value="static">Static (défile avec la page)</option>
+            <option value="sticky">Sticky (colle en haut au scroll)</option>
+            <option value="fixed">Fixed (toujours en haut)</option>
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-[11px] text-gray-600 mb-1 block">Décalage haut (px)</span>
+          <input
+            type="number"
+            value={layout.topOffset}
+            onChange={(e) => setLayout({ topOffset: Number(e.target.value) || 0 })}
+            disabled={layout.position === "static"}
+            className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400 disabled:opacity-40"
+          />
+        </label>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <span className="text-[11px] text-gray-600">Headroom (cacher au scroll)</span>
+          <input
+            type="checkbox"
+            checked={layout.headroom}
+            onChange={(e) => setLayout({ headroom: e.target.checked })}
+            disabled={layout.position === "static"}
+            className="accent-blue-500 disabled:opacity-40"
+          />
+        </label>
+
+        <p className="text-[10px] text-gray-400 leading-relaxed">
+          Visible sur le site déployé. L&apos;éditeur affiche la navbar à plat pour faciliter l&apos;édition.
+        </p>
+      </div>
+    </div>
+  );
+}
