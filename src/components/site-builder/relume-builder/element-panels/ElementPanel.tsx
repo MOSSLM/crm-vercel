@@ -240,7 +240,7 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
 
   const onChange = (url: string) => {
     if (typeof console !== "undefined") {
-      console.debug("[SB:dispatch] image", { strategy: binding.strategy, isBackground, key: ("key" in binding ? binding.key : binding.pathStr), value: url.slice(0, 60) });
+      console.debug("[SB:dispatch] image", { strategy: binding.strategy, isBackground, key: ("key" in binding ? binding.key : "pathStr" in binding ? binding.pathStr : "pair"), value: url.slice(0, 60) });
     }
     if (binding.strategy === "direct" || binding.strategy === "field-id") {
       dispatch(binding.location, { [binding.key]: url });
