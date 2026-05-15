@@ -39,6 +39,11 @@ function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
     "--font-heading": sg.fonts.heading + ", Inter, sans-serif",
     "--font-body": sg.fonts.body + ", Inter, sans-serif",
     "--font-base-size": sg.fonts.baseSize,
+    // Tailwind-friendly colour aliases (mirror iframe shell so sections that
+    // reference var(--tw-primary) etc. render identically on the deployed site).
+    "--tw-primary": sg.colors.primary,
+    "--tw-secondary": sg.colors.secondary,
+    "--tw-accent": sg.colors.accent,
     "--card-radius": sg.cards.borderRadius,
     "--card-shadow": resolveCardShadow(sg.cards),
     "--card-padding": sg.cards.padding,
@@ -70,6 +75,9 @@ const LIBRARY_SCOPED_CSS = `
 [data-lsi] img,[data-lsi] picture,[data-lsi] video {
   border-radius: var(--card-image-radius);
 }
+/* Prevent images escaping their container on the deployed site (iframe
+   benefits from Tailwind CDN's image reset; SSR pages need this scoped fix). */
+[data-lsi] img,[data-lsi] video { max-width: 100%; height: auto; }
 [data-lsi] .cta-primary {
   background-color: var(--btn-primary-bg) !important;
   color: var(--btn-primary-text) !important;
@@ -170,12 +178,20 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     <div style={{ ...cssVars, fontFamily: "var(--font-body)", color: "var(--color-text)" } as React.CSSProperties}>
       {/* Inject library-section styles once for the whole page */}
       {hasLibrarySections && (
-        <style
-          data-library-styles
-          dangerouslySetInnerHTML={{
-            __html: tailwindCss + LIBRARY_SCOPED_CSS,
-          }}
-        />
+        <>
+          <style
+            data-library-styles
+            dangerouslySetInnerHTML={{
+              __html: tailwindCss + LIBRARY_SCOPED_CSS,
+            }}
+          />
+          {/* Tailwind CDN as a runtime fallback — generateTailwindCSS extracts
+              class tokens via regex and misses ternaries, template-string
+              interpolations, and object-map classes. The CDN script picks
+              those up on the client so the deployed site matches the iframe
+              preview. Loaded async so it doesn't block first paint. */}
+          <script src="https://cdn.tailwindcss.com" async />
+        </>
       )}
 
       {instances.map((instance) => {
