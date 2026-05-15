@@ -379,10 +379,13 @@ function buildHTML(
             }
             console.debug('[SB:render]', { keys: __keys.length, sample: __sample, overrides: Object.keys(window.__overrides || {}).length });
           } catch(_) {}
+          var __interp = (typeof window.__applyVarsToData === 'function')
+            ? window.__applyVarsToData(window.__data)
+            : window.__data;
           __root.render(
             React.createElement(${renderName}, {
               tokens: window.__tokens,
-              data: window.__data,
+              data: __interp,
               variables: window.__variables
             })
           );
@@ -511,6 +514,39 @@ function buildHTML(
           return vars[key] != null ? vars[key] : '';
         });
       }
+      function applyVarsToData(obj) {
+        if (typeof obj === 'string') return applyVars(obj);
+        if (Array.isArray(obj)) {
+          var out = new Array(obj.length);
+          for (var i = 0; i < obj.length; i++) out[i] = applyVarsToData(obj[i]);
+          return out;
+        }
+        if (obj && typeof obj === 'object') {
+          var o = {};
+          for (var k in obj) if (Object.prototype.hasOwnProperty.call(obj, k)) {
+            o[k] = applyVarsToData(obj[k]);
+          }
+          return o;
+        }
+        return obj;
+      }
+      window.__applyVars = applyVars;
+      window.__applyVarsToData = applyVarsToData;
+      function applyVarsToDOM() {
+        var root = document.getElementById('root');
+        if (!root) return;
+        try {
+          var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+          var n;
+          while ((n = walker.nextNode())) {
+            var v = n.nodeValue;
+            if (v && v.indexOf('{{') !== -1) {
+              var rep = applyVars(v);
+              if (rep !== v) n.nodeValue = rep;
+            }
+          }
+        } catch (_) {}
+      }
       function nodeAtPath(path) {
         var node = document.getElementById('root');
         if (!node || !node.firstElementChild) return null;
@@ -553,6 +589,10 @@ function buildHTML(
             try { applyOne(key, overrides[key]); } catch (_) {}
           }
         }
+        // Replace any remaining {{ var }} tokens hardcoded in section JSX
+        // text nodes. Idempotent: once replaced, the token is gone so a
+        // re-trigger of MutationObserver finds nothing more to do.
+        applyVarsToDOM();
       }
       window.__applyOverrides = applyAll;
       var debounceTimer = null;
