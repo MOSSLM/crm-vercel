@@ -2,8 +2,7 @@ import React from "react";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
-import { resolveSite, fetchBlogPosts } from "@/lib/site-resolver";
-import SectionRenderer from "@/components/site-builder/SectionRenderer";
+import { resolveSite } from "@/lib/site-resolver";
 import { DynamicPageRenderer } from "@/components/site-builder/DynamicPageRenderer";
 import type { Metadata } from "next";
 
@@ -37,10 +36,9 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
   const site = await resolveSite(subdomain, host);
   if (!site) notFound();
 
-  const { config, enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide } = site;
+  const { enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide } = site;
   const effectiveStyleGuide = publishedStyleGuide ?? styleGuide;
 
-  // ─── Dynamic sections mode ────────────────────────────────────────────────────
   // Prefer the published snapshot (set when user clicks "Publish") so that
   // in-progress edits don't leak to the live site.
   if (publishedInstances && publishedInstances.length > 0) {
@@ -56,7 +54,10 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
     );
   }
 
-  // Fallback: query live instances (sites not yet re-published after migration)
+  // Fallback for sites not yet re-published since the dynamic-sections
+  // migration — render directly from the live `site_section_instances`
+  // table. Only reached if a site exists with instances but `is_published`
+  // was set before the snapshot columns were introduced.
   const supabase = getSupabaseServiceClient();
   const { count } = await supabase
     .from("site_section_instances")
@@ -75,26 +76,7 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
     );
   }
 
-  // ─── Legacy mode (site_config JSON) ────────────────────────────────────────────
-  const sections = config.sections ?? [];
-  const hasBlog = sections.some((s) => s.type === "blog" && !s.hidden);
-  const blogPosts = hasBlog ? await fetchBlogPosts(siteId) : [];
-
-  return (
-    <>
-      {sections
-        .filter((s) => !s.hidden)
-        .map((section) => (
-          <SectionRenderer
-            key={section.id}
-            section={section}
-            variables={enterpriseVariables}
-            subdomain={subdomain}
-            blogPosts={blogPosts}
-          />
-        ))}
-    </>
-  );
+  notFound();
 }
 
 // ISR: revalidate every 60 seconds

@@ -77,9 +77,9 @@ const LIBRARY_SCOPED_CSS = `
 }
 /* Prevent images escaping their container on the deployed site. We avoid
    !important on height so sections that explicitly size their images via
-   classes like `h-full` (e.g. carousel tiles in Layout414) keep working —
-   forcing `height: auto !important` would distort their aspect ratios and
-   make the parent `overflow: hidden` clip the bottom (= reported "rounded
+   classes like h-full (e.g. carousel tiles in Layout414) keep working;
+   forcing height: auto !important would distort their aspect ratios and
+   make the parent overflow: hidden clip the bottom (= reported "rounded
    only on top" bug). The synchronously-loaded Tailwind CDN provides the
    same defaults via its preflight. */
 [data-lsi] img,[data-lsi] picture,[data-lsi] video { max-width: 100%; }
@@ -194,10 +194,12 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
               class tokens via regex and misses ternaries, template-string
               interpolations, and object-map classes. Loaded SYNCHRONOUSLY
               (no async / defer) so it's available before the browser paints
-              the section HTML. With `async`, the first paint used incomplete
+              the section HTML. With async/defer, first paint used incomplete
               CSS → images rendered at natural size, layout flashed when CDN
-              caught up. Synchronous costs ~200-300ms TTFB but yields stable,
-              consistent rendering across reloads. */}
+              caught up. The +200-300ms TTFB cost is deliberate: we trade it
+              for stable, consistent rendering across reloads on a marketing
+              site. Replace once Tailwind extraction is AST-complete. */}
+          {/* eslint-disable-next-line @next/next/no-sync-scripts */}
           <script src="https://cdn.tailwindcss.com" />
         </>
       )}
