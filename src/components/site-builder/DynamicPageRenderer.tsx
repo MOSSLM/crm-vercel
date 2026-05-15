@@ -75,10 +75,14 @@ const LIBRARY_SCOPED_CSS = `
 [data-lsi] img,[data-lsi] picture,[data-lsi] video {
   border-radius: var(--card-image-radius);
 }
-/* Prevent images escaping their container on the deployed site. !important
-   ensures the cap survives even when section code sets explicit width/height
-   attributes or a class that should have constrained but isn't in the JIT. */
-[data-lsi] img,[data-lsi] picture,[data-lsi] video { max-width: 100% !important; height: auto !important; }
+/* Prevent images escaping their container on the deployed site. We avoid
+   !important on height so sections that explicitly size their images via
+   classes like `h-full` (e.g. carousel tiles in Layout414) keep working —
+   forcing `height: auto !important` would distort their aspect ratios and
+   make the parent `overflow: hidden` clip the bottom (= reported "rounded
+   only on top" bug). The synchronously-loaded Tailwind CDN provides the
+   same defaults via its preflight. */
+[data-lsi] img,[data-lsi] picture,[data-lsi] video { max-width: 100%; }
 [data-lsi] .cta-primary {
   background-color: var(--btn-primary-bg) !important;
   color: var(--btn-primary-text) !important;
