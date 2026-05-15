@@ -78,9 +78,33 @@ function setOverride(
 ) {
   const current = (instance.content.__overrides as Record<string, unknown> | undefined) ?? {};
   const next = { ...current };
-  if (entry == null) delete next[pathStr];
-  else next[pathStr] = entry;
+  // Compose key so label/text and href can coexist on the same path.
+  // The applicator splits on ':' to recover kind. For attr overrides we
+  // also append the attribute name so multiple attrs per element survive.
+  const compositeKey = entry
+    ? `${pathStr}:${entry.kind}${entry.kind === "attr" && entry.meta?.attrName ? `:${entry.meta.attrName}` : ""}`
+    : pathStr;
+  if (entry == null) {
+    // Delete every entry that starts with the path.
+    for (const k of Object.keys(next)) {
+      if (k === pathStr || k.startsWith(`${pathStr}:`)) delete next[k];
+    }
+  } else {
+    next[compositeKey] = entry;
+  }
   dispatch({ scope: "instance" }, { __overrides: next });
+}
+
+function readOverride(
+  instance: SiteSectionInstance,
+  pathStr: string,
+  kind: string,
+  attrName?: string,
+): string | undefined {
+  const all = (instance.content.__overrides as Record<string, { value?: string }> | undefined) ?? {};
+  const key = `${pathStr}:${kind}${kind === "attr" && attrName ? `:${attrName}` : ""}`;
+  const entry = all[key] ?? all[pathStr]; // back-compat for old single-entry shape
+  return entry && typeof entry.value === "string" ? entry.value : undefined;
 }
 
 function compositeRead(settings: Record<string, unknown>, key: string): Record<string, unknown> {
@@ -128,8 +152,8 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
     const label = compositeRead(settings, binding.key).label;
     if (typeof label === "string") currentValue = label;
   } else if (binding.strategy === "override") {
-    const ov = (instance.content.__overrides as Record<string, { value?: string }> | undefined)?.[binding.pathStr];
-    if (ov && typeof ov.value === "string") currentValue = ov.value;
+    const ov = readOverride(instance, binding.pathStr, "text");
+    if (ov !== undefined) currentValue = ov;
   }
 
   const onChange = (val: string) => {
@@ -184,8 +208,8 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
     if (typeof v === "string") currentValue = v;
     else isFromVariable = true; // key undefined → image comes from variable fallback
   } else if (binding.strategy === "override") {
-    const ov = (instance.content.__overrides as Record<string, { value?: string }> | undefined)?.[binding.pathStr];
-    if (ov && typeof ov.value === "string") currentValue = ov.value;
+    const ov = readOverride(instance, binding.pathStr, "image");
+    if (ov !== undefined) currentValue = ov;
   }
 
   const onChange = (url: string) => {
@@ -252,13 +276,11 @@ function ButtonOrLinkPanel({
   let label = element.text;
   let href = element.attrs.href ?? "";
   let target = element.attrs.target ?? "_self";
-  let hrefIsHardcoded = false;
 
   if (binding.strategy === "field-id" || binding.strategy === "direct") {
     const settings = readSettings(instance, binding.location);
     const v = settings[binding.key];
     if (typeof v === "string") label = v;
-    hrefIsHardcoded = true; // direct = single string for label; href is in code
   } else if (binding.strategy === "composite") {
     const settings = readSettings(instance, binding.location);
     const obj = compositeRead(settings, binding.key);
@@ -270,10 +292,16 @@ function ButtonOrLinkPanel({
     if (typeof settings[binding.labelKey] === "string") label = settings[binding.labelKey] as string;
     if (typeof settings[binding.hrefKey] === "string") href = settings[binding.hrefKey] as string;
   } else {
-    const ov = (instance.content.__overrides as Record<string, { value?: string }> | undefined)?.[binding.pathStr];
-    if (ov && typeof ov.value === "string") label = ov.value;
-    hrefIsHardcoded = true;
+    const textOv = readOverride(instance, binding.pathStr, "text");
+    if (textOv !== undefined) label = textOv;
   }
+
+  // Any strategy may carry an override for href/target on the same DOM path.
+  const pathForOverride = binding.strategy === "override" ? binding.pathStr : element.path.join(".");
+  const hrefOv = readOverride(instance, pathForOverride, kind === "button" ? "button_href" : "link_href");
+  if (hrefOv !== undefined) href = hrefOv;
+  const targetOv = readOverride(instance, pathForOverride, "attr", "target");
+  if (targetOv === "_blank" || targetOv === "_self") target = targetOv;
 
   const setLabel = (val: string) => {
     if (binding.strategy === "direct" || binding.strategy === "field-id") {
@@ -289,6 +317,8 @@ function ButtonOrLinkPanel({
     }
   };
 
+  const fallbackPath = element.path.join(".");
+
   const setHref = (val: string) => {
     if (binding.strategy === "composite") {
       const settings = readSettings(instance, binding.location);
@@ -296,8 +326,14 @@ function ButtonOrLinkPanel({
       dispatch(binding.location, { [binding.key]: { ...existing, href: val } });
     } else if (binding.strategy === "pair") {
       dispatch(binding.location, { [binding.hrefKey]: val });
-    } else if (binding.strategy === "override") {
-      setOverride(instance, dispatch, binding.pathStr, { kind: kind === "button" ? "button_href" : "link_href", value: val });
+    } else {
+      // direct / field-id / override → write a DOM-path override so the
+      // applicator can set the href even when section code reads it in dur.
+      const pathStr = binding.strategy === "override" ? binding.pathStr : fallbackPath;
+      setOverride(instance, dispatch, pathStr, {
+        kind: kind === "button" ? "button_href" : "link_href",
+        value: val,
+      });
     }
   };
 
@@ -306,10 +342,20 @@ function ButtonOrLinkPanel({
       const settings = readSettings(instance, binding.location);
       const existing = compositeRead(settings, binding.key);
       dispatch(binding.location, { [binding.key]: { ...existing, target: val } });
+    } else {
+      const pathStr = binding.strategy === "override" ? binding.pathStr : fallbackPath;
+      setOverride(instance, dispatch, pathStr, {
+        kind: "attr",
+        value: val,
+        meta: { attrName: "target" },
+      });
     }
   };
 
-  const canEditHref = binding.strategy === "composite" || binding.strategy === "pair" || binding.strategy === "override";
+  // Href is always editable: composite/pair update the bound key, other
+  // strategies fall back to a DOM-path override so hardcoded section hrefs
+  // still update post-render.
+  const hrefIsViaOverride = binding.strategy !== "composite" && binding.strategy !== "pair";
 
   return (
     <div className="p-3 space-y-3">
@@ -329,35 +375,27 @@ function ButtonOrLinkPanel({
       </div>
 
       <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Lien (href)</label>
-        {canEditHref ? (
-          <VariableTextarea
-            value={href}
-            onChange={setHref}
-            placeholder="/page ou https://…"
-            rows={1}
-            className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-            variables={state.variableContext}
-            variant="light"
-          />
-        ) : (
-          <>
-            <input
-              type="text"
-              value={href}
-              readOnly
-              className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-500 bg-gray-50 cursor-not-allowed"
-            />
-            <p className="mt-1 text-[10px] text-amber-700 bg-amber-50 rounded px-2 py-1">
-              Le lien est codé en dur dans la section. Pour le rendre éditable, déclare-le dans une clé content (ex: <code className="font-mono">primaryHref</code>) ou un objet composite <code className="font-mono">{`{ label, href }`}</code>.
-            </p>
-          </>
-        )}
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+          Lien (href)
+          {hrefIsViaOverride && (
+            <span className="ml-1 text-[9px] font-normal text-gray-400 normal-case tracking-normal">
+              · via override
+            </span>
+          )}
+        </label>
+        <VariableTextarea
+          value={href}
+          onChange={setHref}
+          placeholder="/page ou https://…"
+          rows={1}
+          className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
+          variables={state.variableContext}
+          variant="light"
+        />
       </div>
 
-      {(binding.strategy === "composite") && (
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Ouverture</label>
+      <div>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Ouverture</label>
           <div className="flex gap-1">
             <button
               type="button"
@@ -375,7 +413,6 @@ function ButtonOrLinkPanel({
             </button>
           </div>
         </div>
-      )}
     </div>
   );
 }
@@ -385,11 +422,12 @@ function ButtonOrLinkPanel({
 function InputPanel({ element, instance, binding }: { element: SelectedElementShape; instance: SiteSectionInstance; binding: BindingResult }) {
   const { state } = useRelumeBuilder();
   const dispatch = useDispatcher(instance);
+  const fallbackPath = element.path.join(".");
+  const overridePath = binding.strategy === "override" ? binding.pathStr : fallbackPath;
 
   let placeholder = element.attrs.placeholder ?? "";
   let name = element.attrs.name ?? "";
   let inputType = element.attrs.inputType ?? "text";
-  let canEdit = true;
 
   if (binding.strategy === "field-id" || binding.strategy === "direct") {
     const settings = readSettings(instance, binding.location);
@@ -401,26 +439,64 @@ function InputPanel({ element, instance, binding }: { element: SelectedElementSh
     if (typeof obj.placeholder === "string") placeholder = obj.placeholder;
     if (typeof obj.name === "string") name = obj.name;
     if (typeof obj.input_type === "string") inputType = obj.input_type;
-  } else if (binding.strategy === "override") {
-    canEdit = false;
   }
 
+  // Any strategy can carry attr overrides for placeholder/name/type.
+  const pOv = readOverride(instance, overridePath, "attr", "placeholder");
+  if (pOv !== undefined) placeholder = pOv;
+  const nOv = readOverride(instance, overridePath, "attr", "name");
+  if (nOv !== undefined) name = nOv;
+  const tOv = readOverride(instance, overridePath, "attr", "type");
+  if (tOv !== undefined) inputType = tOv;
+
+  // Update routing: composite writes inline, direct/field-id writes the
+  // string value to its single key for placeholder only, everything else
+  // falls back to a DOM-path attribute override.
   const update = (patch: Record<string, unknown>) => {
     if (binding.strategy === "composite") {
       const settings = readSettings(instance, binding.location);
       const existing = compositeRead(settings, binding.key);
       dispatch(binding.location, { [binding.key]: { ...existing, ...patch } });
-    } else if (binding.strategy === "direct" || binding.strategy === "field-id") {
-      if ("placeholder" in patch) dispatch(binding.location, { [binding.key]: patch.placeholder });
+      return;
+    }
+    if ((binding.strategy === "direct" || binding.strategy === "field-id") && "placeholder" in patch) {
+      dispatch(binding.location, { [binding.key]: patch.placeholder });
+      // also clear any stale attr override for placeholder
+      setOverride(instance, dispatch, overridePath, null);
+      // Re-write other attrs if any
+      if ("name" in patch && typeof patch.name === "string") {
+        setOverride(instance, dispatch, overridePath, { kind: "attr", value: patch.name, meta: { attrName: "name" } });
+      }
+      if ("input_type" in patch && typeof patch.input_type === "string") {
+        setOverride(instance, dispatch, overridePath, { kind: "attr", value: patch.input_type, meta: { attrName: "type" } });
+      }
+      return;
+    }
+    // Fallback: write attr overrides for each touched field.
+    if ("placeholder" in patch && typeof patch.placeholder === "string") {
+      setOverride(instance, dispatch, overridePath, { kind: "attr", value: patch.placeholder, meta: { attrName: "placeholder" } });
+    }
+    if ("name" in patch && typeof patch.name === "string") {
+      setOverride(instance, dispatch, overridePath, { kind: "attr", value: patch.name, meta: { attrName: "name" } });
+    }
+    if ("input_type" in patch && typeof patch.input_type === "string") {
+      setOverride(instance, dispatch, overridePath, { kind: "attr", value: patch.input_type, meta: { attrName: "type" } });
     }
   };
+
+  const viaOverride = binding.strategy !== "composite";
 
   return (
     <div className="p-3 space-y-3">
       <PanelHeader kind="input" binding={binding} />
 
       <div>
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Placeholder</label>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">
+          Placeholder
+          {viaOverride && (
+            <span className="ml-1 text-[9px] font-normal text-gray-400 normal-case tracking-normal">· via override</span>
+          )}
+        </label>
         <VariableTextarea
           value={placeholder}
           onChange={(v) => update({ placeholder: v })}
@@ -432,41 +508,32 @@ function InputPanel({ element, instance, binding }: { element: SelectedElementSh
         />
       </div>
 
-      {binding.strategy === "composite" && (
-        <>
-          <div>
-            <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Type</label>
-            <select
-              value={inputType}
-              onChange={(e) => update({ input_type: e.target.value })}
-              className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
-            >
-              <option value="text">Texte</option>
-              <option value="email">Email</option>
-              <option value="tel">Téléphone</option>
-              <option value="number">Nombre</option>
-              <option value="url">URL</option>
-              <option value="password">Mot de passe</option>
-              <option value="date">Date</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Nom du champ (name)</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => update({ name: e.target.value })}
-              className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
-            />
-          </div>
-        </>
-      )}
+      <div>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Type</label>
+        <select
+          value={inputType}
+          onChange={(e) => update({ input_type: e.target.value })}
+          className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
+        >
+          <option value="text">Texte</option>
+          <option value="email">Email</option>
+          <option value="tel">Téléphone</option>
+          <option value="number">Nombre</option>
+          <option value="url">URL</option>
+          <option value="password">Mot de passe</option>
+          <option value="date">Date</option>
+        </select>
+      </div>
 
-      {!canEdit && (
-        <p className="text-[10px] text-amber-700 bg-amber-50 rounded px-2 py-1">
-          Ce champ est codé en dur dans la section.
-        </p>
-      )}
+      <div>
+        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-1">Nom du champ (name)</label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => update({ name: e.target.value })}
+          className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
+        />
+      </div>
     </div>
   );
 }

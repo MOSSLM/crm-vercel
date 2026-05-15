@@ -442,7 +442,11 @@ function buildHTML(
         }
         return node;
       }
-      function applyOne(pathStr, entry) {
+      function applyOne(key, entry) {
+        // Keys may carry a kind suffix: "<dotPath>:<kind>" or
+        // "<dotPath>:attr:<attrName>". Strip the suffix to recover the path.
+        var colonIdx = key.indexOf(':');
+        var pathStr = colonIdx === -1 ? key : key.slice(0, colonIdx);
         var path = pathStr.split('.').map(function (s) { return parseInt(s, 10); }).filter(function (n) { return !isNaN(n); });
         var el = nodeAtPath(path);
         if (!el) return;
