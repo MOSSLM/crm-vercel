@@ -1,5 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import type { SiteConfig, SiteSection, BlogPost, StyleGuide } from "@/types";
+import {
+  resolveEnterpriseVariables,
+  deriveLayoutFieldsFromVariables,
+  type ReviewItem,
+} from "@/lib/site-builder/resolve-variables";
+
+export type { ReviewItem };
 
 function getServiceClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -7,24 +14,6 @@ function getServiceClient() {
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   return createClient(url, key, { auth: { persistSession: false } });
 }
-
-export interface ReviewItem {
-  name: string;
-  role: string;
-  text: string;
-  rating: number;
-  avatar: string;
-}
-
-type LeadMagnetProjectOverridesRow = {
-  override_entreprise_name: string | null;
-  override_city: string | null;
-  override_location: string | null;
-  override_phone: string | null;
-  override_email: string | null;
-  override_address: string | null;
-  variables: Record<string, unknown> | null;
-};
 
 export interface ResolvedSite {
   siteId: string;
@@ -54,7 +43,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_instances"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_instances, published_variables, published_reviews"
     )
     .eq("is_published", true);
 
@@ -94,96 +83,37 @@ export async function resolveSite(
     };
   }
 
-  // Fetch enterprise variables if linked
-  const vars: Record<string, string> = {};
+  // Prefer the publish-time snapshot so the deployed site is frozen between
+  // publishes. Live CRM edits (entreprises.name, lead_magnet_reviews, etc.)
+  // only propagate after the user clicks "Publier" again.
+  // Legacy sites published before this column existed have null snapshots:
+  // fall back to a live resolution for those.
+  const snapshotVars = (siteRow as { published_variables?: Record<string, string> | null }).published_variables;
+  const snapshotReviews = (siteRow as { published_reviews?: ReviewItem[] | null }).published_reviews;
+
+  let vars: Record<string, string>;
+  let reviews: ReviewItem[];
   let companyName: string | undefined;
   let logoUrl: string | undefined;
   let phone: string | undefined;
 
-  if (siteRow.enterprise_id) {
-    const { data: company } = await supabase
-      .from("entreprises")
-      .select(
-        "id, name, telephone, email, adresse, ville, code_postal, logo_url, site_web_canonique, note_moyenne, nombre_avis"
-      )
-      .eq("id", siteRow.enterprise_id)
-      .single();
-
-    if (company) {
-      vars["entreprise.nom"] = company.name ?? "";
-      vars["entreprise.telephone"] = company.telephone ?? "";
-      vars["entreprise.email"] = company.email ?? "";
-      vars["entreprise.adresse"] = company.adresse ?? "";
-      vars["entreprise.ville"] = company.ville ?? "";
-      vars["entreprise.code_postal"] = company.code_postal ?? "";
-      vars["entreprise.logo_url"] = company.logo_url ?? "";
-      vars["entreprise.site_web_canonique"] = company.site_web_canonique ?? "";
-      vars["entreprise.note_moyenne"] = String(company.note_moyenne ?? "");
-      vars["entreprise.nombre_avis"] = String(company.nombre_avis ?? "");
-      companyName = company.name ?? undefined;
-      logoUrl = company.logo_url ?? undefined;
-      phone = company.telephone ?? undefined;
-    }
-  }
-
-  // Load lead magnet project overrides and reviews
-  let reviews: ReviewItem[] = [];
-  if (siteRow.lead_magnet_project_id) {
-    const [projResult, reviewsResult] = await Promise.all([
-      supabase
-        .from("lead_magnet_projects")
-        .select(
-          "override_entreprise_name, override_city, override_location, " +
-          "override_phone, override_email, override_address, variables"
-        )
-        .eq("id", siteRow.lead_magnet_project_id)
-        .single(),
-      supabase
-        .from("lead_magnet_reviews")
-        .select("author_name, review_text, rating")
-        .eq("lead_magnet_project_id", siteRow.lead_magnet_project_id)
-        .eq("is_active", true)
-        .order("display_order", { ascending: true }),
-    ]);
-
-    const proj = projResult.data as {
-      override_entreprise_name: string | null;
-      override_city: string | null;
-      override_location: string | null;
-      override_phone: string | null;
-      override_email: string | null;
-      override_address: string | null;
-      variables: Record<string, unknown> | null;
-    } | null;
-    if (proj) {
-      if (proj.override_entreprise_name) {
-        vars["entreprise.nom"] = proj.override_entreprise_name;
-        companyName = proj.override_entreprise_name;
-      }
-      if (proj.override_city) vars["entreprise.ville_seo"] = proj.override_city;
-      if (proj.override_location) vars["entreprise.location"] = proj.override_location;
-      if (proj.override_phone) { vars["entreprise.telephone"] = proj.override_phone; phone = proj.override_phone; }
-      if (proj.override_email) vars["entreprise.email"] = proj.override_email;
-      if (proj.override_address) vars["entreprise.adresse"] = proj.override_address;
-      // Merge free-form variables bag
-      if (proj.variables && typeof proj.variables === "object") {
-        for (const [k, v] of Object.entries(proj.variables)) {
-          vars[k] = String(v);
-        }
-      }
-    }
-
-    reviews = ((reviewsResult.data ?? []) as Array<{ author_name: string | null; review_text: string | null; rating: number | null }>).map((r) => ({
-      name: r.author_name ?? "",
-      role: "",
-      text: r.review_text ?? "",
-      rating: Number(r.rating ?? 5),
-      avatar: "",
-    }));
-
-    if (reviews.length > 0) {
-      vars["__reviews"] = JSON.stringify(reviews);
-    }
+  if (snapshotVars && Object.keys(snapshotVars).length > 0) {
+    vars = { ...snapshotVars };
+    reviews = Array.isArray(snapshotReviews) ? snapshotReviews : [];
+    const layout = deriveLayoutFieldsFromVariables(vars);
+    companyName = layout.companyName;
+    logoUrl = layout.logoUrl;
+    phone = layout.phone;
+  } else {
+    const resolved = await resolveEnterpriseVariables(supabase, {
+      enterprise_id: siteRow.enterprise_id ?? null,
+      lead_magnet_project_id: siteRow.lead_magnet_project_id ?? null,
+    });
+    vars = resolved.variables;
+    reviews = resolved.reviews;
+    companyName = resolved.companyName;
+    logoUrl = resolved.logoUrl;
+    phone = resolved.phone;
   }
 
   // Merge client overrides into section data

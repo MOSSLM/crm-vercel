@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { resolveEnterpriseVariables } from "@/lib/site-builder/resolve-variables";
 
 export const dynamic = "force-dynamic";
 
@@ -30,18 +31,33 @@ export async function POST(request: Request, context: RouteContext) {
 
     // Snapshot current draft → published columns
     const [{ data: currentSite }, { data: currentInstances }] = await Promise.all([
-      supabase.from("sites").select("style_guide, sitemap, site_config").eq("id", siteId).single(),
+      supabase
+        .from("sites")
+        .select("style_guide, sitemap, site_config, enterprise_id, lead_magnet_project_id")
+        .eq("id", siteId)
+        .single(),
       supabase.from("site_section_instances")
         .select("*, section_def:site_sections (*)")
         .eq("site_id", siteId)
         .order("page_slug").order("sort_order"),
     ]);
 
+    // Snapshot enterprise variables + reviews so future edits to the
+    // entreprises / lead_magnet_projects rows don't leak into the
+    // published site until the next publish action.
+    const { variables: publishedVariables, reviews: publishedReviews } =
+      await resolveEnterpriseVariables(supabase, {
+        enterprise_id: (currentSite as { enterprise_id: number | null } | null)?.enterprise_id ?? null,
+        lead_magnet_project_id: (currentSite as { lead_magnet_project_id: string | null } | null)?.lead_magnet_project_id ?? null,
+      });
+
     const updatePayload: Record<string, unknown> = {
       is_published: true,
       published_style_guide: currentSite?.style_guide ?? null,
       published_sitemap: currentSite?.sitemap ?? null,
       published_instances: currentInstances ?? [],
+      published_variables: publishedVariables,
+      published_reviews: publishedReviews,
       published_at: new Date().toISOString(),
     };
     if (subdomain) updatePayload.published_subdomain = subdomain;
