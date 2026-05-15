@@ -10,6 +10,8 @@
 import React from "react";
 import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
+import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
+import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
 
@@ -41,6 +43,15 @@ export async function LibrarySectionInline({
   let renderName: string | null = null;
   let errorMsg: string | undefined;
 
+  // Split out __overrides — they're not data fields, they're DOM-path edits
+  // applied after render. Keep them server-side; the client hydrator gets
+  // them via the JSON payload (still inside `data`).
+  const overrides = (content.__overrides as Record<string, OverrideEntry> | undefined) ?? {};
+
+  // Pre-interpolate {{ var }} tokens inside data string fields so React
+  // renders the resolved text directly (matches the iframe behaviour).
+  const interpolatedData = interpolateData(content, variables);
+
   try {
     const compiled = await compileSection(code);
     compiledJs = compiled.js;
@@ -49,7 +60,7 @@ export async function LibrarySectionInline({
     const result = renderSectionToHTML({
       js: compiledJs,
       renderName,
-      data: content,
+      data: interpolatedData,
       variables,
       styleGuide,
     });
@@ -57,6 +68,27 @@ export async function LibrarySectionInline({
     errorMsg = result.error;
   } catch (err) {
     errorMsg = err instanceof Error ? err.message : String(err);
+  }
+
+  // Apply DOM-path overrides server-side so the deployed HTML reflects user
+  // edits on first paint (no flash) and works without JS. The client
+  // hydrator re-applies them post-hydration as a safety net.
+  let applied = 0;
+  let failed = 0;
+  if (html && Object.keys(overrides).length > 0) {
+    const result = applyOverridesToHTML(html, overrides, variables);
+    html = result.html;
+    applied = result.applied;
+    failed = result.failed;
+  }
+  if (typeof console !== "undefined") {
+    console.info("[SB:ssr]", {
+      instanceId,
+      overrideCount: Object.keys(overrides).length,
+      applied,
+      failed,
+      hasError: !!errorMsg,
+    });
   }
 
   const tokens = styleGuide
