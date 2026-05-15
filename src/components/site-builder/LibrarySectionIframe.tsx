@@ -84,15 +84,37 @@ export function LibrarySectionIframe({
     ...variables,
   }), [variables]);
 
+  // srcDoc only depends on the iframe shell (code, theme, mode). Runtime
+  // data (content, variables, overrides) is pushed via postMessage so the
+  // iframe never reloads + Babel never recompiles during user edits.
   const srcDoc = React.useMemo(
     () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides }),
-    [code, content, allVariables, styleGuide, wireframe, selectionEnabled, overrides]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [code, styleGuide, wireframe, selectionEnabled],
   );
+
+  const isReadyRef = React.useRef(false);
+
+  // Push data updates to the iframe whenever content / variables / overrides
+  // change. The first push happens on the iframe-ready message (handled
+  // below) so the initial state is consistent with subsequent updates.
+  React.useEffect(() => {
+    if (!isReadyRef.current) return;
+    const win = iframeRef.current?.contentWindow;
+    if (!win) return;
+    win.postMessage(
+      { __siteBuilder: "update-data", data: content, variables: allVariables, overrides: overrides ?? {} },
+      "*",
+    );
+  }, [content, allVariables, overrides]);
 
   // Whenever the source changes, give the iframe a real viewport again so
   // sections that rely on 100vh / min-h-screen render at the correct size
-  // before we measure them and shrink to fit.
+  // before we measure them and shrink to fit. Also reset ready flag — the
+  // new srcDoc is a fresh iframe and we need to wait for its iframe-ready
+  // message before pushing data again.
   React.useEffect(() => {
+    isReadyRef.current = false;
     setHeight(publicMode ? Math.max(minHeight, 1) : Math.max(minHeight, 720));
   }, [srcDoc, minHeight, publicMode]);
 
@@ -125,10 +147,18 @@ export function LibrarySectionIframe({
       if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
         setHeight(Math.ceil(data.height) + 2);
       }
+      if (data?.__siteBuilder === "iframe-ready") {
+        isReadyRef.current = true;
+        // Push the current runtime state now that the iframe is alive.
+        iframeRef.current?.contentWindow?.postMessage(
+          { __siteBuilder: "update-data", data: content, variables: allVariables, overrides: overrides ?? {} },
+          "*",
+        );
+      }
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [selectionEnabled, onElementClick, minHeight]);
+  }, [selectionEnabled, onElementClick, minHeight, content, allVariables, overrides]);
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   const handleLoad = React.useCallback(() => {
@@ -305,13 +335,20 @@ function buildHTML(
 
   const renderCall = renderName
     ? `try {
-        ReactDOM.createRoot(document.getElementById('root')).render(
-          React.createElement(${renderName}, {
-            tokens: window.__tokens,
-            data: window.__data,
-            variables: window.__variables
-          })
-        );
+        var __root = ReactDOM.createRoot(document.getElementById('root'));
+        function __render() {
+          __root.render(
+            React.createElement(${renderName}, {
+              tokens: window.__tokens,
+              data: window.__data,
+              variables: window.__variables
+            })
+          );
+        }
+        window.__rerender = __render;
+        __render();
+        // Tell parent we're ready to receive runtime data updates.
+        try { parent.postMessage({ __siteBuilder: 'iframe-ready' }, '*'); } catch(e) {}
       } catch(err) {
         document.getElementById('root').innerHTML =
           '<pre style="padding:16px;color:#e74c3c;font-size:12px;white-space:pre-wrap">' +
@@ -491,6 +528,19 @@ function buildHTML(
       } else {
         init();
       }
+
+      // Parent → iframe: refresh runtime data without rebuilding srcDoc.
+      // The shell HTML (Babel + section code) is stable; only data,
+      // variables and overrides change as the user types.
+      window.addEventListener('message', function (e) {
+        var msg = e.data;
+        if (!msg || msg.__siteBuilder !== 'update-data') return;
+        if (msg.data) window.__data = msg.data;
+        if (msg.variables) window.__variables = msg.variables;
+        window.__overrides = msg.overrides || {};
+        if (typeof window.__rerender === 'function') window.__rerender();
+        applyAll();
+      });
     })();
   <\/script>
   <script>
