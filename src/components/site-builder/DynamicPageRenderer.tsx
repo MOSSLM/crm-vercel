@@ -5,7 +5,11 @@ import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 import { generateShadeCSSVars, getContrastColor } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
-import { deriveMenuOverrides } from "@/lib/site-builder/menu-overrides";
+import {
+  deriveMenuOverrides,
+  NAVBAR_CATEGORIES,
+  TESTIMONIAL_CATEGORIES,
+} from "@/lib/site-builder/menu-overrides";
 import {
   resolveNavbarLayout,
   buildNavbarWrapperStyle,
@@ -163,15 +167,19 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     .map((inst) => (inst.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined)
     .filter((ref): ref is { theme_slug: string; section_id: string } => Boolean(ref));
 
-  const themeSectionMap = new Map<string, { code: string; example_data: Record<string, unknown> | null }>();
+  const themeSectionMap = new Map<string, { code: string; example_data: Record<string, unknown> | null; category: string | null }>();
   if (libRefs.length > 0) {
     const themeSlugs = [...new Set(libRefs.map((r) => r.theme_slug))];
     const { data: themeSections } = await supabase
       .from("theme_sections")
-      .select("theme_slug, section_id, code, example_data")
+      .select("theme_slug, section_id, code, example_data, category")
       .in("theme_slug", themeSlugs);
     for (const ts of themeSections ?? []) {
-      themeSectionMap.set(`${ts.theme_slug}:${ts.section_id}`, { code: ts.code, example_data: ts.example_data });
+      themeSectionMap.set(`${ts.theme_slug}:${ts.section_id}`, {
+        code: ts.code,
+        example_data: ts.example_data,
+        category: ts.category ?? null,
+      });
     }
   }
 
@@ -215,19 +223,35 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
       {instances.map((instance) => {
         const sectionDef = instance.section_def;
         const libRef = (instance.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined;
-        const menuOverrides = deriveMenuOverrides(sectionDef?.category, menus ?? undefined);
-        const isNavbar = sectionDef?.category === "navigation";
+        const libThemeSection = libRef ? themeSectionMap.get(`${libRef.theme_slug}:${libRef.section_id}`) : null;
+        // For library sections section_def is null; pull category from theme_sections instead.
+        const category: string | null = sectionDef?.category ?? libThemeSection?.category ?? null;
+        const menuOverrides = deriveMenuOverrides(category, menus ?? undefined);
+        const isNavbar = !!category && NAVBAR_CATEGORIES.has(category);
+        const isTestimonial = !!category && TESTIMONIAL_CATEGORIES.has(category);
         const navLayout = isNavbar ? resolveNavbarLayout(instance.content as Record<string, unknown>) : null;
         const navWrapperStyle = navLayout ? buildNavbarWrapperStyle(navLayout) : undefined;
 
+        const testimonialOverrides: Record<string, unknown> = {};
+        if (isTestimonial && reviews.length > 0) {
+          const existing = (instance.content as Record<string, unknown> | null)?.testimonials;
+          const hasCustom = Array.isArray(existing) && existing.length > 0;
+          if (!hasCustom) {
+            testimonialOverrides.testimonials = reviews.slice(0, 6);
+            testimonialOverrides.reviews = reviews.slice(0, 6);
+          }
+          testimonialOverrides.hasReviews = reviews.length > 0;
+        }
+
         // Library section: render inline (SSR) — no iframe
         if (libRef) {
-          const ts = themeSectionMap.get(`${libRef.theme_slug}:${libRef.section_id}`);
+          const ts = libThemeSection;
           if (!ts?.code) return null;
           const content = {
             ...(ts.example_data ?? {}),
             ...(instance.content as Record<string, unknown> ?? {}),
             ...menuOverrides,
+            ...testimonialOverrides,
           };
           const node = (
             <LibrarySectionInline
@@ -257,7 +281,15 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
         // Native section with structure: render server-side
         if (!sectionDef) return null;
         const native = (
-          <DynamicSectionPublic key={instance.id} instance={instance} sectionDef={sectionDef} guide={guide} variables={variables} reviews={reviews} menuOverrides={menuOverrides} />
+          <DynamicSectionPublic
+            key={instance.id}
+            instance={instance}
+            sectionDef={sectionDef}
+            guide={guide}
+            variables={variables}
+            reviews={reviews}
+            menuOverrides={{ ...menuOverrides, ...testimonialOverrides }}
+          />
         );
         if (navLayout && navLayout.position !== "static") {
           return (

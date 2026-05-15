@@ -12,7 +12,7 @@ import {
   type SectionColorScheme,
 } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
-import { deriveMenuOverrides } from "@/lib/site-builder/menu-overrides";
+import { deriveMenuOverrides, TESTIMONIAL_CATEGORIES } from "@/lib/site-builder/menu-overrides";
 
 interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
@@ -173,6 +173,26 @@ export function DynamicSectionRenderer({
   // Menus override for navbar/footer sections (only when blocks have no nav_link content)
   const menuOverrides = deriveMenuOverrides(sectionDef.category, menus);
 
+  // Auto-inject reviews into testimonial-category sections (live preview).
+  // Reviews are stringified into variables['__reviews'] by resolveEnterpriseVariables.
+  const testimonialOverrides: Record<string, unknown> = (() => {
+    if (!sectionDef.category || !TESTIMONIAL_CATEGORIES.has(sectionDef.category)) return {};
+    const reviewsRaw = variables?.__reviews;
+    if (!reviewsRaw) return { hasReviews: false };
+    let parsed: unknown[];
+    try {
+      parsed = JSON.parse(reviewsRaw) as unknown[];
+    } catch {
+      return { hasReviews: false };
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) return { hasReviews: false };
+    const existing = instance.content.testimonials;
+    const hasCustom = Array.isArray(existing) && existing.length > 0;
+    if (hasCustom) return { hasReviews: true };
+    const six = parsed.slice(0, 6);
+    return { testimonials: six, reviews: six, hasReviews: true };
+  })();
+
   // Color scheme override computed from content.__color_scheme
   const colorSchemeVars = resolveColorSchemeVars(instance.content, styleGuide);
 
@@ -237,6 +257,7 @@ export function DynamicSectionRenderer({
             content={{
               ...sectionDef.default_content,
               ...menuOverrides,
+              ...testimonialOverrides,
               ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
             }}
             overrides={instance.content.__overrides as Record<string, unknown> | undefined}
@@ -254,7 +275,7 @@ export function DynamicSectionRenderer({
 
   const { structure } = sectionDef;
   const adapted = adaptContentForRender(instance.content, instance.blocks ?? []);
-  const content = { ...sectionDef.default_content, ...menuOverrides, ...adapted };
+  const content = { ...sectionDef.default_content, ...menuOverrides, ...testimonialOverrides, ...adapted };
 
   const cssVars = styleGuideToCSSVars(styleGuide);
 

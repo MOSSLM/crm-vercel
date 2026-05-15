@@ -18,6 +18,7 @@ import {
   DEFAULT_NAVBAR_LAYOUT,
   type NavbarPosition,
 } from "@/lib/site-builder/position-layout";
+import { NAVBAR_CATEGORIES } from "@/lib/site-builder/menu-overrides";
 
 interface PropertiesPanelProps {
   onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
@@ -182,7 +183,7 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
         {activeTab === "style" && (
           <div className="px-4 py-3 space-y-4">
             {/* Position settings — only for navbar sections */}
-            {sectionDef.category === "navigation" && (
+            {sectionDef.category && NAVBAR_CATEGORIES.has(sectionDef.category) && (
               <NavbarPositionPanel instance={instance} updateContent={updateContent} />
             )}
 

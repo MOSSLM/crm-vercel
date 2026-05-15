@@ -12,12 +12,12 @@ export function deriveMenuOverrides(
   menus: SiteMenus | undefined | null,
 ): Record<string, unknown> {
   if (!menus || !category) return {};
-  if (category === "navigation") {
+  if (category === "navbar" || category === "navigation") {
     return {
       links: menus.nav.map((item) => ({ label: item.label, href: item.url, external: item.external })),
     };
   }
-  if (category === "footer") {
+  if (category === "footers" || category === "footer") {
     return {
       footerLinks: menus.footer.map((item) => ({ label: item.label, href: item.url })),
       legalLinks: menus.footerLegal.map((item) => ({ label: item.label, href: item.url })),
@@ -25,3 +25,9 @@ export function deriveMenuOverrides(
   }
   return {};
 }
+
+/** Categories that should trigger the navbar position wrapper + headroom. */
+export const NAVBAR_CATEGORIES = new Set(["navbar", "navigation"]);
+
+/** Categories that should auto-fill testimonial / social-proof data. */
+export const TESTIMONIAL_CATEGORIES = new Set(["testimonials", "social-proof", "Social Proof"]);
