@@ -20,6 +20,9 @@ export interface IframeElementAttrs {
   required?: boolean;
   action?: string;
   method?: string;
+  /** True when the "image" kind was inferred from a CSS background-image
+   *  rather than an `<img src>` attribute. */
+  isBackground?: boolean;
 }
 
 export interface IframeElementClickInfo {
@@ -526,6 +529,21 @@ function buildHTML(
         return path;
       }
 
+      function extractBgUrl(el) {
+        var bg = window.getComputedStyle(el).backgroundImage;
+        if (!bg || bg === 'none') return null;
+        var m = bg.match(/url\\((['"]?)(.+?)\\1\\)/);
+        return m ? m[2] : null;
+      }
+      function findBgImageAncestor(el) {
+        var node = el;
+        for (var i = 0; i < 6 && node && node !== document.body; i++) {
+          if (extractBgUrl(node)) return node;
+          node = node.parentElement;
+        }
+        return null;
+      }
+
       function classify(el) {
         var tag = el.tagName.toLowerCase();
         if (tag === 'img' || tag === 'picture') return 'image';
@@ -538,14 +556,17 @@ function buildHTML(
         }
         if (tag === 'input' || tag === 'textarea') return 'input';
         if (tag === 'form') return 'form';
+        if (extractBgUrl(el)) return 'image';
         return 'text';
       }
 
       function attrsFor(kind, el) {
         var a = {};
         if (kind === 'image') {
-          a.src = el.getAttribute('src') || '';
+          var bgUrl = extractBgUrl(el);
+          a.src = el.getAttribute('src') || bgUrl || '';
           a.alt = el.getAttribute('alt') || '';
+          if (bgUrl) a.isBackground = true;
         } else if (kind === 'button' || kind === 'link') {
           a.href = el.getAttribute('href') || '';
           a.target = el.getAttribute('target') || '_self';
@@ -563,21 +584,32 @@ function buildHTML(
         return a;
       }
 
+      function resolveTarget(t) {
+        // Prefer an inline SELECTABLE match. Fall back to the nearest ancestor
+        // with a background-image so headers / banners are clickable.
+        var el = t.closest(SELECTABLE);
+        if (el) return el;
+        return findBgImageAncestor(t);
+      }
+
       document.addEventListener('mouseover', function (e) {
         var t = e.target;
         if (!(t instanceof Element)) return;
-        if (!t.matches(SELECTABLE)) return;
-        t.setAttribute('data-sb-hover', '1');
+        var el = resolveTarget(t);
+        if (!el) return;
+        el.setAttribute('data-sb-hover', '1');
       }, true);
       document.addEventListener('mouseout', function (e) {
         var t = e.target;
         if (!(t instanceof Element)) return;
         t.removeAttribute('data-sb-hover');
+        var anc = findBgImageAncestor(t);
+        if (anc) anc.removeAttribute('data-sb-hover');
       }, true);
       document.addEventListener('click', function (e) {
         var t = e.target;
         if (!(t instanceof Element)) return;
-        var el = t.closest(SELECTABLE);
+        var el = resolveTarget(t);
         if (!el) return;
         e.preventDefault();
         e.stopPropagation();

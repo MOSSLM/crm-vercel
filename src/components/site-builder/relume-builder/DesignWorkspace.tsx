@@ -88,6 +88,8 @@ export interface ElementAttrs {
   required?: boolean;
   action?: string;
   method?: string;
+  /** True when the "image" kind was inferred from a CSS background-image. */
+  isBackground?: boolean;
 }
 
 interface SelectedElement {
