@@ -100,6 +100,7 @@ export const AppSidebar = () => {
     { title: "Qualification", icon: CheckSquare, href: "/qualification" },
     { title: "Nouvelle Recherche", icon: Search, href: "/search/new" },
     { title: "Audits", icon: ClipboardList, href: "/opportunities" },
+    { title: "Formulaires", icon: ClipboardList, href: "/forms" },
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
     { title: "Thèmes", icon: Layout, href: "/themes" },
     { title: "Créateur de sections", icon: BookOpen, href: "/sections-library" },
