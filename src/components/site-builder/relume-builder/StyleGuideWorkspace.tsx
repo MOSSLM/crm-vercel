@@ -976,12 +976,13 @@ function ButtonsModal({
           )}
         </div>
 
-        {/* Tab switcher */}
-        <div className="seg" style={{ width: "100%" }}>
+        {/* Tab switcher — primary / secondary */}
+        <div className="seg full" role="tablist" aria-label="Variante de bouton">
           {(["primary", "secondary"] as const).map((t) => (
             <button
               key={t}
-              style={{ flex: 1, justifyContent: "center" }}
+              type="button"
+              role="tab"
               aria-pressed={tab === t ? "true" : "false"}
               onClick={() => setTab(t)}
             >

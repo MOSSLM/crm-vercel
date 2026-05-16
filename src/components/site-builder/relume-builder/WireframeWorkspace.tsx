@@ -1,11 +1,10 @@
 "use client";
 
 import React from "react";
-import { createPortal } from "react-dom";
 import {
   Laptop, Tablet, Smartphone, Plus, Trash2, Layers,
-  Search, Sparkles, MoreHorizontal,
-  ChevronDown, ChevronUp, RefreshCw, Loader2, MessageSquare, Send,
+  Sparkles, MoreHorizontal,
+  ChevronDown, ChevronUp, RefreshCw, Loader2, MessageSquare, Send, Search,
   ZoomIn, ZoomOut,
 } from "lucide-react";
 
@@ -19,6 +18,7 @@ import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 import { Btn, Pane, Pop } from "./skin-primitives";
+import { SectionPickerModal } from "./SectionPickerModal";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -73,116 +73,6 @@ const CATEGORIES = ["Tous", "Hero", "Services", "Content", "Social Proof", "Cont
  * inside an `overflow: hidden` ancestor (like .device-frame in wireframe).
  * Position is computed from the trigger button's getBoundingClientRect.
  */
-function SectionTypePicker({
-  anchorRect,
-  availableSections,
-  onSelect,
-  onClose,
-}: {
-  anchorRect: DOMRect | null;
-  availableSections: SiteSectionDef[];
-  onSelect: (s: SiteSectionDef) => void;
-  onClose: () => void;
-}) {
-  const [q, setQ] = React.useState("");
-  const filtered = availableSections.filter((s) =>
-    s.name.toLowerCase().includes(q.toLowerCase()) ||
-    (s.category ?? "").toLowerCase().includes(q.toLowerCase()),
-  );
-
-  const groups = React.useMemo(() => {
-    const map: Record<string, SiteSectionDef[]> = {};
-    for (const s of filtered) {
-      const key = s.category ?? "Other";
-      if (!map[key]) map[key] = [];
-      map[key].push(s);
-    }
-    return map;
-  }, [filtered]);
-
-  // Close on outside click and Escape
-  const popRef = React.useRef<HTMLDivElement>(null);
-  React.useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) onClose();
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
-  if (!anchorRect) return null;
-
-  const WIDTH = 260;
-  // Align popover right edge with trigger right edge, drop below the trigger.
-  const left = Math.max(8, Math.min(window.innerWidth - WIDTH - 8, anchorRect.right - WIDTH));
-  const top = Math.min(window.innerHeight - 320, anchorRect.bottom + 6);
-
-  return createPortal(
-    <div className="sb-skin">
-      <div
-        ref={popRef}
-        className="pop"
-        style={{
-          position: "fixed",
-          left,
-          top,
-          width: WIDTH,
-          display: "flex",
-          flexDirection: "column",
-          maxHeight: 320,
-          zIndex: 100,
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ padding: 8, borderBottom: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6, fontFamily: "var(--font-mono)" }}>
-            Changer de section
-          </div>
-          <div className="search-wrap" style={{ position: "relative" }}>
-            <Search size={10} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-4)" }} />
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Rechercher…"
-              className="input"
-              style={{ paddingLeft: 22, height: 24, fontSize: 11 }}
-            />
-          </div>
-        </div>
-        <div style={{ overflow: "auto", padding: 2, flex: 1 }}>
-          {Object.entries(groups).map(([cat, sections]) => (
-            <React.Fragment key={cat}>
-              <div style={{ padding: "6px 8px 2px", fontSize: 9, fontWeight: 600, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: ".06em", fontFamily: "var(--font-mono)" }}>
-                {cat}
-              </div>
-              {sections.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={(e) => { e.stopPropagation(); onSelect(s); onClose(); }}
-                  className="btn ghost sm"
-                  style={{ width: "100%", justifyContent: "flex-start" }}
-                >
-                  {s.name}
-                </button>
-              ))}
-            </React.Fragment>
-          ))}
-          {filtered.length === 0 && (
-            <p style={{ fontSize: 10.5, color: "var(--text-4)", textAlign: "center", padding: 16, margin: 0 }}>Aucune section trouvée</p>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 // ─── Section AI popover ──────────────────────────────────────────────────────
 
 function SectionAIPopover({
@@ -259,8 +149,14 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
   const [search, setSearch] = React.useState("");
   const [activeCategory, setActiveCategory] = React.useState("Tous");
   const [sectionMenuOpen, setSectionMenuOpen] = React.useState<string | null>(null);
-  const [sectionTypePicker, setSectionTypePicker] = React.useState<string | null>(null);
-  const [sectionTypePickerRect, setSectionTypePickerRect] = React.useState<DOMRect | null>(null);
+  // Replace flow: matches Design workspace (uses shared SectionPickerModal +
+  // REPLACE_INSTANCE reducer action) instead of the previous in-canvas popover
+  // which got clipped by .device-frame { overflow: hidden }.
+  const [replaceTargetId, setReplaceTargetId] = React.useState<string | null>(null);
+  const replaceTargetInst = replaceTargetId ? state.instances[replaceTargetId] : null;
+  const replaceTargetDef = replaceTargetInst
+    ? (replaceTargetInst.section_def ?? (replaceTargetInst.section_id ? sectionDefs[replaceTargetInst.section_id] : null))
+    : null;
   const [sectionAIOpen, setSectionAIOpen] = React.useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useAIModel();
   const [pageAIOpen, setPageAIOpen] = React.useState<string | null>(null);
@@ -296,21 +192,6 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
     dispatch({ type: "ADD_INSTANCE", payload: { instance: newInstance, pageSlug } });
   };
 
-  const swapSectionType = (instanceId: string, newDef: SiteSectionDef) => {
-    const inst = state.instances[instanceId];
-    if (!inst) return;
-    dispatch({
-      type: "UPDATE_INSTANCE_CONTENT",
-      payload: { id: instanceId, content: { ...newDef.default_content } },
-    });
-    dispatch({
-      type: "UPDATE_INSTANCE_STYLE",
-      payload: { id: instanceId, style: { _section_def_id: newDef.id, _section_def_type: newDef.type } },
-    });
-    setSectionTypePicker(null);
-    setSectionTypePickerRect(null);
-  };
-
   const handleRegeneratePage = async (pageSlug: string, pageId: string) => {
     const context = pageContexts[pageId] ?? "";
     setPageLoading(pageId);
@@ -334,15 +215,30 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden", flex: 1, minHeight: 0 }}>
 
-      {/* Section type picker — portaled at root so it isn't clipped by .device-frame */}
-      {sectionTypePicker && (
-        <SectionTypePicker
-          anchorRect={sectionTypePickerRect}
-          availableSections={availableSections}
-          onSelect={(s) => swapSectionType(sectionTypePicker, s)}
-          onClose={() => { setSectionTypePicker(null); setSectionTypePickerRect(null); }}
-        />
-      )}
+      {/* Replace flow — same modal as Design workspace */}
+      <SectionPickerModal
+        open={!!replaceTargetId}
+        sections={availableSections}
+        initialCategory={replaceTargetDef?.category ?? null}
+        onHover={(secDef) =>
+          replaceTargetId
+            ? dispatch({
+                type: "SET_PREVIEW_REPLACE",
+                payload: secDef ? { instanceId: replaceTargetId, sectionDef: secDef } : null,
+              })
+            : undefined
+        }
+        onPick={(secDef) => {
+          if (!replaceTargetId) return;
+          dispatch({ type: "REPLACE_INSTANCE", payload: { instanceId: replaceTargetId, sectionDef: secDef } });
+          dispatch({ type: "SET_PREVIEW_REPLACE", payload: null });
+          setReplaceTargetId(null);
+        }}
+        onClose={() => {
+          dispatch({ type: "SET_PREVIEW_REPLACE", payload: null });
+          setReplaceTargetId(null);
+        }}
+      />
 
       {/* ─ Left Panel ──────────────────────────────────────────────────── */}
       {leftPanel && (
@@ -616,17 +512,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                         </div>
                         <div style={{ position: "relative" }}>
                           <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (sectionTypePicker === instanceId) {
-                                setSectionTypePicker(null);
-                                setSectionTypePickerRect(null);
-                              } else {
-                                const rect = (e.currentTarget as HTMLButtonElement).getBoundingClientRect();
-                                setSectionTypePickerRect(rect);
-                                setSectionTypePicker(instanceId);
-                              }
-                            }}
+                            onClick={(e) => { e.stopPropagation(); setReplaceTargetId(instanceId); }}
                             title="Changer de section"
                           >
                             <RefreshCw size={11} />
