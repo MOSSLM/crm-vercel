@@ -14,6 +14,7 @@ import {
   resolveNavbarLayout,
   buildNavbarWrapperStyle,
   HEADROOM_SCRIPT,
+  OVERLAY_STICKY_SCRIPT,
 } from "@/lib/site-builder/position-layout";
 import type { ReviewItem } from "@/lib/site-resolver";
 import { extractClassTokens } from "@/lib/library-section/preprocess";
@@ -269,6 +270,8 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
                 key={instance.id}
                 data-navbar-wrapper={instance.id}
                 data-headroom={navLayout.headroom ? "1" : undefined}
+                data-overlay={navLayout.overlay ? "1" : undefined}
+                data-top-offset={navLayout.overlay ? String(navLayout.topOffset) : undefined}
                 style={navWrapperStyle}
               >
                 {node}
@@ -297,6 +300,8 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
               key={instance.id}
               data-navbar-wrapper={instance.id}
               data-headroom={navLayout.headroom ? "1" : undefined}
+              data-overlay={navLayout.overlay ? "1" : undefined}
+              data-top-offset={navLayout.overlay ? String(navLayout.topOffset) : undefined}
               style={navWrapperStyle}
             >
               {native}
@@ -311,6 +316,13 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
         (i) => i.section_def?.category === "navigation" && resolveNavbarLayout(i.content as Record<string, unknown>).headroom,
       ) && (
         <script dangerouslySetInnerHTML={{ __html: HEADROOM_SCRIPT }} />
+      )}
+
+      {/* Overlay-sticky: navbar floats over first section, promotes to fixed on scroll */}
+      {instances.some(
+        (i) => i.section_def?.category === "navigation" && resolveNavbarLayout(i.content as Record<string, unknown>).overlay,
+      ) && (
+        <script dangerouslySetInnerHTML={{ __html: OVERLAY_STICKY_SCRIPT }} />
       )}
 
       {/* Mount interactive React on each library section after hydration */}

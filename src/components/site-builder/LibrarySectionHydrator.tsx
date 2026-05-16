@@ -13,11 +13,12 @@
 import React, { useEffect } from "react";
 import { hydrateRoot } from "react-dom/client";
 import { interpolateData } from "@/lib/library-section/interpolate";
+import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
 
 interface OverrideEntry {
-  kind: "text" | "image" | "bg_image" | "link_href" | "button_href" | "attr";
+  kind: "text" | "rich_text" | "image" | "bg_image" | "link_href" | "button_href" | "attr" | "style";
   value: string;
-  meta?: { attrName?: string };
+  meta?: { attrName?: string; style?: Record<string, string> };
 }
 
 interface SectionPayload {
@@ -46,6 +47,10 @@ function nodeAtPath(root: Element, path: number[]): Element | null {
   return node;
 }
 
+function camelToKebab(name: string): string {
+  return name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
+}
+
 function applyOverridesToContainer(
   container: Element,
   overrides: Record<string, OverrideEntry>,
@@ -70,6 +75,11 @@ function applyOverridesToContainer(
         case "text":
           if (el.textContent !== value) el.textContent = value;
           break;
+        case "rich_text": {
+          const safe = sanitizeRichText(value);
+          if (el.innerHTML !== safe) el.innerHTML = safe;
+          break;
+        }
         case "image":
           if (el.getAttribute("src") !== value) el.setAttribute("src", value);
           break;
@@ -87,6 +97,19 @@ function applyOverridesToContainer(
         case "attr":
           if (entry.meta?.attrName) el.setAttribute(entry.meta.attrName, value);
           break;
+        case "style": {
+          const styleMap = entry.meta?.style;
+          if (!styleMap || typeof styleMap !== "object") break;
+          if (!(el instanceof HTMLElement)) break;
+          for (const [k, v] of Object.entries(styleMap)) {
+            if (typeof v !== "string" || !v) {
+              el.style.removeProperty(camelToKebab(k));
+              continue;
+            }
+            el.style.setProperty(camelToKebab(k), v);
+          }
+          break;
+        }
       }
     } catch {
       // Swallow per-override errors so the page keeps rendering.

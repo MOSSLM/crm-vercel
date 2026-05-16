@@ -1,13 +1,15 @@
 "use client";
 
 import React from "react";
-import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon } from "lucide-react";
+import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify } from "lucide-react";
 import type { SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "../RelumeBuilderProvider";
 import { resolveContentBinding, type BindingResult, type BindingLocation } from "@/lib/site-builder/resolve-content-binding";
 import { VariableTextarea } from "../VariableTextarea";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 import type { ElementKind, ElementAttrs } from "../DesignWorkspace";
+import { RichTextEditor } from "../rich-text-editor";
+import { looksLikeRichText, sanitizeRichText } from "@/lib/site-builder/sanitize-html";
 
 export interface SelectedElementShape {
   instanceId: string;
@@ -160,9 +162,60 @@ function PanelHeader({ kind, binding }: { kind: ElementKind; binding: BindingRes
 
 // ─── Text editor ──────────────────────────────────────────────────────────────
 
+const FONT_FAMILY_OPTIONS = [
+  "(inherit)",
+  "Instrument Serif", "Fraunces", "Playfair Display", "Bodoni Moda", "DM Serif Display",
+  "Cormorant Garamond", "Lora", "EB Garamond", "Crimson Pro", "PT Serif",
+  "Merriweather", "Source Serif 4",
+  "Geist", "Inter", "Instrument Sans", "Manrope", "Outfit", "Unbounded",
+  "DM Sans", "Plus Jakarta Sans", "Sora", "Space Grotesk", "Work Sans",
+  "Anton", "Archivo Black", "Bebas Neue", "Oswald",
+];
+
+const ALIGN_OPTIONS: Array<{ id: "left" | "center" | "right" | "justify"; Icon: React.ElementType; label: string }> = [
+  { id: "left", Icon: AlignLeft, label: "Gauche" },
+  { id: "center", Icon: AlignCenter, label: "Centre" },
+  { id: "right", Icon: AlignRight, label: "Droite" },
+  { id: "justify", Icon: AlignJustify, label: "Justifié" },
+];
+
+const STYLE_GUIDE_COLOR_KEYS = ["primary", "secondary", "accent", "background", "text", "textMuted"] as const;
+
+/** Read a style override map for a given DOM path. Stored as `<pathStr>:style`
+ *  → entry { kind: "style", meta: { style: { …camelCase keys… } } }. */
+function readStyleOverride(instance: SiteSectionInstance, pathStr: string): Record<string, string> {
+  const all = (instance.content.__overrides as Record<string, { kind?: string; meta?: { style?: Record<string, string> } }> | undefined) ?? {};
+  const entry = all[`${pathStr}:style`];
+  return entry?.meta?.style ?? {};
+}
+
+/** Merge a patch into the style override map for a given path. */
+function writeStyleOverride(
+  instance: SiteSectionInstance,
+  dispatch: (loc: BindingLocation, patch: Record<string, unknown>) => void,
+  pathStr: string,
+  patch: Record<string, string | undefined>,
+): void {
+  const current = readStyleOverride(instance, pathStr);
+  const merged: Record<string, string> = { ...current };
+  for (const [k, v] of Object.entries(patch)) {
+    if (!v) delete merged[k];
+    else merged[k] = v;
+  }
+  const all = { ...((instance.content.__overrides as Record<string, unknown> | undefined) ?? {}) };
+  const key = `${pathStr}:style`;
+  if (Object.keys(merged).length === 0) {
+    delete all[key];
+  } else {
+    all[key] = { kind: "style", value: "", meta: { style: merged } };
+  }
+  dispatch({ scope: "instance" }, { __overrides: all });
+}
+
 function TextPanel({ element, instance, binding }: { element: SelectedElementShape; instance: SiteSectionInstance; binding: BindingResult }) {
   const { state } = useRelumeBuilder();
   const dispatch = useDispatcher(instance);
+  const pathStr = binding.strategy === "override" ? binding.pathStr : element.path.join(".");
 
   let currentValue = element.text;
   if (binding.strategy === "direct" || binding.strategy === "field-id") {
@@ -174,11 +227,17 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
     const label = compositeRead(settings, binding.key).label;
     if (typeof label === "string") currentValue = label;
   } else if (binding.strategy === "override") {
-    const ov = readOverride(instance, binding.pathStr, "text");
+    // Prefer the rich_text override, fall back to plain text.
+    const ovRich = readOverride(instance, binding.pathStr, "rich_text");
+    const ov = ovRich ?? readOverride(instance, binding.pathStr, "text");
     if (ov !== undefined) currentValue = ov;
   }
 
-  const onChange = (val: string) => {
+  /** Persist whatever the editor emits. If it contains markup we store it
+   *  as `rich_text` (override) — even on direct/composite bindings we
+   *  reuse the same key but the renderer detects HTML and switches mode. */
+  const handleRichChange = (val: string) => {
+    const isRich = looksLikeRichText(val);
     if (binding.strategy === "direct" || binding.strategy === "field-id") {
       dispatch(binding.location, { [binding.key]: val });
     } else if (binding.strategy === "composite") {
@@ -188,29 +247,215 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
     } else if (binding.strategy === "pair") {
       dispatch(binding.location, { [binding.labelKey]: val });
     } else {
-      setOverride(instance, dispatch, binding.pathStr, { kind: "text", value: val });
+      setOverride(instance, dispatch, binding.pathStr, { kind: isRich ? "rich_text" : "text", value: val });
     }
   };
 
+  const elementStyle = readStyleOverride(instance, pathStr);
+  const patchStyle = (patch: Record<string, string | undefined>) => writeStyleOverride(instance, dispatch, pathStr, patch);
+
+  const fontSizePx = elementStyle.fontSize ? parseInt(elementStyle.fontSize) : null;
+  const lineHeight = elementStyle.lineHeight ? parseFloat(elementStyle.lineHeight) : null;
+  const fontWeight = elementStyle.fontWeight ? parseInt(elementStyle.fontWeight) : null;
+  const align = (elementStyle.textAlign as "left" | "center" | "right" | "justify" | undefined) ?? undefined;
+  const colorOverride = elementStyle.color ?? "";
+  const isItalic = elementStyle.fontStyle === "italic";
+  const isUnderline = (elementStyle.textDecoration ?? "").includes("underline");
+
   return (
-    <div className="p-3 space-y-2">
+    <div className="p-3" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <PanelHeader kind="text" binding={binding} />
-      <div className="space-y-1">
-        <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block">Contenu</label>
-        <VariableTextarea
-          value={currentValue}
-          onChange={onChange}
+
+      {/* TEXTE */}
+      <div>
+        <div className="field-label"><span>Contenu</span></div>
+        <RichTextEditor
+          value={looksLikeRichText(currentValue) ? sanitizeRichText(currentValue) : currentValue}
+          onChange={handleRichChange}
           placeholder="Texte…"
-          rows={4}
-          className="w-full border border-gray-200 rounded-md px-2.5 py-2 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
           variables={state.variableContext}
-          variant="light"
+          minHeight={92}
         />
         {binding.strategy === "override" && (
-          <p className="text-[10px] text-amber-700 bg-amber-50 rounded px-2 py-1">
+          <p className="alert-soft warn" style={{ marginTop: 6, fontSize: 10.5 }}>
             Ce texte est codé en dur dans la section. La modification est appliquée via un override DOM.
           </p>
         )}
+      </div>
+
+      {/* TYPOGRAPHIE */}
+      <div>
+        <div className="field-label"><span>Typographie</span></div>
+
+        <div className="field">
+          <div className="field-label"><span>Famille</span></div>
+          <select
+            className="select"
+            value={elementStyle.fontFamily ?? "(inherit)"}
+            onChange={(e) => patchStyle({ fontFamily: e.target.value === "(inherit)" ? undefined : e.target.value })}
+          >
+            {FONT_FAMILY_OPTIONS.map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="range-row">
+          <label>Taille</label>
+          <input
+            type="range" min={10} max={120} step={1}
+            value={fontSizePx ?? 16}
+            onChange={(e) => patchStyle({ fontSize: `${e.target.value}px` })}
+          />
+          <input
+            type="number" min={10} max={200}
+            value={fontSizePx ?? ""}
+            placeholder="px"
+            onChange={(e) => {
+              const n = parseInt(e.target.value);
+              patchStyle({ fontSize: isNaN(n) ? undefined : `${n}px` });
+            }}
+            className="input mono"
+            style={{ width: 56, height: 22, padding: "0 4px", fontSize: 10.5 }}
+          />
+        </div>
+
+        <div className="range-row">
+          <label>Hauteur ligne</label>
+          <input
+            type="range" min={0.8} max={2.4} step={0.05}
+            value={lineHeight ?? 1.2}
+            onChange={(e) => patchStyle({ lineHeight: e.target.value })}
+          />
+          <input
+            type="number" min={0.5} max={3} step={0.05}
+            value={lineHeight ?? ""}
+            placeholder="1.2"
+            onChange={(e) => patchStyle({ lineHeight: e.target.value || undefined })}
+            className="input mono"
+            style={{ width: 56, height: 22, padding: "0 4px", fontSize: 10.5 }}
+          />
+        </div>
+
+        <div className="range-row">
+          <label>Poids</label>
+          <input
+            type="range" min={100} max={900} step={50}
+            value={fontWeight ?? 400}
+            onChange={(e) => patchStyle({ fontWeight: e.target.value })}
+          />
+          <input
+            type="number" min={100} max={900} step={50}
+            value={fontWeight ?? ""}
+            placeholder="400"
+            onChange={(e) => {
+              const n = parseInt(e.target.value);
+              patchStyle({ fontWeight: isNaN(n) ? undefined : String(n) });
+            }}
+            className="input mono"
+            style={{ width: 56, height: 22, padding: "0 4px", fontSize: 10.5 }}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+          {[300, 400, 500, 600, 700, 800].map((w) => (
+            <button
+              key={w}
+              className="btn outline xs"
+              style={{
+                height: 22, padding: "0 8px",
+                background: fontWeight === w ? "var(--text)" : undefined,
+                color: fontWeight === w ? "var(--bg)" : undefined,
+                borderColor: fontWeight === w ? "var(--text)" : undefined,
+              }}
+              onClick={() => patchStyle({ fontWeight: String(w) })}
+            >{w}</button>
+          ))}
+        </div>
+
+        <div className="field" style={{ marginTop: 10 }}>
+          <div className="field-label"><span>Alignement</span></div>
+          <div className="seg full">
+            {ALIGN_OPTIONS.map(({ id, Icon, label }) => (
+              <button
+                key={id}
+                type="button"
+                aria-pressed={align === id ? "true" : "false"}
+                onClick={() => patchStyle({ textAlign: align === id ? undefined : id })}
+                title={label}
+              >
+                <Icon size={12} />
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn outline xs"
+            style={{ flex: 1, justifyContent: "center", background: isItalic ? "var(--text)" : undefined, color: isItalic ? "var(--bg)" : undefined, borderColor: isItalic ? "var(--text)" : undefined }}
+            onClick={() => patchStyle({ fontStyle: isItalic ? undefined : "italic" })}
+            title="Italique sur tout l'élément"
+          >
+            Italique élément
+          </button>
+          <button
+            type="button"
+            className="btn outline xs"
+            style={{ flex: 1, justifyContent: "center", background: isUnderline ? "var(--text)" : undefined, color: isUnderline ? "var(--bg)" : undefined, borderColor: isUnderline ? "var(--text)" : undefined }}
+            onClick={() => patchStyle({ textDecoration: isUnderline ? undefined : "underline" })}
+            title="Souligné sur tout l'élément"
+          >
+            Souligné élément
+          </button>
+        </div>
+      </div>
+
+      {/* COULEUR */}
+      <div>
+        <div className="field-label"><span>Couleur</span></div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+          {STYLE_GUIDE_COLOR_KEYS.map((k) => {
+            const hex = state.styleGuide.colors[k];
+            const isOn = colorOverride.toLowerCase() === hex.toLowerCase();
+            return (
+              <button
+                key={k}
+                title={`${k} · ${hex}`}
+                onClick={() => patchStyle({ color: hex })}
+                style={{
+                  width: 24, height: 24, borderRadius: 6,
+                  background: hex,
+                  border: "1.5px solid var(--surface)",
+                  boxShadow: isOn
+                    ? "0 0 0 2px var(--text)"
+                    : "0 0 0 1px var(--border-2)",
+                  cursor: "default",
+                }}
+              />
+            );
+          })}
+          {colorOverride && (
+            <button
+              className="btn ghost xs"
+              onClick={() => patchStyle({ color: undefined })}
+              title="Revenir à la couleur héritée"
+              style={{ height: 22 }}
+            >
+              Auto
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="text"
+            value={colorOverride}
+            onChange={(e) => patchStyle({ color: e.target.value || undefined })}
+            placeholder="#RRGGBB ou #RRGGBBAA"
+            className="input mono"
+            style={{ flex: 1, height: 26, fontSize: 11 }}
+          />
+        </div>
       </div>
     </div>
   );

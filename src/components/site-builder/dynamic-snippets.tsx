@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { SnippetDefinition } from "@/types";
+import { sanitizeRichText, looksLikeRichText } from "@/lib/site-builder/sanitize-html";
 
 interface SnippetRendererProps {
   snippet: SnippetDefinition;
@@ -40,19 +41,23 @@ export function SnippetRenderer({ snippet, content, selected, onSelect }: Snippe
     const level = Math.min(Math.max(parseInt(rp("level")) || 2, 1), 6);
     const Tag = `h${level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
     const sizeMap: Record<number, string> = { 1: "2.5rem", 2: "2rem", 3: "1.5rem", 4: "1.25rem", 5: "1.1rem", 6: "1rem" };
-    return wrap(
-      <Tag style={{ fontFamily: "var(--font-heading)", fontSize: sizeMap[level] ?? "2rem", fontWeight: 700, color: rp("color") || "var(--color-text)", textAlign: (rp("align") as React.CSSProperties["textAlign"]) || "left", lineHeight: 1.2, margin: 0 }}>
-        {rp("text")}
-      </Tag>
-    );
+    const text = rp("text");
+    const baseStyle: React.CSSProperties = { fontFamily: "var(--font-heading)", fontSize: sizeMap[level] ?? "2rem", fontWeight: 700, color: rp("color") || "var(--color-text)", textAlign: (rp("align") as React.CSSProperties["textAlign"]) || "left", lineHeight: 1.2, margin: 0 };
+    if (looksLikeRichText(text)) {
+      return wrap(
+        <Tag style={baseStyle} dangerouslySetInnerHTML={{ __html: sanitizeRichText(text) }} />,
+      );
+    }
+    return wrap(<Tag style={baseStyle}>{text}</Tag>);
   }
 
   if (snippet.type === "paragraph") {
-    return wrap(
-      <p style={{ fontFamily: "var(--font-body)", color: rp("color") || "var(--color-text-muted)", textAlign: (rp("align") as React.CSSProperties["textAlign"]) || "left", maxWidth: rp("maxWidth") || undefined, margin: rp("align") === "center" ? "0 auto" : 0, lineHeight: 1.7 }}>
-        {rp("text")}
-      </p>
-    );
+    const text = rp("text");
+    const baseStyle: React.CSSProperties = { fontFamily: "var(--font-body)", color: rp("color") || "var(--color-text-muted)", textAlign: (rp("align") as React.CSSProperties["textAlign"]) || "left", maxWidth: rp("maxWidth") || undefined, margin: rp("align") === "center" ? "0 auto" : 0, lineHeight: 1.7 };
+    if (looksLikeRichText(text)) {
+      return wrap(<p style={baseStyle} dangerouslySetInnerHTML={{ __html: sanitizeRichText(text) }} />);
+    }
+    return wrap(<p style={baseStyle}>{text}</p>);
   }
 
   if (snippet.type === "badge") {

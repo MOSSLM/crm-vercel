@@ -314,6 +314,9 @@
     background: var(--text); color: var(--bg);
   }
   .sb-skin .seg.compact > button{ padding: 0 6px; height: 24px; }
+  /* Full-width variant: used when seg must span its parent column */
+  .sb-skin .seg.full{ display: flex; width: 100%; }
+  .sb-skin .seg.full > button{ flex: 1 1 0; min-width: 0; justify-content: center; }
 
 
   /* Pill */
@@ -469,6 +472,16 @@
     outline: 0;
   }
   .sb-skin .textarea{ min-height: 60px; padding: 6px 8px; resize: vertical; line-height: 1.4; }
+
+  /* Rich-text contentEditable surface uses .textarea look. Add a CSS
+     placeholder for the empty state and let the cursor through. */
+  .sb-skin .rte-surface{ cursor: text; }
+  .sb-skin .rte-surface:empty::before{
+    content: attr(data-placeholder);
+    color: var(--text-4);
+    pointer-events: none;
+  }
+  .sb-skin .rte-surface:focus{ outline: 0; border-color: var(--text); }
 
   .sb-skin .input:focus, .textarea:focus, .select:focus { border-color: var(--text); }
 

@@ -555,6 +555,12 @@ function buildHTML(
         var value = applyVars(raw);
         if (kind === 'text') {
           if (el.textContent !== value) el.textContent = value;
+        } else if (kind === 'rich_text') {
+          /* Server-side sanitization isn't reachable from this inline
+             script, so we keep the iframe permissive: it's a same-origin
+             editor preview, not user-facing. Final output passes through
+             sanitizeRichText on SSR and on the public hydrator. */
+          if (el.innerHTML !== value) el.innerHTML = value;
         } else if (kind === 'image') {
           if (el.getAttribute('src') !== value) el.setAttribute('src', value);
         } else if (kind === 'bg_image') {
@@ -564,6 +570,16 @@ function buildHTML(
           if (el.getAttribute('href') !== value) el.setAttribute('href', value);
         } else if (kind === 'attr' && entry.meta && entry.meta.attrName) {
           el.setAttribute(entry.meta.attrName, value);
+        } else if (kind === 'style' && entry.meta && entry.meta.style && typeof entry.meta.style === 'object') {
+          var styleMap = entry.meta.style;
+          for (var sk in styleMap) {
+            if (Object.prototype.hasOwnProperty.call(styleMap, sk)) {
+              var sv = styleMap[sk];
+              var prop = sk.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
+              if (typeof sv === 'string' && sv) el.style.setProperty(prop, sv);
+              else el.style.removeProperty(prop);
+            }
+          }
         }
       }
       function applyAll() {

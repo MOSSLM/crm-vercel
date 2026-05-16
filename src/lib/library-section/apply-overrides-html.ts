@@ -16,11 +16,12 @@
  */
 import "server-only";
 import { parse, type HTMLElement } from "node-html-parser";
+import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
 
 export interface OverrideEntry {
-  kind: "text" | "image" | "bg_image" | "link_href" | "button_href" | "attr";
+  kind: "text" | "rich_text" | "image" | "bg_image" | "link_href" | "button_href" | "attr" | "style";
   value: string;
-  meta?: { attrName?: string };
+  meta?: { attrName?: string; style?: Record<string, string> };
 }
 
 function interpolate(text: string, variables: Record<string, string>): string {
@@ -106,6 +107,13 @@ export function applyOverridesToHTML(
           case "text":
             el.set_content(escapeText(value));
             break;
+          case "rich_text": {
+            // Variables were already interpolated; sanitize then drop the
+            // sanitized HTML straight into the element.
+            const safe = sanitizeRichText(value);
+            el.set_content(safe);
+            break;
+          }
           case "image":
             el.setAttribute("src", value);
             break;
@@ -124,6 +132,15 @@ export function applyOverridesToHTML(
               continue;
             }
             break;
+          case "style": {
+            const styleMap = entry.meta?.style;
+            if (!styleMap || typeof styleMap !== "object") {
+              failed++;
+              continue;
+            }
+            mergeStyles(el, styleMap);
+            break;
+          }
           default:
             failed++;
             continue;
@@ -145,4 +162,30 @@ function escapeText(text: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+/** Merge style declarations into the element's inline style attribute,
+ *  overwriting existing properties when keys collide. */
+function mergeStyles(el: HTMLElement, styles: Record<string, string>): void {
+  const current = el.getAttribute("style") ?? "";
+  const map: Record<string, string> = {};
+  for (const decl of current.split(";")) {
+    const [k, ...rest] = decl.split(":");
+    const key = (k ?? "").trim();
+    if (!key) continue;
+    map[key] = rest.join(":").trim();
+  }
+  for (const [k, v] of Object.entries(styles)) {
+    if (typeof v !== "string" || !v) {
+      delete map[camelToKebab(k)];
+      continue;
+    }
+    map[camelToKebab(k)] = v;
+  }
+  const merged = Object.entries(map).map(([k, v]) => `${k}: ${v}`).join("; ");
+  el.setAttribute("style", merged);
+}
+
+function camelToKebab(name: string): string {
+  return name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
 }

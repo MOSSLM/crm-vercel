@@ -2005,6 +2005,20 @@ function NavbarPositionPanel({
           />
         </label>
 
+        <label className="flex items-start justify-between gap-2 cursor-pointer">
+          <span className="flex-1">
+            <span className="text-[11px] text-gray-600 block">Survoler la première section</span>
+            <span className="text-[10px] text-gray-400 block leading-snug">La navbar flotte au-dessus du Hero (pas d&apos;espace réservé).</span>
+          </span>
+          <input
+            type="checkbox"
+            checked={layout.overlay}
+            onChange={(e) => setLayout({ overlay: e.target.checked })}
+            disabled={layout.position === "static"}
+            className="accent-blue-500 disabled:opacity-40 mt-0.5"
+          />
+        </label>
+
         <p className="text-[10px] text-gray-400 leading-relaxed">
           Visible sur le site déployé. L&apos;éditeur affiche la navbar à plat pour faciliter l&apos;édition.
         </p>
