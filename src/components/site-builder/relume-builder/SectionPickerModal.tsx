@@ -1,8 +1,9 @@
 "use client";
 
 import React from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, Layers } from "lucide-react";
 import type { SiteSectionDef } from "@/types";
+import { Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pill } from "./skin-primitives";
 
 interface Props {
   open: boolean;
@@ -27,18 +28,6 @@ export function SectionPickerModal({ open, sections, initialCategory, onPick, on
     }
   }, [open, initialCategory]);
 
-  React.useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onHover(null);
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose, onHover]);
-
   const categories = React.useMemo(() => {
     const set = new Set<string>();
     for (const s of sections) {
@@ -60,80 +49,57 @@ export function SectionPickerModal({ open, sections, initialCategory, onPick, on
     });
   }, [sections, filterCategory, search]);
 
-  if (!open) return null;
+  const handleClose = () => {
+    onHover(null);
+    onClose();
+  };
 
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-6"
-      onClick={() => {
-        onHover(null);
-        onClose();
-      }}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
-          <div className="flex-1">
-            <div className="text-sm font-semibold text-gray-800">Remplacer la section</div>
-            <div className="text-[11px] text-gray-400 mt-0.5">
-              Survolez une section pour la prévisualiser dans le canvas, cliquez pour confirmer.
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              onHover(null);
-              onClose();
-            }}
-            className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
-          >
-            <X size={14} />
-          </button>
-        </div>
+    <ModalShell open={open} onClose={handleClose} size="lg">
+      <ModalHd
+        icon={<Layers size={14} />}
+        title="Remplacer la section"
+        subtitle="Survolez pour prévisualiser dans le canvas, cliquez pour confirmer."
+        right={<Btn variant="ghost" size="sm" icon onClick={handleClose}><X size={13} /></Btn>}
+      />
 
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
-          <div className="relative flex-1">
-            <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              autoFocus
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher une section..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400 text-gray-800"
-            />
-          </div>
-          <button
-            onClick={() => setFilterCategory(null)}
-            className={`px-2 py-1 text-[10px] rounded-md transition-colors ${
-              filterCategory === null
-                ? "bg-gray-900 text-white"
-                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-            }`}
-          >
-            Tout
-          </button>
-          {categories.map((cat) => (
-            <button
-              key={cat}
-              onClick={() => setFilterCategory(cat)}
-              className={`px-2 py-1 text-[10px] rounded-md transition-colors ${
-                filterCategory === cat
-                  ? "bg-gray-900 text-white"
-                  : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
+      <div className="modal-search">
+        <div className="search-wrap">
+          <Search size={12} />
+          <input
+            autoFocus
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Rechercher une section…"
+            className="input"
+          />
         </div>
+      </div>
 
-        <div
-          className="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 gap-3"
-          onMouseLeave={() => onHover(null)}
+      <div className="modal-tabs">
+        <button
+          className="modal-tab"
+          aria-selected={filterCategory === null ? "true" : "false"}
+          onClick={() => setFilterCategory(null)}
         >
+          Tout
+        </button>
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            className="modal-tab"
+            aria-selected={filterCategory === cat ? "true" : "false"}
+            onClick={() => setFilterCategory(cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      <ModalBody>
+        <div className="card-grid" onMouseLeave={() => onHover(null)}>
           {filtered.length === 0 && (
-            <p className="col-span-full text-center text-xs text-gray-400 py-12">
+            <p style={{ gridColumn: "1 / -1", textAlign: "center", fontSize: 12, color: "var(--text-4)", padding: 40, margin: 0 }}>
               Aucune section ne correspond à votre recherche.
             </p>
           )}
@@ -141,28 +107,33 @@ export function SectionPickerModal({ open, sections, initialCategory, onPick, on
             <button
               key={s.id}
               onMouseEnter={() => onHover(s)}
-              onClick={() => {
-                onPick(s);
-                onHover(null);
-              }}
-              className="text-left border border-gray-200 hover:border-blue-400 hover:shadow-md rounded-lg p-3 transition-all bg-white"
+              onClick={() => { onPick(s); onHover(null); }}
+              className="picker-card"
+              style={{ textAlign: "left", appearance: "none", border: "1px solid var(--border)", background: "var(--surface)", padding: 0, font: "inherit", color: "inherit", cursor: "default" }}
             >
-              <div className="h-16 bg-gray-50 rounded mb-2 flex items-center justify-center overflow-hidden">
+              <div className="preview" style={{ height: 70 }}>
                 {s.preview_image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={s.preview_image_url} alt={s.name} className="w-full h-full object-cover" />
+                  <img src={s.preview_image_url} alt={s.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                 ) : (
-                  <span className="text-[10px] text-gray-400 px-2 text-center">{s.category ?? "—"}</span>
+                  <span style={{ fontSize: 10, color: "var(--text-4)", padding: "0 8px", textAlign: "center", fontFamily: "var(--font-mono)" }}>
+                    {s.category ?? "—"}
+                  </span>
                 )}
               </div>
-              <div className="text-xs font-medium text-gray-800 truncate">{s.name}</div>
-              {s.category && (
-                <div className="text-[10px] text-gray-400 mt-0.5 capitalize">{s.category}</div>
-              )}
+              <div className="meta">
+                <div className="name">{s.name}</div>
+                {s.category && <div className="cat">{s.category}</div>}
+              </div>
             </button>
           ))}
         </div>
-      </div>
-    </div>
+      </ModalBody>
+      <ModalFt>
+        <Pill>{filtered.length} sections</Pill>
+        <span className="grow" />
+        <Btn variant="outline" onClick={handleClose}>Annuler</Btn>
+      </ModalFt>
+    </ModalShell>
   );
 }

@@ -5,7 +5,7 @@ import {
   Laptop, Tablet, Smartphone, Plus, Trash2, Layers,
   Search, Sparkles, MoreHorizontal,
   ChevronDown, RefreshCw, Loader2, MessageSquare, Send,
-  ZoomIn, ZoomOut
+  ZoomIn, ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
@@ -14,6 +14,7 @@ import { type AIModelId, ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import { Btn, Pane, Pop } from "./skin-primitives";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -59,11 +60,9 @@ function useCanvasPanZoom(initialPan = { x: 40, y: 40 }) {
   return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel, zoomIn, zoomOut, resetZoom };
 }
 
-// ─── Section type categories ──────────────────────────────────────────────────
-
 const CATEGORIES = ["Tous", "Hero", "Services", "Content", "Social Proof", "Contact", "CTA", "Media"];
 
-// ─── Section type picker with search ─────────────────────────────────────────
+// ─── Section type picker (swap) ───────────────────────────────────────────────
 
 function SectionTypePicker({
   availableSections,
@@ -77,10 +76,9 @@ function SectionTypePicker({
   const [q, setQ] = React.useState("");
   const filtered = availableSections.filter((s) =>
     s.name.toLowerCase().includes(q.toLowerCase()) ||
-    (s.category ?? "").toLowerCase().includes(q.toLowerCase())
+    (s.category ?? "").toLowerCase().includes(q.toLowerCase()),
   );
 
-  // Group by category
   const groups = React.useMemo(() => {
     const map: Record<string, SiteSectionDef[]> = {};
     for (const s of filtered) {
@@ -92,32 +90,38 @@ function SectionTypePicker({
   }, [filtered]);
 
   return (
-    <div
-      className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-xl shadow-xl z-30 flex flex-col max-h-64"
-      onClick={(e) => e.stopPropagation()}
+    <Pop
+      style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, width: 240, display: "flex", flexDirection: "column", maxHeight: 280, zIndex: 50 }}
+      onClick={(e: React.MouseEvent) => e.stopPropagation()}
     >
-      <div className="p-2 border-b border-gray-100 flex-shrink-0">
-        <div className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Changer de section</div>
-        <div className="relative">
-          <Search size={10} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+      <div style={{ padding: 8, borderBottom: "1px solid var(--border)" }}>
+        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6, fontFamily: "var(--font-mono)" }}>
+          Changer de section
+        </div>
+        <div className="search-wrap" style={{ position: "relative" }}>
+          <Search size={10} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-4)" }} />
           <input
             autoFocus
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Rechercher..."
-            className="w-full pl-6 pr-2 py-1 text-[10px] bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+            placeholder="Rechercher…"
+            className="input"
+            style={{ paddingLeft: 22, height: 24, fontSize: 11 }}
           />
         </div>
       </div>
-      <div className="overflow-y-auto flex-1 py-1">
+      <div style={{ overflow: "auto", padding: 2 }}>
         {Object.entries(groups).map(([cat, sections]) => (
           <React.Fragment key={cat}>
-            <div className="px-2 pt-1.5 pb-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">{cat}</div>
+            <div style={{ padding: "6px 8px 2px", fontSize: 9, fontWeight: 600, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: ".06em", fontFamily: "var(--font-mono)" }}>
+              {cat}
+            </div>
             {sections.map((s) => (
               <button
                 key={s.id}
                 onClick={(e) => { e.stopPropagation(); onSelect(s); onClose(); }}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 text-left"
+                className="btn ghost sm"
+                style={{ width: "100%", justifyContent: "flex-start" }}
               >
                 {s.name}
               </button>
@@ -125,25 +129,16 @@ function SectionTypePicker({
           </React.Fragment>
         ))}
         {filtered.length === 0 && (
-          <p className="text-[10px] text-gray-400 text-center py-4">Aucune section trouvée</p>
+          <p style={{ fontSize: 10.5, color: "var(--text-4)", textAlign: "center", padding: 16, margin: 0 }}>Aucune section trouvée</p>
         )}
       </div>
-    </div>
+    </Pop>
   );
 }
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-
-interface WireframeWorkspaceProps {
-  sectionDefs: Record<string, SiteSectionDef>;
-  availableSections: SiteSectionDef[];
-  onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
-}
-
-// ─── Section AI popover ───────────────────────────────────────────────────────
+// ─── Section AI popover ──────────────────────────────────────────────────────
 
 function SectionAIPopover({
-  instanceId,
   onRegenerate,
   onClose,
   model,
@@ -169,47 +164,43 @@ function SectionAIPopover({
     }
   };
 
-  void instanceId;
-
   return (
-    <div
-      className="absolute right-0 top-full mt-1 w-56 bg-white border border-purple-200 rounded-xl shadow-xl z-40 p-3"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center gap-1.5 mb-2">
-        <Sparkles size={11} className="text-purple-500" />
-        <span className="text-[10px] font-semibold text-purple-700">Régénérer avec l'IA</span>
+    <div className="ai-box" style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, width: 260, zIndex: 50, padding: 0 }} onClick={(e) => e.stopPropagation()}>
+      <div className="ai-box-hd">
+        <Sparkles size={11} />
+        <span>Régénérer avec l&apos;IA</span>
       </div>
-      <ModelDropdown value={model} onChange={onModelChange} />
-      <div className="mt-2" />
-      <VariableTextarea
-        value={prompt}
-        onChange={setPrompt}
-        placeholder="Instructions spécifiques (optionnel)..."
-        rows={3}
-        autoFocus
-        className="w-full text-[10px] bg-gray-50 border border-gray-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
-        variables={state.variableContext}
-        variant="light"
-      />
-      <div className="flex gap-1.5 mt-2">
-        <button
-          onClick={onClose}
-          className="flex-1 py-1.5 text-[10px] text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50"
-        >
-          Annuler
-        </button>
-        <button
-          onClick={handleSubmit}
-          disabled={loading}
-          className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={9} className="animate-spin" /> : <Send size={9} />}
-          {loading ? "..." : "Générer"}
-        </button>
+      <div style={{ padding: 10 }}>
+        <ModelDropdown value={model} onChange={onModelChange} />
+        <div style={{ height: 8 }} />
+        <VariableTextarea
+          value={prompt}
+          onChange={setPrompt}
+          placeholder="Instructions spécifiques (optionnel)…"
+          rows={3}
+          autoFocus
+          className="textarea"
+          variables={state.variableContext}
+          variant="light"
+        />
+      </div>
+      <div className="ai-box-ft">
+        <Btn variant="outline" size="sm" onClick={onClose} style={{ flex: 1, justifyContent: "center" }}>Annuler</Btn>
+        <Btn variant="magic" size="sm" onClick={handleSubmit} disabled={loading} style={{ flex: 1, justifyContent: "center" }}>
+          {loading ? <Loader2 size={10} className="animate-spin" /> : <Send size={10} />}
+          {loading ? "…" : "Générer"}
+        </Btn>
       </div>
     </div>
   );
+}
+
+// ─── Props ────────────────────────────────────────────────────────────────────
+
+interface WireframeWorkspaceProps {
+  sectionDefs: Record<string, SiteSectionDef>;
+  availableSections: SiteSectionDef[];
+  onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -292,47 +283,47 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
   const activeInstanceIds = state.instancesByPage[state.activePage] ?? [];
 
   return (
-    <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
+    <div style={{ display: "flex", height: "100%", overflow: "hidden", flex: 1, minHeight: 0 }}>
 
-      {/* ─ Left Panel ──────────────────────────────────────────────────────────── */}
+      {/* ─ Left Panel ──────────────────────────────────────────────────── */}
       {leftPanel && (
-        <div className="w-[260px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-          {/* Panel tabs */}
-          <div className="flex border-b border-gray-100">
+        <Pane style={{ width: 260, flexShrink: 0 }}>
+          <div className="wf-side-tabs">
             <button
               onClick={() => setLeftPanel("library")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors ${leftPanel === "library" ? "text-gray-900 border-b-2 border-gray-900" : "text-gray-400 hover:text-gray-600"}`}
+              aria-selected={leftPanel === "library" ? "true" : "false"}
             >
-              <Layers size={12} />
-              Sections
+              <Layers size={12} />Sections
             </button>
             <button
+              className="magic"
               onClick={() => setLeftPanel("ai")}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-medium transition-colors ${leftPanel === "ai" ? "text-purple-600 border-b-2 border-purple-600" : "text-gray-400 hover:text-gray-600"}`}
+              aria-selected={leftPanel === "ai" ? "true" : "false"}
             >
-              <Sparkles size={12} />
-              IA
+              <Sparkles size={12} />IA
             </button>
           </div>
 
           {leftPanel === "library" && (
             <>
-              <div className="p-3 border-b border-gray-100">
-                <div className="relative">
-                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <div className="wf-search">
+                <div className="search-wrap" style={{ position: "relative" }}>
+                  <Search size={12} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-4)" }} />
                   <input
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Rechercher..."
-                    className="w-full pl-7 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-gray-400 text-gray-800"
+                    placeholder="Rechercher…"
+                    className="input"
+                    style={{ paddingLeft: 26 }}
                   />
                 </div>
-                <div className="flex gap-1 mt-2 flex-wrap">
+                <div className="wf-cats">
                   {CATEGORIES.slice(0, 5).map((cat) => (
                     <button
                       key={cat}
                       onClick={() => setActiveCategory(cat)}
-                      className={`px-2 py-0.5 text-[10px] rounded-full transition-colors ${activeCategory === cat ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+                      className="wf-cat"
+                      aria-selected={activeCategory === cat ? "true" : "false"}
                     >
                       {cat}
                     </button>
@@ -340,104 +331,112 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {filteredSections.map((sec) => (
-                  <div
-                    key={sec.id}
-                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 group cursor-default"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-gray-800 truncate">{sec.name}</div>
-                      <div className="text-[10px] text-gray-400 truncate">{sec.category}</div>
+              <div className="pane-body">
+                <div className="wf-sec-list">
+                  {filteredSections.map((sec) => (
+                    <div key={sec.id} className="wf-sec-row">
+                      <div className="thumb" />
+                      <div className="info">
+                        <div className="name">{sec.name}</div>
+                        <div className="cat">{sec.category}</div>
+                      </div>
+                      <button
+                        onClick={() => addSection(state.activePage, sec)}
+                        className="add-btn"
+                        title="Ajouter à la page active"
+                      >
+                        <Plus size={11} />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => addSection(state.activePage, sec)}
-                      className="opacity-0 group-hover:opacity-100 p-1 bg-gray-900 text-white rounded transition-all"
-                      title="Ajouter à la page active"
-                    >
-                      <Plus size={10} />
-                    </button>
-                  </div>
-                ))}
-                {filteredSections.length === 0 && (
-                  <p className="text-xs text-gray-400 text-center py-8">Aucune section trouvée</p>
-                )}
+                  ))}
+                  {filteredSections.length === 0 && (
+                    <p style={{ fontSize: 11, color: "var(--text-4)", textAlign: "center", padding: 32, margin: 0 }}>Aucune section trouvée</p>
+                  )}
+                </div>
               </div>
             </>
           )}
 
           {leftPanel === "ai" && (
-            <div className="flex-1 flex flex-col p-4 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-gray-700">Modèle IA</label>
+            <div className="pane-body" style={{ padding: "14px 14px" }}>
+              <div className="field">
+                <div className="field-label">Modèle IA</div>
                 <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center text-center">
-                <Sparkles size={24} className="text-purple-400 mb-3" />
-                <p className="text-sm font-medium text-gray-700 mb-1">Assistant IA</p>
-                <p className="text-xs text-gray-400">Cliquez sur le bouton ✨ d'une page ou d'une section pour la régénérer.</p>
+              <div style={{ textAlign: "center", padding: "32px 12px" }}>
+                <Sparkles size={24} style={{ color: "var(--magic)", marginBottom: 10 }} />
+                <p style={{ fontSize: 12.5, fontWeight: 500, color: "var(--text)", margin: "0 0 4px" }}>Assistant IA</p>
+                <p style={{ fontSize: 11, color: "var(--text-4)", margin: 0 }}>Cliquez sur le bouton ✨ d&apos;une page ou d&apos;une section pour la régénérer.</p>
               </div>
             </div>
           )}
-        </div>
+        </Pane>
       )}
 
       {/* Panel toggle */}
       <button
         onClick={() => setLeftPanel(leftPanel ? null : "library")}
-        className="absolute top-1/2 -translate-y-1/2 z-20 w-5 h-12 bg-white border border-gray-200 border-l-0 rounded-r-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
-        style={{ left: leftPanel ? 260 : 0 }}
+        style={{
+          position: "absolute",
+          top: "50%",
+          transform: "translateY(-50%)",
+          zIndex: 20,
+          width: 18,
+          height: 44,
+          background: "var(--surface)",
+          border: "1px solid var(--border-2)",
+          borderLeft: 0,
+          borderRadius: "0 6px 6px 0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-4)",
+          boxShadow: "var(--shadow-1)",
+          left: leftPanel ? 260 : 0,
+          cursor: "default",
+        }}
+        title={leftPanel ? "Masquer le panneau" : "Afficher le panneau"}
       >
-        <ChevronDown size={12} className={`transition-transform ${leftPanel ? "-rotate-90" : "rotate-90"}`} />
+        <ChevronDown size={11} style={{ transform: leftPanel ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
       </button>
 
-      {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
+      {/* ─ Canvas ──────────────────────────────────────────────────────── */}
       <div
-        className="flex-1 overflow-hidden relative select-none"
+        className="canvas-host"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
         onMouseLeave={canvas.onMouseUp}
         onWheel={canvas.onWheel}
-        style={{ cursor: "grab" }}
+        style={{ cursor: "grab", flex: 1 }}
       >
-        {/* Dot grid */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: "radial-gradient(circle, #c8c8c8 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
-        />
+        <div className="canvas-dotgrid" />
 
         <div
+          className="canvas-stage"
           style={{
             transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.scale})`,
-            transformOrigin: "0 0",
-            position: "absolute",
             width: deviceWidth,
           }}
         >
-          {/* Page selector tabs (above the rendered active page) */}
-          <div className="mb-3 flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
-              <Layers size={12} className="text-gray-400" />
-              <span className="text-xs font-medium text-gray-700">
-                {state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}
-              </span>
+          <div className="page-meta-bar">
+            <div className="page-chip">
+              <Layers size={12} />
+              <span>{state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}</span>
             </div>
-            <div className="flex gap-1 flex-wrap">
-              {state.sitemap.map((p) => (
+            <div className="page-tabs">
+              {state.sitemap.map((p, i) => (
                 <button
                   key={p.id}
                   onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug })}
-                  className={`px-2.5 py-1 text-[10px] rounded-md border transition-colors ${state.activePage === p.slug ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+                  className="page-tab"
+                  aria-selected={state.activePage === p.slug ? "true" : "false"}
                 >
+                  <span className="pgnum">{String(i + 1).padStart(2, "0")}</span>
                   {p.title}
                 </button>
               ))}
             </div>
-            {/* Per-page AI shortcut */}
             {(() => {
               const page = state.sitemap.find((p) => p.slug === state.activePage);
               if (!page) return null;
@@ -445,60 +444,57 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
               return (
                 <button
                   onClick={() => setPageAIOpen(isOpen ? null : page.id)}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 text-[10px] rounded-md border transition-colors ${isOpen ? "border-purple-300 bg-purple-50 text-purple-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+                  className={isOpen ? "btn magic sm" : "btn outline sm"}
                 >
-                  <Sparkles size={11} />
-                  Régénérer la page
+                  <Sparkles size={11} />Régénérer la page
                 </button>
               );
             })()}
           </div>
 
-          {/* Per-page AI prompt */}
           {(() => {
             const page = state.sitemap.find((p) => p.slug === state.activePage);
             if (!page || pageAIOpen !== page.id) return null;
             const isLoading = pageLoading === page.id;
             const ctx = pageContexts[page.id] ?? "";
             return (
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-3">
-                <div className="flex items-center gap-1.5 mb-1.5">
-                  <MessageSquare size={10} className="text-purple-500" />
-                  <span className="text-[10px] font-semibold text-purple-700">Contexte pour {page.title}</span>
+              <div className="ai-box" style={{ marginBottom: 12 }}>
+                <div className="ai-box-hd">
+                  <MessageSquare size={11} />
+                  <span>Contexte pour {page.title}</span>
                 </div>
                 <VariableTextarea
                   value={ctx}
                   onChange={(v) => setPageContexts((prev) => ({ ...prev, [page.id]: v }))}
-                  placeholder="Instructions pour régénérer toutes les sections..."
+                  placeholder="Instructions pour régénérer toutes les sections…"
                   rows={2}
-                  className="w-full text-[11px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
+                  className="textarea"
                   variables={state.variableContext}
                   variant="light"
                 />
-                <button
-                  onClick={() => handleRegeneratePage(page.slug, page.id)}
-                  disabled={isLoading || activeInstanceIds.length === 0}
-                  className="mt-1.5 w-full flex items-center justify-center gap-1 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50"
-                >
-                  {isLoading ? <><Loader2 size={9} className="animate-spin" /> Génération...</> : <><RefreshCw size={9} /> Régénérer la page</>}
-                </button>
+                <div className="ai-box-ft">
+                  <span style={{ flex: 1 }} />
+                  <Btn variant="magic" size="sm" onClick={() => handleRegeneratePage(page.slug, page.id)} disabled={isLoading || activeInstanceIds.length === 0}>
+                    {isLoading ? <><Loader2 size={10} className="animate-spin" /> Génération…</> : <><RefreshCw size={10} /> Régénérer la page</>}
+                  </Btn>
+                </div>
               </div>
             );
           })()}
 
-          {/* Active page rendered at device width in B&W */}
+          {/* Active page rendered at device width */}
           <div
-            className="overflow-hidden shadow-2xl bg-white"
-            style={{ width: deviceWidth, borderRadius: 12 }}
+            className="device-frame"
+            style={{ width: deviceWidth }}
           >
             {activeInstanceIds.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-24 text-center">
-                <Layers size={32} className="text-gray-200 mb-4" />
-                <p className="text-sm text-gray-400 mb-1">Aucune section sur cette page</p>
-                <p className="text-xs text-gray-300">Ajoutez des sections depuis la bibliothèque</p>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "100px 0", textAlign: "center" }}>
+                <Layers size={32} style={{ color: "var(--border-2)", marginBottom: 14 }} />
+                <p style={{ fontSize: 13, color: "var(--text-3)", margin: "0 0 4px" }}>Aucune section sur cette page</p>
+                <p style={{ fontSize: 11, color: "var(--text-4)", margin: 0 }}>Ajoutez des sections depuis la bibliothèque</p>
               </div>
             ) : (
-              <div className="flex flex-col">
+              <div style={{ display: "flex", flexDirection: "column" }}>
                 {activeInstanceIds.map((instanceId, idx) => {
                   const instance = state.instances[instanceId];
                   if (!instance) return null;
@@ -510,9 +506,12 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                   return (
                     <div
                       key={instanceId}
-                      className={`relative group ${isSelected ? "ring-2 ring-inset ring-blue-500" : ""}`}
+                      className="ws-section"
+                      data-selected={isSelected ? "true" : undefined}
                       onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); }}
+                      style={{ position: "relative", cursor: "default" }}
                     >
+                      <span className="ws-tag"><span className="dot" />{secDef.name}</span>
                       <DynamicSectionRenderer
                         instance={{ ...instance, section_def: secDef }}
                         sectionDef={secDef}
@@ -520,87 +519,86 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                         wireframe
                       />
 
-                      {/* Floating section toolbar */}
-                      <div className="absolute top-2 right-2 z-10 flex items-center gap-1 bg-white/95 backdrop-blur border border-gray-200 rounded-md shadow-sm px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-[10px] text-gray-500 px-1 font-medium">{secDef.name}</span>
-                        <div className="relative">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setSectionAIOpen(isSectionAIOpen ? null : instanceId); }}
-                            className={`p-1 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors ${isSectionAIOpen ? "text-purple-600" : ""}`}
-                            title="Régénérer avec l'IA"
-                          >
-                            <Sparkles size={11} />
-                          </button>
-                          {isSectionAIOpen && (
-                            <SectionAIPopover
-                              instanceId={instanceId}
-                              onRegenerate={async (prompt) => { await onRegenerateSection?.(instanceId, prompt, selectedModel); }}
-                              onClose={() => setSectionAIOpen(null)}
-                              model={selectedModel}
-                              onModelChange={setSelectedModel}
-                            />
-                          )}
-                        </div>
-                        <div className="relative">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setSectionTypePicker(sectionTypePicker === instanceId ? null : instanceId); }}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-400"
-                            title="Changer de section"
-                          >
-                            <RefreshCw size={11} />
-                          </button>
-                          {sectionTypePicker === instanceId && (
-                            <SectionTypePicker
-                              availableSections={availableSections}
-                              onSelect={(s) => swapSectionType(instanceId, s)}
-                              onClose={() => setSectionTypePicker(null)}
-                            />
-                          )}
-                        </div>
-                        <div className="relative">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setSectionMenuOpen(sectionMenuOpen === instanceId ? null : instanceId); }}
-                            className="p-1 hover:bg-gray-100 rounded text-gray-400"
-                          >
-                            <MoreHorizontal size={11} />
-                          </button>
-                          {sectionMenuOpen === instanceId && (
-                            <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-gray-200 rounded-lg shadow-xl z-30 py-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx - 1 } });
-                                  setSectionMenuOpen(null);
-                                }}
-                                disabled={idx === 0}
-                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                ↑ Monter
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx + 1 } });
-                                  setSectionMenuOpen(null);
-                                }}
-                                disabled={idx === activeInstanceIds.length - 1}
-                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-gray-700 hover:bg-gray-50 disabled:opacity-40"
-                              >
-                                ↓ Descendre
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  dispatch({ type: "REMOVE_INSTANCE", payload: instanceId });
-                                  setSectionMenuOpen(null);
-                                }}
-                                className="flex items-center gap-2 w-full px-3 py-1.5 text-[10px] text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 size={9} />
-                                Supprimer
-                              </button>
-                            </div>
-                          )}
+                      <div className="wf-section" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "transparent", border: 0, padding: 0 }}>
+                        <div className="toolbar" style={{ pointerEvents: "auto" }}>
+                          <span>{secDef.name}</span>
+                          <div style={{ position: "relative" }}>
+                            <button
+                              className="magic"
+                              onClick={(e) => { e.stopPropagation(); setSectionAIOpen(isSectionAIOpen ? null : instanceId); }}
+                              title="Régénérer avec l'IA"
+                            >
+                              <Sparkles size={11} />
+                            </button>
+                            {isSectionAIOpen && (
+                              <SectionAIPopover
+                                instanceId={instanceId}
+                                onRegenerate={async (prompt) => { await onRegenerateSection?.(instanceId, prompt, selectedModel); }}
+                                onClose={() => setSectionAIOpen(null)}
+                                model={selectedModel}
+                                onModelChange={setSelectedModel}
+                              />
+                            )}
+                          </div>
+                          <div style={{ position: "relative" }}>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setSectionTypePicker(sectionTypePicker === instanceId ? null : instanceId); }}
+                              title="Changer de section"
+                            >
+                              <RefreshCw size={11} />
+                            </button>
+                            {sectionTypePicker === instanceId && (
+                              <SectionTypePicker
+                                availableSections={availableSections}
+                                onSelect={(s) => swapSectionType(instanceId, s)}
+                                onClose={() => setSectionTypePicker(null)}
+                              />
+                            )}
+                          </div>
+                          <div style={{ position: "relative" }}>
+                            <button onClick={(e) => { e.stopPropagation(); setSectionMenuOpen(sectionMenuOpen === instanceId ? null : instanceId); }}>
+                              <MoreHorizontal size={11} />
+                            </button>
+                            {sectionMenuOpen === instanceId && (
+                              <Pop style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, minWidth: 140, padding: 4, zIndex: 50 }}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx - 1 } });
+                                    setSectionMenuOpen(null);
+                                  }}
+                                  disabled={idx === 0}
+                                  className="btn ghost sm"
+                                  style={{ width: "100%", justifyContent: "flex-start" }}
+                                >
+                                  ↑ Monter
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx + 1 } });
+                                    setSectionMenuOpen(null);
+                                  }}
+                                  disabled={idx === activeInstanceIds.length - 1}
+                                  className="btn ghost sm"
+                                  style={{ width: "100%", justifyContent: "flex-start" }}
+                                >
+                                  ↓ Descendre
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    dispatch({ type: "REMOVE_INSTANCE", payload: instanceId });
+                                    setSectionMenuOpen(null);
+                                  }}
+                                  className="btn danger sm"
+                                  style={{ width: "100%", justifyContent: "flex-start" }}
+                                >
+                                  <Trash2 size={9} />Supprimer
+                                </button>
+                              </Pop>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -608,49 +606,40 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                 })}
                 <button
                   onClick={() => setLeftPanel("library")}
-                  className="flex items-center justify-center gap-1.5 py-4 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-dashed border-gray-200"
+                  className="add-row"
+                  style={{ width: "100%", appearance: "none", border: 0, borderTop: "1px dashed var(--border-2)", background: "transparent", padding: "16px 0" }}
                 >
-                  <Plus size={12} />
-                  Ajouter une section
+                  <Plus size={12} />Ajouter une section
                 </button>
               </div>
             )}
           </div>
         </div>
 
-        {/* Bottom controls */}
-        <div className="absolute bottom-4 right-4 flex items-center gap-2">
-          {/* Device switcher */}
-          <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="canvas-tools">
+          <div className="grp">
             {(["desktop", "tablet", "mobile"] as const).map((device) => {
               const Icon = device === "desktop" ? Laptop : device === "tablet" ? Tablet : Smartphone;
               return (
                 <button
                   key={device}
                   onClick={() => dispatch({ type: "SET_DEVICE_VIEW", payload: device })}
-                  className={`p-2 transition-colors ${state.deviceView === device ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"}`}
+                  aria-pressed={state.deviceView === device ? "true" : "false"}
                   title={device}
                 >
-                  <Icon size={14} />
+                  <Icon size={13} />
                 </button>
               );
             })}
           </div>
-
-          {/* Zoom controls */}
-          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll</span>
-          <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
-            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Dézoomer">
-              <ZoomOut size={12} />
-            </button>
-            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center" title="Réinitialiser">
-              {Math.round(canvas.scale * 100)}%
-            </button>
-            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Zoomer">
-              <ZoomIn size={12} />
-            </button>
+          <div className="grp">
+            <button onClick={canvas.zoomOut} title="Dézoomer"><ZoomOut size={12} /></button>
+            <button onClick={canvas.resetZoom} title="Réinitialiser"><span className="zoom-val">{Math.round(canvas.scale * 100)}%</span></button>
+            <button onClick={canvas.zoomIn} title="Zoomer"><ZoomIn size={12} /></button>
           </div>
         </div>
+
+        <div className="canvas-help">Glisser · <kbd>⌘</kbd>+scroll</div>
       </div>
     </div>
   );

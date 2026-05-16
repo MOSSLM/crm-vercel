@@ -6,6 +6,7 @@ import { ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import type { SiteSectionInstance, SiteSectionDef } from "@/types";
+import { Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pill } from "./skin-primitives";
 
 interface BulkResult {
   instanceId: string;
@@ -30,8 +31,6 @@ export function BulkAIDialog({ open, onClose, instances, onApplyAll, variableCon
   const [results, setResults] = React.useState<BulkResult[]>([]);
   const [running, setRunning] = React.useState(false);
   const [applied, setApplied] = React.useState(false);
-
-  if (!open) return null;
 
   const hasResults = results.length > 0;
   const successCount = results.filter((r) => r.after !== null && !r.error).length;
@@ -70,15 +69,15 @@ export function BulkAIDialog({ open, onClose, instances, onApplyAll, variableCon
           if (!res.ok) throw new Error(`Erreur ${res.status}`);
           const data = await res.json() as { content: Record<string, unknown> };
           setResults((prev) =>
-            prev.map((r, j) => j === i ? { ...r, after: data.content, loading: false } : r)
+            prev.map((r, j) => j === i ? { ...r, after: data.content, loading: false } : r),
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : "Erreur";
           setResults((prev) =>
-            prev.map((r, j) => j === i ? { ...r, error: message, loading: false } : r)
+            prev.map((r, j) => j === i ? { ...r, error: message, loading: false } : r),
           );
         }
-      })
+      }),
     );
 
     setRunning(false);
@@ -94,85 +93,71 @@ export function BulkAIDialog({ open, onClose, instances, onApplyAll, variableCon
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={running ? undefined : onClose} />
-      <div className="relative z-10 w-full max-w-2xl max-h-[85vh] bg-white rounded-2xl shadow-2xl flex flex-col mx-4">
+    <ModalShell open={open} onClose={running ? () => {} : onClose} size="md">
+      <ModalHd
+        icon={<Sparkles size={14} />}
+        iconTone="magic"
+        title="Régénération IA groupée"
+        subtitle={`${instances.length} section${instances.length !== 1 ? "s" : ""} sélectionnée${instances.length !== 1 ? "s" : ""}`}
+        right={<Btn variant="ghost" size="sm" icon onClick={onClose} disabled={running}><X size={13} /></Btn>}
+      />
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2.5">
-            <Sparkles size={15} className="text-purple-500" />
-            <div>
-              <h2 className="text-sm font-semibold text-gray-900">Régénération IA groupée</h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {instances.length} section{instances.length !== 1 ? "s" : ""} sélectionnée{instances.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            disabled={running}
-            className="text-gray-400 hover:text-gray-600 disabled:opacity-40 transition-colors"
-          >
-            <X size={18} />
-          </button>
+      <div className="ai-box" style={{ margin: "12px 18px 0", borderRadius: 8 }}>
+        <div className="ai-box-hd">
+          <Sparkles size={12} />
+          <span>Prompt IA</span>
+          <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
         </div>
+        <VariableTextarea
+          value={prompt}
+          onChange={setPrompt}
+          placeholder="Ex: Rends le contenu plus dynamique et orienté conversion. Utilise un ton professionnel."
+          rows={3}
+          variables={variableContext}
+          autoFocus={!hasResults}
+        />
+      </div>
 
-        {/* Prompt area */}
-        <div className="px-6 py-4 border-b border-gray-100 space-y-3">
-          <div className="flex items-center gap-2">
-            <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
-            <span className="text-xs text-gray-400">Appliqué à toutes les sections</span>
+      <ModalBody dense>
+        {!hasResults && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {instances.map(({ instance, def }) => {
+              const fieldCount = Object.keys(instance.content).filter((k) => !k.startsWith("__")).length;
+              return (
+                <div key={instance.id} className="layer-section" style={{ pointerEvents: "none", padding: "0 12px" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 4, border: "1.5px solid var(--magic)", background: "var(--magic-tint)", flexShrink: 0 }} />
+                  <span className="name">{def?.name ?? "Section"}</span>
+                  <Pill>{fieldCount} champ{fieldCount !== 1 ? "s" : ""}</Pill>
+                </div>
+              );
+            })}
           </div>
-          <VariableTextarea
-            value={prompt}
-            onChange={setPrompt}
-            placeholder="Ex: Rends le contenu plus dynamique et orienté conversion. Utilise un ton professionnel."
-            rows={3}
-            variables={variableContext}
-            autoFocus={!hasResults}
-          />
-        </div>
+        )}
 
-        {/* Results */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-3 min-h-0">
-          {!hasResults && (
-            <div className="space-y-2">
-              {instances.map(({ instance, def }) => {
-                const fieldCount = Object.keys(instance.content).filter((k) => !k.startsWith("__")).length;
-                return (
-                  <div key={instance.id} className="flex items-center gap-2.5 p-2.5 bg-gray-50 rounded-lg">
-                    <div className="w-5 h-5 rounded border-2 border-gray-200 flex-shrink-0" />
-                    <span className="text-xs font-medium text-gray-700">{def?.name ?? "Section"}</span>
-                    <span className="text-[10px] text-gray-400 ml-auto">{fieldCount} champ{fieldCount !== 1 ? "s" : ""}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {hasResults && results.map((r) => (
+        {hasResults && results.map((r) => {
+          const tone = r.error ? "danger" : r.loading ? "default" : "ok";
+          return (
             <div
               key={r.instanceId}
-              className={`rounded-xl border overflow-hidden ${
-                r.error ? "border-red-200 bg-red-50" :
-                r.loading ? "border-gray-200 bg-gray-50" :
-                "border-green-200 bg-green-50/40"
-              }`}
+              style={{
+                borderRadius: 8,
+                border: `1px solid ${r.error ? "rgba(181,50,47,.22)" : r.loading ? "var(--border-2)" : "rgba(31,138,91,.28)"}`,
+                background: r.error ? "rgba(181,50,47,.06)" : r.loading ? "var(--surface-2)" : "rgba(31,138,91,.06)",
+                marginBottom: 8,
+                overflow: "hidden",
+              }}
             >
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-black/5">
+              <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 10px", borderBottom: "1px solid var(--border)" }}>
                 {r.loading ? (
-                  <Loader2 size={12} className="animate-spin text-gray-400 flex-shrink-0" />
+                  <Loader2 size={12} className="animate-spin" style={{ color: "var(--text-3)" }} />
                 ) : r.error ? (
-                  <AlertCircle size={12} className="text-red-500 flex-shrink-0" />
+                  <AlertCircle size={12} style={{ color: "var(--danger)" }} />
                 ) : (
-                  <Check size={12} className="text-green-600 flex-shrink-0" />
+                  <Check size={12} style={{ color: "var(--ok)" }} />
                 )}
-                <span className="text-xs font-semibold text-gray-700">{r.name}</span>
-                {r.error && <span className="text-[10px] text-red-500 ml-auto">{r.error}</span>}
-                {!r.loading && !r.error && (
-                  <span className="text-[10px] text-green-600 ml-auto">Prêt</span>
-                )}
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{r.name}</span>
+                {r.error && <Pill tone="danger">{r.error}</Pill>}
+                {!r.loading && !r.error && <Pill tone={tone === "ok" ? "ok" : "default"} >Prêt</Pill>}
               </div>
 
               {!r.loading && !r.error && r.after && (() => {
@@ -180,18 +165,18 @@ export function BulkAIDialog({ open, onClose, instances, onApplyAll, variableCon
                   .filter((k) => typeof r.after![k] === "string" && r.after![k] !== r.before[k])
                   .slice(0, 4);
                 if (changedKeys.length === 0) return (
-                  <div className="px-3 py-2 text-[10px] text-gray-400 italic">Aucun changement textuel</div>
+                  <div style={{ padding: "8px 10px", fontSize: 10, color: "var(--text-4)", fontStyle: "italic" }}>Aucun changement textuel</div>
                 );
                 return (
-                  <div className="px-3 py-2 space-y-2">
+                  <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
                     {changedKeys.map((k) => (
-                      <div key={k} className="text-[10px] space-y-0.5">
-                        <span className="text-gray-500 font-semibold">{k}</span>
-                        <div className="pl-2 border-l-2 border-red-300 text-red-600 line-through truncate">
-                          {String(r.before[k] ?? "").slice(0, 100)}
+                      <div key={k} style={{ fontSize: 10.5 }}>
+                        <div style={{ color: "var(--text-3)", fontWeight: 600, fontFamily: "var(--font-mono)" }}>{k}</div>
+                        <div style={{ paddingLeft: 8, borderLeft: "2px solid rgba(181,50,47,.45)", color: "var(--danger)", textDecoration: "line-through", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {String(r.before[k] ?? "").slice(0, 120)}
                         </div>
-                        <div className="pl-2 border-l-2 border-green-500 text-green-700 truncate">
-                          {String(r.after![k]).slice(0, 100)}
+                        <div style={{ paddingLeft: 8, borderLeft: "2px solid var(--ok)", color: "var(--ok)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 2 }}>
+                          {String(r.after![k]).slice(0, 120)}
                         </div>
                       </div>
                     ))}
@@ -199,50 +184,33 @@ export function BulkAIDialog({ open, onClose, instances, onApplyAll, variableCon
                 );
               })()}
             </div>
-          ))}
-        </div>
+          );
+        })}
+      </ModalBody>
 
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center gap-3">
-          {!hasResults ? (
-            <>
-              <button
-                onClick={onClose}
-                className="px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handleGenerate}
-                disabled={!prompt.trim()}
-                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-              >
-                <Sparkles size={13} />
-                Générer pour {instances.length} section{instances.length !== 1 ? "s" : ""}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => { setResults([]); setApplied(false); }}
-                disabled={running}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
-              >
-                <RotateCcw size={12} />
-                Recommencer
-              </button>
-              <button
-                onClick={handleApplyAll}
-                disabled={running || applied || successCount === 0}
-                className="flex-1 flex items-center justify-center gap-2 py-2 text-sm font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-              >
-                {applied ? <Check size={13} /> : <Sparkles size={13} />}
-                {applied ? "Appliqué !" : `Tout appliquer (${successCount})`}
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
+      <ModalFt>
+        {!hasResults ? (
+          <>
+            <Btn variant="outline" onClick={onClose}>Annuler</Btn>
+            <span className="grow" />
+            <Btn variant="magic" onClick={handleGenerate} disabled={!prompt.trim()}>
+              <Sparkles size={12} />
+              Générer pour {instances.length} section{instances.length !== 1 ? "s" : ""}
+            </Btn>
+          </>
+        ) : (
+          <>
+            <Btn variant="outline" onClick={() => { setResults([]); setApplied(false); }} disabled={running}>
+              <RotateCcw size={11} /> Recommencer
+            </Btn>
+            <span className="grow" />
+            <Btn variant="magic" onClick={handleApplyAll} disabled={running || applied || successCount === 0}>
+              {applied ? <Check size={12} /> : <Sparkles size={12} />}
+              {applied ? "Appliqué !" : `Tout appliquer (${successCount})`}
+            </Btn>
+          </>
+        )}
+      </ModalFt>
+    </ModalShell>
   );
 }

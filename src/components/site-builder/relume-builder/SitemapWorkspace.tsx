@@ -4,13 +4,14 @@ import React from "react";
 import {
   Sparkles, FileText, MoreHorizontal, Plus, Trash2,
   ChevronRight, Send, Loader2, AlertCircle, ChevronDown, RefreshCw, MessageSquare,
-  Copy, ZoomIn, ZoomOut, Maximize2, Search, X
+  Copy, ZoomIn, ZoomOut, Maximize2, Search, X,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
+import { AlertSoft, Btn, Pane, PaneBody, PaneHeader, Pill, Pop } from "./skin-primitives";
 
 // ─── AI Model config ──────────────────────────────────────────────────────────
 
@@ -77,41 +78,57 @@ function useCanvasPanZoom() {
 export function ModelDropdown({ value, onChange }: { value: AIModelId; onChange: (v: AIModelId) => void }) {
   const [open, setOpen] = React.useState(false);
   const model = AI_MODELS.find((m) => m.id === value) ?? AI_MODELS[0];
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs bg-gray-50 border border-gray-200 rounded-lg hover:border-gray-300 transition-colors text-gray-700"
-      >
-        <span className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${model.provider === "anthropic" ? "bg-orange-400" : "bg-green-500"}`} />
-          {model.label}
+    <div ref={ref} style={{ position: "relative", width: "100%" }}>
+      <button onClick={() => setOpen(!open)} className="model-pick" style={{ width: "100%" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <span className={`dot ${model.provider}`} />
+          <span>{model.label}</span>
         </span>
-        <ChevronDown size={11} className="text-gray-400 flex-shrink-0" />
+        <ChevronDown size={11} style={{ color: "var(--text-4)" }} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-50 py-1">
+        <Pop style={{ top: "100%", left: 0, right: 0, marginTop: 4, padding: 4 }}>
           {[
             { provider: "anthropic", label: "Claude" },
             { provider: "openai", label: "ChatGPT" },
           ].map((group) => (
             <div key={group.provider}>
-              <div className="px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400">{group.label}</div>
+              <div style={{ padding: "6px 10px 4px", fontSize: 9, fontWeight: 600, color: "var(--text-4)", textTransform: "uppercase", letterSpacing: ".08em", fontFamily: "var(--font-mono)" }}>
+                {group.label}
+              </div>
               {AI_MODELS.filter((m) => m.provider === group.provider).map((m) => (
                 <button
                   key={m.id}
                   onClick={() => { onChange(m.id); setOpen(false); }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left transition-colors hover:bg-gray-50 ${m.id === value ? "text-blue-600 font-medium" : "text-gray-700"}`}
+                  className="btn ghost"
+                  style={{
+                    width: "100%",
+                    justifyContent: "flex-start",
+                    height: 28,
+                    fontWeight: m.id === value ? 600 : 500,
+                    color: m.id === value ? "var(--accent-2)" : "var(--text-2)",
+                  }}
                 >
-                  <span className={`w-2 h-2 rounded-full flex-shrink-0 ${m.provider === "anthropic" ? "bg-orange-400" : "bg-green-500"}`} />
-                  {m.label}
-                  {m.id === value && <span className="ml-auto text-blue-500">✓</span>}
+                  <span className={`dot ${m.provider}`} style={{ width: 7, height: 7, borderRadius: "50%", display: "inline-block", background: m.provider === "anthropic" ? "var(--accent)" : "var(--ok)" }} />
+                  <span>{m.label}</span>
+                  {m.id === value && <span style={{ marginLeft: "auto", color: "var(--accent)" }}>✓</span>}
                 </button>
               ))}
             </div>
           ))}
-        </div>
+        </Pop>
       )}
     </div>
   );
@@ -137,7 +154,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [menuOpen, setMenuOpen] = React.useState<string | null>(null);
   const [selectedModel, setSelectedModel] = useAIModel();
 
-  // Per-page state: context text + per-page loading
+  // Per-page state
   const [pageContexts, setPageContexts] = React.useState<Record<string, string>>({});
   const [pageContextOpen, setPageContextOpen] = React.useState<string | null>(null);
   const [pageLoading, setPageLoading] = React.useState<string | null>(null);
@@ -146,7 +163,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [pickerOpenForPage, setPickerOpenForPage] = React.useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = React.useState("");
 
-  // ─── AI Generation (full sitemap) ──────────────────────────────────────────
+  // ─── AI Generation ─────────────────────────────────────────────────────────
 
   const handleGenerate = async () => {
     if (!aiInput.trim()) return;
@@ -224,8 +241,6 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     }
   };
 
-  // ─── AI regeneration for a single page ────────────────────────────────────
-
   const handleRegeneratePage = async (page: SitemapPage) => {
     setPageLoading(page.id);
     try {
@@ -252,12 +267,10 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
         dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { sections: data.sections } } });
       }
       if (data.instances?.length) {
-        // Remove existing instances for this page
         const existingIds = state.instancesByPage[page.slug] ?? [];
         for (const id of existingIds) {
           dispatch({ type: "REMOVE_INSTANCE", payload: id });
         }
-        // Add new instances
         for (const inst of data.instances) {
           const secDef = availableSections.find((s) => s.type === inst.sectionType);
           if (!secDef) continue;
@@ -296,8 +309,6 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     }
   };
 
-  // ─── Page management ─────────────────────────────────────────────────────────
-
   const addPage = () => {
     const id = nanoid();
     const slug = `/page-${Date.now()}`;
@@ -308,7 +319,6 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     dispatch({ type: "REMOVE_PAGE", payload: id });
   };
 
-  /** Manually add a section to a page (no AI). */
   const addSectionToPage = (page: SitemapPage, sectionDef: SiteSectionDef) => {
     const newSitemapEntry: SitemapSection = {
       id: nanoid(),
@@ -349,7 +359,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
 
   const filteredSectionsForPicker = availableSections.filter((s) =>
     s.name.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-    (s.category ?? "").toLowerCase().includes(pickerSearch.toLowerCase())
+    (s.category ?? "").toLowerCase().includes(pickerSearch.toLowerCase()),
   );
 
   const toggleExpand = (id: string) => {
@@ -360,7 +370,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     });
   };
 
-  // ─── SVG connector lines ──────────────────────────────────────────────────────
+  // ─── SVG layout ──────────────────────────────────────────────────────────
 
   const PAGE_CARD_WIDTH = 280;
   const PAGE_CARD_GAP = 40;
@@ -372,137 +382,111 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     y: PAGES_TOP,
   }));
 
-  const totalWidth = Math.max(
-    600,
-    state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP) + 120
-  );
-
+  const totalWidth = Math.max(600, state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP) + 120);
   const rootX = totalWidth / 2 - 80;
 
   return (
-    <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
+    <div style={{ display: "flex", height: "100%", overflow: "hidden", flex: 1, minHeight: 0 }}>
 
-      {/* ─ Left AI Panel ─────────────────────────────────────────────────────── */}
-      <div className="w-[280px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-        <div className="p-4 border-b border-gray-100">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={14} className="text-purple-500" />
-            <span className="text-sm font-semibold text-gray-900">Assistant IA</span>
+      {/* ─ Left AI Panel ──────────────────────────────────────────────────── */}
+      <Pane style={{ width: 280, flexShrink: 0 }}>
+        <div className="ai-side-hd">
+          <div className="title">
+            <span className="mark"><Sparkles size={13} /></span>
+            <span>Assistant IA</span>
           </div>
-          <p className="text-xs text-gray-500">Décrivez votre activité pour générer votre sitemap automatiquement.</p>
+          <div className="desc">Décrivez votre activité pour générer votre sitemap automatiquement.</div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {!enterpriseId && (
-            <div className="flex gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-              <AlertCircle size={13} className="flex-shrink-0 mt-0.5" />
-              <span>Aucune entreprise liée. Les résultats seront génériques.</span>
-            </div>
-          )}
+        <PaneBody>
+          <div className="ai-side-body">
+            {!enterpriseId && (
+              <AlertSoft tone="warn">
+                <AlertCircle size={12} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>Aucune entreprise liée. Les résultats seront génériques.</span>
+              </AlertSoft>
+            )}
 
-          {/* Model selector */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-700">Modèle IA</label>
-            <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
+            <div>
+              <div className="field-label">Modèle IA</div>
+              <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
+            </div>
+
+            <div>
+              <div className="field-label">Description de votre activité</div>
+              <VariableTextarea
+                value={aiInput}
+                onChange={setAiInput}
+                placeholder="Ex: Entreprise de plomberie à Paris, spécialisée…"
+                rows={5}
+                className="textarea"
+                variables={state.variableContext}
+                variant="light"
+              />
+            </div>
+
+            <div>
+              <div className="field-label">Pages souhaitées <span className="hint">{state.sitemap.length}</span></div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                {state.sitemap.map((page) => (
+                  <div key={page.id} className="page-pill">
+                    <FileText size={11} style={{ color: "var(--text-4)" }} />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{page.title}</span>
+                  </div>
+                ))}
+              </div>
+              <button
+                onClick={addPage}
+                className="btn ghost xs"
+                style={{ color: "var(--magic)", marginTop: 4, paddingLeft: 4 }}
+              >
+                <Plus size={11} />Ajouter une page
+              </button>
+            </div>
+
+            {aiStep === "done" && (
+              <AlertSoft tone="ok"><span>Sitemap généré avec succès !</span></AlertSoft>
+            )}
+            {aiStep === "error" && (
+              <AlertSoft tone="warn"><span>Une erreur est survenue. Réessayez.</span></AlertSoft>
+            )}
           </div>
+        </PaneBody>
 
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-gray-700">Description de votre activité</label>
-            <VariableTextarea
-              value={aiInput}
-              onChange={setAiInput}
-              placeholder="Ex: Entreprise de plomberie à Paris, spécialisée dans les rénovations de salles de bain et dépannages urgents..."
-              rows={5}
-              className="w-full text-xs bg-gray-50 border border-gray-200 rounded-lg p-3 resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-400 text-gray-800 placeholder-gray-400"
-              variables={state.variableContext}
-              variant="light"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-gray-700">Pages souhaitées</label>
-            <div className="flex flex-col gap-1">
-              {state.sitemap.map((page) => (
-                <div key={page.id} className="flex items-center gap-2 px-2 py-1.5 bg-gray-50 rounded-md">
-                  <FileText size={11} className="text-gray-400" />
-                  <span className="text-xs text-gray-700 flex-1">{page.title}</span>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={addPage}
-              className="flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 mt-1 pl-1"
-            >
-              <Plus size={11} />
-              Ajouter une page
-            </button>
-          </div>
-
-          {aiStep === "done" && (
-            <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-xs text-green-700">
-              Sitemap généré avec succès !
-            </div>
-          )}
-          {aiStep === "error" && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
-              Une erreur est survenue. Réessayez.
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 border-t border-gray-100">
-          <button
+        <div className="ai-side-foot">
+          <Btn
+            variant="magic"
             onClick={handleGenerate}
             disabled={aiLoading || !aiInput.trim()}
-            className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+            style={{ width: "100%", justifyContent: "center", height: 32 }}
           >
-            {aiLoading ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                Génération...
-              </>
-            ) : (
-              <>
-                <Send size={13} />
-                Générer le sitemap
-              </>
-            )}
-          </button>
+            {aiLoading ? (<><Loader2 size={13} className="animate-spin" />Génération…</>) : (<><Send size={12} />Générer le sitemap</>)}
+          </Btn>
         </div>
-      </div>
+      </Pane>
 
-      {/* ─ Canvas ──────────────────────────────────────────────────────────────── */}
+      {/* ─ Canvas ──────────────────────────────────────────────────────────── */}
       <div
-        className="flex-1 overflow-hidden relative select-none"
+        className="sm-canvas"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
         onMouseLeave={canvas.onMouseUp}
         onWheel={canvas.onWheel}
-        style={{ cursor: "grab" }}
+        style={{ cursor: "grab", flex: 1 }}
       >
-        {/* Dot grid background */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: "radial-gradient(circle, #c8c8c8 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
-        />
+        <div className="canvas-dotgrid" />
 
         <div
+          className="sm-stage"
           style={{
             transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.scale})`,
-            transformOrigin: "0 0",
-            position: "absolute",
             width: totalWidth + 200,
           }}
         >
-          {/* SVG connector lines */}
           <svg
             style={{ position: "absolute", top: 0, left: 0, width: totalWidth + 200, height: 600, overflow: "visible", pointerEvents: "none" }}
           >
-            {/* Root → each page */}
             {state.sitemap.map((page, i) => {
               const pos = pagePositions[i];
               const fromX = rootX + 80;
@@ -514,7 +498,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                 <path
                   key={page.id}
                   d={`M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`}
-                  stroke="#d1d5db"
+                  stroke="rgba(20,18,14,0.18)"
                   strokeWidth={1.5}
                   fill="none"
                   strokeDasharray="4 3"
@@ -524,14 +508,9 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           </svg>
 
           {/* Root "Project" node */}
-          <div
-            style={{ position: "absolute", top: ROOT_TOP, left: rootX, width: 160 }}
-            className="bg-white border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm flex items-center gap-2"
-          >
-            <div className="w-5 h-5 rounded bg-gray-100 flex items-center justify-center">
-              <FileText size={11} className="text-gray-500" />
-            </div>
-            <span className="text-sm font-semibold text-gray-800">Project</span>
+          <div className="sm-root-node" style={{ position: "absolute", top: ROOT_TOP, left: rootX, width: 160 }}>
+            <div className="ic"><FileText size={12} /></div>
+            <span>Project</span>
           </div>
 
           {/* Page cards */}
@@ -546,15 +525,12 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
             return (
               <div
                 key={page.id}
+                className="sm-page-card"
                 style={{ position: "absolute", top: pos.y, left: pos.x, width: PAGE_CARD_WIDTH }}
-                className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-visible"
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* Card header */}
-                <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-100">
-                  <div className="w-5 h-5 rounded bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <FileText size={10} className="text-blue-500" />
-                  </div>
+                <div className="hd">
+                  <div className="ic"><FileText size={11} /></div>
                   {editingPageId === page.id ? (
                     <input
                       autoFocus
@@ -572,221 +548,230 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                         if (e.key === "Escape") setEditingPageId(null);
                       }}
                       onClick={(e) => e.stopPropagation()}
-                      className="flex-1 text-xs font-semibold bg-white border border-blue-400 rounded px-1 py-0.5 focus:outline-none"
+                      className="input"
+                      style={{ flex: 1, height: 22, padding: "0 4px", fontSize: 12, fontWeight: 600, borderColor: "var(--accent)" }}
                     />
                   ) : (
                     <span
-                      className="text-xs font-semibold text-gray-800 flex-1 truncate cursor-text"
+                      className="title"
                       onDoubleClick={(e) => { e.stopPropagation(); setEditingPageId(page.id); setEditingTitle(page.title); }}
                       title="Double-clic pour renommer"
                     >
                       {page.title}
                     </span>
                   )}
-                  <div className="flex items-center gap-1">
-                    {/* Per-page AI regenerate */}
+                  <span className="slug">{page.slug}</span>
+                  <div className="tools">
                     <button
                       onClick={() => setPageContextOpen(isContextOpen ? null : page.id)}
-                      className={`p-1 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50 transition-colors ${isContextOpen ? "text-purple-600 bg-purple-50" : ""}`}
+                      className={isContextOpen ? "magic-on" : undefined}
                       title="Régénérer avec l'IA"
                     >
                       <Sparkles size={11} />
                     </button>
                     <button
                       onClick={() => toggleExpand(page.id)}
-                      className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+                      title={isExpanded ? "Réduire" : "Développer"}
                     >
-                      <ChevronRight size={12} className={`transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                      <ChevronRight size={11} style={{ transform: isExpanded ? "rotate(90deg)" : undefined, transition: "transform .15s" }} />
                     </button>
-                    <div className="relative">
-                      <button
-                        onClick={() => setMenuOpen(menuOpen === page.id ? null : page.id)}
-                        className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
-                      >
-                        <MoreHorizontal size={12} />
+                    <div style={{ position: "relative" }}>
+                      <button onClick={() => setMenuOpen(menuOpen === page.id ? null : page.id)}>
+                        <MoreHorizontal size={11} />
                       </button>
                       {menuOpen === page.id && (
-                        <div className="absolute right-0 top-full mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10 py-1">
+                        <Pop style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, minWidth: 160, padding: 4, zIndex: 50 }}>
                           <button
                             onClick={() => { setEditingPageId(page.id); setEditingTitle(page.title); setMenuOpen(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                            className="btn ghost sm"
+                            style={{ width: "100%", justifyContent: "flex-start" }}
                           >
-                            <FileText size={11} />
-                            Renommer
+                            <FileText size={11} />Renommer
                           </button>
                           <button
                             onClick={() => { dispatch({ type: "DUPLICATE_PAGE", payload: page.id }); setMenuOpen(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                            className="btn ghost sm"
+                            style={{ width: "100%", justifyContent: "flex-start" }}
                           >
-                            <Copy size={11} />
-                            Dupliquer
+                            <Copy size={11} />Dupliquer
                           </button>
                           <button
                             onClick={() => { removePage(page.id); setMenuOpen(null); }}
-                            className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50"
+                            className="btn danger sm"
+                            style={{ width: "100%", justifyContent: "flex-start" }}
                           >
-                            <Trash2 size={11} />
-                            Supprimer
+                            <Trash2 size={11} />Supprimer
                           </button>
-                        </div>
+                        </Pop>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* Per-page AI context panel */}
+                {/* Per-page AI context */}
                 {isContextOpen && (
-                  <div className="px-3 py-2.5 bg-purple-50 border-b border-purple-100">
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <MessageSquare size={10} className="text-purple-500" />
-                      <span className="text-[10px] font-semibold text-purple-700">Contexte pour cette page</span>
+                  <div className="ai-ctx">
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+                      <MessageSquare size={10} style={{ color: "var(--magic)" }} />
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "var(--magic)", textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        Contexte pour cette page
+                      </span>
                     </div>
                     <VariableTextarea
                       value={pageCtx}
                       onChange={(v) => setPageContexts((prev) => ({ ...prev, [page.id]: v }))}
-                      placeholder={`Instructions spécifiques pour "${page.title}"...`}
+                      placeholder={`Instructions spécifiques pour "${page.title}"…`}
                       rows={3}
-                      className="w-full text-[10px] bg-white border border-purple-200 rounded-md p-2 resize-none focus:outline-none focus:ring-1 focus:ring-purple-400 text-gray-800 placeholder-gray-400"
                       variables={state.variableContext}
                       variant="light"
                     />
-                    <button
+                    <Btn
+                      variant="magic"
+                      size="sm"
                       onClick={() => handleRegeneratePage(page)}
                       disabled={isLoadingPage}
-                      className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 text-[10px] font-semibold bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors disabled:opacity-50"
+                      style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
                     >
-                      {isLoadingPage ? (
-                        <><Loader2 size={10} className="animate-spin" /> Génération...</>
-                      ) : (
-                        <><RefreshCw size={10} /> Régénérer cette page</>
-                      )}
-                    </button>
+                      {isLoadingPage ? (<><Loader2 size={10} className="animate-spin" /> Génération…</>) : (<><RefreshCw size={10} /> Régénérer cette page</>)}
+                    </Btn>
                   </div>
                 )}
 
-                {/* Sections list */}
+                {/* Sections */}
                 {sections.length > 0 && (
-                  <div className="divide-y divide-gray-50">
+                  <div>
                     {(isExpanded ? sections : sections.slice(0, 4)).map((sec) => (
-                      <div key={sec.id} className="px-3 py-2">
-                        <div className="text-xs font-medium text-gray-700 mb-0.5">{sec.name}</div>
-                        <div className="text-[10px] text-gray-400 leading-relaxed line-clamp-2">{sec.description}</div>
+                      <div key={sec.id} className="sec-row">
+                        <div className="name">{sec.name}</div>
+                        <div className="desc">{sec.description}</div>
                       </div>
                     ))}
                     {!isExpanded && sections.length > 4 && (
                       <button
                         onClick={() => toggleExpand(page.id)}
-                        className="w-full px-3 py-2 text-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 text-left"
+                        className="sec-row"
+                        style={{ width: "100%", textAlign: "left", appearance: "none", border: 0, background: "transparent", fontSize: 10.5, color: "var(--text-4)", cursor: "default" }}
                       >
-                        +{sections.length - 4} sections de plus...
+                        +{sections.length - 4} sections de plus…
                       </button>
                     )}
                   </div>
                 )}
 
                 {sections.length === 0 && (
-                  <div className="px-3 py-3 text-center">
-                    <p className="text-[10px] text-gray-400">Aucune section — ajoutez-les manuellement ou générez avec l&apos;IA</p>
+                  <div style={{ padding: "10px 12px", textAlign: "center", fontSize: 10.5, color: "var(--text-4)" }}>
+                    Aucune section — ajoutez-les manuellement ou générez avec l&apos;IA
                   </div>
                 )}
 
-                {/* Manual section add */}
-                <div className="relative border-t border-gray-100">
+                <div style={{ position: "relative" }}>
                   <button
                     onClick={() => {
                       setPickerOpenForPage(pickerOpenForPage === page.id ? null : page.id);
                       setPickerSearch("");
                     }}
-                    className="flex items-center justify-center gap-1.5 w-full py-2 text-[10px] text-gray-500 hover:bg-gray-50 transition-colors"
+                    className="add-row"
+                    style={{ width: "100%", appearance: "none", border: 0, background: "transparent" }}
                   >
-                    <Plus size={11} />
-                    Ajouter une section
+                    <Plus size={11} />Ajouter une section
                   </button>
                   {pickerOpenForPage === page.id && (
-                    <div
-                      className="absolute left-2 right-2 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-40 flex flex-col max-h-72"
+                    <Pop
+                      style={{ position: "absolute", left: 8, right: 8, top: "100%", marginTop: 4, maxHeight: 280, display: "flex", flexDirection: "column", zIndex: 40 }}
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="p-2 border-b border-gray-100 flex items-center gap-1.5">
-                        <Search size={11} className="text-gray-400 flex-shrink-0" />
-                        <input
-                          autoFocus
-                          value={pickerSearch}
-                          onChange={(e) => setPickerSearch(e.target.value)}
-                          placeholder="Rechercher une section…"
-                          className="flex-1 text-[11px] bg-transparent focus:outline-none text-gray-800 placeholder-gray-400"
-                        />
-                        <button
-                          onClick={() => setPickerOpenForPage(null)}
-                          className="text-gray-300 hover:text-gray-500"
-                          title="Fermer"
-                        >
+                      <div className="modal-search" style={{ padding: 8 }}>
+                        <div className="search-wrap" style={{ flex: 1 }}>
+                          <Search size={11} />
+                          <input
+                            autoFocus
+                            value={pickerSearch}
+                            onChange={(e) => setPickerSearch(e.target.value)}
+                            placeholder="Rechercher une section…"
+                            className="input"
+                            style={{ height: 26, fontSize: 12 }}
+                          />
+                        </div>
+                        <button onClick={() => setPickerOpenForPage(null)} className="btn ghost sm icon" title="Fermer">
                           <X size={11} />
                         </button>
                       </div>
-                      <div className="overflow-y-auto py-1">
+                      <div style={{ overflow: "auto", padding: 4 }}>
                         {filteredSectionsForPicker.length === 0 && (
-                          <p className="text-[10px] text-gray-400 text-center py-3">Aucune section</p>
+                          <p style={{ fontSize: 10.5, color: "var(--text-4)", textAlign: "center", padding: 12, margin: 0 }}>Aucune section</p>
                         )}
                         {filteredSectionsForPicker.map((sec) => (
                           <button
                             key={sec.id}
-                            onClick={() => {
-                              addSectionToPage(page, sec);
-                              setPickerOpenForPage(null);
-                            }}
-                            className="flex items-start gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50"
+                            onClick={() => { addSectionToPage(page, sec); setPickerOpenForPage(null); }}
+                            className="btn ghost"
+                            style={{ width: "100%", justifyContent: "flex-start", height: 32, padding: "0 10px" }}
                           >
-                            <div className="flex-1 min-w-0">
-                              <div className="text-[11px] text-gray-800 truncate">{sec.name}</div>
-                              <div className="text-[9px] text-gray-400 truncate">{sec.category ?? sec.type}</div>
+                            <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
+                              <div style={{ fontSize: 11.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sec.name}</div>
+                              <div style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>{sec.category ?? sec.type}</div>
                             </div>
-                            <Plus size={10} className="text-gray-300 mt-1 flex-shrink-0" />
+                            <Plus size={10} style={{ color: "var(--text-4)" }} />
                           </button>
                         ))}
                       </div>
-                    </div>
+                    </Pop>
                   )}
                 </div>
               </div>
             );
           })}
 
-          {/* Add page button */}
-          <div style={{ position: "absolute", top: PAGES_TOP, left: state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP) }}>
-            <button
-              onClick={addPage}
-              className="w-10 h-10 bg-white border-2 border-dashed border-gray-300 rounded-xl flex items-center justify-center text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors shadow-sm mt-3"
-            >
-              <Plus size={16} />
+          <button
+            onClick={addPage}
+            className="sm-add-page"
+            style={{ position: "absolute", top: PAGES_TOP + 6, left: state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP), appearance: "none" }}
+            title="Ajouter une page"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+
+        <div className="canvas-tools">
+          <div className="grp">
+            <button onClick={canvas.zoomOut} title="Dézoomer"><ZoomOut size={12} /></button>
+            <button onClick={canvas.resetZoom} title="Réinitialiser">
+              <span className="zoom-val">{Math.round(canvas.scale * 100)}%</span>
             </button>
+            <button onClick={canvas.zoomIn} title="Zoomer"><ZoomIn size={12} /></button>
+          </div>
+          <div className="grp">
+            <button onClick={canvas.resetZoom} title="Recentrer"><Maximize2 size={12} /></button>
           </div>
         </div>
 
-        {/* Bottom bar */}
-        <div className="absolute bottom-4 right-4 flex items-center gap-2">
-          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll pour zoomer</span>
-          <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
-            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Dézoomer">
-              <ZoomOut size={12} />
-            </button>
-            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center" title="Réinitialiser">
-              {Math.round(canvas.scale * 100)}%
-            </button>
-            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors" title="Zoomer">
-              <ZoomIn size={12} />
-            </button>
-          </div>
+        <div className="canvas-help">
+          Glisser · <kbd>⌘</kbd>+scroll pour zoomer
         </div>
 
-        {/* Generation status */}
         {aiLoading && (
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-gray-900 text-white text-xs px-4 py-2 rounded-full shadow-lg">
-            <Sparkles size={12} className="text-purple-400" />
-            Génération du sitemap...
+          <div
+            style={{
+              position: "absolute",
+              bottom: 18,
+              left: "50%",
+              transform: "translateX(-50%)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              background: "var(--text)",
+              color: "var(--bg)",
+              fontSize: 12,
+              padding: "8px 16px",
+              borderRadius: 999,
+              boxShadow: "var(--shadow-2)",
+            }}
+          >
+            <Sparkles size={12} style={{ color: "var(--magic)" }} />
+            Génération du sitemap…
             <button
               onClick={() => setAiLoading(false)}
-              className="ml-2 w-4 h-4 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"
+              style={{ marginLeft: 4, width: 16, height: 16, borderRadius: "50%", background: "rgba(255,255,255,.18)", border: 0, color: "inherit", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "default" }}
             >
               ×
             </button>
