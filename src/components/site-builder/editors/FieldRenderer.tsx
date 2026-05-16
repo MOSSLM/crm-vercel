@@ -15,6 +15,7 @@ import { ColorPickerField } from "./ColorPickerField";
 import { ColorSchemeField } from "./ColorSchemeField";
 import { ImagePickerField } from "./ImagePickerField";
 import { FontPickerField } from "./FontPickerField";
+import { FormPickerField } from "./FormPickerField";
 import { ButtonField } from "./ButtonField";
 import { LinkField } from "./LinkField";
 import { InputField, TextareaInputField } from "./InputField";
@@ -218,6 +219,16 @@ export function FieldRenderer({ field, value, onChange, styleGuide, variables, s
           value={(value as string) ?? ""}
           onChange={(v) => onChange(v)}
           styleGuide={styleGuide}
+        />
+      );
+      break;
+
+    case "form_picker":
+      input = (
+        <FormPickerField
+          field={field as import('@/types').SectionFormPickerField}
+          value={(value as string) ?? ""}
+          onChange={(v) => onChange(v)}
         />
       );
       break;

@@ -809,7 +809,8 @@ export type SectionFieldType =
   | 'icon_picker'             // Lucide icon name with autocomplete
   | 'enterprise_field'        // bind to an entreprise.* field (nom, telephone, …)
   | 'review_source'           // 'google' | 'config' | 'static'
-  | 'social_links';           // grouped fb/ig/li/tw/yt fields
+  | 'social_links'            // grouped fb/ig/li/tw/yt fields
+  | 'form_picker';            // pick a Form Builder form
 
 /** Group used to organise fields in the editor (Contenu / Style / etc.). */
 export type SectionFieldGroup = 'content' | 'layout' | 'style' | 'advanced' | 'seo';
@@ -865,6 +866,7 @@ export interface SectionEnterpriseFieldField extends SectionFieldBase {
   allow?: Array<'nom' | 'telephone' | 'email' | 'adresse' | 'ville' | 'code_postal' | 'logo_url' | 'note_moyenne' | 'nombre_avis' | 'description' | 'annee_creation' | 'siret'>;
 }
 export interface SectionReviewSourceField extends SectionFieldBase { type: 'review_source'; }
+export interface SectionFormPickerField extends SectionFieldBase { type: 'form_picker'; filter_by_site_tags?: boolean; }
 export interface SectionSocialLinksField extends SectionFieldBase {
   type: 'social_links';
   /** Which platforms to expose. Default: facebook, instagram, linkedin, twitter. */
@@ -946,7 +948,130 @@ export type SectionField =
   | SectionPageLinkField | SectionIconPickerField | SectionEnterpriseFieldField
   | SectionReviewSourceField | SectionSocialLinksField
   | SectionButtonField | SectionLinkField | SectionInputField
-  | SectionTextareaInputField | SectionFormField;
+  | SectionTextareaInputField | SectionFormField
+  | SectionFormPickerField;
+
+// ─── Form Builder ──────────────────────────────────────────────────────────
+
+export type FormQuestionType =
+  | 'welcome' | 'statement' | 'end'
+  | 'short_text' | 'long_text'
+  | 'email' | 'phone'
+  | 'number' | 'slider'
+  | 'multi_choice' | 'single_choice' | 'dropdown' | 'yes_no'
+  | 'rating' | 'scale'
+  | 'date' | 'file';
+
+export interface FormChoice {
+  id: string;
+  label: string;
+  desc?: string;
+  icon?: string;
+  image?: { src: string; alt?: string };
+  value?: string;
+}
+
+export interface FormQuestion {
+  id: string;
+  ref: string;
+  type: FormQuestionType;
+  title: string;
+  subtitle?: string;
+  required?: boolean;
+  image?: { src: string; alt?: string };
+  emoji?: string;
+  choices?: FormChoice[];
+  multi?: boolean;
+  min?: number;
+  max?: number;
+  step?: number;
+  default?: number;
+  unit?: string;
+  placeholder?: string;
+  maxLen?: number;
+  cta?: string;
+  scaleMax?: number;
+  ratingMax?: number;
+  acceptedFileTypes?: string;
+}
+
+export type FormLogicOp =
+  | 'eq' | 'neq'
+  | 'contains' | 'not_contains'
+  | 'gt' | 'gte' | 'lt' | 'lte'
+  | 'answered' | 'empty';
+
+export interface FormLogicClause {
+  field: string;
+  op: FormLogicOp;
+  value?: unknown;
+}
+
+export interface FormLogicCondition {
+  all?: FormLogicClause[];
+  any?: FormLogicClause[];
+}
+
+export interface FormLogicRule {
+  id: string;
+  from: string;
+  to: string;
+  cond?: FormLogicCondition;
+  label?: string;
+}
+
+export interface FormBrand {
+  name?: string;
+  color?: string;
+  logo_url?: string;
+}
+
+export interface FormSettings {
+  progressBar: boolean;
+  showQuestionNumber: boolean;
+  submitLabel: string;
+  renderMode: 'step' | 'scroll';
+  redirect_url?: string;
+  notify_email?: string;
+  create_opportunity?: boolean;
+  opportunity_offer_id?: string;
+}
+
+export interface FormStyle {
+  density?: 'compact' | 'regular' | 'cozy';
+  accent?: string;
+  fontFamily?: string;
+  radius?: string;
+}
+
+export interface Form {
+  id: string;
+  name: string;
+  slug?: string;
+  description?: string;
+  tags: string[];
+  questions: FormQuestion[];
+  logic: FormLogicRule[];
+  brand: FormBrand;
+  settings: FormSettings;
+  style: FormStyle;
+  is_published: boolean;
+  enterprise_id?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormSubmission {
+  id: string;
+  form_id: string;
+  site_id?: string | null;
+  enterprise_id?: number | null;
+  answers: Record<string, unknown>;
+  contact: { name?: string; email?: string; phone?: string; zip?: string };
+  source_url?: string;
+  status: 'received' | 'processed' | 'spam';
+  created_at: string;
+}
 
 export interface SectionBlockSchema {
   type: string;
