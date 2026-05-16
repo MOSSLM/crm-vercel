@@ -83,13 +83,16 @@ function composeHexAlpha(solid: string, alpha: number): string {
 /** Render a color with an underlying checker to convey alpha. */
 function ColorChip({ value, size = 28, className }: { value: string; size?: number; className?: string }) {
   return (
-    <span
+    <div
       className={className}
       style={{
+        display: "inline-block",
         width: size,
         height: size,
+        boxSizing: "border-box",
         borderRadius: size <= 22 ? 5 : 7,
         flexShrink: 0,
+        flexGrow: 0,
         border: "1.5px solid var(--surface)",
         boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(20,18,14,.06)",
         backgroundImage:
@@ -175,8 +178,10 @@ function Modal({
 // ── Hex Color Input ───────────────────────────────────────────────────────────
 
 /**
- * Color input with hex text field, native picker overlay, opacity slider, copy button.
+ * Color input with hex text field, opacity slider, copy button.
  * Stores values as #RRGGBB or #RRGGBBAA. Setting alpha to < 1 produces the 8-char form.
+ * The chip itself is decorative — clicking it does nothing. The system color picker
+ * is intentionally hidden: typing the hex is the primary editing path.
  */
 function HexColorInput({
   label,
@@ -206,7 +211,6 @@ function HexColorInput({
     else setDraft(value);
   };
 
-  const setSolid = (s: string) => onChange(composeHexAlpha(s, alpha));
   const setAlpha = (a: number) => onChange(composeHexAlpha(solid, a));
 
   const copy = () => {
@@ -215,6 +219,8 @@ function HexColorInput({
       setTimeout(() => setCopied(false), 1200);
     });
   };
+
+  const chipSize = compact ? 24 : 28;
 
   return (
     <div>
@@ -225,15 +231,7 @@ function HexColorInput({
         </div>
       )}
       <div className="hex-input-row">
-        <div style={{ position: "relative", flexShrink: 0 }}>
-          <ColorChip value={value} size={compact ? 24 : 28} />
-          <input
-            type="color"
-            value={solid}
-            onChange={(e) => setSolid(e.target.value)}
-            style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "default" }}
-          />
-        </div>
+        <ColorChip value={value} size={chipSize} />
         <input
           type="text"
           value={draft}
@@ -243,7 +241,7 @@ function HexColorInput({
           placeholder="#000000"
           spellCheck={false}
           className="input mono"
-          style={{ flex: 1, minWidth: 0, height: compact ? 24 : 28, fontSize: compact ? 11 : 12 }}
+          style={{ flex: 1, minWidth: 0, height: chipSize, fontSize: compact ? 11 : 12 }}
         />
         <button onClick={copy} className="btn ghost xs icon" title="Copier #hex">
           {copied ? <Check size={11} style={{ color: "var(--ok)" }} /> : <Copy size={11} />}
@@ -937,7 +935,6 @@ function ButtonsModal({
         <div>
           <div className="field-label">
             <span>Couleurs (override)</span>
-            <span className="hint">supporte #RRGGBBAA</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
             {(["bg", "text", "borderColor"] as const).map((field) => {

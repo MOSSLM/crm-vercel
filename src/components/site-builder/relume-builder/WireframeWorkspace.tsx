@@ -4,9 +4,12 @@ import React from "react";
 import {
   Laptop, Tablet, Smartphone, Plus, Trash2, Layers,
   Search, Sparkles, MoreHorizontal,
-  ChevronDown, RefreshCw, Loader2, MessageSquare, Send,
+  ChevronDown, ChevronUp, RefreshCw, Loader2, MessageSquare, Send,
   ZoomIn, ZoomOut,
 } from "lucide-react";
+
+// Local alias so we can use the down chevron next to ChevronUp in the toolbar
+const ChevronDownIcon = ChevronDown;
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
@@ -519,86 +522,76 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                         wireframe
                       />
 
-                      <div className="wf-section" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "transparent", border: 0, padding: 0 }}>
-                        <div className="toolbar" style={{ pointerEvents: "auto" }}>
-                          <span>{secDef.name}</span>
-                          <div style={{ position: "relative" }}>
-                            <button
-                              className="magic"
-                              onClick={(e) => { e.stopPropagation(); setSectionAIOpen(isSectionAIOpen ? null : instanceId); }}
-                              title="Régénérer avec l'IA"
-                            >
-                              <Sparkles size={11} />
-                            </button>
-                            {isSectionAIOpen && (
-                              <SectionAIPopover
-                                instanceId={instanceId}
-                                onRegenerate={async (prompt) => { await onRegenerateSection?.(instanceId, prompt, selectedModel); }}
-                                onClose={() => setSectionAIOpen(null)}
-                                model={selectedModel}
-                                onModelChange={setSelectedModel}
-                              />
-                            )}
-                          </div>
-                          <div style={{ position: "relative" }}>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setSectionTypePicker(sectionTypePicker === instanceId ? null : instanceId); }}
-                              title="Changer de section"
-                            >
-                              <RefreshCw size={11} />
-                            </button>
-                            {sectionTypePicker === instanceId && (
-                              <SectionTypePicker
-                                availableSections={availableSections}
-                                onSelect={(s) => swapSectionType(instanceId, s)}
-                                onClose={() => setSectionTypePicker(null)}
-                              />
-                            )}
-                          </div>
-                          <div style={{ position: "relative" }}>
-                            <button onClick={(e) => { e.stopPropagation(); setSectionMenuOpen(sectionMenuOpen === instanceId ? null : instanceId); }}>
-                              <MoreHorizontal size={11} />
-                            </button>
-                            {sectionMenuOpen === instanceId && (
-                              <Pop style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, minWidth: 140, padding: 4, zIndex: 50 }}>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx - 1 } });
-                                    setSectionMenuOpen(null);
-                                  }}
-                                  disabled={idx === 0}
-                                  className="btn ghost sm"
-                                  style={{ width: "100%", justifyContent: "flex-start" }}
-                                >
-                                  ↑ Monter
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx + 1 } });
-                                    setSectionMenuOpen(null);
-                                  }}
-                                  disabled={idx === activeInstanceIds.length - 1}
-                                  className="btn ghost sm"
-                                  style={{ width: "100%", justifyContent: "flex-start" }}
-                                >
-                                  ↓ Descendre
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    dispatch({ type: "REMOVE_INSTANCE", payload: instanceId });
-                                    setSectionMenuOpen(null);
-                                  }}
-                                  className="btn danger sm"
-                                  style={{ width: "100%", justifyContent: "flex-start" }}
-                                >
-                                  <Trash2 size={9} />Supprimer
-                                </button>
-                              </Pop>
-                            )}
-                          </div>
+                      <div className="ws-toolbar" onClick={(e) => e.stopPropagation()}>
+                        <span>{secDef.name}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx - 1 } }); }}
+                          disabled={idx === 0}
+                          title="Monter"
+                          style={{ opacity: idx === 0 ? 0.3 : 1 }}
+                        >
+                          <ChevronUp size={11} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: state.activePage, fromIndex: idx, toIndex: idx + 1 } }); }}
+                          disabled={idx === activeInstanceIds.length - 1}
+                          title="Descendre"
+                          style={{ opacity: idx === activeInstanceIds.length - 1 ? 0.3 : 1 }}
+                        >
+                          <ChevronDownIcon size={11} />
+                        </button>
+                        <div style={{ position: "relative" }}>
+                          <button
+                            className="magic"
+                            onClick={(e) => { e.stopPropagation(); setSectionAIOpen(isSectionAIOpen ? null : instanceId); }}
+                            title="Régénérer avec l'IA"
+                          >
+                            <Sparkles size={11} />
+                          </button>
+                          {isSectionAIOpen && (
+                            <SectionAIPopover
+                              instanceId={instanceId}
+                              onRegenerate={async (prompt) => { await onRegenerateSection?.(instanceId, prompt, selectedModel); }}
+                              onClose={() => setSectionAIOpen(null)}
+                              model={selectedModel}
+                              onModelChange={setSelectedModel}
+                            />
+                          )}
+                        </div>
+                        <div style={{ position: "relative" }}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setSectionTypePicker(sectionTypePicker === instanceId ? null : instanceId); }}
+                            title="Changer de section"
+                          >
+                            <RefreshCw size={11} />
+                          </button>
+                          {sectionTypePicker === instanceId && (
+                            <SectionTypePicker
+                              availableSections={availableSections}
+                              onSelect={(s) => swapSectionType(instanceId, s)}
+                              onClose={() => setSectionTypePicker(null)}
+                            />
+                          )}
+                        </div>
+                        <div style={{ position: "relative" }}>
+                          <button onClick={(e) => { e.stopPropagation(); setSectionMenuOpen(sectionMenuOpen === instanceId ? null : instanceId); }}>
+                            <MoreHorizontal size={11} />
+                          </button>
+                          {sectionMenuOpen === instanceId && (
+                            <Pop style={{ position: "absolute", right: 0, top: "100%", marginTop: 4, minWidth: 140, padding: 4, zIndex: 50 }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  dispatch({ type: "REMOVE_INSTANCE", payload: instanceId });
+                                  setSectionMenuOpen(null);
+                                }}
+                                className="btn danger sm"
+                                style={{ width: "100%", justifyContent: "flex-start" }}
+                              >
+                                <Trash2 size={9} />Supprimer
+                              </button>
+                            </Pop>
+                          )}
                         </div>
                       </div>
                     </div>

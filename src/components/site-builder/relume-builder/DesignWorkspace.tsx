@@ -693,6 +693,13 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                 </div>
                 <div className="actions">
                   <button
+                    onClick={() => setReplaceTargetId(selectedInstance.id)}
+                    className="btn ghost xs"
+                    title="Remplacer la section"
+                  >
+                    <Repeat size={11} />Changer
+                  </button>
+                  <button
                     onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: null }); setSelectedElement(null); }}
                     className="btn ghost sm icon"
                     title="Désélectionner"
@@ -1381,8 +1388,6 @@ function SkinSection({ label, defaultOpen = false, children }: { label: string; 
 
 // ─── Mode B: Section properties panel ────────────────────────────────────────
 
-type SectionTab = "content" | "style" | "ai";
-
 function SectionPanel({
   instance,
   sectionDefs,
@@ -1399,12 +1404,7 @@ function SectionPanel({
   onReplace?: () => void;
 }) {
   const { state, dispatch } = useRelumeBuilder();
-  const [activeTab, setActiveTab] = React.useState<SectionTab>("content");
-
-  // Jump to Content tab when a field is focused from layers
-  React.useEffect(() => {
-    if (focusedField) setActiveTab("content");
-  }, [focusedField]);
+  void focusedField; void onClearFocusedField;
 
   const sectionDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
   const schema = sectionDef ? getSchemaForSection(sectionDef) : null;
@@ -1428,199 +1428,158 @@ function SectionPanel({
     dispatch({ type: "REORDER_INSTANCES", payload: { pageSlug: instance.page_slug, fromIndex: idx, toIndex: idx + 1 } });
   };
 
-  const TABS: { id: SectionTab; label: string; icon: React.ElementType }[] = [
-    { id: "content", label: "Contenu", icon: FileText },
-    { id: "style", label: "Style", icon: Palette },
-    { id: "ai", label: "IA", icon: Sparkles },
-  ];
+  // Pre-split fields so we know whether to show the content / appearance accordions
+  const splitFields = schema ? splitSchemaFields(schema) : { contentFields: [], styleFields: [], layoutFields: [] };
+  const filteredStyleFields = (splitFields.styleFields ?? []).filter(
+    (f) => !("id" in f) || (f.id !== "__color_scheme" && f.id !== "__padding_y"),
+  );
+  const allStyleFields = [...filteredStyleFields, ...(splitFields.layoutFields ?? [])];
+  const hasBlocks = !!schema?.blocks && schema.blocks.length > 0;
+  const isNavbar = !!sectionDef?.category && NAVBAR_CATEGORIES.has(sectionDef.category);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Section actions */}
-      <div className="px-3 py-2 border-b border-gray-100 flex gap-1 flex-shrink-0">
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {/* Quick actions row */}
+      <div style={{ display: "flex", gap: 2, alignItems: "center", padding: "6px 10px", borderBottom: "1px solid var(--border)", flexShrink: 0 }}>
         <button
           onClick={() => dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instance.id })}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded hover:bg-gray-50"
+          className="btn ghost sm"
+          title={instance.is_hidden ? "Afficher" : "Masquer"}
         >
-          {instance.is_hidden ? <Eye size={11} /> : <EyeOff size={11} />}
-          {instance.is_hidden ? "Afficher" : "Masquer"}
+          {instance.is_hidden ? <EyeOff size={11} /> : <Eye size={11} />}
         </button>
-        <button
-          disabled={idx <= 0}
-          onClick={moveUp}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded hover:bg-gray-50 disabled:opacity-30"
-          title="Monter"
-        >
+        <button onClick={moveUp} disabled={idx <= 0} className="btn ghost sm icon" title="Monter">
           <ChevronUp size={11} />
         </button>
-        <button
-          disabled={idx >= ids.length - 1}
-          onClick={moveDown}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 px-2 py-1.5 rounded hover:bg-gray-50 disabled:opacity-30"
-          title="Descendre"
-        >
+        <button onClick={moveDown} disabled={idx >= ids.length - 1} className="btn ghost sm icon" title="Descendre">
           <ChevronDown size={11} />
         </button>
         {onReplace && (
-          <button
-            onClick={onReplace}
-            className="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 px-2 py-1.5 rounded hover:bg-blue-50"
-            title="Remplacer la section"
-          >
-            <Repeat size={11} />
-            Remplacer
+          <button onClick={onReplace} className="btn ghost sm" title="Remplacer la section">
+            <Repeat size={11} />Changer
           </button>
         )}
+        <span style={{ flex: 1 }} />
         <button
           onClick={() => dispatch({ type: "REMOVE_INSTANCE", payload: instance.id })}
-          className="flex items-center gap-1 text-xs text-red-400/70 hover:text-red-500 px-2 py-1.5 rounded hover:bg-red-50 ml-auto"
+          className="btn ghost sm icon"
+          style={{ color: "var(--danger)" }}
+          title="Supprimer la section"
         >
           <Trash2 size={11} />
-          Suppr.
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-gray-100 flex-shrink-0">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => setActiveTab(id)}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs transition-colors border-b-2 ${
-              activeTab === id
-                ? "border-blue-500 text-blue-600"
-                : "border-transparent text-gray-400 hover:text-gray-600"
-            }`}
-          >
-            <Icon size={11} />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {activeTab === "content" && (
-          <>
-            {/* Click-to-edit hint */}
-            <div className="flex items-start gap-2 px-2.5 py-2 bg-blue-50 border border-blue-100 rounded text-[10px] text-blue-700">
-              <MousePointer size={11} className="flex-shrink-0 mt-0.5" />
-              <span>
-                Cliquez sur un titre, image, bouton ou champ dans le canvas pour ouvrir directement son éditeur — pas besoin de schéma. Le panneau ci-dessous reste disponible pour les sections avec schéma déclaré.
-              </span>
-            </div>
-
-            {/* Presets */}
-            {schema?.presets && schema.presets.length > 0 && (
-              <PresetsPicker presets={schema.presets} onApply={applyPreset} />
-            )}
-            {/* Content fields (when schema is declared) */}
-            {schema ? (
-              <>
-                {(() => {
-                  const { contentFields } = splitSchemaFields(schema);
-                  return contentFields.length > 0 ? (
-                    <SchemaEditor
-                      schema={{ name: "content", settings: contentFields }}
-                      content={instance.content}
-                      onUpdate={updateContent}
-                      styleGuide={state.styleGuide}
-                      variables={state.variableContext}
-                      siteId={state.siteId}
-                    />
-                  ) : null;
-                })()}
-                {schema.blocks && schema.blocks.length > 0 && (
-                  <BlocksEditor
-                    schema={schema}
-                    blocks={instance.blocks ?? []}
-                    styleGuide={state.styleGuide}
-                    onAdd={(blockType, settings) => dispatch({ type: "ADD_BLOCK", payload: { instanceId: instance.id, blockType, settings } })}
-                    onUpdate={(blockId, settings) => dispatch({ type: "UPDATE_BLOCK", payload: { instanceId: instance.id, blockId, settings } })}
-                    onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
-                    onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
-                    onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
-                    variables={state.variableContext}
-                    siteId={state.siteId}
-                  />
-                )}
-              </>
-            ) : (
-              <p className="text-xs text-gray-400 text-center py-4">
-                Pas de schéma déclaré — cliquez directement sur un élément du canvas, ou utilisez le panneau Layers.
-              </p>
-            )}
-          </>
+      <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+        {/* AI box, always visible at top */}
+        {onRegenerateSection && (
+          <AIRegenerateSection instanceId={instance.id} onRegenerate={onRegenerateSection} />
         )}
 
-        {activeTab === "style" && (
-          <>
-            {/* Position settings — navbar only */}
-            {sectionDef?.category && NAVBAR_CATEGORIES.has(sectionDef.category) && (
+        {/* Click-to-edit hint */}
+        <div style={{ margin: "0 14px 8px", display: "flex", gap: 6, alignItems: "flex-start", padding: "6px 8px", background: "var(--info-tint)", border: "1px solid rgba(42,111,219,.22)", borderRadius: 6 }}>
+          <MousePointer size={11} style={{ color: "var(--info)", flexShrink: 0, marginTop: 2 }} />
+          <span style={{ fontSize: 10.5, color: "#0d4a98", lineHeight: 1.45 }}>
+            Cliquez sur un titre, image ou bouton dans le canvas pour l&apos;éditer directement.
+          </span>
+        </div>
+
+        {/* Presets */}
+        {schema?.presets && schema.presets.length > 0 && (
+          <div style={{ padding: "0 14px 12px" }}>
+            <PresetsPicker presets={schema.presets} onApply={applyPreset} />
+          </div>
+        )}
+
+        {/* Contenu */}
+        {splitFields.contentFields.length > 0 && (
+          <SkinSection label="Contenu" defaultOpen>
+            <SchemaEditor
+              schema={{ name: "content", settings: splitFields.contentFields }}
+              content={instance.content}
+              onUpdate={updateContent}
+              styleGuide={state.styleGuide}
+              variables={state.variableContext}
+              siteId={state.siteId}
+            />
+          </SkinSection>
+        )}
+
+        {/* Blocs (boutons, items, etc.) */}
+        {hasBlocks && (
+          <SkinSection label="Blocs &amp; boutons" defaultOpen>
+            <BlocksEditor
+              schema={schema!}
+              blocks={instance.blocks ?? []}
+              styleGuide={state.styleGuide}
+              onAdd={(blockType, settings) => dispatch({ type: "ADD_BLOCK", payload: { instanceId: instance.id, blockType, settings } })}
+              onUpdate={(blockId, settings) => dispatch({ type: "UPDATE_BLOCK", payload: { instanceId: instance.id, blockId, settings } })}
+              onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
+              onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
+              onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
+              variables={state.variableContext}
+              siteId={state.siteId}
+            />
+          </SkinSection>
+        )}
+
+        {/* Apparence */}
+        <SkinSection label="Apparence" defaultOpen>
+          {isNavbar && (
+            <div className="field">
               <NavbarPositionPanel instance={instance} updateContent={updateContent} />
-            )}
-
-            {/* Color scheme */}
-            <div>
-              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Palette de couleurs</label>
-              <ColorSchemeField
-                setting={{ type: "color_scheme", id: "__color_scheme", label: "Palette" }}
-                value={(instance.content.__color_scheme as string) ?? "default"}
-                onChange={(preset: ColorSchemePreset) => updateContent("__color_scheme", preset)}
-                styleGuide={state.styleGuide}
-              />
             </div>
+          )}
+          <div className="field">
+            <div className="field-label"><span>Palette de couleurs</span></div>
+            <ColorSchemeField
+              setting={{ type: "color_scheme", id: "__color_scheme", label: "Palette" }}
+              value={(instance.content.__color_scheme as string) ?? "default"}
+              onChange={(preset: ColorSchemePreset) => updateContent("__color_scheme", preset)}
+              styleGuide={state.styleGuide}
+            />
+          </div>
+          <div className="field">
+            <div className="field-label"><span>Hauteur</span></div>
+            <UniversalHeightControls instance={instance} onUpdate={updateContent} />
+          </div>
+          <div className="field">
+            <div className="field-label"><span>Espacement</span></div>
+            <UniversalSpacingControls instance={instance} onUpdate={updateContent} />
+          </div>
+          {allStyleFields.length > 0 && (
+            <SchemaEditor
+              schema={{ name: "style", settings: allStyleFields }}
+              content={instance.content}
+              onUpdate={updateContent}
+              styleGuide={state.styleGuide}
+              variables={state.variableContext}
+              siteId={state.siteId}
+            />
+          )}
+          <SectionColorOverrides instance={instance} />
+        </SkinSection>
 
-            {/* Universal Dimensions */}
-            <Accordion title="Hauteur" icon={Maximize2} defaultOpen>
-              <UniversalHeightControls instance={instance} onUpdate={updateContent} />
-            </Accordion>
+        {/* Animation */}
+        <SkinSection label="Animation">
+          <AnimationFieldEditor
+            type={(instance.content.__animation_type as SectionAnimation) ?? "none"}
+            duration={(instance.content.__animation_duration as number) ?? 600}
+            delay={(instance.content.__animation_delay as number) ?? 0}
+            easing={(instance.content.__animation_easing as string) ?? "ease-out"}
+            onUpdate={({ type, duration, delay, easing }) => {
+              updateContent("__animation_type", type);
+              updateContent("__animation_duration", duration);
+              updateContent("__animation_delay", delay);
+              updateContent("__animation_easing", easing);
+            }}
+          />
+        </SkinSection>
 
-            <Accordion title="Espacement" icon={ArrowUpDown} defaultOpen>
-              <UniversalSpacingControls instance={instance} onUpdate={updateContent} />
-            </Accordion>
-
-            {/* Schema style fields */}
-            {schema && (() => {
-              const { styleFields, layoutFields } = splitSchemaFields(schema);
-              const filteredStyle = styleFields.filter(
-                (f) => !("id" in f) || (f.id !== "__color_scheme" && f.id !== "__padding_y")
-              );
-              const allStyleFields = [...filteredStyle, ...layoutFields];
-              if (allStyleFields.length === 0) return null;
-              return (
-                <SchemaEditor
-                  schema={{ name: "style", settings: allStyleFields }}
-                  content={instance.content}
-                  onUpdate={updateContent}
-                  styleGuide={state.styleGuide}
-                  variables={state.variableContext}
-                  siteId={state.siteId}
-                />
-              );
-            })()}
-
-            {/* Per-section color overrides via CSS vars */}
-            <SectionColorOverrides instance={instance} />
-
-            {/* Advanced CSS overrides */}
-            <div>
-              <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">CSS avancé</label>
-              <CustomStyleEditor instance={instance} />
-            </div>
-          </>
-        )}
-
-        {activeTab === "ai" && (
-          onRegenerateSection ? (
-            <AIRegenerateSection instanceId={instance.id} onRegenerate={onRegenerateSection} />
-          ) : (
-            <div className="text-center py-6 space-y-2">
-              <Sparkles size={20} className="text-purple-400/30 mx-auto" />
-              <p className="text-xs text-gray-400">Régénération IA non disponible</p>
-            </div>
-          )
-        )}
+        {/* CSS avancé */}
+        <SkinSection label="CSS avancé">
+          <CustomStyleEditor instance={instance} />
+        </SkinSection>
       </div>
     </div>
   );
