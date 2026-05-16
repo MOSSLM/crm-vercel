@@ -89,24 +89,29 @@ function Modal({
   }, [onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
+    <div className="sb-skin">
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
+        className="modal-backdrop"
+        onClick={onClose}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
-          <span className="font-semibold text-gray-900 text-sm">{title}</span>
-          <button
-            onClick={onClose}
-            className="p-1 text-gray-400 hover:text-gray-700 rounded-md hover:bg-gray-100 transition-colors"
-          >
-            <X size={14} />
-          </button>
+        <div
+          className="modal-shell md"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="modal-hd">
+            <div className="ic-wrap"><Layers size={13} /></div>
+            <div className="grow">
+              <div className="title">{title}</div>
+            </div>
+            <button
+              onClick={onClose}
+              className="btn ghost sm icon"
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>{children}</div>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">{children}</div>
       </div>
     </div>
   );
@@ -221,26 +226,27 @@ function ShadeStrip({ label, baseHex }: { label: string; baseHex: string }) {
 
 function ZoneCard({
   title,
+  icon,
   onClick,
   children,
 }: {
   title: string;
+  icon?: React.ReactNode;
   onClick: () => void;
   children?: React.ReactNode;
 }) {
   return (
     <button
       onClick={onClick}
-      className="w-full text-left border border-gray-200 rounded-xl p-3.5 hover:border-gray-300 hover:bg-gray-50/50 transition-all group"
+      className="zone-card"
+      style={{ width: "100%", textAlign: "left", appearance: "none", font: "inherit", color: "inherit" }}
     >
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+      <div className="zh">
+        <span style={{ display: "flex", alignItems: "center" }}>
+          {icon && <span className="ic-wrap">{icon}</span>}
           {title}
         </span>
-        <ChevronDown
-          size={11}
-          className="text-gray-300 group-hover:text-gray-500 transition-colors -rotate-90"
-        />
+        <ChevronDown size={11} style={{ color: "var(--text-4)", transform: "rotate(-90deg)" }} />
       </div>
       {children}
     </button>
@@ -1026,7 +1032,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
   );
 
   return (
-    <div className="flex h-full bg-white overflow-hidden">
+    <div className="sg-split" style={{ flex: 1, minHeight: 0 }}>
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
       {activeModal === "colors" && (
@@ -1056,14 +1062,14 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
       )}
 
       {/* ── Left: Zone layout ───────────────────────────────────────────────── */}
-      <div className="w-[42%] flex-shrink-0 flex flex-col border-r border-gray-200 overflow-hidden">
+      <div className="sg-side">
 
-        <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 bg-gray-50/60 flex-shrink-0">
-          <span className="text-xs font-semibold text-gray-700">Style Guide</span>
-          <span className="text-[10px] text-gray-400">Cliquez une zone pour modifier</span>
+        <div className="sg-side-hd">
+          <span className="title">Style Guide</span>
+          <span className="hint">Cliquez une zone</span>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+        <div className="sg-zones">
 
           {/* COLORS — full width zone */}
           <ZoneCard title="Couleurs" onClick={() => setActiveModal("colors")}>
@@ -1089,7 +1095,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
           </ZoneCard>
 
           {/* TYPOGRAPHY — side by side */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="zone-row-2">
             <ZoneCard title="Titre" onClick={() => setActiveModal("heading")}>
               <p
                 className="text-lg font-bold text-gray-800 truncate leading-tight"
@@ -1112,7 +1118,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
           </div>
 
           {/* BUTTONS + CARDS — side by side */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="zone-row-2">
             <ZoneCard title="Boutons CTA" onClick={() => setActiveModal("buttons")}>
               <div className="flex flex-wrap gap-1.5">
                 {/* Primary preview */}
@@ -1177,22 +1183,19 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
           </div>
 
           {/* SPACING — compact inline (no modal needed) */}
-          <div className="border border-gray-200 rounded-xl p-3.5">
-            <span className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider block mb-3">
-              Espacement
-            </span>
-            <div className="space-y-3">
+          <div className="zone-card">
+            <div className="zh">
+              <span>Espacement</span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {(
                 [
                   { label: "Section padding", key: "sectionPadding" as const, min: 40, max: 160 },
                   { label: "Gap éléments", key: "elementGap" as const, min: 8, max: 64 },
                 ]
               ).map(({ label, key, min, max }) => (
-                <div key={key}>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-[11px] text-gray-500">{label}</span>
-                    <span className="text-[11px] font-mono text-gray-400">{guide.spacing[key]}</span>
-                  </div>
+                <div key={key} className="range-row">
+                  <label>{label}</label>
                   <input
                     type="range"
                     min={min}
@@ -1204,8 +1207,8 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
                         payload: { spacing: { ...guide.spacing, [key]: `${e.target.value}px` } },
                       })
                     }
-                    className="w-full accent-gray-900"
                   />
+                  <span className="val">{guide.spacing[key]}</span>
                 </div>
               ))}
             </div>
@@ -1229,7 +1232,8 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
                 },
               })
             }
-            className="w-full text-[11px] text-gray-400 hover:text-gray-600 transition-colors py-2 border border-gray-100 rounded-lg hover:bg-gray-50"
+            className="btn outline"
+            style={{ width: "100%", justifyContent: "center", height: 32, color: "var(--text-3)" }}
           >
             Réinitialiser les couleurs
           </button>
@@ -1238,11 +1242,11 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
 
       {/* ── Right: Live Preview ─────────────────────────────────────────────── */}
       {previewFullscreen ? (
-        <div className="fixed inset-0 z-50 bg-gray-900/80 flex items-center justify-center p-8">
-          <div className="relative w-full max-w-6xl max-h-full overflow-auto rounded-2xl shadow-2xl bg-white">
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(20, 18, 14, .6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+          <div style={{ position: "relative", width: "100%", maxWidth: 1100, maxHeight: "100%", overflow: "auto", borderRadius: 14, boxShadow: "var(--shadow-pop)", background: "#fff" }}>
             <button
               onClick={() => setPreviewFullscreen(false)}
-              className="absolute top-3 right-3 z-10 p-2 bg-black/20 hover:bg-black/30 rounded-lg text-white transition-colors"
+              style={{ position: "absolute", top: 12, right: 12, zIndex: 10, padding: 8, background: "rgba(0,0,0,.25)", borderRadius: 8, color: "#fff", border: 0, cursor: "default" }}
             >
               <EyeOff size={14} />
             </button>
@@ -1250,21 +1254,19 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2 bg-white/80 border-b border-gray-100 flex-shrink-0">
-            <span className="text-xs font-medium text-gray-500">
-              Aperçu en direct · page d&apos;accueil
-            </span>
+        <div className="sg-preview-host">
+          <div className="sg-preview-bar">
+            <span className="title">Aperçu en direct · page d&apos;accueil</span>
             <button
               onClick={() => setPreviewFullscreen(true)}
-              className="p-1.5 hover:bg-gray-100 rounded-md text-gray-400 hover:text-gray-700 transition-colors"
+              className="btn ghost sm icon"
               title="Plein écran"
             >
               <Eye size={14} />
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto bg-[#f5f5f5] p-4">
-            <div className="rounded-xl overflow-hidden border border-gray-200 shadow-sm bg-white">
+          <div className="sg-preview-frame">
+            <div className="frame-inner">
               {livePreview}
             </div>
           </div>

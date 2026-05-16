@@ -611,7 +611,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
   }
 
   return (
-    <div className="flex h-full bg-[#f0f0f0] overflow-hidden">
+    <div style={{ display: "flex", height: "100%", overflow: "hidden", flex: 1, minHeight: 0, position: "relative" }}>
 
       {/* ─ Section Picker Modal (Replace flow) ──────────────────────────────── */}
       <SectionPickerModal
@@ -648,68 +648,81 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
 
       {/* ─ Left Panel (context-sensitive) ───────────────────────────────────── */}
       {panelOpen && (
-        <div className="w-[280px] flex-shrink-0 bg-white border-r border-gray-200 flex flex-col overflow-hidden">
+        <aside className="pane" style={{ width: 280, flexShrink: 0 }}>
 
           {/* Panel header */}
-          <div className="px-4 py-2.5 border-b border-gray-100 flex items-center gap-2 flex-shrink-0">
+          <div className="pane-hd contextual">
             {panelMode === "global" && !showMenusPanel && (
               <>
-                <Settings2 size={12} className="text-gray-400" />
-                <span className="text-xs font-semibold text-gray-700 flex-1">Paramètres globaux</span>
-                <button
-                  onClick={() => setShowMenusPanel(true)}
-                  className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                  title="Gérer les menus"
-                >
-                  <Navigation size={10} />
-                  Menus
-                </button>
+                <div className="title-with-icon">
+                  <Settings2 size={12} style={{ color: "var(--text-3)" }} />
+                  <span>Paramètres globaux</span>
+                </div>
+                <div className="actions">
+                  <button
+                    onClick={() => setShowMenusPanel(true)}
+                    className="btn ghost xs"
+                    style={{ color: "var(--info)" }}
+                    title="Gérer les menus"
+                  >
+                    <Navigation size={10} />Menus
+                  </button>
+                </div>
               </>
             )}
             {panelMode === "global" && showMenusPanel && (
               <>
-                <Navigation size={12} className="text-blue-500" />
-                <span className="text-xs font-semibold text-gray-700 flex-1">Menus</span>
-                <button onClick={() => setShowMenusPanel(false)} className="text-gray-400 hover:text-gray-600">
-                  <X size={12} />
-                </button>
+                <div className="title-with-icon">
+                  <Navigation size={12} style={{ color: "var(--info)" }} />
+                  <span>Menus</span>
+                </div>
+                <div className="actions">
+                  <button onClick={() => setShowMenusPanel(false)} className="btn ghost sm icon" title="Retour">
+                    <X size={12} />
+                  </button>
+                </div>
               </>
             )}
             {panelMode === "section" && selectedInstance && (
               <>
-                <Box size={12} className="text-blue-500" />
-                <span className="text-xs font-semibold text-gray-800 flex-1 truncate">
-                  {(selectedInstance.section_def ?? (selectedInstance.section_id ? sectionDefs[selectedInstance.section_id] : null))?.name ?? "Section"}
-                </span>
-                <button
-                  onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: null }); setSelectedElement(null); }}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={12} />
-                </button>
+                <div className="title-with-icon" style={{ minWidth: 0 }}>
+                  <Box size={12} style={{ color: "var(--accent-2)" }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {(selectedInstance.section_def ?? (selectedInstance.section_id ? sectionDefs[selectedInstance.section_id] : null))?.name ?? "Section"}
+                  </span>
+                </div>
+                <div className="actions">
+                  <button
+                    onClick={() => { dispatch({ type: "SELECT_INSTANCE", payload: null }); setSelectedElement(null); }}
+                    className="btn ghost sm icon"
+                    title="Désélectionner"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
               </>
             )}
             {panelMode === "element" && selectedElement && (
               <>
-                {(() => {
-                  const Icon = elementIcon(selectedElement.tag);
-                  return <Icon size={12} className="text-purple-500" />;
-                })()}
-                <span className="text-xs font-semibold text-gray-800 flex-1">
-                  &lt;{selectedElement.tag}&gt; {selectedElement.kind}
-                </span>
-                <button
-                  onClick={() => setSelectedElement(null)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X size={12} />
-                </button>
+                <div className="title-with-icon">
+                  {(() => {
+                    const Icon = elementIcon(selectedElement.tag);
+                    return <Icon size={12} style={{ color: "var(--magic)" }} />;
+                  })()}
+                  <span className="element-tag-pill">&lt;{selectedElement.tag}&gt;</span>
+                  <span style={{ color: "var(--text-3)", fontSize: 11 }}>{selectedElement.kind}</span>
+                </div>
+                <div className="actions">
+                  <button onClick={() => setSelectedElement(null)} className="btn ghost sm icon" title="Fermer">
+                    <X size={12} />
+                  </button>
+                </div>
               </>
             )}
           </div>
 
           {/* Panel content */}
-          <div className="flex-1 overflow-y-auto">
+          <div className="pane-body">
             {panelMode === "global" && !showMenusPanel && <GlobalPanel />}
             {panelMode === "global" && showMenusPanel && <SiteMenusPanel />}
             {panelMode === "section" && selectedInstance && (
@@ -729,61 +742,73 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
               />
             )}
           </div>
-        </div>
+        </aside>
       )}
 
       {/* Panel toggle */}
       <button
         onClick={() => setPanelOpen(!panelOpen)}
-        className="absolute z-20 w-5 h-12 bg-white border border-gray-200 border-l-0 rounded-r-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm top-1/2 -translate-y-1/2"
-        style={{ left: panelOpen ? 280 : 0 }}
+        style={{
+          position: "absolute",
+          zIndex: 20,
+          width: 18,
+          height: 44,
+          background: "var(--surface)",
+          border: "1px solid var(--border-2)",
+          borderLeft: 0,
+          borderRadius: "0 6px 6px 0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--text-4)",
+          boxShadow: "var(--shadow-1)",
+          top: "50%",
+          transform: "translateY(-50%)",
+          left: panelOpen ? 280 : 0,
+          cursor: "default",
+        }}
+        title={panelOpen ? "Masquer le panneau" : "Afficher le panneau"}
       >
-        <ChevronDown size={12} className={`transition-transform ${panelOpen ? "-rotate-90" : "rotate-90"}`} />
+        <ChevronDown size={11} style={{ transform: panelOpen ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .15s" }} />
       </button>
 
       {/* ─ Canvas ──────────────────────────────────────────────────────────── */}
       <div
-        className="flex-1 overflow-hidden relative select-none"
+        className="canvas-host"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
         onMouseLeave={canvas.onMouseUp}
         onWheel={canvas.onWheel}
         onClick={() => { if (!canvas.didPan.current) { dispatch({ type: "SELECT_INSTANCE", payload: null }); setSelectedElement(null); } }}
-        style={{ cursor: "grab" }}
+        style={{ cursor: "grab", flex: 1 }}
       >
         {/* Dot grid */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            backgroundImage: "radial-gradient(circle, #c8c8c8 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
-        />
+        <div className="canvas-dotgrid" />
 
         <div
+          className="canvas-stage"
           style={{
             transform: `translate(${canvas.pan.x}px, ${canvas.pan.y}px) scale(${canvas.scale})`,
-            transformOrigin: "0 0",
-            position: "absolute",
             width: deviceWidth,
           }}
         >
-          {/* Page header label */}
-          <div className="mb-3 flex items-center gap-2">
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5 shadow-sm">
-              <Layers size={12} className="text-gray-400" />
-              <span className="text-xs font-medium text-gray-700">
-                {state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}
-              </span>
+          {/* Page meta bar */}
+          <div className="page-meta-bar">
+            <div className="page-chip">
+              <Layers size={12} />
+              <span>{state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}</span>
+              <span className="slug">{state.activePage}</span>
             </div>
-            <div className="flex gap-1">
-              {state.sitemap.map((p) => (
+            <div className="page-tabs">
+              {state.sitemap.map((p, i) => (
                 <button
                   key={p.id}
                   onClick={(e) => { e.stopPropagation(); dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug }); }}
-                  className={`px-2.5 py-1 text-[10px] rounded-md border transition-colors ${state.activePage === p.slug ? "bg-gray-900 text-white border-gray-900" : "bg-white border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+                  className="page-tab"
+                  aria-selected={state.activePage === p.slug ? "true" : "false"}
                 >
+                  <span className="pgnum">{String(i + 1).padStart(2, "0")}</span>
                   {p.title}
                 </button>
               ))}
@@ -792,8 +817,8 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
 
           {/* Styled canvas */}
           <div
-            className="overflow-hidden shadow-2xl"
-            style={{ width: deviceWidth, borderRadius: 12, backgroundColor: state.styleGuide.colors.background }}
+            className="device-frame"
+            style={{ width: deviceWidth, backgroundColor: state.styleGuide.colors.background }}
           >
             {pageInstanceIds.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -830,13 +855,15 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                   return (
                     <div
                       key={instanceId}
-                      className="relative cursor-pointer"
+                      className="ws-section"
+                      data-selected={isSelected ? "true" : undefined}
                       style={{
-                        outline: isPreviewed ? "2px dashed #a855f7" : isSelected ? "2px solid #3b82f6" : "2px solid transparent",
+                        outline: isPreviewed ? "2px dashed var(--magic)" : undefined,
                         ...(instance.custom_style as React.CSSProperties ?? {}),
                       }}
                       onClick={(e) => { e.stopPropagation(); dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
                     >
+                      <span className="ws-tag"><span className="dot" />{secDef.name}</span>
                       <DynamicSectionRenderer
                         instance={{ ...instance, section_def: secDef, content: previewContent, blocks: previewDef ? [] : instance.blocks }}
                         sectionDef={secDef}
@@ -853,13 +880,8 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                         onDomTree={handleDomTree(instanceId)}
                       />
                       {isPreviewed && (
-                        <div className="absolute top-0 left-0 z-30 bg-purple-500 text-white text-[9px] px-2 py-0.5 rounded-br font-medium">
+                        <div style={{ position: "absolute", top: 0, left: 0, zIndex: 30, background: "var(--magic)", color: "#fff", fontSize: 9, padding: "2px 7px", borderBottomRightRadius: 5, fontFamily: "var(--font-mono)", fontWeight: 500 }}>
                           Aperçu: {previewDef!.name}
-                        </div>
-                      )}
-                      {!isPreviewed && isSelected && (
-                        <div className="absolute top-0 left-0 z-30 bg-blue-500 text-white text-[9px] px-2 py-0.5 rounded-br font-medium">
-                          {secDef.name}
                         </div>
                       )}
                     </div>
@@ -871,102 +893,94 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
         </div>
 
         {/* Bottom controls */}
-        <div className="absolute bottom-4 right-4 flex items-center gap-2">
-          <div className="flex items-center bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="canvas-tools">
+          <div className="grp">
             {(["desktop", "tablet", "mobile"] as const).map((device) => {
               const Icon = device === "desktop" ? Laptop : device === "tablet" ? Tablet : Smartphone;
               return (
                 <button
                   key={device}
                   onClick={() => dispatch({ type: "SET_DEVICE_VIEW", payload: device })}
-                  className={`p-2 transition-colors ${state.deviceView === device ? "bg-gray-900 text-white" : "text-gray-400 hover:text-gray-600 hover:bg-gray-50"}`}
+                  aria-pressed={state.deviceView === device ? "true" : "false"}
+                  title={device}
                 >
-                  <Icon size={14} />
+                  <Icon size={13} />
                 </button>
               );
             })}
           </div>
-          <button
-            onClick={() => setPreviewMode(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-gray-200 rounded-md shadow-sm text-gray-600 hover:bg-gray-50 transition-colors"
-            title="Aperçu plein écran"
-          >
-            <Eye size={11} />
-            Aperçu
-          </button>
-          <span className="text-[10px] text-gray-400 bg-white/80 rounded px-2 py-1">Glisser · Ctrl+scroll</span>
-          <div className="flex items-center bg-white border border-gray-200 rounded-md shadow-sm overflow-hidden">
-            <button onClick={canvas.zoomOut} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors">
-              <ZoomOut size={12} />
-            </button>
-            <button onClick={canvas.resetZoom} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-50 font-mono min-w-[44px] text-center">
-              {Math.round(canvas.scale * 100)}%
-            </button>
-            <button onClick={canvas.zoomIn} className="px-2 py-1 text-gray-500 hover:bg-gray-50 hover:text-gray-800 transition-colors">
-              <ZoomIn size={12} />
+          <div className="grp">
+            <button onClick={() => setPreviewMode(true)} title="Aperçu plein écran">
+              <Eye size={12} />
+              Aperçu
             </button>
           </div>
+          <div className="grp">
+            <button onClick={canvas.zoomOut} title="Dézoomer"><ZoomOut size={12} /></button>
+            <button onClick={canvas.resetZoom} title="Réinitialiser"><span className="zoom-val">{Math.round(canvas.scale * 100)}%</span></button>
+            <button onClick={canvas.zoomIn} title="Zoomer"><ZoomIn size={12} /></button>
+          </div>
         </div>
+
+        <div className="canvas-help">Glisser · <kbd>⌘</kbd>+scroll</div>
       </div>
 
       {/* ─ Right: Layers panel ──────────────────────────────────────────────── */}
       {layersOpen && (
-        <div className="w-[240px] flex-shrink-0 bg-white border-l border-gray-200 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100">
-            <div className="flex items-center gap-1.5">
-              <Layers size={12} className="text-gray-500" />
-              <span className="text-xs font-semibold text-gray-700">Calques</span>
+        <aside className="pane" style={{ width: 240, flexShrink: 0 }}>
+          <div className="pane-hd contextual">
+            <div className="title-with-icon">
+              <Layers size={12} style={{ color: "var(--text-3)" }} />
+              <span>Calques</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="actions">
               <button
                 onClick={toggleBulkSelectMode}
                 title={bulkSelectMode ? "Quitter la sélection multiple" : "Sélection multiple pour IA groupée"}
-                className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors ${
-                  bulkSelectMode
-                    ? "bg-purple-100 text-purple-700 hover:bg-purple-200"
-                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-                }`}
+                className={bulkSelectMode ? "btn magic xs" : "btn ghost xs"}
+                style={bulkSelectMode ? { background: "var(--magic-tint)", color: "var(--magic)", border: 0 } : undefined}
               >
                 <Sparkles size={10} />
                 {bulkSelectMode ? "Sélection" : "IA ×N"}
               </button>
-              <button onClick={() => setLayersOpen(false)} className="text-gray-400 hover:text-gray-600 ml-1">
-                <ChevronRight size={14} />
+              <button onClick={() => setLayersOpen(false)} className="btn ghost sm icon" title="Masquer">
+                <ChevronRight size={13} />
               </button>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto px-1 py-2 text-[11px] text-gray-700">
+          <div className="pane-body" style={{ padding: "8px 6px" }}>
             {state.sitemap.map((page) => {
               const ids = state.instancesByPage[page.slug] ?? [];
               const isActive = page.slug === state.activePage;
               return (
-                <div key={page.id} className="mb-1.5">
+                <div key={page.id} style={{ marginBottom: 4 }}>
                   <button
                     onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: page.slug })}
-                    className={`flex items-center gap-1.5 w-full px-2 py-1 rounded-md ${isActive ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50 text-gray-700"}`}
+                    className="layer-page"
+                    aria-selected={isActive ? "true" : "false"}
+                    aria-expanded={isActive ? "true" : "false"}
+                    style={{ width: "100%", appearance: "none", border: 0, background: "transparent", textAlign: "left" }}
                   >
-                    <ChevronDown size={11} className={`text-gray-400 transition-transform ${isActive ? "" : "-rotate-90"}`} />
-                    <span className="font-semibold flex-1 text-left truncate">{page.title}</span>
-                    <span className="text-[9px] text-gray-400">{ids.length}</span>
+                    <ChevronDown size={11} className="chev" />
+                    <span style={{ fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{page.title}</span>
+                    <span className="count">{ids.length}</span>
                   </button>
                   {isActive && (
-                    <div className="ml-2 border-l border-gray-100 pl-1">
+                    <div className="layer-children">
                       {ids.map((instanceId) => {
                         const inst = state.instances[instanceId];
                         if (!inst) return null;
                         const def = inst.section_def ?? (inst.section_id ? sectionDefs[inst.section_id] : null);
                         const isSel = state.selectedInstanceId === instanceId;
                         const schema = def ? getSchemaForSection(def) : null;
-                        // Default all sections to expanded in layers
                         const expanded = !expandedInstances.has(`collapsed-${instanceId}`);
+                        const bulkChecked = bulkSelectMode && bulkSelected.has(instanceId);
                         return (
                           <div key={instanceId}>
                             <div
-                              className={`group flex items-center gap-1 px-1.5 py-1 rounded-md cursor-pointer ${
-                                bulkSelectMode && bulkSelected.has(instanceId)
-                                  ? "bg-purple-50 text-purple-700"
-                                  : isSel ? "bg-blue-50 text-blue-700" : "hover:bg-gray-50"
-                              }`}
+                              className={`layer-section ${bulkSelectMode ? "bulk-on" : ""}`}
+                              aria-selected={isSel ? "true" : "false"}
+                              data-checked={bulkChecked ? "true" : undefined}
                               onClick={() => {
                                 if (bulkSelectMode) {
                                   toggleBulkItem(instanceId);
@@ -980,11 +994,11 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                               {bulkSelectMode ? (
                                 <button
                                   onClick={(e) => { e.stopPropagation(); toggleBulkItem(instanceId); }}
-                                  className="flex-shrink-0 text-purple-400"
+                                  style={{ flexShrink: 0, appearance: "none", border: 0, background: "transparent", cursor: "default", color: "var(--magic)" }}
                                 >
                                   {bulkSelected.has(instanceId)
-                                    ? <CheckSquare size={11} className="text-purple-600" />
-                                    : <Square size={11} className="text-gray-300" />}
+                                    ? <CheckSquare size={11} />
+                                    : <Square size={11} style={{ color: "var(--text-4)" }} />}
                                 </button>
                               ) : (
                                 <button
@@ -997,28 +1011,29 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                                       return next;
                                     });
                                   }}
-                                  className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                  style={{ flexShrink: 0, appearance: "none", border: 0, background: "transparent", cursor: "default", color: "var(--text-4)" }}
                                 >
-                                  <ChevronRight size={10} className={`transition-transform ${expanded ? "rotate-90" : ""}`} />
+                                  <ChevronRight size={10} style={{ transform: expanded ? "rotate(90deg)" : undefined, transition: "transform .15s" }} />
                                 </button>
                               )}
-                              <Box size={11} className={`flex-shrink-0 ${bulkSelectMode && bulkSelected.has(instanceId) ? "text-purple-400" : isSel ? "text-blue-400" : "text-gray-400"}`} />
-                              <span className="flex-1 truncate text-[11px] font-medium">{def?.name ?? "Section"}</span>
+                              <Box size={11} className="ico-section" />
+                              <span className="name">{def?.name ?? "Section"}</span>
                               {!bulkSelectMode && (
-                                <>
+                                <div className="rowtools">
                                   <button
                                     onClick={(e) => { e.stopPropagation(); dispatch({ type: "TOGGLE_INSTANCE_VISIBILITY", payload: instanceId }); }}
-                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-gray-700"
+                                    title={inst.is_hidden ? "Afficher" : "Masquer"}
                                   >
                                     {inst.is_hidden ? <EyeOff size={10} /> : <Eye size={10} />}
                                   </button>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); dispatch({ type: "REMOVE_INSTANCE", payload: instanceId }); }}
-                                    className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600"
+                                    className="danger"
+                                    title="Supprimer"
                                   >
                                     <Trash2 size={10} />
                                   </button>
-                                </>
+                                </div>
                               )}
                             </div>
                             {expanded && (
@@ -1042,11 +1057,11 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                             {expanded && selectedElement?.instanceId === instanceId && (() => {
                               const Icon = elementIcon(selectedElement.tag);
                               return (
-                                <div className="ml-3 pl-2 border-l border-gray-100 mt-0.5">
-                                  <div className="flex items-center gap-1.5 px-1.5 py-1 rounded bg-purple-50 text-purple-700 text-[10px]">
-                                    <Icon size={10} />
-                                    <span className="font-semibold uppercase">{selectedElement.tag}</span>
-                                    <span className="truncate text-purple-500">{selectedElement.text || "—"}</span>
+                                <div className="layer-children" style={{ marginTop: 2 }}>
+                                  <div className="layer-field" aria-selected="true">
+                                    <Icon size={10} className="ico-kind" />
+                                    <span className="element-tag-pill" style={{ height: 18, fontSize: 10 }}>{selectedElement.tag}</span>
+                                    <span className="prev">{selectedElement.text || "—"}</span>
                                   </div>
                                 </div>
                               );
@@ -1055,7 +1070,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                         );
                       })}
                       {ids.length === 0 && (
-                        <div className="px-2 py-1.5 text-[10px] text-gray-300 italic">Aucune section</div>
+                        <div className="empty-row">Aucune section</div>
                       )}
                     </div>
                   )}
@@ -1066,23 +1081,35 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
 
           {/* Bulk AI action bar */}
           {bulkSelectMode && (
-            <div className={`border-t border-gray-100 px-3 py-2.5 flex flex-col gap-2 ${bulkSelected.size > 0 ? "bg-purple-50" : "bg-gray-50"}`}>
+            <div
+              style={{
+                borderTop: "1px solid var(--border)",
+                padding: "10px 12px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                background: bulkSelected.size > 0 ? "var(--magic-tint)" : "var(--bg)",
+              }}
+            >
               {bulkSelected.size === 0 ? (
-                <p className="text-[10px] text-gray-400 text-center">Cochez des sections pour les régénérer en groupe</p>
+                <p style={{ fontSize: 10.5, color: "var(--text-4)", textAlign: "center", margin: 0 }}>Cochez des sections pour les régénérer en groupe</p>
               ) : (
                 <>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-semibold text-purple-700">{bulkSelected.size} section{bulkSelected.size !== 1 ? "s" : ""}</span>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--magic)" }}>
+                      {bulkSelected.size} section{bulkSelected.size !== 1 ? "s" : ""}
+                    </span>
                     <button
                       onClick={() => setBulkSelected(new Set())}
-                      className="text-[10px] text-gray-400 hover:text-gray-600"
+                      className="btn ghost xs"
                     >
                       Tout décocher
                     </button>
                   </div>
                   <button
                     onClick={() => setBulkDialogOpen(true)}
-                    className="flex items-center justify-center gap-1.5 w-full py-1.5 text-xs font-semibold bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                    className="btn magic sm"
+                    style={{ width: "100%", justifyContent: "center" }}
                   >
                     <Sparkles size={11} />
                     Régénérer avec IA
@@ -1091,12 +1118,31 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
               )}
             </div>
           )}
-        </div>
+        </aside>
       )}
       {!layersOpen && (
         <button
           onClick={() => setLayersOpen(true)}
-          className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-5 h-12 bg-white border border-gray-200 border-r-0 rounded-l-md flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-sm"
+          style={{
+            position: "absolute",
+            right: 0,
+            top: "50%",
+            transform: "translateY(-50%)",
+            zIndex: 20,
+            width: 18,
+            height: 44,
+            background: "var(--surface)",
+            border: "1px solid var(--border-2)",
+            borderRight: 0,
+            borderRadius: "6px 0 0 6px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--text-4)",
+            boxShadow: "var(--shadow-1)",
+            cursor: "default",
+          }}
+          title="Afficher les calques"
         >
           <Layers size={12} />
         </button>

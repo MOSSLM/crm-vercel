@@ -4,7 +4,7 @@ import React from "react";
 import {
   Save, Globe, Check, Share2, Upload,
   Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2,
-  Undo2, Redo2, ArrowUpDown,
+  Undo2, Redo2, ArrowUpDown, AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId } from "@/types";
@@ -19,6 +19,8 @@ import { SitemapWorkspace } from "./SitemapWorkspace";
 import { WireframeWorkspace } from "./WireframeWorkspace";
 import { StyleGuideWorkspace } from "./StyleGuideWorkspace";
 import { DesignWorkspace } from "./DesignWorkspace";
+import "./site-builder-skin.css";
+import { AlertSoft, Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pop, Seg, TopChip, cx } from "./skin-primitives";
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -89,14 +91,12 @@ function CompanyDropdown({
 
   React.useEffect(() => {
     if (open && companies.length === 0) loadCompanies();
-  }, [open]);
+  }, [open, companies.length, loadCompanies]);
 
-  // Load current name on mount
   React.useEffect(() => {
     if (currentEnterpriseId && !currentName) loadCompanies();
-  }, [currentEnterpriseId]);
+  }, [currentEnterpriseId, currentName, loadCompanies]);
 
-  // Close on outside click
   React.useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -106,9 +106,7 @@ function CompanyDropdown({
   }, [open]);
 
   const filtered = React.useMemo(() => {
-    const matched = companies.filter((c) =>
-      c.nom.toLowerCase().includes(search.toLowerCase())
-    );
+    const matched = companies.filter((c) => c.nom.toLowerCase().includes(search.toLowerCase()));
     if (sortByLm) {
       return [...matched].sort((a, b) => {
         if (a.pret_pour_lm === b.pret_pour_lm) return a.nom.localeCompare(b.nom);
@@ -119,77 +117,82 @@ function CompanyDropdown({
   }, [companies, search, sortByLm]);
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors max-w-[160px]"
-      >
-        <Building2 size={12} className="flex-shrink-0 text-gray-400" />
+    <div ref={ref} style={{ position: "relative" }}>
+      <TopChip onClick={() => setOpen(!open)} empty={!currentName} aria-expanded={open}>
+        <Building2 size={11} />
         <span className="truncate">{currentName || "Lier une entreprise"}</span>
-        <ChevronDown size={10} className="flex-shrink-0 text-gray-400" />
-      </button>
-
+        <ChevronDown size={10} style={{ flexShrink: 0, opacity: 0.6 }} />
+      </TopChip>
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-72 bg-white border border-gray-200 rounded-xl shadow-xl z-50">
-          <div className="p-2 border-b border-gray-100 flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+        <Pop style={{ top: "100%", left: 0, marginTop: 4, minWidth: 288 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: 8, borderBottom: "1px solid var(--border)" }}>
+            <div style={{ position: "relative", flex: 1 }}>
+              <Search size={11} style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--text-4)" }} />
               <input
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Rechercher une entreprise..."
-                className="w-full pl-7 pr-2 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-md focus:outline-none focus:border-blue-400"
+                placeholder="Rechercher une entreprise…"
+                className="input"
+                style={{ paddingLeft: 24, height: 26, fontSize: 12 }}
               />
             </div>
-            <button
+            <Btn
+              size="sm"
+              variant={sortByLm ? "subtle" : "outline"}
               onClick={() => setSortByLm((v) => !v)}
               title={sortByLm ? "Tri : Prêts LM en premier" : "Tri : A–Z"}
-              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1.5 rounded-md text-xs border transition-colors ${sortByLm ? "bg-green-50 border-green-300 text-green-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
             >
               <ArrowUpDown size={10} />
               {sortByLm ? "LM" : "A–Z"}
-            </button>
+            </Btn>
           </div>
-          <div className="max-h-56 overflow-y-auto py-1">
+          <div style={{ maxHeight: 240, overflow: "auto", padding: "4px 0" }}>
             {loading && (
-              <div className="flex items-center justify-center py-4">
-                <Loader2 size={14} className="animate-spin text-gray-400" />
+              <div style={{ display: "flex", justifyContent: "center", padding: 16 }}>
+                <Loader2 size={14} className="animate-spin" style={{ color: "var(--text-4)" }} />
               </div>
             )}
             {!loading && currentEnterpriseId && (
               <button
                 onClick={() => { onSelect(null, ""); setCurrentName(""); setOpen(false); }}
-                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
+                className="btn ghost"
+                style={{ width: "100%", justifyContent: "flex-start", height: 28, padding: "0 12px", borderRadius: 0 }}
               >
-                <X size={10} />
-                Aucune entreprise
+                <X size={10} /> Aucune entreprise
               </button>
             )}
             {!loading && filtered.map((c) => (
               <button
                 key={c.id}
                 onClick={() => { onSelect(c.id, c.nom); setCurrentName(c.nom); setOpen(false); setSearch(""); }}
-                className={`flex items-center gap-2 w-full px-3 py-1.5 text-xs text-left transition-colors hover:bg-gray-50 ${c.id === currentEnterpriseId ? "text-blue-600 font-medium" : "text-gray-700"}`}
+                className="btn ghost"
+                style={{
+                  width: "100%",
+                  justifyContent: "flex-start",
+                  height: 28,
+                  padding: "0 12px",
+                  borderRadius: 0,
+                  color: c.id === currentEnterpriseId ? "var(--accent-2)" : undefined,
+                  fontWeight: c.id === currentEnterpriseId ? 600 : 500,
+                }}
               >
-                <Building2 size={10} className="text-gray-400 flex-shrink-0" />
-                <span className="flex-1 truncate">{c.nom}</span>
-                {c.pret_pour_lm && (
-                  <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-green-100 text-green-700 font-medium">LM</span>
-                )}
-                {c.id === currentEnterpriseId && <span className="flex-shrink-0 text-blue-500">✓</span>}
+                <Building2 size={10} style={{ color: "var(--text-4)", flexShrink: 0 }} />
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}>{c.nom}</span>
+                {c.pret_pour_lm && <span className="pill ok" style={{ height: 16, padding: "0 5px", fontSize: 9 }}>LM</span>}
+                {c.id === currentEnterpriseId && <Check size={11} style={{ color: "var(--accent)" }} />}
               </button>
             ))}
             {!loading && filtered.length === 0 && (
-              <p className="text-xs text-gray-400 text-center py-3">Aucune entreprise trouvée</p>
+              <p style={{ fontSize: 11, color: "var(--text-4)", textAlign: "center", padding: 12, margin: 0 }}>Aucune entreprise trouvée</p>
             )}
           </div>
           {!loading && companies.length > 0 && (
-            <div className="px-3 py-1.5 border-t border-gray-100 text-[10px] text-gray-400">
-              {filtered.length} / {companies.length} entreprises qualifiées
+            <div style={{ padding: "6px 12px", borderTop: "1px solid var(--border)", fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>
+              {filtered.length} / {companies.length} entreprises
             </div>
           )}
-        </div>
+        </Pop>
       )}
     </div>
   );
@@ -245,42 +248,46 @@ function ProjectDropdown({
   if (!enterpriseId) return null;
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-3 py-1 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors max-w-[160px]"
-        title="Lier un lead magnet project (ville SEO + avis)"
-      >
+    <div ref={ref} style={{ position: "relative" }}>
+      <TopChip onClick={() => setOpen(!open)} title="Lier un lead magnet project" empty={!current}>
         <span className="truncate">{loading ? "…" : label}</span>
-        <ChevronDown size={12} className="flex-shrink-0" />
-      </button>
+        <ChevronDown size={10} style={{ flexShrink: 0, opacity: 0.6 }} />
+      </TopChip>
       {open && (
-        <div className="absolute top-full left-0 mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
-          <div className="p-1 max-h-60 overflow-y-auto">
+        <Pop style={{ top: "100%", left: 0, marginTop: 4, minWidth: 220 }}>
+          <div style={{ padding: 4, maxHeight: 240, overflow: "auto" }}>
             <button
-              className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-gray-50 rounded"
               onClick={() => { onSelect(null); setOpen(false); }}
+              className="btn ghost"
+              style={{ width: "100%", justifyContent: "flex-start", height: 28 }}
             >
               — Aucun projet
             </button>
             {projects.map((p) => (
               <button
                 key={p.id}
-                className={`w-full text-left px-3 py-2 text-xs rounded hover:bg-gray-50 ${p.id === currentProjectId ? "font-semibold text-gray-900" : "text-gray-700"}`}
                 onClick={() => { onSelect(p.id); setOpen(false); }}
+                className="btn ghost"
+                style={{
+                  width: "100%",
+                  justifyContent: "flex-start",
+                  height: 28,
+                  fontWeight: p.id === currentProjectId ? 600 : 500,
+                  color: p.id === currentProjectId ? "var(--text)" : "var(--text-2)",
+                }}
               >
-                <span className="font-medium">{p.override_city ?? p.override_location ?? p.id.slice(0, 8)}</span>
+                <span style={{ fontWeight: 600 }}>{p.override_city ?? p.override_location ?? p.id.slice(0, 8)}</span>
                 {p.override_entreprise_name && (
-                  <span className="ml-1 text-gray-400">· {p.override_entreprise_name}</span>
+                  <span style={{ color: "var(--text-4)", fontSize: 11 }}>· {p.override_entreprise_name}</span>
                 )}
-                {p.statut && <span className="ml-1 text-gray-400">({p.statut})</span>}
+                {p.statut && <span className="pill" style={{ marginLeft: "auto" }}>{p.statut}</span>}
               </button>
             ))}
             {!loading && projects.length === 0 && (
-              <p className="text-xs text-gray-400 text-center py-3">Aucun projet trouvé</p>
+              <p style={{ fontSize: 11, color: "var(--text-4)", textAlign: "center", padding: 12, margin: 0 }}>Aucun projet trouvé</p>
             )}
           </div>
-        </div>
+        </Pop>
       )}
     </div>
   );
@@ -301,8 +308,6 @@ function SaveAsThemeDialog({
   const [description, setDescription] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
-  if (!open) return null;
-
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
@@ -317,49 +322,44 @@ function SaveAsThemeDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-xl shadow-2xl w-80 p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Bookmark size={16} className="text-gray-600" />
-          <span className="font-semibold text-gray-900">Enregistrer comme thème</span>
-          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-600"><X size={14} /></button>
+    <ModalShell open={open} onClose={onClose} size="sm">
+      <ModalHd
+        icon={<Bookmark size={14} />}
+        title="Enregistrer comme thème"
+        subtitle="Réutilise cette configuration sur un autre site"
+        right={<Btn variant="ghost" size="sm" icon onClick={onClose}><X size={13} /></Btn>}
+      />
+      <ModalBody>
+        <div className="field">
+          <div className="field-label">Nom du thème <span className="req">*</span></div>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Mon thème pro"
+            className="input"
+          />
         </div>
-        <div className="space-y-3">
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Nom du thème</label>
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Mon thème pro"
-              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-gray-600 block mb-1">Description (optionnel)</label>
-            <input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Un thème professionnel pour..."
-              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-            />
-          </div>
+        <div className="field">
+          <div className="field-label">Description <span className="hint">optionnel</span></div>
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Un thème professionnel pour…"
+            className="input"
+          />
         </div>
-        <div className="flex gap-2 mt-4">
-          <button onClick={onClose} className="flex-1 py-2 text-sm text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50">Annuler</button>
-          <button
-            onClick={handleSave}
-            disabled={saving || !name.trim()}
-            className="flex-1 py-2 text-sm font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-700 disabled:opacity-50"
-          >
-            {saving ? "Enregistrement..." : "Enregistrer"}
-          </button>
-        </div>
-      </div>
-    </div>
+      </ModalBody>
+      <ModalFt>
+        <span className="grow" />
+        <Btn variant="outline" onClick={onClose}>Annuler</Btn>
+        <Btn variant="primary" onClick={handleSave} disabled={saving || !name.trim()}>
+          {saving ? "Enregistrement…" : "Enregistrer"}
+        </Btn>
+      </ModalFt>
+    </ModalShell>
   );
 }
-
 
 // ─── Inner Editor ─────────────────────────────────────────────────────────────
 
@@ -380,9 +380,7 @@ function RelumeEditorInner({
   const { state, dispatch } = useRelumeBuilder();
   const [saving, setSaving] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
-  // True once autosave has fired since the last publish → indicates unpublished draft changes
   const [hasDraftChanges, setHasDraftChanges] = React.useState(false);
-  // Unused `publishedAt` kept for future "modified since X" display
   void publishedAt;
 
   const { status: autosaveStatus } = useSiteAutosave({
@@ -394,16 +392,16 @@ function RelumeEditorInner({
     },
   });
 
-  // Load selected fonts globally so all workspaces render them correctly
   useGoogleFonts([state.styleGuide.fonts.heading, state.styleGuide.fonts.body]);
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
+  const publishRef = React.useRef<HTMLDivElement>(null);
   const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
+  const [enterpriseName, setEnterpriseName] = React.useState<string>("");
   const [projectId, setProjectId] = React.useState<string | undefined>(initialProjectId);
   const [showSaveTheme, setShowSaveTheme] = React.useState(false);
   const [themeLibraryOpen, setThemeLibraryOpen] = React.useState(false);
 
-  // Fetch and store enterprise variable context whenever the linked enterprise/project changes
   const fetchVariables = React.useCallback((id: number | undefined, pid?: string) => {
     if (!id) { dispatch({ type: "SET_VARIABLE_CONTEXT", payload: {} }); return; }
     const url = `/api/site-builder/variables?enterprise=${id}${pid ? `&project=${pid}` : ""}`;
@@ -417,14 +415,23 @@ function RelumeEditorInner({
       .catch(() => {});
   }, [dispatch]);
 
-  // Load on mount if an enterprise is already linked
   React.useEffect(() => {
     if (initialEnterpriseId) fetchVariables(initialEnterpriseId, initialProjectId);
   }, [initialEnterpriseId, initialProjectId, fetchVariables]);
 
+  // Close publish popover on outside click
+  React.useEffect(() => {
+    if (!showPublish) return;
+    const handler = (e: MouseEvent) => {
+      if (publishRef.current && !publishRef.current.contains(e.target as Node)) setShowPublish(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showPublish]);
+
   const sectionDefs = React.useMemo(
     () => Object.fromEntries(initialSections.map((s) => [s.id, s])),
-    [initialSections]
+    [initialSections],
   );
 
   React.useEffect(() => {
@@ -440,6 +447,7 @@ function RelumeEditorInner({
         })),
       },
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [siteId]);
 
   // ─── Keyboard shortcuts ───────────────────────────────────────────────────────
@@ -494,7 +502,6 @@ function RelumeEditorInner({
       });
       if (!r2.ok) { const e = await r2.json(); throw new Error(e.error ?? "Erreur PUT instances"); }
 
-      // Version snapshot — non-blocking (ignore errors)
       fetch(`/api/site-builder/sites/${siteId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -535,11 +542,10 @@ function RelumeEditorInner({
     }
   };
 
-  // ─── Link company ─────────────────────────────────────────────────────────────
-
-  const handleSelectCompany = async (id: number | null) => {
+  const handleSelectCompany = async (id: number | null, nom: string) => {
     setEnterpriseId(id ?? undefined);
-    setProjectId(undefined); // reset project when company changes
+    setEnterpriseName(id ? nom : "");
+    setProjectId(undefined);
     fetchVariables(id ?? undefined, undefined);
     try {
       await fetch(`/api/site-builder/sites/${siteId}`, {
@@ -567,8 +573,6 @@ function RelumeEditorInner({
       toast.error("Erreur lors de la liaison du projet");
     }
   };
-
-  // ─── Apply theme from library ─────────────────────────────────────────────────
 
   const handleApplyTheme = (config: SerializedThemeConfig) => {
     const flatInstances: SiteSectionInstance[] = [];
@@ -608,8 +612,6 @@ function RelumeEditorInner({
     toast.success("Thème appliqué");
   };
 
-  // ─── Save as theme ────────────────────────────────────────────────────────────
-
   const handleSaveTheme = async (name: string, description: string) => {
     const config = serializeTheme(state);
     const res = await fetch("/api/site-builder/themes", {
@@ -629,8 +631,6 @@ function RelumeEditorInner({
     }
     toast.success(`Thème "${name}" enregistré`);
   };
-
-  // ─── AI Regenerate Section ────────────────────────────────────────────────────
 
   const handleRegenerateSection = async (instanceId: string, prompt: string, model = "claude-sonnet-4-6") => {
     const instance = state.instances[instanceId];
@@ -667,8 +667,19 @@ function RelumeEditorInner({
     { id: "design", label: "Design" },
   ];
 
+  const currentWorkspace = WORKSPACES.find((w) => w.id === state.activeWorkspace);
+  const savedClass = autosaveStatus === "saving" ? "saved saving"
+    : autosaveStatus === "error" ? "saved dirty"
+    : state.isDirty ? "saved dirty"
+    : "saved";
+  const savedText = autosaveStatus === "saving" ? "Sauvegarde…"
+    : autosaveStatus === "error" ? "Erreur"
+    : state.isDirty ? "Non sauvé"
+    : "Sauvegardé";
+
   return (
-    <div className="flex flex-col h-screen bg-white text-gray-900 overflow-hidden">
+    <div className="sb-skin" data-workspace={state.activeWorkspace}>
+      <div className="sb-app">
 
       {/* ─ Dialogs ─────────────────────────────────────────────────────────── */}
       <SaveAsThemeDialog
@@ -683,41 +694,36 @@ function RelumeEditorInner({
         enterpriseId={enterpriseId}
       />
 
-      {/* ─ Top Bar ─────────────────────────────────────────────────────────── */}
-      <div className="flex items-center h-12 px-4 border-b border-gray-200 bg-white flex-shrink-0 z-40 select-none gap-2">
+      {/* ─ Topbar ─────────────────────────────────────────────────────────── */}
+      <div className="topbar">
 
-        {/* Logo + Site name */}
-        <div className="flex items-center gap-2 min-w-0 flex-shrink-0">
-          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex-shrink-0 flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-white/80" />
+        {/* Left group: brand + breadcrumb + autosave */}
+        <div className="left-group">
+          <div className="brand">
+            <div className="brand-mark">S</div>
           </div>
-          <span className="text-sm font-medium text-gray-800 truncate max-w-[140px]">{siteName}</span>
+          <div className="crumbs">
+            {enterpriseName && <><span>{enterpriseName}</span><span className="sep">/</span></>}
+            <span className="cur">{siteName}</span>
+            {currentWorkspace && <><span className="sep">/</span><span style={{ color: "var(--text-3)" }}>{currentWorkspace.label}</span></>}
+          </div>
+          <span className={savedClass} aria-live="polite">
+            <i />{savedText}
+          </span>
+          <span style={{ width: 6 }} />
+          <CompanyDropdown currentEnterpriseId={enterpriseId} onSelect={handleSelectCompany} />
+          <ProjectDropdown enterpriseId={enterpriseId} currentProjectId={projectId} onSelect={handleSelectProject} />
         </div>
 
-        {/* Company linker */}
-        <CompanyDropdown
-          currentEnterpriseId={enterpriseId}
-          onSelect={(id, _nom) => handleSelectCompany(id)}
-        />
-
-        {/* Lead magnet project picker (ville SEO + avis) */}
-        <ProjectDropdown
-          enterpriseId={enterpriseId}
-          currentProjectId={projectId}
-          onSelect={handleSelectProject}
-        />
-
         {/* Center workspace tabs */}
-        <div className="flex items-center gap-0.5 mx-auto">
+        <div className="tabs" role="tablist">
           {WORKSPACES.map((ws) => (
             <button
               key={ws.id}
+              role="tab"
+              aria-selected={state.activeWorkspace === ws.id ? "true" : "false"}
               onClick={() => dispatch({ type: "SET_WORKSPACE", payload: ws.id })}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
-                state.activeWorkspace === ws.id
-                  ? "bg-gray-900 text-white"
-                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-100"
-              }`}
+              className="tab"
             >
               {ws.label}
             </button>
@@ -725,161 +731,124 @@ function RelumeEditorInner({
         </div>
 
         {/* Right actions */}
-        <div className="flex items-center gap-2 ml-auto flex-shrink-0">
-          {/* Undo / Redo */}
-          <div className="flex items-center border border-gray-200 rounded-md overflow-hidden">
+        <div className="right">
+          <Seg compact>
             <button
               onClick={() => dispatch({ type: "UNDO" })}
               disabled={state.historyIndex < 0}
               title="Annuler (Ctrl+Z)"
-              className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-30 transition-colors"
             >
-              <Undo2 size={13} />
+              <Undo2 size={12} />
             </button>
             <button
               onClick={() => dispatch({ type: "REDO" })}
               disabled={state.historyIndex >= state.history.length - 1}
               title="Rétablir (Ctrl+Y)"
-              className="px-2 py-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-30 transition-colors border-l border-gray-200"
             >
-              <Redo2 size={13} />
+              <Redo2 size={12} />
             </button>
-          </div>
+          </Seg>
 
-          {/* Autosave / dirty indicator */}
-          {autosaveStatus === "saving" && (
-            <span className="flex items-center gap-1 text-xs text-gray-400 px-2 py-0.5">
-              <div className="w-2.5 h-2.5 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-              Sauvegarde...
-            </span>
-          )}
-          {autosaveStatus === "saved" && (
-            <span className="text-xs text-green-600 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-              Sauvegardé ✓
-            </span>
-          )}
-          {autosaveStatus === "error" && (
-            <span className="text-xs text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-              Erreur de sauvegarde
-            </span>
-          )}
-          {autosaveStatus === "idle" && state.isDirty && (
-            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-              Non sauvegardé
-            </span>
-          )}
+          <SiteVersionHistory siteId={siteId} />
 
-          {/* Save */}
-          <button
-            onClick={handleSave}
-            disabled={saving || !state.isDirty}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors disabled:opacity-40"
-          >
+          <Btn variant="ghost" size="sm" onClick={() => setThemeLibraryOpen(true)} title="Bibliothèque de thèmes">
+            <Palette size={12} />
+            Thèmes
+          </Btn>
+
+          <Btn variant="ghost" size="sm" onClick={() => setShowSaveTheme(true)} title="Enregistrer comme thème">
+            <Bookmark size={12} />
+            Sauver
+          </Btn>
+
+          <Btn variant="outline" size="sm" onClick={handleSave} disabled={saving || !state.isDirty}>
             {saving ? (
-              <div className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+              <Loader2 size={12} className="animate-spin" />
             ) : state.isDirty ? (
               <Save size={12} />
             ) : (
-              <Check size={12} className="text-green-600" />
+              <Check size={12} style={{ color: "var(--ok)" }} />
             )}
-            {saving ? "Sauvegarde..." : "Enregistrer"}
-          </button>
+            {saving ? "Sauvegarde…" : "Enregistrer"}
+          </Btn>
 
-          {/* Historique des versions */}
-          <SiteVersionHistory siteId={siteId} />
-
-          {/* Theme library */}
-          <button
-            onClick={() => setThemeLibraryOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-            title="Bibliothèque de thèmes"
-          >
-            <Palette size={12} />
-            Thèmes
-          </button>
-
-          {/* Save as theme */}
-          <button
-            onClick={() => setShowSaveTheme(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-            title="Enregistrer comme thème réutilisable"
-          >
-            <Bookmark size={12} />
-            Sauver
-          </button>
-
-          {/* Share */}
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
+          <Btn variant="ghost" size="sm">
             <Share2 size={12} />
-            Share
-          </button>
+            Partager
+          </Btn>
 
-          {/* Export */}
-          <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors">
+          <Btn variant="ghost" size="sm">
             <Upload size={12} />
             Export
-          </button>
+          </Btn>
 
-          {/* Publish / Upgrade */}
-          <div className="relative">
-            <button
-              onClick={() => setShowPublish(!showPublish)}
-              className="relative flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold bg-gray-900 text-white rounded-md hover:bg-gray-700 transition-colors"
-            >
+          <div ref={publishRef} style={{ position: "relative" }}>
+            <Btn variant="accent" size="sm" onClick={() => setShowPublish((v) => !v)}>
               <Globe size={12} />
               {isPublished ? "Republier" : "Publier"}
               {hasDraftChanges && (
-                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border-2 border-white" title="Modifications non publiées" />
+                <span
+                  style={{
+                    position: "absolute",
+                    top: -3,
+                    right: -3,
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "var(--warn)",
+                    border: "2px solid var(--bg)",
+                  }}
+                  title="Modifications non publiées"
+                />
               )}
-            </button>
+            </Btn>
             {showPublish && (
-              <div className="absolute top-full right-0 mt-2 w-80 bg-white border border-gray-200 rounded-xl shadow-xl p-4 z-50">
-                <div className="text-sm font-semibold mb-1 text-gray-900">
+              <Pop style={{ top: "100%", right: 0, marginTop: 6, width: 320, padding: 14 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>
                   {isPublished ? "Publier les modifications" : "Publier le site"}
                 </div>
                 {isPublished && publishedSubdomain && (
-                  <p className="text-[11px] text-gray-400 mb-3">
-                    Actuellement en ligne sur{" "}
+                  <div style={{ fontSize: 11, color: "var(--text-4)", marginBottom: 10 }}>
+                    En ligne sur{" "}
                     <a
                       href={`https://${publishedSubdomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-500 hover:underline"
+                      style={{ color: "var(--info)", textDecoration: "none" }}
                     >
                       {publishedSubdomain}.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}
                     </a>
-                  </p>
-                )}
-                {hasDraftChanges && (
-                  <div className="flex items-start gap-2 p-2 mb-3 bg-amber-50 border border-amber-200 rounded-lg">
-                    <span className="text-amber-500 text-[11px] leading-tight">⚠ Des modifications non publiées existent. Publiez pour les mettre en ligne.</span>
                   </div>
                 )}
-                <div className="flex items-center gap-1 mb-3">
+                {hasDraftChanges && (
+                  <AlertSoft tone="warn" className="mb-2">
+                    <AlertTriangle size={12} />
+                    <span>Des modifications non publiées existent.</span>
+                  </AlertSoft>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "10px 0" }}>
                   <input
                     type="text"
                     value={publishDomain}
                     onChange={(e) => setPublishDomain(e.target.value.replace(/[^a-z0-9-]/g, ""))}
                     placeholder="mon-site"
-                    className="flex-1 bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs text-gray-900 font-mono focus:outline-none focus:border-blue-500"
+                    className="input mono"
                   />
-                  <span className="text-xs text-gray-400">.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}</span>
+                  <span style={{ fontSize: 11, color: "var(--text-4)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+                    .{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}
+                  </span>
                 </div>
-                <button
-                  onClick={handlePublish}
-                  disabled={publishing || !publishDomain.trim()}
-                  className="w-full py-2 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
-                >
-                  {publishing ? "Publication en cours…" : isPublished ? "Mettre à jour le site live" : "Publier"}
-                </button>
-              </div>
+                <Btn variant="primary" onClick={handlePublish} disabled={publishing || !publishDomain.trim()} style={{ width: "100%", justifyContent: "center" }}>
+                  {publishing ? <><Loader2 size={12} className="animate-spin" /> Publication…</> : isPublished ? "Mettre à jour le site" : "Publier"}
+                </Btn>
+              </Pop>
             )}
           </div>
         </div>
       </div>
 
-      {/* ─ Workspace ─────────────────────────────────────────────────────────── */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      {/* ─ Workspace body ────────────────────────────────────────────────── */}
+      <div className={cx("sb-body", "sb-body--" + state.activeWorkspace)} style={{ flex: "1 1 auto", minHeight: 0, display: "flex", overflow: "hidden" }}>
         {state.activeWorkspace === "sitemap" && (
           <SitemapWorkspace
             siteId={siteId}
@@ -905,7 +874,7 @@ function RelumeEditorInner({
           />
         )}
       </div>
+      </div>
     </div>
   );
 }
-
