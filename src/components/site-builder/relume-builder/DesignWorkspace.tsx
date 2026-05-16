@@ -1182,8 +1182,20 @@ function GlobalPanel() {
     { key: "text", label: "Texte" },
   ];
 
-  const FONT_OPTIONS_HEAD = ["Instrument Serif", "Fraunces", "Playfair Display", "Geist", "Inter", "Manrope", "Outfit"];
-  const FONT_OPTIONS_BODY = ["Geist", "Inter", "DM Sans", "Plus Jakarta Sans", "Manrope", "Outfit", "Sora"];
+  const FONT_OPTIONS_HEAD = [
+    "Instrument Serif", "Fraunces", "Playfair Display", "Bodoni Moda", "DM Serif Display",
+    "Cormorant Garamond", "Lora", "EB Garamond", "Crimson Pro", "PT Serif",
+    "Merriweather", "Source Serif 4",
+    "Geist", "Inter", "Instrument Sans", "Manrope", "Outfit", "Unbounded",
+    "Anton", "Archivo Black", "Bebas Neue", "Oswald",
+  ];
+  const FONT_OPTIONS_BODY = [
+    "Geist", "Inter", "DM Sans", "Plus Jakarta Sans", "Manrope", "Outfit",
+    "Sora", "Space Grotesk", "Work Sans", "Figtree", "Onest", "IBM Plex Sans",
+    "Albert Sans", "Be Vietnam Pro", "Hanken Grotesk", "Public Sans",
+    "Nunito", "Nunito Sans", "Raleway", "Roboto", "Lato", "Open Sans",
+    "Instrument Serif", "Lora", "EB Garamond", "Crimson Pro",
+  ];
 
   const MAX_WIDTHS: { label: string; value: string }[] = [
     { label: "Étroit (800px)", value: "800px" },

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 import {
   X, Copy, Check, Shuffle, ChevronDown, Eye, EyeOff, Layers, Palette, Type as TypeIcon, MousePointer, Box,
   RefreshCw, AlertCircle, Search,
@@ -20,10 +21,18 @@ import { Btn } from "./skin-primitives";
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const GOOGLE_FONTS = [
-  "Instrument Serif", "Fraunces", "Playfair Display", "Merriweather", "Bodoni Moda",
-  "Geist", "Inter", "DM Sans", "Plus Jakarta Sans", "Work Sans", "Outfit",
-  "Sora", "Space Grotesk", "Unbounded", "Manrope", "Poppins", "Montserrat",
-  "Nunito", "Roboto", "Lato", "Open Sans",
+  // Serif éditorial (titres élégants)
+  "Instrument Serif", "Fraunces", "Playfair Display", "Bodoni Moda", "DM Serif Display",
+  "Cormorant Garamond", "Lora", "EB Garamond", "Crimson Pro", "PT Serif",
+  "Merriweather", "Source Serif 4", "Libre Caslon Text",
+  // Sans modernes (corps & UI)
+  "Geist", "Inter", "DM Sans", "Plus Jakarta Sans", "Manrope", "Outfit",
+  "Sora", "Space Grotesk", "Unbounded", "Work Sans", "Poppins", "Montserrat",
+  "Nunito", "Nunito Sans", "Raleway", "Roboto", "Lato", "Open Sans",
+  "Figtree", "Onest", "Geist Mono", "JetBrains Mono", "IBM Plex Sans",
+  "IBM Plex Mono", "Albert Sans", "Be Vietnam Pro", "Hanken Grotesk", "Public Sans",
+  // Display caractère (gros titres marqués)
+  "Instrument Sans", "Anton", "Archivo Black", "Bebas Neue", "Oswald",
 ];
 
 const COLOR_PALETTES = [
@@ -118,7 +127,8 @@ export function useGoogleFonts(families: string[]) {
       const link = document.createElement("link");
       link.id = id;
       link.rel = "stylesheet";
-      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:wght@400;500;600;700&display=swap`;
+      // Request italic 400 too — fonts without italics fall back gracefully on Google's side.
+      link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap`;
       document.head.appendChild(link);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -153,7 +163,12 @@ function Modal({
     return () => document.removeEventListener("keydown", handler);
   }, [onClose]);
 
-  return (
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+
+  // Portal to body to avoid breaking parent layouts (grid/flex) of the workspace.
+  return createPortal(
     <div className="sb-skin">
       <div className="modal-backdrop" onClick={onClose}>
         <div className={`modal-shell ${size}`} onClick={(e) => e.stopPropagation()}>
@@ -171,7 +186,8 @@ function Modal({
           {footer && <div className="modal-ft">{footer}</div>}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -786,6 +802,71 @@ function VariantEditor({
   );
 }
 
+/**
+ * Compact color override cell used inside the 3-col grid of the Buttons modal.
+ * Stacks: label + (mini "auto" link), small hex input row, mini opacity slider.
+ * Designed to fit ~160px width without overflowing.
+ */
+function CompactColorOverride({
+  label,
+  value,
+  isOverridden,
+  onChange,
+  onClear,
+}: {
+  label: string;
+  value: string;
+  isOverridden: boolean;
+  onChange: (hex: string) => void;
+  onClear: () => void;
+}) {
+  const { solid, alpha } = splitHexAlpha(value || "#000000");
+  const [draft, setDraft] = React.useState(value);
+  React.useEffect(() => { setDraft(value); }, [value]);
+
+  const commit = (v: string) => {
+    const trimmed = v.trim();
+    const clean = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+    if (isValidHex(clean)) { onChange(clean); setDraft(clean); }
+    else setDraft(value);
+  };
+  const setAlpha = (a: number) => onChange(composeHexAlpha(solid, a));
+
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4, minWidth: 0 }}>
+        <span style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: ".04em" }}>{label}</span>
+        {isOverridden && (
+          <button
+            onClick={onClear}
+            title="Revenir à la couleur de marque"
+            style={{ fontSize: 9, color: "var(--text-3)", border: 0, background: "transparent", cursor: "default", padding: 0, fontFamily: "var(--font-mono)" }}
+          >Auto</button>
+        )}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+        <ColorChip value={value} size={22} />
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={(e) => commit(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }}
+          spellCheck={false}
+          className="input mono"
+          style={{ flex: 1, minWidth: 0, height: 22, padding: "0 4px", fontSize: 10.5 }}
+        />
+      </div>
+      <input
+        type="range" min={0} max={100} value={Math.round(alpha * 100)}
+        onChange={(e) => setAlpha(Number(e.target.value) / 100)}
+        title={`Opacité ${Math.round(alpha * 100)}%`}
+        style={{ width: "100%", marginTop: 6 }}
+      />
+    </div>
+  );
+}
+
 // ── Modal: Buttons ────────────────────────────────────────────────────────────
 
 const BUTTON_STYLES: Array<{ id: ButtonVariant["style"]; label: string }> = [
@@ -931,35 +1012,26 @@ function ButtonsModal({
           </div>
         </div>
 
-        {/* Color overrides */}
+        {/* Color overrides — Fond / Texte / Bordure all on one row */}
         <div>
           <div className="field-label">
             <span>Couleurs (override)</span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
             {(["bg", "text", "borderColor"] as const).map((field) => {
               const fieldLabel = { bg: "Fond", text: "Texte", borderColor: "Bordure" }[field];
               const autoKey = (field === "borderColor" ? "--v-border-color" : `--v-${field}`) as `--v-${string}`;
               const current = v[field] ?? vars[autoKey];
               const isOverridden = !!v[field];
               return (
-                <div key={field}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                    <span style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: ".04em" }}>{fieldLabel}</span>
-                    {isOverridden && (
-                      <button
-                        onClick={() => updateV({ [field]: undefined } as Partial<ButtonVariant>)}
-                        title="Revenir à auto"
-                        style={{ fontSize: 9, color: "var(--text-4)", border: 0, background: "transparent", cursor: "default", padding: 0 }}
-                      >Auto</button>
-                    )}
-                  </div>
-                  <HexColorInput
-                    value={current}
-                    onChange={(hex) => updateV({ [field]: hex } as Partial<ButtonVariant>)}
-                    compact
-                  />
-                </div>
+                <CompactColorOverride
+                  key={field}
+                  label={fieldLabel}
+                  value={current}
+                  isOverridden={isOverridden}
+                  onChange={(hex) => updateV({ [field]: hex } as Partial<ButtonVariant>)}
+                  onClear={() => updateV({ [field]: undefined } as Partial<ButtonVariant>)}
+                />
               );
             })}
           </div>

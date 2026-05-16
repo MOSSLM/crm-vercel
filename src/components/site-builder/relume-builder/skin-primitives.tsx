@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { createPortal } from "react-dom";
 
 type Cn = string | false | null | undefined;
 const cx = (...xs: Cn[]) => xs.filter(Boolean).join(" ");
@@ -197,15 +198,18 @@ export function ModalShell({
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [open, onClose]);
-  if (!open) return null;
-  return (
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+  if (!open || !mounted) return null;
+  return createPortal(
     <div className="sb-skin">
       <div className="modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
         <div className={cx("modal-shell", size, className)} role="dialog" aria-modal="true">
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
