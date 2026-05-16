@@ -7,6 +7,9 @@ import { TopBar } from './parts/TopBar';
 import { StatusBar } from './parts/StatusBar';
 import { SettingsSheet } from './parts/SettingsSheet';
 import { BuildView } from './build/BuildView';
+import { LogicView } from './logic/LogicView';
+import { PreviewView } from './preview/PreviewView';
+import { ShareView } from './share/ShareView';
 
 const SAVE_DEBOUNCE_MS = 1000;
 
@@ -249,29 +252,14 @@ export default function FormBuilderApp({ formId }: FormBuilderAppProps) {
           />
         )}
         {tab === 'logic' && (
-          <div className="pane" style={{ flex: 1 }}>
-            <div className="pane-hd"><span>Logique</span></div>
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-              Canvas logique — bientôt disponible.
-            </div>
-          </div>
+          <LogicView
+            form={form}
+            onChangeLogic={(logic) => setForm((f) => f ? ({ ...f, logic }) : f)}
+            onAddLogicFrom={addLogicFrom}
+          />
         )}
-        {tab === 'preview' && (
-          <div className="pane" style={{ flex: 1 }}>
-            <div className="pane-hd"><span>Preview</span></div>
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-              Aperçu — bientôt disponible.
-            </div>
-          </div>
-        )}
-        {tab === 'share' && (
-          <div className="pane" style={{ flex: 1 }}>
-            <div className="pane-hd"><span>Partager</span></div>
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}>
-              Partager — bientôt disponible.
-            </div>
-          </div>
-        )}
+        {tab === 'preview' && <PreviewView form={form} />}
+        {tab === 'share' && <ShareView form={form} />}
       </div>
       <StatusBar form={form} tab={tab} />
       <SettingsSheet
