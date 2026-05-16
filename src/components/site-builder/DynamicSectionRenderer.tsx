@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
 import { LibrarySectionIframe, type IframeElementClickInfo, type IframeDomTreeNode } from "./LibrarySectionIframe";
@@ -196,6 +196,37 @@ export function DynamicSectionRenderer({
   // Color scheme override computed from content.__color_scheme
   const colorSchemeVars = resolveColorSchemeVars(instance.content, styleGuide);
 
+  // Form block section
+  if (sectionDef.type === 'form_block') {
+    const formId = instance.content.form_id as string | undefined;
+    const renderMode = (instance.content.render_mode as 'step' | 'scroll') ?? 'step';
+    if (!formId) {
+      if (!editorMode) return null;
+      return (
+        <div
+          onClick={editorMode ? (e) => { e.stopPropagation(); onSelect?.(); } : undefined}
+          data-section-id={instance.id}
+          className={editorMode ? 'group/section' : ''}
+          style={{ padding: '40px 24px', textAlign: 'center', background: '#f8f6f1', color: '#8A877F', fontSize: 14, cursor: editorMode ? 'pointer' : undefined, position: 'relative', border: selected ? '2px solid #3b82f6' : '2px solid transparent' }}
+        >
+          Formulaire non configuré — sélectionnez un formulaire dans l'éditeur.
+        </div>
+      );
+    }
+    return (
+      <FormBlockSection
+        formId={formId}
+        renderMode={renderMode}
+        siteId={instance.site_id as string | undefined}
+        editorMode={editorMode}
+        selected={selected}
+        onSelect={onSelect}
+        instanceId={instance.id}
+        variables={variables}
+      />
+    );
+  }
+
   // Library section: render via iframe using the section code
   if (sectionDef.code) {
     const handleClick = editorMode ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); } : undefined;
@@ -378,6 +409,68 @@ export function DynamicSectionRenderer({
         ))}
       </div>
     </section>
+  );
+}
+
+// Lazily loaded form block — avoids bundling FormRuntime into every page
+function FormBlockSection({
+  formId, renderMode, siteId, editorMode, selected, onSelect, instanceId, variables,
+}: {
+  formId: string;
+  renderMode: 'step' | 'scroll';
+  siteId?: string;
+  editorMode?: boolean;
+  selected?: boolean;
+  onSelect?: () => void;
+  instanceId?: string;
+  variables?: Record<string, string>;
+}) {
+  const [form, setForm] = useState<import('@/types').Form | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/forms/public/${formId}`)
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then(setForm)
+      .catch(() => setError(true));
+  }, [formId]);
+
+  const FormRuntime = React.lazy(() => import('@/components/form-builder/runtime/FormRuntime').then(m => ({ default: m.FormRuntime })));
+
+  if (error) {
+    if (!editorMode) return null;
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: '#8A877F', fontSize: 14 }}>
+        Formulaire introuvable ou non publié.
+      </div>
+    );
+  }
+
+  if (!form) {
+    return (
+      <div style={{ padding: 40, textAlign: 'center', color: '#8A877F', fontSize: 14 }}>
+        Chargement du formulaire…
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={editorMode ? (e) => { e.stopPropagation(); onSelect?.(); } : undefined}
+      data-section-id={instanceId}
+      className={editorMode ? 'group/section' : ''}
+      style={{ position: 'relative', border: selected ? '2px solid #3b82f6' : '2px solid transparent' }}
+    >
+      <React.Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#8A877F' }}>Chargement…</div>}>
+        <FormRuntime
+          form={form}
+          mode={renderMode}
+          siteId={siteId}
+          embedded={editorMode}
+          variables={variables}
+        />
+      </React.Suspense>
+    </div>
   );
 }
 

@@ -996,6 +996,23 @@ const footerSchema: SectionSchema = {
 
 // ─── Registry ─────────────────────────────────────────────────────────────────
 
+const formBlockSchema: SectionSchema = {
+  name: 'Formulaire',
+  description: 'Insère un formulaire interactif (Typeform-like) géré dans le CRM.',
+  category: 'contact',
+  icon: 'clipboard-list',
+  settings: [
+    { type: 'header', content: 'Formulaire', group: 'content' },
+    { type: 'form_picker', id: 'form_id', label: 'Formulaire', filter_by_site_tags: true, group: 'content' } as SectionField,
+    { type: 'select', id: 'render_mode', label: 'Mode de rendu',
+      options: [{ label: 'Une question à la fois', value: 'step' }, { label: 'Scroll', value: 'scroll' }],
+      default: 'step', group: 'content' },
+    { type: 'header', content: 'Style', group: 'style' },
+    { type: 'checkbox', id: 'inherit_form_style', label: 'Hériter du style du formulaire', default: true, group: 'style' },
+  ],
+  presets: [{ name: 'Formulaire par défaut', settings: { inherit_form_style: true, render_mode: 'step' } }],
+};
+
 export const SECTION_SCHEMAS: Record<string, SectionSchema> = {
   // Hero variants
   'hero': heroSchema,
@@ -1048,6 +1065,9 @@ export const SECTION_SCHEMAS: Record<string, SectionSchema> = {
 
   // Footer
   'footer': footerSchema,
+
+  // Form block
+  'form_block': formBlockSchema,
 };
 
 /**
