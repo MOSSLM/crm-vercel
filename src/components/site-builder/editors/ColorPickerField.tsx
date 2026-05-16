@@ -51,12 +51,15 @@ function composeHexAlpha(solid: string, alpha: number): string {
 /** Color chip with checker pattern visible when alpha < 1. */
 function ColorChip({ value, size = 22 }: { value: string; size?: number }) {
   return (
-    <span
+    <div
       style={{
+        display: "inline-block",
         width: size,
         height: size,
+        boxSizing: "border-box",
         borderRadius: size <= 22 ? 5 : 6,
         flexShrink: 0,
+        flexGrow: 0,
         border: "1.5px solid var(--surface)",
         boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(20,18,14,.06)",
         backgroundImage:
@@ -148,17 +151,9 @@ export function ColorPickerField({ setting, value, onChange, styleGuide }: Color
             gap: 10,
           }}
         >
-          {/* Hex input + native picker + copy */}
+          {/* Hex input + copy */}
           <div className="hex-input-row">
-            <div style={{ position: "relative", flexShrink: 0 }}>
-              <ColorChip value={currentHex} size={28} />
-              <input
-                type="color"
-                value={solid}
-                onChange={(e) => setSolid(e.target.value)}
-                style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "default" }}
-              />
-            </div>
+            <ColorChip value={currentHex} size={28} />
             <input
               type="text"
               value={draft}
