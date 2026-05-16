@@ -1156,9 +1156,27 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
 function GlobalPanel() {
   const { state, dispatch } = useRelumeBuilder();
 
-  const anims = state.styleGuide.animations ?? {};
+  const guide = state.styleGuide;
+  const anims = guide.animations ?? {};
   const updateAnims = (patch: Record<string, unknown>) =>
     dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { animations: { ...anims, ...patch } } });
+  const updateColor = (key: keyof typeof guide.colors, hex: string) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { colors: { ...guide.colors, [key]: hex } } });
+  const updateFont = (role: "heading" | "body", value: string) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { fonts: { ...guide.fonts, [role]: value } } });
+  const updateSpacing = (key: keyof typeof guide.spacing, value: string) =>
+    dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...guide.spacing, [key]: value } } });
+
+  const COLOR_SWATCHES: Array<{ key: keyof typeof guide.colors; label: string }> = [
+    { key: "primary", label: "Primaire" },
+    { key: "secondary", label: "Secondaire" },
+    { key: "accent", label: "Accent" },
+    { key: "background", label: "Fond" },
+    { key: "text", label: "Texte" },
+  ];
+
+  const FONT_OPTIONS_HEAD = ["Instrument Serif", "Fraunces", "Playfair Display", "Geist", "Inter", "Manrope", "Outfit"];
+  const FONT_OPTIONS_BODY = ["Geist", "Inter", "DM Sans", "Plus Jakarta Sans", "Manrope", "Outfit", "Sora"];
 
   const MAX_WIDTHS: { label: string; value: string }[] = [
     { label: "Étroit (800px)", value: "800px" },
@@ -1167,13 +1185,130 @@ function GlobalPanel() {
     { label: "Plein (100%)", value: "100%" },
   ];
 
+  const variableKeys = Object.keys(state.variableContext ?? {});
+
   return (
-    <div className="divide-y divide-gray-100">
-      {/* Animations & Transitions — stacked */}
-      <Accordion title="Animations par défaut" icon={Zap} defaultOpen>
-        <p className="text-[10px] text-gray-400 mb-3">
-          Appliqué à chaque section qui n&apos;a pas d&apos;animation personnalisée (onglet Anim. du panneau de section).
-        </p>
+    <div>
+      {/* Identité (read-only summary) */}
+      <SkinSection label="Identité" defaultOpen>
+        <div className="field">
+          <div className="field-label"><span>Nom du site</span></div>
+          <input className="input" value={state.siteName} readOnly />
+        </div>
+        {state.menus && (
+          <div className="field">
+            <div className="field-label"><span>Menus</span><span className="hint">{(state.menus.nav?.length ?? 0)} entrées</span></div>
+            <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45 }}>
+              Géré depuis le panneau Menus (ouvrir via l&apos;en-tête).
+            </div>
+          </div>
+        )}
+      </SkinSection>
+
+      {/* Couleurs */}
+      <SkinSection label="Couleurs" defaultOpen>
+        <div className="field">
+          <div className="field-label"><span>Palette</span><span className="hint">cliquer pour éditer</span></div>
+          <div className="swatches">
+            {COLOR_SWATCHES.map((c) => (
+              <button
+                key={c.key}
+                title={`${c.label} · ${guide.colors[c.key]}`}
+                onClick={() => dispatch({ type: "SET_WORKSPACE", payload: "style-guide" })}
+                className="swatch"
+                style={{ background: guide.colors[c.key], appearance: "none", cursor: "default" }}
+              />
+            ))}
+            <button
+              onClick={() => dispatch({ type: "SET_WORKSPACE", payload: "style-guide" })}
+              className="swatch add"
+              title="Ouvrir le Style Guide pour éditer"
+              style={{ appearance: "none", cursor: "default" }}
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </SkinSection>
+
+      {/* Typographie */}
+      <SkinSection label="Typographie" defaultOpen>
+        <div className="field">
+          <div className="field-label"><span>Titres</span></div>
+          <select
+            className="select"
+            value={guide.fonts.heading}
+            onChange={(e) => updateFont("heading", e.target.value)}
+          >
+            {[...new Set([guide.fonts.heading, ...FONT_OPTIONS_HEAD])].map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <div className="field-label"><span>Corps</span></div>
+          <select
+            className="select"
+            value={guide.fonts.body}
+            onChange={(e) => updateFont("body", e.target.value)}
+          >
+            {[...new Set([guide.fonts.body, ...FONT_OPTIONS_BODY])].map((f) => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <div className="field-label"><span>Échelle</span><span className="hint">×{guide.fonts.scale ?? 1.25}</span></div>
+          <input
+            className="input mono"
+            value={String(guide.fonts.scale ?? 1.25)}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (!isNaN(n)) dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { fonts: { ...guide.fonts, scale: n } } });
+            }}
+          />
+        </div>
+      </SkinSection>
+
+      {/* Espacement */}
+      <SkinSection label="Espacement">
+        <div className="range-row">
+          <label>Padding</label>
+          <input
+            type="range" min={40} max={160}
+            value={parseInt(guide.spacing.sectionPadding)}
+            onChange={(e) => updateSpacing("sectionPadding", `${e.target.value}px`)}
+          />
+          <span className="val">{guide.spacing.sectionPadding}</span>
+        </div>
+        <div className="range-row">
+          <label>Gap</label>
+          <input
+            type="range" min={8} max={64}
+            value={parseInt(guide.spacing.elementGap)}
+            onChange={(e) => updateSpacing("elementGap", `${e.target.value}px`)}
+          />
+          <span className="val">{guide.spacing.elementGap}</span>
+        </div>
+        <div className="field">
+          <div className="field-label"><span>Largeur max</span></div>
+          <select
+            className="select"
+            value={guide.spacing.maxContentWidth}
+            onChange={(e) => updateSpacing("maxContentWidth", e.target.value)}
+          >
+            {MAX_WIDTHS.map((w) => (
+              <option key={w.value} value={w.value}>{w.label}</option>
+            ))}
+          </select>
+        </div>
+      </SkinSection>
+
+      {/* Animations par défaut */}
+      <SkinSection label="Animations par défaut">
+        <div style={{ fontSize: 10.5, color: "var(--text-3)", marginBottom: 8, lineHeight: 1.45 }}>
+          Appliqué à chaque section qui n&apos;a pas d&apos;animation personnalisée.
+        </div>
         <AnimationFieldEditor
           type={anims.defaultType ?? "none"}
           duration={anims.defaultDuration ?? 600}
@@ -1188,63 +1323,58 @@ function GlobalPanel() {
             })
           }
         />
-      </Accordion>
+      </SkinSection>
 
-      {/* Global style */}
-      <Accordion title="Style global" icon={Palette} defaultOpen>
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-            <span>Padding sections</span>
-            <span className="font-mono text-gray-500">{state.styleGuide.spacing.sectionPadding}</span>
-          </label>
-          <input
-            type="range" min={40} max={160}
-            value={parseInt(state.styleGuide.spacing.sectionPadding)}
-            onChange={(e) =>
-              dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, sectionPadding: `${e.target.value}px` } } })
-            }
-            className="w-full accent-gray-900"
-          />
-        </div>
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex justify-between mb-1">
-            <span>Gap éléments</span>
-            <span className="font-mono text-gray-500">{state.styleGuide.spacing.elementGap}</span>
-          </label>
-          <input
-            type="range" min={8} max={64}
-            value={parseInt(state.styleGuide.spacing.elementGap)}
-            onChange={(e) =>
-              dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, elementGap: `${e.target.value}px` } } })
-            }
-            className="w-full accent-gray-900"
-          />
-        </div>
-        <div>
-          <label className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">Largeur maximale du contenu</label>
-          <select
-            value={state.styleGuide.spacing.maxContentWidth}
-            onChange={(e) =>
-              dispatch({ type: "UPDATE_STYLE_GUIDE", payload: { spacing: { ...state.styleGuide.spacing, maxContentWidth: e.target.value } } })
-            }
-            className="w-full border border-gray-200 rounded-md px-2 py-1.5 text-xs text-gray-700 bg-white focus:outline-none focus:border-blue-400"
-          >
-            {MAX_WIDTHS.map((w) => (
-              <option key={w.value} value={w.value}>{w.label}</option>
+      {/* Variables */}
+      <SkinSection label="Variables">
+        {variableKeys.length === 0 ? (
+          <div style={{ fontSize: 11, color: "var(--text-4)", lineHeight: 1.45 }}>
+            Aucune entreprise liée. Liez une entreprise depuis la topbar pour injecter ville, téléphone, avis Google, etc.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {variableKeys.slice(0, 8).map((k) => (
+              <div key={k} className="page-pill">
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--text-3)" }}>{`{{ ${k} }}`}</span>
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>{String(state.variableContext[k]).slice(0, 30)}</span>
+              </div>
             ))}
-          </select>
-        </div>
-      </Accordion>
+            {variableKeys.length > 8 && (
+              <div style={{ fontSize: 10.5, color: "var(--text-4)" }}>+ {variableKeys.length - 8} autres variables</div>
+            )}
+          </div>
+        )}
+      </SkinSection>
 
       {/* AI tip */}
-      <div className="p-3 bg-purple-50/50">
-        <div className="flex items-start gap-2">
-          <Sparkles size={12} className="text-purple-500 flex-shrink-0 mt-0.5" />
-          <p className="text-[10px] text-purple-700 leading-relaxed">
+      <div style={{ padding: "10px 14px", background: "var(--magic-tint)", borderTop: "1px solid var(--border)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
+          <Sparkles size={12} style={{ color: "var(--magic)", flexShrink: 0, marginTop: 1 }} />
+          <p style={{ fontSize: 10.5, color: "var(--magic)", margin: 0, lineHeight: 1.45 }}>
             Sélectionnez une section pour modifier son contenu et son style.
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Skin-styled accordion section (reusable inside DesignWorkspace panels)
+function SkinSection({ label, defaultOpen = false, children }: { label: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  return (
+    <div className="section">
+      <button
+        type="button"
+        aria-expanded={open ? "true" : "false"}
+        onClick={() => setOpen((o) => !o)}
+        className="section-hd"
+        style={{ width: "100%", appearance: "none", border: 0, background: "transparent", textAlign: "left" }}
+      >
+        <ChevronDown size={11} className="chev" style={{ color: "var(--text-4)" }} />
+        <span>{label}</span>
+      </button>
+      {open && <div className="section-body">{children}</div>}
     </div>
   );
 }
@@ -1707,9 +1837,11 @@ function PresetsPicker({ presets, onApply }: { presets: SectionPreset[]; onApply
 function AIRegenerateSection({
   instanceId,
   onRegenerate,
+  compact = false,
 }: {
   instanceId: string;
   onRegenerate: (id: string, prompt: string, model: string) => Promise<void>;
+  compact?: boolean;
 }) {
   const { state } = useRelumeBuilder();
   const [prompt, setPrompt] = React.useState("");
@@ -1727,35 +1859,39 @@ function AIRegenerateSection({
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Sparkles size={12} className="text-purple-500" />
-        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wider">IA Copywriting</span>
+    <div className="ai-box" style={compact ? { margin: 0 } : { margin: "12px 14px" }}>
+      <div className="ai-box-hd">
+        <Sparkles size={12} />
+        <span>Régénérer cette section</span>
+        <span className="pill magic" style={{ marginLeft: "auto" }}>
+          {selectedModel.replace(/-/g, " ").replace(/claude /, "Claude ").slice(0, 18)}
+        </span>
       </div>
-      <div>
-        <label className="text-[10px] text-gray-500 block mb-1">Modèle IA</label>
+      <div style={{ padding: "8px 10px 0", display: "flex", flexDirection: "column", gap: 6 }}>
         <ModelDropdown value={selectedModel} onChange={setSelectedModel} />
+        <VariableTextarea
+          value={prompt}
+          onChange={setPrompt}
+          placeholder="Ex: plus orienté urgence : insister sur la disponibilité 7j/7…"
+          rows={3}
+          className="textarea"
+          variables={state.variableContext}
+          variant="light"
+        />
       </div>
-      <VariableTextarea
-        value={prompt}
-        onChange={setPrompt}
-        placeholder="Ex: rends ce contenu plus professionnel et dynamique..."
-        rows={3}
-        className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-purple-400 resize-none"
-        variables={state.variableContext}
-        variant="light"
-      />
-      <button
-        onClick={handleRegenerate}
-        disabled={loading || !prompt.trim()}
-        className="w-full flex items-center justify-center gap-2 py-2 text-xs font-medium bg-purple-500/10 text-purple-600 border border-purple-200 hover:bg-purple-500/20 rounded-lg transition-all disabled:opacity-50"
-      >
-        {loading ? <RefreshCw size={12} className="animate-spin" /> : <Sparkles size={12} />}
-        {loading ? "Génération..." : "Régénérer le contenu"}
-      </button>
-      <p className="text-[10px] text-gray-400 text-center leading-relaxed">
-        L&apos;IA réécrira le contenu de cette section en conservant la structure.
-      </p>
+      <div className="ai-box-ft">
+        <span style={{ fontSize: 10.5, color: "var(--text-3)", flex: 1 }}>
+          Conserve les variables {"{{ ville }}"}, {"{{ tel }}"}.
+        </span>
+        <button
+          onClick={handleRegenerate}
+          disabled={loading || !prompt.trim()}
+          className="btn magic xs"
+        >
+          {loading ? <RefreshCw size={11} className="animate-spin" /> : <Sparkles size={11} />}
+          {loading ? "…" : "Générer"}
+        </button>
+      </div>
     </div>
   );
 }

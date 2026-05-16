@@ -24,10 +24,55 @@ const STYLE_GUIDE_COLOR_LABELS: Record<string, string> = {
   textMuted: "Texte doux",
 };
 
+function isValidHex(hex: string): boolean {
+  return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(hex);
+}
+
+function splitHexAlpha(hex: string): { solid: string; alpha: number } {
+  if (!hex) return { solid: "#000000", alpha: 1 };
+  if (hex.length === 9) {
+    const solid = hex.slice(0, 7);
+    const aa = hex.slice(7, 9);
+    const alpha = parseInt(aa, 16) / 255;
+    return { solid, alpha: isNaN(alpha) ? 1 : alpha };
+  }
+  return { solid: hex, alpha: 1 };
+}
+
+function composeHexAlpha(solid: string, alpha: number): string {
+  if (!isValidHex(solid)) return solid;
+  const clamped = Math.max(0, Math.min(1, alpha));
+  if (clamped >= 1) return solid.length === 9 ? solid.slice(0, 7) : solid;
+  const aa = Math.round(clamped * 255).toString(16).padStart(2, "0");
+  const base = solid.length === 9 ? solid.slice(0, 7) : solid;
+  return `${base}${aa}`;
+}
+
+/** Color chip with checker pattern visible when alpha < 1. */
+function ColorChip({ value, size = 22 }: { value: string; size?: number }) {
+  return (
+    <span
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size <= 22 ? 5 : 6,
+        flexShrink: 0,
+        border: "1.5px solid var(--surface)",
+        boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(20,18,14,.06)",
+        backgroundImage:
+          `linear-gradient(${value}, ${value}), ` +
+          "conic-gradient(rgba(20,18,14,.14) 25%, transparent 0 50%, rgba(20,18,14,.14) 0 75%, transparent 0)",
+        backgroundSize: "100% 100%, 8px 8px",
+      }}
+    />
+  );
+}
+
 export function ColorPickerField({ setting, value, onChange, styleGuide }: ColorPickerFieldProps) {
   const [open, setOpen] = useState(false);
   const [expandedColor, setExpandedColor] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [draft, setDraft] = useState(value);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,7 +83,10 @@ export function ColorPickerField({ setting, value, onChange, styleGuide }: Color
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [open]);
 
+  useEffect(() => { setDraft(value); }, [value]);
+
   const currentHex = value || (setting.default as string) || "#ffffff";
+  const { solid, alpha } = splitHexAlpha(currentHex);
 
   function copyHex() {
     navigator.clipboard.writeText(currentHex).then(() => {
@@ -47,86 +95,130 @@ export function ColorPickerField({ setting, value, onChange, styleGuide }: Color
     });
   }
 
+  const commit = (v: string) => {
+    const trimmed = v.trim();
+    const clean = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
+    if (isValidHex(clean)) { onChange(clean); setDraft(clean); }
+    else setDraft(value);
+  };
+
+  const setSolid = (s: string) => onChange(composeHexAlpha(s, alpha));
+  const setAlpha = (a: number) => onChange(composeHexAlpha(solid, a));
+
   const colorEntries = Object.entries(styleGuide.colors) as [string, string][];
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} style={{ position: "relative" }}>
       {/* Trigger */}
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 w-full bg-white/5 border border-white/10 rounded px-2.5 py-1.5 hover:bg-white/8 hover:border-white/20 transition-colors"
+        className="input"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          width: "100%",
+          height: 28,
+          padding: "0 8px",
+          textAlign: "left",
+          cursor: "default",
+        }}
       >
-        <span
-          className="w-5 h-5 rounded border border-white/20 shrink-0"
-          style={{ backgroundColor: currentHex }}
-        />
-        <span className="text-xs text-white/70 flex-1 text-left font-mono">{currentHex}</span>
-        <ChevronDown size={12} className={`text-white/30 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ColorChip value={currentHex} size={18} />
+        <span style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 11.5, color: "var(--text-2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {currentHex}
+        </span>
+        <ChevronDown size={11} style={{ color: "var(--text-4)", transform: open ? "rotate(180deg)" : undefined, transition: "transform .15s" }} />
       </button>
 
       {/* Popover */}
       {open && (
-        <div className="absolute z-50 top-full left-0 mt-1 w-64 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl p-3 space-y-3">
-          {/* Current color preview */}
-          <div className="flex items-center gap-2">
-            <div
-              className="w-8 h-8 rounded-lg border border-white/20"
-              style={{ backgroundColor: currentHex }}
-            />
-            <div className="flex-1">
-              <input
-                type="text"
-                value={currentHex}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (/^#[0-9a-fA-F]{6}$/.test(v)) onChange(v);
-                }}
-                className="w-full bg-transparent text-white/80 text-xs font-mono focus:outline-none border-b border-white/10 pb-0.5"
-              />
-            </div>
-            <button onClick={copyHex} className="text-white/30 hover:text-white/70 transition-colors p-1">
-              {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-            </button>
-            {/* Native color input hidden behind a custom button */}
-            <label className="cursor-pointer">
+        <div
+          className="pop"
+          style={{
+            position: "absolute",
+            zIndex: 60,
+            top: "100%",
+            left: 0,
+            marginTop: 4,
+            width: 260,
+            padding: 10,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
+          {/* Hex input + native picker + copy */}
+          <div className="hex-input-row">
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <ColorChip value={currentHex} size={28} />
               <input
                 type="color"
-                value={currentHex}
-                onChange={(e) => onChange(e.target.value)}
-                className="sr-only"
+                value={solid}
+                onChange={(e) => setSolid(e.target.value)}
+                style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "default" }}
               />
-              <span className="block w-5 h-5 rounded border border-white/20 bg-gradient-to-br from-red-400 via-green-400 to-blue-400 cursor-pointer" title="Couleur personnalisée" />
-            </label>
+            </div>
+            <input
+              type="text"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={(e) => commit(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }}
+              className="input mono"
+              spellCheck={false}
+              style={{ flex: 1, minWidth: 0, height: 28 }}
+            />
+            <button onClick={copyHex} className="btn ghost xs icon" title="Copier">
+              {copied ? <Check size={11} style={{ color: "var(--ok)" }} /> : <Copy size={11} />}
+            </button>
+          </div>
+
+          {/* Opacity slider */}
+          <div className="range-row">
+            <label style={{ fontSize: 10.5, color: "var(--text-4)", width: 56, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: ".04em" }}>Opacité</label>
+            <input
+              type="range" min={0} max={100} value={Math.round(alpha * 100)}
+              onChange={(e) => setAlpha(Number(e.target.value) / 100)}
+            />
+            <span className="val" style={{ fontSize: 10.5, width: 38 }}>{Math.round(alpha * 100)}%</span>
           </div>
 
           {/* Style guide palette */}
-          <div className="space-y-2">
-            <div className="text-[10px] text-white/30 uppercase tracking-wider font-medium">Palette Style Guide</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid var(--border)", paddingTop: 10 }}>
+            <div style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: ".06em" }}>
+              Palette Style Guide
+            </div>
             {colorEntries.map(([key, hex]) => {
               const shades = generateColorShades(hex);
               const isExpanded = expandedColor === key;
               return (
                 <div key={key}>
-                  {/* Base color row */}
-                  <div className="flex items-center gap-2">
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <button
                       onClick={() => { onChange(hex); setOpen(false); }}
-                      className="w-5 h-5 rounded border border-white/20 shrink-0 hover:scale-110 transition-transform"
-                      style={{ backgroundColor: hex }}
                       title={hex}
+                      style={{
+                        width: 18, height: 18,
+                        borderRadius: 4, flexShrink: 0,
+                        background: hex, border: "1px solid var(--border-2)",
+                        cursor: "default",
+                      }}
                     />
-                    <span className="text-[11px] text-white/50 flex-1">{STYLE_GUIDE_COLOR_LABELS[key] ?? key}</span>
+                    <span style={{ flex: 1, fontSize: 11, color: "var(--text-2)" }}>
+                      {STYLE_GUIDE_COLOR_LABELS[key] ?? key}
+                    </span>
                     <button
                       onClick={() => setExpandedColor(isExpanded ? null : key)}
-                      className="text-white/20 hover:text-white/50 transition-colors"
+                      className="btn ghost xs icon"
+                      style={{ width: 18, height: 18 }}
+                      title="Nuances"
                     >
-                      <ChevronDown size={11} className={`transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                      <ChevronDown size={10} style={{ transform: isExpanded ? "rotate(180deg)" : undefined, transition: "transform .15s" }} />
                     </button>
                   </div>
-
-                  {/* Shades strip */}
                   {isExpanded && (
-                    <div className="flex gap-0.5 mt-1.5 ml-7">
+                    <div className="shade-strip" style={{ marginTop: 4, height: 18 }}>
                       {STOP_NUMBERS.map((stop) => {
                         const shadeHex = shades[stop];
                         return (
@@ -134,18 +226,23 @@ export function ColorPickerField({ setting, value, onChange, styleGuide }: Color
                             key={stop}
                             title={`${key}-${stop}: ${shadeHex}`}
                             onClick={() => { onChange(shadeHex); setOpen(false); }}
-                            className="flex-1 h-5 rounded-sm border border-transparent hover:border-white/40 hover:scale-y-110 transition-all"
-                            style={{ backgroundColor: shadeHex }}
-                          />
+                            style={{
+                              flex: 1,
+                              background: shadeHex,
+                              appearance: "none",
+                              border: 0,
+                              cursor: "default",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              color: isLightColor(shadeHex) ? "#000" : "#fff",
+                              fontSize: 7,
+                            }}
+                          >
+                            {stop === 500 && "•"}
+                          </button>
                         );
                       })}
-                    </div>
-                  )}
-                  {isExpanded && (
-                    <div className="flex gap-0.5 ml-7 mt-0.5">
-                      {STOP_NUMBERS.map((stop) => (
-                        <div key={stop} className="flex-1 text-center text-[7px] text-white/20">{stop}</div>
-                      ))}
                     </div>
                   )}
                 </div>

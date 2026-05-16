@@ -2,7 +2,8 @@
 
 import React from "react";
 import {
-  X, Copy, Check, Shuffle, ChevronDown, Eye, EyeOff, Layers,
+  X, Copy, Check, Shuffle, ChevronDown, Eye, EyeOff, Layers, Palette, Type as TypeIcon, MousePointer, Box,
+  RefreshCw, AlertCircle, Search,
 } from "lucide-react";
 import type { StyleGuide, ButtonVariant, SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
@@ -14,25 +15,26 @@ import {
   variantToCSSVars,
 } from "@/lib/button-style";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import { Btn } from "./skin-primitives";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const GOOGLE_FONTS = [
-  "Inter", "Roboto", "Open Sans", "Lato", "Poppins", "Montserrat",
-  "Nunito", "Nunito Sans", "Raleway", "Playfair Display", "Merriweather",
-  "Arimo", "Source Sans 3", "DM Sans", "Work Sans", "Outfit",
-  "Plus Jakarta Sans", "Sora", "Unbounded", "Space Grotesk",
+  "Instrument Serif", "Fraunces", "Playfair Display", "Merriweather", "Bodoni Moda",
+  "Geist", "Inter", "DM Sans", "Plus Jakarta Sans", "Work Sans", "Outfit",
+  "Sora", "Space Grotesk", "Unbounded", "Manrope", "Poppins", "Montserrat",
+  "Nunito", "Roboto", "Lato", "Open Sans",
 ];
 
 const COLOR_PALETTES = [
-  { name: "Malibu", hex: "#74CEF2" },
+  { name: "Sunset orange",   hex: "#FF7043" },
   { name: "Cornflower Blue", hex: "#799DF3" },
-  { name: "Manz", hex: "#EFEF6D" },
-  { name: "Sunset", hex: "#FF7043" },
-  { name: "Mint", hex: "#4CAF7D" },
-  { name: "Lavender", hex: "#A78BFA" },
-  { name: "Rose", hex: "#F43F5E" },
-  { name: "Teal", hex: "#14B8A6" },
+  { name: "Manz",            hex: "#EFEF6D" },
+  { name: "Malibu",          hex: "#74CEF2" },
+  { name: "Mint",            hex: "#4CAF7D" },
+  { name: "Lavender",        hex: "#A78BFA" },
+  { name: "Rose",            hex: "#F43F5E" },
+  { name: "Teal",            hex: "#14B8A6" },
 ];
 
 const SHADE_STOPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
@@ -51,7 +53,57 @@ function isValidHex(hex: string): boolean {
   return /^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(hex);
 }
 
+/** Split a hex string into solid hex (#RRGGBB) and alpha 0..1. Falls back to (input, 1). */
+function splitHexAlpha(hex: string): { solid: string; alpha: number } {
+  if (!hex) return { solid: "#000000", alpha: 1 };
+  if (hex.length === 9) {
+    const solid = hex.slice(0, 7);
+    const aa = hex.slice(7, 9);
+    const alpha = parseInt(aa, 16) / 255;
+    return { solid, alpha: isNaN(alpha) ? 1 : alpha };
+  }
+  if (hex.length === 4) {
+    // #rgb → #rrggbb
+    const r = hex[1], g = hex[2], b = hex[3];
+    return { solid: `#${r}${r}${g}${g}${b}${b}`, alpha: 1 };
+  }
+  return { solid: hex, alpha: 1 };
+}
+
+/** Compose a hex+alpha string. If alpha==1, returns #RRGGBB. Otherwise #RRGGBBAA. */
+function composeHexAlpha(solid: string, alpha: number): string {
+  if (!isValidHex(solid)) return solid;
+  const clamped = Math.max(0, Math.min(1, alpha));
+  if (clamped >= 1) return solid.length === 9 ? solid.slice(0, 7) : solid;
+  const aa = Math.round(clamped * 255).toString(16).padStart(2, "0");
+  const base = solid.length === 9 ? solid.slice(0, 7) : solid;
+  return `${base}${aa}`;
+}
+
+/** Render a color with an underlying checker to convey alpha. */
+function ColorChip({ value, size = 28, className }: { value: string; size?: number; className?: string }) {
+  return (
+    <span
+      className={className}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size <= 22 ? 5 : 7,
+        flexShrink: 0,
+        border: "1.5px solid var(--surface)",
+        boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(20,18,14,.06)",
+        backgroundImage:
+          `linear-gradient(${value}, ${value}), ` +
+          "conic-gradient(rgba(20,18,14,.14) 25%, transparent 0 50%, rgba(20,18,14,.14) 0 75%, transparent 0)",
+        backgroundSize: "100% 100%, 8px 8px",
+        backgroundPosition: "0 0, 0 0",
+      }}
+    />
+  );
+}
+
 // ── Google Fonts Loader ───────────────────────────────────────────────────────
+
 
 export function useGoogleFonts(families: string[]) {
   const key = families.filter(Boolean).join(",");
@@ -73,12 +125,22 @@ export function useGoogleFonts(families: string[]) {
 // ── Modal Wrapper ─────────────────────────────────────────────────────────────
 
 function Modal({
+  size = "md",
   title,
+  subtitle,
+  icon,
+  iconKind = "accent",
   onClose,
+  footer,
   children,
 }: {
+  size?: "sm" | "md" | "lg" | "xl";
   title: string;
+  subtitle?: React.ReactNode;
+  icon?: React.ReactNode;
+  iconKind?: "accent" | "magic" | "info";
   onClose: () => void;
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
   // Close on Escape
@@ -90,27 +152,20 @@ function Modal({
 
   return (
     <div className="sb-skin">
-      <div
-        className="modal-backdrop"
-        onClick={onClose}
-      >
-        <div
-          className="modal-shell md"
-          onClick={(e) => e.stopPropagation()}
-        >
+      <div className="modal-backdrop" onClick={onClose}>
+        <div className={`modal-shell ${size}`} onClick={(e) => e.stopPropagation()}>
           <div className="modal-hd">
-            <div className="ic-wrap"><Layers size={13} /></div>
+            {icon && <div className={`ic-wrap ${iconKind === "accent" ? "" : iconKind}`}>{icon}</div>}
             <div className="grow">
               <div className="title">{title}</div>
+              {subtitle && <div className="subtitle">{subtitle}</div>}
             </div>
-            <button
-              onClick={onClose}
-              className="btn ghost sm icon"
-            >
+            <button onClick={onClose} className="btn ghost sm icon" title="Fermer">
               <X size={13} />
             </button>
           </div>
-          <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>{children}</div>
+          {children}
+          {footer && <div className="modal-ft">{footer}</div>}
         </div>
       </div>
     </div>
@@ -119,51 +174,66 @@ function Modal({
 
 // ── Hex Color Input ───────────────────────────────────────────────────────────
 
+/**
+ * Color input with hex text field, native picker overlay, opacity slider, copy button.
+ * Stores values as #RRGGBB or #RRGGBBAA. Setting alpha to < 1 produces the 8-char form.
+ */
 function HexColorInput({
   label,
+  hint,
   value,
   onChange,
+  showOpacity = true,
+  compact = false,
 }: {
-  label: string;
+  label?: string;
+  hint?: React.ReactNode;
   value: string;
   onChange: (hex: string) => void;
+  showOpacity?: boolean;
+  compact?: boolean;
 }) {
+  const { solid, alpha } = splitHexAlpha(value || "#000000");
   const [draft, setDraft] = React.useState(value);
   const [copied, setCopied] = React.useState(false);
 
   React.useEffect(() => { setDraft(value); }, [value]);
 
   const commit = (v: string) => {
-    const clean = v.startsWith("#") ? v : `#${v}`;
+    const trimmed = v.trim();
+    const clean = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
     if (isValidHex(clean)) { onChange(clean); setDraft(clean); }
     else setDraft(value);
   };
 
+  const setSolid = (s: string) => onChange(composeHexAlpha(s, alpha));
+  const setAlpha = (a: number) => onChange(composeHexAlpha(solid, a));
+
   const copy = () => {
     navigator.clipboard.writeText(value).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      setTimeout(() => setCopied(false), 1200);
     });
   };
 
   return (
-    <div className="space-y-1.5">
-      <label className="text-xs font-medium text-gray-500">{label}</label>
-      <div className="flex items-center gap-2">
-        {/* Color swatch + native picker overlay */}
-        <div className="relative flex-shrink-0">
-          <div
-            className="w-10 h-10 rounded-lg border-2 border-white shadow-md"
-            style={{ backgroundColor: isValidHex(draft) ? draft : value }}
-          />
+    <div>
+      {(label || hint) && (
+        <div className="field-label">
+          {label && <span>{label}</span>}
+          {hint && <span className="hint">{hint}</span>}
+        </div>
+      )}
+      <div className="hex-input-row">
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <ColorChip value={value} size={compact ? 24 : 28} />
           <input
             type="color"
-            value={isValidHex(draft) ? draft : value}
-            onChange={(e) => { setDraft(e.target.value); onChange(e.target.value); }}
-            className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+            value={solid}
+            onChange={(e) => setSolid(e.target.value)}
+            style={{ position: "absolute", inset: 0, opacity: 0, width: "100%", height: "100%", cursor: "default" }}
           />
         </div>
-        {/* Hex text input */}
         <input
           type="text"
           value={draft}
@@ -172,17 +242,23 @@ function HexColorInput({
           onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }}
           placeholder="#000000"
           spellCheck={false}
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-100"
+          className="input mono"
+          style={{ flex: 1, minWidth: 0, height: compact ? 24 : 28, fontSize: compact ? 11 : 12 }}
         />
-        {/* Copy button */}
-        <button
-          onClick={copy}
-          className="p-2 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
-          title="Copier #hex"
-        >
-          {copied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+        <button onClick={copy} className="btn ghost xs icon" title="Copier #hex">
+          {copied ? <Check size={11} style={{ color: "var(--ok)" }} /> : <Copy size={11} />}
         </button>
       </div>
+      {showOpacity && (
+        <div className="range-row" style={{ marginTop: 6 }}>
+          <label style={{ fontSize: 10.5, color: "var(--text-4)", width: 56, fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: ".04em" }}>Opacité</label>
+          <input
+            type="range" min={0} max={100} value={Math.round(alpha * 100)}
+            onChange={(e) => setAlpha(Number(e.target.value) / 100)}
+          />
+          <span className="val" style={{ fontSize: 10.5, width: 38 }}>{Math.round(alpha * 100)}%</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -191,7 +267,8 @@ function HexColorInput({
 
 function ShadeStrip({ label, baseHex }: { label: string; baseHex: string }) {
   const [copiedHex, setCopiedHex] = React.useState<string | null>(null);
-  const shades = React.useMemo(() => generateColorShades(baseHex), [baseHex]);
+  const { solid } = splitHexAlpha(baseHex);
+  const shades = React.useMemo(() => generateColorShades(solid), [solid]);
 
   const copyHex = (hex: string) => {
     navigator.clipboard.writeText(hex).then(() => {
@@ -201,19 +278,24 @@ function ShadeStrip({ label, baseHex }: { label: string; baseHex: string }) {
   };
 
   return (
-    <div className="space-y-1.5">
-      <span className="text-[11px] text-gray-400 font-medium">{label}</span>
-      <div className="flex gap-0.5 h-5 rounded-md overflow-hidden">
+    <div>
+      <div style={{ fontSize: 10.5, color: "var(--text-4)", fontFamily: "var(--font-mono)", marginBottom: 4 }}>{label}</div>
+      <div className="shade-strip">
         {SHADE_STOPS.map((stop) => (
           <div
             key={stop}
-            className="flex-1 cursor-pointer transition-opacity hover:opacity-80 flex items-center justify-center"
-            style={{ backgroundColor: shades[stop] }}
-            title={`${stop}: ${shades[stop]}`}
+            style={{
+              background: shades[stop],
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "default",
+            }}
+            title={`${stop} · ${shades[stop]}`}
             onClick={() => copyHex(shades[stop])}
           >
             {copiedHex === shades[stop] && (
-              <Check size={6} style={{ color: isLightColor(shades[stop]) ? "#000" : "#fff" }} />
+              <Check size={9} style={{ color: isLightColor(shades[stop]) ? "#000" : "#fff" }} />
             )}
           </div>
         ))}
@@ -258,83 +340,112 @@ function ZoneCard({
 function ColorsModal({
   guide,
   onUpdate,
+  onReset,
   onClose,
 }: {
   guide: StyleGuide;
   onUpdate: (key: keyof StyleGuide["colors"], v: string) => void;
+  onReset: () => void;
   onClose: () => void;
 }) {
   return (
-    <Modal title="Couleurs" onClose={onClose}>
-      {/* Palette shuffle */}
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-gray-600">Couleurs de marque</span>
-        <button
-          onClick={() => {
-            const p = COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)];
-            onUpdate("primary", p.hex);
-          }}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-500 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
-        >
-          <Shuffle size={10} />
-          Aléatoire
-        </button>
-      </div>
-
-      {/* Brand colors */}
-      <div className="grid grid-cols-3 gap-3">
-        {(["primary", "secondary", "accent"] as const).map((key) => (
-          <HexColorInput
-            key={key}
-            label={{ primary: "Primaire", secondary: "Secondaire", accent: "Accent" }[key]}
-            value={guide.colors[key]}
-            onChange={(v) => onUpdate(key, v)}
-          />
-        ))}
-      </div>
-
-      {/* BG + text colors */}
-      <div className="grid grid-cols-2 gap-3">
-        {(
-          [
-            ["background", "Background"],
-            ["backgroundAlt", "Fond alt."],
-            ["text", "Texte"],
-            ["textMuted", "Texte atténué"],
-          ] as const
-        ).map(([key, label]) => (
-          <HexColorInput
-            key={key}
-            label={label}
-            value={guide.colors[key]}
-            onChange={(v) => onUpdate(key, v)}
-          />
-        ))}
-      </div>
-
-      {/* Shade strips */}
-      <div className="pt-1 border-t border-gray-100">
-        <p className="text-[11px] text-gray-400 mb-2.5">Nuances (cliquer pour copier)</p>
-        <div className="space-y-2">
-          <ShadeStrip label="Primaire" baseHex={guide.colors.primary} />
-          <ShadeStrip label="Secondaire" baseHex={guide.colors.secondary} />
-          <ShadeStrip label="Accent" baseHex={guide.colors.accent} />
+    <Modal
+      size="md"
+      title="Couleurs"
+      subtitle="Marque, fonds et textes. Cliquez une nuance pour copier son hex."
+      icon={<Palette size={14} />} iconKind="accent"
+      onClose={onClose}
+      footer={
+        <>
+          <Btn variant="ghost" onClick={onReset}><RefreshCw size={12} />Réinitialiser</Btn>
+          <span style={{ flex: 1 }} />
+          <Btn variant="outline" onClick={onClose}>Fermer</Btn>
+        </>
+      }
+    >
+      <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {/* Brand colors header */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div className="field-label" style={{ marginBottom: 0 }}><span>Couleurs de marque</span></div>
+            <Btn variant="outline" size="xs"
+              onClick={() => {
+                const p = COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)];
+                onUpdate("primary", p.hex);
+              }}>
+              <Shuffle size={10} />Aléatoire
+            </Btn>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            {(["primary", "secondary", "accent"] as const).map((key) => (
+              <HexColorInput
+                key={key}
+                label={{ primary: "Primaire", secondary: "Secondaire", accent: "Accent" }[key]}
+                value={guide.colors[key]}
+                onChange={(v) => onUpdate(key, v)}
+              />
+            ))}
+          </div>
         </div>
-      </div>
 
-      {/* Palette chips */}
-      <div>
-        <p className="text-[11px] text-gray-400 mb-2">Palettes suggérées</p>
-        <div className="flex gap-2 flex-wrap">
-          {COLOR_PALETTES.map((p) => (
-            <button
-              key={p.hex}
-              onClick={() => onUpdate("primary", p.hex)}
-              className="w-8 h-8 rounded-full border-2 border-white shadow hover:scale-110 transition-transform"
-              style={{ backgroundColor: p.hex }}
-              title={p.name}
-            />
-          ))}
+        {/* BG + text colors */}
+        <div>
+          <div className="field-label"><span>Fonds &amp; texte</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+            {(
+              [
+                ["background", "Fond"],
+                ["backgroundAlt", "Fond alt."],
+                ["text", "Texte"],
+                ["textMuted", "Texte atténué"],
+              ] as const
+            ).map(([key, label]) => (
+              <HexColorInput
+                key={key}
+                label={label}
+                value={guide.colors[key]}
+                onChange={(v) => onUpdate(key, v)}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Shade strips */}
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 14 }}>
+          <div className="field-label" style={{ display: "flex", alignItems: "center" }}>
+            <span>Nuances générées</span>
+            <span className="hint">cliquer pour copier</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {([
+              ["Primaire", guide.colors.primary],
+              ["Secondaire", guide.colors.secondary],
+              ["Accent", guide.colors.accent],
+            ] as const).map(([label, hex]) => (
+              <ShadeStrip key={label} label={label} baseHex={hex} />
+            ))}
+          </div>
+        </div>
+
+        {/* Palette chips */}
+        <div>
+          <div className="field-label"><span>Palettes suggérées</span></div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {COLOR_PALETTES.map((p) => (
+              <button
+                key={p.hex}
+                onClick={() => onUpdate("primary", p.hex)}
+                title={p.name}
+                style={{
+                  width: 30, height: 30, borderRadius: "50%",
+                  border: "2px solid var(--surface)",
+                  boxShadow: "0 0 0 1px var(--border-2), 0 1px 3px rgba(20,18,14,.08)",
+                  background: p.hex,
+                  cursor: "default",
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </Modal>
@@ -354,93 +465,112 @@ function FontModal({
   onUpdate: (v: string) => void;
   onClose: () => void;
 }) {
-  const current = role === "heading" ? guide.fonts.heading : guide.fonts.body;
+  const isHead = role === "heading";
+  const current = isHead ? guide.fonts.heading : guide.fonts.body;
   const [search, setSearch] = React.useState("");
-  const filtered = GOOGLE_FONTS.filter((f) =>
-    f.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = GOOGLE_FONTS.filter((f) => f.toLowerCase().includes(search.toLowerCase()));
+  const fallback = isHead ? "serif" : "sans-serif";
 
   // Load all list fonts so previews render
   useGoogleFonts(GOOGLE_FONTS);
 
   return (
     <Modal
-      title={role === "heading" ? "Police de titres" : "Police de corps"}
+      size="sm"
+      title={isHead ? "Police de titres" : "Police de corps"}
+      subtitle="Google Fonts · chargée à la publication."
+      icon={<TypeIcon size={14} />}
+      iconKind="accent"
       onClose={onClose}
+      footer={
+        <>
+          <Btn variant="ghost" size="xs"
+            onClick={() => {
+              const f = GOOGLE_FONTS[Math.floor(Math.random() * GOOGLE_FONTS.length)];
+              onUpdate(f);
+            }}>
+            <Shuffle size={10} />Aléatoire
+          </Btn>
+          <span style={{ flex: 1 }} />
+          <Btn variant="outline" onClick={onClose}>Fermer</Btn>
+        </>
+      }
     >
-      {/* Search + shuffle */}
-      <div className="flex gap-2">
-        <input
-          autoFocus
-          type="text"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Rechercher..."
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
-        />
-        <button
-          onClick={() => {
-            const f = GOOGLE_FONTS[Math.floor(Math.random() * GOOGLE_FONTS.length)];
-            onUpdate(f);
-          }}
-          className="p-2 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-400 hover:text-gray-700 transition-colors"
-          title="Police aléatoire"
-        >
-          <Shuffle size={14} />
-        </button>
-      </div>
-
-      {/* Current font preview */}
-      <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
-        {role === "heading" ? (
-          <p className="text-2xl font-bold text-gray-900 leading-tight" style={{ fontFamily: current }}>
-            {current}
-          </p>
-        ) : (
-          <>
-            <p className="text-base text-gray-800" style={{ fontFamily: current }}>{current}</p>
-            <p className="text-xs text-gray-400 mt-1" style={{ fontFamily: current }}>Aa Bb Cc — 0123456789</p>
-          </>
-        )}
-      </div>
-
-      {/* Base size (body only) */}
-      {role === "body" && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-xs font-medium text-gray-500">Taille de base</label>
-            <span className="text-xs font-mono text-gray-400">{guide.fonts.baseSize}</span>
+      <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {/* Search */}
+        <div className="modal-search" style={{ padding: 0, borderBottom: 0 }}>
+          <div className="search-wrap" style={{ flex: 1, position: "relative" }}>
+            <Search size={12} style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--text-4)" }} />
+            <input
+              autoFocus
+              className="input"
+              placeholder="Rechercher une police…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
           </div>
-          <input
-            type="range" min={12} max={20}
-            value={parseInt(guide.fonts.baseSize)}
-            onChange={(e) => {
-              /* dispatch handled by parent via onUpdate — only font family here */
-            }}
-            className="w-full accent-gray-900"
-            disabled
-          />
-          <p className="text-[10px] text-gray-300 mt-1">Modifiable dans l&apos;onglet Espacement</p>
         </div>
-      )}
 
-      {/* Font list */}
-      <div className="space-y-0.5 max-h-52 overflow-y-auto -mx-1 pr-1">
-        {filtered.map((f) => (
-          <button
-            key={f}
-            onClick={() => onUpdate(f)}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm text-left transition-colors ${
-              f === current
-                ? "bg-gray-900 text-white"
-                : "text-gray-700 hover:bg-gray-50"
-            }`}
-            style={{ fontFamily: f }}
-          >
-            {f}
-            {f === current && <Check size={12} />}
-          </button>
-        ))}
+        {/* Current font preview */}
+        <div
+          style={{
+            padding: 14,
+            background: "var(--bg-2)",
+            borderRadius: 10,
+            border: "1px solid var(--border)",
+          }}
+        >
+          <div style={{ fontFamily: `"${current}", ${fallback}`, fontSize: isHead ? 36 : 20, color: "var(--text)", lineHeight: 1.1 }}>
+            {isHead ? "Aa Bb · Une eau qui ne lâche jamais." : "The quick brown fox jumps over the lazy dog."}
+          </div>
+          <div style={{ fontFamily: `"${current}", ${fallback}`, fontSize: 12, color: "var(--text-3)", marginTop: 6, fontVariantNumeric: "tabular-nums" }}>
+            {current} · 0123456789 · &amp; @ # → ←
+          </div>
+        </div>
+
+        {/* Base size info (body only) */}
+        {role === "body" && (
+          <div className="field" style={{ margin: 0 }}>
+            <div className="field-label">
+              <span>Taille de base</span>
+              <span className="hint">{guide.fonts.baseSize}</span>
+            </div>
+            <div style={{ fontSize: 10.5, color: "var(--text-4)", lineHeight: 1.4 }}>
+              Modifiable dans l&apos;onglet Espacement de la page Style Guide.
+            </div>
+          </div>
+        )}
+
+        {/* Font list */}
+        <div style={{ maxHeight: 240, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+          {filtered.map((f) => (
+            <button
+              key={f}
+              onClick={() => onUpdate(f)}
+              style={{
+                width: "100%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 12px",
+                border: 0,
+                borderBottom: "1px solid var(--border)",
+                background: f === current ? "var(--text)" : "transparent",
+                color: f === current ? "var(--bg)" : "var(--text)",
+                cursor: "default",
+                fontFamily: `"${f}", ${fallback}`,
+                fontSize: 14,
+                textAlign: "left",
+              }}
+            >
+              <span>{f}</span>
+              {f === current && <Check size={12} />}
+            </button>
+          ))}
+          {filtered.length === 0 && (
+            <div style={{ padding: 16, textAlign: "center", color: "var(--text-4)", fontSize: 11 }}>Aucune police trouvée</div>
+          )}
+        </div>
       </div>
     </Modal>
   );
@@ -660,6 +790,21 @@ function VariantEditor({
 
 // ── Modal: Buttons ────────────────────────────────────────────────────────────
 
+const BUTTON_STYLES: Array<{ id: ButtonVariant["style"]; label: string }> = [
+  { id: "filled", label: "Plein" },
+  { id: "outline", label: "Contour" },
+  { id: "soft", label: "Doux" },
+  { id: "ghost", label: "Ghost" },
+];
+
+const RADIUS_PRESETS: Array<{ l: string; v: string }> = [
+  { l: "Carré", v: "0px" },
+  { l: "Sm", v: "4px" },
+  { l: "Md", v: "8px" },
+  { l: "Lg", v: "16px" },
+  { l: "Pilule", v: "999px" },
+];
+
 function ButtonsModal({
   guide,
   onUpdate,
@@ -678,7 +823,6 @@ function ButtonsModal({
     const preset = BUTTON_PRESETS.find((p) => p.id === id);
     if (!preset) return;
     onUpdate({
-      // Update legacy fields from preset primary
       style: preset.primary.style === "ghost" ? "outline" : preset.primary.style,
       borderRadius: preset.primary.borderRadius,
       padding: preset.primary.padding,
@@ -703,68 +847,240 @@ function ButtonsModal({
     onUpdate({ secondary: { ...secondary, ...updates }, preset: "custom" });
   };
 
+  const v = tab === "primary" ? primary : secondary;
+  const updateV = tab === "primary" ? updatePrimary : updateSecondary;
+  const baseColor = tab === "primary" ? guide.colors.primary : guide.colors.secondary;
+  const vars = variantToCSSVars(v, baseColor, "--v");
+
+  const radiusNum = Math.min(parseInt(v.borderRadius), 32);
+  const borderWidthNum = parseInt(v.borderWidth);
+  const shadowEnabled = !!v.shadow;
+
   return (
-    <Modal title="Boutons CTA" onClose={onClose}>
-      {/* Preset selector */}
-      <div>
-        <label className="text-xs font-medium text-gray-500 block mb-2">Preset</label>
-        <div className="grid grid-cols-3 gap-1.5">
-          {BUTTON_PRESETS.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => applyPreset(p.id)}
-              className={`py-1.5 text-xs rounded-lg border transition-colors ${
-                currentPreset === p.id
-                  ? "bg-gray-900 text-white border-gray-900"
-                  : "border-gray-200 text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+    <Modal
+      size="md" title="Boutons CTA"
+      subtitle="Configure les styles cta-primary et cta-secondary appliqués sur tout le site."
+      icon={<MousePointer size={14} />} iconKind="accent"
+      onClose={onClose}
+      footer={
+        <>
+          <span style={{ flex: 1 }} />
+          <Btn variant="outline" onClick={onClose}>Fermer</Btn>
+        </>
+      }
+    >
+      <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Preset */}
+        <div>
+          <div className="field-label"><span>Preset</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+            {BUTTON_PRESETS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => applyPreset(p.id)}
+                className="btn outline xs"
+                style={{
+                  height: 30, justifyContent: "center",
+                  background: currentPreset === p.id ? "var(--text)" : "var(--surface)",
+                  color: currentPreset === p.id ? "var(--bg)" : "var(--text)",
+                  borderColor: currentPreset === p.id ? "var(--text)" : "var(--border-2)",
+                }}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
           {currentPreset === "custom" && (
-            <button className="py-1.5 text-xs rounded-lg border bg-blue-50 border-blue-300 text-blue-700">
-              Custom
-            </button>
+            <div style={{ marginTop: 6, fontSize: 10.5, color: "var(--text-3)", fontFamily: "var(--font-mono)" }}>
+              Mode personnalisé — Custom
+            </div>
           )}
         </div>
-      </div>
 
-      {/* Tab switcher */}
-      <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-        {(["primary", "secondary"] as const).map((t) => (
+        {/* Tab switcher */}
+        <div className="seg" style={{ width: "100%" }}>
+          {(["primary", "secondary"] as const).map((t) => (
+            <button
+              key={t}
+              style={{ flex: 1, justifyContent: "center" }}
+              aria-pressed={tab === t ? "true" : "false"}
+              onClick={() => setTab(t)}
+            >
+              {t === "primary" ? "Bouton principal" : "Bouton secondaire"}
+            </button>
+          ))}
+        </div>
+
+        {/* Style row */}
+        <div>
+          <div className="field-label"><span>Style</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+            {BUTTON_STYLES.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => updateV({ style: s.id })}
+                className="btn outline xs"
+                style={{
+                  height: 28, justifyContent: "center",
+                  background: v.style === s.id ? "var(--text)" : "var(--surface)",
+                  color: v.style === s.id ? "var(--bg)" : "var(--text)",
+                  borderColor: v.style === s.id ? "var(--text)" : "var(--border-2)",
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Color overrides */}
+        <div>
+          <div className="field-label">
+            <span>Couleurs (override)</span>
+            <span className="hint">supporte #RRGGBBAA</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+            {(["bg", "text", "borderColor"] as const).map((field) => {
+              const fieldLabel = { bg: "Fond", text: "Texte", borderColor: "Bordure" }[field];
+              const autoKey = (field === "borderColor" ? "--v-border-color" : `--v-${field}`) as `--v-${string}`;
+              const current = v[field] ?? vars[autoKey];
+              const isOverridden = !!v[field];
+              return (
+                <div key={field}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)", textTransform: "uppercase", letterSpacing: ".04em" }}>{fieldLabel}</span>
+                    {isOverridden && (
+                      <button
+                        onClick={() => updateV({ [field]: undefined } as Partial<ButtonVariant>)}
+                        title="Revenir à auto"
+                        style={{ fontSize: 9, color: "var(--text-4)", border: 0, background: "transparent", cursor: "default", padding: 0 }}
+                      >Auto</button>
+                    )}
+                  </div>
+                  <HexColorInput
+                    value={current}
+                    onChange={(hex) => updateV({ [field]: hex } as Partial<ButtonVariant>)}
+                    compact
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Radius */}
+        <div>
+          <div className="range-row">
+            <label>Arrondi</label>
+            <input type="range" min={0} max={32} value={radiusNum} onChange={(e) => updateV({ borderRadius: `${e.target.value}px` })} />
+            <span className="val">{v.borderRadius}</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            {RADIUS_PRESETS.map(({ l, v: rv }) => (
+              <button
+                key={rv}
+                onClick={() => updateV({ borderRadius: rv })}
+                className="btn outline xs"
+                style={{
+                  flex: 1, justifyContent: "center", height: 26,
+                  background: v.borderRadius === rv ? "var(--text)" : "var(--surface)",
+                  color: v.borderRadius === rv ? "var(--bg)" : "var(--text-2)",
+                  borderColor: v.borderRadius === rv ? "var(--text)" : "var(--border-2)",
+                }}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Border width */}
+        <div className="range-row">
+          <label>Bordure</label>
+          <input type="range" min={0} max={6} value={borderWidthNum} onChange={(e) => updateV({ borderWidth: `${e.target.value}px` })} />
+          <span className="val">{v.borderWidth}</span>
+        </div>
+
+        {/* Padding */}
+        <div className="field" style={{ margin: 0 }}>
+          <div className="field-label"><span>Padding</span></div>
+          <input
+            className="input mono"
+            value={v.padding}
+            onChange={(e) => updateV({ padding: e.target.value })}
+            placeholder="12px 20px"
+          />
+        </div>
+
+        {/* Shadow toggle */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, color: "var(--text)" }}>Ombre portée</div>
+            <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2 }}>Ajoute une légère ombre dynamique au survol.</div>
+          </div>
           <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`flex-1 py-2 text-xs font-medium transition-colors ${
-              tab === t ? "bg-gray-900 text-white" : "text-gray-500 hover:bg-gray-50"
-            }`}
+            className="toggle"
+            aria-checked={shadowEnabled ? "true" : "false"}
+            onClick={() =>
+              updateV({ shadow: shadowEnabled ? null : { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(20,18,14,.15)" } })
+            }
+          />
+        </div>
+
+        {/* Preview */}
+        <div
+          style={{
+            padding: 22,
+            background: "var(--bg-2)",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            textAlign: "center",
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              color: "var(--text-4)",
+              marginBottom: 10,
+              fontFamily: "var(--font-mono)",
+              letterSpacing: ".06em",
+              textTransform: "uppercase",
+            }}
           >
-            {t === "primary" ? "Bouton principal" : "Bouton secondaire"}
-          </button>
-        ))}
-      </div>
+            Aperçu
+          </div>
+          <div style={{ display: "inline-flex", gap: 10, justifyContent: "center" }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: vars["--v-bg"],
+                color: vars["--v-text"],
+                border: `${v.borderWidth} solid ${vars["--v-border-color"]}`,
+                padding: v.padding,
+                borderRadius: v.borderRadius,
+                fontSize: 13,
+                fontWeight: 600,
+                boxShadow: vars["--v-shadow"] === "none" ? undefined : vars["--v-shadow"],
+              }}
+            >
+              {tab === "primary" ? "Demander un devis" : "En savoir plus"} →
+            </span>
+          </div>
+        </div>
 
-      {/* Variant editor */}
-      {tab === "primary" ? (
-        <VariantEditor
-          label="Principal (cta-primary)"
-          variant={primary}
-          baseColor={guide.colors.primary}
-          onChange={updatePrimary}
-        />
-      ) : (
-        <VariantEditor
-          label="Secondaire (cta-secondary)"
-          variant={secondary}
-          baseColor={guide.colors.secondary}
-          onChange={updateSecondary}
-        />
-      )}
-
-      {/* Convention reminder */}
-      <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-[10px] text-blue-600 leading-relaxed">
-        <strong>Convention :</strong> ajoutez la classe <code className="bg-blue-100 px-1 rounded">cta-primary</code> ou <code className="bg-blue-100 px-1 rounded">cta-secondary</code> sur vos boutons d&apos;action pour que ces styles s&apos;appliquent. Les autres boutons (FAQ, slider, menu…) conservent leur style natif.
+        {/* Convention */}
+        <div className="alert-soft info">
+          <AlertCircle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>Convention :</strong> ajoutez{" "}
+            <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, background: "rgba(42,111,219,.15)", padding: "1px 4px", borderRadius: 3 }}>cta-primary</code>
+            {" "}ou{" "}
+            <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, background: "rgba(42,111,219,.15)", padding: "1px 4px", borderRadius: 3 }}>cta-secondary</code>
+            {" "}sur vos boutons d&apos;action pour appliquer ce style.
+          </span>
+        </div>
       </div>
     </Modal>
   );
@@ -798,163 +1114,150 @@ function CardsModal({
 }) {
   const c = guide.cards;
   const isCustomShadow = !!c.shadowCustom;
-  const sc = c.shadowCustom ?? { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(0,0,0,0.12)" };
+  const sc = c.shadowCustom ?? { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(20,18,14,0.12)" };
+  const radiusNum = parseInt(c.borderRadius);
+  const imageRadiusNum = parseInt(c.imageRadius ?? c.borderRadius);
+  const borderWidthNum = parseInt(c.borderWidth ?? "0");
 
   return (
-    <Modal title="Cartes &amp; images" onClose={onClose}>
-      {/* Card radius */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-medium text-gray-500">Arrondi des cartes</label>
-          <span className="text-xs font-mono text-gray-400">{c.borderRadius}</span>
+    <Modal
+      size="md"
+      title="Cartes & images"
+      subtitle="Apparence par défaut des cartes de feature, témoignages, blog, etc."
+      icon={<Box size={14} />}
+      iconKind="accent"
+      onClose={onClose}
+      footer={
+        <>
+          <span style={{ flex: 1 }} />
+          <Btn variant="outline" onClick={onClose}>Fermer</Btn>
+        </>
+      }
+    >
+      <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Card radius */}
+        <div className="range-row">
+          <label>Arrondi cartes</label>
+          <input type="range" min={0} max={32} value={radiusNum} onChange={(e) => onUpdate({ borderRadius: `${e.target.value}px` })} />
+          <span className="val">{c.borderRadius}</span>
         </div>
-        <input
-          type="range" min={0} max={32}
-          value={parseInt(c.borderRadius)}
-          onChange={(e) => onUpdate({ borderRadius: `${e.target.value}px` })}
-          className="w-full accent-gray-900"
-        />
-      </div>
 
-      {/* Image radius */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-medium text-gray-500">Arrondi des images</label>
-          <span className="text-xs font-mono text-gray-400">{c.imageRadius ?? c.borderRadius}</span>
+        {/* Image radius */}
+        <div className="range-row">
+          <label>Arrondi images</label>
+          <input type="range" min={0} max={32} value={imageRadiusNum} onChange={(e) => onUpdate({ imageRadius: `${e.target.value}px` })} />
+          <span className="val">{c.imageRadius ?? c.borderRadius}</span>
         </div>
-        <input
-          type="range" min={0} max={32}
-          value={parseInt(c.imageRadius ?? c.borderRadius)}
-          onChange={(e) => onUpdate({ imageRadius: `${e.target.value}px` })}
-          className="w-full accent-gray-900"
-        />
-        <p className="text-[10px] text-gray-300 mt-1">Indépendant de l&apos;arrondi des cartes</p>
-      </div>
 
-      {/* Shadow mode toggle */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <label className="text-xs font-medium text-gray-500">Ombre</label>
-          <button
-            onClick={() => onUpdate({ shadowCustom: isCustomShadow ? null : sc })}
-            className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-              isCustomShadow ? "bg-gray-900 text-white border-gray-900" : "border-gray-200 text-gray-400 hover:bg-gray-50"
-            }`}
-          >
-            {isCustomShadow ? "✦ Personnalisée" : "Personnaliser"}
-          </button>
-        </div>
-        {!isCustomShadow ? (
-          <div className="flex gap-1.5">
-            {(["none", "sm", "md", "lg"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => onUpdate({ shadow: s })}
-                className={`flex-1 py-1.5 text-xs rounded-lg border transition-colors ${
-                  c.shadow === s
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                }`}
-              >
-                {s === "none" ? "Aucune" : s.toUpperCase()}
-              </button>
-            ))}
+        {/* Shadow */}
+        <div>
+          <div className="field-label">
+            <span>Ombre</span>
+            <button
+              onClick={() => onUpdate({ shadowCustom: isCustomShadow ? null : sc })}
+              style={{
+                marginLeft: "auto",
+                fontSize: 10, padding: "2px 8px",
+                border: "1px solid var(--border-2)",
+                background: isCustomShadow ? "var(--text)" : "var(--surface)",
+                color: isCustomShadow ? "var(--bg)" : "var(--text-3)",
+                borderRadius: 4, cursor: "default",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {isCustomShadow ? "Personnalisée" : "Personnaliser"}
+            </button>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {(
-              [
-                { key: "x" as const, label: "Décalage X", min: -40, max: 40 },
-                { key: "y" as const, label: "Décalage Y", min: -20, max: 60 },
-                { key: "blur" as const, label: "Flou", min: 0, max: 80 },
-                { key: "spread" as const, label: "Extension", min: -20, max: 40 },
-              ] as const
-            ).map(({ key, label, min, max }) => (
-              <div key={key}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] text-gray-400">{label}</span>
-                  <span className="text-[10px] font-mono text-gray-400">{sc[key]}px</span>
+          {!isCustomShadow ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+              {(["none", "sm", "md", "lg"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => onUpdate({ shadow: s })}
+                  className="btn outline xs"
+                  style={{
+                    height: 30, justifyContent: "center",
+                    background: c.shadow === s ? "var(--text)" : "var(--surface)",
+                    color: c.shadow === s ? "var(--bg)" : "var(--text)",
+                    borderColor: c.shadow === s ? "var(--text)" : "var(--border-2)",
+                  }}
+                >
+                  {s === "none" ? "Aucune" : s.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {(
+                [
+                  { key: "x" as const, label: "Décalage X", min: -40, max: 40 },
+                  { key: "y" as const, label: "Décalage Y", min: -20, max: 60 },
+                  { key: "blur" as const, label: "Flou", min: 0, max: 80 },
+                  { key: "spread" as const, label: "Extension", min: -20, max: 40 },
+                ] as const
+              ).map(({ key, label, min, max }) => (
+                <div key={key} className="range-row">
+                  <label>{label}</label>
+                  <input type="range" min={min} max={max} value={sc[key]} onChange={(e) => onUpdate({ shadowCustom: { ...sc, [key]: Number(e.target.value) } })} />
+                  <span className="val">{sc[key]}px</span>
                 </div>
-                <input
-                  type="range" min={min} max={max}
-                  value={sc[key]}
-                  onChange={(e) =>
-                    onUpdate({ shadowCustom: { ...sc, [key]: Number(e.target.value) } })
-                  }
-                  className="w-full accent-gray-900"
-                />
+              ))}
+              <HexColorInput
+                label="Couleur d'ombre"
+                value={sc.color.startsWith("rgba") ? "#14120E33" : sc.color}
+                onChange={(hex) => onUpdate({ shadowCustom: { ...sc, color: hex } })}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Border */}
+        <div className="range-row">
+          <label>Bordure</label>
+          <input type="range" min={0} max={6} value={borderWidthNum} onChange={(e) => onUpdate({ borderWidth: `${e.target.value}px` })} />
+          <span className="val">{c.borderWidth ?? "0px"}</span>
+        </div>
+
+        <HexColorInput
+          label="Couleur de bordure"
+          value={c.borderColor && !c.borderColor.startsWith("rgba") ? c.borderColor : "#14120E1F"}
+          onChange={(hex) => onUpdate({ borderColor: hex })}
+        />
+
+        {/* Preview */}
+        <div
+          style={{
+            padding: 22,
+            background: "var(--bg-2)",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+          }}
+        >
+          <div style={{ fontSize: 10, color: "var(--text-4)", marginBottom: 14, fontFamily: "var(--font-mono)", letterSpacing: ".06em", textTransform: "uppercase", textAlign: "center" }}>
+            Aperçu
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+            {["#FFFAF2", "#FFEFE2", "#E9F1F8"].map((bg, i) => (
+              <div
+                key={i}
+                style={{
+                  background: bg,
+                  borderRadius: c.borderRadius,
+                  boxShadow: resolveCardShadowPreview(c),
+                  border: `${c.borderWidth ?? "0px"} solid ${c.borderColor ?? "transparent"}`,
+                  aspectRatio: "1 / 1",
+                  padding: 10,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <div style={{ background: "rgba(20,18,14,.10)", borderRadius: c.imageRadius ?? c.borderRadius, height: "55%" }} />
+                <div style={{ background: "rgba(20,18,14,.16)", borderRadius: 3, height: 8, width: "70%" }} />
+                <div style={{ background: "rgba(20,18,14,.10)", borderRadius: 3, height: 6, width: "85%" }} />
               </div>
             ))}
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-gray-400">Couleur</span>
-              <input
-                type="color"
-                value={sc.color.startsWith("rgba") ? "#000000" : sc.color}
-                onChange={(e) =>
-                  onUpdate({ shadowCustom: { ...sc, color: e.target.value + "1f" } })
-                }
-                className="w-8 h-6 rounded cursor-pointer border border-gray-200"
-              />
-              <input
-                type="text"
-                value={sc.color}
-                onChange={(e) => onUpdate({ shadowCustom: { ...sc, color: e.target.value } })}
-                className="flex-1 text-[10px] font-mono bg-gray-50 border border-gray-200 rounded px-2 py-1"
-                placeholder="rgba(0,0,0,0.12)"
-              />
-            </div>
           </div>
-        )}
-      </div>
-
-      {/* Border */}
-      <div>
-        <label className="text-xs font-medium text-gray-500 block mb-2">Bordure</label>
-        <div className="flex gap-2 items-center">
-          <div className="flex-1">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] text-gray-400">Épaisseur</span>
-              <span className="text-[10px] font-mono text-gray-400">{c.borderWidth ?? "0px"}</span>
-            </div>
-            <input
-              type="range" min={0} max={8}
-              value={parseInt(c.borderWidth ?? "0")}
-              onChange={(e) => onUpdate({ borderWidth: `${e.target.value}px` })}
-              className="w-full accent-gray-900"
-            />
-          </div>
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-[10px] text-gray-400">Couleur</span>
-            <input
-              type="color"
-              value={
-                (c.borderColor ?? "transparent").startsWith("rgba")
-                  ? "#e5e7eb"
-                  : (c.borderColor ?? "#e5e7eb")
-              }
-              onChange={(e) => onUpdate({ borderColor: e.target.value })}
-              className="w-8 h-6 rounded cursor-pointer border border-gray-200"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Preview */}
-      <div>
-        <p className="text-[11px] text-gray-400 mb-2">Aperçu</p>
-        <div className="flex gap-2">
-          {["#EBF5FB", "#E9F7EF", "#F5EEF8"].map((bg, i) => (
-            <div
-              key={i}
-              className="flex-1 h-16"
-              style={{
-                backgroundColor: bg,
-                borderRadius: c.borderRadius,
-                boxShadow: resolveCardShadowPreview(c),
-                border: `${c.borderWidth ?? "0px"} solid ${c.borderColor ?? "transparent"}`,
-              }}
-            />
-          ))}
         </div>
       </div>
     </Modal>
@@ -1036,7 +1339,25 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
       {activeModal === "colors" && (
-        <ColorsModal guide={guide} onUpdate={updateColor} onClose={close} />
+        <ColorsModal
+          guide={guide}
+          onUpdate={updateColor}
+          onReset={() => dispatch({
+            type: "UPDATE_STYLE_GUIDE",
+            payload: {
+              colors: {
+                primary: "#1a56db",
+                secondary: "#6875f5",
+                accent: "#e3a008",
+                background: "#ffffff",
+                backgroundAlt: "#f9fafb",
+                text: "#111827",
+                textMuted: "#6b7280",
+              },
+            },
+          })}
+          onClose={close}
+        />
       )}
       {activeModal === "heading" && (
         <FontModal
@@ -1072,7 +1393,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
         <div className="sg-zones">
 
           {/* COLORS — full width zone */}
-          <ZoneCard title="Couleurs" onClick={() => setActiveModal("colors")}>
+          <ZoneCard title="Couleurs" icon={<Palette size={11} />} onClick={() => setActiveModal("colors")}>
             <div className="flex gap-2 flex-wrap">
               {(
                 [
@@ -1096,7 +1417,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
 
           {/* TYPOGRAPHY — side by side */}
           <div className="zone-row-2">
-            <ZoneCard title="Titre" onClick={() => setActiveModal("heading")}>
+            <ZoneCard title="Titre" icon={<TypeIcon size={11} />} onClick={() => setActiveModal("heading")}>
               <p
                 className="text-lg font-bold text-gray-800 truncate leading-tight"
                 style={{ fontFamily: guide.fonts.heading }}
@@ -1104,7 +1425,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
                 {guide.fonts.heading}
               </p>
             </ZoneCard>
-            <ZoneCard title="Corps" onClick={() => setActiveModal("body")}>
+            <ZoneCard title="Corps" icon={<TypeIcon size={11} />} onClick={() => setActiveModal("body")}>
               <p
                 className="text-sm text-gray-600 truncate leading-tight"
                 style={{ fontFamily: guide.fonts.body }}
@@ -1119,7 +1440,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
 
           {/* BUTTONS + CARDS — side by side */}
           <div className="zone-row-2">
-            <ZoneCard title="Boutons CTA" onClick={() => setActiveModal("buttons")}>
+            <ZoneCard title="Boutons CTA" icon={<MousePointer size={11} />} onClick={() => setActiveModal("buttons")}>
               <div className="flex flex-wrap gap-1.5">
                 {/* Primary preview */}
                 {(() => {
@@ -1164,7 +1485,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
                 )}
               </div>
             </ZoneCard>
-            <ZoneCard title="Cartes" onClick={() => setActiveModal("cards")}>
+            <ZoneCard title="Cartes" icon={<Box size={11} />} onClick={() => setActiveModal("cards")}>
               <div className="flex gap-1.5">
                 {["#EBF5FB", "#E9F7EF", "#F5EEF8"].map((bg, i) => (
                   <div
@@ -1185,7 +1506,10 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
           {/* SPACING — compact inline (no modal needed) */}
           <div className="zone-card">
             <div className="zh">
-              <span>Espacement</span>
+              <span style={{ display: "flex", alignItems: "center" }}>
+                <span className="ic-wrap"><Layers size={11} /></span>
+                Espacement
+              </span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {(
