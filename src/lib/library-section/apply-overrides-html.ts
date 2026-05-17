@@ -19,7 +19,16 @@ import { parse, type HTMLElement } from "node-html-parser";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
 
 export interface OverrideEntry {
-  kind: "text" | "rich_text" | "image" | "bg_image" | "link_href" | "button_href" | "attr" | "style";
+  kind:
+    | "text"
+    | "rich_text"
+    | "image"
+    | "image_mobile"
+    | "bg_image"
+    | "link_href"
+    | "button_href"
+    | "attr"
+    | "style";
   value: string;
   meta?: { attrName?: string; style?: Record<string, string> };
 }
@@ -117,6 +126,9 @@ export function applyOverridesToHTML(
           case "image":
             el.setAttribute("src", value);
             break;
+          case "image_mobile":
+            wrapImgWithMobileSource(el, value);
+            break;
           case "bg_image":
             setBackgroundImage(el, value);
             break;
@@ -155,6 +167,41 @@ export function applyOverridesToHTML(
   } catch {
     return { html, applied: 0, failed: Object.keys(overrides).length };
   }
+}
+
+/** Wraps the given `<img>` in a `<picture>` with a mobile-only `<source>`.
+ *  If the img is already inside a `<picture>` we synthesised, refresh the
+ *  source instead of nesting. Idempotent — safe to apply twice. */
+function wrapImgWithMobileSource(el: HTMLElement, mobileUrl: string): void {
+  if (el.tagName?.toLowerCase() !== "img") return;
+  const parent = el.parentNode as HTMLElement | null;
+  const isAlreadyPicture =
+    parent && parent.tagName?.toLowerCase() === "picture" && parent.getAttribute("data-mobile-src-wrap") === "1";
+
+  if (isAlreadyPicture && parent) {
+    // Update existing source element
+    const sources = parent.childNodes.filter((c) => c.nodeType === 1 && (c as HTMLElement).tagName?.toLowerCase() === "source") as HTMLElement[];
+    const existing = sources.find((s) => s.getAttribute("data-mobile-source") === "1");
+    if (existing) {
+      if (mobileUrl) existing.setAttribute("srcset", mobileUrl);
+      else existing.remove();
+    } else if (mobileUrl) {
+      const src = `<source media="(max-width: 767px)" srcset="${escapeAttr(mobileUrl)}" data-mobile-source="1">`;
+      parent.insertAdjacentHTML?.("afterbegin", src);
+    }
+    return;
+  }
+
+  if (!mobileUrl) return; // nothing to wrap when clearing without an existing wrapper
+
+  const imgHtml = el.outerHTML;
+  const source = `<source media="(max-width: 767px)" srcset="${escapeAttr(mobileUrl)}" data-mobile-source="1">`;
+  const wrapped = `<picture data-mobile-src-wrap="1">${source}${imgHtml}</picture>`;
+  el.replaceWith(wrapped);
+}
+
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function escapeText(text: string): string {
