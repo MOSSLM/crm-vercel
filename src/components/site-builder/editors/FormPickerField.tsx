@@ -35,6 +35,16 @@ export function FormPickerField({ value, onChange, siteTags = [] }: FormPickerFi
   const recommended = sorted.filter((f) => scoreFormForSite(f.tags, siteTags) > 0);
   const others = sorted.filter((f) => scoreFormForSite(f.tags, siteTags) === 0);
 
+  // Auto-pick the top recommended form when none is selected yet, so a freshly
+  // added form_block section ships with the enterprise-tagged form by default.
+  // Guarded against overwriting an explicit user choice (only fires while value
+  // is empty) and only when at least one recommended form exists.
+  useEffect(() => {
+    if (value || loading) return;
+    if (recommended.length === 0) return;
+    onChange(recommended[0].id);
+  }, [value, loading, recommended, onChange]);
+
   if (loading) {
     return (
       <div className="text-xs text-white/30 py-2">Chargement des formulaires…</div>
