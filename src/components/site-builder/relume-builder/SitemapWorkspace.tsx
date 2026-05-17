@@ -369,6 +369,39 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     (s.category ?? "").toLowerCase().includes(pickerSearch.toLowerCase()),
   );
 
+  // Resolve `section_id` → SiteSectionDef once for fast lookup.
+  const sectionDefById = React.useMemo(() => {
+    const m = new Map<string, SiteSectionDef>();
+    for (const s of availableSections) m.set(s.id, s);
+    return m;
+  }, [availableSections]);
+
+  /** Live list of sections shown under a page card. Derived from the actual
+   *  section instances (state.instancesByPage) instead of the legacy
+   *  page.sections array — that way both manual adds and AI-generated
+   *  sections surface here without any sync glue.
+   *
+   *  Descriptions only exist when the AI wrote them: we look them up by
+   *  position-or-type in page.sections and fall back to empty otherwise. */
+  const getDisplaySections = React.useCallback((page: SitemapPage): Array<{ id: string; name: string; description: string }> => {
+    const ids = state.instancesByPage[page.slug] ?? [];
+    const aiDescriptions = page.sections ?? [];
+    return ids
+      .map((id) => state.instances[id])
+      .filter((inst): inst is NonNullable<typeof inst> => Boolean(inst))
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((inst, idx) => {
+        const def = inst.section_def ?? (inst.section_id ? sectionDefById.get(inst.section_id) : undefined);
+        const name = def?.name ?? "Section";
+        const aiAt = aiDescriptions[idx];
+        const aiByType = def?.type
+          ? aiDescriptions.find((s) => s.type === def.type)
+          : undefined;
+        const description = (aiAt?.description ?? aiByType?.description ?? "").trim();
+        return { id: inst.id, name, description };
+      });
+  }, [state.instancesByPage, state.instances, sectionDefById]);
+
   const toggleExpand = (id: string) => {
     setExpandedPages((prev) => {
       const next = new Set(prev);
@@ -524,7 +557,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           {state.sitemap.map((page, i) => {
             const pos = pagePositions[i];
             const isExpanded = expandedPages.has(page.id);
-            const sections: SitemapSection[] = page.sections ?? [];
+            const sections = getDisplaySections(page);
             const isLoadingPage = pageLoading === page.id;
             const pageCtx = pageContexts[page.id] ?? "";
             const isContextOpen = pageContextOpen === page.id;
@@ -644,13 +677,13 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                   </div>
                 )}
 
-                {/* Sections */}
+                {/* Sections — derived live from real instances */}
                 {sections.length > 0 && (
                   <div>
                     {(isExpanded ? sections : sections.slice(0, 4)).map((sec) => (
                       <div key={sec.id} className="sec-row">
                         <div className="name">{sec.name}</div>
-                        <div className="desc">{sec.description}</div>
+                        {sec.description && <div className="desc">{sec.description}</div>}
                       </div>
                     ))}
                     {!isExpanded && sections.length > 4 && (
