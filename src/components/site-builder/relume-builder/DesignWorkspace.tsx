@@ -63,19 +63,35 @@ function useCanvasPanZoom() {
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
   const onMouseUp = () => { isPanning.current = false; };
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
-    } else {
-      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
-    }
-  };
+
+  /**
+   * Native wheel listener with `passive: false` so `preventDefault()`
+   * actually blocks the browser's Ctrl+wheel / trackpad-pinch zoom on the
+   * page. React's synthetic `onWheel` is registered as passive and
+   * silently ignores `preventDefault`. We attach via a callback ref so
+   * the listener is bound once per canvas element instance.
+   */
+  const wheelRef = React.useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+      } else {
+        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+      }
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    // Stash the cleanup on the element so a later re-attach can detach.
+    (el as HTMLDivElement & { __wheelCleanup?: () => void }).__wheelCleanup?.();
+    (el as HTMLDivElement & { __wheelCleanup?: () => void }).__wheelCleanup = () => el.removeEventListener("wheel", handler);
+  }, []);
+
   const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
   const zoomOut = () => setScale((s) => Math.max(0.2, parseFloat((s - 0.1).toFixed(2))));
   const resetZoom = () => { setScale(0.8); setPan({ x: 60, y: 30 }); };
 
-  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel, zoomIn, zoomOut, resetZoom };
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, wheelRef, zoomIn, zoomOut, resetZoom };
 }
 
 // ─── Selected element info ────────────────────────────────────────────────────
@@ -781,12 +797,12 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
 
       {/* ─ Canvas ──────────────────────────────────────────────────────────── */}
       <div
+        ref={canvas.wheelRef}
         className="canvas-host"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
         onMouseLeave={canvas.onMouseUp}
-        onWheel={canvas.onWheel}
         onClick={() => { if (!canvas.didPan.current) { dispatch({ type: "SELECT_INSTANCE", payload: null }); setSelectedElement(null); } }}
         style={{ cursor: "grab", flex: 1 }}
       >

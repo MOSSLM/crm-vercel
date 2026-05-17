@@ -81,8 +81,23 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
   const [selectionView, setSelectionView] = React.useState<{ rect: SelectionRect } | null>(null);
 
   const [varOpen, setVarOpen] = React.useState(false);
+  const [colorPopOpen, setColorPopOpen] = React.useState(false);
+  const [weightPopOpen, setWeightPopOpen] = React.useState(false);
   const [colorDraft, setColorDraft] = React.useState("#000000");
   const lastEmittedRef = React.useRef<string>("");
+
+  // Common swatches shown in the inline color popover. These are pulled
+  // from the warm-neutral skin tokens so they always match the design.
+  const SWATCHES = ["#14120E", "#E2552B", "#C73E16", "#FFFAF2", "#5C5953", "#1F8A5B", "#2A6FDB", "#7A5AE0", "#C8881F", "#B5322F"];
+  const WEIGHT_CHIPS = [300, 400, 500, 600, 700, 800] as const;
+
+  // Tell the browser to apply CSS styles via <span style="…"> instead of
+  // legacy <font>/<b> tags. Without this, foreColor produces <font
+  // color="…"> which our sanitizer strips on emit — the color appears
+  // briefly then disappears on the next round-trip.
+  React.useEffect(() => {
+    try { document.execCommand("styleWithCSS", false, "true"); } catch { /* unsupported in some browsers */ }
+  }, []);
 
   // Seed the editor once. Subsequent external `value` updates only override
   // when the editor isn't focused, to avoid clobbering the caret.
@@ -126,6 +141,21 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
     return () => document.removeEventListener("selectionchange", onSelectionChange);
   }, []);
 
+  // Dismiss color / weight popovers on outside-click. We can't bind to a
+  // ref inside a portal cleanly, so we just close on any non-prevented
+  // pointerdown — the popover's own mousedown handler calls
+  // preventDefault, so its descendants don't trigger this.
+  React.useEffect(() => {
+    if (!colorPopOpen && !weightPopOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      setColorPopOpen(false);
+      setWeightPopOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [colorPopOpen, weightPopOpen]);
+
   /** Emit the sidebar editor's sanitized HTML — only for the local surface,
    *  not for an external contentEditable (those have their own onInput). */
   const emit = React.useCallback(() => {
@@ -139,17 +169,20 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
 
   const debouncedEmit = useDebouncedFn(emit, 200);
 
-  /** Restore the last contentEditable selection so execCommand operates on
-   *  the user's selected text and not on a collapsed caret. Returns the
-   *  contentEditable host the range belongs to. */
+  /** Re-install the saved Range as the document selection (does NOT move
+   *  focus — focus shifts can collapse the caret on some browsers).
+   *  Returns the contentEditable host the range belongs to. */
   const restoreSelection = (): HTMLElement | null => {
     const range = savedRangeRef.current;
     const host = savedHostRef.current;
     if (!range || !host) return null;
-    host.focus();
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
+    try {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    } catch {
+      return null;
+    }
     return host;
   };
 
@@ -164,12 +197,15 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
   const exec = (cmd: string, arg?: string) => {
     const host = restoreSelection();
     if (!host) return;
+    try { document.execCommand("styleWithCSS", false, "true"); } catch { /* */ }
     document.execCommand(cmd, false, arg);
     refreshSavedRange();
     // If the host is *our* surface, emit debounced. If it's an external
     // contentEditable (canvas), its own input listener handles persistence.
     if (host === ref.current) {
       debouncedEmit();
+    } else {
+      host.dispatchEvent(new Event("input", { bubbles: true }));
     }
   };
 
@@ -193,27 +229,45 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
       // surroundContents-like failures are silent.
     }
     if (host === ref.current) debouncedEmit();
-    // External hosts emit input events on their own.
-    if (host !== ref.current) {
-      host.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  };
-
-  const insertVariable = (key: string) => {
-    const host = restoreSelection() ?? ref.current;
-    if (!host) return;
-    host.focus();
-    document.execCommand("insertText", false, `{{ ${key} }}`);
-    setVarOpen(false);
-    refreshSavedRange();
-    if (host === ref.current) debouncedEmit();
     else host.dispatchEvent(new Event("input", { bubbles: true }));
   };
 
-  /** Helper used on every toolbar interactive element so the click never
-   *  moves focus away from the active contentEditable. */
+  /** Inserting a variable always targets *our* sidebar surface — it's the
+   *  picker under the editor, not something the user invokes from a
+   *  canvas selection. */
+  const insertVariable = (key: string) => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    // Restore caret to the last position inside the editor if we have one.
+    if (savedRangeRef.current && savedHostRef.current === el) {
+      const sel = window.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(savedRangeRef.current);
+    }
+    document.execCommand("insertText", false, `{{ ${key} }}`);
+    setVarOpen(false);
+    refreshSavedRange();
+    debouncedEmit();
+  };
+
+  /**
+   * mousedown handler for EVERY interactive element of the toolbar.
+   * Saves the user's current selection at the exact moment of click —
+   * before any focus shift wipes it — and calls preventDefault so the
+   * browser doesn't transfer focus away from the active contentEditable.
+   */
   const stopFocusSteal = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+      const range = sel.getRangeAt(0);
+      const host = findContentEditableAncestor(range.commonAncestorContainer);
+      if (host) {
+        savedRangeRef.current = range.cloneRange();
+        savedHostRef.current = host;
+      }
+    }
   };
 
   return (
@@ -257,51 +311,117 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
               pointerEvents: "auto",
             }}
           >
-            <button type="button" className="btn ghost xs icon" title="Gras" onMouseDown={stopFocusSteal} onClick={() => exec("bold")}>
+            <button type="button" tabIndex={-1} className="btn ghost xs icon" title="Gras" onMouseDown={stopFocusSteal} onClick={() => exec("bold")}>
               <Bold size={12} />
             </button>
-            <button type="button" className="btn ghost xs icon" title="Italique" onMouseDown={stopFocusSteal} onClick={() => exec("italic")}>
+            <button type="button" tabIndex={-1} className="btn ghost xs icon" title="Italique" onMouseDown={stopFocusSteal} onClick={() => exec("italic")}>
               <Italic size={12} />
             </button>
-            <button type="button" className="btn ghost xs icon" title="Souligné" onMouseDown={stopFocusSteal} onClick={() => exec("underline")}>
+            <button type="button" tabIndex={-1} className="btn ghost xs icon" title="Souligné" onMouseDown={stopFocusSteal} onClick={() => exec("underline")}>
               <UnderlineIcon size={12} />
             </button>
             <span style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
-            <label
-              onMouseDown={stopFocusSteal}
-              style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "0 4px", fontSize: 10, color: "var(--text-3)", cursor: "default" }}
-              title="Couleur du texte sélectionné"
-            >
-              <input
-                type="color"
-                value={colorDraft}
+
+            {/* Color — custom popover, no native picker (which steals
+                focus and leaves the saved range stale). */}
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                tabIndex={-1}
+                className="btn ghost xs"
+                title="Couleur du texte sélectionné"
                 onMouseDown={stopFocusSteal}
-                onChange={(e) => {
-                  setColorDraft(e.target.value);
-                  exec("foreColor", e.target.value);
-                }}
-                style={{ width: 18, height: 18, border: 0, padding: 0, background: "transparent", cursor: "default" }}
-              />
-              <span style={{ fontFamily: "var(--font-mono)" }}>{colorDraft}</span>
-            </label>
+                onClick={() => { setColorPopOpen((v) => !v); setWeightPopOpen(false); }}
+                style={{ height: 22, padding: "0 4px" }}
+              >
+                <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: 3, background: colorDraft, border: "1px solid var(--border-2)" }} />
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>A</span>
+              </button>
+              {colorPopOpen && (
+                <div
+                  className="pop"
+                  onMouseDown={stopFocusSteal}
+                  style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, padding: 8, width: 180, zIndex: 220 }}
+                >
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4, marginBottom: 8 }}>
+                    {SWATCHES.map((hex) => (
+                      <button
+                        key={hex}
+                        type="button"
+                        tabIndex={-1}
+                        title={hex}
+                        onMouseDown={stopFocusSteal}
+                        onClick={() => {
+                          setColorDraft(hex);
+                          exec("foreColor", hex);
+                          setColorPopOpen(false);
+                        }}
+                        style={{ width: 24, height: 24, borderRadius: 4, background: hex, border: "1.5px solid var(--surface)", boxShadow: "0 0 0 1px var(--border-2)", cursor: "default" }}
+                      />
+                    ))}
+                  </div>
+                  <div className="hex-input-row">
+                    <span style={{ display: "inline-block", width: 22, height: 22, borderRadius: 4, background: colorDraft, border: "1px solid var(--border-2)" }} />
+                    <input
+                      type="text"
+                      value={colorDraft}
+                      onMouseDown={stopFocusSteal}
+                      onChange={(e) => setColorDraft(e.target.value)}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/.test(v)) {
+                          exec("foreColor", v);
+                        }
+                      }}
+                      className="input mono"
+                      style={{ flex: 1, height: 22, fontSize: 10.5 }}
+                      placeholder="#000000"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
             <span style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
-            <input
-              type="number"
-              min={100}
-              max={900}
-              step={50}
-              defaultValue={400}
-              title="Poids appliqué à la sélection (100–900, step 50)"
-              className="input mono"
-              style={{ width: 64, height: 22, padding: "0 6px", fontSize: 11 }}
-              onMouseDown={stopFocusSteal}
-              onChange={(e) => {
-                const w = Number(e.target.value);
-                if (!isNaN(w) && w >= 100 && w <= 900) applyWeight(w);
-              }}
-            />
+
+            {/* Weight — chips popover, no number input that steals focus. */}
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                tabIndex={-1}
+                className="btn ghost xs"
+                title="Poids (s'applique à la sélection)"
+                onMouseDown={stopFocusSteal}
+                onClick={() => { setWeightPopOpen((v) => !v); setColorPopOpen(false); }}
+                style={{ height: 22, padding: "0 6px", fontFamily: "var(--font-mono)", fontSize: 11 }}
+              >
+                Aa
+              </button>
+              {weightPopOpen && (
+                <div
+                  className="pop"
+                  onMouseDown={stopFocusSteal}
+                  style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, padding: 6, display: "flex", gap: 4, zIndex: 220 }}
+                >
+                  {WEIGHT_CHIPS.map((w) => (
+                    <button
+                      key={w}
+                      type="button"
+                      tabIndex={-1}
+                      onMouseDown={stopFocusSteal}
+                      onClick={() => { applyWeight(w); setWeightPopOpen(false); }}
+                      className="btn outline xs"
+                      style={{ height: 22, padding: "0 8px", fontWeight: w, fontFamily: "var(--font-mono)" }}
+                    >
+                      {w}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <span style={{ width: 1, height: 16, background: "var(--border)", margin: "0 2px" }} />
-            <button type="button" className="btn ghost xs icon" title="Effacer la mise en forme" onMouseDown={stopFocusSteal} onClick={() => exec("removeFormat")}>
+            <button type="button" tabIndex={-1} className="btn ghost xs icon" title="Effacer la mise en forme" onMouseDown={stopFocusSteal} onClick={() => exec("removeFormat")}>
               <Eraser size={12} />
             </button>
           </div>
