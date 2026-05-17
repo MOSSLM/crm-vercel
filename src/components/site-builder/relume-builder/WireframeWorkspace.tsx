@@ -48,20 +48,28 @@ function useCanvasPanZoom(initialPan = { x: 40, y: 40 }) {
     lastPos.current = { x: e.clientX, y: e.clientY };
   };
   const onMouseUp = () => { isPanning.current = false; };
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
-    } else {
-      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
-    }
-  };
+
+  /** Non-passive wheel listener (see DesignWorkspace.useCanvasPanZoom). */
+  const wheelRef = React.useCallback((el: HTMLDivElement | null) => {
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      if (e.ctrlKey || e.metaKey) {
+        setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+      } else {
+        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+      }
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    (el as HTMLDivElement & { __wheelCleanup?: () => void }).__wheelCleanup?.();
+    (el as HTMLDivElement & { __wheelCleanup?: () => void }).__wheelCleanup = () => el.removeEventListener("wheel", handler);
+  }, []);
 
   const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
   const zoomOut = () => setScale((s) => Math.max(0.2, parseFloat((s - 0.1).toFixed(2))));
   const resetZoom = () => { setScale(0.75); setPan({ x: 40, y: 40 }); };
 
-  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, onWheel, zoomIn, zoomOut, resetZoom };
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, wheelRef, zoomIn, zoomOut, resetZoom };
 }
 
 const CATEGORIES = ["Tous", "Hero", "Services", "Content", "Social Proof", "Contact", "CTA", "Media"];
@@ -357,12 +365,12 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
 
       {/* ─ Canvas ──────────────────────────────────────────────────────── */}
       <div
+        ref={canvas.wheelRef}
         className="canvas-host"
         onMouseDown={canvas.onMouseDown}
         onMouseMove={canvas.onMouseMove}
         onMouseUp={canvas.onMouseUp}
         onMouseLeave={canvas.onMouseUp}
-        onWheel={canvas.onWheel}
         style={{ cursor: "grab", flex: 1 }}
       >
         <div className="canvas-dotgrid" />
