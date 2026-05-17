@@ -884,6 +884,189 @@ const RADIUS_PRESETS: Array<{ l: string; v: string }> = [
   { l: "Pilule", v: "999px" },
 ];
 
+/**
+ * Self-contained editor for a single CTA variant (primary or secondary).
+ * Rendered twice, stacked vertically inside `ButtonsModal`, so the user
+ * can see and adjust both buttons simultaneously without having to
+ * switch tabs. Each instance edits its own slice of `StyleGuide.buttons`
+ * via the `onChange` callback passed by the parent.
+ */
+function ButtonVariantEditor({
+  label,
+  className,
+  previewText,
+  variant,
+  baseColor,
+  onChange,
+}: {
+  label: string;
+  className: string;
+  previewText: string;
+  variant: ButtonVariant;
+  baseColor: string;
+  onChange: (updates: Partial<ButtonVariant>) => void;
+}) {
+  const vars = variantToCSSVars(variant, baseColor, "--v");
+  const radiusNum = Math.min(parseInt(variant.borderRadius), 32);
+  const borderWidthNum = parseInt(variant.borderWidth);
+  const shadowEnabled = !!variant.shadow;
+
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border-2)",
+        borderRadius: 10,
+        padding: 14,
+        background: "var(--surface)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 14,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label}</span>
+        <code style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)", background: "var(--bg-2)", padding: "1px 5px", borderRadius: 3 }}>{className}</code>
+      </div>
+
+      {/* Style */}
+      <div>
+        <div className="field-label"><span>Style</span></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+          {BUTTON_STYLES.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => onChange({ style: s.id })}
+              className="btn outline xs"
+              style={{
+                height: 28, justifyContent: "center",
+                background: variant.style === s.id ? "var(--text)" : "var(--surface)",
+                color: variant.style === s.id ? "var(--bg)" : "var(--text)",
+                borderColor: variant.style === s.id ? "var(--text)" : "var(--border-2)",
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Color overrides */}
+      <div>
+        <div className="field-label"><span>Couleurs (override)</span></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+          {(["bg", "text", "borderColor"] as const).map((field) => {
+            const fieldLabel = { bg: "Fond", text: "Texte", borderColor: "Bordure" }[field];
+            const autoKey = (field === "borderColor" ? "--v-border-color" : `--v-${field}`) as `--v-${string}`;
+            const current = variant[field] ?? vars[autoKey];
+            const isOverridden = !!variant[field];
+            return (
+              <CompactColorOverride
+                key={field}
+                label={fieldLabel}
+                value={current}
+                isOverridden={isOverridden}
+                onChange={(hex) => onChange({ [field]: hex } as Partial<ButtonVariant>)}
+                onClear={() => onChange({ [field]: undefined } as Partial<ButtonVariant>)}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Radius */}
+      <div>
+        <div className="range-row">
+          <label>Arrondi</label>
+          <input type="range" min={0} max={32} value={radiusNum} onChange={(e) => onChange({ borderRadius: `${e.target.value}px` })} />
+          <span className="val">{variant.borderRadius}</span>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+          {RADIUS_PRESETS.map(({ l, v: rv }) => (
+            <button
+              key={rv}
+              onClick={() => onChange({ borderRadius: rv })}
+              className="btn outline xs"
+              style={{
+                flex: 1, justifyContent: "center", height: 26,
+                background: variant.borderRadius === rv ? "var(--text)" : "var(--surface)",
+                color: variant.borderRadius === rv ? "var(--bg)" : "var(--text-2)",
+                borderColor: variant.borderRadius === rv ? "var(--text)" : "var(--border-2)",
+              }}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Border width */}
+      <div className="range-row">
+        <label>Bordure</label>
+        <input type="range" min={0} max={6} value={borderWidthNum} onChange={(e) => onChange({ borderWidth: `${e.target.value}px` })} />
+        <span className="val">{variant.borderWidth}</span>
+      </div>
+
+      {/* Padding */}
+      <div className="field" style={{ margin: 0 }}>
+        <div className="field-label"><span>Padding</span></div>
+        <input
+          className="input mono"
+          value={variant.padding}
+          onChange={(e) => onChange({ padding: e.target.value })}
+          placeholder="12px 20px"
+        />
+      </div>
+
+      {/* Shadow toggle */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, color: "var(--text)" }}>Ombre portée</div>
+          <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2 }}>Légère ombre dynamique au survol.</div>
+        </div>
+        <button
+          className="toggle"
+          aria-checked={shadowEnabled ? "true" : "false"}
+          onClick={() =>
+            onChange({ shadow: shadowEnabled ? null : { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(20,18,14,.15)" } })
+          }
+        />
+      </div>
+
+      {/* Per-variant preview */}
+      <div
+        style={{
+          padding: 18,
+          background: "var(--bg-2)",
+          borderRadius: 8,
+          border: "1px solid var(--border)",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 10, color: "var(--text-4)", marginBottom: 8, fontFamily: "var(--font-mono)", letterSpacing: ".06em", textTransform: "uppercase" }}>
+          Aperçu
+        </div>
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            background: vars["--v-bg"],
+            color: vars["--v-text"],
+            border: `${variant.borderWidth} solid ${vars["--v-border-color"]}`,
+            padding: variant.padding,
+            borderRadius: variant.borderRadius,
+            fontSize: 13,
+            fontWeight: 600,
+            boxShadow: vars["--v-shadow"] === "none" ? undefined : vars["--v-shadow"],
+          }}
+        >
+          {previewText} →
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function ButtonsModal({
   guide,
   onUpdate,
@@ -893,7 +1076,6 @@ function ButtonsModal({
   onUpdate: (updates: Partial<StyleGuide["buttons"]>) => void;
   onClose: () => void;
 }) {
-  const [tab, setTab] = React.useState<"primary" | "secondary">("primary");
   const primary = resolvePrimaryVariant(guide);
   const secondary = resolveSecondaryVariant(guide);
   const currentPreset = guide.buttons.preset ?? "modern";
@@ -926,15 +1108,6 @@ function ButtonsModal({
     onUpdate({ secondary: { ...secondary, ...updates }, preset: "custom" });
   };
 
-  const v = tab === "primary" ? primary : secondary;
-  const updateV = tab === "primary" ? updatePrimary : updateSecondary;
-  const baseColor = tab === "primary" ? guide.colors.primary : guide.colors.secondary;
-  const vars = variantToCSSVars(v, baseColor, "--v");
-
-  const radiusNum = Math.min(parseInt(v.borderRadius), 32);
-  const borderWidthNum = parseInt(v.borderWidth);
-  const shadowEnabled = !!v.shadow;
-
   return (
     <Modal
       size="md" title="Boutons CTA"
@@ -949,7 +1122,7 @@ function ButtonsModal({
       }
     >
       <div className="modal-body" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Preset */}
+        {/* Preset — applies to both primary + secondary at once */}
         <div>
           <div className="field-label"><span>Preset</span></div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
@@ -976,171 +1149,26 @@ function ButtonsModal({
           )}
         </div>
 
-        {/* Tab switcher — primary / secondary */}
-        <div className="seg full" role="tablist" aria-label="Variante de bouton">
-          {(["primary", "secondary"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-pressed={tab === t ? "true" : "false"}
-              onClick={() => setTab(t)}
-            >
-              {t === "primary" ? "Bouton principal" : "Bouton secondaire"}
-            </button>
-          ))}
-        </div>
+        {/* Both variants stacked, each in its own bordered card. */}
+        <ButtonVariantEditor
+          label="Bouton principal"
+          className="cta-primary"
+          previewText="Demander un devis"
+          variant={primary}
+          baseColor={guide.colors.primary}
+          onChange={updatePrimary}
+        />
 
-        {/* Style row */}
-        <div>
-          <div className="field-label"><span>Style</span></div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-            {BUTTON_STYLES.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => updateV({ style: s.id })}
-                className="btn outline xs"
-                style={{
-                  height: 28, justifyContent: "center",
-                  background: v.style === s.id ? "var(--text)" : "var(--surface)",
-                  color: v.style === s.id ? "var(--bg)" : "var(--text)",
-                  borderColor: v.style === s.id ? "var(--text)" : "var(--border-2)",
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ButtonVariantEditor
+          label="Bouton secondaire"
+          className="cta-secondary"
+          previewText="En savoir plus"
+          variant={secondary}
+          baseColor={guide.colors.secondary}
+          onChange={updateSecondary}
+        />
 
-        {/* Color overrides — Fond / Texte / Bordure all on one row */}
-        <div>
-          <div className="field-label">
-            <span>Couleurs (override)</span>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-            {(["bg", "text", "borderColor"] as const).map((field) => {
-              const fieldLabel = { bg: "Fond", text: "Texte", borderColor: "Bordure" }[field];
-              const autoKey = (field === "borderColor" ? "--v-border-color" : `--v-${field}`) as `--v-${string}`;
-              const current = v[field] ?? vars[autoKey];
-              const isOverridden = !!v[field];
-              return (
-                <CompactColorOverride
-                  key={field}
-                  label={fieldLabel}
-                  value={current}
-                  isOverridden={isOverridden}
-                  onChange={(hex) => updateV({ [field]: hex } as Partial<ButtonVariant>)}
-                  onClear={() => updateV({ [field]: undefined } as Partial<ButtonVariant>)}
-                />
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Radius */}
-        <div>
-          <div className="range-row">
-            <label>Arrondi</label>
-            <input type="range" min={0} max={32} value={radiusNum} onChange={(e) => updateV({ borderRadius: `${e.target.value}px` })} />
-            <span className="val">{v.borderRadius}</span>
-          </div>
-          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-            {RADIUS_PRESETS.map(({ l, v: rv }) => (
-              <button
-                key={rv}
-                onClick={() => updateV({ borderRadius: rv })}
-                className="btn outline xs"
-                style={{
-                  flex: 1, justifyContent: "center", height: 26,
-                  background: v.borderRadius === rv ? "var(--text)" : "var(--surface)",
-                  color: v.borderRadius === rv ? "var(--bg)" : "var(--text-2)",
-                  borderColor: v.borderRadius === rv ? "var(--text)" : "var(--border-2)",
-                }}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Border width */}
-        <div className="range-row">
-          <label>Bordure</label>
-          <input type="range" min={0} max={6} value={borderWidthNum} onChange={(e) => updateV({ borderWidth: `${e.target.value}px` })} />
-          <span className="val">{v.borderWidth}</span>
-        </div>
-
-        {/* Padding */}
-        <div className="field" style={{ margin: 0 }}>
-          <div className="field-label"><span>Padding</span></div>
-          <input
-            className="input mono"
-            value={v.padding}
-            onChange={(e) => updateV({ padding: e.target.value })}
-            placeholder="12px 20px"
-          />
-        </div>
-
-        {/* Shadow toggle */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)" }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, color: "var(--text)" }}>Ombre portée</div>
-            <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2 }}>Ajoute une légère ombre dynamique au survol.</div>
-          </div>
-          <button
-            className="toggle"
-            aria-checked={shadowEnabled ? "true" : "false"}
-            onClick={() =>
-              updateV({ shadow: shadowEnabled ? null : { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(20,18,14,.15)" } })
-            }
-          />
-        </div>
-
-        {/* Preview */}
-        <div
-          style={{
-            padding: 22,
-            background: "var(--bg-2)",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-            textAlign: "center",
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              color: "var(--text-4)",
-              marginBottom: 10,
-              fontFamily: "var(--font-mono)",
-              letterSpacing: ".06em",
-              textTransform: "uppercase",
-            }}
-          >
-            Aperçu
-          </div>
-          <div style={{ display: "inline-flex", gap: 10, justifyContent: "center" }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                background: vars["--v-bg"],
-                color: vars["--v-text"],
-                border: `${v.borderWidth} solid ${vars["--v-border-color"]}`,
-                padding: v.padding,
-                borderRadius: v.borderRadius,
-                fontSize: 13,
-                fontWeight: 600,
-                boxShadow: vars["--v-shadow"] === "none" ? undefined : vars["--v-shadow"],
-              }}
-            >
-              {tab === "primary" ? "Demander un devis" : "En savoir plus"} →
-            </span>
-          </div>
-        </div>
-
-        {/* Convention */}
+        {/* Convention reminder */}
         <div className="alert-soft info">
           <AlertCircle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>

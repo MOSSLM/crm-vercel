@@ -65,11 +65,21 @@ function useCanvasPanZoom(initialPan = { x: 40, y: 40 }) {
     (el as HTMLDivElement & { __wheelCleanup?: () => void }).__wheelCleanup = () => el.removeEventListener("wheel", handler);
   }, []);
 
+  /** Apply a wheel delta programmatically — used for iframe sections
+   *  (see DesignWorkspace.useCanvasPanZoom). */
+  const applyWheel = React.useCallback((e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => {
+    if (e.ctrlKey || e.metaKey) {
+      setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+    } else {
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
+  }, []);
+
   const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
   const zoomOut = () => setScale((s) => Math.max(0.2, parseFloat((s - 0.1).toFixed(2))));
   const resetZoom = () => { setScale(0.75); setPan({ x: 40, y: 40 }); };
 
-  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, wheelRef, zoomIn, zoomOut, resetZoom };
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, wheelRef, applyWheel, zoomIn, zoomOut, resetZoom };
 }
 
 const CATEGORIES = ["Tous", "Hero", "Services", "Content", "Social Proof", "Contact", "CTA", "Media"];
@@ -480,6 +490,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                         sectionDef={secDef}
                         styleGuide={state.styleGuide}
                         wireframe
+                        onCanvasWheel={canvas.applyWheel}
                       />
 
                       <div className="ws-toolbar" onClick={(e) => e.stopPropagation()}>
