@@ -87,11 +87,22 @@ function useCanvasPanZoom() {
     (el as HTMLDivElement & { __wheelCleanup?: () => void }).__wheelCleanup = () => el.removeEventListener("wheel", handler);
   }, []);
 
+  /** Apply a wheel delta to the canvas state programmatically. Used to
+   *  re-route wheel events that originate INSIDE a library iframe (where
+   *  the native event never bubbles to our `.canvas-host` listener). */
+  const applyWheel = React.useCallback((e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => {
+    if (e.ctrlKey || e.metaKey) {
+      setScale((s) => Math.min(2, Math.max(0.2, s * (e.deltaY > 0 ? 0.9 : 1.1))));
+    } else {
+      setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+    }
+  }, []);
+
   const zoomIn = () => setScale((s) => Math.min(2, parseFloat((s + 0.1).toFixed(2))));
   const zoomOut = () => setScale((s) => Math.max(0.2, parseFloat((s - 0.1).toFixed(2))));
   const resetZoom = () => { setScale(0.8); setPan({ x: 60, y: 30 }); };
 
-  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, wheelRef, zoomIn, zoomOut, resetZoom };
+  return { pan, scale, didPan, onMouseDown, onMouseMove, onMouseUp, wheelRef, applyWheel, zoomIn, zoomOut, resetZoom };
 }
 
 // ─── Selected element info ────────────────────────────────────────────────────
@@ -901,6 +912,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                         selectionEnabled={!isPreviewed}
                         onElementClick={handleElementClick(instanceId)}
                         onDomTree={handleDomTree(instanceId)}
+                        onCanvasWheel={canvas.applyWheel}
                       />
                       {isPreviewed && (
                         <div style={{ position: "absolute", top: 0, left: 0, zIndex: 30, background: "var(--magic)", color: "#fff", fontSize: 9, padding: "2px 7px", borderBottomRightRadius: 5, fontFamily: "var(--font-mono)", fontWeight: 500 }}>

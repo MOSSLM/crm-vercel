@@ -394,6 +394,11 @@ function RelumeEditorInner({
 
   useGoogleFonts([state.styleGuide.fonts.heading, state.styleGuide.fonts.body]);
   const [publishDomain, setPublishDomain] = React.useState(publishedSubdomain ?? "");
+  // Local mirror of the published sub-domain. The `publishedSubdomain`
+  // prop is the value loaded at mount and never re-fetched ; we keep a
+  // local state so the "currently live on …" link in the publish popover
+  // (and the status pill) reflects the value the user just published.
+  const [activePublishedSubdomain, setActivePublishedSubdomain] = React.useState(publishedSubdomain ?? "");
   const [showPublish, setShowPublish] = React.useState(false);
   const publishRef = React.useRef<HTMLDivElement>(null);
   const [enterpriseId, setEnterpriseId] = React.useState<number | undefined>(initialEnterpriseId);
@@ -468,39 +473,54 @@ function RelumeEditorInner({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [dispatch]);
 
+  // ─── Save helper ─────────────────────────────────────────────────────────────
+
+  /**
+   * Persists the current builder state to the DB: site metadata
+   * (style_guide / sitemap / site_config) AND the section instances.
+   *
+   * Returns true on success, throws on hard failure. Used both by
+   * `handleSave` (toast feedback) and `handlePublish` (silent pre-save
+   * so the publish endpoint snapshots fresh DB rows, not stale ones
+   * left over from before the 2 s autosave debounce fired).
+   */
+  const persistStateToDb = React.useCallback(async () => {
+    const r1 = await fetch(`/api/site-builder/sites/${siteId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        style_guide: state.styleGuide,
+        sitemap: state.sitemap,
+        site_config: { menus: state.menus },
+      }),
+    });
+    if (!r1.ok) { const e = await r1.json(); throw new Error(e.error ?? "Erreur PATCH site"); }
+
+    const instances = Object.values(state.instances).map((inst) => ({
+      id: inst.id,
+      site_id: inst.site_id,
+      section_id: inst.section_id ?? null,
+      page_slug: inst.page_slug,
+      sort_order: inst.sort_order,
+      content: inst.content,
+      blocks: inst.blocks ?? [],
+      custom_style: inst.custom_style ?? {},
+      is_hidden: inst.is_hidden ?? false,
+    }));
+    const r2 = await fetch(`/api/site-builder/sites/${siteId}/instances`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ instances }),
+    });
+    if (!r2.ok) { const e = await r2.json(); throw new Error(e.error ?? "Erreur PUT instances"); }
+  }, [siteId, state.styleGuide, state.sitemap, state.menus, state.instances]);
+
   // ─── Save ────────────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const r1 = await fetch(`/api/site-builder/sites/${siteId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          style_guide: state.styleGuide,
-          sitemap: state.sitemap,
-          site_config: { menus: state.menus },
-        }),
-      });
-      if (!r1.ok) { const e = await r1.json(); throw new Error(e.error ?? "Erreur PATCH site"); }
-
-      const instances = Object.values(state.instances).map((inst) => ({
-        id: inst.id,
-        site_id: inst.site_id,
-        section_id: inst.section_id ?? null,
-        page_slug: inst.page_slug,
-        sort_order: inst.sort_order,
-        content: inst.content,
-        blocks: inst.blocks ?? [],
-        custom_style: inst.custom_style ?? {},
-        is_hidden: inst.is_hidden ?? false,
-      }));
-      const r2 = await fetch(`/api/site-builder/sites/${siteId}/instances`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instances }),
-      });
-      if (!r2.ok) { const e = await r2.json(); throw new Error(e.error ?? "Erreur PUT instances"); }
+      await persistStateToDb();
 
       fetch(`/api/site-builder/sites/${siteId}/versions`, {
         method: "POST",
@@ -523,6 +543,14 @@ function RelumeEditorInner({
     if (!publishDomain.trim()) return;
     setPublishing(true);
     try {
+      // Force-save the latest local state BEFORE the publish endpoint
+      // snapshots the DB. Without this, edits made within the autosave
+      // debounce window (2 s) never reach the published site.
+      if (state.isDirty) {
+        await persistStateToDb();
+        dispatch({ type: "MARK_SAVED" });
+      }
+
       const res = await fetch(`/api/site-builder/sites/${siteId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -534,6 +562,10 @@ function RelumeEditorInner({
       }
       setShowPublish(false);
       setHasDraftChanges(false);
+      // Mirror what the API just persisted so the popover's clickable
+      // link and any "live on …" badge point to the new sub-domain
+      // immediately (no full-page reload required).
+      setActivePublishedSubdomain(publishDomain.trim());
       toast.success(`Site publié sur ${publishDomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur de publication");
@@ -807,16 +839,16 @@ function RelumeEditorInner({
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>
                   {isPublished ? "Publier les modifications" : "Publier le site"}
                 </div>
-                {isPublished && publishedSubdomain && (
+                {isPublished && activePublishedSubdomain && (
                   <div style={{ fontSize: 11, color: "var(--text-4)", marginBottom: 10 }}>
                     En ligne sur{" "}
                     <a
-                      href={`https://${publishedSubdomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`}
+                      href={`https://${activePublishedSubdomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       style={{ color: "var(--info)", textDecoration: "none" }}
                     >
-                      {publishedSubdomain}.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}
+                      {activePublishedSubdomain}.{process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}
                     </a>
                   </div>
                 )}

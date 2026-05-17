@@ -66,6 +66,14 @@ interface LibrarySectionIframeProps {
   onDomTree?: (tree: IframeDomTreeNode) => void;
   /** Public site mode: start at 1px and grow up (no 720px initial flash). */
   publicMode?: boolean;
+  /** Forwarded from the iframe whenever a wheel/trackpad-pinch event
+   *  fires INSIDE the section. Editor-only: lets the parent canvas
+   *  apply pan/zoom for events that originate in iframe-rendered
+   *  sections (wheel events don't bubble out of iframes natively, so
+   *  the parent's non-passive listener never sees them). The iframe
+   *  script calls `e.preventDefault()` itself so the browser's
+   *  Ctrl+wheel page-zoom is suppressed. */
+  onCanvasWheel?: (e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => void;
 }
 
 /**
@@ -86,6 +94,7 @@ export function LibrarySectionIframe({
   onElementClick,
   onDomTree,
   publicMode = false,
+  onCanvasWheel,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   // In editor mode: start at a real viewport height so min-h-screen sections
@@ -163,6 +172,10 @@ export function LibrarySectionIframe({
         fieldId?: string | null;
         height?: number;
         tree?: IframeDomTreeNode;
+        deltaX?: number;
+        deltaY?: number;
+        ctrlKey?: boolean;
+        metaKey?: boolean;
       };
       if (selectionEnabled && data?.__siteBuilder === "dom-tree" && data.tree) {
         onDomTree?.(data.tree);
@@ -179,6 +192,14 @@ export function LibrarySectionIframe({
       }
       if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
         setHeight(Math.ceil(data.height) + 2);
+      }
+      if (data?.__siteBuilder === "iframe-wheel" && typeof data.deltaX === "number" && typeof data.deltaY === "number") {
+        onCanvasWheel?.({
+          deltaX: data.deltaX,
+          deltaY: data.deltaY,
+          ctrlKey: !!data.ctrlKey,
+          metaKey: !!data.metaKey,
+        });
       }
       if (data?.__siteBuilder === "iframe-ready") {
         isReadyRef.current = true;
@@ -197,7 +218,7 @@ export function LibrarySectionIframe({
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [selectionEnabled, onElementClick, onDomTree, minHeight, content, allVariables, overrides]);
+  }, [selectionEnabled, onElementClick, onDomTree, minHeight, content, allVariables, overrides, onCanvasWheel]);
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   const handleLoad = React.useCallback(() => {
@@ -484,6 +505,29 @@ function buildHTML(
     window.__tokens = ${JSON.stringify(tokens)};
     window.__overrides = ${JSON.stringify(overridesPayload)};
     window.__src = ${src};
+  <\/script>
+  <script>
+    /* Wheel passthrough — Ctrl+wheel / trackpad-pinch over the section
+       must NOT zoom the host browser page. The iframe is a same-origin
+       editor preview, so we install a non-passive wheel listener here
+       (events don't bubble out of an iframe natively) that:
+         1. preventDefault → suppresses the browser's page-zoom.
+         2. postMessage to parent → the parent's canvas applies pan/zoom
+            as if the wheel had happened directly on .canvas-host. */
+    (function(){
+      try {
+        window.addEventListener('wheel', function(e){
+          e.preventDefault();
+          try {
+            parent.postMessage({
+              __siteBuilder: 'iframe-wheel',
+              deltaX: e.deltaX, deltaY: e.deltaY,
+              ctrlKey: !!e.ctrlKey, metaKey: !!e.metaKey,
+            }, '*');
+          } catch(_) {}
+        }, { passive: false });
+      } catch(_) {}
+    })();
   <\/script>
   <script>
     /* Override applicator — applies content.__overrides[pathStr] after each

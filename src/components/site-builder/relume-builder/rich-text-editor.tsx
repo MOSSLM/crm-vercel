@@ -80,6 +80,20 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
   const savedHostRef = React.useRef<HTMLElement | null>(null);
   const [selectionView, setSelectionView] = React.useState<{ rect: SelectionRect } | null>(null);
 
+  // `isEditingRef` gates the value-seeding effect : while the user is
+  // editing (focus inside the contentEditable OR briefly outside it
+  // during a toolbar click), we MUST NOT rewrite `el.innerHTML`. Doing
+  // so would invalidate the Range objects in `savedRangeRef`, causing
+  // the next `execCommand` to operate on a collapsed caret — which on
+  // some browsers applies the format to the entire block.
+  //
+  // We extend the editing window 150 ms past blur to absorb the
+  // transient focus shift that happens when the toolbar buttons are
+  // clicked (preventDefault is not always honored on mousedown in
+  // Safari / Firefox).
+  const isEditingRef = React.useRef(false);
+  const blurTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const [varOpen, setVarOpen] = React.useState(false);
   const [colorPopOpen, setColorPopOpen] = React.useState(false);
   const [weightPopOpen, setWeightPopOpen] = React.useState(false);
@@ -99,15 +113,26 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
     try { document.execCommand("styleWithCSS", false, "true"); } catch { /* unsupported in some browsers */ }
   }, []);
 
-  // Seed the editor once. Subsequent external `value` updates only override
-  // when the editor isn't focused, to avoid clobbering the caret.
+  // Seed the editor once, and re-seed on external value updates only
+  // when the editor is NOT being edited. Critical : while the user is
+  // in the middle of formatting (focus in editor *or* a toolbar
+  // click that briefly steals focus), we mustn't rewrite `innerHTML`
+  // or the Range references in `savedRangeRef` become invalid.
+  //
+  // Also : we compare the *sanitised* incoming value to
+  // `lastEmittedRef.current` (our own last emit) so the inevitable
+  // round-trip "edit → debouncedEmit → parent re-render → new value
+  // prop" is identified and skipped — the editor's DOM is already up
+  // to date, no need to rewrite.
   React.useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (document.activeElement === el) return;
-    if (el.innerHTML === value) return;
-    el.innerHTML = sanitizeRichText(value);
-    lastEmittedRef.current = el.innerHTML;
+    if (isEditingRef.current) return;
+    const sanitized = sanitizeRichText(value);
+    if (sanitized === lastEmittedRef.current) return;
+    if (el.innerHTML === sanitized) return;
+    el.innerHTML = sanitized;
+    lastEmittedRef.current = sanitized;
   }, [value]);
 
   React.useEffect(() => {
@@ -171,19 +196,31 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
 
   /** Re-install the saved Range as the document selection (does NOT move
    *  focus — focus shifts can collapse the caret on some browsers).
-   *  Returns the contentEditable host the range belongs to. */
+   *  Returns the contentEditable host the range belongs to.
+   *
+   *  If `addRange` fails (the Range's nodes have been removed from the
+   *  DOM, e.g. by a previous innerHTML rewrite), fall back to the
+   *  currently-active selection if it lives inside a contentEditable —
+   *  that's usually a usable caret we can still operate on. */
   const restoreSelection = (): HTMLElement | null => {
     const range = savedRangeRef.current;
     const host = savedHostRef.current;
-    if (!range || !host) return null;
-    try {
-      const sel = window.getSelection();
-      sel?.removeAllRanges();
-      sel?.addRange(range);
-    } catch {
-      return null;
+    if (range && host && document.body.contains(host)) {
+      try {
+        const sel = window.getSelection();
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+        return host;
+      } catch {
+        // saved Range stale ; fall through to live selection
+      }
     }
-    return host;
+    const liveSel = window.getSelection();
+    if (liveSel && liveSel.rangeCount > 0) {
+      const liveHost = findContentEditableAncestor(liveSel.getRangeAt(0).commonAncestorContainer);
+      if (liveHost) return liveHost;
+    }
+    return null;
   };
 
   /** Refresh savedRangeRef after execCommand (the DOM may have changed). */
@@ -279,8 +316,20 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
         role="textbox"
         aria-multiline="true"
         data-placeholder={placeholder ?? ""}
+        onFocus={() => {
+          if (blurTimerRef.current) { clearTimeout(blurTimerRef.current); blurTimerRef.current = null; }
+          isEditingRef.current = true;
+        }}
+        onBlur={() => {
+          // Toolbar clicks momentarily blur the contentEditable on some
+          // browsers ; wait a tick before declaring the editor "idle".
+          if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+          blurTimerRef.current = setTimeout(() => {
+            isEditingRef.current = false;
+            emit();
+          }, 150);
+        }}
         onInput={debouncedEmit}
-        onBlur={emit}
         onPaste={(e) => {
           e.preventDefault();
           const text = e.clipboardData.getData("text/plain");

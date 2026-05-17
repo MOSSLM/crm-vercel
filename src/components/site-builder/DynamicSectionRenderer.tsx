@@ -34,6 +34,10 @@ interface DynamicSectionRendererProps {
   selectionEnabled?: boolean;
   onElementClick?: (info: IframeElementClickInfo) => void;
   onDomTree?: (tree: IframeDomTreeNode) => void;
+  /** Editor-only: forward wheel/pinch events that originate inside a
+   *  library iframe back to the parent canvas so the user can still
+   *  pan/zoom even while hovering an iframe section. */
+  onCanvasWheel?: (e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => void;
 }
 
 /** Convert StyleGuide into CSS custom properties object */
@@ -164,6 +168,7 @@ export function DynamicSectionRenderer({
   selectionEnabled = false,
   onElementClick,
   onDomTree,
+  onCanvasWheel,
 }: DynamicSectionRendererProps) {
   // Filter out __ meta keys from content passed to section components
   const contentWithoutMeta = Object.fromEntries(
@@ -298,6 +303,7 @@ export function DynamicSectionRenderer({
             selectionEnabled={selectionEnabled}
             onElementClick={onElementClick}
             onDomTree={onDomTree}
+            onCanvasWheel={onCanvasWheel}
           />
         )}
       </div>
