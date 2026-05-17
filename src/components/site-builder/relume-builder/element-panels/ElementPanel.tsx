@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify } from "lucide-react";
+import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, Trash2, RotateCcw } from "lucide-react";
 import type { SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "../RelumeBuilderProvider";
 import { resolveContentBinding, type BindingResult, type BindingLocation } from "@/lib/site-builder/resolve-content-binding";
@@ -135,6 +135,64 @@ function compositeRead(settings: Record<string, unknown>, key: string): Record<s
   const v = settings[key];
   if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
   return {};
+}
+
+// ─── Hide / restore (shared) ──────────────────────────────────────────────────
+
+/** True when a `display: none` style override exists on the given path. */
+function isElementHidden(instance: SiteSectionInstance, pathStr: string): boolean {
+  const all = (instance.content.__overrides as Record<string, { kind?: string; meta?: { style?: Record<string, string> } }> | undefined) ?? {};
+  const entry = all[`${pathStr}:style`];
+  return entry?.meta?.style?.display === "none";
+}
+
+/** Footer with a destructive "Hide" button (and "Restore" when already hidden).
+ *  Hiding writes `display: none` into the path's style override so the change
+ *  survives reload, snapshot and SSR (applyOverridesToHTML applies it). */
+function DeleteRestoreFooter({
+  instance,
+  pathStr,
+  label,
+}: {
+  instance: SiteSectionInstance;
+  pathStr: string;
+  label: string;
+}) {
+  const dispatch = useDispatcher(instance);
+  const hidden = isElementHidden(instance, pathStr);
+  return (
+    <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px dashed var(--border-2, #e5e2da)" }}>
+      {hidden ? (
+        <button
+          type="button"
+          className="btn outline xs"
+          style={{ width: "100%", justifyContent: "center", gap: 6 }}
+          onClick={() => writeStyleOverride(instance, dispatch, pathStr, { display: undefined })}
+          title="Réafficher cet élément"
+        >
+          <RotateCcw size={11} />Restaurer {label.toLowerCase()}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn outline xs"
+          style={{
+            width: "100%", justifyContent: "center", gap: 6,
+            color: "var(--danger, #b91c1c)", borderColor: "var(--danger, #fecaca)",
+          }}
+          onClick={() => writeStyleOverride(instance, dispatch, pathStr, { display: "none" })}
+          title="Cacher cet élément (réversible)"
+        >
+          <Trash2 size={11} />Supprimer {label.toLowerCase()}
+        </button>
+      )}
+      {hidden && (
+        <p style={{ fontSize: 10, color: "var(--text-4)", marginTop: 6, lineHeight: 1.4 }}>
+          Élément masqué via override. Il est invisible en preview et sur le site publié.
+        </p>
+      )}
+    </div>
+  );
 }
 
 // ─── Panel header (shared) ────────────────────────────────────────────────────
@@ -505,6 +563,8 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
           />
         </div>
       </div>
+
+      <DeleteRestoreFooter instance={instance} pathStr={pathStr} label="le texte" />
     </div>
   );
 }
@@ -578,6 +638,7 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
           Cette image est codée en dur dans la section. La modification est appliquée via un override DOM.
         </p>
       )}
+      <DeleteRestoreFooter instance={instance} pathStr={element.path.join(".")} label="l'image" />
     </div>
   );
 }
@@ -735,6 +796,8 @@ function ButtonOrLinkPanel({
             </button>
           </div>
         </div>
+
+      <DeleteRestoreFooter instance={instance} pathStr={fallbackPath} label={kind === "button" ? "le bouton" : "le lien"} />
     </div>
   );
 }
@@ -856,6 +919,8 @@ function InputPanel({ element, instance, binding }: { element: SelectedElementSh
           className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
         />
       </div>
+
+      <DeleteRestoreFooter instance={instance} pathStr={overridePath} label="le champ" />
     </div>
   );
 }
@@ -920,6 +985,8 @@ function FormPanel({ element, instance, binding }: { element: SelectedElementSha
           Ce formulaire est codé en dur. Pour le rendre éditable, déclare-le comme objet composite <code className="font-mono">{`{ action, method, submit_label }`}</code> dans le content.
         </p>
       )}
+
+      <DeleteRestoreFooter instance={instance} pathStr={element.path.join(".")} label="le formulaire" />
     </div>
   );
 }
