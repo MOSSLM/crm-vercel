@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify } from "lucide-react";
+import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, Trash2, RotateCcw } from "lucide-react";
 import type { SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "../RelumeBuilderProvider";
 import { resolveContentBinding, type BindingResult, type BindingLocation } from "@/lib/site-builder/resolve-content-binding";
@@ -135,6 +135,64 @@ function compositeRead(settings: Record<string, unknown>, key: string): Record<s
   const v = settings[key];
   if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
   return {};
+}
+
+// ─── Hide / restore (shared) ──────────────────────────────────────────────────
+
+/** True when a `display: none` style override exists on the given path. */
+function isElementHidden(instance: SiteSectionInstance, pathStr: string): boolean {
+  const all = (instance.content.__overrides as Record<string, { kind?: string; meta?: { style?: Record<string, string> } }> | undefined) ?? {};
+  const entry = all[`${pathStr}:style`];
+  return entry?.meta?.style?.display === "none";
+}
+
+/** Footer with a destructive "Hide" button (and "Restore" when already hidden).
+ *  Hiding writes `display: none` into the path's style override so the change
+ *  survives reload, snapshot and SSR (applyOverridesToHTML applies it). */
+function DeleteRestoreFooter({
+  instance,
+  pathStr,
+  label,
+}: {
+  instance: SiteSectionInstance;
+  pathStr: string;
+  label: string;
+}) {
+  const dispatch = useDispatcher(instance);
+  const hidden = isElementHidden(instance, pathStr);
+  return (
+    <div style={{ marginTop: 8, paddingTop: 10, borderTop: "1px dashed var(--border-2, #e5e2da)" }}>
+      {hidden ? (
+        <button
+          type="button"
+          className="btn outline xs"
+          style={{ width: "100%", justifyContent: "center", gap: 6 }}
+          onClick={() => writeStyleOverride(instance, dispatch, pathStr, { display: undefined })}
+          title="Réafficher cet élément"
+        >
+          <RotateCcw size={11} />Restaurer {label.toLowerCase()}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn outline xs"
+          style={{
+            width: "100%", justifyContent: "center", gap: 6,
+            color: "var(--danger, #b91c1c)", borderColor: "var(--danger, #fecaca)",
+          }}
+          onClick={() => writeStyleOverride(instance, dispatch, pathStr, { display: "none" })}
+          title="Cacher cet élément (réversible)"
+        >
+          <Trash2 size={11} />Supprimer {label.toLowerCase()}
+        </button>
+      )}
+      {hidden && (
+        <p style={{ fontSize: 10, color: "var(--text-4)", marginTop: 6, lineHeight: 1.4 }}>
+          Élément masqué via override. Il est invisible en preview et sur le site publié.
+        </p>
+      )}
+    </div>
+  );
 }
 
 // ─── Panel header (shared) ────────────────────────────────────────────────────
@@ -505,15 +563,27 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
           />
         </div>
       </div>
+
+      <DeleteRestoreFooter instance={instance} pathStr={pathStr} label="le texte" />
     </div>
   );
 }
 
 // ─── Image editor ─────────────────────────────────────────────────────────────
 
+const ASPECT_RATIO_OPTIONS: Array<{ id: string; label: string; value: string | undefined }> = [
+  { id: "auto", label: "Auto", value: undefined },
+  { id: "1/1", label: "1:1", value: "1 / 1" },
+  { id: "4/3", label: "4:3", value: "4 / 3" },
+  { id: "3/2", label: "3:2", value: "3 / 2" },
+  { id: "16/9", label: "16:9", value: "16 / 9" },
+  { id: "2/3", label: "2:3", value: "2 / 3" },
+];
+
 function ImagePanel({ element, instance, binding }: { element: SelectedElementShape; instance: SiteSectionInstance; binding: BindingResult }) {
   const { state } = useRelumeBuilder();
   const dispatch = useDispatcher(instance);
+  const pathStr = element.path.join(".");
 
   const isBackground = element.attrs.isBackground === true;
   const overrideKind = isBackground ? "bg_image" : "image";
@@ -530,6 +600,31 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
       ?? readOverride(instance, binding.pathStr, isBackground ? "image" : "bg_image");
     if (ov !== undefined) currentValue = ov;
   }
+
+  // Style overrides (ratio / dimensions)
+  const elementStyle = readStyleOverride(instance, pathStr);
+  const patchStyle = (patch: Record<string, string | undefined>) => writeStyleOverride(instance, dispatch, pathStr, patch);
+  const currentRatio = elementStyle.aspectRatio ?? "";
+  const currentWidth = elementStyle.width ?? "";
+  const currentHeight = elementStyle.height ?? "";
+
+  // Mobile image (image_mobile override)
+  const mobileSrc = readOverride(instance, pathStr, "image_mobile") ?? "";
+  const [mobileEnabled, setMobileEnabled] = React.useState<boolean>(mobileSrc.length > 0);
+  React.useEffect(() => { if (mobileSrc.length > 0) setMobileEnabled(true); }, [mobileSrc]);
+
+  const setMobileImage = (url: string) => {
+    if (!url) {
+      setOverride(instance, dispatch, pathStr, { kind: "image_mobile", value: "" });
+      // Clean up: also drop the wrapper by writing an empty override
+      // (applicator removes the source). Then clear the entry entirely.
+      const all = { ...((instance.content.__overrides as Record<string, unknown> | undefined) ?? {}) };
+      delete all[`${pathStr}:image_mobile`];
+      dispatch({ scope: "instance" }, { __overrides: all });
+      return;
+    }
+    setOverride(instance, dispatch, pathStr, { kind: "image_mobile", value: url });
+  };
 
   const onChange = (url: string) => {
     if (typeof console !== "undefined") {
@@ -578,6 +673,89 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
           Cette image est codée en dur dans la section. La modification est appliquée via un override DOM.
         </p>
       )}
+
+      {/* RATIO */}
+      <div>
+        <div className="field-label"><span>Format (ratio)</span></div>
+        <div className="seg full" style={{ flexWrap: "wrap" }}>
+          {ASPECT_RATIO_OPTIONS.map((r) => {
+            const isOn = (r.value ?? "") === currentRatio;
+            return (
+              <button
+                key={r.id}
+                type="button"
+                aria-pressed={isOn ? "true" : "false"}
+                onClick={() => patchStyle({ aspectRatio: r.value, objectFit: r.value ? "cover" : undefined })}
+                title={`Ratio ${r.label}`}
+              >
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* DIMENSIONS */}
+      <div>
+        <div className="field-label"><span>Dimensions</span></div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 9, color: "var(--text-4)" }}>Largeur</label>
+            <input
+              type="text"
+              value={currentWidth}
+              placeholder="ex: 100%, 320px"
+              onChange={(e) => patchStyle({ width: e.target.value || undefined })}
+              className="input mono"
+              style={{ width: "100%", height: 24, padding: "0 6px", fontSize: 11 }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ fontSize: 9, color: "var(--text-4)" }}>Hauteur</label>
+            <input
+              type="text"
+              value={currentHeight}
+              placeholder="ex: auto, 240px"
+              onChange={(e) => patchStyle({ height: e.target.value || undefined })}
+              className="input mono"
+              style={{ width: "100%", height: 24, padding: "0 6px", fontSize: 11 }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* MOBILE VARIANT */}
+      {!isBackground && (
+        <div>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-2)", cursor: "default" }}>
+            <input
+              type="checkbox"
+              checked={mobileEnabled}
+              onChange={(e) => {
+                const on = e.target.checked;
+                setMobileEnabled(on);
+                if (!on) setMobileImage("");
+              }}
+            />
+            Image différente sur mobile (&lt; 768 px)
+          </label>
+          {mobileEnabled && (
+            <div style={{ marginTop: 6 }}>
+              <ImagePickerField
+                setting={{ type: "image_picker", id: "image_mobile", label: "Image mobile" }}
+                value={mobileSrc}
+                onChange={setMobileImage}
+                siteId={state.siteId}
+              />
+              <p style={{ fontSize: 10, color: "var(--text-4)", marginTop: 4, lineHeight: 1.4 }}>
+                L'image desktop reste utilisée au-dessus de 768 px.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      <DeleteRestoreFooter instance={instance} pathStr={pathStr} label="l'image" />
     </div>
   );
 }
@@ -735,6 +913,8 @@ function ButtonOrLinkPanel({
             </button>
           </div>
         </div>
+
+      <DeleteRestoreFooter instance={instance} pathStr={fallbackPath} label={kind === "button" ? "le bouton" : "le lien"} />
     </div>
   );
 }
@@ -856,6 +1036,8 @@ function InputPanel({ element, instance, binding }: { element: SelectedElementSh
           className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400"
         />
       </div>
+
+      <DeleteRestoreFooter instance={instance} pathStr={overridePath} label="le champ" />
     </div>
   );
 }
@@ -920,6 +1102,8 @@ function FormPanel({ element, instance, binding }: { element: SelectedElementSha
           Ce formulaire est codé en dur. Pour le rendre éditable, déclare-le comme objet composite <code className="font-mono">{`{ action, method, submit_label }`}</code> dans le content.
         </p>
       )}
+
+      <DeleteRestoreFooter instance={instance} pathStr={element.path.join(".")} label="le formulaire" />
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { getSupabaseServiceClient } from "@/lib/supabase-service";
 import { resolveEnterpriseVariables } from "@/lib/site-builder/resolve-variables";
 
@@ -81,6 +82,15 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Invalider le cache ISR pour que la page publique reflète la nouvelle
+    // version immédiatement (sans attendre les 60 s du revalidate).
+    const publishedSub = (data as { published_subdomain?: string | null } | null)?.published_subdomain;
+    const sub = subdomain ?? publishedSub ?? null;
+    if (sub) {
+      try { revalidatePath(`/site/${sub}`, "page"); } catch {}
+      try { revalidatePath(`/site/${sub}`, "layout"); } catch {}
+    }
+
     return NextResponse.json({ ok: true, site: data });
   } catch {
     return NextResponse.json({ error: "Erreur serveur" }, { status: 500 });
@@ -100,5 +110,12 @@ export async function DELETE(_request: Request, context: RouteContext) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  const publishedSub = (data as { published_subdomain?: string | null } | null)?.published_subdomain;
+  if (publishedSub) {
+    try { revalidatePath(`/site/${publishedSub}`, "page"); } catch {}
+    try { revalidatePath(`/site/${publishedSub}`, "layout"); } catch {}
+  }
+
   return NextResponse.json({ ok: true, site: data });
 }

@@ -607,6 +607,39 @@ function buildHTML(
           if (el.innerHTML !== value) el.innerHTML = value;
         } else if (kind === 'image') {
           if (el.getAttribute('src') !== value) el.setAttribute('src', value);
+        } else if (kind === 'image_mobile') {
+          // Wrap the img in a <picture> with a (max-width: 767px) source so
+          // the mobile variant kicks in below 768 px without JS. Idempotent:
+          // we re-use an existing wrapper / source element when present.
+          if (el.tagName && el.tagName.toLowerCase() === 'img') {
+            var parent = el.parentNode;
+            var isWrap = parent && parent.tagName && parent.tagName.toLowerCase() === 'picture' && parent.getAttribute && parent.getAttribute('data-mobile-src-wrap') === '1';
+            if (isWrap) {
+              var existing = parent.querySelector('source[data-mobile-source="1"]');
+              if (value) {
+                if (existing) { if (existing.getAttribute('srcset') !== value) existing.setAttribute('srcset', value); }
+                else {
+                  var s = document.createElement('source');
+                  s.setAttribute('media', '(max-width: 767px)');
+                  s.setAttribute('srcset', value);
+                  s.setAttribute('data-mobile-source', '1');
+                  parent.insertBefore(s, parent.firstChild);
+                }
+              } else if (existing) {
+                existing.parentNode.removeChild(existing);
+              }
+            } else if (value) {
+              var pic = document.createElement('picture');
+              pic.setAttribute('data-mobile-src-wrap', '1');
+              var src2 = document.createElement('source');
+              src2.setAttribute('media', '(max-width: 767px)');
+              src2.setAttribute('srcset', value);
+              src2.setAttribute('data-mobile-source', '1');
+              pic.appendChild(src2);
+              el.parentNode.insertBefore(pic, el);
+              pic.appendChild(el);
+            }
+          }
         } else if (kind === 'bg_image') {
           var bg = value ? ('url("' + value.replace(/"/g, '\\"') + '")') : 'none';
           if (el.style.backgroundImage !== bg) el.style.backgroundImage = bg;

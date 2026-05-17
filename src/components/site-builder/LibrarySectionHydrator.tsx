@@ -16,7 +16,16 @@ import { interpolateData } from "@/lib/library-section/interpolate";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
 
 interface OverrideEntry {
-  kind: "text" | "rich_text" | "image" | "bg_image" | "link_href" | "button_href" | "attr" | "style";
+  kind:
+    | "text"
+    | "rich_text"
+    | "image"
+    | "image_mobile"
+    | "bg_image"
+    | "link_href"
+    | "button_href"
+    | "attr"
+    | "style";
   value: string;
   meta?: { attrName?: string; style?: Record<string, string> };
 }
@@ -83,6 +92,38 @@ function applyOverridesToContainer(
         case "image":
           if (el.getAttribute("src") !== value) el.setAttribute("src", value);
           break;
+        case "image_mobile": {
+          if (!(el instanceof HTMLImageElement)) break;
+          const parent = el.parentElement;
+          const isWrap = parent && parent.tagName.toLowerCase() === "picture" && parent.getAttribute("data-mobile-src-wrap") === "1";
+          if (isWrap && parent) {
+            const existing = parent.querySelector<HTMLSourceElement>('source[data-mobile-source="1"]');
+            if (value) {
+              if (existing) {
+                if (existing.getAttribute("srcset") !== value) existing.setAttribute("srcset", value);
+              } else {
+                const s = document.createElement("source");
+                s.setAttribute("media", "(max-width: 767px)");
+                s.setAttribute("srcset", value);
+                s.setAttribute("data-mobile-source", "1");
+                parent.insertBefore(s, parent.firstChild);
+              }
+            } else if (existing) {
+              existing.remove();
+            }
+          } else if (value && el.parentNode) {
+            const pic = document.createElement("picture");
+            pic.setAttribute("data-mobile-src-wrap", "1");
+            const s = document.createElement("source");
+            s.setAttribute("media", "(max-width: 767px)");
+            s.setAttribute("srcset", value);
+            s.setAttribute("data-mobile-source", "1");
+            pic.appendChild(s);
+            el.parentNode.insertBefore(pic, el);
+            pic.appendChild(el);
+          }
+          break;
+        }
         case "bg_image": {
           const bg = value ? `url("${value.replace(/"/g, '\\"')}")` : "none";
           if (el instanceof HTMLElement && el.style.backgroundImage !== bg) {
