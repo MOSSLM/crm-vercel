@@ -236,7 +236,7 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
   /** Persist whatever the editor emits. If it contains markup we store it
    *  as `rich_text` (override) — even on direct/composite bindings we
    *  reuse the same key but the renderer detects HTML and switches mode. */
-  const handleRichChange = (val: string) => {
+  const handleRichChange = React.useCallback((val: string) => {
     const isRich = looksLikeRichText(val);
     if (binding.strategy === "direct" || binding.strategy === "field-id") {
       dispatch(binding.location, { [binding.key]: val });
@@ -249,7 +249,55 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
     } else {
       setOverride(instance, dispatch, binding.pathStr, { kind: isRich ? "rich_text" : "text", value: val });
     }
-  };
+  }, [binding, dispatch, instance]);
+
+  // Inline canvas editing: locate the DOM node corresponding to this
+  // element in the live preview and make it contentEditable. The user
+  // can then type / select / format directly in the canvas — the same
+  // floating toolbar (from RichTextEditor) operates on whichever
+  // contentEditable currently owns the selection.
+  React.useEffect(() => {
+    if (typeof document === "undefined") return;
+    const container = document.querySelector<HTMLElement>(`[data-section-id="${instance.id}"], [data-lsi="${instance.id}"]`);
+    if (!container) return;
+    const root = container.firstElementChild as HTMLElement | null;
+    if (!root) return;
+    let node: HTMLElement | null = root;
+    for (const idx of element.path) {
+      if (!node || !node.children[idx]) { node = null; break; }
+      node = node.children[idx] as HTMLElement;
+    }
+    if (!node) return;
+
+    const previousEditable = node.getAttribute("contenteditable");
+    node.setAttribute("contenteditable", "true");
+    node.setAttribute("data-canvas-edit", "1");
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const onInput = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const html = node!.innerHTML;
+        handleRichChange(html);
+      }, 200);
+    };
+    // Swallow click/mousedown so the section's own onClick (which would
+    // reset selectedElement to null) doesn't fire while editing.
+    const onClick = (e: Event) => { e.stopPropagation(); };
+    node.addEventListener("input", onInput);
+    node.addEventListener("click", onClick);
+    node.addEventListener("mousedown", onClick);
+
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      node.removeEventListener("input", onInput);
+      node.removeEventListener("click", onClick);
+      node.removeEventListener("mousedown", onClick);
+      if (previousEditable == null) node.removeAttribute("contenteditable");
+      else node.setAttribute("contenteditable", previousEditable);
+      node.removeAttribute("data-canvas-edit");
+    };
+  }, [instance.id, element.path, handleRichChange]);
 
   const elementStyle = readStyleOverride(instance, pathStr);
   const patchStyle = (patch: Record<string, string | undefined>) => writeStyleOverride(instance, dispatch, pathStr, patch);
