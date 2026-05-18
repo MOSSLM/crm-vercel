@@ -1034,7 +1034,7 @@ function buildHTML(
         }
         if(window.MutationObserver){
           var mo=new MutationObserver(function(){setTimeout(scan,16)});
-          if(document.body)mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['data-form-slot','style','class']});
+          if(document.body)mo.observe(document.body,{childList:true,subtree:true});
         }
       }
       if(document.readyState==='loading'){
