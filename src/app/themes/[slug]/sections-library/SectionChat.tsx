@@ -33,6 +33,7 @@ interface Props {
   sectionId: string | null;
   currentCode: string;
   onApplyCode: (code: string) => void;
+  onApplySchema?: (schema: Record<string, unknown>) => void;
 }
 
 const QUICK_ACTIONS = [
@@ -46,6 +47,7 @@ export default function SectionChat({
   sectionId,
   currentCode,
   onApplyCode,
+  onApplySchema,
 }: Props) {
   const systemPrompt = useSystemPrompt(themeSlug);
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
@@ -120,13 +122,14 @@ export default function SectionChat({
           throw new Error(e.error || "Erreur du serveur");
         }
 
-        const { newCode, explanation } = await res.json();
+        const { newCode, newSchema, explanation } = await res.json();
 
         const aiMsg: ChatMessage = {
           id: crypto.randomUUID(),
           role: "assistant",
           content: explanation || "Code modifié avec succès.",
           newCode,
+          newSchema: newSchema ?? undefined,
           timestamp: new Date(),
         };
 
@@ -258,6 +261,10 @@ export default function SectionChat({
               onApplyCode(code);
               toast.success("Code appliqué dans l'éditeur");
             }}
+            onApplySchema={onApplySchema ? (schema) => {
+              onApplySchema(schema);
+              toast.success("Schéma appliqué automatiquement");
+            } : undefined}
           />
         ))}
 
@@ -363,9 +370,11 @@ export default function SectionChat({
 function MessageBubble({
   message,
   onApply,
+  onApplySchema,
 }: {
   message: ChatMessage;
   onApply: (code: string) => void;
+  onApplySchema?: (schema: Record<string, unknown>) => void;
 }) {
   const [expanded, setExpanded] = React.useState(false);
 
@@ -425,15 +434,28 @@ function MessageBubble({
             )}
 
             {/* Actions */}
-            <div className="flex gap-2 px-3 py-1.5 bg-zinc-800">
+            <div className="flex gap-2 px-3 py-1.5 bg-zinc-800 flex-wrap">
               <Button
                 size="sm"
                 className="h-6 text-xs bg-green-700 hover:bg-green-600 text-white"
-                onClick={() => onApply(message.newCode!)}
+                onClick={() => {
+                  onApply(message.newCode!);
+                  if (message.newSchema && onApplySchema) onApplySchema(message.newSchema);
+                }}
               >
                 <CheckCheck className="h-3 w-3 mr-1" />
-                Appliquer
+                {message.newSchema ? "Appliquer code + schéma" : "Appliquer"}
               </Button>
+              {message.newSchema && onApplySchema && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-xs text-zinc-400 hover:text-zinc-200"
+                  onClick={() => onApply(message.newCode!)}
+                >
+                  Code seulement
+                </Button>
+              )}
             </div>
           </div>
         )}

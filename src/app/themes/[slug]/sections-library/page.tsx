@@ -109,6 +109,17 @@ export default function SectionsLibraryPage({ params }: PageProps) {
     if (activeSection) setUnsaved(true);
   };
 
+  const handleApplySchemaFromChat = React.useCallback(async (newSchema: Record<string, unknown>) => {
+    if (!activeSection || !slug) return;
+    try {
+      await handleSchemaSave(newSchema);
+      setSchema(newSchema);
+      setActiveTab("schema");
+    } catch {
+      toast.error("Impossible de sauvegarder le schéma automatiquement");
+    }
+  }, [activeSection, slug, handleSchemaSave]);
+
   const handleSchemaSave = React.useCallback(async (newSchema: Record<string, unknown>) => {
     if (!activeSection || !slug) return;
     const res = await fetch(
@@ -279,6 +290,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
               sectionId={activeSection?.section_id ?? null}
               currentCode={code}
               onApplyCode={handleApplyCode}
+              onApplySchema={handleApplySchemaFromChat}
             />
           </Panel>
         </PanelGroup>
