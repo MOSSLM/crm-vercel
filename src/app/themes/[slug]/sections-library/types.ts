@@ -26,6 +26,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   newCode?: string;
+  newSchema?: Record<string, unknown>;
   explanation?: string;
   timestamp: Date;
 }

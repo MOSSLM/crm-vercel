@@ -93,18 +93,35 @@ Variations pilotées par schéma — IMPORTANT :
   4. Pour un checkbox : conditionnel JSX. Ex: \`{data.show_badge && <Badge … />}\`
 - Si l'utilisateur te demande "ajoute un dropdown horizontal/vertical pour les
   images", tu fais DEUX choses :
-  a. Tu déclares (et expliques où coller) le réglage dans le schéma :
-     \`{ "type": "select", "id": "image_layout", "label": "Disposition",
-        "options": [{"label":"Horizontal","value":"horizontal"},{"label":"Vertical","value":"vertical"}],
-        "default": "vertical", "group": "layout" }\`
+  a. Tu déclares le réglage dans le schéma (voir format ci-dessous).
   b. Tu lis \`data.image_layout\` dans le TSX et tu adaptes le rendu (flex-row vs flex-col,
      ratio d'image, taille, etc.).
 - Ne jamais coder en dur une variation que le schéma annonce comme éditable —
   c'est précisément ce qui doit être branché.
 
-Réponse : \`\`\`tsx [code] \`\`\` puis 1-2 phrases d'explication. Quand tu ajoutes ou
-modifies un champ de schéma, mentionne-le explicitement (l'utilisateur doit le
-recopier dans l'onglet Schéma).`;
+Types de champs disponibles dans le schéma :
+- \`{ "type": "text", "id": "...", "label": "...", "default": "..." }\`
+- \`{ "type": "textarea", "id": "...", "label": "...", "default": "..." }\`
+- \`{ "type": "checkbox", "id": "...", "label": "...", "default": true|false }\`
+- \`{ "type": "select", "id": "...", "label": "...", "options": [{"value":"...","label":"..."}], "default": "..." }\`
+- \`{ "type": "range", "id": "...", "label": "...", "min": 0, "max": 100, "step": 1, "unit": "px", "default": 50 }\`
+- \`{ "type": "image_picker", "id": "...", "label": "..." }\`
+- \`{ "type": "color_scheme", "id": "...", "label": "..." }\`
+- \`{ "type": "header", "content": "Titre de groupe" }\` — séparateur visuel sans id
+Ajoute \`"group": "content"|"layout"|"style"\` sur chaque champ pour l'organiser dans les bons onglets du builder.
+
+FORMAT DE RÉPONSE OBLIGATOIRE quand un schéma est créé ou modifié :
+1. D'abord le bloc TSX complet :
+   \`\`\`tsx
+   [code complet]
+   \`\`\`
+2. Ensuite, si et seulement si le schéma change, un bloc JSON schema complet :
+   \`\`\`json schema
+   { "name": "...", "description": "...", "category": "...", "settings": [...] }
+   \`\`\`
+3. Enfin 1-2 phrases d'explication.
+
+Si aucun schéma n'est créé ni modifié, omets le bloc \`\`\`json schema et réponds juste avec le tsx + explication.`;
 
 export async function POST(
   req: NextRequest,
@@ -170,8 +187,8 @@ export async function POST(
 
       const gptData = await openaiRes.json();
       const rawContent = gptData.choices?.[0]?.message?.content ?? "";
-      const { newCode, explanation } = extractCodeAndExplanation(rawContent);
-      return NextResponse.json({ newCode, explanation });
+      const { newCode, newSchema, explanation } = extractCodeAndExplanation(rawContent);
+      return NextResponse.json({ newCode, newSchema, explanation });
     }
 
     // Anthropic
@@ -198,8 +215,8 @@ export async function POST(
       clearTimeout(timeout);
       const rawContent =
         response.content[0]?.type === "text" ? response.content[0].text : "";
-      const { newCode, explanation } = extractCodeAndExplanation(rawContent);
-      return NextResponse.json({ newCode, explanation });
+      const { newCode, newSchema, explanation } = extractCodeAndExplanation(rawContent);
+      return NextResponse.json({ newCode, newSchema, explanation });
     } catch (err) {
       clearTimeout(timeout);
       throw err;
@@ -237,15 +254,30 @@ function resolveGptModel(model: string): string {
 
 function extractCodeAndExplanation(raw: string): {
   newCode: string;
+  newSchema: Record<string, unknown> | null;
   explanation: string;
 } {
-  const match = raw.match(/```(?:tsx?|jsx?|typescript)?\n?([\s\S]*?)```/);
-  if (!match) {
-    return { newCode: raw.trim(), explanation: "" };
+  const codeMatch = raw.match(/```(?:tsx?|jsx?|typescript)\n?([\s\S]*?)```/);
+  const schemaMatch = raw.match(/```json schema\n?([\s\S]*?)```/i);
+
+  let newSchema: Record<string, unknown> | null = null;
+  if (schemaMatch) {
+    try {
+      newSchema = JSON.parse(schemaMatch[1].trim()) as Record<string, unknown>;
+    } catch {
+      // invalid JSON — ignore schema
+    }
   }
-  const newCode = match[1].trim();
-  const explanation = raw
-    .slice(raw.indexOf(match[0]) + match[0].length)
-    .trim();
-  return { newCode, explanation };
+
+  if (!codeMatch) {
+    return { newCode: raw.trim(), newSchema, explanation: "" };
+  }
+
+  const newCode = codeMatch[1].trim();
+  const lastBlockEnd = Math.max(
+    raw.indexOf(codeMatch[0]) + codeMatch[0].length,
+    schemaMatch ? raw.indexOf(schemaMatch[0]) + schemaMatch[0].length : 0,
+  );
+  const explanation = raw.slice(lastBlockEnd).trim();
+  return { newCode, newSchema, explanation };
 }

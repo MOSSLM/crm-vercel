@@ -74,6 +74,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
             code: ts.code,
             theme_slug: ts.theme_slug,
             theme_section_id: ts.section_id,
+            schema: ts.schema ?? null,
           };
         }
       }
