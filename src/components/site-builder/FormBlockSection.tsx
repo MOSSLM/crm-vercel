@@ -1,6 +1,12 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+// The form runtime uses pv-* classes defined in forms-theme.css. This CSS
+// is only auto-loaded on /forms/* and /f/[slug] routes, so when the form is
+// embedded inside a site (site builder preview, library section overlay,
+// or the published site) we need to pull it in explicitly — otherwise the
+// form renders as unstyled text.
+import "@/components/form-builder/forms-theme.css";
 
 /**
  * Lazily loaded form block — avoids bundling FormRuntime into every page.
