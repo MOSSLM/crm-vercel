@@ -245,6 +245,8 @@ export function LibrarySectionHydrator() {
       // case; named slots (data-form-slot="foo") map to data.foo_form_id.
       const formId = (data as Record<string, unknown>)?.form_id;
       if (typeof formId === "string" && formId.length > 0) {
+        const d = data as Record<string, unknown>;
+        const formHeight = typeof d.__form_height === "number" ? d.__form_height as number : undefined;
         const mountSlots = () => {
           const slots = container.querySelectorAll<HTMLElement>("[data-form-slot]");
           slots.forEach((slot) => {
@@ -255,8 +257,9 @@ export function LibrarySectionHydrator() {
               root.render(
                 React.createElement(FormBlockSection, {
                   formId,
-                  renderMode: ((data as Record<string, unknown>)?.render_mode as "step" | "scroll") ?? "step",
+                  renderMode: (d?.render_mode as "step" | "scroll") ?? "step",
                   variables,
+                  height: formHeight,
                 }),
               );
               formRoots.push(root);
