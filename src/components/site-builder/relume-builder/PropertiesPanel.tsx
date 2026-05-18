@@ -156,6 +156,32 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     />
                   );
                 })()}
+                {/* Form height control — auto-injected when schema has a form_picker and a form is selected */}
+                {(() => {
+                  const hasFormPicker = schema.settings?.some((f) => f.type === "form_picker");
+                  const formId = instance.content.form_id as string | undefined;
+                  if (!hasFormPicker || !formId) return null;
+                  const formHeight = (instance.content.__form_height as number) ?? 480;
+                  return (
+                    <div className="border-t border-white/10 pt-3 space-y-2">
+                      <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest">Zone formulaire</div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-white/50">Hauteur</span>
+                        <span className="text-xs text-white/70 tabular-nums">{formHeight}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={300}
+                        max={900}
+                        step={20}
+                        value={formHeight}
+                        onChange={(e) => updateContent("__form_height", Number(e.target.value))}
+                        className="w-full accent-blue-400"
+                      />
+                    </div>
+                  );
+                })()}
+
                 {/* Blocks editor — only when schema declares blocks */}
                 {schema.blocks && schema.blocks.length > 0 && (
                   <BlocksEditor

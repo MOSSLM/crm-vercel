@@ -23,6 +23,7 @@ export function FormBlockSection({
   onSelect,
   instanceId,
   variables,
+  height,
 }: {
   formId: string;
   renderMode: "step" | "scroll";
@@ -32,6 +33,9 @@ export function FormBlockSection({
   onSelect?: () => void;
   instanceId?: string;
   variables?: Record<string, string>;
+  /** Explicit height in px. When set, the container gets an explicit height so
+   *  FormRuntime's flex layout (progress bar → body flex:1 → footer) works. */
+  height?: number;
 }) {
   const [form, setForm] = useState<import("@/types").Form | null>(null);
   const [error, setError] = useState(false);
@@ -69,7 +73,11 @@ export function FormBlockSection({
       onClick={editorMode ? (e) => { e.stopPropagation(); onSelect?.(); } : undefined}
       data-section-id={instanceId}
       className={editorMode ? "group/section" : ""}
-      style={{ position: "relative", border: selected ? "2px solid #3b82f6" : "2px solid transparent" }}
+      style={{
+        position: "relative",
+        ...(height ? { height: `${height}px` } : {}),
+        border: selected ? "2px solid #3b82f6" : "2px solid transparent",
+      }}
     >
       <React.Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#8A877F" }}>Chargement…</div>}>
         <FormRuntime

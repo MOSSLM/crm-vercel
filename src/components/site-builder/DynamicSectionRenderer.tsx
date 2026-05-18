@@ -445,10 +445,13 @@ function LibrarySectionRender({
   else if (libHeightMode === "large") libMinHeight = "80vh";
   else if (libHeightMode === "fixed" && libHeightValue) libMinHeight = libHeightValue;
 
+  // Height the user configured for the form zone (slider in PropertiesPanel).
+  const formHeight = (instance.content.__form_height as number) || 480;
+
   // When form slots are present, ensure the wrapper is tall enough to contain
   // the form even though the iframe itself renders the slot as an empty div.
   const slotMinHeight = formId && formSlots.length > 0
-    ? Math.max(...formSlots.map((s) => s.top + 480))
+    ? Math.max(...formSlots.map((s) => s.top + formHeight))
     : 0;
 
   const wrapperStyle: React.CSSProperties = {
@@ -507,18 +510,17 @@ function LibrarySectionRender({
             position: "absolute",
             top: s.top,
             left: s.left,
-            // Use reported width when available; fall back to remaining space.
             width: s.width > 0 ? s.width : "100%",
-            // The slot div inside the iframe is empty (height 0). Give enough
-            // room for the form to render without being clipped.
-            bottom: 0,
+            // Explicit px height so FormRuntime's flex layout (progress bar →
+            // pv-body flex:1 → footer) can use min-height:100% correctly.
+            height: formHeight,
             zIndex: 5,
             pointerEvents: "auto",
-            overflowY: "auto",
           }}
         >
           <FormBlockSection
             formId={formId}
+            height={formHeight}
             renderMode={(instance.content.render_mode as "step" | "scroll") ?? "step"}
             siteId={instance.site_id}
             editorMode={editorMode}
