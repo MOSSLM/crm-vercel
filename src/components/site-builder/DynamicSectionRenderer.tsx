@@ -417,6 +417,23 @@ function LibrarySectionRender({
     },
   };
 
+  // Memoize content so LibrarySectionIframe doesn't get a new object ref on
+  // every render of this component (which would trigger a spurious update-data
+  // postMessage → section re-render → MutationObserver → setFormSlots loop).
+  const iframeContent = React.useMemo(() => ({
+    ...sectionDef.default_content,
+    ...menuOverrides,
+    ...testimonialOverrides,
+    ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [
+    sectionDef.default_content,
+    menuOverrides,
+    testimonialOverrides,
+    contentWithoutMeta,
+    instance.blocks,
+  ]);
+
   const libHeightMode = instance.content.__height_mode as string | undefined;
   const libHeightValue = instance.content.__height_value as string | undefined;
   const libPadTop = typeof instance.content.__padding_top === "number" ? `${instance.content.__padding_top}px` : undefined;
@@ -428,10 +445,18 @@ function LibrarySectionRender({
   else if (libHeightMode === "large") libMinHeight = "80vh";
   else if (libHeightMode === "fixed" && libHeightValue) libMinHeight = libHeightValue;
 
+  // When form slots are present, ensure the wrapper is tall enough to contain
+  // the form even though the iframe itself renders the slot as an empty div.
+  const slotMinHeight = formId && formSlots.length > 0
+    ? Math.max(...formSlots.map((s) => s.top + 480))
+    : 0;
+
   const wrapperStyle: React.CSSProperties = {
     position: "relative",
+    // Allow the form overlay to extend below the iframe without being clipped.
+    overflow: "visible",
     cursor: editorMode ? "pointer" : undefined,
-    ...(libMinHeight ? { minHeight: libMinHeight } : {}),
+    ...(libMinHeight ? { minHeight: libMinHeight } : (slotMinHeight > 0 ? { minHeight: slotMinHeight } : {})),
     ...(libPadTop ? { paddingTop: libPadTop } : {}),
     ...(libPadBottom ? { paddingBottom: libPadBottom } : {}),
     ...(libMarginTop ? { marginTop: libMarginTop } : {}),
@@ -460,12 +485,7 @@ function LibrarySectionRender({
       {(!instance.is_hidden || editorMode) && (
         <LibrarySectionIframe
           code={sectionDef.code!}
-          content={{
-            ...sectionDef.default_content,
-            ...menuOverrides,
-            ...testimonialOverrides,
-            ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
-          }}
+          content={iframeContent}
           overrides={instance.content.__overrides as Record<string, unknown> | undefined}
           styleGuide={effectiveStyleGuide}
           variables={variables}
@@ -487,10 +507,14 @@ function LibrarySectionRender({
             position: "absolute",
             top: s.top,
             left: s.left,
-            width: s.width,
-            minHeight: s.height,
+            // Use reported width when available; fall back to remaining space.
+            width: s.width > 0 ? s.width : "100%",
+            // The slot div inside the iframe is empty (height 0). Give enough
+            // room for the form to render without being clipped.
+            bottom: 0,
             zIndex: 5,
             pointerEvents: "auto",
+            overflowY: "auto",
           }}
         >
           <FormBlockSection
