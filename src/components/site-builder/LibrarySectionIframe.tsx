@@ -44,6 +44,16 @@ export interface IframeDomTreeNode {
   children: IframeDomTreeNode[];
 }
 
+/** Position of a `<div data-form-slot />` marker reported from inside the
+ *  iframe, used by parents to overlay <FormBlockSection /> at the right place. */
+export interface FormSlotInfo {
+  slot: string;
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 interface LibrarySectionIframeProps {
   code: string;
   content?: Record<string, unknown>;
@@ -74,6 +84,9 @@ interface LibrarySectionIframeProps {
    *  script calls `e.preventDefault()` itself so the browser's
    *  Ctrl+wheel page-zoom is suppressed. */
   onCanvasWheel?: (e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => void;
+  /** Called whenever the iframe reports the positions of `[data-form-slot]`
+   *  elements (after render, mutations, or resize). Empty array if none. */
+  onFormSlot?: (slots: FormSlotInfo[]) => void;
 }
 
 /**
@@ -95,6 +108,7 @@ export function LibrarySectionIframe({
   onDomTree,
   publicMode = false,
   onCanvasWheel,
+  onFormSlot,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   // In editor mode: start at a real viewport height so min-h-screen sections
@@ -176,6 +190,7 @@ export function LibrarySectionIframe({
         deltaY?: number;
         ctrlKey?: boolean;
         metaKey?: boolean;
+        slots?: FormSlotInfo[];
       };
       if (selectionEnabled && data?.__siteBuilder === "dom-tree" && data.tree) {
         onDomTree?.(data.tree);
@@ -192,6 +207,9 @@ export function LibrarySectionIframe({
       }
       if (data?.__siteBuilder === "iframe-height" && typeof data.height === "number" && data.height > 0) {
         setHeight(Math.ceil(data.height) + 2);
+      }
+      if (data?.__siteBuilder === "form-slot" && Array.isArray(data.slots)) {
+        onFormSlot?.(data.slots);
       }
       if (data?.__siteBuilder === "iframe-wheel" && typeof data.deltaX === "number" && typeof data.deltaY === "number") {
         onCanvasWheel?.({
@@ -218,7 +236,7 @@ export function LibrarySectionIframe({
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [selectionEnabled, onElementClick, onDomTree, minHeight, content, allVariables, overrides, onCanvasWheel]);
+  }, [selectionEnabled, onElementClick, onDomTree, minHeight, content, allVariables, overrides, onCanvasWheel, onFormSlot]);
 
   // eslint-disable-next-line @typescript-eslint/no-empty-function
   const handleLoad = React.useCallback(() => {
@@ -975,6 +993,48 @@ function buildHTML(
             });
             mo.observe(document.body,{childList:true});
           }
+        }
+      }
+      if(document.readyState==='loading'){
+        document.addEventListener('DOMContentLoaded',init);
+      }else{init()}
+    })();
+  <\/script>
+  <script>
+    /* Form-slot scanner: reports the position of any <[data-form-slot]>
+       elements so the parent can overlay <FormBlockSection /> at the right
+       place. Re-scans on mutation/resize. */
+    (function(){
+      var lastKey='';
+      function scan(){
+        var nodes=document.querySelectorAll('[data-form-slot]');
+        var slots=[];
+        for(var i=0;i<nodes.length;i++){
+          var el=nodes[i];
+          var r=el.getBoundingClientRect();
+          slots.push({
+            slot: el.getAttribute('data-form-slot')||'',
+            top: r.top + (window.scrollY||0),
+            left: r.left + (window.scrollX||0),
+            width: r.width,
+            height: r.height
+          });
+        }
+        var key=JSON.stringify(slots);
+        if(key!==lastKey){
+          lastKey=key;
+          try{parent.postMessage({__siteBuilder:'form-slot',slots:slots},'*')}catch(e){}
+        }
+      }
+      function init(){
+        [50,200,500,1200,2500,4000].forEach(function(d){setTimeout(scan,d)});
+        if(window.ResizeObserver){
+          var ro=new ResizeObserver(function(){setTimeout(scan,16)});
+          if(document.body)ro.observe(document.body);
+        }
+        if(window.MutationObserver){
+          var mo=new MutationObserver(function(){setTimeout(scan,16)});
+          if(document.body)mo.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['data-form-slot','style','class']});
         }
       }
       if(document.readyState==='loading'){

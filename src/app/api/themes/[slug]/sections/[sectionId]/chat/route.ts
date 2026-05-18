@@ -99,6 +99,14 @@ Variations pilotées par schéma — IMPORTANT :
 - Ne jamais coder en dur une variation que le schéma annonce comme éditable —
   c'est précisément ce qui doit être branché.
 
+Formulaires CRM — convention "form-slot" (CRITIQUE) :
+- Si l'utilisateur demande "ajoute un formulaire à cette section", tu fais TROIS choses :
+  a. Ajoute \`{ "type": "form_picker", "id": "form_id", "label": "Formulaire lié", "filter_by_site_tags": true, "group": "content" }\` au schéma.
+  b. Dans le TSX, place un marker \`<div data-form-slot className="..." />\` à l'endroit exact où le formulaire doit apparaître. C'est un div VIDE — ne rends RIEN à l'intérieur, le système monte automatiquement le composant FormBlockSection (avec FormRuntime) à cet endroit via portal/overlay.
+  c. Donne au div une largeur/min-height utile via Tailwind (ex: \`w-full max-w-md min-h-[400px]\`) — c'est ce qui réserve l'espace dans le layout.
+- N'essaie JAMAIS de rendre un \`<form>\`, des \`<input>\` ou \`<button type="submit">\` toi-même quand un form_picker est demandé : le composant FormBlockSection s'en charge avec toutes les features (logique conditionnelle, mode step/scroll, soumission API).
+- Pour des sections futures avec plusieurs formulaires : \`<div data-form-slot="contact" />\` ↔ \`content.contact_form_id\`. Pour un seul slot, laisser l'attribut vide.
+
 Types de champs disponibles dans le schéma :
 - \`{ "type": "text", "id": "...", "label": "...", "default": "..." }\`
 - \`{ "type": "textarea", "id": "...", "label": "...", "default": "..." }\`

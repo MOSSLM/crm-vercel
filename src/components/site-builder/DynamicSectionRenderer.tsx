@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { SnippetRenderer } from "./dynamic-snippets";
-import { LibrarySectionIframe, type IframeElementClickInfo, type IframeDomTreeNode } from "./LibrarySectionIframe";
+import { LibrarySectionIframe, type IframeElementClickInfo, type IframeDomTreeNode, type FormSlotInfo } from "./LibrarySectionIframe";
+import { FormBlockSection } from "./FormBlockSection";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
 import {
   resolveColorScheme,
@@ -234,79 +235,25 @@ export function DynamicSectionRenderer({
 
   // Library section: render via iframe using the section code
   if (sectionDef.code) {
-    const handleClick = editorMode ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); } : undefined;
-
-    const effectiveStyleGuide: StyleGuide = {
-      ...styleGuide,
-      colors: {
-        ...styleGuide.colors,
-        background: (colorSchemeVars["--color-background"] as string) || styleGuide.colors.background,
-        text: (colorSchemeVars["--color-text"] as string) || styleGuide.colors.text,
-        textMuted: (colorSchemeVars["--color-text-muted"] as string) || styleGuide.colors.textMuted,
-      },
-    };
-
-    // Compute wrapper height/spacing from content meta-keys (same as snippet sections)
-    const libHeightMode = instance.content.__height_mode as string | undefined;
-    const libHeightValue = instance.content.__height_value as string | undefined;
-    const libPadTop = typeof instance.content.__padding_top === "number" ? `${instance.content.__padding_top}px` : undefined;
-    const libPadBottom = typeof instance.content.__padding_bottom === "number" ? `${instance.content.__padding_bottom}px` : undefined;
-    const libMarginTop = typeof instance.content.__margin_top === "number" ? `${instance.content.__margin_top}px` : undefined;
-    const libMarginBottom = typeof instance.content.__margin_bottom === "number" ? `${instance.content.__margin_bottom}px` : undefined;
-    let libMinHeight: string | undefined;
-    if (libHeightMode === "fullscreen") libMinHeight = "100vh";
-    else if (libHeightMode === "large") libMinHeight = "80vh";
-    else if (libHeightMode === "fixed" && libHeightValue) libMinHeight = libHeightValue;
-
-    const wrapperStyle: React.CSSProperties = {
-      position: "relative",
-      cursor: editorMode ? "pointer" : undefined,
-      ...(libMinHeight ? { minHeight: libMinHeight } : {}),
-      ...(libPadTop ? { paddingTop: libPadTop } : {}),
-      ...(libPadBottom ? { paddingBottom: libPadBottom } : {}),
-      ...(libMarginTop ? { marginTop: libMarginTop } : {}),
-      ...(libMarginBottom ? { marginBottom: libMarginBottom } : {}),
-      ...((instance.custom_style ?? {}) as React.CSSProperties),
-    };
-
     return (
-      <div
-        onClick={handleClick}
-        data-section-id={instance.id}
-        style={wrapperStyle}
-        className={editorMode ? "group/section" : ""}
-      >
-        {editorMode && (
-          <div
-            className="absolute inset-0 pointer-events-none z-10 transition-all"
-            style={{ border: selected ? "2px solid #3b82f6" : "2px solid transparent" }}
-          />
-        )}
-        {instance.is_hidden && editorMode && (
-          <div className="absolute top-2 right-2 text-xs bg-gray-800 text-white px-2 py-1 rounded z-20">
-            Masquée
-          </div>
-        )}
-        {(!instance.is_hidden || editorMode) && (
-          <LibrarySectionIframe
-            code={sectionDef.code}
-            content={{
-              ...sectionDef.default_content,
-              ...menuOverrides,
-              ...testimonialOverrides,
-              ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
-            }}
-            overrides={instance.content.__overrides as Record<string, unknown> | undefined}
-            styleGuide={effectiveStyleGuide}
-            variables={variables}
-            wireframe={wireframe}
-            selectionEnabled={selectionEnabled}
-            onElementClick={onElementClick}
-            onDomTree={onDomTree}
-            onCanvasWheel={onCanvasWheel}
-          />
-        )}
-      </div>
+      <LibrarySectionRender
+        instance={instance}
+        sectionDef={sectionDef}
+        styleGuide={styleGuide}
+        colorSchemeVars={colorSchemeVars}
+        menuOverrides={menuOverrides}
+        testimonialOverrides={testimonialOverrides}
+        contentWithoutMeta={contentWithoutMeta}
+        variables={variables}
+        editorMode={editorMode}
+        selected={selected}
+        onSelect={onSelect}
+        wireframe={wireframe}
+        selectionEnabled={selectionEnabled}
+        onElementClick={onElementClick}
+        onDomTree={onDomTree}
+        onCanvasWheel={onCanvasWheel}
+      />
     );
   }
 
@@ -418,64 +365,144 @@ export function DynamicSectionRenderer({
   );
 }
 
-// Lazily loaded form block — avoids bundling FormRuntime into every page
-function FormBlockSection({
-  formId, renderMode, siteId, editorMode, selected, onSelect, instanceId, variables,
+// ─── Library section render (iframe + optional form-slot overlay) ────────────
+
+function LibrarySectionRender({
+  instance,
+  sectionDef,
+  styleGuide,
+  colorSchemeVars,
+  menuOverrides,
+  testimonialOverrides,
+  contentWithoutMeta,
+  variables,
+  editorMode,
+  selected,
+  onSelect,
+  wireframe,
+  selectionEnabled,
+  onElementClick,
+  onDomTree,
+  onCanvasWheel,
 }: {
-  formId: string;
-  renderMode: 'step' | 'scroll';
-  siteId?: string;
+  instance: SiteSectionInstance;
+  sectionDef: SiteSectionDef;
+  styleGuide: StyleGuide;
+  colorSchemeVars: ColorSchemeVars;
+  menuOverrides: Record<string, unknown>;
+  testimonialOverrides: Record<string, unknown>;
+  contentWithoutMeta: Record<string, unknown>;
+  variables?: Record<string, string>;
   editorMode?: boolean;
   selected?: boolean;
   onSelect?: () => void;
-  instanceId?: string;
-  variables?: Record<string, string>;
+  wireframe?: boolean;
+  selectionEnabled?: boolean;
+  onElementClick?: (info: IframeElementClickInfo) => void;
+  onDomTree?: (tree: IframeDomTreeNode) => void;
+  onCanvasWheel?: (e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => void;
 }) {
-  const [form, setForm] = useState<import('@/types').Form | null>(null);
-  const [error, setError] = useState(false);
+  const [formSlots, setFormSlots] = useState<FormSlotInfo[]>([]);
+  const formId = instance.content.form_id as string | undefined;
 
-  useEffect(() => {
-    fetch(`/api/forms/public/${formId}`)
-      .then((r) => r.ok ? r.json() : Promise.reject())
-      .then(setForm)
-      .catch(() => setError(true));
-  }, [formId]);
+  const handleClick = editorMode ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); } : undefined;
 
-  const FormRuntime = React.lazy(() => import('@/components/form-builder/runtime/FormRuntime').then(m => ({ default: m.FormRuntime })));
+  const effectiveStyleGuide: StyleGuide = {
+    ...styleGuide,
+    colors: {
+      ...styleGuide.colors,
+      background: (colorSchemeVars["--color-background"] as string) || styleGuide.colors.background,
+      text: (colorSchemeVars["--color-text"] as string) || styleGuide.colors.text,
+      textMuted: (colorSchemeVars["--color-text-muted"] as string) || styleGuide.colors.textMuted,
+    },
+  };
 
-  if (error) {
-    if (!editorMode) return null;
-    return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#8A877F', fontSize: 14 }}>
-        Formulaire introuvable ou non publié.
-      </div>
-    );
-  }
+  const libHeightMode = instance.content.__height_mode as string | undefined;
+  const libHeightValue = instance.content.__height_value as string | undefined;
+  const libPadTop = typeof instance.content.__padding_top === "number" ? `${instance.content.__padding_top}px` : undefined;
+  const libPadBottom = typeof instance.content.__padding_bottom === "number" ? `${instance.content.__padding_bottom}px` : undefined;
+  const libMarginTop = typeof instance.content.__margin_top === "number" ? `${instance.content.__margin_top}px` : undefined;
+  const libMarginBottom = typeof instance.content.__margin_bottom === "number" ? `${instance.content.__margin_bottom}px` : undefined;
+  let libMinHeight: string | undefined;
+  if (libHeightMode === "fullscreen") libMinHeight = "100vh";
+  else if (libHeightMode === "large") libMinHeight = "80vh";
+  else if (libHeightMode === "fixed" && libHeightValue) libMinHeight = libHeightValue;
 
-  if (!form) {
-    return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#8A877F', fontSize: 14 }}>
-        Chargement du formulaire…
-      </div>
-    );
-  }
+  const wrapperStyle: React.CSSProperties = {
+    position: "relative",
+    cursor: editorMode ? "pointer" : undefined,
+    ...(libMinHeight ? { minHeight: libMinHeight } : {}),
+    ...(libPadTop ? { paddingTop: libPadTop } : {}),
+    ...(libPadBottom ? { paddingBottom: libPadBottom } : {}),
+    ...(libMarginTop ? { marginTop: libMarginTop } : {}),
+    ...(libMarginBottom ? { marginBottom: libMarginBottom } : {}),
+    ...((instance.custom_style ?? {}) as React.CSSProperties),
+  };
 
   return (
     <div
-      onClick={editorMode ? (e) => { e.stopPropagation(); onSelect?.(); } : undefined}
-      data-section-id={instanceId}
-      className={editorMode ? 'group/section' : ''}
-      style={{ position: 'relative', border: selected ? '2px solid #3b82f6' : '2px solid transparent' }}
+      onClick={handleClick}
+      data-section-id={instance.id}
+      style={wrapperStyle}
+      className={editorMode ? "group/section" : ""}
     >
-      <React.Suspense fallback={<div style={{ padding: 40, textAlign: 'center', color: '#8A877F' }}>Chargement…</div>}>
-        <FormRuntime
-          form={form}
-          mode={renderMode}
-          siteId={siteId}
-          embedded={editorMode}
-          variables={variables}
+      {editorMode && (
+        <div
+          className="absolute inset-0 pointer-events-none z-10 transition-all"
+          style={{ border: selected ? "2px solid #3b82f6" : "2px solid transparent" }}
         />
-      </React.Suspense>
+      )}
+      {instance.is_hidden && editorMode && (
+        <div className="absolute top-2 right-2 text-xs bg-gray-800 text-white px-2 py-1 rounded z-20">
+          Masquée
+        </div>
+      )}
+      {(!instance.is_hidden || editorMode) && (
+        <LibrarySectionIframe
+          code={sectionDef.code!}
+          content={{
+            ...sectionDef.default_content,
+            ...menuOverrides,
+            ...testimonialOverrides,
+            ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
+          }}
+          overrides={instance.content.__overrides as Record<string, unknown> | undefined}
+          styleGuide={effectiveStyleGuide}
+          variables={variables}
+          wireframe={wireframe}
+          selectionEnabled={selectionEnabled}
+          onElementClick={onElementClick}
+          onDomTree={onDomTree}
+          onCanvasWheel={onCanvasWheel}
+          onFormSlot={setFormSlots}
+        />
+      )}
+      {/* Overlay FormBlockSection on each `<div data-form-slot />` marker
+          reported from inside the iframe. Positions are relative to the
+          iframe document, which shares its (0,0) origin with this wrapper. */}
+      {formId && formSlots.map((s: FormSlotInfo, i: number) => (
+        <div
+          key={`${s.slot}:${i}`}
+          style={{
+            position: "absolute",
+            top: s.top,
+            left: s.left,
+            width: s.width,
+            minHeight: s.height,
+            zIndex: 5,
+            pointerEvents: "auto",
+          }}
+        >
+          <FormBlockSection
+            formId={formId}
+            renderMode={(instance.content.render_mode as "step" | "scroll") ?? "step"}
+            siteId={instance.site_id}
+            editorMode={editorMode}
+            instanceId={instance.id}
+            variables={variables}
+          />
+        </div>
+      ))}
     </div>
   );
 }
