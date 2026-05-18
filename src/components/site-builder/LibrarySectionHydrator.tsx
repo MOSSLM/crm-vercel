@@ -11,9 +11,10 @@
  * No @babel/standalone needed client-side — the JS is already compiled.
  */
 import React, { useEffect } from "react";
-import { hydrateRoot } from "react-dom/client";
+import { hydrateRoot, createRoot, type Root } from "react-dom/client";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
+import { FormBlockSection } from "./FormBlockSection";
 
 interface OverrideEntry {
   kind:
@@ -164,8 +165,9 @@ export function LibrarySectionHydrator() {
       "script[type='application/json'][data-lsi-id]"
     );
 
-    // Track observers so we clean them up on unmount.
+    // Track observers + React roots so we clean them up on unmount.
     const observers: MutationObserver[] = [];
+    const formRoots: Root[] = [];
 
     scripts.forEach((script) => {
       const instanceId = script.dataset.lsiId;
@@ -237,6 +239,41 @@ export function LibrarySectionHydrator() {
         );
       }
 
+      // Mount FormBlockSection into any `<div data-form-slot />` markers
+      // declared by the section code. The form_id is read from the section
+      // instance content (data.form_id). One slot per section is the common
+      // case; named slots (data-form-slot="foo") map to data.foo_form_id.
+      const formId = (data as Record<string, unknown>)?.form_id;
+      if (typeof formId === "string" && formId.length > 0) {
+        const mountSlots = () => {
+          const slots = container.querySelectorAll<HTMLElement>("[data-form-slot]");
+          slots.forEach((slot) => {
+            if (slot.dataset.formSlotMounted === "1") return;
+            slot.dataset.formSlotMounted = "1";
+            try {
+              const root = createRoot(slot);
+              root.render(
+                React.createElement(FormBlockSection, {
+                  formId,
+                  renderMode: ((data as Record<string, unknown>)?.render_mode as "step" | "scroll") ?? "step",
+                  variables,
+                }),
+              );
+              formRoots.push(root);
+            } catch (err) {
+              console.warn(`[LibrarySectionHydrator] Form slot mount failed:`, err);
+            }
+          });
+        };
+        mountSlots();
+        // Re-scan if React re-renders the section and replaces the slot node.
+        if (typeof MutationObserver !== "undefined") {
+          const slotObserver = new MutationObserver(() => mountSlots());
+          slotObserver.observe(container, { childList: true, subtree: true });
+          observers.push(slotObserver);
+        }
+      }
+
       // Apply DOM-path overrides AFTER hydration so React's first render
       // doesn't wipe them out. Then watch the container so any later
       // re-render re-applies them.
@@ -262,7 +299,12 @@ export function LibrarySectionHydrator() {
       }
     });
 
-    return () => observers.forEach((o) => o.disconnect());
+    return () => {
+      observers.forEach((o) => o.disconnect());
+      formRoots.forEach((r) => {
+        try { r.unmount(); } catch { /* root may already be unmounted */ }
+      });
+    };
   // Run once on mount — SSR payloads are static
   }, []);
 

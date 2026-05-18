@@ -26,7 +26,7 @@ Types de SectionField disponibles :
 - { "type": "color_scheme", "id": "...", "label": "...", "default": "default" }
 - { "type": "image_picker", "id": "...", "label": "...", "default": "" }
 - { "type": "page_link", "id": "...", "label": "...", "default": "/" }
-- { "type": "form_picker", "id": "form_id", "label": "Formulaire lié", "filter_by_site_tags": true } — pour les sections qui intègrent un formulaire CRM
+- { "type": "form_picker", "id": "form_id", "label": "Formulaire lié", "filter_by_site_tags": true } — pour les sections qui intègrent un formulaire CRM. Le code TSX doit contenir un \`<div data-form-slot />\` à l'endroit où le formulaire sera monté par le système. Si tu vois ce marker dans le code, déclare le form_picker.
 - { "type": "header", "content": "Titre de groupe" } — séparateur visuel, sans id
 
 Chaque champ peut avoir "group": "content"|"layout"|"style" pour l'organiser dans les onglets du builder.
