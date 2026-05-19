@@ -17,9 +17,8 @@ import {
   deriveMenuOverrides,
   TESTIMONIAL_CATEGORIES,
   STATS_CATEGORIES,
-  SERVICES_CATEGORIES,
-  buildServicesForEnterprise,
   buildStatsForEnterprise,
+  filterBlocksByEnterpriseTags,
 } from "@/lib/site-builder/menu-overrides";
 import { convertVhToPx } from "@/lib/site-builder/preview-viewport";
 
@@ -224,18 +223,9 @@ export function DynamicSectionRenderer({
     return { stats, hasStats: true };
   })();
 
-  // Auto-inject the merged services array into service-category sections
-  // (sections that list one entry per enterprise service tag, e.g. tabs).
-  const servicesOverrides: Record<string, unknown> = (() => {
-    if (!sectionDef.category || !SERVICES_CATEGORIES.has(sectionDef.category)) return {};
-    const services = buildServicesForEnterprise(variables);
-    if (services === null) return { hasServices: false };
-    if (services.length === 0) return { services: [], hasServices: false };
-    const existing = instance.content.services;
-    const hasCustom = Array.isArray(existing) && existing.length > 0;
-    if (hasCustom) return { hasServices: true };
-    return { services, hasServices: true };
-  })();
+  // Filter blocks by enterprise service_tags: blocks (tabs / cards / items)
+  // tagged with a service_tag are hidden when the enterprise lacks that tag.
+  const filteredBlocks = filterBlocksByEnterpriseTags(instance.blocks ?? [], variables);
 
   // Color scheme override computed from content.__color_scheme
   const colorSchemeVars = resolveColorSchemeVars(instance.content, styleGuide);
@@ -282,7 +272,7 @@ export function DynamicSectionRenderer({
         menuOverrides={menuOverrides}
         testimonialOverrides={testimonialOverrides}
         statsOverrides={statsOverrides}
-        servicesOverrides={servicesOverrides}
+        filteredBlocks={filteredBlocks}
         contentWithoutMeta={contentWithoutMeta}
         variables={variables}
         editorMode={editorMode}
@@ -299,8 +289,8 @@ export function DynamicSectionRenderer({
   }
 
   const { structure } = sectionDef;
-  const adapted = adaptContentForRender(instance.content, instance.blocks ?? []);
-  const content = { ...sectionDef.default_content, ...menuOverrides, ...testimonialOverrides, ...statsOverrides, ...servicesOverrides, ...adapted };
+  const adapted = adaptContentForRender(instance.content, filteredBlocks);
+  const content = { ...sectionDef.default_content, ...menuOverrides, ...testimonialOverrides, ...statsOverrides, ...adapted };
 
   const cssVars = styleGuideToCSSVars(styleGuide);
 
@@ -429,7 +419,7 @@ function LibrarySectionRender({
   menuOverrides,
   testimonialOverrides,
   statsOverrides,
-  servicesOverrides,
+  filteredBlocks,
   contentWithoutMeta,
   variables,
   editorMode,
@@ -449,7 +439,7 @@ function LibrarySectionRender({
   menuOverrides: Record<string, unknown>;
   testimonialOverrides: Record<string, unknown>;
   statsOverrides: Record<string, unknown>;
-  servicesOverrides: Record<string, unknown>;
+  filteredBlocks: import("@/types").SectionBlockInstance[];
   contentWithoutMeta: Record<string, unknown>;
   variables?: Record<string, string>;
   editorMode?: boolean;
@@ -485,17 +475,14 @@ function LibrarySectionRender({
     ...menuOverrides,
     ...testimonialOverrides,
     ...statsOverrides,
-    ...servicesOverrides,
-    ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    ...adaptContentForRender(contentWithoutMeta, filteredBlocks),
   }), [
     sectionDef.default_content,
     menuOverrides,
     testimonialOverrides,
     statsOverrides,
-    servicesOverrides,
     contentWithoutMeta,
-    instance.blocks,
+    filteredBlocks,
   ]);
 
   const libHeightMode = instance.content.__height_mode as string | undefined;

@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus } from "@/types";
+import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus, SitemapPage } from "@/types";
 import {
   deriveLayoutFieldsFromVariables,
   type ReviewItem,
@@ -33,6 +33,8 @@ export interface ResolvedSite {
   publishedSiteConfig?: Partial<SiteConfig> & { menus?: SiteMenus } | null;
   /** Convenience accessor: menus extracted from the published snapshot. */
   menus?: SiteMenus | null;
+  /** Published snapshot of the sitemap. Used to filter pages by service_tag. */
+  publishedSitemap?: SitemapPage[] | null;
 }
 
 // Resolve a site by subdomain or custom domain
@@ -46,7 +48,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_instances, published_variables, published_reviews"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_sitemap, published_instances, published_variables, published_reviews"
     )
     .eq("is_published", true);
 
@@ -148,6 +150,7 @@ export async function resolveSite(
     publishedSiteConfig,
     menus,
     reviews,
+    publishedSitemap: (siteRow as { published_sitemap?: SitemapPage[] | null }).published_sitemap ?? null,
   };
 }
 

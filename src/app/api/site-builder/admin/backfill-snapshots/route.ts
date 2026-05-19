@@ -66,7 +66,7 @@ export async function POST(request: Request) {
           id: site.id,
           enterprise_id: (site as { enterprise_id: number | null }).enterprise_id ?? null,
           lead_magnet_project_id: (site as { lead_magnet_project_id: string | null }).lead_magnet_project_id ?? null,
-          content_overrides: (site as { content_overrides: { services?: Record<string, Record<string, unknown>>; stats?: Array<{ label: string; value: string; display_order?: number }> } | null }).content_overrides ?? null,
+          content_overrides: (site as { content_overrides: { stats?: Array<{ label: string; value: string; display_order?: number }> } | null }).content_overrides ?? null,
         });
         updatePayload.published_variables = variables;
         updatePayload.published_reviews = reviews;

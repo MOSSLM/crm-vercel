@@ -279,6 +279,23 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       };
     }
 
+    case "UPDATE_BLOCK_TAG": {
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const snapshot = takeSnapshot(state);
+      const blocks = inst.blocks.map((b) =>
+        b.id === action.payload.blockId
+          ? { ...b, service_tag: action.payload.service_tag ?? undefined }
+          : b
+      );
+      return {
+        ...state,
+        instances: { ...state.instances, [inst.id]: { ...inst, blocks } },
+        isDirty: true,
+        ...pushHistory(state, snapshot),
+      };
+    }
+
     case "REMOVE_BLOCK": {
       const snapshot = takeSnapshot(state);
       const inst = state.instances[action.payload.instanceId];
@@ -299,7 +316,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       const idx = inst.blocks.findIndex((b) => b.id === action.payload.blockId);
       if (idx < 0) return state;
       const original = inst.blocks[idx];
-      const copy = { id: nanoid(), type: original.type, settings: { ...original.settings } };
+      const copy = { id: nanoid(), type: original.type, settings: { ...original.settings }, service_tag: original.service_tag };
       const blocks = [...inst.blocks.slice(0, idx + 1), copy, ...inst.blocks.slice(idx + 1)];
       return {
         ...state,
@@ -434,7 +451,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           id: newInstId,
           page_slug: newSlug,
           // Deep-clone blocks with fresh ids so edits to the copy don't bleed back.
-          blocks: src.blocks.map((b) => ({ id: nanoid(), type: b.type, settings: { ...b.settings } })),
+          blocks: src.blocks.map((b) => ({ id: nanoid(), type: b.type, settings: { ...b.settings }, service_tag: b.service_tag })),
         };
         newIds.push(newInstId);
       }

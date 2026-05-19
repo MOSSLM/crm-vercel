@@ -36,24 +36,8 @@ type ReviewRow = {
   rating: number | null;
 };
 
-type ServiceTagDefaultRow = {
-  service_tag: string;
-  slug: string;
-  display_label: string | null;
-  icon: string | null;
-  display_order: number | null;
-  headline_template: string | null;
-  subheadline_template: string | null;
-  description_template: string | null;
-  trust_title_template: string | null;
-  image_url: string | null;
-  cta_label: string | null;
-  cta_href: string | null;
-};
-
 type SiteOverridesRow = {
   content_overrides: {
-    services?: Record<string, Record<string, unknown>>;
     stats?: Array<{ label: string; value: string; display_order?: number }>;
   } | null;
 };
@@ -197,35 +181,9 @@ export async function GET(req: Request) {
     variables["__reviews"] = JSON.stringify(reviewsArray);
   }
 
-  // Service tags of the active enterprise (used by adaptive sections to
-  // filter the global defaults).
+  // Service tags of the active enterprise. Consumed by the renderers to
+  // filter blocks/pages whose `service_tag` doesn't match.
   variables["__service_tags"] = JSON.stringify(serviceTags);
-
-  // Global per-tag content defaults, keyed by service_tag, filtered to the
-  // enterprise's tags only (no point fetching irrelevant rows).
-  if (serviceTags.length > 0) {
-    const { data: defaultsData } = await supabase
-      .from("service_tag_defaults")
-      .select(
-        "service_tag, slug, display_label, icon, display_order, " +
-        "headline_template, subheadline_template, description_template, " +
-        "trust_title_template, image_url, cta_label, cta_href"
-      )
-      .in("service_tag", serviceTags);
-
-    const defaultsByTag: Record<string, ServiceTagDefaultRow> = {};
-    const rows = (defaultsData ?? []) as unknown as ServiceTagDefaultRow[];
-    for (const row of rows) {
-      defaultsByTag[row.service_tag] = row;
-    }
-    variables["__service_tag_defaults"] = JSON.stringify(defaultsByTag);
-  } else {
-    variables["__service_tag_defaults"] = "{}";
-  }
-
-  // Site-level service overrides (keyed by tag slug), merged on top of defaults
-  // by the renderer.
-  variables["__service_overrides"] = JSON.stringify(siteOverrides?.services ?? {});
 
   // Stats: site override > enterprise stats.
   const siteStats = siteOverrides?.stats;

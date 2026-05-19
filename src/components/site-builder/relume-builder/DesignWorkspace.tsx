@@ -36,6 +36,7 @@ import { ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
+import { useServiceTags } from "@/hooks/useServiceTags";
 import type { SectionAnimation } from "@/types";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
@@ -1449,6 +1450,13 @@ function SectionPanel({
 }) {
   const { state, dispatch } = useRelumeBuilder();
   void focusedField; void onClearFocusedField;
+  const availableTags = useServiceTags();
+  const activeTags = React.useMemo(() => {
+    try {
+      const parsed = JSON.parse(state.variableContext.__service_tags ?? "[]");
+      return Array.isArray(parsed) ? parsed.filter((t: unknown): t is string => typeof t === "string") : [];
+    } catch { return []; }
+  }, [state.variableContext.__service_tags]);
 
   const sectionDef = instance.section_def ?? (instance.section_id ? sectionDefs[instance.section_id] : null);
   const schema = sectionDef ? getSchemaForSection(sectionDef) : null;
@@ -1561,6 +1569,9 @@ function SectionPanel({
               onRemove={(blockId) => dispatch({ type: "REMOVE_BLOCK", payload: { instanceId: instance.id, blockId } })}
               onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
               onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
+              onUpdateTag={(blockId, service_tag) => dispatch({ type: "UPDATE_BLOCK_TAG", payload: { instanceId: instance.id, blockId, service_tag } })}
+              availableTags={availableTags}
+              activeTags={activeTags}
               variables={state.variableContext}
               siteId={state.siteId}
             />

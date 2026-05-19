@@ -1,7 +1,7 @@
 /**
  * Server-side resolver: builds the enterpriseVariables map and reviews
  * array for a given site by joining `entreprises`, `lead_magnet_projects`,
- * `lead_magnet_reviews`, `service_tag_defaults`, and `sites.content_overrides`.
+ * `lead_magnet_reviews`, and `sites.content_overrides` (stats overrides only).
  *
  * Shared by:
  *  - /api/site-builder/sites/[siteId]/publish — snapshots the result into
@@ -14,10 +14,10 @@
  * Supabase client instance so both server endpoints (publish route) and
  * server-side renderers (site-resolver) can share it.
  *
- * Structured collections (reviews, service tags, defaults, overrides, stats)
- * are JSON-stringified under keys prefixed with "__" so the flat string map
- * stays compatible with the existing `{{variable}}` substitution while the
- * renderer can parse the structured forms back into objects/arrays.
+ * Structured collections (reviews, service tags, stats) are JSON-stringified
+ * under keys prefixed with "__" so the flat string map stays compatible with
+ * the existing `{{variable}}` substitution while the renderer can parse the
+ * structured forms back into objects/arrays.
  */
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -43,7 +43,6 @@ interface SiteRowSlice {
   lead_magnet_project_id: string | null;
   id?: string | null;
   content_overrides?: {
-    services?: Record<string, Record<string, unknown>>;
     stats?: Array<{ label: string; value: string; display_order?: number }>;
   } | null;
 }
@@ -175,36 +174,12 @@ export async function resolveEnterpriseVariables(
     }
   }
 
-  // Service tags of the active enterprise.
+  // Service tags of the active enterprise. Consumed by the renderers to
+  // filter blocks/pages whose `service_tag` doesn't match the enterprise.
   vars["__service_tags"] = JSON.stringify(serviceTags);
 
-  // Global per-tag content defaults (filtered to the enterprise's tags).
-  if (serviceTags.length > 0) {
-    const { data: defaultsData } = await supabase
-      .from("service_tag_defaults")
-      .select(
-        "service_tag, slug, display_label, icon, display_order, " +
-        "headline_template, subheadline_template, description_template, " +
-        "trust_title_template, image_url, cta_label, cta_href"
-      )
-      .in("service_tag", serviceTags);
-
-    const defaultsByTag: Record<string, unknown> = {};
-    const rows = (defaultsData ?? []) as unknown as Array<{ service_tag: string } & Record<string, unknown>>;
-    for (const row of rows) {
-      defaultsByTag[row.service_tag] = row;
-    }
-    vars["__service_tag_defaults"] = JSON.stringify(defaultsByTag);
-  } else {
-    vars["__service_tag_defaults"] = "{}";
-  }
-
-  // Site-level overrides (passed in directly so the publish flow can snapshot
-  // them without an extra round-trip).
-  const overrides = site.content_overrides ?? null;
-  vars["__service_overrides"] = JSON.stringify(overrides?.services ?? {});
-
-  const siteStats = overrides?.stats;
+  // Stats: prefer site-level overrides, fall back to enterprise stats.
+  const siteStats = site.content_overrides?.stats;
   const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
   vars["__stats"] = JSON.stringify(resolvedStats);
 

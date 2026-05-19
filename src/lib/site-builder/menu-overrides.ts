@@ -1,4 +1,4 @@
-import type { SiteMenus } from "@/types";
+import type { SectionBlockInstance, SiteMenus, SitemapPage } from "@/types";
 
 /**
  * Computes the content overrides to merge into a section's content based on
@@ -41,121 +41,63 @@ export const STATS_CATEGORIES = new Set([
   "key-figures",
 ]);
 
-/** Categories whose sections iterate over the active enterprise's services. */
-export const SERVICES_CATEGORIES = new Set([
-  "services",
-  "Services",
-  "services-tabs",
-  "service-pages",
-]);
-
-export interface ServiceItem {
-  tag: string;
-  slug: string;
-  label: string;
-  icon?: string;
-  display_order?: number;
-  headline?: string;
-  subheadline?: string;
-  description?: string;
-  trust_title?: string;
-  image_url?: string;
-  cta_label?: string;
-  cta_href?: string;
-  is_active?: boolean;
-}
-
 export interface StatItem {
   label: string;
   value: string;
   display_order?: number;
 }
 
-interface ServiceTagDefaultRow {
-  service_tag: string;
-  slug: string;
-  display_label: string | null;
-  icon: string | null;
-  display_order: number | null;
-  headline_template: string | null;
-  subheadline_template: string | null;
-  description_template: string | null;
-  trust_title_template: string | null;
-  image_url: string | null;
-  cta_label: string | null;
-  cta_href: string | null;
+/** Parse the JSON-stringified service_tags array from the variables map. */
+function parseEnterpriseTags(variables: Record<string, string> | undefined): Set<string> {
+  const raw = variables?.__service_tags;
+  if (!raw) return new Set();
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.filter((t): t is string => typeof t === "string"));
+    }
+  } catch {
+    /* ignore */
+  }
+  return new Set();
 }
 
-/** Substitute {{var.path}} tokens with values from the variables map. */
-function substitute(template: string | null | undefined, variables: Record<string, string> | undefined): string | undefined {
-  if (!template) return template ?? undefined;
-  if (!variables) return template;
-  return template.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_match, key) => {
-    const v = variables[key as string];
-    return v !== undefined && v !== null ? String(v) : "";
+/**
+ * Filter section blocks by enterprise service tags. Blocks without a
+ * `service_tag` are always kept; blocks with a tag are dropped when the tag
+ * is not present in the enterprise's service_tags. Used by both the
+ * in-editor and deployed-site renderers so each enterprise sees only the
+ * blocks (tabs / cards / items) matching its services.
+ */
+export function filterBlocksByEnterpriseTags(
+  blocks: SectionBlockInstance[] | undefined | null,
+  variables: Record<string, string> | undefined,
+): SectionBlockInstance[] {
+  if (!Array.isArray(blocks) || blocks.length === 0) return [];
+  const tagSet = parseEnterpriseTags(variables);
+  return blocks.filter((b) => {
+    const tag = b.service_tag;
+    if (!tag) return true;
+    return tagSet.has(tag);
   });
 }
 
 /**
- * Build the merged list of services for the active enterprise:
- *   - Filtered to tags the enterprise actually has (__service_tags)
- *   - Each entry is global defaults (__service_tag_defaults) overlaid with
- *     per-site overrides (__service_overrides[slug])
- *   - Templates are substituted using the variables map ({{entreprise.nom}}…)
- *   - Items explicitly marked `is_active: false` are dropped
- * Returns null when no tags are configured (renderer can then fall back).
+ * Filter sitemap pages by enterprise service tags. Pages without a
+ * `service_tag` are always kept; pages with a tag are dropped when the tag
+ * is not present in the enterprise's service_tags. Used by the public site
+ * routing to 404 service-specific pages that don't apply to the enterprise.
  */
-export function buildServicesForEnterprise(
-  variables: Record<string, string> | undefined,
-): ServiceItem[] | null {
-  if (!variables) return null;
-  const tagsRaw = variables.__service_tags;
-  if (!tagsRaw) return null;
-  let tags: string[] = [];
-  try {
-    const parsed = JSON.parse(tagsRaw);
-    if (Array.isArray(parsed)) tags = parsed.filter((t) => typeof t === "string");
-  } catch { return null; }
-  if (tags.length === 0) return [];
-
-  let defaults: Record<string, ServiceTagDefaultRow> = {};
-  try {
-    const parsed = JSON.parse(variables.__service_tag_defaults ?? "{}");
-    if (parsed && typeof parsed === "object") defaults = parsed as Record<string, ServiceTagDefaultRow>;
-  } catch { /* keep empty */ }
-
-  let overrides: Record<string, Record<string, unknown>> = {};
-  try {
-    const parsed = JSON.parse(variables.__service_overrides ?? "{}");
-    if (parsed && typeof parsed === "object") overrides = parsed as Record<string, Record<string, unknown>>;
-  } catch { /* keep empty */ }
-
-  const items: ServiceItem[] = [];
-  for (const tag of tags) {
-    const def = defaults[tag] ?? null;
-    const slug = def?.slug ?? tag.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-    const ovr = overrides[slug] ?? {};
-    if (ovr.is_active === false) continue;
-
-    const merged: ServiceItem = {
-      tag,
-      slug,
-      label: (ovr.label as string) ?? def?.display_label ?? tag,
-      icon: (ovr.icon as string) ?? def?.icon ?? undefined,
-      display_order: (ovr.display_order as number) ?? def?.display_order ?? 100,
-      headline: substitute((ovr.headline_template as string) ?? def?.headline_template, variables),
-      subheadline: substitute((ovr.subheadline_template as string) ?? def?.subheadline_template, variables),
-      description: substitute((ovr.description_template as string) ?? def?.description_template, variables),
-      trust_title: substitute((ovr.trust_title_template as string) ?? def?.trust_title_template, variables),
-      image_url: (ovr.image_url as string) ?? def?.image_url ?? undefined,
-      cta_label: (ovr.cta_label as string) ?? def?.cta_label ?? undefined,
-      cta_href: (ovr.cta_href as string) ?? def?.cta_href ?? undefined,
-      is_active: true,
-    };
-    items.push(merged);
-  }
-  items.sort((a, b) => (a.display_order ?? 100) - (b.display_order ?? 100));
-  return items;
+export function filterSitemapByEnterpriseTags(
+  sitemap: SitemapPage[] | undefined | null,
+  enterpriseTags: string[] | undefined | null,
+): SitemapPage[] {
+  if (!Array.isArray(sitemap)) return [];
+  const tagSet = new Set(enterpriseTags ?? []);
+  return sitemap.filter((p) => {
+    if (!p.service_tag) return true;
+    return tagSet.has(p.service_tag);
+  });
 }
 
 /** Returns the enterprise stats array (already resolved by the variable resolver). */
