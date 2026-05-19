@@ -71,7 +71,9 @@ CREATE INDEX IF NOT EXISTS idx_media_library_created_at
 
 -- Auto-update `updated_at` on any change
 CREATE OR REPLACE FUNCTION media_library_set_updated_at()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SET search_path = ''
+AS $$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
@@ -185,3 +187,6 @@ RETURNS TABLE (
     ) DESC,
     m.created_at DESC;
 $$ LANGUAGE sql STABLE;
+
+-- Pin search_path to silence "function_search_path_mutable" lint.
+ALTER FUNCTION public.media_library_by_company(integer) SET search_path = 'public';
