@@ -9,6 +9,10 @@ import {
   deriveMenuOverrides,
   NAVBAR_CATEGORIES,
   TESTIMONIAL_CATEGORIES,
+  STATS_CATEGORIES,
+  SERVICES_CATEGORIES,
+  buildServicesForEnterprise,
+  buildStatsForEnterprise,
 } from "@/lib/site-builder/menu-overrides";
 import {
   resolveNavbarLayout,
@@ -244,6 +248,37 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
           testimonialOverrides.hasReviews = reviews.length > 0;
         }
 
+        const isStats = !!category && STATS_CATEGORIES.has(category);
+        const statsOverrides: Record<string, unknown> = {};
+        if (isStats) {
+          const stats = buildStatsForEnterprise(variables);
+          if (stats && stats.length > 0) {
+            const existing = (instance.content as Record<string, unknown> | null)?.stats;
+            const hasCustom = Array.isArray(existing) && existing.length > 0;
+            if (!hasCustom) statsOverrides.stats = stats;
+            statsOverrides.hasStats = true;
+          } else {
+            statsOverrides.hasStats = false;
+          }
+        }
+
+        const isServices = !!category && SERVICES_CATEGORIES.has(category);
+        const servicesOverrides: Record<string, unknown> = {};
+        if (isServices) {
+          const services = buildServicesForEnterprise(variables);
+          if (services && services.length > 0) {
+            const existing = (instance.content as Record<string, unknown> | null)?.services;
+            const hasCustom = Array.isArray(existing) && existing.length > 0;
+            if (!hasCustom) servicesOverrides.services = services;
+            servicesOverrides.hasServices = true;
+          } else {
+            servicesOverrides.hasServices = false;
+            servicesOverrides.services = [];
+          }
+        }
+
+        const adaptiveOverrides = { ...testimonialOverrides, ...statsOverrides, ...servicesOverrides };
+
         // Library section: render inline (SSR) — no iframe
         if (libRef) {
           const ts = libThemeSection;
@@ -252,7 +287,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
             ...(ts.example_data ?? {}),
             ...(instance.content as Record<string, unknown> ?? {}),
             ...menuOverrides,
-            ...testimonialOverrides,
+            ...adaptiveOverrides,
           };
           const node = (
             <LibrarySectionInline
@@ -291,7 +326,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
             guide={guide}
             variables={variables}
             reviews={reviews}
-            menuOverrides={{ ...menuOverrides, ...testimonialOverrides }}
+            menuOverrides={{ ...menuOverrides, ...adaptiveOverrides }}
           />
         );
         if (navLayout && navLayout.position !== "static") {

@@ -13,7 +13,14 @@ import {
   type SectionColorScheme,
 } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
-import { deriveMenuOverrides, TESTIMONIAL_CATEGORIES } from "@/lib/site-builder/menu-overrides";
+import {
+  deriveMenuOverrides,
+  TESTIMONIAL_CATEGORIES,
+  STATS_CATEGORIES,
+  SERVICES_CATEGORIES,
+  buildServicesForEnterprise,
+  buildStatsForEnterprise,
+} from "@/lib/site-builder/menu-overrides";
 import { convertVhToPx } from "@/lib/site-builder/preview-viewport";
 
 interface DynamicSectionRendererProps {
@@ -206,6 +213,30 @@ export function DynamicSectionRenderer({
     return { testimonials: six, reviews: six, hasReviews: true };
   })();
 
+  // Auto-inject stats (key figures) into stats-category sections.
+  const statsOverrides: Record<string, unknown> = (() => {
+    if (!sectionDef.category || !STATS_CATEGORIES.has(sectionDef.category)) return {};
+    const stats = buildStatsForEnterprise(variables);
+    if (!stats || stats.length === 0) return { hasStats: false };
+    const existing = instance.content.stats;
+    const hasCustom = Array.isArray(existing) && existing.length > 0;
+    if (hasCustom) return { hasStats: true };
+    return { stats, hasStats: true };
+  })();
+
+  // Auto-inject the merged services array into service-category sections
+  // (sections that list one entry per enterprise service tag, e.g. tabs).
+  const servicesOverrides: Record<string, unknown> = (() => {
+    if (!sectionDef.category || !SERVICES_CATEGORIES.has(sectionDef.category)) return {};
+    const services = buildServicesForEnterprise(variables);
+    if (services === null) return { hasServices: false };
+    if (services.length === 0) return { services: [], hasServices: false };
+    const existing = instance.content.services;
+    const hasCustom = Array.isArray(existing) && existing.length > 0;
+    if (hasCustom) return { hasServices: true };
+    return { services, hasServices: true };
+  })();
+
   // Color scheme override computed from content.__color_scheme
   const colorSchemeVars = resolveColorSchemeVars(instance.content, styleGuide);
 
@@ -250,6 +281,8 @@ export function DynamicSectionRenderer({
         colorSchemeVars={colorSchemeVars}
         menuOverrides={menuOverrides}
         testimonialOverrides={testimonialOverrides}
+        statsOverrides={statsOverrides}
+        servicesOverrides={servicesOverrides}
         contentWithoutMeta={contentWithoutMeta}
         variables={variables}
         editorMode={editorMode}
@@ -267,7 +300,7 @@ export function DynamicSectionRenderer({
 
   const { structure } = sectionDef;
   const adapted = adaptContentForRender(instance.content, instance.blocks ?? []);
-  const content = { ...sectionDef.default_content, ...menuOverrides, ...testimonialOverrides, ...adapted };
+  const content = { ...sectionDef.default_content, ...menuOverrides, ...testimonialOverrides, ...statsOverrides, ...servicesOverrides, ...adapted };
 
   const cssVars = styleGuideToCSSVars(styleGuide);
 
@@ -395,6 +428,8 @@ function LibrarySectionRender({
   colorSchemeVars,
   menuOverrides,
   testimonialOverrides,
+  statsOverrides,
+  servicesOverrides,
   contentWithoutMeta,
   variables,
   editorMode,
@@ -413,6 +448,8 @@ function LibrarySectionRender({
   colorSchemeVars: ColorSchemeVars;
   menuOverrides: Record<string, unknown>;
   testimonialOverrides: Record<string, unknown>;
+  statsOverrides: Record<string, unknown>;
+  servicesOverrides: Record<string, unknown>;
   contentWithoutMeta: Record<string, unknown>;
   variables?: Record<string, string>;
   editorMode?: boolean;
@@ -447,12 +484,16 @@ function LibrarySectionRender({
     ...sectionDef.default_content,
     ...menuOverrides,
     ...testimonialOverrides,
+    ...statsOverrides,
+    ...servicesOverrides,
     ...adaptContentForRender(contentWithoutMeta, instance.blocks ?? []),
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [
     sectionDef.default_content,
     menuOverrides,
     testimonialOverrides,
+    statsOverrides,
+    servicesOverrides,
     contentWithoutMeta,
     instance.blocks,
   ]);

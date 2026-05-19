@@ -1,7 +1,7 @@
 /**
  * Server-side resolver: builds the enterpriseVariables map and reviews
  * array for a given site by joining `entreprises`, `lead_magnet_projects`,
- * and `lead_magnet_reviews`.
+ * `lead_magnet_reviews`, `service_tag_defaults`, and `sites.content_overrides`.
  *
  * Shared by:
  *  - /api/site-builder/sites/[siteId]/publish — snapshots the result into
@@ -13,6 +13,11 @@
  * Note: the function is intentionally side-effect-free and accepts a
  * Supabase client instance so both server endpoints (publish route) and
  * server-side renderers (site-resolver) can share it.
+ *
+ * Structured collections (reviews, service tags, defaults, overrides, stats)
+ * are JSON-stringified under keys prefixed with "__" so the flat string map
+ * stays compatible with the existing `{{variable}}` substitution while the
+ * renderer can parse the structured forms back into objects/arrays.
  */
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -36,6 +41,11 @@ export interface ResolvedVariables {
 interface SiteRowSlice {
   enterprise_id: number | null;
   lead_magnet_project_id: string | null;
+  id?: string | null;
+  content_overrides?: {
+    services?: Record<string, Record<string, unknown>>;
+    stats?: Array<{ label: string; value: string; display_order?: number }>;
+  } | null;
 }
 
 export async function resolveEnterpriseVariables(
@@ -46,15 +56,34 @@ export async function resolveEnterpriseVariables(
   let companyName: string | undefined;
   let logoUrl: string | undefined;
   let phone: string | undefined;
+  let serviceTags: string[] = [];
+  let entStats: Array<{ label: string; value: string; display_order?: number }> = [];
 
   if (site.enterprise_id) {
-    const { data: company } = await supabase
+    const { data: companyRaw } = await supabase
       .from("entreprises")
       .select(
-        "id, name, telephone, email, adresse, ville, code_postal, logo_url, site_web_canonique, note_moyenne, nombre_avis"
+        "id, name, telephone, email, adresse, ville, code_postal, logo_url, " +
+        "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats"
       )
       .eq("id", site.enterprise_id)
       .single();
+
+    const company = companyRaw as unknown as {
+      id: number;
+      name: string | null;
+      telephone: string | null;
+      email: string | null;
+      adresse: string | null;
+      ville: string | null;
+      code_postal: string | null;
+      logo_url: string | null;
+      site_web_canonique: string | null;
+      note_moyenne: number | string | null;
+      nombre_avis: number | string | null;
+      service_tags: string[] | string | null;
+      stats: Array<{ label: string; value: string; display_order?: number }> | null;
+    } | null;
 
     if (company) {
       vars["entreprise.nom"] = company.name ?? "";
@@ -70,6 +99,13 @@ export async function resolveEnterpriseVariables(
       companyName = company.name ?? undefined;
       logoUrl = company.logo_url ?? undefined;
       phone = company.telephone ?? undefined;
+
+      serviceTags = Array.isArray(company.service_tags)
+        ? (company.service_tags as string[])
+        : (typeof company.service_tags === "string" ? [company.service_tags] : []);
+      entStats = Array.isArray(company.stats)
+        ? (company.stats as Array<{ label: string; value: string; display_order?: number }>)
+        : [];
     }
   }
 
@@ -116,7 +152,12 @@ export async function resolveEnterpriseVariables(
       if (proj.override_address) vars["entreprise.adresse"] = proj.override_address;
       if (proj.variables && typeof proj.variables === "object") {
         for (const [k, v] of Object.entries(proj.variables)) {
-          vars[k] = String(v);
+          if (v === null || v === undefined) continue;
+          if (typeof v === "object") {
+            vars[`__${k}`] = JSON.stringify(v);
+          } else {
+            vars[k] = String(v);
+          }
         }
       }
     }
@@ -133,6 +174,39 @@ export async function resolveEnterpriseVariables(
       vars["__reviews"] = JSON.stringify(reviews);
     }
   }
+
+  // Service tags of the active enterprise.
+  vars["__service_tags"] = JSON.stringify(serviceTags);
+
+  // Global per-tag content defaults (filtered to the enterprise's tags).
+  if (serviceTags.length > 0) {
+    const { data: defaultsData } = await supabase
+      .from("service_tag_defaults")
+      .select(
+        "service_tag, slug, display_label, icon, display_order, " +
+        "headline_template, subheadline_template, description_template, " +
+        "trust_title_template, image_url, cta_label, cta_href"
+      )
+      .in("service_tag", serviceTags);
+
+    const defaultsByTag: Record<string, unknown> = {};
+    const rows = (defaultsData ?? []) as unknown as Array<{ service_tag: string } & Record<string, unknown>>;
+    for (const row of rows) {
+      defaultsByTag[row.service_tag] = row;
+    }
+    vars["__service_tag_defaults"] = JSON.stringify(defaultsByTag);
+  } else {
+    vars["__service_tag_defaults"] = "{}";
+  }
+
+  // Site-level overrides (passed in directly so the publish flow can snapshot
+  // them without an extra round-trip).
+  const overrides = site.content_overrides ?? null;
+  vars["__service_overrides"] = JSON.stringify(overrides?.services ?? {});
+
+  const siteStats = overrides?.stats;
+  const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
+  vars["__stats"] = JSON.stringify(resolvedStats);
 
   return { variables: vars, reviews, companyName, logoUrl, phone };
 }
