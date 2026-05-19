@@ -1333,7 +1333,7 @@ export interface SitemapPage {
   metaDescription?: string;
 }
 
-export type WorkspaceId = 'sitemap' | 'wireframe' | 'style-guide' | 'design';
+export type WorkspaceId = 'sitemap' | 'wireframe' | 'style-guide' | 'design' | 'content';
 
 // ── SITE MENUS ────────────────────────────────────────────────
 

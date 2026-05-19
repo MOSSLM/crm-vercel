@@ -19,6 +19,7 @@ import { SitemapWorkspace } from "./SitemapWorkspace";
 import { WireframeWorkspace } from "./WireframeWorkspace";
 import { StyleGuideWorkspace } from "./StyleGuideWorkspace";
 import { DesignWorkspace } from "./DesignWorkspace";
+import { ContentWorkspace } from "./ContentWorkspace";
 import "./site-builder-skin.css";
 import { AlertSoft, Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pop, Seg, TopChip, cx } from "./skin-primitives";
 
@@ -409,8 +410,10 @@ function RelumeEditorInner({
 
   const fetchVariables = React.useCallback((id: number | undefined, pid?: string) => {
     if (!id) { dispatch({ type: "SET_VARIABLE_CONTEXT", payload: {} }); return; }
-    const url = `/api/site-builder/variables?enterprise=${id}${pid ? `&project=${pid}` : ""}`;
-    fetch(url)
+    const params = new URLSearchParams({ enterprise: String(id) });
+    if (pid) params.set("project", pid);
+    if (siteId) params.set("site", siteId);
+    fetch(`/api/site-builder/variables?${params.toString()}`)
       .then((r) => r.json())
       .then((data: unknown) => {
         if (data && typeof data === "object" && !Array.isArray(data)) {
@@ -418,7 +421,7 @@ function RelumeEditorInner({
         }
       })
       .catch(() => {});
-  }, [dispatch]);
+  }, [dispatch, siteId]);
 
   React.useEffect(() => {
     if (initialEnterpriseId) fetchVariables(initialEnterpriseId, initialProjectId);
@@ -696,6 +699,7 @@ function RelumeEditorInner({
     { id: "sitemap", label: "Sitemap" },
     { id: "wireframe", label: "Wireframe" },
     { id: "style-guide", label: "Style Guide" },
+    { id: "content", label: "Contenu" },
     { id: "design", label: "Design" },
   ];
 
@@ -897,6 +901,9 @@ function RelumeEditorInner({
         )}
         {state.activeWorkspace === "style-guide" && (
           <StyleGuideWorkspace sectionDefs={sectionDefs} />
+        )}
+        {state.activeWorkspace === "content" && (
+          <ContentWorkspace enterpriseId={enterpriseId} />
         )}
         {state.activeWorkspace === "design" && (
           <DesignWorkspace
