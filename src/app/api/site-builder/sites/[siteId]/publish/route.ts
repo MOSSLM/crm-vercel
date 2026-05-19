@@ -34,7 +34,7 @@ export async function POST(request: Request, context: RouteContext) {
     const [{ data: currentSite }, { data: currentInstances }] = await Promise.all([
       supabase
         .from("sites")
-        .select("style_guide, sitemap, site_config, enterprise_id, lead_magnet_project_id")
+        .select("style_guide, sitemap, site_config, enterprise_id, lead_magnet_project_id, content_overrides")
         .eq("id", siteId)
         .single(),
       supabase.from("site_section_instances")
@@ -46,10 +46,17 @@ export async function POST(request: Request, context: RouteContext) {
     // Snapshot enterprise variables + reviews so future edits to the
     // entreprises / lead_magnet_projects rows don't leak into the
     // published site until the next publish action.
+    const siteSlice = currentSite as {
+      enterprise_id: number | null;
+      lead_magnet_project_id: string | null;
+      content_overrides: { services?: Record<string, Record<string, unknown>>; stats?: Array<{ label: string; value: string; display_order?: number }> } | null;
+    } | null;
     const { variables: publishedVariables, reviews: publishedReviews } =
       await resolveEnterpriseVariables(supabase, {
-        enterprise_id: (currentSite as { enterprise_id: number | null } | null)?.enterprise_id ?? null,
-        lead_magnet_project_id: (currentSite as { lead_magnet_project_id: string | null } | null)?.lead_magnet_project_id ?? null,
+        id: siteId,
+        enterprise_id: siteSlice?.enterprise_id ?? null,
+        lead_magnet_project_id: siteSlice?.lead_magnet_project_id ?? null,
+        content_overrides: siteSlice?.content_overrides ?? null,
       });
 
     const updatePayload: Record<string, unknown> = {

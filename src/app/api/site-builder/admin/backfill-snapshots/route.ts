@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
   const { data: sites, error } = await supabase
     .from("sites")
-    .select("id, name, enterprise_id, lead_magnet_project_id, site_config, published_variables, published_instances, published_reviews, published_site_config")
+    .select("id, name, enterprise_id, lead_magnet_project_id, content_overrides, site_config, published_variables, published_instances, published_reviews, published_site_config")
     .eq("is_published", true);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -63,8 +63,10 @@ export async function POST(request: Request) {
 
       if (needsVars) {
         const { variables, reviews } = await resolveEnterpriseVariables(supabase, {
+          id: site.id,
           enterprise_id: (site as { enterprise_id: number | null }).enterprise_id ?? null,
           lead_magnet_project_id: (site as { lead_magnet_project_id: string | null }).lead_magnet_project_id ?? null,
+          content_overrides: (site as { content_overrides: { services?: Record<string, Record<string, unknown>>; stats?: Array<{ label: string; value: string; display_order?: number }> } | null }).content_overrides ?? null,
         });
         updatePayload.published_variables = variables;
         updatePayload.published_reviews = reviews;

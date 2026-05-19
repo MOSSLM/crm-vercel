@@ -12,6 +12,7 @@ type EnterpriseVariablesRow = {
   code_postal: string | null;
   pays: string | null;
   service_tags: string[] | string | null;
+  stats: Array<{ label: string; value: string; display_order?: number }> | null;
   note_moyenne: number | string | null;
   nombre_avis: number | string | null;
   logo_url: string | null;
@@ -26,7 +27,7 @@ type ProjectRow = {
   override_phone: string | null;
   override_email: string | null;
   override_address: string | null;
-  variables: Record<string, string> | null;
+  variables: Record<string, unknown> | null;
 };
 
 type ReviewRow = {
@@ -35,18 +36,41 @@ type ReviewRow = {
   rating: number | null;
 };
 
+type ServiceTagDefaultRow = {
+  service_tag: string;
+  slug: string;
+  display_label: string | null;
+  icon: string | null;
+  display_order: number | null;
+  headline_template: string | null;
+  subheadline_template: string | null;
+  description_template: string | null;
+  trust_title_template: string | null;
+  image_url: string | null;
+  cta_label: string | null;
+  cta_href: string | null;
+};
+
+type SiteOverridesRow = {
+  content_overrides: {
+    services?: Record<string, Record<string, unknown>>;
+    stats?: Array<{ label: string; value: string; display_order?: number }>;
+  } | null;
+};
+
 /**
- * GET /api/site-builder/variables?enterprise=<id>[&project=<uuid>]
+ * GET /api/site-builder/variables?enterprise=<id>[&project=<uuid>][&site=<uuid>]
  *
- * Returns a flat Record<string, string> of template variables. When a
- * lead_magnet_project_id is supplied, project overrides (city, phone, etc.)
- * take precedence over entreprise values, and active reviews are included as
- * a JSON-stringified array under the key "__reviews".
+ * Returns a flat Record<string, string>. Scalar variables are stringified;
+ * structured collections (reviews, service tags, defaults, stats, overrides)
+ * are JSON-stringified under keys prefixed with "__" so the renderer can
+ * parse them back into objects/arrays.
  */
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const enterpriseIdRaw = searchParams.get("enterprise");
   const projectId = searchParams.get("project");
+  const siteId = searchParams.get("site");
 
   if (!enterpriseIdRaw) {
     return NextResponse.json({}, { status: 200 });
@@ -59,12 +83,12 @@ export async function GET(req: Request) {
 
   const supabase = getSupabaseServiceClient();
 
-  const [entResult, projectResult, reviewsResult] = await Promise.all([
+  const [entResult, projectResult, reviewsResult, siteResult] = await Promise.all([
     supabase
       .from("entreprises")
       .select(
         "nom:name, ville, telephone, email, adresse, code_postal, pays, " +
-        "service_tags, note_moyenne, nombre_avis, logo_url, " +
+        "service_tags, stats, note_moyenne, nombre_avis, logo_url, " +
         "site_web_canonique, canonical_url"
       )
       .eq("id", enterpriseId)
@@ -89,6 +113,14 @@ export async function GET(req: Request) {
           .eq("is_active", true)
           .order("display_order", { ascending: true })
       : Promise.resolve({ data: null, error: null }),
+
+    siteId
+      ? supabase
+          .from("sites")
+          .select("content_overrides")
+          .eq("id", siteId)
+          .single()
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   if (entResult.error || !entResult.data) {
@@ -98,10 +130,12 @@ export async function GET(req: Request) {
   const ent = entResult.data as unknown as EnterpriseVariablesRow;
   const proj = projectResult.data as unknown as ProjectRow | null;
   const reviews = (reviewsResult.data ?? []) as ReviewRow[];
+  const siteOverrides = (siteResult.data as unknown as SiteOverridesRow | null)?.content_overrides ?? null;
 
-  const services = Array.isArray(ent.service_tags)
-    ? (ent.service_tags as string[]).join(", ")
-    : (typeof ent.service_tags === "string" ? ent.service_tags : "");
+  const serviceTags: string[] = Array.isArray(ent.service_tags)
+    ? (ent.service_tags as string[])
+    : (typeof ent.service_tags === "string" ? [ent.service_tags] : []);
+  const servicesList = serviceTags.join(", ");
 
   // Project overrides take priority over entreprise values
   const nom = proj?.override_entreprise_name ?? ent.nom ?? "";
@@ -120,7 +154,7 @@ export async function GET(req: Request) {
     "entreprise.adresse":     adresse,
     "entreprise.code_postal": ent.code_postal ?? "",
     "entreprise.pays":        ent.pays ?? "France",
-    "entreprise.services":    services,
+    "entreprise.services":    servicesList,
     "entreprise.note_moyenne":String(ent.note_moyenne ?? ""),
     "entreprise.nombre_avis": String(ent.nombre_avis ?? ""),
     "entreprise.logo_url":    ent.logo_url ?? "",
@@ -133,15 +167,21 @@ export async function GET(req: Request) {
     "company.address": [adresse, ville].filter(Boolean).join(", "),
     "company.rating":  String(ent.note_moyenne ?? ""),
     "company.reviews": String(ent.nombre_avis ?? ""),
-    "company.services":services,
+    "company.services":servicesList,
     "company.logo":    ent.logo_url ?? "",
     "company.website": ent.site_web_canonique ?? ent.canonical_url ?? "",
   };
 
-  // Merge free-form project variables (lower priority than named overrides)
+  // Merge free-form project variables. Scalars become "{{var}}"; objects/arrays
+  // are JSON-stringified under "__var" so the renderer can parse them.
   if (proj?.variables && typeof proj.variables === "object") {
     for (const [k, v] of Object.entries(proj.variables)) {
-      if (!(k in variables)) variables[k] = String(v);
+      if (v === null || v === undefined) continue;
+      if (typeof v === "object") {
+        variables[`__${k}`] = JSON.stringify(v);
+      } else if (!(k in variables)) {
+        variables[k] = String(v);
+      }
     }
   }
 
@@ -156,6 +196,42 @@ export async function GET(req: Request) {
     }));
     variables["__reviews"] = JSON.stringify(reviewsArray);
   }
+
+  // Service tags of the active enterprise (used by adaptive sections to
+  // filter the global defaults).
+  variables["__service_tags"] = JSON.stringify(serviceTags);
+
+  // Global per-tag content defaults, keyed by service_tag, filtered to the
+  // enterprise's tags only (no point fetching irrelevant rows).
+  if (serviceTags.length > 0) {
+    const { data: defaultsData } = await supabase
+      .from("service_tag_defaults")
+      .select(
+        "service_tag, slug, display_label, icon, display_order, " +
+        "headline_template, subheadline_template, description_template, " +
+        "trust_title_template, image_url, cta_label, cta_href"
+      )
+      .in("service_tag", serviceTags);
+
+    const defaultsByTag: Record<string, ServiceTagDefaultRow> = {};
+    const rows = (defaultsData ?? []) as unknown as ServiceTagDefaultRow[];
+    for (const row of rows) {
+      defaultsByTag[row.service_tag] = row;
+    }
+    variables["__service_tag_defaults"] = JSON.stringify(defaultsByTag);
+  } else {
+    variables["__service_tag_defaults"] = "{}";
+  }
+
+  // Site-level service overrides (keyed by tag slug), merged on top of defaults
+  // by the renderer.
+  variables["__service_overrides"] = JSON.stringify(siteOverrides?.services ?? {});
+
+  // Stats: site override > enterprise stats.
+  const siteStats = siteOverrides?.stats;
+  const entStats = Array.isArray(ent.stats) ? ent.stats : [];
+  const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
+  variables["__stats"] = JSON.stringify(resolvedStats);
 
   return NextResponse.json(variables);
 }
