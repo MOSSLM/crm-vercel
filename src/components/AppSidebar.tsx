@@ -106,7 +106,6 @@ export const AppSidebar = () => {
     { title: "Thèmes", icon: Layout, href: "/themes" },
     { title: "Créateur de sections", icon: BookOpen, href: "/sections-library" },
     { title: "Bibliothèque images", icon: Images, href: "/media-library" },
-    { title: "Contenu services", icon: BookOpen, href: "/services-content" },
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");

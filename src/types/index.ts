@@ -1133,6 +1133,12 @@ export interface SectionBlockInstance {
   id: string;
   type: string;
   settings: Record<string, unknown>;
+  /**
+   * If set, this block is filtered out at render time when the enterprise
+   * does not have this tag in its `service_tags`. When undefined/null, the
+   * block is always shown regardless of enterprise tags.
+   */
+  service_tag?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1331,6 +1337,12 @@ export interface SitemapPage {
   sections?: SitemapSection[];
   metaTitle?: string;
   metaDescription?: string;
+  /**
+   * If set, this page is removed from the published sitemap (and 404s on the
+   * public site) when the enterprise does not have this tag in its
+   * `service_tags`. Used for per-service landing pages.
+   */
+  service_tag?: string | null;
 }
 
 export type WorkspaceId = 'sitemap' | 'wireframe' | 'style-guide' | 'design' | 'content';
@@ -1419,6 +1431,7 @@ export type RelumeBuilderAction =
   | { type: 'UPDATE_INSTANCE_STYLE'; payload: { id: string; style: Record<string, unknown> } }
   | { type: 'ADD_BLOCK'; payload: { instanceId: string; blockType: string; settings?: Record<string, unknown>; index?: number } }
   | { type: 'UPDATE_BLOCK'; payload: { instanceId: string; blockId: string; settings: Record<string, unknown> } }
+  | { type: 'UPDATE_BLOCK_TAG'; payload: { instanceId: string; blockId: string; service_tag: string | null } }
   | { type: 'REMOVE_BLOCK'; payload: { instanceId: string; blockId: string } }
   | { type: 'DUPLICATE_BLOCK'; payload: { instanceId: string; blockId: string } }
   | { type: 'REORDER_BLOCKS'; payload: { instanceId: string; fromIndex: number; toIndex: number } }

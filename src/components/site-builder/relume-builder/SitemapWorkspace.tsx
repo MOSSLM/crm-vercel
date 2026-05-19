@@ -4,11 +4,12 @@ import React from "react";
 import {
   Sparkles, FileText, MoreHorizontal, Plus, Trash2,
   ChevronRight, Send, Loader2, AlertCircle, ChevronDown, RefreshCw, MessageSquare,
-  Copy, ZoomIn, ZoomOut, Maximize2, Search, X,
+  Copy, ZoomIn, ZoomOut, Maximize2, Search, X, Tag,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
+import { useServiceTags } from "@/hooks/useServiceTags";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { AlertSoft, Btn, Pane, PaneBody, PaneHeader, Pill, Pop } from "./skin-primitives";
@@ -154,6 +155,7 @@ interface SitemapWorkspaceProps {
 export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: SitemapWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const canvas = useCanvasPanZoom();
+  const serviceTags = useServiceTags();
   const [aiInput, setAiInput] = React.useState("");
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");
@@ -646,6 +648,26 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Service tag picker — page only shown to enterprises with this tag */}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", borderTop: "1px solid var(--line-1)", background: "var(--surface-2, transparent)" }}>
+                  <Tag size={10} style={{ color: "var(--text-3)" }} />
+                  <span style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 500 }}>Service tag :</span>
+                  <select
+                    value={page.service_tag ?? ""}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { service_tag: v === "" ? null : v } } });
+                    }}
+                    style={{ flex: 1, fontSize: 11, padding: "2px 4px", border: "1px solid var(--line-1)", borderRadius: 4, background: "white", minWidth: 0 }}
+                    title="Si défini, cette page n'apparaît que sur les entreprises ayant ce tag."
+                  >
+                    <option value="">— Toujours afficher</option>
+                    {serviceTags.map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Per-page AI context */}

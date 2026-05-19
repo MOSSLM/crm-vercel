@@ -35,13 +35,27 @@ export default async function SitePage({ params, searchParams }: SitePageProps) 
   const site = await resolveSite(subdomain, host);
   if (!site) notFound();
 
-  const { enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide, menus } = site;
+  const { enterpriseVariables, siteId, reviews, publishedInstances, publishedStyleGuide, styleGuide, menus, publishedSitemap } = site;
   const effectiveStyleGuide = publishedStyleGuide ?? styleGuide;
 
   // resolveSite() already enforces a strict snapshot lock: it returns null
   // when published_variables / published_instances are missing. Reaching
   // here means we have a valid snapshot to render.
   if (!publishedInstances || publishedInstances.length === 0) notFound();
+
+  // Filter pages by enterprise.service_tags: a page tagged with a service_tag
+  // that the enterprise doesn't have 404s here.
+  if (publishedSitemap && publishedSitemap.length > 0) {
+    const targetPage = publishedSitemap.find((p) => p.slug === pageSlug);
+    if (targetPage?.service_tag) {
+      let enterpriseTags: string[] = [];
+      try {
+        const parsed = JSON.parse(enterpriseVariables["__service_tags"] ?? "[]");
+        if (Array.isArray(parsed)) enterpriseTags = parsed.filter((t): t is string => typeof t === "string");
+      } catch {}
+      if (!enterpriseTags.includes(targetPage.service_tag)) notFound();
+    }
+  }
 
   return (
     <DynamicPageRenderer

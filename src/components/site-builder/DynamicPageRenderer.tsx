@@ -10,9 +10,8 @@ import {
   NAVBAR_CATEGORIES,
   TESTIMONIAL_CATEGORIES,
   STATS_CATEGORIES,
-  SERVICES_CATEGORIES,
-  buildServicesForEnterprise,
   buildStatsForEnterprise,
+  filterBlocksByEnterpriseTags,
 } from "@/lib/site-builder/menu-overrides";
 import {
   resolveNavbarLayout,
@@ -262,32 +261,26 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
           }
         }
 
-        const isServices = !!category && SERVICES_CATEGORIES.has(category);
-        const servicesOverrides: Record<string, unknown> = {};
-        if (isServices) {
-          const services = buildServicesForEnterprise(variables);
-          if (services && services.length > 0) {
-            const existing = (instance.content as Record<string, unknown> | null)?.services;
-            const hasCustom = Array.isArray(existing) && existing.length > 0;
-            if (!hasCustom) servicesOverrides.services = services;
-            servicesOverrides.hasServices = true;
-          } else {
-            servicesOverrides.hasServices = false;
-            servicesOverrides.services = [];
-          }
-        }
+        // Filter blocks by enterprise service_tags. The filtered list is passed
+        // both to LibrarySectionInline (which uses content adapter) and to the
+        // native renderer (DynamicSectionPublic), replacing `instance.blocks`.
+        const filteredBlocks = filterBlocksByEnterpriseTags(instance.blocks ?? [], variables);
 
-        const adaptiveOverrides = { ...testimonialOverrides, ...statsOverrides, ...servicesOverrides };
+        const adaptiveOverrides = { ...testimonialOverrides, ...statsOverrides };
 
         // Library section: render inline (SSR) — no iframe
         if (libRef) {
           const ts = libThemeSection;
           if (!ts?.code) return null;
+          // adaptContentForRender folds blocks into the content via legacy
+          // mappings. For library sections we apply it here so the filtered
+          // blocks list (rather than instance.blocks) drives the result.
           const content = {
             ...(ts.example_data ?? {}),
             ...(instance.content as Record<string, unknown> ?? {}),
             ...menuOverrides,
             ...adaptiveOverrides,
+            ...adaptContentForRender({}, filteredBlocks),
           };
           const node = (
             <LibrarySectionInline
@@ -321,7 +314,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
         const native = (
           <DynamicSectionPublic
             key={instance.id}
-            instance={instance}
+            instance={{ ...instance, blocks: filteredBlocks }}
             sectionDef={sectionDef}
             guide={guide}
             variables={variables}

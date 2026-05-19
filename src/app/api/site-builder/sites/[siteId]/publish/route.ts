@@ -49,7 +49,7 @@ export async function POST(request: Request, context: RouteContext) {
     const siteSlice = currentSite as {
       enterprise_id: number | null;
       lead_magnet_project_id: string | null;
-      content_overrides: { services?: Record<string, Record<string, unknown>>; stats?: Array<{ label: string; value: string; display_order?: number }> } | null;
+      content_overrides: { stats?: Array<{ label: string; value: string; display_order?: number }> } | null;
     } | null;
     const { variables: publishedVariables, reviews: publishedReviews } =
       await resolveEnterpriseVariables(supabase, {

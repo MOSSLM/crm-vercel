@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ChevronDown, ChevronUp, Copy, GripVertical, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Copy, GripVertical, Plus, Tag, Trash2 } from "lucide-react";
 import type { SectionBlockInstance, SectionBlockSchema, SectionSchema, StyleGuide } from "@/types";
 import { findBlockSchema, getBlockDefaults } from "@/data/section-schemas";
 import { SchemaEditor } from "./SchemaEditor";
@@ -15,6 +15,13 @@ interface BlocksEditorProps {
   onRemove: (blockId: string) => void;
   onDuplicate: (blockId: string) => void;
   onReorder: (fromIndex: number, toIndex: number) => void;
+  /** Optional: when provided, each block gets a service-tag picker. */
+  onUpdateTag?: (blockId: string, service_tag: string | null) => void;
+  /** Options shown in the service-tag picker. */
+  availableTags?: string[];
+  /** Tags currently active on the enterprise (or simulated). Used to show
+   *  whether a block is currently visible or filtered out. */
+  activeTags?: string[];
   variables?: Record<string, string>;
   siteId?: string;
 }
@@ -28,6 +35,9 @@ export function BlocksEditor({
   onRemove,
   onDuplicate,
   onReorder,
+  onUpdateTag,
+  availableTags,
+  activeTags,
   variables,
   siteId,
 }: BlocksEditorProps) {
@@ -72,9 +82,16 @@ export function BlocksEditor({
         }
         const isExpanded = expandedId === block.id;
         const preview = blockPreview(blockSchema, block.settings);
+        const tag = block.service_tag ?? null;
+        const isFiltered = !!(tag && activeTags && !activeTags.includes(tag));
+        const showTagPicker = !!onUpdateTag;
 
         return (
-          <div key={block.id} className="border border-white/10 rounded-md overflow-hidden bg-white/[0.02]">
+          <div
+            key={block.id}
+            className="border border-white/10 rounded-md overflow-hidden bg-white/[0.02]"
+            style={isFiltered ? { opacity: 0.45 } : undefined}
+          >
             <div className="flex items-center gap-1 px-2 py-1.5 hover:bg-white/[0.04] transition-colors">
               <button
                 onMouseDown={(e) => e.preventDefault()}
@@ -101,6 +118,18 @@ export function BlocksEditor({
                 <span className="text-white/40 mr-1.5">{blockSchema.name}</span>
                 <span className="truncate">{preview}</span>
               </button>
+              {tag && (
+                <span
+                  className="text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wide"
+                  style={{
+                    background: isFiltered ? "rgba(251,113,133,0.15)" : "rgba(96,165,250,0.18)",
+                    color: isFiltered ? "#fb7185" : "#93c5fd",
+                  }}
+                  title={isFiltered ? "Bloc masqué : tag absent de l'entreprise" : `Service tag: ${tag}`}
+                >
+                  {tag}
+                </span>
+              )}
               <button
                 onClick={() => onDuplicate(block.id)}
                 disabled={maxReached}
@@ -118,7 +147,15 @@ export function BlocksEditor({
               </button>
             </div>
             {isExpanded && (
-              <div className="px-3 pb-3 pt-1 border-t border-white/5">
+              <div className="px-3 pb-3 pt-1 border-t border-white/5 space-y-3">
+                {showTagPicker && (
+                  <ServiceTagPicker
+                    value={tag}
+                    options={availableTags ?? []}
+                    activeTags={activeTags}
+                    onChange={(v) => onUpdateTag!(block.id, v)}
+                  />
+                )}
                 <SchemaEditor
                   schema={{ name: blockSchema.name, settings: blockSchema.settings }}
                   content={block.settings}
@@ -149,6 +186,45 @@ export function BlocksEditor({
           Limite atteinte ({schema.max_blocks} blocs maximum).
         </p>
       )}
+    </div>
+  );
+}
+
+function ServiceTagPicker({
+  value,
+  options,
+  activeTags,
+  onChange,
+}: {
+  value: string | null;
+  options: string[];
+  activeTags?: string[];
+  onChange: (v: string | null) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold text-white/30 uppercase tracking-widest">
+        <Tag size={10} />
+        Service tag
+      </div>
+      <select
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+        className="w-full text-[11px] px-2 py-1 bg-white/5 border border-white/10 rounded text-white/80"
+      >
+        <option value="">— Aucun (toujours afficher)</option>
+        {options.map((t) => {
+          const active = !activeTags || activeTags.includes(t);
+          return (
+            <option key={t} value={t}>
+              {t}{active ? "" : " · (absent de l'entreprise)"}
+            </option>
+          );
+        })}
+      </select>
+      <p className="text-[10px] text-white/30 leading-snug">
+        Si défini, ce bloc n&apos;apparaît que sur les entreprises ayant ce tag.
+      </p>
     </div>
   );
 }
