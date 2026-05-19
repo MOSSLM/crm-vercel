@@ -41,7 +41,8 @@ Règles :
 INTERDIT absolument :
 - export default function Schema(...) — le schéma est géré dans un onglet séparé, ne jamais l'intégrer dans le TSX
 - Deux export default dans le même fichier
-- min-h-screen, h-screen, 100vh sur le conteneur racine
+
+Viewport units (vh, min-h-screen, h-screen, 100vh, calc(100vh - …)) : autorisés. En preview, le builder les convertit automatiquement en px selon le device simulé (desktop=900, tablet=1024, mobile=812). Le site publié garde les vh natifs.
 
 OBLIGATOIRE :
 - Définir un fond sur le conteneur racine : style={{ backgroundColor: 'var(--color-background)' }}

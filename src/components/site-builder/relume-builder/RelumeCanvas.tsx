@@ -4,6 +4,7 @@ import React from "react";
 import { Plus, Trash2, Eye, EyeOff, GripVertical } from "lucide-react";
 import type { SiteSectionDef } from "@/types";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import AnimatedSection from "../AnimatedSection";
 import type { SectionAnimation } from "@/types";
@@ -18,6 +19,7 @@ export function RelumeCanvas({ sectionDefs, onAddSection }: RelumeCanvasProps) {
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
 
   const deviceWidth = state.deviceView === "mobile" ? "390px" : "100%";
+  const simulatedViewportHeight = getSimulatedViewportHeight(state.deviceView);
 
   return (
     <div
@@ -85,6 +87,7 @@ export function RelumeCanvas({ sectionDefs, onAddSection }: RelumeCanvasProps) {
                       onSelect={() => dispatch({ type: "SELECT_INSTANCE", payload: instanceId })}
                       selectedSnippetId={isSelected ? state.selectedSnippetId : null}
                       onSelectSnippet={(id) => dispatch({ type: "SELECT_SNIPPET", payload: id })}
+                      simulatedViewportHeight={simulatedViewportHeight}
                     />
                   </AnimatedSection>
                 </CanvasSectionWrapper>

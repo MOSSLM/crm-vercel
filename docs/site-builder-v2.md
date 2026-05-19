@@ -598,10 +598,10 @@ Le runtime injecte automatiquement ces règles CSS dans l'iframe :
 3. Cartes / images : `style={{ borderRadius: 'var(--card-radius)', boxShadow: 'var(--card-shadow)' }}`.
 4. Polices : titres avec `fontFamily: 'var(--font-heading)'`, corps avec `'var(--font-body)'`.
 5. Couleurs : utiliser les `var(--color-*)` plutôt que des hex codés en dur.
-6. **Interdit** : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine — privilégier un
-   `paddingTop`/`paddingBottom` basé sur `var(--section-padding)`. Le runtime neutralise tout de
-   même `min-h-screen`/`100vh` pour éviter les sections géantes, mais éviter ces classes reste la
-   bonne pratique.
+6. **Viewport units (`vh`, `min-h-screen`, `h-screen`)** : autorisés. En preview, le builder les
+   convertit automatiquement en `px` selon le device simulé (desktop = 900, tablet = 1024,
+   mobile = 812). Sur le site publié ils restent natifs. Couvre les `vh` inline, les classes
+   Tailwind arbitraires (`h-[80vh]`) et les valeurs `calc(100vh - 64px)`.
 
 ### Style Guide — boutons : schéma étendu
 
