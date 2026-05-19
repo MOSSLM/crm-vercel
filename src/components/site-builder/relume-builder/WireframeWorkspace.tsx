@@ -17,6 +17,7 @@ import { type AIModelId, ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { Btn, Pane, Pop } from "./skin-primitives";
 import { SectionPickerModal } from "./SectionPickerModal";
 
@@ -228,6 +229,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
   };
 
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
+  const simulatedViewportHeight = getSimulatedViewportHeight(state.deviceView);
   const activeInstanceIds = state.instancesByPage[state.activePage] ?? [];
 
   return (
@@ -491,6 +493,7 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                         styleGuide={state.styleGuide}
                         wireframe
                         onCanvasWheel={canvas.applyWheel}
+                        simulatedViewportHeight={simulatedViewportHeight}
                       />
 
                       <div className="ws-toolbar" onClick={(e) => e.stopPropagation()}>

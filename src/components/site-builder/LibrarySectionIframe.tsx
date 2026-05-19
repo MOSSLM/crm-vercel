@@ -87,6 +87,13 @@ interface LibrarySectionIframeProps {
   /** Called whenever the iframe reports the positions of `[data-form-slot]`
    *  elements (after render, mutations, or resize). Empty array if none. */
   onFormSlot?: (slots: FormSlotInfo[]) => void;
+  /** Preview-only: simulated viewport height (px) used to substitute `vh`
+   *  units in the rendered section. When set, a CSS variable `--sim-vh` is
+   *  exposed and a runtime rewriter converts every `Nvh` literal — in
+   *  stylesheets, `<style>` blocks, and inline `style=""` attributes — to
+   *  its px equivalent. Leave undefined on the published site to keep
+   *  native `vh`. */
+  simulatedViewportHeight?: number;
 }
 
 /**
@@ -109,6 +116,7 @@ export function LibrarySectionIframe({
   publicMode = false,
   onCanvasWheel,
   onFormSlot,
+  simulatedViewportHeight,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   // In editor mode: start at a real viewport height so min-h-screen sections
@@ -125,9 +133,9 @@ export function LibrarySectionIframe({
   // data (content, variables, overrides) is pushed via postMessage so the
   // iframe never reloads + Babel never recompiles during user edits.
   const srcDoc = React.useMemo(
-    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides }),
+    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides, simulatedViewportHeight }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [code, styleGuide, wireframe, selectionEnabled],
+    [code, styleGuide, wireframe, selectionEnabled, simulatedViewportHeight],
   );
 
   const isReadyRef = React.useRef(false);
@@ -349,6 +357,8 @@ interface BuildOptions {
   wireframe?: boolean;
   selectionEnabled?: boolean;
   overrides?: Record<string, unknown>;
+  /** Simulated viewport height in px for preview vh→px rewriting. */
+  simulatedViewportHeight?: number;
 }
 
 function buildHTML(
@@ -361,7 +371,7 @@ function buildHTML(
   const overridesPayload = options.overrides ?? {};
   const cssVars = styleGuide ? styleGuideToCSSVars(styleGuide) : "";
   const googleFontsLinks = buildGoogleFontsLinks(styleGuide?.fonts);
-  const { wireframe = false, selectionEnabled = false } = options;
+  const { wireframe = false, selectionEnabled = false, simulatedViewportHeight } = options;
 
   // Extract export default name BEFORE stripping keywords
   const exportDefaultFnMatch = code.match(/export\s+default\s+function\s+([A-Z]\w*)/);
@@ -493,6 +503,90 @@ function buildHTML(
     [data-sb-selected] { outline: 2px solid #3b82f6 !important; outline-offset: 2px; }
   ` : "";
 
+  // Preview-only: expose --sim-vh and install a runtime rewriter that
+  // converts every `Nvh` literal into px. Done both in stylesheets (catches
+  // Tailwind JIT + `<style>` blocks + arbitrary `h-[100vh]` classes) and in
+  // inline style="" attributes. Published HTML never includes this block.
+  const simVhBlock = typeof simulatedViewportHeight === "number"
+    ? `<style id="__sim_vh_var__">:root { --sim-vh: ${simulatedViewportHeight / 100}px; }<\/style>
+  <script>
+    (function(){
+      var VH_RE=/(-?\\d*\\.?\\d+)vh\\b/g;
+      var SIM=${simulatedViewportHeight};
+      function rewrite(s){
+        return s.replace(VH_RE, function(_, n){
+          var px = (parseFloat(n) / 100) * SIM;
+          return (isFinite(px) ? px : 0) + 'px';
+        });
+      }
+      function patchSheet(sheet){
+        try {
+          var rules = sheet.cssRules || sheet.rules;
+          if(!rules) return;
+          for(var i=rules.length-1;i>=0;i--){
+            var r = rules[i];
+            var t = r.cssText;
+            if(t && t.indexOf('vh')!==-1 && VH_RE.test(t)){
+              VH_RE.lastIndex = 0;
+              var rewritten = rewrite(t);
+              if(rewritten !== t){
+                try { sheet.deleteRule(i); sheet.insertRule(rewritten, i); } catch(e){}
+              }
+            }
+            VH_RE.lastIndex = 0;
+          }
+        } catch(e){ /* cross-origin sheet, skip */ }
+      }
+      function patchAllSheets(){
+        var sheets = document.styleSheets;
+        for(var i=0;i<sheets.length;i++) patchSheet(sheets[i]);
+      }
+      function patchInlineStyles(root){
+        var nodes = (root||document).querySelectorAll('[style*="vh"]');
+        for(var i=0;i<nodes.length;i++){
+          var el = nodes[i];
+          var s = el.getAttribute('style');
+          if(s && s.indexOf('vh')!==-1){
+            VH_RE.lastIndex = 0;
+            var rewritten = rewrite(s);
+            if(rewritten !== s) el.setAttribute('style', rewritten);
+          }
+        }
+      }
+      var pending = false;
+      function schedule(){
+        if(pending) return;
+        pending = true;
+        requestAnimationFrame(function(){
+          pending = false;
+          patchAllSheets();
+          patchInlineStyles();
+        });
+      }
+      function init(){
+        patchAllSheets();
+        patchInlineStyles();
+        // Watch for new <style> tags (Tailwind JIT) and inline-style mutations.
+        var mo = new MutationObserver(function(muts){
+          var dirty = false;
+          for(var i=0;i<muts.length;i++){
+            var m = muts[i];
+            if(m.type === 'attributes' && m.attributeName === 'style'){ dirty = true; break; }
+            if(m.addedNodes && m.addedNodes.length){ dirty = true; break; }
+            if(m.type === 'childList'){ dirty = true; break; }
+          }
+          if(dirty) schedule();
+        });
+        mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
+        // Re-run a few times to catch Babel/async render passes.
+        [50,200,500,1200].forEach(function(d){ setTimeout(schedule, d); });
+      }
+      if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+      else init();
+    })();
+  <\/script>`
+    : "";
+
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -514,6 +608,7 @@ function buildHTML(
     ${wireframeCss}
     ${selectionCss}
   <\/style>
+  ${simVhBlock}
 <\/head>
 <body>
   <div id="root"><\/div>

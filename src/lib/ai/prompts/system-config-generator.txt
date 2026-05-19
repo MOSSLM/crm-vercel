@@ -98,7 +98,7 @@ Toute section générée s'exécute dans un iframe avec ces variables CSS inject
   - INTERDITS sur un CTA : valeurs codées en dur (`rounded-full`, `px-8 py-4`, `bg-blue-600`, `text-white`) — les tokens s'en chargent.
 - Cartes / images : `var(--card-radius)`, `var(--card-padding)`, `var(--card-shadow)`.
 - Espacements : `var(--section-padding)`, `var(--element-gap)`, `var(--max-content-width)`.
-- INTERDIT : `min-h-screen`, `h-screen`, `100vh` sur le conteneur racine d'une section. Préférer un padding vertical raisonnable basé sur `var(--section-padding)`.
+- Viewport units (`vh`, `min-h-screen`, `h-screen`, `100vh`, `calc(100vh - …)`) : autorisés. En preview le builder les convertit automatiquement en `px` selon le device simulé ; le site publié les conserve nativement.
 
 ---
 

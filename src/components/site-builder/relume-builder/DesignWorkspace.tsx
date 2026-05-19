@@ -22,6 +22,7 @@ import { BulkAIDialog } from "./BulkAIDialog";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
+import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import type { IframeElementClickInfo, IframeDomTreeNode } from "../LibrarySectionIframe";
 import { ElementPanel } from "./element-panels/ElementPanel";
 import { SchemaEditor, splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
@@ -566,6 +567,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
   };
 
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
+  const simulatedViewportHeight = getSimulatedViewportHeight(state.deviceView);
 
   // Determine left panel mode
   // "element" = an element inside a section was clicked (any kind: text, image, button, link, input, form)
@@ -627,6 +629,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                     styleGuide={state.styleGuide}
                     menus={state.menus}
                     variables={state.variableContext}
+                    simulatedViewportHeight={simulatedViewportHeight}
                   />
                 );
               })}
@@ -913,6 +916,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                         onElementClick={handleElementClick(instanceId)}
                         onDomTree={handleDomTree(instanceId)}
                         onCanvasWheel={canvas.applyWheel}
+                        simulatedViewportHeight={simulatedViewportHeight}
                       />
                       {isPreviewed && (
                         <div style={{ position: "absolute", top: 0, left: 0, zIndex: 30, background: "var(--magic)", color: "#fff", fontSize: 9, padding: "2px 7px", borderBottomRightRadius: 5, fontFamily: "var(--font-mono)", fontWeight: 500 }}>

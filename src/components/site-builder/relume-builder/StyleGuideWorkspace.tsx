@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import type { StyleGuide, ButtonVariant, SiteSectionDef } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
+import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { generateColorShades, isLightColor } from "@/lib/color-utils";
 import {
   BUTTON_PRESETS,
@@ -1425,6 +1426,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
               sectionDef={secDef}
               styleGuide={guide}
               variables={state.variableContext}
+              simulatedViewportHeight={getSimulatedViewportHeight(state.deviceView)}
             />
           );
         })

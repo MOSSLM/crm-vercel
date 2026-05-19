@@ -14,6 +14,7 @@ import {
 } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
 import { deriveMenuOverrides, TESTIMONIAL_CATEGORIES } from "@/lib/site-builder/menu-overrides";
+import { convertVhToPx } from "@/lib/site-builder/preview-viewport";
 
 interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
@@ -39,6 +40,11 @@ interface DynamicSectionRendererProps {
    *  library iframe back to the parent canvas so the user can still
    *  pan/zoom even while hovering an iframe section. */
   onCanvasWheel?: (e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => void;
+  /** Preview-only: simulated viewport height (px) used to substitute `vh`
+   *  units. Without it, `100vh` resolves against the iframe's own resizing
+   *  viewport, producing broken layouts. The published renderer never
+   *  receives this prop. */
+  simulatedViewportHeight?: number;
 }
 
 /** Convert StyleGuide into CSS custom properties object */
@@ -170,6 +176,7 @@ export function DynamicSectionRenderer({
   onElementClick,
   onDomTree,
   onCanvasWheel,
+  simulatedViewportHeight,
 }: DynamicSectionRendererProps) {
   // Filter out __ meta keys from content passed to section components
   const contentWithoutMeta = Object.fromEntries(
@@ -253,6 +260,7 @@ export function DynamicSectionRenderer({
         onElementClick={onElementClick}
         onDomTree={onDomTree}
         onCanvasWheel={onCanvasWheel}
+        simulatedViewportHeight={simulatedViewportHeight}
       />
     );
   }
@@ -264,12 +272,25 @@ export function DynamicSectionRenderer({
   const cssVars = styleGuideToCSSVars(styleGuide);
 
   // ── Height from schema __height_mode / __height_value ────────────────────────
+  // In preview iframes, `vh` resolves against the iframe's own viewport
+  // (which auto-resizes to fit content) → infinite/broken layouts. When the
+  // workspace passes a simulatedViewportHeight, we substitute px equivalents.
+  // The published renderer (DynamicSectionPublic) never receives the prop,
+  // so live sites keep native `vh`.
   const heightMode = instance.content.__height_mode as string | undefined;
   const heightValue = instance.content.__height_value as string | undefined;
   let minHeight: string | undefined;
-  if (heightMode === "fullscreen") minHeight = "100vh";
-  else if (heightMode === "large") minHeight = "80vh";
-  else if (heightMode === "fixed" && heightValue) minHeight = heightValue;
+  if (heightMode === "fullscreen") {
+    minHeight = simulatedViewportHeight ? `${simulatedViewportHeight}px` : "100vh";
+  } else if (heightMode === "large") {
+    minHeight = simulatedViewportHeight
+      ? `${Math.round(simulatedViewportHeight * 0.8)}px`
+      : "80vh";
+  } else if (heightMode === "fixed" && heightValue) {
+    minHeight = simulatedViewportHeight
+      ? convertVhToPx(heightValue, simulatedViewportHeight)
+      : heightValue;
+  }
 
   // ── Padding from schema: __padding_top / __padding_bottom > __padding_y > CSS var ──
   const paddingY = typeof instance.content.__padding_y === "number"
@@ -384,6 +405,7 @@ function LibrarySectionRender({
   onElementClick,
   onDomTree,
   onCanvasWheel,
+  simulatedViewportHeight,
 }: {
   instance: SiteSectionInstance;
   sectionDef: SiteSectionDef;
@@ -401,6 +423,7 @@ function LibrarySectionRender({
   onElementClick?: (info: IframeElementClickInfo) => void;
   onDomTree?: (tree: IframeDomTreeNode) => void;
   onCanvasWheel?: (e: { deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }) => void;
+  simulatedViewportHeight?: number;
 }) {
   const [formSlots, setFormSlots] = useState<FormSlotInfo[]>([]);
   const formId = instance.content.form_id as string | undefined;
@@ -441,9 +464,17 @@ function LibrarySectionRender({
   const libMarginTop = typeof instance.content.__margin_top === "number" ? `${instance.content.__margin_top}px` : undefined;
   const libMarginBottom = typeof instance.content.__margin_bottom === "number" ? `${instance.content.__margin_bottom}px` : undefined;
   let libMinHeight: string | undefined;
-  if (libHeightMode === "fullscreen") libMinHeight = "100vh";
-  else if (libHeightMode === "large") libMinHeight = "80vh";
-  else if (libHeightMode === "fixed" && libHeightValue) libMinHeight = libHeightValue;
+  if (libHeightMode === "fullscreen") {
+    libMinHeight = simulatedViewportHeight ? `${simulatedViewportHeight}px` : "100vh";
+  } else if (libHeightMode === "large") {
+    libMinHeight = simulatedViewportHeight
+      ? `${Math.round(simulatedViewportHeight * 0.8)}px`
+      : "80vh";
+  } else if (libHeightMode === "fixed" && libHeightValue) {
+    libMinHeight = simulatedViewportHeight
+      ? convertVhToPx(libHeightValue, simulatedViewportHeight)
+      : libHeightValue;
+  }
 
   // Height the user configured for the form zone (slider in PropertiesPanel).
   const formHeight = (instance.content.__form_height as number) || 480;
@@ -498,6 +529,7 @@ function LibrarySectionRender({
           onDomTree={onDomTree}
           onCanvasWheel={onCanvasWheel}
           onFormSlot={setFormSlots}
+          simulatedViewportHeight={simulatedViewportHeight}
         />
       )}
       {/* Overlay FormBlockSection on each `<div data-form-slot />` marker
