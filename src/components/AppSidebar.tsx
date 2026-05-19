@@ -40,6 +40,7 @@ import {
   MessageSquare,
   Zap,
   BookOpen,
+  Images,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { useWorkspaceView } from "@/components/layout/useWorkspaceView";
@@ -104,6 +105,7 @@ export const AppSidebar = () => {
     { title: "Site Builder", icon: Layout, href: "/site-builder" },
     { title: "Thèmes", icon: Layout, href: "/themes" },
     { title: "Créateur de sections", icon: BookOpen, href: "/sections-library" },
+    { title: "Bibliothèque images", icon: Images, href: "/media-library" },
   ];
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");

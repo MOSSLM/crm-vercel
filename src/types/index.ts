@@ -1441,3 +1441,35 @@ export type RelumeBuilderAction =
   | { type: 'SET_VARIABLE_CONTEXT'; payload: Record<string, string> }
   | { type: 'REPLACE_INSTANCE'; payload: { instanceId: string; sectionDef: SiteSectionDef } }
   | { type: 'SET_PREVIEW_REPLACE'; payload: { instanceId: string; sectionDef: SiteSectionDef } | null };
+
+// ---------------------------------------------------------------------------
+// Media Library
+// ---------------------------------------------------------------------------
+
+export type MediaImageType = 'stock' | 'ai_generated' | 'personal' | 'company';
+
+export const MEDIA_LIBRARY_UNIVERSAL_TAG = 'all';
+
+export interface MediaLibraryItem {
+  id: string;
+  file_name: string;
+  storage_path: string;
+  public_url: string;
+  mime_type: string | null;
+  size_bytes: number | null;
+  width: number | null;
+  height: number | null;
+  alt_text: string | null;
+  description: string | null;
+  service_tags: string[];
+  image_type: MediaImageType;
+  entreprise_id: number | null;
+  uploaded_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaLibraryItemRanked extends MediaLibraryItem {
+  match_count: number;
+  is_universal: boolean;
+}

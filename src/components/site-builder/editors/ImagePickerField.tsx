@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { ImageIcon, Link, X, Upload, Library, Loader2, Trash2 } from "lucide-react";
-import type { SectionImagePickerField } from "@/types";
+import { ImageIcon, Link, X, Upload, Library, Loader2, Trash2, Sparkles, ChevronDown } from "lucide-react";
+import type { SectionImagePickerField, MediaLibraryItemRanked } from "@/types";
 
-interface AssetItem {
+interface SiteAssetItem {
   id: string;
   public_url: string;
   filename: string;
@@ -19,32 +19,89 @@ interface ImagePickerFieldProps {
   siteId?: string;
 }
 
-type Tab = "url" | "upload" | "library";
+type Tab = "url" | "upload" | "library" | "site";
 
 export function ImagePickerField({ setting, value, onChange, siteId }: ImagePickerFieldProps) {
   const [tab, setTab] = useState<Tab>("url");
   const [open, setOpen] = useState(false);
   const [urlInput, setUrlInput] = useState(value ?? "");
   const [uploading, setUploading] = useState(false);
-  const [assets, setAssets] = useState<AssetItem[]>([]);
-  const [loadingAssets, setLoadingAssets] = useState(false);
+
+  // Site-specific assets (existing behaviour)
+  const [siteAssets, setSiteAssets] = useState<SiteAssetItem[]>([]);
+  const [loadingSiteAssets, setLoadingSiteAssets] = useState(false);
+
+  // Central media library, ranked by the linked entreprise
+  const [suggested, setSuggested] = useState<MediaLibraryItemRanked[]>([]);
+  const [others, setOthers] = useState<MediaLibraryItemRanked[]>([]);
+  const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [othersOpen, setOthersOpen] = useState(false);
+  const [enterpriseId, setEnterpriseId] = useState<number | null>(null);
 
   const hasImage = value && value.length > 0;
 
-  const fetchAssets = useCallback(async () => {
+  // Resolve the linked enterprise from the site once.
+  useEffect(() => {
     if (!siteId) return;
-    setLoadingAssets(true);
+    let cancelled = false;
+    fetch(`/api/site-builder/sites/${encodeURIComponent(siteId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.enterprise_id) {
+          setEnterpriseId(Number(data.enterprise_id));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [siteId]);
+
+  const fetchSiteAssets = useCallback(async () => {
+    if (!siteId) return;
+    setLoadingSiteAssets(true);
     try {
       const res = await fetch(`/api/site-builder/assets?site=${encodeURIComponent(siteId)}`);
-      if (res.ok) setAssets(await res.json());
+      if (res.ok) setSiteAssets(await res.json());
     } finally {
-      setLoadingAssets(false);
+      setLoadingSiteAssets(false);
     }
   }, [siteId]);
 
+  const fetchLibrary = useCallback(async () => {
+    setLoadingLibrary(true);
+    try {
+      if (enterpriseId) {
+        const res = await fetch(
+          `/api/media/by-company-tags?entreprise_id=${enterpriseId}`,
+        );
+        if (res.ok) {
+          const data = (await res.json()) as {
+            suggested: MediaLibraryItemRanked[];
+            others: MediaLibraryItemRanked[];
+          };
+          setSuggested(data.suggested);
+          setOthers(data.others);
+          return;
+        }
+      }
+      // Fallback: no enterprise -> flat list, all in "others"
+      const res = await fetch(`/api/media?limit=200`);
+      if (res.ok) {
+        const data = (await res.json()) as { items: MediaLibraryItemRanked[] };
+        setSuggested([]);
+        setOthers(data.items);
+      }
+    } finally {
+      setLoadingLibrary(false);
+    }
+  }, [enterpriseId]);
+
   useEffect(() => {
-    if (open && tab === "library") fetchAssets();
-  }, [open, tab, fetchAssets]);
+    if (!open) return;
+    if (tab === "library") void fetchLibrary();
+    if (tab === "site") void fetchSiteAssets();
+  }, [open, tab, fetchLibrary, fetchSiteAssets]);
 
   function handleUrlConfirm() {
     onChange(urlInput.trim());
@@ -56,7 +113,6 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
     if (!file) return;
 
     if (!siteId) {
-      // Fallback: object URL (no storage)
       onChange(URL.createObjectURL(file));
       setOpen(false);
       return;
@@ -71,9 +127,9 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
         body: form,
       });
       if (!res.ok) throw new Error(await res.text());
-      const asset: AssetItem = await res.json();
+      const asset: SiteAssetItem = await res.json();
       onChange(asset.public_url);
-      setAssets((prev) => [asset, ...prev]);
+      setSiteAssets((prev) => [asset, ...prev]);
       setOpen(false);
     } catch (err) {
       console.error("Upload failed:", err);
@@ -82,18 +138,19 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
     }
   }
 
-  async function handleDeleteAsset(asset: AssetItem, e: React.MouseEvent) {
+  async function handleDeleteSiteAsset(asset: SiteAssetItem, e: React.MouseEvent) {
     e.stopPropagation();
     if (!confirm(`Supprimer "${asset.filename}" ?`)) return;
     await fetch(`/api/site-builder/assets/${asset.id}`, { method: "DELETE" });
-    setAssets((prev) => prev.filter((a) => a.id !== asset.id));
+    setSiteAssets((prev) => prev.filter((a) => a.id !== asset.id));
     if (value === asset.public_url) onChange("");
   }
 
   const tabs: { id: Tab; label: string; icon: React.ElementType }[] = [
     { id: "url", label: "URL", icon: Link },
     { id: "upload", label: "Upload", icon: Upload },
-    ...(siteId ? [{ id: "library" as Tab, label: "Bibliothèque", icon: Library }] : []),
+    { id: "library", label: "Bibliothèque", icon: Library },
+    ...(siteId ? [{ id: "site" as Tab, label: "Ce site", icon: ImageIcon }] : []),
   ];
 
   return (
@@ -120,7 +177,7 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
         </div>
       ) : (
         <button
-          onClick={() => setOpen(true)}
+          onClick={() => { setTab(siteId ? "library" : "url"); setOpen(true); }}
           className="w-full h-16 border border-dashed border-white/15 rounded-lg flex flex-col items-center justify-center gap-1.5 text-white/30 hover:border-white/30 hover:text-white/50 hover:bg-white/3 transition-all"
         >
           <ImageIcon size={16} />
@@ -133,7 +190,7 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
         <div className="bg-[#111827] border border-white/10 rounded-xl p-3 space-y-2.5 shadow-2xl">
           {/* Tabs */}
           <div className="flex items-center justify-between">
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap">
               {tabs.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -195,21 +252,82 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
             </label>
           )}
 
-          {/* Library tab */}
+          {/* Library tab — central media, ranked by linked enterprise */}
           {tab === "library" && (
             <div>
-              {loadingAssets ? (
+              {loadingLibrary ? (
                 <div className="flex items-center justify-center py-6 text-white/30 gap-2 text-xs">
                   <Loader2 size={14} className="animate-spin" />
                   Chargement…
                 </div>
-              ) : assets.length === 0 ? (
+              ) : suggested.length === 0 && others.length === 0 ? (
+                <div className="text-center py-6 text-white/30 text-xs">
+                  Bibliothèque vide. <a href="/media-library" className="underline">L&apos;alimenter</a>.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {suggested.length > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-1 text-[10px] text-amber-300/80">
+                        <Sparkles size={9} />
+                        Suggérées pour cette entreprise ({suggested.length})
+                      </div>
+                      <LibraryGrid
+                        items={suggested}
+                        currentValue={value}
+                        onPick={(url) => { onChange(url); setOpen(false); }}
+                      />
+                    </div>
+                  )}
+                  {others.length > 0 && (
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => setOthersOpen((p) => !p)}
+                        className="flex items-center gap-1 text-[10px] text-white/40 hover:text-white/60 transition-colors"
+                      >
+                        <ChevronDown
+                          size={9}
+                          className={`transition-transform ${othersOpen ? "rotate-0" : "-rotate-90"}`}
+                        />
+                        Autres images ({others.length})
+                      </button>
+                      {othersOpen && (
+                        <LibraryGrid
+                          items={others}
+                          currentValue={value}
+                          onPick={(url) => { onChange(url); setOpen(false); }}
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              <a
+                href="/media-library"
+                target="_blank"
+                rel="noreferrer"
+                className="block mt-2 text-center text-[10px] text-white/30 hover:text-white/60 transition-colors"
+              >
+                Gérer la bibliothèque →
+              </a>
+            </div>
+          )}
+
+          {/* Site assets tab (existing per-site uploads) */}
+          {tab === "site" && (
+            <div>
+              {loadingSiteAssets ? (
+                <div className="flex items-center justify-center py-6 text-white/30 gap-2 text-xs">
+                  <Loader2 size={14} className="animate-spin" />
+                  Chargement…
+                </div>
+              ) : siteAssets.length === 0 ? (
                 <div className="text-center py-6 text-white/30 text-xs">
                   Aucune image uploadée pour ce site.
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-1.5 max-h-44 overflow-y-auto">
-                  {assets.map((asset) => (
+                  {siteAssets.map((asset) => (
                     <div
                       key={asset.id}
                       className={`relative group rounded cursor-pointer overflow-hidden border-2 transition-all ${
@@ -220,7 +338,7 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={asset.public_url} alt={asset.filename} className="w-full h-16 object-cover" />
                       <button
-                        onClick={(e) => handleDeleteAsset(asset, e)}
+                        onClick={(e) => handleDeleteSiteAsset(asset, e)}
                         className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-red-500/80 text-white rounded p-0.5"
                         title="Supprimer"
                       >
@@ -230,16 +348,49 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
                   ))}
                 </div>
               )}
-              <button
-                onClick={fetchAssets}
-                className="mt-2 w-full text-[10px] text-white/30 hover:text-white/60 transition-colors"
-              >
-                Actualiser
-              </button>
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function LibraryGrid({
+  items,
+  currentValue,
+  onPick,
+}: {
+  items: MediaLibraryItemRanked[];
+  currentValue: string;
+  onPick: (url: string) => void;
+}) {
+  return (
+    <div className="grid grid-cols-3 gap-1.5">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          onClick={() => onPick(item.public_url)}
+          className={`relative group rounded overflow-hidden border-2 transition-all ${
+            currentValue === item.public_url
+              ? "border-blue-400"
+              : "border-transparent hover:border-white/30"
+          }`}
+          title={item.alt_text ?? item.file_name}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={item.public_url}
+            alt={item.alt_text ?? item.file_name}
+            className="w-full h-16 object-cover"
+          />
+          {item.is_universal && (
+            <div className="absolute top-0.5 right-0.5 bg-amber-500/90 rounded-sm p-0.5">
+              <Sparkles size={8} className="text-white" />
+            </div>
+          )}
+        </button>
+      ))}
     </div>
   );
 }
