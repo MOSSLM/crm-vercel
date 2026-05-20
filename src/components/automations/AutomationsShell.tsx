@@ -5,6 +5,7 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { XI } from './icons'
+import { RefDataProvider } from './ref-data'
 
 type TopTab = 'automations' | 'sequences' | 'prospection' | 'connections'
 type View = 'list' | 'builder' | 'prospection' | 'connections'
@@ -52,7 +53,9 @@ export function AutomationsShell({
     <div className="au-skin" data-view={view} data-density="regular">
       <div className="au-app">
         <TopBar tab={tab} inBuilder={inBuilder} counts={counts} />
-        <div className="au-body">{children}</div>
+        <div className="au-body">
+          <RefDataProvider>{children}</RefDataProvider>
+        </div>
         <StatusBar counts={counts} />
       </div>
     </div>

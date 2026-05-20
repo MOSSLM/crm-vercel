@@ -1,11 +1,5 @@
-import { PlaceholderView } from '@/components/automations/PlaceholderView'
+import { WorkflowsList } from '@/components/automations/WorkflowsList'
 
 export default function Page() {
-  return (
-    <PlaceholderView
-      icon="bolt"
-      title="Workflows"
-      desc="La liste des automatisations arrive dans le prochain commit."
-    />
-  )
+  return <WorkflowsList />
 }
