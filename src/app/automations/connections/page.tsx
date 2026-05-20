@@ -1,11 +1,5 @@
-import { PlaceholderView } from '@/components/automations/PlaceholderView'
+import { ConnectionsPage } from '@/components/automations/ConnectionsPage'
 
 export default function Page() {
-  return (
-    <PlaceholderView
-      icon="webhook"
-      title="Connexions"
-      desc="Les intégrations (Resend, Slack, WhatsApp, Claude…) arrivent bientôt."
-    />
-  )
+  return <ConnectionsPage />
 }
