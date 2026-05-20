@@ -1,10 +1,11 @@
-import { Metadata } from 'next'
-import AutomationsConnectionsPage from '@/components/automations/AutomationsConnectionsPage'
-
-export const metadata: Metadata = {
-  title: 'Connexions | Automatisations',
-}
+import { PlaceholderView } from '@/components/automations/PlaceholderView'
 
 export default function Page() {
-  return <AutomationsConnectionsPage />
+  return (
+    <PlaceholderView
+      icon="webhook"
+      title="Connexions"
+      desc="Les intégrations (Resend, Slack, WhatsApp, Claude…) arrivent bientôt."
+    />
+  )
 }

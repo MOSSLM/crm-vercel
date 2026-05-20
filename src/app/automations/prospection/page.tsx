@@ -3,9 +3,9 @@ import { PlaceholderView } from '@/components/automations/PlaceholderView'
 export default function Page() {
   return (
     <PlaceholderView
-      icon="bolt"
-      title="Éditeur de workflow"
-      desc="Le builder visuel arrive dans un prochain commit."
+      icon="inbox"
+      title="Démarchage"
+      desc="La file des tâches manuelles (appels, WhatsApp, LinkedIn) arrive bientôt."
     />
   )
 }
