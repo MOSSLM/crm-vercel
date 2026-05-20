@@ -74,7 +74,7 @@ export interface Automation {
   trigger_pipeline_id: string | null
   trigger_stage_id: number | null
   definition: WorkflowDefinition | SequenceDefinition | Record<string, never>
-  settings: SequenceSettings & Record<string, unknown>
+  settings: SequenceSettings
   runs_7d: number
   success_7d: number | null
   last_run_at: string | null
