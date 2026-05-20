@@ -1,11 +1,5 @@
-import { PlaceholderView } from '@/components/automations/PlaceholderView'
+import { JournalPage } from '@/components/automations/JournalPage'
 
 export default function Page() {
-  return (
-    <PlaceholderView
-      icon="history"
-      title="Journal d'exécution"
-      desc="L'historique des exécutions des automatisations arrive bientôt."
-    />
-  )
+  return <JournalPage />
 }

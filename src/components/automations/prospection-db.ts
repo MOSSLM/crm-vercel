@@ -1,6 +1,7 @@
 'use client'
 // prospection-db.ts — accès à la file de tâches manuelles (Démarchage).
 import { supabase } from '@/utils/supabase/client'
+import { authedFetch } from '@/utils/authedFetch'
 import type { ProspectionTask } from './types'
 
 export interface ProspectionContact {
@@ -37,16 +38,13 @@ export async function listProspectionTasks(): Promise<ProspectionTaskFull[]> {
 }
 
 export async function completeProspectionTask(id: string, result?: string): Promise<void> {
-  try {
-    const res = await fetch(`/api/automations/prospection/${id}/complete`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ result }),
-    })
-    if (res.ok) return
-  } catch {
-    /* repli direct */
-  }
+  const res = await authedFetch(`/api/automations/prospection/${id}/complete`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ result }),
+  })
+  if (res.ok) return
+  // repli direct si la route échoue
   const { error } = await supabase
     .from('prospection_tasks')
     .update({ status: 'done', done_at: new Date().toISOString() })
