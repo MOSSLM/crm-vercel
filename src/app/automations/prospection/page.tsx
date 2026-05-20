@@ -1,11 +1,5 @@
-import { PlaceholderView } from '@/components/automations/PlaceholderView'
+import { ProspectionPage } from '@/components/automations/ProspectionPage'
 
 export default function Page() {
-  return (
-    <PlaceholderView
-      icon="inbox"
-      title="Démarchage"
-      desc="La file des tâches manuelles (appels, WhatsApp, LinkedIn) arrive bientôt."
-    />
-  )
+  return <ProspectionPage />
 }
