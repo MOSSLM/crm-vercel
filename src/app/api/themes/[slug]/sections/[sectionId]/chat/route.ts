@@ -132,6 +132,51 @@ FORMAT DE RÉPONSE OBLIGATOIRE quand un schéma est créé ou modifié :
 
 Si aucun schéma n'est créé ni modifié, omets le bloc \`\`\`json schema et réponds juste avec le tsx + explication.`;
 
+/**
+ * Appended to the system prompt when the section is tag-adaptive. A
+ * tag-adaptive section has ONE repeatable element (card, accordion item,
+ * tab, row…) rendered once per enterprise service tag.
+ */
+export const ADAPTIVE_PROMPT_ADDENDUM = `
+
+═══════════════════════════════════════════════════════════════════
+SECTION ADAPTATIVE AUX SERVICES — RÈGLES SUPPLÉMENTAIRES (CRITIQUE)
+═══════════════════════════════════════════════════════════════════
+Cette section est de type "adaptative aux tags". Elle contient UNE SEULE
+div répétable (carte, item d'accordéon, onglet, ligne…) qui est dupliquée
+automatiquement : un exemplaire par service de l'entreprise.
+
+1. TABLEAU PILOTÉ PAR LES DONNÉES — JAMAIS de tableau codé en dur.
+   Lis la liste répétable depuis \`data.items\` :
+   \`\`\`tsx
+   interface Item { title?: string; description?: string; image?: string; service_tag?: string; }
+   const items = (data.items as Item[]) ?? [];
+   \`\`\`
+   Puis \`items.map((item, index) => ( … ))\`. Le nombre d'items est variable
+   (1 à ~12) : le layout DOIT rester correct quel que soit ce nombre.
+
+2. Tout numéro d'ordre ("01", "02"…) est dérivé de \`index\`
+   (\`String(index + 1).padStart(2, '0')\`), jamais stocké dans l'item.
+
+3. Les textes/images FIXES de la section (titre, sous-titre, image d'en-tête…)
+   restent éditables : déclare-les dans \`settings\` du schéma et lis-les via \`data.<id>\`.
+
+4. RÉPONSE OBLIGATOIRE : tu fournis TOUJOURS le code TSX **ET** le bloc
+   \`\`\`json schema. Le schéma doit contenir :
+   - \`settings\` : les champs fixes de la section.
+   - \`blocks\` : EXACTEMENT un bloc \`{ "type": "tag_item", "name": "...", "settings": [...] }\`.
+     Les \`settings\` de ce bloc correspondent EXACTEMENT aux clés lues dans \`item.*\`
+     (un champ par propriété : text, textarea, image_picker…).
+   N'utilise jamais l'onglet schéma séparé : le schéma fait partie de ta réponse.
+
+5. ADAPTATION DE CODE EXISTANT — si on te colle un composant avec un tableau
+   codé en dur (ex: \`const features = [ {...}, {...} ]\` suivi de \`features.map(...)\`) :
+   a. Repère le tableau hardcodé et la div répétée.
+   b. Lève les propriétés de chaque entrée dans le bloc \`tag_item\` du schéma.
+   c. Réécris : \`const items = (data.items as Item[]) ?? [];\` puis \`items.map(...)\`.
+   d. Expose les textes fixes (titres de section, etc.) dans \`settings\`.
+   e. Garde la mise en forme et les interactions (accordéon, onglets…) intactes.`;
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string; sectionId: string }> }
@@ -144,6 +189,7 @@ export async function POST(
     message: string;
     history?: HistoryItem[];
     systemPrompt?: string;
+    isTagAdaptive?: boolean;
   };
 
   try {
@@ -152,7 +198,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { currentCode, message, history = [], model = "claude-sonnet-4-6", systemPrompt } = body;
+  const { currentCode, message, history = [], model = "claude-sonnet-4-6", systemPrompt, isTagAdaptive } = body;
 
   if (!currentCode || !message) {
     return NextResponse.json(
@@ -162,7 +208,8 @@ export async function POST(
   }
 
   const recentHistory = history.slice(-10);
-  const resolvedSystemPrompt = systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT(sectionId);
+  const basePrompt = systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT(sectionId);
+  const resolvedSystemPrompt = isTagAdaptive ? basePrompt + ADAPTIVE_PROMPT_ADDENDUM : basePrompt;
   const userMessage = `Code actuel de la section "${sectionId}" :\n\`\`\`tsx\n${currentCode}\n\`\`\`\n\nDemande : ${message}`;
 
   const isGpt = model.startsWith("gpt-");

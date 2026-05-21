@@ -102,15 +102,23 @@ function blocksToLegacyArrays(
 
   // Group blocks by type so different block types in the same section land in
   // different keys (e.g. `nav_link` → `links`, `service_item` → `items`).
-  const byType: Record<string, Array<Record<string, unknown>>> = {};
+  const byType: Record<string, SectionBlockInstance[]> = {};
   for (const b of blocks) {
     if (!byType[b.type]) byType[b.type] = [];
-    byType[b.type].push({ ...b.settings });
+    byType[b.type].push(b);
   }
 
   const out: Record<string, unknown> = {};
-  for (const [type, items] of Object.entries(byType)) {
+  for (const [type, typeBlocks] of Object.entries(byType)) {
+    const items = typeBlocks.map((b) => ({ ...b.settings }));
     switch (type) {
+      case 'tag_item':
+        // Tag-adaptive sections: the repeatable item template. `service_tag`
+        // is surfaced on each item so the section code can key off it.
+        if (existing.items === undefined) {
+          out.items = typeBlocks.map((b) => ({ ...b.settings, service_tag: b.service_tag ?? null }));
+        }
+        break;
       case 'service_item':
       case 'feature_item':
         if (existing.items === undefined) out.items = items;

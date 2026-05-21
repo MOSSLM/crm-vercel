@@ -59,6 +59,7 @@ export default function SectionTree({
   const [newId, setNewId] = React.useState("");
   const [newName, setNewName] = React.useState("");
   const [newCategory, setNewCategory] = React.useState("layouts");
+  const [newIsTagAdaptive, setNewIsTagAdaptive] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   const grouped = React.useMemo(() => {
@@ -90,6 +91,7 @@ export default function SectionTree({
           section_id: newId.trim().toLowerCase().replace(/\s+/g, "-"),
           category: newCategory,
           name: newName.trim(),
+          is_tag_adaptive: newIsTagAdaptive,
         }),
       });
       if (!res.ok) {
@@ -101,6 +103,7 @@ export default function SectionTree({
       setCreateOpen(false);
       setNewId("");
       setNewName("");
+      setNewIsTagAdaptive(false);
       onRefresh();
       onSelect(created);
     } catch (e: unknown) {
@@ -290,6 +293,21 @@ export default function SectionTree({
                 </SelectContent>
               </Select>
             </div>
+            <label className="flex items-start gap-2.5 rounded-md border border-zinc-700 bg-zinc-800/50 p-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newIsTagAdaptive}
+                onChange={(e) => setNewIsTagAdaptive(e.target.checked)}
+                className="mt-0.5 accent-blue-500"
+              />
+              <span className="text-sm">
+                <span className="text-zinc-200 font-medium">Section adaptative aux services</span>
+                <span className="block text-xs text-zinc-400 mt-0.5">
+                  La section répète un élément (carte, item…) une fois par service de l&apos;entreprise.
+                  Code et schéma de départ adaptés.
+                </span>
+              </span>
+            </label>
           </div>
           <DialogFooter>
             <Button

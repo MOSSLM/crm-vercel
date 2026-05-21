@@ -296,6 +296,33 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       };
     }
 
+    case "SYNC_ADAPTIVE_BLOCKS": {
+      const inst = state.instances[action.payload.instanceId];
+      if (!inst) return state;
+      const { tags, blockType, defaults } = action.payload;
+      const existingTags = new Set(
+        inst.blocks.filter((b) => b.type === blockType && b.service_tag).map((b) => b.service_tag),
+      );
+      const missing = tags.filter((t) => !existingTags.has(t));
+      if (missing.length === 0) return state;
+      const snapshot = takeSnapshot(state);
+      const added = missing.map((tag) => ({
+        id: nanoid(),
+        type: blockType,
+        settings: { ...defaults },
+        service_tag: tag,
+      }));
+      return {
+        ...state,
+        instances: {
+          ...state.instances,
+          [inst.id]: { ...inst, blocks: [...inst.blocks, ...added] },
+        },
+        isDirty: true,
+        ...pushHistory(state, snapshot),
+      };
+    }
+
     case "REMOVE_BLOCK": {
       const snapshot = takeSnapshot(state);
       const inst = state.instances[action.payload.instanceId];

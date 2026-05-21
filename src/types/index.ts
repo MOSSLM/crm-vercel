@@ -1160,6 +1160,11 @@ export interface SiteSectionDef {
   code?: string;
   theme_slug?: string;
   theme_section_id?: string;
+  /**
+   * When true, the section repeats its `tag_item` schema block once per
+   * enterprise service_tag. Mirrored from theme_sections.is_tag_adaptive.
+   */
+  is_tag_adaptive?: boolean;
   /** Shopify-like schema defining editable settings for this section */
   schema?: SectionSchema;
 }
@@ -1432,6 +1437,7 @@ export type RelumeBuilderAction =
   | { type: 'ADD_BLOCK'; payload: { instanceId: string; blockType: string; settings?: Record<string, unknown>; index?: number } }
   | { type: 'UPDATE_BLOCK'; payload: { instanceId: string; blockId: string; settings: Record<string, unknown> } }
   | { type: 'UPDATE_BLOCK_TAG'; payload: { instanceId: string; blockId: string; service_tag: string | null } }
+  | { type: 'SYNC_ADAPTIVE_BLOCKS'; payload: { instanceId: string; tags: string[]; blockType: string; defaults: Record<string, unknown> } }
   | { type: 'REMOVE_BLOCK'; payload: { instanceId: string; blockId: string } }
   | { type: 'DUPLICATE_BLOCK'; payload: { instanceId: string; blockId: string } }
   | { type: 'REORDER_BLOCKS'; payload: { instanceId: string; fromIndex: number; toIndex: number } }
