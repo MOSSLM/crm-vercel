@@ -7,6 +7,7 @@ export interface ThemeSection {
   code: string;
   example_data: Record<string, unknown>;
   schema?: Record<string, unknown> | null;
+  is_tag_adaptive: boolean;
   sort_order: number;
   created_at: string;
   updated_at: string;

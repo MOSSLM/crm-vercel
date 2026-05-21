@@ -74,6 +74,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
             code: ts.code,
             theme_slug: ts.theme_slug,
             theme_section_id: ts.section_id,
+            is_tag_adaptive: ts.is_tag_adaptive ?? false,
             schema: ts.schema ?? null,
           };
         }
@@ -96,7 +97,7 @@ export async function PUT(req: Request, { params }: RouteContext) {
     page_slug: string;
     sort_order: number;
     content: Record<string, unknown>;
-    blocks?: Array<{ id: string; type: string; settings: Record<string, unknown> }>;
+    blocks?: Array<{ id: string; type: string; settings: Record<string, unknown>; service_tag?: string | null }>;
     custom_style?: Record<string, unknown>;
     is_hidden?: boolean;
   }>;
