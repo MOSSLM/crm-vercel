@@ -1,10 +1,5 @@
-import { Metadata } from 'next'
-import AutomationsConnectionsPage from '@/components/automations/AutomationsConnectionsPage'
-
-export const metadata: Metadata = {
-  title: 'Connexions | Automatisations',
-}
+import { ConnectionsPage } from '@/components/automations/ConnectionsPage'
 
 export default function Page() {
-  return <AutomationsConnectionsPage />
+  return <ConnectionsPage />
 }
