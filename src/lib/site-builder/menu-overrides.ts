@@ -1,4 +1,4 @@
-import type { SectionBlockInstance, SiteMenus, SitemapPage } from "@/types";
+import type { SectionBlockInstance, SiteMenuItem, SiteMenus, SitemapPage } from "@/types";
 
 /**
  * Computes the content overrides to merge into a section's content based on
@@ -117,6 +117,36 @@ export function filterSitemapByEnterpriseTags(
     if (!p.service_tag) return true;
     return tagSet.has(p.service_tag);
   });
+}
+
+/**
+ * Drop menu items linking to a sitemap page whose `service_tag` the
+ * enterprise doesn't have. Such pages 404 on the public site, so their nav /
+ * footer links would otherwise be dead. Items not matching a hidden page are
+ * kept untouched. Used by the public site renderer so each enterprise's
+ * navigation only exposes the pages that actually exist for it.
+ */
+export function filterMenusByEnterpriseTags(
+  menus: SiteMenus | undefined | null,
+  sitemap: SitemapPage[] | undefined | null,
+  enterpriseTags: string[] | undefined | null,
+): SiteMenus | undefined | null {
+  if (!menus || !Array.isArray(sitemap) || sitemap.length === 0) return menus;
+  const tagSet = new Set(enterpriseTags ?? []);
+  const hiddenSlugs = new Set(
+    sitemap.filter((p) => p.service_tag && !tagSet.has(p.service_tag)).map((p) => p.slug),
+  );
+  if (hiddenSlugs.size === 0) return menus;
+  const keep = (item: SiteMenuItem) => !hiddenSlugs.has(item.url);
+  const filterList = (list: SiteMenuItem[]) =>
+    list
+      .filter(keep)
+      .map((item) => (item.children ? { ...item, children: item.children.filter(keep) } : item));
+  return {
+    nav: filterList(menus.nav),
+    footer: filterList(menus.footer),
+    footerLegal: filterList(menus.footerLegal),
+  };
 }
 
 /** Returns the enterprise stats array (already resolved by the variable resolver). */

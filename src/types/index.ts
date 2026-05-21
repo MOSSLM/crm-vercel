@@ -1424,7 +1424,7 @@ export interface RelumeHistoryEntry {
 }
 
 export type RelumeBuilderAction =
-  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[]; menus?: SiteMenus } }
+  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[]; menus?: SiteMenus; isDirty?: boolean } }
   | { type: 'SET_ACTIVE_PAGE'; payload: string }
   | { type: 'SET_DEVICE_VIEW'; payload: 'desktop' | 'tablet' | 'mobile' }
   | { type: 'SET_WORKSPACE'; payload: WorkspaceId }

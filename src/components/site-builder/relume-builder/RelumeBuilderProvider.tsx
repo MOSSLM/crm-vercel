@@ -107,7 +107,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         activePage: firstPage,
         selectedInstanceId: null,
         selectedSnippetId: null,
-        isDirty: false,
+        isDirty: action.payload.isDirty ?? false,
         history: [],
         historyIndex: -1,
       };

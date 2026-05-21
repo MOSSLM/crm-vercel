@@ -46,6 +46,7 @@ export async function GET(req: Request) {
     code: row.code,
     theme_slug: row.theme_slug,
     theme_section_id: row.section_id,
+    is_tag_adaptive: row.is_tag_adaptive ?? false,
     schema: row.schema ?? undefined,
   }));
 
