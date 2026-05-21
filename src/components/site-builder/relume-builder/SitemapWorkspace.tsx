@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
+import { buildSitemapTree, normalizePageSlug } from "@/lib/site-builder/sitemap-tree";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { AlertSoft, Btn, Pane, PaneBody, PaneHeader, Pill, Pop } from "./skin-primitives";
@@ -169,6 +170,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
   const [pageLoading, setPageLoading] = React.useState<string | null>(null);
   const [editingPageId, setEditingPageId] = React.useState<string | null>(null);
   const [editingTitle, setEditingTitle] = React.useState("");
+  const [editingSlugId, setEditingSlugId] = React.useState<string | null>(null);
+  const [editingSlug, setEditingSlug] = React.useState("");
   const [pickerOpenForPage, setPickerOpenForPage] = React.useState<string | null>(null);
   const [pickerSearch, setPickerSearch] = React.useState("");
 
@@ -324,6 +327,16 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     dispatch({ type: "ADD_PAGE", payload: { id, slug, title: "Nouvelle page", sections: [] } });
   };
 
+  const addSubPage = (parent: SitemapPage) => {
+    const id = nanoid();
+    const base = `${parent.slug === "/" ? "" : parent.slug}/sous-page`;
+    const taken = new Set(state.sitemap.map((p) => p.slug));
+    let slug = normalizePageSlug(base);
+    let n = 2;
+    while (taken.has(slug)) slug = normalizePageSlug(`${base}-${n++}`);
+    dispatch({ type: "ADD_PAGE", payload: { id, slug, title: "Nouvelle sous-page", sections: [] } });
+  };
+
   const removePage = (id: string) => {
     dispatch({ type: "REMOVE_PAGE", payload: id });
   };
@@ -416,15 +429,46 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
 
   const PAGE_CARD_WIDTH = 280;
   const PAGE_CARD_GAP = 40;
+  const DEPTH_Y_STEP = 70;
   const ROOT_TOP = 60;
   const PAGES_TOP = 200;
 
-  const pagePositions = state.sitemap.map((_, i) => ({
-    x: i * (PAGE_CARD_WIDTH + PAGE_CARD_GAP),
-    y: PAGES_TOP,
-  }));
+  // Depth-first flatten of the slug-derived hierarchy so each child card
+  // immediately follows its parent and is stepped down by its depth.
+  const flatPages = React.useMemo(() => {
+    const out: Array<{ page: SitemapPage; depth: number }> = [];
+    const walk = (nodes: ReturnType<typeof buildSitemapTree>) => {
+      for (const n of nodes) {
+        out.push({ page: n.page, depth: n.depth });
+        walk(n.children);
+      }
+    };
+    walk(buildSitemapTree(state.sitemap));
+    return out;
+  }, [state.sitemap]);
 
-  const totalWidth = Math.max(600, state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP) + 120);
+  const posBySlug = new Map<string, { x: number; y: number }>();
+  flatPages.forEach((fp, i) => {
+    posBySlug.set(fp.page.slug, {
+      x: i * (PAGE_CARD_WIDTH + PAGE_CARD_GAP),
+      y: PAGES_TOP + fp.depth * DEPTH_Y_STEP,
+    });
+  });
+  const slugToParent = new Map<string, string | null>();
+  {
+    const slugSet = new Set(state.sitemap.map((p) => p.slug));
+    for (const { page } of flatPages) {
+      const parts = page.slug.split("/").filter(Boolean);
+      let parent: string | null = null;
+      for (let i = parts.length - 1; i >= 1; i--) {
+        const cand = "/" + parts.slice(0, i).join("/");
+        if (slugSet.has(cand)) { parent = cand; break; }
+      }
+      slugToParent.set(page.slug, parent);
+    }
+  }
+
+  const totalWidth = Math.max(600, flatPages.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP) + 120);
   const rootX = totalWidth / 2 - 80;
 
   return (
@@ -529,10 +573,12 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           <svg
             style={{ position: "absolute", top: 0, left: 0, width: totalWidth + 200, height: 600, overflow: "visible", pointerEvents: "none" }}
           >
-            {state.sitemap.map((page, i) => {
-              const pos = pagePositions[i];
-              const fromX = rootX + 80;
-              const fromY = ROOT_TOP + 36;
+            {flatPages.map(({ page }) => {
+              const pos = posBySlug.get(page.slug)!;
+              const parentSlug = slugToParent.get(page.slug) ?? null;
+              const parentPos = parentSlug ? posBySlug.get(parentSlug) : null;
+              const fromX = parentPos ? parentPos.x + PAGE_CARD_WIDTH / 2 : rootX + 80;
+              const fromY = parentPos ? parentPos.y + 30 : ROOT_TOP + 36;
               const toX = pos.x + PAGE_CARD_WIDTH / 2;
               const toY = pos.y;
               const midY = (fromY + toY) / 2;
@@ -556,8 +602,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           </div>
 
           {/* Page cards */}
-          {state.sitemap.map((page, i) => {
-            const pos = pagePositions[i];
+          {flatPages.map(({ page }) => {
+            const pos = posBySlug.get(page.slug)!;
             const isExpanded = expandedPages.has(page.id);
             const sections = getDisplaySections(page);
             const isLoadingPage = pageLoading === page.id;
@@ -602,7 +648,42 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                       {page.title}
                     </span>
                   )}
-                  <span className="slug">{page.slug}</span>
+                  {editingSlugId === page.id ? (
+                    <input
+                      autoFocus
+                      value={editingSlug}
+                      onChange={(e) => setEditingSlug(e.target.value)}
+                      onBlur={() => {
+                        if (editingSlug.trim()) dispatch({ type: "RENAME_PAGE_SLUG", payload: { id: page.id, slug: editingSlug } });
+                        setEditingSlugId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          if (editingSlug.trim()) dispatch({ type: "RENAME_PAGE_SLUG", payload: { id: page.id, slug: editingSlug } });
+                          setEditingSlugId(null);
+                        }
+                        if (e.key === "Escape") setEditingSlugId(null);
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      className="input"
+                      placeholder="/chemin/de-la-page"
+                      style={{ width: 130, height: 20, padding: "0 4px", fontSize: 10.5, fontFamily: "var(--font-mono)", borderColor: "var(--accent)" }}
+                    />
+                  ) : (
+                    <span
+                      className="slug"
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        if (page.slug === "/") return;
+                        setEditingSlugId(page.id);
+                        setEditingSlug(page.slug);
+                      }}
+                      title={page.slug === "/" ? "Page d'accueil" : "Double-clic pour modifier le chemin (ex: /services/climatisation)"}
+                      style={{ cursor: page.slug === "/" ? "default" : "text" }}
+                    >
+                      {page.slug}
+                    </span>
+                  )}
                   <div className="tools">
                     <button
                       onClick={() => setPageContextOpen(isContextOpen ? null : page.id)}
@@ -629,6 +710,22 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                             style={{ width: "100%", justifyContent: "flex-start" }}
                           >
                             <FileText size={11} />Renommer
+                          </button>
+                          {page.slug !== "/" && (
+                            <button
+                              onClick={() => { setEditingSlugId(page.id); setEditingSlug(page.slug); setMenuOpen(null); }}
+                              className="btn ghost sm"
+                              style={{ width: "100%", justifyContent: "flex-start" }}
+                            >
+                              <ChevronRight size={11} />Modifier le chemin
+                            </button>
+                          )}
+                          <button
+                            onClick={() => { addSubPage(page); setMenuOpen(null); }}
+                            className="btn ghost sm"
+                            style={{ width: "100%", justifyContent: "flex-start" }}
+                          >
+                            <Plus size={11} />Ajouter une sous-page
                           </button>
                           <button
                             onClick={() => { dispatch({ type: "DUPLICATE_PAGE", payload: page.id }); setMenuOpen(null); }}
@@ -721,8 +818,8 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                 )}
 
                 {sections.length === 0 && (
-                  <div style={{ padding: "10px 12px", textAlign: "center", fontSize: 10.5, color: "var(--text-4)" }}>
-                    Aucune section — ajoutez-les manuellement ou générez avec l&apos;IA
+                  <div style={{ padding: "10px 12px", textAlign: "center", fontSize: 10.5, color: "var(--text-4)", lineHeight: 1.5 }}>
+                    Page vide — sert de catégorie. Ne sera pas publiée comme page tant qu&apos;aucune section n&apos;est ajoutée.
                   </div>
                 )}
 
@@ -787,7 +884,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
           <button
             onClick={addPage}
             className="sm-add-page"
-            style={{ position: "absolute", top: PAGES_TOP + 6, left: state.sitemap.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP), appearance: "none" }}
+            style={{ position: "absolute", top: PAGES_TOP + 6, left: flatPages.length * (PAGE_CARD_WIDTH + PAGE_CARD_GAP), appearance: "none" }}
             title="Ajouter une page"
           >
             <Plus size={16} />

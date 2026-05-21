@@ -13,6 +13,7 @@ import type {
   WorkspaceId,
 } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
+import { normalizePageSlug, buildSitemapTree, type SitemapTreeNode } from "@/lib/site-builder/sitemap-tree";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -20,11 +21,14 @@ const DEFAULT_MENUS: SiteMenus = { nav: [], footer: [], footerLegal: [] };
 
 /** Build default nav menus from sitemap pages */
 function buildMenusFromSitemap(sitemap: SitemapPage[], existing: SiteMenus): SiteMenus {
-  const navItems: SiteMenuItem[] = sitemap.map((page) => ({
-    id: page.id,
-    label: page.title,
-    url: page.slug,
-  }));
+  // Auto nav mirrors the slug hierarchy: nested pages become sub-items.
+  const toNavItem = (node: SitemapTreeNode): SiteMenuItem => ({
+    id: node.page.id,
+    label: node.page.title,
+    url: node.page.slug,
+    ...(node.children.length > 0 ? { children: node.children.map(toNavItem) } : {}),
+  });
+  const navItems: SiteMenuItem[] = buildSitemapTree(sitemap).map(toNavItem);
   // Only auto-populate if nav is empty
   const nav = existing.nav.length === 0 ? navItems : existing.nav;
   const footerLegal = existing.footerLegal.length === 0
@@ -34,7 +38,9 @@ function buildMenusFromSitemap(sitemap: SitemapPage[], existing: SiteMenus): Sit
       ]
     : existing.footerLegal;
   const footer = existing.footer.length === 0
-    ? sitemap.slice(0, 5).map((page) => ({ id: `footer-${page.id}`, label: page.title, url: page.slug }))
+    ? buildSitemapTree(sitemap)
+        .slice(0, 5)
+        .map((node) => ({ id: `footer-${node.page.id}`, label: node.page.title, url: node.page.slug }))
     : existing.footer;
   return { nav, footer, footerLegal };
 }
@@ -521,6 +527,61 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           p.id === action.payload.id ? { ...p, ...action.payload.data } : p
         ),
         isDirty: true,
+      };
+    }
+
+    case "RENAME_PAGE_SLUG": {
+      const page = state.sitemap.find((p) => p.id === action.payload.id);
+      if (!page) return state;
+      const oldSlug = page.slug;
+      const newSlug = normalizePageSlug(action.payload.slug);
+      if (newSlug === oldSlug) return state;
+      // Reject collisions with another existing page.
+      if (state.sitemap.some((p) => p.id !== page.id && p.slug === newSlug)) return state;
+
+      const snapshot = takeSnapshot(state);
+
+      // Remap the page and every descendant (slug prefix) to the new path.
+      const slugRemap = new Map<string, string>();
+      slugRemap.set(oldSlug, newSlug);
+      for (const p of state.sitemap) {
+        if (p.slug !== oldSlug && p.slug.startsWith(oldSlug + "/")) {
+          slugRemap.set(p.slug, newSlug + p.slug.slice(oldSlug.length));
+        }
+      }
+      const remap = (slug: string) => slugRemap.get(slug) ?? slug;
+
+      const newSitemap = state.sitemap.map((p) =>
+        slugRemap.has(p.slug) ? { ...p, slug: remap(p.slug) } : p,
+      );
+
+      const newInstances: Record<string, SiteSectionInstance> = {};
+      for (const [id, inst] of Object.entries(state.instances)) {
+        newInstances[id] = slugRemap.has(inst.page_slug)
+          ? { ...inst, page_slug: remap(inst.page_slug) }
+          : inst;
+      }
+
+      const remapMenuItems = (items: SiteMenuItem[]): SiteMenuItem[] =>
+        items.map((item) => ({
+          ...item,
+          url: slugRemap.has(item.url) ? remap(item.url) : item.url,
+          children: item.children ? remapMenuItems(item.children) : item.children,
+        }));
+
+      return {
+        ...state,
+        sitemap: newSitemap,
+        instances: newInstances,
+        instancesByPage: buildInstancesByPage(newInstances),
+        activePage: slugRemap.has(state.activePage) ? remap(state.activePage) : state.activePage,
+        menus: {
+          nav: remapMenuItems(state.menus.nav),
+          footer: remapMenuItems(state.menus.footer),
+          footerLegal: remapMenuItems(state.menus.footerLegal),
+        },
+        isDirty: true,
+        ...pushHistory(state, snapshot),
       };
     }
 
