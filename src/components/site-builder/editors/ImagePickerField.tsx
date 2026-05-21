@@ -17,11 +17,13 @@ interface ImagePickerFieldProps {
   value: string;
   onChange: (url: string) => void;
   siteId?: string;
+  /** Light theme — for the inline trigger on light surfaces (Contenu workspace). */
+  light?: boolean;
 }
 
 type Tab = "url" | "upload" | "library" | "site";
 
-export function ImagePickerField({ setting, value, onChange, siteId }: ImagePickerFieldProps) {
+export function ImagePickerField({ setting, value, onChange, siteId, light }: ImagePickerFieldProps) {
   const [tab, setTab] = useState<Tab>("url");
   const [open, setOpen] = useState(false);
   const [urlInput, setUrlInput] = useState(value ?? "");
@@ -157,7 +159,11 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
     <div className="space-y-1.5">
       {/* Preview / trigger */}
       {hasImage ? (
-        <div className="relative group rounded-lg overflow-hidden border border-white/10">
+        <div
+          className={`relative group rounded-lg overflow-hidden border ${
+            light ? "border-[var(--border-2)]" : "border-white/10"
+          }`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={value} alt="" className="w-full h-24 object-cover" />
           <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -178,7 +184,11 @@ export function ImagePickerField({ setting, value, onChange, siteId }: ImagePick
       ) : (
         <button
           onClick={() => { setTab(siteId ? "library" : "url"); setOpen(true); }}
-          className="w-full h-16 border border-dashed border-white/15 rounded-lg flex flex-col items-center justify-center gap-1.5 text-white/30 hover:border-white/30 hover:text-white/50 hover:bg-white/3 transition-all"
+          className={
+            light
+              ? "w-full h-16 border border-dashed border-[var(--border-2)] rounded-lg flex flex-col items-center justify-center gap-1.5 text-[var(--text-3)] hover:border-[var(--border-strong)] hover:text-[var(--text-2)] hover:bg-[var(--hover)] transition-all"
+              : "w-full h-16 border border-dashed border-white/15 rounded-lg flex flex-col items-center justify-center gap-1.5 text-white/30 hover:border-white/30 hover:text-white/50 hover:bg-white/3 transition-all"
+          }
         >
           <ImageIcon size={16} />
           <span className="text-[10px]">Ajouter une image</span>

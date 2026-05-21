@@ -16,7 +16,6 @@ import {
   X,
   Box,
   GripVertical,
-  Image as ImageIcon,
   Link as LinkIcon,
   RotateCcw,
   MousePointer,
@@ -25,8 +24,10 @@ import {
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { getSchemaForSection, getBlockDefaults } from "@/data/section-schemas";
 import { splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
+import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
+import { VariableTextarea } from "./VariableTextarea";
 import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
-import type { SiteSectionInstance, SectionField, SectionBlockSchema } from "@/types";
+import type { SiteSectionInstance, SectionField, SectionBlockSchema, SectionImagePickerField } from "@/types";
 
 /** Block type used for the repeatable item of a tag-adaptive section. */
 const TAG_ITEM_TYPE = "tag_item";
@@ -43,10 +44,18 @@ function eq<T>(a: T, b: T): boolean {
   try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
 }
 
-// ── Tags context — every editor reads the enterprise tags from here ─────────
-const ContentTagsCtx = React.createContext<{ enterpriseTags: string[]; activeTags: string[] }>({
+// ── Editor context — tags, siteId and variables for the field editors ──────
+interface ContentEditorCtx {
+  enterpriseTags: string[];
+  activeTags: string[];
+  siteId: string;
+  variables: Record<string, string>;
+}
+const ContentTagsCtx = React.createContext<ContentEditorCtx>({
   enterpriseTags: [],
   activeTags: [],
+  siteId: "",
+  variables: {},
 });
 const useContentTags = () => React.useContext(ContentTagsCtx);
 
@@ -167,8 +176,17 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
     return true;
   }
 
+  // Variables offered in the insert-variable dropdown — drop the internal
+  // "__"-prefixed JSON keys (__service_tags, __stats, __reviews…).
+  const displayVariables = React.useMemo(
+    () => Object.fromEntries(Object.entries(state.variableContext).filter(([k]) => !k.startsWith("__"))),
+    [state.variableContext],
+  );
+
   return (
-    <ContentTagsCtx.Provider value={{ enterpriseTags, activeTags }}>
+    <ContentTagsCtx.Provider
+      value={{ enterpriseTags, activeTags, siteId: state.siteId, variables: displayVariables }}
+    >
       <div className="ct-grid">
         {/* ───────── Left pane ───────── */}
         <aside className="ct-left">
@@ -556,37 +574,32 @@ function FieldInput({
   onChange: (v: unknown) => void;
 }) {
   const t = field.type;
+  const { siteId, variables } = useContentTags();
 
-  if (t === "textarea" || t === "richtext") {
+  if (t === "text" || t === "url" || t === "textarea" || t === "richtext") {
+    const rows = t === "richtext" ? 4 : t === "textarea" ? 3 : 2;
     return (
-      <textarea
-        className="textarea"
-        rows={2}
+      <VariableTextarea
         value={(value as string) ?? ""}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(v) => onChange(v)}
+        variables={variables}
+        variant="light"
+        rows={rows}
+        className="textarea"
         placeholder={"label" in field ? field.label : ""}
       />
     );
   }
 
   if (t === "image_picker" || t === "video_url") {
-    const url = (value as string) ?? "";
     return (
-      <div className="ct-img">
-        <span className="thumb" style={url ? { backgroundImage: `url(${url})` } : undefined}>
-          {!url && <ImageIcon size={14} />}
-        </span>
-        <div className="info">
-          <input
-            className="input"
-            value={url}
-            onChange={(e) => onChange(e.target.value)}
-            placeholder="URL de l'image"
-            style={{ height: 22, padding: "0 4px" }}
-          />
-          <div className="desc">{t === "video_url" ? "vidéo" : "image"}</div>
-        </div>
-      </div>
+      <ImagePickerField
+        setting={field as SectionImagePickerField}
+        value={(value as string) ?? ""}
+        onChange={(url) => onChange(url)}
+        siteId={siteId || undefined}
+        light
+      />
     );
   }
 
