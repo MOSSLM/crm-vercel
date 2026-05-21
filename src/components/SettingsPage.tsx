@@ -36,10 +36,12 @@ import {
   Building,
   BarChart3,
   BookOpen,
-  Target
+  Target,
+  Sparkles
 } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { THEME_PRESETS, ThemePreset } from './themePresets';
+import { EnrichmentTagsSettings } from './settings/EnrichmentTagsSettings';
 
 export const SettingsPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -124,7 +126,7 @@ export const SettingsPage: React.FC = () => {
       </Card>
 
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="grid w-full grid-cols-2 gap-1 md:grid-cols-5">
+        <TabsList className="grid w-full grid-cols-2 gap-1 md:grid-cols-6">
           <TabsTrigger value="profile" className="flex items-center gap-2">
             <User className="h-4 w-4" />
             Profil
@@ -132,6 +134,10 @@ export const SettingsPage: React.FC = () => {
           <TabsTrigger value="preferences" className="flex items-center gap-2">
             <Settings className="h-4 w-4" />
             Préférences
+          </TabsTrigger>
+          <TabsTrigger value="enrichment" className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4" />
+            Enrichissement
           </TabsTrigger>
           <TabsTrigger value="notifications" className="flex items-center gap-2">
             <Bell className="h-4 w-4" />
@@ -474,6 +480,10 @@ export const SettingsPage: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="enrichment" className="space-y-6">
+          <EnrichmentTagsSettings />
         </TabsContent>
 
         <TabsContent value="notifications" className="space-y-6">
