@@ -281,6 +281,28 @@ export const moveOpportunityToNoWebsitePipeline = (
 ) => moveOpportunityToFallbackPipeline(sb, opportuniteId, null);
 
 // ---------------------------------------------------------------------
+// Allowlist d'enrichissement : tags interdits (config globale)
+// ---------------------------------------------------------------------
+// La table `enrichment_tag_settings` est gérée depuis les Paramètres du CRM.
+// Un tag absent de la table est autorisé par défaut ; on ne récupère donc
+// que les tags explicitement interdits (allowed = false).
+export async function fetchBlockedServiceTags(sb: SupabaseClient): Promise<Set<string>> {
+  const { data, error } = await sb
+    .from("enrichment_tag_settings")
+    .select("tag")
+    .eq("allowed", false);
+  if (error) {
+    console.warn(`fetchBlockedServiceTags error: ${error.message}`);
+    return new Set();
+  }
+  const blocked = new Set<string>();
+  for (const row of data ?? []) {
+    if (typeof row.tag === "string") blocked.add(row.tag.trim().toLowerCase());
+  }
+  return blocked;
+}
+
+// ---------------------------------------------------------------------
 // Application des résultats d'extraction (cœur de la logique)
 // ---------------------------------------------------------------------
 export interface ApplyResult {
@@ -298,25 +320,37 @@ export async function applyExtraction(
   const lmpUpdate: Record<string, unknown> = {};
   const entrepriseUpdate: Record<string, unknown> = {};
 
-  // --- services_tags : merge sans doublons (case-insensitive) ---
-  if (extraction.services_tags.length > 0) {
-    const normalize = (s: string) => s.trim().toLowerCase();
-    const existingSnapshot = new Set(ctx.lmp.service_tags_snapshot.map(normalize));
-    const existingEntreprise = new Set(ctx.entreprise.service_tags.map(normalize));
-    const newTags = extraction.services_tags.filter((t) => t && t.trim().length > 0);
+  // --- services_tags : filtrage allowlist + merge sans doublons ---
+  // Seuls les tags autorisés (config globale enrichment_tag_settings) sont
+  // utilisés par l'enrichissement. On ne supprime jamais un tag déjà présent
+  // sur l'entreprise : le filtrage est non destructif côté source de vérité.
+  {
+    const blockedTags = await fetchBlockedServiceTags(sb);
+    const isAllowed = (tag: string) => !blockedTags.has(tag.trim().toLowerCase());
 
-    // Snapshot: on remplace complètement (c'est un snapshot pour CE lead magnet)
-    const finalSnapshot = dedupeCaseInsensitive([...ctx.lmp.service_tags_snapshot, ...newTags]);
+    const newTags = extraction.services_tags
+      .filter((t) => t && t.trim().length > 0)
+      .filter(isAllowed);
+
+    // Snapshot du lead magnet : ne doit contenir que des tags autorisés
+    // (on purge aussi les tags devenus interdits depuis sa création).
+    const finalSnapshot = dedupeCaseInsensitive([
+      ...ctx.lmp.service_tags_snapshot.filter(isAllowed),
+      ...newTags,
+    ]);
     if (JSON.stringify(finalSnapshot) !== JSON.stringify(ctx.lmp.service_tags_snapshot)) {
       lmpUpdate.service_tags_snapshot = finalSnapshot;
       updatedFields.push("service_tags_snapshot");
     }
 
-    // Entreprise: on merge (source de vérité durable)
-    const finalEntreprise = dedupeCaseInsensitive([...ctx.entreprise.service_tags, ...newTags]);
-    if (finalEntreprise.length !== ctx.entreprise.service_tags.length) {
-      entrepriseUpdate.service_tags = finalEntreprise;
-      updatedFields.push("entreprise.service_tags");
+    // Entreprise : merge non destructif — on conserve tous les tags existants
+    // et on n'ajoute que les nouveaux tags autorisés.
+    if (newTags.length > 0) {
+      const finalEntreprise = dedupeCaseInsensitive([...ctx.entreprise.service_tags, ...newTags]);
+      if (finalEntreprise.length !== ctx.entreprise.service_tags.length) {
+        entrepriseUpdate.service_tags = finalEntreprise;
+        updatedFields.push("entreprise.service_tags");
+      }
     }
   }
 
