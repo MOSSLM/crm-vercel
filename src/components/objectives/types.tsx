@@ -26,6 +26,10 @@ export interface KPIObjective {
   relances_total?: number;
   ca?: number;
   mrr?: number;
+  // Objectifs des activités journalières (Dashboard 2)
+  entreprises_enrichies?: number;
+  sites_crees?: number;
+  audits_crees?: number;
   label?: string;
   created_at?: string;
 }

@@ -1,0 +1,410 @@
+/* ───────────────────────────────────────────────────────────
+   Dashboard 2 — Direction Artistique "Sama CRM"
+   Toutes les règles sont scopées sous .da2 pour ne pas
+   impacter le reste du repo (migration progressive prévue).
+   ─────────────────────────────────────────────────────────── */
+
+.da2 {
+  --bg: #FBFAF7;
+  --bg-2: #F4F2EC;
+  --bg-3: #ECE9E1;
+  --surface: #FFFFFF;
+  --surface-2: #F8F6F1;
+  --hover: rgba(20, 18, 14, 0.04);
+  --hover-2: rgba(20, 18, 14, 0.07);
+  --border: rgba(20, 18, 14, 0.08);
+  --border-2: rgba(20, 18, 14, 0.14);
+  --border-strong: rgba(20, 18, 14, 0.22);
+  --text: #14120E;
+  --text-2: #5C5953;
+  --text-3: #8A877F;
+  --text-4: #B5B2AA;
+  --accent: #E2552B;
+  --accent-2: #C73E16;
+  --accent-tint: rgba(226, 85, 43, 0.10);
+  --accent-tint-2: rgba(226, 85, 43, 0.18);
+  --ok: #1F8A5B;
+  --ok-tint: rgba(31, 138, 91, .10);
+  --warn: #C8881F;
+  --warn-tint: rgba(200, 136, 31, .14);
+  --danger: #B5322F;
+  --danger-tint: rgba(181, 50, 47, .10);
+  --info: #2A6FDB;
+  --info-tint: rgba(42, 111, 219, 0.10);
+  --magic: #7A5AE0;
+  --magic-tint: rgba(122, 90, 224, 0.10);
+
+  --da2-font-ui: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --da2-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --da2-font-serif: "Instrument Serif", "Times New Roman", serif;
+
+  --shadow-1: 0 1px 0 rgba(20,18,14,0.04), 0 1px 2px rgba(20,18,14,0.04);
+  --shadow-2: 0 1px 0 rgba(20,18,14,0.04), 0 4px 12px rgba(20,18,14,0.06), 0 12px 32px rgba(20,18,14,0.05);
+
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--da2-font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+.da2 *,
+.da2 *::before,
+.da2 *::after { box-sizing: border-box; }
+
+/* ───── Page ───── */
+.da2-page { padding: 22px 28px 60px; }
+.da2-page-hd {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; margin-bottom: 18px;
+}
+.da2-page-hd h1 {
+  font-family: var(--da2-font-serif);
+  font-weight: 400;
+  font-size: 32px;
+  margin: 0;
+  line-height: 1;
+  letter-spacing: -.01em;
+}
+.da2-page-hd .da2-sub {
+  color: var(--text-3);
+  font-size: 12.5px;
+  margin-top: 6px;
+}
+
+/* ───── Grille principale ───── */
+.da2-dash-grid {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 22px;
+  align-items: start;
+}
+
+/* ───── Colonne gauche — tâches du jour ───── */
+.da2-today {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  padding: 18px 18px 14px;
+  position: sticky; top: 0;
+  box-shadow: var(--shadow-1);
+}
+.da2-today .da2-date {
+  font-family: var(--da2-font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-3);
+}
+.da2-today h2 {
+  font-family: var(--da2-font-serif);
+  font-weight: 400;
+  font-size: 26px;
+  margin: 4px 0 2px;
+  letter-spacing: -.01em;
+  line-height: 1.1;
+}
+.da2-today .da2-greet-sub { color: var(--text-3); font-size: 12.5px; margin: 0 0 14px; }
+
+.da2-timeline {
+  position: relative;
+  padding-left: 16px;
+  border-left: 1px dashed var(--border-2);
+  display: flex; flex-direction: column;
+  gap: 14px;
+  margin-top: 6px;
+}
+.da2-tl-item { position: relative; }
+.da2-tl-item::before {
+  content: ""; position: absolute;
+  left: -22px; top: 3px;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--border-strong);
+}
+.da2-tl-item[data-state="done"]::before { background: var(--ok); border-color: var(--ok); }
+.da2-tl-item[data-state="now"]::before { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.da2-tl-item .da2-h {
+  font-family: var(--da2-font-mono); font-size: 10.5px;
+  color: var(--text-3); letter-spacing: .04em;
+  margin-bottom: 3px;
+}
+.da2-tl-item[data-state="now"] .da2-h { color: var(--accent-2); font-weight: 600; }
+.da2-tl-item .da2-ttl { font-size: 12.5px; font-weight: 500; color: var(--text); letter-spacing: -.005em; }
+.da2-tl-item .da2-det { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.da2-tl-item[data-state="done"] .da2-ttl { color: var(--text-3); text-decoration: line-through; }
+
+.da2-today-empty {
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 16px 0;
+  text-align: center;
+}
+
+.da2-today-foot {
+  margin-top: 14px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px;
+}
+
+/* ───── Colonne principale ───── */
+.da2-main { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+
+/* ───── Carte générique ───── */
+.da2-card {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.da2-card-hd {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px 10px;
+}
+.da2-card-hd h3 {
+  font-family: var(--da2-font-serif);
+  font-weight: 400;
+  font-size: 18px;
+  margin: 0;
+  letter-spacing: -.005em;
+  flex: 1; min-width: 0;
+}
+.da2-card-hd .da2-meta {
+  font-size: 11px; color: var(--text-3);
+  font-family: var(--da2-font-mono);
+}
+.da2-card-bd { padding: 6px 18px 18px; }
+
+/* ───── Plan de la semaine — grille 4 × jours ───── */
+.da2-week {
+  display: grid;
+  grid-template-columns: 200px repeat(7, 1fr);
+  border-top: 1px solid var(--border);
+}
+.da2-week-cell {
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 8px;
+  min-height: 64px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 2px;
+}
+.da2-week-cell:last-child { border-right: 0; }
+.da2-week-head {
+  min-height: 44px;
+  background: var(--surface-2);
+}
+.da2-week-head .da2-dow {
+  font-family: var(--da2-font-mono);
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-3);
+}
+.da2-week-head .da2-dom { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.da2-week-cell.da2-today-col { background: var(--accent-tint); }
+.da2-week-head.da2-today-col .da2-dow,
+.da2-week-head.da2-today-col .da2-dom { color: var(--accent-2); }
+.da2-week-cell.da2-weekend { background: var(--bg-2); }
+
+/* Cellule de label (1ère colonne) */
+.da2-week-label {
+  align-items: flex-start;
+  justify-content: center;
+  text-align: left;
+  padding: 12px 14px;
+  gap: 4px;
+}
+.da2-week-label.da2-week-head { background: var(--surface-2); }
+.da2-week-label .da2-ml-top {
+  display: flex; align-items: center; gap: 7px;
+}
+.da2-week-label .da2-ml-ico {
+  width: 24px; height: 24px;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.da2-week-label .da2-ml-name {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  letter-spacing: -.005em; line-height: 1.2;
+}
+.da2-week-label .da2-ml-sub {
+  font-family: var(--da2-font-mono);
+  font-size: 10.5px; color: var(--text-3);
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.da2-week-label .da2-ml-sub b { color: var(--text-2); font-weight: 600; }
+
+/* Valeur cible / jour */
+.da2-week-target {
+  font-family: var(--da2-font-serif);
+  font-size: 24px; font-weight: 400;
+  color: var(--text);
+  letter-spacing: -.01em; line-height: 1;
+}
+.da2-week-target.da2-zero { color: var(--text-4); }
+.da2-week-cell.da2-today-col .da2-week-target { color: var(--accent-2); }
+.da2-week-free {
+  font-family: var(--da2-font-mono);
+  font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-4);
+}
+
+/* mini-barre de progression dans le label */
+.da2-mini-bar {
+  width: 100%; height: 5px;
+  background: var(--bg-3);
+  border-radius: 999px; overflow: hidden;
+  margin-top: 2px;
+}
+.da2-mini-bar > i { display: block; height: 100%; border-radius: 999px; }
+
+/* ───── Bento KPI ───── */
+.da2-bento {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.da2-kpi {
+  background: var(--surface);
+  padding: 16px 18px;
+  display: flex; flex-direction: column;
+  gap: 6px;
+  min-height: 116px;
+}
+.da2-kpi .da2-kpi-lb {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase; letter-spacing: .08em;
+}
+.da2-kpi .da2-kpi-vl {
+  font-family: var(--da2-font-serif);
+  font-size: 40px; font-weight: 400;
+  letter-spacing: -.015em; line-height: 1;
+  color: var(--text);
+  margin-top: 2px;
+}
+.da2-kpi .da2-kpi-vl small {
+  font-family: var(--da2-font-mono);
+  font-size: 11px; color: var(--text-4);
+  font-weight: 400; letter-spacing: 0; margin-left: 6px;
+}
+.da2-kpi .da2-kpi-foot {
+  font-family: var(--da2-font-mono);
+  font-size: 11px; color: var(--text-3);
+  margin-top: auto;
+}
+.da2-kpi.da2-dark { background: var(--text); }
+.da2-kpi.da2-dark .da2-kpi-lb { color: rgba(255,255,255,.45); }
+.da2-kpi.da2-dark .da2-kpi-vl { color: var(--bg); }
+.da2-kpi.da2-dark .da2-kpi-vl small { color: rgba(255,255,255,.5); }
+.da2-kpi.da2-dark .da2-kpi-foot { color: rgba(255,255,255,.55); }
+
+/* ───── Rangée 2 colonnes ───── */
+.da2-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+
+/* ───── Pipeline ───── */
+.da2-stage {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+.da2-stage:first-child { border-top: 0; }
+.da2-stage .da2-stage-nm { font-size: 12.5px; font-weight: 500; color: var(--text); }
+.da2-stage .da2-stage-ct {
+  font-family: var(--da2-font-mono); font-size: 12px;
+  color: var(--text-2);
+}
+.da2-stage-bar {
+  grid-column: 1 / -1;
+  height: 5px; background: var(--bg-3);
+  border-radius: 999px; overflow: hidden;
+}
+.da2-stage-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+
+/* ───── Activité ───── */
+.da2-activity { display: flex; flex-direction: column; }
+.da2-act-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+.da2-act-row:first-child { border-top: 0; }
+.da2-act-row .da2-act-ic {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; margin-top: 1px;
+  background: var(--bg-2); color: var(--text-3);
+}
+.da2-act-row .da2-act-ic.win   { background: var(--ok-tint); color: var(--ok); }
+.da2-act-row .da2-act-ic.call  { background: var(--warn-tint); color: var(--warn); }
+.da2-act-row .da2-act-ic.email { background: var(--info-tint); color: var(--info); }
+.da2-act-row .da2-act-ic.cal   { background: var(--magic-tint); color: var(--magic); }
+.da2-act-row .da2-act-tx {
+  font-size: 12.5px; color: var(--text);
+  letter-spacing: -.005em; line-height: 1.4;
+}
+.da2-act-row .da2-act-det { font-size: 11.5px; color: var(--text-3); margin-top: 2px; }
+.da2-act-row .da2-act-h {
+  font-family: var(--da2-font-mono); font-size: 10.5px;
+  color: var(--text-4); white-space: nowrap; padding-top: 2px;
+}
+
+/* ───── Pills & boutons ───── */
+.da2-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 20px; padding: 0 7px;
+  font-size: 10.5px; font-weight: 500;
+  color: var(--text-2); background: var(--bg-2);
+  border-radius: 5px;
+  font-family: var(--da2-font-mono);
+  letter-spacing: .02em; white-space: nowrap;
+}
+.da2-pill.ok     { background: var(--ok-tint); color: var(--ok); }
+.da2-pill.accent { background: var(--accent-tint); color: var(--accent-2); }
+.da2-pill.warn   { background: var(--warn-tint); color: var(--warn); }
+
+.da2-link {
+  appearance: none; border: 0; background: transparent;
+  font: inherit; font-size: 11.5px; font-weight: 500;
+  color: var(--text-3);
+  display: inline-flex; align-items: center; gap: 4px;
+  cursor: pointer; padding: 0;
+}
+.da2-link:hover { color: var(--accent-2); }
+
+.da2-empty {
+  color: var(--text-3); font-size: 12px;
+  padding: 14px 0; text-align: center;
+}
+
+/* ───── Responsive ───── */
+@media (max-width: 1100px) {
+  .da2-dash-grid { grid-template-columns: 1fr; }
+  .da2-today { position: static; }
+}
+@media (max-width: 860px) {
+  .da2-page { padding: 16px 14px 48px; }
+  .da2-bento { grid-template-columns: repeat(2, 1fr); }
+  .da2-row2 { grid-template-columns: 1fr; }
+  .da2-week { grid-template-columns: 132px repeat(7, 1fr); }
+  .da2-week-cell { padding: 8px 4px; min-height: 56px; }
+  .da2-week-target { font-size: 19px; }
+}

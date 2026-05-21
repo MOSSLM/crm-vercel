@@ -86,6 +86,7 @@ export const AUTOMATIONS_ITEMS: NavItem[] = [
 
 export const DASHBOARD_ITEMS: NavItem[] = [
   { title: "Dashboard", icon: BarChart3, href: "/dashboard" },
+  { title: "Dashboard 2", icon: LayoutDashboard, href: "/dashboard-2" },
   { title: "Sales", icon: Phone, href: "/prospection/dashboard" },
   { title: "Qualification", icon: CheckCircle, href: "/qualification/dashboard" },
 ];
