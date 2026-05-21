@@ -53,7 +53,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const body = await req.json();
   const supabase = getSupabaseServiceClient();
 
-  const allowed = ["name", "category", "code", "example_data", "sort_order", "section_id", "schema"];
+  const allowed = ["name", "category", "code", "example_data", "sort_order", "section_id", "schema", "is_tag_adaptive"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (key in body) updates[key] = body[key];

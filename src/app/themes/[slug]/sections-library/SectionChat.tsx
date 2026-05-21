@@ -32,6 +32,7 @@ interface Props {
   themeSlug: string;
   sectionId: string | null;
   currentCode: string;
+  isTagAdaptive?: boolean;
   onApplyCode: (code: string) => void;
   onApplySchema?: (schema: Record<string, unknown>) => void;
 }
@@ -46,6 +47,7 @@ export default function SectionChat({
   themeSlug,
   sectionId,
   currentCode,
+  isTagAdaptive,
   onApplyCode,
   onApplySchema,
 }: Props) {
@@ -113,6 +115,7 @@ export default function SectionChat({
               message: messageText,
               history,
               systemPrompt,
+              isTagAdaptive: isTagAdaptive ?? false,
             }),
           }
         );
@@ -148,7 +151,7 @@ export default function SectionChat({
         setLoading(false);
       }
     },
-    [sectionId, loading, messages, model, currentCode, themeSlug]
+    [sectionId, loading, messages, model, currentCode, themeSlug, systemPrompt, isTagAdaptive]
   );
 
   const handleHtmlPaste = () => {

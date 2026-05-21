@@ -39,6 +39,18 @@ Règles :
 - Maximum 15 champs dans settings
 - Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans explications`;
 
+/** Appended when the section is tag-adaptive — requires a `tag_item` block. */
+const ADAPTIVE_SCHEMA_ADDENDUM = `
+
+SECTION ADAPTATIVE AUX SERVICES :
+Cette section répète une div une fois par service de l'entreprise. Son code
+itère sur \`data.items\`. Le schéma DOIT contenir, en plus de \`settings\` :
+- "blocks": [ { "type": "tag_item", "name": "Service", "icon": "briefcase",
+    "settings": [ ... ] } ]
+Les "settings" du bloc tag_item correspondent EXACTEMENT aux propriétés lues
+sur chaque \`item.*\` dans le code (un champ text/textarea/image_picker par clé).
+\`settings\` (racine) ne contient QUE les champs fixes de la section (titre, etc.).`;
+
 // POST /api/themes/[slug]/sections/[sectionId]/generate-schema
 export async function POST(
   req: NextRequest,
@@ -46,7 +58,7 @@ export async function POST(
 ) {
   const { sectionId } = await params;
 
-  let body: { code: string };
+  let body: { code: string; isTagAdaptive?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -58,12 +70,15 @@ export async function POST(
   }
 
   const userMessage = `Section "${sectionId}" — code TSX :\n\`\`\`tsx\n${body.code}\n\`\`\`\n\nGénère le schéma JSON pour cette section.`;
+  const systemPrompt = body.isTagAdaptive
+    ? SCHEMA_SYSTEM_PROMPT + ADAPTIVE_SCHEMA_ADDENDUM
+    : SCHEMA_SYSTEM_PROMPT;
 
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-6",
       max_tokens: 2048,
-      system: SCHEMA_SYSTEM_PROMPT,
+      system: systemPrompt,
       messages: [{ role: "user", content: userMessage }],
     });
 

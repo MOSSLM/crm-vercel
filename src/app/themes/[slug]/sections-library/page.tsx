@@ -146,6 +146,30 @@ export default function SectionsLibraryPage({ params }: PageProps) {
     if (slug) loadSections(slug);
   };
 
+  const handleToggleAdaptive = React.useCallback(async () => {
+    if (!activeSection || !slug) return;
+    const next = !activeSection.is_tag_adaptive;
+    try {
+      const res = await fetch(
+        `/api/themes/${slug}/sections/${activeSection.section_id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ is_tag_adaptive: next }),
+        }
+      );
+      if (!res.ok) throw new Error("Erreur");
+      const updated: ThemeSection = await res.json();
+      setActiveSection(updated);
+      setSections((prev) =>
+        prev.map((s) => (s.section_id === updated.section_id ? updated : s))
+      );
+      toast.success(next ? "Section marquée adaptative" : "Section standard");
+    } catch {
+      toast.error("Impossible de modifier le type de section");
+    }
+  }, [activeSection, slug]);
+
   if (!slug) {
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-950 text-zinc-500">
@@ -243,6 +267,19 @@ export default function SectionsLibraryPage({ params }: PageProps) {
                         <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-green-500 align-middle" />
                       )}
                     </button>
+                    {activeSection && (
+                      <button
+                        onClick={handleToggleAdaptive}
+                        className={`ml-auto mr-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${
+                          activeSection.is_tag_adaptive
+                            ? "bg-blue-600/20 text-blue-300 border border-blue-600/40"
+                            : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+                        }`}
+                        title="Une section adaptative répète un élément par service de l'entreprise"
+                      >
+                        {activeSection.is_tag_adaptive ? "● Adaptative" : "○ Adaptative"}
+                      </button>
+                    )}
                   </div>
                   {/* Tab content */}
                   <div className="flex-1 min-h-0">
@@ -261,6 +298,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
                         sectionId={activeSection?.section_id ?? null}
                         code={code}
                         schema={schema}
+                        isTagAdaptive={activeSection?.is_tag_adaptive ?? false}
                         onSchemaSave={handleSchemaSave}
                       />
                     )}
@@ -289,6 +327,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
               themeSlug={slug}
               sectionId={activeSection?.section_id ?? null}
               currentCode={code}
+              isTagAdaptive={activeSection?.is_tag_adaptive ?? false}
               onApplyCode={handleApplyCode}
               onApplySchema={handleApplySchemaFromChat}
             />

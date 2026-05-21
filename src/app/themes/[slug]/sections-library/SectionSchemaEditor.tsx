@@ -11,6 +11,7 @@ interface Props {
   sectionId: string | null;
   code: string;
   schema: Record<string, unknown> | null;
+  isTagAdaptive?: boolean;
   onSchemaSave: (schema: Record<string, unknown>) => Promise<void>;
 }
 
@@ -19,6 +20,7 @@ export default function SectionSchemaEditor({
   sectionId,
   code,
   schema,
+  isTagAdaptive,
   onSchemaSave,
 }: Props) {
   const [schemaStr, setSchemaStr] = React.useState(
@@ -57,7 +59,7 @@ export default function SectionSchemaEditor({
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code }),
+          body: JSON.stringify({ code, isTagAdaptive: isTagAdaptive ?? false }),
         }
       );
       const data = await res.json();
