@@ -238,6 +238,9 @@ export const objectivesApi = {
         acomptes: objective.acomptes ?? 0,
         ca: objective.ca ?? 0,
         mrr: objective.mrr ?? 0,
+        entreprises_enrichies: objective.entreprises_enrichies ?? 0,
+        sites_crees: objective.sites_crees ?? 0,
+        audits_crees: objective.audits_crees ?? 0,
       };
 
       const { error } = await supabase
@@ -279,6 +282,9 @@ export const objectivesApi = {
       relances_total: Number(row.relances ?? 0),
       ca: Number(row.ca ?? 0),
       mrr: Number(row.mrr ?? 0),
+      entreprises_enrichies: Number(row.entreprises_enrichies ?? 0),
+      sites_crees: Number(row.sites_crees ?? 0),
+      audits_crees: Number(row.audits_crees ?? 0),
       label: row.label ?? undefined,
       created_at: row.created_at,
     }));
