@@ -11,10 +11,14 @@ export const runtime = 'nodejs'
 export const maxDuration = 60
 
 async function handle(req: Request): Promise<Response> {
-  const secret = process.env.CRON_SECRET
-  if (secret) {
+  const cronSecret = process.env.CRON_SECRET
+  const pgCronSecret = process.env.PG_CRON_SECRET
+  if (cronSecret || pgCronSecret) {
     const auth = req.headers.get('authorization')
-    if (auth !== `Bearer ${secret}`) {
+    const pgHeader = req.headers.get('x-pg-cron-secret')
+    const validVercel = cronSecret && auth === `Bearer ${cronSecret}`
+    const validPgCron = pgCronSecret && pgHeader === pgCronSecret
+    if (!validVercel && !validPgCron) {
       return json({ error: 'Unauthorized' }, { status: 401 })
     }
   }
