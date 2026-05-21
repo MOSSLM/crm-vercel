@@ -4,6 +4,7 @@ import React from "react";
 import { ChevronDown, ChevronUp, Copy, GripVertical, Plus, Tag, Trash2 } from "lucide-react";
 import type { SectionBlockInstance, SectionBlockSchema, SectionSchema, StyleGuide } from "@/types";
 import { findBlockSchema, getBlockDefaults } from "@/data/section-schemas";
+import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
 import { SchemaEditor } from "./SchemaEditor";
 
 interface BlocksEditorProps {
@@ -17,11 +18,6 @@ interface BlocksEditorProps {
   onReorder: (fromIndex: number, toIndex: number) => void;
   /** Optional: when provided, each block gets a service-tag picker. */
   onUpdateTag?: (blockId: string, service_tag: string | null) => void;
-  /** Options shown in the service-tag picker. */
-  availableTags?: string[];
-  /** Tags currently active on the enterprise (or simulated). Used to show
-   *  whether a block is currently visible or filtered out. */
-  activeTags?: string[];
   variables?: Record<string, string>;
   siteId?: string;
 }
@@ -36,11 +32,11 @@ export function BlocksEditor({
   onDuplicate,
   onReorder,
   onUpdateTag,
-  availableTags,
-  activeTags,
   variables,
   siteId,
 }: BlocksEditorProps) {
+  // Service-tag options come from the site's linked enterprise.
+  const enterpriseTags = parseServiceTags(variables);
   const [expandedId, setExpandedId] = React.useState<string | null>(blocks[0]?.id ?? null);
 
   if (!schema.blocks || schema.blocks.length === 0) return null;
@@ -83,7 +79,7 @@ export function BlocksEditor({
         const isExpanded = expandedId === block.id;
         const preview = blockPreview(blockSchema, block.settings);
         const tag = block.service_tag ?? null;
-        const isFiltered = !!(tag && activeTags && !activeTags.includes(tag));
+        const isFiltered = !!(tag && !enterpriseTags.includes(tag));
         const showTagPicker = !!onUpdateTag;
 
         return (
@@ -151,8 +147,7 @@ export function BlocksEditor({
                 {showTagPicker && (
                   <ServiceTagPicker
                     value={tag}
-                    options={availableTags ?? []}
-                    activeTags={activeTags}
+                    options={enterpriseTags}
                     onChange={(v) => onUpdateTag!(block.id, v)}
                   />
                 )}
@@ -193,12 +188,10 @@ export function BlocksEditor({
 function ServiceTagPicker({
   value,
   options,
-  activeTags,
   onChange,
 }: {
   value: string | null;
   options: string[];
-  activeTags?: string[];
   onChange: (v: string | null) => void;
 }) {
   return (
@@ -213,17 +206,17 @@ function ServiceTagPicker({
         className="w-full text-[11px] px-2 py-1 bg-white/5 border border-white/10 rounded text-white/80"
       >
         <option value="">— Aucun (toujours afficher)</option>
-        {options.map((t) => {
-          const active = !activeTags || activeTags.includes(t);
-          return (
-            <option key={t} value={t}>
-              {t}{active ? "" : " · (absent de l'entreprise)"}
-            </option>
-          );
-        })}
+        {options.map((t) => (
+          <option key={t} value={t}>{t}</option>
+        ))}
       </select>
+      {options.length === 0 && (
+        <p className="text-[10px] text-amber-300/60 leading-snug">
+          Aucun service tag sur l&apos;entreprise liée au site.
+        </p>
+      )}
       <p className="text-[10px] text-white/30 leading-snug">
-        Si défini, ce bloc n&apos;apparaît que sur les entreprises ayant ce tag.
+        Si défini, ce bloc n&apos;apparaît que si l&apos;entreprise a ce service.
       </p>
     </div>
   );

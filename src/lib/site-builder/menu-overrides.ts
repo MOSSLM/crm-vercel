@@ -62,6 +62,11 @@ function parseEnterpriseTags(variables: Record<string, string> | undefined): Set
   return new Set();
 }
 
+/** The active enterprise's service tags as an ordered array. */
+export function parseServiceTags(variables: Record<string, string> | undefined): string[] {
+  return Array.from(parseEnterpriseTags(variables));
+}
+
 /**
  * Filter section blocks by enterprise service tags. Blocks without a
  * `service_tag` are always kept; blocks with a tag are dropped when the tag
@@ -80,6 +85,20 @@ export function filterBlocksByEnterpriseTags(
     if (!tag) return true;
     return tagSet.has(tag);
   });
+}
+
+/**
+ * Whether a section instance is visible for the enterprise's service tags.
+ * A section is hidden when its `content.__service_tag` meta key is set and
+ * the enterprise doesn't have that tag. Sections without the key always show.
+ */
+export function isInstanceVisibleForTags(
+  content: Record<string, unknown> | null | undefined,
+  variables: Record<string, string> | undefined,
+): boolean {
+  const tag = content?.["__service_tag"];
+  if (typeof tag !== "string" || tag === "") return true;
+  return parseEnterpriseTags(variables).has(tag);
 }
 
 /**
