@@ -62,6 +62,11 @@ function parseEnterpriseTags(variables: Record<string, string> | undefined): Set
   return new Set();
 }
 
+/** The active enterprise's service tags as an ordered array. */
+export function parseServiceTags(variables: Record<string, string> | undefined): string[] {
+  return Array.from(parseEnterpriseTags(variables));
+}
+
 /**
  * Filter section blocks by enterprise service tags. Blocks without a
  * `service_tag` are always kept; blocks with a tag are dropped when the tag

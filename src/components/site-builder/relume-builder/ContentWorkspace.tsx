@@ -23,17 +23,15 @@ import {
   FileText,
 } from "lucide-react";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
-import { useServiceTags } from "@/hooks/useServiceTags";
 import { getSchemaForSection, getBlockDefaults } from "@/data/section-schemas";
 import { splitSchemaFields } from "@/components/site-builder/editors/SchemaEditor";
-import type {
-  SiteSectionInstance,
-  SectionField,
-  SectionBlockSchema,
-} from "@/types";
+import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
+import type { SiteSectionInstance, SectionField, SectionBlockSchema } from "@/types";
 
 /** Block type used for the repeatable item of a tag-adaptive section. */
 const TAG_ITEM_TYPE = "tag_item";
+/** Section-level service tag is stored on a meta key of instance.content. */
+const SECTION_TAG_KEY = "__service_tag";
 
 interface StatItem {
   label: string;
@@ -45,43 +43,38 @@ function eq<T>(a: T, b: T): boolean {
   try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
 }
 
-function parseTags(raw: string | undefined): string[] {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
-  } catch { return []; }
-}
-
-/** Section-level service tag is stored on a meta key of instance.content. */
-const SECTION_TAG_KEY = "__service_tag";
+// ── Tags context — every editor reads the enterprise tags from here ─────────
+const ContentTagsCtx = React.createContext<{ enterpriseTags: string[]; activeTags: string[] }>({
+  enterpriseTags: [],
+  activeTags: [],
+});
+const useContentTags = () => React.useContext(ContentTagsCtx);
 
 // ───────────────────────────────────────────────────────────────────────────
 
 /**
- * Contenu workspace — schema-driven content editor. Each section of the active
- * page is rendered as a card whose fields come from the section schema; the
- * right inspector handles tags (section / block) and schema overview. A tag
- * simulator at the top lets the user preview the site as a given enterprise.
+ * Contenu workspace — schema-driven content editor. Each section of the
+ * active page is a card whose fields come from the section schema; the right
+ * inspector handles service tags. All tags come from the site's linked
+ * enterprise (`service_tags`), not the system-wide list.
  */
 export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | undefined }) {
   const { state, dispatch } = useRelumeBuilder();
-  const availableTags = useServiceTags();
 
-  // ── Tag state: real (enterprise) vs simulated ─────────────────────────────
+  // ── Enterprise service tags ───────────────────────────────────────────────
   const tagsRaw = state.variableContext.__service_tags;
-  const [realTags, setRealTags] = React.useState<string[]>(() => parseTags(tagsRaw));
-  const [simulatedTags, setSimulatedTags] = React.useState<string[] | null>(null);
+  const enterpriseTags = React.useMemo(() => parseServiceTags({ __service_tags: tagsRaw ?? "" }), [tagsRaw]);
 
+  // Simulation: a subset of the enterprise tags toggled for preview. null = all.
+  const [simulatedTags, setSimulatedTags] = React.useState<string[] | null>(null);
+  const activeTags = simulatedTags ?? enterpriseTags;
+
+  // Keep the simulated set valid when the enterprise changes.
   const prevEnterpriseId = React.useRef<number | undefined>(enterpriseId);
   if (prevEnterpriseId.current !== enterpriseId) {
     prevEnterpriseId.current = enterpriseId;
-    const next = parseTags(state.variableContext.__service_tags);
-    if (!eq(next, realTags)) setRealTags(next);
     if (simulatedTags !== null) setSimulatedTags(null);
   }
-
-  const activeTags = simulatedTags ?? realTags;
 
   function applyTags(tags: string[]) {
     dispatch({
@@ -90,20 +83,19 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
     });
   }
   function toggleSimTag(tag: string) {
-    const base = simulatedTags ?? realTags;
+    const base = simulatedTags ?? enterpriseTags;
     const next = base.includes(tag) ? base.filter((t) => t !== tag) : [...base, tag];
     setSimulatedTags(next);
     applyTags(next);
   }
   function clearSimulation() {
     setSimulatedTags(null);
-    applyTags(realTags);
+    applyTags(enterpriseTags);
   }
 
   // ── Selection ─────────────────────────────────────────────────────────────
   const selectedId = state.selectedInstanceId;
   const [selectedBlockId, setSelectedBlockId] = React.useState<string | null>(null);
-
   function selectSection(id: string) {
     dispatch({ type: "SELECT_INSTANCE", payload: id });
     setSelectedBlockId(null);
@@ -162,9 +154,7 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
   const sections = pageInstanceIds.map((id) => state.instances[id]).filter(Boolean) as SiteSectionInstance[];
   const selectedInstance = selectedId ? state.instances[selectedId] ?? null : null;
-  const selectedOnPage = selectedInstance && selectedInstance.page_slug === state.activePage
-    ? selectedInstance
-    : null;
+  const selectedOnPage = selectedInstance && selectedInstance.page_slug === state.activePage ? selectedInstance : null;
 
   function sectionTag(inst: SiteSectionInstance): string | null {
     const t = inst.content?.[SECTION_TAG_KEY];
@@ -178,241 +168,218 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
   }
 
   return (
-    <div className="ct-grid">
-      {/* ───────── Left pane ───────── */}
-      <aside className="ct-left">
-        <div className="pane-hd contextual">
-          <div className="title-with-icon">
-            <FileText size={12} style={{ color: "var(--text-3)" }} />
-            <span>Contenu</span>
-          </div>
-          <div className="actions">
-            <span className="pill">{sections.length} sections</span>
-          </div>
-        </div>
-
-        <div className="pane-body">
-          {/* Pages */}
-          <div className="section">
-            <div className="section-hd" aria-expanded="true">
-              <ChevronDown size={11} className="chev" />
-              <span>Page</span>
+    <ContentTagsCtx.Provider value={{ enterpriseTags, activeTags }}>
+      <div className="ct-grid">
+        {/* ───────── Left pane ───────── */}
+        <aside className="ct-left">
+          <div className="pane-hd contextual">
+            <div className="title-with-icon">
+              <FileText size={12} style={{ color: "var(--text-3)" }} />
+              <span>Contenu</span>
             </div>
-            <div className="ct-page-select" style={{ paddingBottom: 12 }}>
-              {state.sitemap.map((p, i) => {
-                const hidden = !!(p.service_tag && !activeTags.includes(p.service_tag));
-                return (
-                  <button
-                    key={p.id}
-                    className="ct-page-row"
-                    aria-selected={state.activePage === p.slug}
-                    data-hidden={hidden ? "true" : "false"}
-                    onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug })}
-                  >
-                    <span className="pgnum">{String(i + 1).padStart(2, "0")}</span>
-                    <span className="pname">{p.title}</span>
-                    <span className="pslug">{p.slug}</span>
-                    <span className="pcount">{(state.instancesByPage[p.slug] ?? []).length}</span>
+            <div className="actions">
+              <span className="pill">{sections.length} sections</span>
+            </div>
+          </div>
+
+          <div className="pane-body">
+            {/* Pages */}
+            <div className="section">
+              <div className="section-hd" aria-expanded="true">
+                <ChevronDown size={11} className="chev" />
+                <span>Page</span>
+              </div>
+              <div className="ct-page-select" style={{ paddingBottom: 12 }}>
+                {state.sitemap.map((p, i) => {
+                  const hidden = !!(p.service_tag && !activeTags.includes(p.service_tag));
+                  return (
+                    <button
+                      key={p.id}
+                      className="ct-page-row"
+                      aria-selected={state.activePage === p.slug}
+                      data-hidden={hidden ? "true" : "false"}
+                      onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug })}
+                    >
+                      <span className="pgnum">{String(i + 1).padStart(2, "0")}</span>
+                      <span className="pname">{p.title}</span>
+                      <span className="pslug">{p.slug}</span>
+                      <span className="pcount">{(state.instancesByPage[p.slug] ?? []).length}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Sections of active page */}
+            <div className="section">
+              <div className="section-hd" aria-expanded="true">
+                <ChevronDown size={11} className="chev" />
+                <span>Sections</span>
+              </div>
+              <div className="ct-sec-list" style={{ paddingBottom: 12 }}>
+                {sections.length === 0 && (
+                  <p style={{ fontSize: 11, color: "var(--text-4)", fontStyle: "italic", padding: "4px 8px", margin: 0 }}>
+                    Aucune section sur cette page.
+                  </p>
+                )}
+                {sections.map((inst) => {
+                  const def = inst.section_def;
+                  const adaptive = !!def?.is_tag_adaptive;
+                  const taggedCount =
+                    (inst.blocks ?? []).filter((b) => !!b.service_tag).length + (sectionTag(inst) ? 1 : 0);
+                  return (
+                    <button
+                      key={inst.id}
+                      className="ct-sec-row"
+                      aria-selected={selectedId === inst.id}
+                      onClick={() => selectSection(inst.id)}
+                    >
+                      <span className="stype">{def?.type ?? "section"}</span>
+                      <span className="sname">{def?.name ?? "Section"}</span>
+                      {!sectionVisible(inst) && <EyeOff size={11} className="hide-ic" />}
+                      {adaptive && (
+                        <span className="adaptbadge" title="Section adaptative aux services">
+                          <Tag size={9} />adapt
+                        </span>
+                      )}
+                      {taggedCount > 0 && (
+                        <span className="tagbadge" title={`${taggedCount} élément(s) tagué(s)`}>
+                          <Tag size={9} />{taggedCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Services de l'entreprise (simulator) */}
+            <div className="section">
+              <div className="section-hd" aria-expanded="true">
+                <ChevronDown size={11} className="chev" />
+                <span>Services de l&apos;entreprise</span>
+              </div>
+              <div style={{ padding: "4px 12px 12px" }}>
+                {enterpriseTags.length === 0 ? (
+                  <p style={{ fontSize: 11, color: "var(--text-4)", lineHeight: 1.5, margin: 0 }}>
+                    Aucun service tag sur l&apos;entreprise liée. Renseignez la colonne
+                    {" "}<code style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>service_tags</code>{" "}
+                    de la fiche entreprise.
+                  </p>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 10.5, color: "var(--text-3)", lineHeight: 1.5, margin: "0 0 8px" }}>
+                      Désactivez un service pour prévisualiser le site sans lui.
+                    </p>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {enterpriseTags.map((t) => (
+                        <button
+                          key={t}
+                          className="ct-tag-chip"
+                          aria-pressed={activeTags.includes(t)}
+                          data-real="true"
+                          onClick={() => toggleSimTag(t)}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    {simulatedTags !== null && (
+                      <button className="btn ghost xs" style={{ marginTop: 8 }} onClick={clearSimulation}>
+                        <RotateCcw size={11} />Réinitialiser
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Chiffres clés */}
+            <div className="section">
+              <div className="section-hd" aria-expanded="true">
+                <ChevronDown size={11} className="chev" />
+                <span>Chiffres clés</span>
+              </div>
+              <div className="ct-stats">
+                <div className="ct-stats-hd">
+                  <h4>
+                    <FlaskConical size={12} style={{ color: "var(--text-3)" }} />
+                    Stats
+                  </h4>
+                  <button className="btn ghost xs" onClick={() => setStats((s) => [...s, { label: "", value: "" }])}>
+                    <Plus size={11} />Ajouter
                   </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Sections of active page */}
-          <div className="section">
-            <div className="section-hd" aria-expanded="true">
-              <ChevronDown size={11} className="chev" />
-              <span>Sections</span>
-            </div>
-            <div className="ct-sec-list" style={{ paddingBottom: 12 }}>
-              {sections.length === 0 && (
-                <p style={{ fontSize: 11, color: "var(--text-4)", fontStyle: "italic", padding: "4px 8px", margin: 0 }}>
-                  Aucune section sur cette page.
+                </div>
+                <p className="hint">
+                  Stockés sur l&apos;entreprise, injectés automatiquement dans les sections « stats ».
                 </p>
-              )}
-              {sections.map((inst) => {
-                const def = inst.section_def;
-                const adaptive = !!def?.is_tag_adaptive;
-                const taggedCount =
-                  (inst.blocks ?? []).filter((b) => !!b.service_tag).length + (sectionTag(inst) ? 1 : 0);
-                return (
-                  <button
-                    key={inst.id}
-                    className="ct-sec-row"
-                    aria-selected={selectedId === inst.id}
-                    onClick={() => selectSection(inst.id)}
-                  >
-                    <span className="stype">{def?.type ?? "section"}</span>
-                    <span className="sname">{def?.name ?? "Section"}</span>
-                    {!sectionVisible(inst) && <EyeOff size={11} className="hide-ic" />}
-                    {adaptive && (
-                      <span className="adaptbadge" title="Section adaptative aux services">
-                        <Tag size={9} />adapt
-                      </span>
-                    )}
-                    {taggedCount > 0 && (
-                      <span className="tagbadge" title={`${taggedCount} élément(s) tagué(s)`}>
-                        <Tag size={9} />{taggedCount}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Chiffres clés */}
-          <div className="section">
-            <div className="section-hd" aria-expanded="true">
-              <ChevronDown size={11} className="chev" />
-              <span>Chiffres clés</span>
-            </div>
-            <div className="ct-stats">
-              <div className="ct-stats-hd">
-                <h4>
-                  <FlaskConical size={12} style={{ color: "var(--text-3)" }} />
-                  Stats
-                </h4>
+                {stats.length === 0 ? (
+                  <p className="ct-stat-empty">Aucun chiffre clé.</p>
+                ) : (
+                  stats.map((s, i) => (
+                    <div key={i} className="ct-stat-row">
+                      <input
+                        className="input val"
+                        value={s.value}
+                        onChange={(e) => setStats((arr) => arr.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
+                        placeholder="500"
+                      />
+                      <input
+                        className="input"
+                        value={s.label}
+                        onChange={(e) => setStats((arr) => arr.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
+                        placeholder="clients satisfaits"
+                      />
+                      <button className="del" title="Supprimer" onClick={() => setStats((arr) => arr.filter((_, j) => j !== i))}>
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  ))
+                )}
                 <button
-                  className="btn ghost xs"
-                  onClick={() => setStats((s) => [...s, { label: "", value: "" }])}
+                  className={"btn " + (statsDirty ? "primary" : "subtle")}
+                  style={{ width: "100%", justifyContent: "center", marginTop: 10, height: 28 }}
+                  onClick={saveStats}
+                  disabled={!statsDirty || savingStats || !enterpriseId}
                 >
-                  <Plus size={11} />Ajouter
+                  {statsDirty
+                    ? (<><Save size={13} />Enregistrer</>)
+                    : (<><Check size={13} style={{ color: "var(--ok)" }} />À jour</>)}
                 </button>
               </div>
-              <p className="hint">
-                Stockés sur l&apos;entreprise, injectés automatiquement dans les sections « stats ».
-              </p>
-              {stats.length === 0 ? (
-                <p className="ct-stat-empty">Aucun chiffre clé.</p>
-              ) : (
-                stats.map((s, i) => (
-                  <div key={i} className="ct-stat-row">
-                    <input
-                      className="input val"
-                      value={s.value}
-                      onChange={(e) => setStats((arr) => arr.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))}
-                      placeholder="500"
-                    />
-                    <input
-                      className="input"
-                      value={s.label}
-                      onChange={(e) => setStats((arr) => arr.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))}
-                      placeholder="clients satisfaits"
-                    />
-                    <button className="del" title="Supprimer" onClick={() => setStats((arr) => arr.filter((_, j) => j !== i))}>
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                ))
-              )}
-              <button
-                className={"btn " + (statsDirty ? "primary" : "subtle")}
-                style={{ width: "100%", justifyContent: "center", marginTop: 10, height: 28 }}
-                onClick={saveStats}
-                disabled={!statsDirty || savingStats || !enterpriseId}
-              >
-                {statsDirty
-                  ? (<><Save size={13} />Enregistrer</>)
-                  : (<><Check size={13} style={{ color: "var(--ok)" }} />À jour</>)}
-              </button>
             </div>
           </div>
+        </aside>
+
+        {/* ───────── Center pane ───────── */}
+        <div className="ct-mid">
+          <SchemaCallout />
+          <div className="ct-scroll">
+            {sections.length === 0 && (
+              <div style={{ padding: 60, textAlign: "center", color: "var(--text-4)" }}>
+                Aucune section sur cette page. Ajoutez-en depuis le Wireframe.
+              </div>
+            )}
+            {sections.map((inst) => (
+              <SectionContentCard
+                key={inst.id}
+                instance={inst}
+                selected={selectedId === inst.id}
+                selectedBlockId={selectedId === inst.id ? selectedBlockId : null}
+                hidden={!sectionVisible(inst)}
+                onSelect={() => selectSection(inst.id)}
+                onSelectBlock={(bid) => selectBlock(inst.id, bid)}
+              />
+            ))}
+          </div>
         </div>
-      </aside>
 
-      {/* ───────── Center pane ───────── */}
-      <div className="ct-mid">
-        <TagSimulatorBar
-          tags={availableTags}
-          realTags={realTags}
-          activeTags={activeTags}
-          isSimulating={simulatedTags !== null}
-          onToggle={toggleSimTag}
-          onClear={clearSimulation}
-        />
-        <SchemaCallout />
-
-        <div className="ct-scroll">
-          {sections.length === 0 && (
-            <div style={{ padding: 60, textAlign: "center", color: "var(--text-4)" }}>
-              Aucune section sur cette page. Ajoutez-en depuis le Wireframe.
-            </div>
-          )}
-          {sections.map((inst) => (
-            <SectionContentCard
-              key={inst.id}
-              instance={inst}
-              selected={selectedId === inst.id}
-              selectedBlockId={selectedId === inst.id ? selectedBlockId : null}
-              hidden={!sectionVisible(inst)}
-              activeTags={activeTags}
-              onSelect={() => selectSection(inst.id)}
-              onSelectBlock={(bid) => selectBlock(inst.id, bid)}
-            />
-          ))}
-        </div>
+        {/* ───────── Right pane ───────── */}
+        <aside className="ct-right">
+          <ContentInspector instance={selectedOnPage} blockId={selectedBlockId} />
+        </aside>
       </div>
-
-      {/* ───────── Right pane ───────── */}
-      <aside className="ct-right">
-        <ContentInspector
-          instance={selectedOnPage}
-          blockId={selectedBlockId}
-          activeTags={activeTags}
-          availableTags={availableTags}
-        />
-      </aside>
-    </div>
-  );
-}
-
-// ─── Tag simulator bar ─────────────────────────────────────────────────────
-
-function TagSimulatorBar({
-  tags, realTags, activeTags, isSimulating, onToggle, onClear,
-}: {
-  tags: string[];
-  realTags: string[];
-  activeTags: string[];
-  isSimulating: boolean;
-  onToggle: (t: string) => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="ct-simbar">
-      <span className="lead">
-        <span className="flask"><FlaskConical size={11} /></span>
-        Simuler tags entreprise
-      </span>
-      <div className="chips">
-        {tags.length === 0 && (
-          <span style={{ fontSize: 11, color: "var(--text-4)" }}>aucun tag dans le système</span>
-        )}
-        {tags.map((t) => {
-          const on = activeTags.includes(t);
-          const isReal = realTags.includes(t);
-          return (
-            <button
-              key={t}
-              className="ct-tag-chip"
-              aria-pressed={on}
-              data-real={isReal ? "true" : "false"}
-              title={isReal ? "Tag réel de l'entreprise" : "Tag simulé"}
-              onClick={() => onToggle(t)}
-            >
-              {t}
-            </button>
-          );
-        })}
-      </div>
-      {isSimulating && (
-        <button className="reset" onClick={onClear}>
-          <RotateCcw size={11} />Tags réels
-        </button>
-      )}
-    </div>
+    </ContentTagsCtx.Provider>
   );
 }
 
@@ -426,7 +393,7 @@ function SchemaCallout() {
       <Sparkles size={13} />
       <span>
         <b>Cet onglet édite le contenu déclaré par le schéma de chaque section.</b>{" "}
-        Les champs sont définis une fois, réutilisés par l&apos;éditeur, le rendu et l&apos;IA.
+        Taguez une section ou un bloc par service pour qu&apos;ils s&apos;adaptent à l&apos;entreprise.
       </span>
       <button className="x" onClick={() => setOpen(false)} title="Masquer">
         <X size={12} />
@@ -438,17 +405,17 @@ function SchemaCallout() {
 // ─── Section content card ──────────────────────────────────────────────────
 
 function SectionContentCard({
-  instance, selected, selectedBlockId, hidden, activeTags, onSelect, onSelectBlock,
+  instance, selected, selectedBlockId, hidden, onSelect, onSelectBlock,
 }: {
   instance: SiteSectionInstance;
   selected: boolean;
   selectedBlockId: string | null;
   hidden: boolean;
-  activeTags: string[];
   onSelect: () => void;
   onSelectBlock: (blockId: string) => void;
 }) {
   const { dispatch } = useRelumeBuilder();
+  const { activeTags } = useContentTags();
   const def = instance.section_def;
   const schema = def ? getSchemaForSection(def) : null;
   const adaptive = !!def?.is_tag_adaptive;
@@ -508,9 +475,7 @@ function SectionContentCard({
       {hidden && (
         <div className="ct-hidden-banner">
           <EyeOff size={11} />
-          {instance.is_hidden
-            ? "Section masquée manuellement"
-            : `Masquée — requiert le tag "${tag}"`}
+          {instance.is_hidden ? "Section masquée manuellement" : `Masquée — requiert le tag "${tag}"`}
         </div>
       )}
 
@@ -536,13 +501,11 @@ function SectionContentCard({
             />
           );
         })}
-
         {schema && blockSchema && (
           <BlocksField
             instance={instance}
             blockSchema={blockSchema}
             adaptive={adaptive}
-            activeTags={activeTags}
             selectedBlockId={selectedBlockId}
             onSelectBlock={onSelectBlock}
           />
@@ -554,11 +517,6 @@ function SectionContentCard({
 
 // ─── Schema field row ──────────────────────────────────────────────────────
 
-function fieldKindLabel(field: SectionField): string {
-  if (field.type === "header" || field.type === "paragraph") return "";
-  return field.type;
-}
-
 function SchemaFieldRow({
   field, value, onChange,
 }: {
@@ -566,7 +524,6 @@ function SchemaFieldRow({
   value: unknown;
   onChange: (v: unknown) => void;
 }) {
-  // Separators render as a thin labelled divider, not a field row.
   if (field.type === "header") {
     return (
       <div style={{ fontSize: 10, fontWeight: 600, color: "var(--text-3)", textTransform: "uppercase", letterSpacing: ".06em", paddingTop: 4 }}>
@@ -577,12 +534,11 @@ function SchemaFieldRow({
   if (field.type === "paragraph") {
     return <p style={{ margin: 0, fontSize: 11, color: "var(--text-4)", lineHeight: 1.5 }}>{field.content}</p>;
   }
-
   return (
-    <div className="ct-field">
+    <div className="ct-field" style={{ gridTemplateColumns: "110px 1fr" }}>
       <div className="ct-field-lbl">
         <span className="name">{field.label}</span>
-        <span className="kind">{fieldKindLabel(field)}</span>
+        <span className="kind">{field.type}</span>
       </div>
       <div className="ct-field-val">
         <FieldInput field={field} value={value} onChange={onChange} />
@@ -719,7 +675,6 @@ function FieldInput({
     );
   }
 
-  // text, url, page_link, icon_picker and any other → plain input
   return (
     <input
       className="input"
@@ -733,19 +688,18 @@ function FieldInput({
 // ─── Blocks field ──────────────────────────────────────────────────────────
 
 function BlocksField({
-  instance, blockSchema, adaptive, activeTags, selectedBlockId, onSelectBlock,
+  instance, blockSchema, adaptive, selectedBlockId, onSelectBlock,
 }: {
   instance: SiteSectionInstance;
   blockSchema: SectionBlockSchema;
   adaptive: boolean;
-  activeTags: string[];
   selectedBlockId: string | null;
   onSelectBlock: (blockId: string) => void;
 }) {
   const { dispatch } = useRelumeBuilder();
+  const { activeTags } = useContentTags();
   const blocks = (instance.blocks ?? []).filter((b) => b.type === blockSchema.type);
 
-  // The first 1-2 text-like fields are surfaced inline on the block row.
   const textFields = blockSchema.settings.filter(
     (f) => f.type === "text" || f.type === "textarea" || f.type === "richtext",
   );
@@ -800,17 +754,10 @@ function BlocksField({
                       onClick={(e) => e.stopPropagation()}
                     />
                   )}
-                  {!titleField && (
-                    <span style={{ fontSize: 11, color: "var(--text-3)" }}>{block.type}</span>
-                  )}
+                  {!titleField && <span style={{ fontSize: 11, color: "var(--text-3)" }}>{block.type}</span>}
                 </div>
                 {adaptive ? (
-                  <span
-                    className="ct-tag-picker"
-                    data-set="true"
-                    title="Tag du service (intrinsèque)"
-                    style={{ cursor: "default" }}
-                  >
+                  <span className="ct-tag-picker" data-set="true" title="Service" style={{ cursor: "default" }}>
                     <Tag size={10} />{bTag ?? "—"}
                   </span>
                 ) : (
@@ -870,7 +817,7 @@ function TagControl({
 }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLSpanElement>(null);
-  const options = useServiceTags();
+  const { enterpriseTags } = useContentTags();
 
   React.useEffect(() => {
     if (!open) return;
@@ -888,11 +835,13 @@ function TagControl({
       </button>
       {open && (
         <div className="ct-tag-pop" style={{ top: "calc(100% + 4px)", right: 0 }}>
-          <div className="ct-pop-hd">Filtrer {scope === "section" ? "la section" : "le bloc"} par tag</div>
-          {options.length === 0 && (
-            <div style={{ fontSize: 11, color: "var(--text-4)", padding: "4px 6px" }}>Aucun tag.</div>
+          <div className="ct-pop-hd">Filtrer {scope === "section" ? "la section" : "le bloc"} par service</div>
+          {enterpriseTags.length === 0 && (
+            <div style={{ fontSize: 11, color: "var(--text-4)", padding: "4px 6px" }}>
+              Aucun service sur l&apos;entreprise.
+            </div>
           )}
-          {options.map((t) => (
+          {enterpriseTags.map((t) => (
             <button
               key={t}
               className="ct-pop-item"
@@ -918,14 +867,13 @@ function TagControl({
 // ─── Right inspector ───────────────────────────────────────────────────────
 
 function ContentInspector({
-  instance, blockId, activeTags, availableTags,
+  instance, blockId,
 }: {
   instance: SiteSectionInstance | null;
   blockId: string | null;
-  activeTags: string[];
-  availableTags: string[];
 }) {
   const { dispatch } = useRelumeBuilder();
+  const { enterpriseTags, activeTags } = useContentTags();
 
   if (!instance) {
     return (
@@ -962,7 +910,7 @@ function ContentInspector({
             <div className="visibility-row" data-state={filtered ? "hidden" : "visible"}>
               <span>
                 {filtered ? <EyeOff size={13} style={{ marginRight: 6 }} /> : <Eye size={13} style={{ marginRight: 6 }} />}
-                {filtered ? "Masqué" : "Visible"} pour les tags actifs
+                {filtered ? "Masqué" : "Visible"} pour les services actifs
               </span>
               {bTag && <span className="pill">{bTag}</span>}
             </div>
@@ -993,15 +941,19 @@ function ContentInspector({
                 <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.5 }}>
                   Section adaptative : ce bloc correspond au service{" "}
                   <strong style={{ color: "var(--text)" }}>{bTag ?? "—"}</strong> et est généré
-                  automatiquement. Le tag n&apos;est pas modifiable.
+                  automatiquement.
+                </p>
+              ) : enterpriseTags.length === 0 ? (
+                <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-4)" }}>
+                  Aucun service sur l&apos;entreprise.
                 </p>
               ) : (
                 <>
                   <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.5 }}>
-                    Ce bloc ne s&apos;affichera que si l&apos;entreprise possède le tag sélectionné.
+                    Ce bloc ne s&apos;affiche que si l&apos;entreprise possède le service sélectionné.
                   </p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {availableTags.map((t) => (
+                    {enterpriseTags.map((t) => (
                       <button
                         key={t}
                         className="ct-tag-chip"
@@ -1018,20 +970,6 @@ function ContentInspector({
                 </>
               )}
             </div>
-
-            <div className="insp-section">
-              <div className="insp-section-hd">Schéma du bloc</div>
-              <div className="schema-overview" style={{ margin: 0 }}>
-                <div className="lbl">{blockSchema.type}</div>
-                <div className="schema-grid">
-                  {blockSchema.settings.map((f) =>
-                    "id" in f ? (
-                      <span key={f.id}><code>{f.id}</code><span style={{ color: "var(--text-4)", fontSize: 10 }}>· {f.type}</span></span>
-                    ) : null,
-                  )}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </>
@@ -1046,7 +984,6 @@ function ContentInspector({
   const sectionFiltered = !!(sectionTagVal && !activeTags.includes(sectionTagVal));
   const visible = !instance.is_hidden && !sectionFiltered;
   const blockTagCount = (instance.blocks ?? []).filter((b) => !!b.service_tag).length;
-  const contentFields = schema ? splitSchemaFields(schema).contentFields : [];
 
   return (
     <>
@@ -1077,50 +1014,42 @@ function ContentInspector({
 
           <div className="insp-section">
             <div className="insp-section-hd">Tag de section</div>
-            <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.5 }}>
-              Toute la section sera masquée si l&apos;entreprise n&apos;a pas ce tag.
-            </p>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {availableTags.map((t) => (
-                <button
-                  key={t}
-                  className="ct-tag-chip"
-                  aria-pressed={sectionTagVal === t}
-                  data-real="true"
-                  onClick={() =>
-                    dispatch({
-                      type: "UPDATE_INSTANCE_CONTENT",
-                      payload: { id: instance.id, content: { [SECTION_TAG_KEY]: sectionTagVal === t ? "" : t } },
-                    })
-                  }
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
+            {enterpriseTags.length === 0 ? (
+              <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-4)" }}>
+                Aucun service sur l&apos;entreprise liée.
+              </p>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 8px", fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.5 }}>
+                  Toute la section sera masquée si l&apos;entreprise n&apos;a pas ce service.
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {enterpriseTags.map((t) => (
+                    <button
+                      key={t}
+                      className="ct-tag-chip"
+                      aria-pressed={sectionTagVal === t}
+                      data-real="true"
+                      onClick={() =>
+                        dispatch({
+                          type: "UPDATE_INSTANCE_CONTENT",
+                          payload: { id: instance.id, content: { [SECTION_TAG_KEY]: sectionTagVal === t ? "" : t } },
+                        })
+                      }
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           <div className="insp-section">
-            <div className="insp-section-hd">Schéma de la section</div>
-            <div className="schema-overview" style={{ margin: 0 }}>
-              <div className="lbl">{def?.type ?? "section"}{def?.is_tag_adaptive ? " · adaptative" : ""}</div>
-              <div className="schema-grid">
-                {contentFields.map((f, i) =>
-                  "id" in f ? (
-                    <span key={f.id}><code>{f.id}</code><span style={{ color: "var(--text-4)", fontSize: 10 }}>· {f.type}</span></span>
-                  ) : (
-                    <span key={`h${i}`}><code>—</code></span>
-                  ),
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="insp-section">
-            <div className="insp-section-hd">Synthèse tags</div>
+            <div className="insp-section-hd">Synthèse</div>
             <div style={{ display: "grid", gap: 4, fontSize: 11.5, color: "var(--text-2)" }}>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>Tag section</span>
+                <span>Tag de section</span>
                 <span style={{ fontFamily: "var(--font-mono)", color: sectionTagVal ? "var(--info)" : "var(--text-4)" }}>
                   {sectionTagVal ?? "—"}
                 </span>
@@ -1131,6 +1060,12 @@ function ContentInspector({
                   {blockTagCount}
                 </span>
               </div>
+              {def?.is_tag_adaptive && (
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>Type</span>
+                  <span style={{ fontFamily: "var(--font-mono)", color: "var(--magic)" }}>adaptative</span>
+                </div>
+              )}
             </div>
           </div>
         </div>

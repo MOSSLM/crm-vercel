@@ -9,7 +9,7 @@ import {
 import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
-import { useServiceTags } from "@/hooks/useServiceTags";
+import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { AlertSoft, Btn, Pane, PaneBody, PaneHeader, Pill, Pop } from "./skin-primitives";
@@ -155,7 +155,7 @@ interface SitemapWorkspaceProps {
 export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: SitemapWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const canvas = useCanvasPanZoom();
-  const serviceTags = useServiceTags();
+  const serviceTags = parseServiceTags(state.variableContext);
   const [aiInput, setAiInput] = React.useState("");
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");

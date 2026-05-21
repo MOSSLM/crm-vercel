@@ -13,7 +13,6 @@ import { getSchemaForSection } from "@/data/section-schemas";
 import type { ColorSchemePreset } from "@/lib/color-utils";
 import type { SectionAnimation, SectionPreset } from "@/types";
 import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
-import { useServiceTags } from "@/hooks/useServiceTags";
 import {
   resolveNavbarLayout,
   DEFAULT_NAVBAR_LAYOUT,
@@ -37,13 +36,6 @@ const TABS: { id: TabId; label: string; icon: React.ElementType }[] = [
 export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
   const { state, dispatch } = useRelumeBuilder();
   const [activeTab, setActiveTab] = useState<TabId>("content");
-  const availableTags = useServiceTags();
-  const activeTags = React.useMemo(() => {
-    try {
-      const parsed = JSON.parse(state.variableContext.__service_tags ?? "[]");
-      return Array.isArray(parsed) ? parsed.filter((t: unknown): t is string => typeof t === "string") : [];
-    } catch { return []; }
-  }, [state.variableContext.__service_tags]);
   const instance = state.selectedInstanceId ? state.instances[state.selectedInstanceId] : null;
   const sectionDef = instance?.section_def;
 
@@ -202,8 +194,6 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                     onDuplicate={(blockId) => dispatch({ type: "DUPLICATE_BLOCK", payload: { instanceId: instance.id, blockId } })}
                     onReorder={(fromIndex, toIndex) => dispatch({ type: "REORDER_BLOCKS", payload: { instanceId: instance.id, fromIndex, toIndex } })}
                     onUpdateTag={(blockId, service_tag) => dispatch({ type: "UPDATE_BLOCK_TAG", payload: { instanceId: instance.id, blockId, service_tag } })}
-                    availableTags={availableTags}
-                    activeTags={activeTags}
                     variables={state.variableContext}
                     siteId={state.siteId}
                   />
