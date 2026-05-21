@@ -610,6 +610,24 @@ function RelumeEditorInner({
   };
 
   const handleApplyTheme = (config: SerializedThemeConfig) => {
+    // Every modern-builder section is a library section (section_id null +
+    // content.__library). Resolve its definition from the loaded catalog so
+    // it renders immediately in-session; on reload the instances API
+    // reconstructs section_def from __library anyway.
+    const resolveSectionDef = (
+      sectionId: string | null,
+      content: Record<string, unknown>,
+    ): SiteSectionDef | undefined => {
+      const lib = content?.__library as { theme_slug?: string; section_id?: string } | undefined;
+      if (lib?.theme_slug && lib?.section_id) {
+        const found = initialSections.find(
+          (def) => def.theme_slug === lib.theme_slug && def.theme_section_id === lib.section_id,
+        );
+        if (found) return found;
+      }
+      return sectionId ? sectionDefs[sectionId] : undefined;
+    };
+
     const flatInstances: SiteSectionInstance[] = [];
     for (const [pageSlug, serialized] of Object.entries(config.instancesByPage)) {
       for (const s of serialized) {
@@ -618,8 +636,8 @@ function RelumeEditorInner({
         flatInstances.push({
           id,
           site_id: siteId,
-          section_id: s.section_id,
-          section_def: sectionDefs[s.section_id] ?? undefined,
+          section_id: s.section_id ?? null,
+          section_def: resolveSectionDef(s.section_id ?? null, s.content),
           page_slug: pageSlug,
           sort_order: s.sort_order,
           content: s.content,
@@ -627,6 +645,7 @@ function RelumeEditorInner({
             id: block.id ?? nanoid(),
             type: block.type,
             settings: block.settings,
+            service_tag: block.service_tag ?? null,
           })),
           custom_style: s.custom_style,
           is_hidden: s.is_hidden,
@@ -642,6 +661,8 @@ function RelumeEditorInner({
         sitemap: config.sitemap,
         menus: config.menus,
         instances: flatInstances,
+        // Mark dirty so autosave persists the applied theme.
+        isDirty: true,
       },
     });
     toast.success("Thème appliqué");
