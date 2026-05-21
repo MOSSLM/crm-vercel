@@ -12,6 +12,7 @@ import {
   STATS_CATEGORIES,
   buildStatsForEnterprise,
   filterBlocksByEnterpriseTags,
+  isInstanceVisibleForTags,
 } from "@/lib/site-builder/menu-overrides";
 import {
   resolveNavbarLayout,
@@ -154,6 +155,11 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
       .order("sort_order");
     instances = (instanceRows ?? []) as (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
   }
+
+  // Drop sections tagged with a service the enterprise doesn't have.
+  instances = instances.filter((inst) =>
+    isInstanceVisibleForTags(inst.content as Record<string, unknown> | null, variables),
+  );
 
   const guide = styleGuide ?? DEFAULT_STYLE_GUIDE;
   const cssVars = styleGuideToCSSVars(guide);

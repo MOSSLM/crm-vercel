@@ -83,6 +83,20 @@ export function filterBlocksByEnterpriseTags(
 }
 
 /**
+ * Whether a section instance is visible for the enterprise's service tags.
+ * A section is hidden when its `content.__service_tag` meta key is set and
+ * the enterprise doesn't have that tag. Sections without the key always show.
+ */
+export function isInstanceVisibleForTags(
+  content: Record<string, unknown> | null | undefined,
+  variables: Record<string, string> | undefined,
+): boolean {
+  const tag = content?.["__service_tag"];
+  if (typeof tag !== "string" || tag === "") return true;
+  return parseEnterpriseTags(variables).has(tag);
+}
+
+/**
  * Filter sitemap pages by enterprise service tags. Pages without a
  * `service_tag` are always kept; pages with a tag are dropped when the tag
  * is not present in the enterprise's service_tags. Used by the public site

@@ -213,7 +213,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     }
 
     case "UPDATE_INSTANCE_CONTENT": {
-      const snapshot = takeSnapshot(state);
+      const snapshot = takeSnapshot(state, `content:${action.payload.id}`);
       const inst = state.instances[action.payload.id];
       if (!inst) return state;
       return {
