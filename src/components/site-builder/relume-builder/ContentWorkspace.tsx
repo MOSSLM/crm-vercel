@@ -18,6 +18,7 @@ import { useRelumeBuilder } from "./RelumeBuilderProvider";
 import { useServiceTags } from "@/hooks/useServiceTags";
 import { DynamicSectionRenderer } from "../DynamicSectionRenderer";
 import { PropertiesPanel } from "./PropertiesPanel";
+import { AdaptiveSectionContentPanel } from "./AdaptiveSectionContentPanel";
 import { Btn, Pane } from "./skin-primitives";
 import type { SiteSectionDef } from "@/types";
 
@@ -142,6 +143,10 @@ export function ContentWorkspace({
 
   // ── Page / instance navigation ────────────────────────────────────────────
   const pageInstanceIds = state.instancesByPage[state.activePage] ?? [];
+  const selectedInstance = state.selectedInstanceId
+    ? state.instances[state.selectedInstanceId]
+    : null;
+  const selectedIsAdaptive = !!selectedInstance?.section_def?.is_tag_adaptive;
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden", flex: 1, minHeight: 0, position: "relative" }}>
@@ -193,7 +198,8 @@ export function ContentWorkspace({
                   if (!inst) return null;
                   const isSel = state.selectedInstanceId === id;
                   const name = inst.section_def?.name ?? "Section";
-                  const taggedBlocks = (inst.blocks ?? []).filter((b) => !!b.service_tag).length;
+                  const adaptive = !!inst.section_def?.is_tag_adaptive;
+                  const idx = pageInstanceIds.indexOf(id);
                   return (
                     <button
                       key={id}
@@ -213,22 +219,25 @@ export function ContentWorkspace({
                         gap: 6,
                       }}
                     >
+                      <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--text-4)", flexShrink: 0 }}>
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
                       <Box size={11} />
                       <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
                       {inst.is_hidden && <EyeOff size={10} />}
-                      {taggedBlocks > 0 && (
+                      {adaptive && (
                         <span
                           style={{
                             fontSize: 9,
                             padding: "1px 5px",
                             borderRadius: 999,
-                            background: "rgba(96,165,250,0.18)",
-                            color: "#3b82f6",
+                            background: "rgba(122,90,224,0.16)",
+                            color: "var(--magic, #7A5AE0)",
                           }}
-                          title={`${taggedBlocks} bloc(s) avec service_tag`}
+                          title="Section adaptative aux services"
                         >
                           <Tag size={8} style={{ display: "inline", marginRight: 2 }} />
-                          {taggedBlocks}
+                          Adaptative
                         </span>
                       )}
                     </button>
@@ -339,9 +348,26 @@ export function ContentWorkspace({
         </div>
       </div>
 
-      {/* ─ Right: properties (re-uses PropertiesPanel from Design) ────────── */}
-      <aside className="pane" style={{ width: 320, flexShrink: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <PropertiesPanel />
+      {/* ─ Right: properties — adaptive sections get a dedicated editor ───── */}
+      <aside
+        className="pane"
+        style={{ width: 320, flexShrink: 0, overflow: "hidden", display: "flex", flexDirection: "column", background: "#171717" }}
+      >
+        {selectedInstance && selectedIsAdaptive ? (
+          <>
+            <div className="pane-hd contextual" style={{ background: "#171717", borderColor: "rgba(255,255,255,0.08)" }}>
+              <div className="title-with-icon" style={{ color: "rgba(255,255,255,0.85)" }}>
+                <Tag size={12} style={{ color: "var(--magic, #7A5AE0)" }} />
+                <span>{selectedInstance.section_def?.name ?? "Section"} · adaptative</span>
+              </div>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: "hidden", color: "#fff" }}>
+              <AdaptiveSectionContentPanel instance={selectedInstance} />
+            </div>
+          </>
+        ) : (
+          <PropertiesPanel />
+        )}
       </aside>
     </div>
   );

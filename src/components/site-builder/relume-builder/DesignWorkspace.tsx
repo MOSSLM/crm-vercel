@@ -1558,7 +1558,16 @@ function SectionPanel({
         )}
 
         {/* Blocs (boutons, items, etc.) */}
-        {hasBlocks && (
+        {hasBlocks && sectionDef?.is_tag_adaptive && (
+          <SkinSection label="Services" defaultOpen>
+            <p style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.5, margin: 0 }}>
+              Section adaptative : le contenu de chaque service se modifie dans l&apos;onglet{" "}
+              <strong>Contenu</strong>. Un élément est généré automatiquement par service de
+              l&apos;entreprise.
+            </p>
+          </SkinSection>
+        )}
+        {hasBlocks && !sectionDef?.is_tag_adaptive && (
           <SkinSection label="Blocs &amp; boutons" defaultOpen>
             <BlocksEditor
               schema={schema!}
