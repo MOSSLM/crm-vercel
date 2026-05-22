@@ -1,4 +1,5 @@
 import type { SectionBlockInstance, SiteMenuItem, SiteMenus, SitemapPage } from "@/types";
+import { getParentSlug } from "./sitemap-tree";
 
 /**
  * Computes the content overrides to merge into a section's content based on
@@ -7,15 +8,24 @@ import type { SectionBlockInstance, SiteMenuItem, SiteMenus, SitemapPage } from 
  * (DynamicPageRenderer) so navbar/footer links stay in sync with the menus
  * panel without per-section editing.
  */
+function mapNavItems(items: SiteMenuItem[]): Array<Record<string, unknown>> {
+  return items.map((item) => ({
+    label: item.label,
+    href: item.url,
+    external: item.external,
+    ...(item.children && item.children.length > 0
+      ? { children: mapNavItems(item.children) }
+      : {}),
+  }));
+}
+
 export function deriveMenuOverrides(
   category: string | null | undefined,
   menus: SiteMenus | undefined | null,
 ): Record<string, unknown> {
   if (!menus || !category) return {};
   if (category === "navbar" || category === "navigation") {
-    return {
-      links: menus.nav.map((item) => ({ label: item.label, href: item.url, external: item.external })),
-    };
+    return { links: mapNavItems(menus.nav) };
   }
   if (category === "footers" || category === "footer") {
     return {
@@ -28,6 +38,9 @@ export function deriveMenuOverrides(
 
 /** Categories that should trigger the navbar position wrapper + headroom. */
 export const NAVBAR_CATEGORIES = new Set(["navbar", "navigation"]);
+
+/** Footer section categories. */
+export const FOOTER_CATEGORIES = new Set(["footer", "footers"]);
 
 /** Categories that should auto-fill testimonial / social-proof data. */
 export const TESTIMONIAL_CATEGORIES = new Set(["testimonials", "social-proof", "Social Proof"]);
@@ -120,32 +133,73 @@ export function filterSitemapByEnterpriseTags(
 }
 
 /**
- * Drop menu items linking to a sitemap page whose `service_tag` the
- * enterprise doesn't have. Such pages 404 on the public site, so their nav /
- * footer links would otherwise be dead. Items not matching a hidden page are
- * kept untouched. Used by the public site renderer so each enterprise's
- * navigation only exposes the pages that actually exist for it.
+ * Build the menus actually shown on the public site for one enterprise.
+ *
+ * - Links to pages 404ing for this enterprise (tagged-out, or empty / no
+ *   sections) are removed so the navigation never points to a dead page.
+ * - In the nav, an empty "category" page (e.g. /services with no sections
+ *   but real sub-pages) becomes a non-clickable dropdown grouping its
+ *   visible children. In the footer, such a page is simply dropped.
  */
-export function filterMenusByEnterpriseTags(
+export function buildPublicMenus(
   menus: SiteMenus | undefined | null,
   sitemap: SitemapPage[] | undefined | null,
+  instances: Array<{ page_slug: string; is_hidden?: boolean }> | undefined | null,
   enterpriseTags: string[] | undefined | null,
 ): SiteMenus | undefined | null {
-  if (!menus || !Array.isArray(sitemap) || sitemap.length === 0) return menus;
+  if (!menus) return menus;
+  const pages = Array.isArray(sitemap) ? sitemap : [];
+  if (pages.length === 0) return menus;
+
   const tagSet = new Set(enterpriseTags ?? []);
-  const hiddenSlugs = new Set(
-    sitemap.filter((p) => p.service_tag && !tagSet.has(p.service_tag)).map((p) => p.slug),
+  const slugSet = new Set(pages.map((p) => p.slug));
+  const contentSlugs = new Set(
+    (instances ?? []).filter((i) => !i.is_hidden).map((i) => i.page_slug),
   );
-  if (hiddenSlugs.size === 0) return menus;
-  const keep = (item: SiteMenuItem) => !hiddenSlugs.has(item.url);
-  const filterList = (list: SiteMenuItem[]) =>
-    list
-      .filter(keep)
-      .map((item) => (item.children ? { ...item, children: item.children.filter(keep) } : item));
+
+  /** A sitemap page is visible when it has content and isn't tag-filtered. */
+  const isPageVisible = (slug: string): boolean => {
+    const page = pages.find((p) => p.slug === slug);
+    if (!page) return true; // external / non-sitemap link — leave untouched
+    if (page.service_tag && !tagSet.has(page.service_tag)) return false;
+    return contentSlugs.has(slug);
+  };
+
+  const childPagesOf = (slug: string): SitemapPage[] =>
+    pages.filter((p) => getParentSlug(p.slug, slugSet) === slug);
+
+  const transform = (item: SiteMenuItem, grouping: boolean): SiteMenuItem | null => {
+    const isInternalPage = slugSet.has(item.url);
+
+    if (item.children && item.children.length > 0) {
+      const kids = item.children
+        .map((c) => transform(c, grouping))
+        .filter((x): x is SiteMenuItem => !!x);
+      if (isInternalPage && !isPageVisible(item.url)) {
+        if (!grouping) return null;
+        return kids.length > 0 ? { ...item, url: "", children: kids } : null;
+      }
+      return { ...item, children: kids };
+    }
+
+    if (!isInternalPage || isPageVisible(item.url)) return item;
+
+    // Empty / hidden internal page. In the nav, fall back to a dropdown of
+    // its visible sub-pages; in the footer just drop it.
+    if (!grouping) return null;
+    const autoKids = childPagesOf(item.url)
+      .filter((c) => isPageVisible(c.slug))
+      .map((c) => ({ id: c.id, label: c.title, url: c.slug }));
+    return autoKids.length > 0 ? { ...item, url: "", children: autoKids } : null;
+  };
+
+  const apply = (list: SiteMenuItem[], grouping: boolean) =>
+    list.map((i) => transform(i, grouping)).filter((x): x is SiteMenuItem => !!x);
+
   return {
-    nav: filterList(menus.nav),
-    footer: filterList(menus.footer),
-    footerLegal: filterList(menus.footerLegal),
+    nav: apply(menus.nav, true),
+    footer: apply(menus.footer, false),
+    footerLegal: apply(menus.footerLegal, false),
   };
 }
 

@@ -8,6 +8,7 @@ import { buildCtaCSSVars } from "@/lib/button-style";
 import {
   deriveMenuOverrides,
   NAVBAR_CATEGORIES,
+  FOOTER_CATEGORIES,
   TESTIMONIAL_CATEGORIES,
   STATS_CATEGORIES,
   buildStatsForEnterprise,
@@ -136,10 +137,12 @@ interface DynamicPageRendererProps {
 export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances }: DynamicPageRendererProps) {
   const supabase = getSupabaseServiceClient();
 
-  let instances: (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
+  type RenderInstance = SiteSectionInstance & { section_def: SiteSectionDef | null };
+  const allInstances = (preloadedInstances ?? []) as RenderInstance[];
 
+  let instances: RenderInstance[];
   if (preloadedInstances) {
-    instances = (preloadedInstances as (SiteSectionInstance & { section_def: SiteSectionDef | null })[])
+    instances = allInstances
       .filter((inst) => inst.page_slug === pageSlug && !inst.is_hidden)
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   } else {
@@ -153,7 +156,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
       .eq("page_slug", pageSlug)
       .eq("is_hidden", false)
       .order("sort_order");
-    instances = (instanceRows ?? []) as (SiteSectionInstance & { section_def: SiteSectionDef | null })[];
+    instances = (instanceRows ?? []) as RenderInstance[];
   }
 
   // Drop sections tagged with a service the enterprise doesn't have.
@@ -164,22 +167,28 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
   const guide = styleGuide ?? DEFAULT_STYLE_GUIDE;
   const cssVars = styleGuideToCSSVars(guide);
 
-  if (instances.length === 0) {
-    return (
-      <div style={{ padding: "80px 24px", textAlign: "center", color: "#6b7280" }}>
-        Aucun contenu pour cette page.
-      </div>
-    );
-  }
+  // Home navbar / footer are inherited by every other page so the chrome is
+  // defined once (on the home page) and stays consistent everywhere.
+  const homeChrome =
+    pageSlug !== "/" && preloadedInstances
+      ? allInstances
+          .filter((i) => i.page_slug === "/" && !i.is_hidden)
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      : [];
 
-  // Collect library refs and fetch their theme_sections code
-  const libRefs = instances
-    .map((inst) => (inst.content as Record<string, unknown> | null)?.__library as { theme_slug: string; section_id: string } | undefined)
-    .filter((ref): ref is { theme_slug: string; section_id: string } => Boolean(ref));
+  const refOf = (inst: { content?: unknown }) =>
+    (inst.content as Record<string, unknown> | null)?.__library as
+      | { theme_slug: string; section_id: string }
+      | undefined;
 
+  // Resolve every library section's theme code/category in one query —
+  // covering both this page's sections and the inherited home chrome.
   const themeSectionMap = new Map<string, { code: string; example_data: Record<string, unknown> | null; category: string | null }>();
-  if (libRefs.length > 0) {
-    const themeSlugs = [...new Set(libRefs.map((r) => r.theme_slug))];
+  const lookupRefs = [...instances, ...homeChrome]
+    .map(refOf)
+    .filter((r): r is { theme_slug: string; section_id: string } => Boolean(r));
+  if (lookupRefs.length > 0) {
+    const themeSlugs = [...new Set(lookupRefs.map((r) => r.theme_slug))];
     const { data: themeSections } = await supabase
       .from("theme_sections")
       .select("theme_slug, section_id, code, example_data, category")
@@ -192,6 +201,39 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
       });
     }
   }
+
+  const categoryOf = (inst: RenderInstance): string | null => {
+    if (inst.section_def?.category) return inst.section_def.category;
+    const ref = refOf(inst);
+    return ref ? themeSectionMap.get(`${ref.theme_slug}:${ref.section_id}`)?.category ?? null : null;
+  };
+
+  // Prepend home's navbar / append home's footer when this page has none.
+  if (homeChrome.length > 0) {
+    const has = (set: Set<string>) =>
+      instances.some((i) => { const c = categoryOf(i); return !!c && set.has(c); });
+    if (!has(NAVBAR_CATEGORIES)) {
+      const navbars = homeChrome.filter((i) => { const c = categoryOf(i); return !!c && NAVBAR_CATEGORIES.has(c); });
+      instances = [...navbars, ...instances];
+    }
+    if (!has(FOOTER_CATEGORIES)) {
+      const footers = homeChrome.filter((i) => { const c = categoryOf(i); return !!c && FOOTER_CATEGORIES.has(c); });
+      instances = [...instances, ...footers];
+    }
+  }
+
+  if (instances.length === 0) {
+    return (
+      <div style={{ padding: "80px 24px", textAlign: "center", color: "#6b7280" }}>
+        Aucun contenu pour cette page.
+      </div>
+    );
+  }
+
+  // Library refs for the FINAL instances list (drives Tailwind JIT + render).
+  const libRefs = instances
+    .map(refOf)
+    .filter((ref): ref is { theme_slug: string; section_id: string } => Boolean(ref));
 
   // Aggregate Tailwind class tokens from all library section codes and
   // generate a single CSS blob for the page (cached by token hash).

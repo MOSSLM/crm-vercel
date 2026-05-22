@@ -1448,6 +1448,7 @@ export type RelumeBuilderAction =
   | { type: 'ADD_PAGE'; payload: SitemapPage }
   | { type: 'REMOVE_PAGE'; payload: string }
   | { type: 'UPDATE_PAGE'; payload: { id: string; data: Partial<SitemapPage> } }
+  | { type: 'RENAME_PAGE_SLUG'; payload: { id: string; slug: string } }
   | { type: 'DUPLICATE_PAGE'; payload: string }
   | { type: 'TOGGLE_AI_PANEL' }
   | { type: 'TOGGLE_STYLE_PANEL' }

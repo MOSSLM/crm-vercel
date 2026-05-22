@@ -132,6 +132,11 @@ IMPORTANT:
 - Écris en français, style professionnel et convaincant
 - Adapte le style guide aux couleurs de l'entreprise si pertinent
 - Si des variables sont disponibles, utilise les tokens {{ entreprise.* }} pour les données dynamiques
+- Les "slug" sont des chemins : tu peux créer des pages imbriquées. Pour une page
+  dédiée à un service précis, utilise un chemin enfant, ex: "/services/climatisation",
+  "/services/chauffage". La page parente "/services" peut rester une page catégorie.
+- Chaque page que tu crées DOIT avoir des sections. Ne crée jamais une page vide :
+  une page sans section n'est pas publiée comme page (elle ne sert que de catégorie).
 `.trim();
 
     let text: string;
