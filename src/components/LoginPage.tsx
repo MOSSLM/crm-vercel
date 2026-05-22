@@ -48,7 +48,7 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900/90 dark:via-slate-800/95 dark:to-blue-900/90 p-4 relative">
+    <div className="min-h-screen flex items-center justify-center bg-background p-4 relative">
       {/* Theme toggle en haut à droite */}
       <div className="absolute top-4 right-4">
         <ThemeToggle />
