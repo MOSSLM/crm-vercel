@@ -317,8 +317,8 @@ export function EmailCompose({
                 className={cn(
                   "mt-2 flex w-full items-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-all",
                   attachAudit
-                    ? "bg-blue-600 text-white"
-                    : "border border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-400 dark:hover:bg-blue-900/30"
+                    ? "bg-primary text-primary-foreground"
+                    : "border border-border text-primary hover:bg-accent"
                 )}
               >
                 <Paperclip className="h-3.5 w-3.5" />

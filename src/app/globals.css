@@ -19,53 +19,77 @@
   --font-weight-medium: 500;
   --font-weight-normal: 400;
   --tracking-tight: -0.02em;
-  --font-family-base: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-family-base: "Geist", var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-family-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-family-mono: "Geist Mono", var(--font-dm-mono), ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Color system - Light mode (lpura blue palette) */
-  --background: #f5f9ff;
-  --foreground: #00091a;
-  --card: #f5f9ff;
-  --card-foreground: #00091a;
-  --popover: #ffffff;
-  --popover-foreground: #00091a;
-  --primary: #0066ff;
-  --primary-foreground: #ffffff;
-  --secondary: #cce0ff;
-  --secondary-foreground: #000308;
-  --muted: #e0edff;
-  --muted-foreground: #666666;
-  --accent: #e0edff;
-  --accent-foreground: #0066ff;
-  --destructive: #ef4444;
-  --destructive-foreground: #f5f8fc;
-  --border: #e6e6e6;
-  --input: #e6e6e6;
-  --input-background: #f5f9ff;
-  --switch-background: #cce0ff;
-  --ring: rgba(0, 102, 255, 0.22);
+  /* Color system - Light mode (Sama CRM — Direction Artistique) */
+  --background: #FBFAF7;
+  --foreground: #14120E;
+  --card: #FFFFFF;
+  --card-foreground: #14120E;
+  --popover: #FFFFFF;
+  --popover-foreground: #14120E;
+  --primary: #E2552B;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F4F2EC;
+  --secondary-foreground: #14120E;
+  --muted: #F4F2EC;
+  --muted-foreground: #8A877F;
+  --accent: #F4F2EC;
+  --accent-foreground: #E2552B;
+  --destructive: #B5322F;
+  --destructive-foreground: #FFFFFF;
+  --border: rgba(20, 18, 14, 0.10);
+  --input: rgba(20, 18, 14, 0.12);
+  --input-background: #FFFFFF;
+  --switch-background: #ECE9E1;
+  --ring: rgba(226, 85, 43, 0.30);
 
   /* Layout */
   --radius: 0.75rem;
-  --shadow-card: 0 6px 20px rgba(17, 24, 39, 0.04);
-  --shadow-elevated: 0 12px 32px rgba(17, 24, 39, 0.06);
+  --shadow-card: 0 1px 0 rgba(20, 18, 14, 0.04), 0 4px 12px rgba(20, 18, 14, 0.06);
+  --shadow-elevated: 0 1px 0 rgba(20, 18, 14, 0.04), 0 12px 32px rgba(20, 18, 14, 0.08);
 
   /* Sidebar colors */
-  --sidebar: #f5f9ff;
-  --sidebar-foreground: #00091a;
-  --sidebar-primary: #0066ff;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #e0edff;
-  --sidebar-accent-foreground: #00091a;
-  --sidebar-border: #e6e6e6;
-  --sidebar-ring: rgba(0, 102, 255, 0.22);
+  --sidebar: #F4F2EC;
+  --sidebar-foreground: #14120E;
+  --sidebar-primary: #E2552B;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #ECE9E1;
+  --sidebar-accent-foreground: #14120E;
+  --sidebar-border: rgba(20, 18, 14, 0.08);
+  --sidebar-ring: rgba(226, 85, 43, 0.30);
 
   /* Semantic colors */
-  --success: #2f8f6b;
-  --success-foreground: #ffffff;
-  --warning: #c98a1c;
-  --warning-foreground: #00091a;
-  --info: #68afc1;
-  --info-foreground: #ffffff;
+  --success: #1F8A5B;
+  --success-foreground: #FFFFFF;
+  --warning: #C8881F;
+  --warning-foreground: #FFFFFF;
+  --info: #2A6FDB;
+  --info-foreground: #FFFFFF;
+
+  /* Direction Artistique — extra tokens (warm cream palette) */
+  --bg: #FBFAF7;
+  --bg-2: #F4F2EC;
+  --bg-3: #ECE9E1;
+  --surface: #FFFFFF;
+  --surface-2: #F8F6F1;
+  --text: #14120E;
+  --text-2: #5C5953;
+  --text-3: #8A877F;
+  --text-4: #B5B2AA;
+  --accent-2: #C73E16;
+  --accent-tint: rgba(226, 85, 43, 0.10);
+  --ok: #1F8A5B;
+  --ok-tint: rgba(31, 138, 91, 0.10);
+  --warn: #C8881F;
+  --warn-tint: rgba(200, 136, 31, 0.14);
+  --danger: #B5322F;
+  --danger-tint: rgba(181, 50, 47, 0.10);
+  --info-tint: rgba(42, 111, 219, 0.10);
+  --magic: #7A5AE0;
+  --magic-tint: rgba(122, 90, 224, 0.10);
 
   /* Animation timings */
   --animation-fast: 150ms;
@@ -245,9 +269,10 @@
 /* Typography system */
 @layer base {
   h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    letter-spacing: var(--tracking-tight);
+    font-family: var(--font-family-serif);
+    font-size: 2.1rem;
+    font-weight: 400;
+    letter-spacing: -0.01em;
     line-height: 1.1;
     margin-bottom: 0.75rem;
   }
