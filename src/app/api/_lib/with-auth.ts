@@ -4,10 +4,11 @@ import { corsHeadersFor, preflight, type CorsOptions } from "./cors";
 import { jsonError } from "./respond";
 import { requireRole, type UserRole } from "./require-role";
 
-export type AuthedContext<TBody> = {
+export type AuthedContext<TBody, TParams> = {
   user: { id: string; email?: string };
   accessToken: string;
   body: TBody;
+  params: TParams;
   req: Request;
   cors: Record<string, string>;
 };
@@ -18,7 +19,7 @@ export type WithAuthOptions<TBody> = {
   cors?: CorsOptions;
 };
 
-export type RouteHandler<TBody> = (ctx: AuthedContext<TBody>) => Promise<Response> | Response;
+export type RouteHandler<TBody, TParams> = (ctx: AuthedContext<TBody, TParams>) => Promise<Response> | Response;
 
 /**
  * Higher-order wrapper that handles the standard auth + CORS + body-validation
@@ -36,11 +37,14 @@ export type RouteHandler<TBody> = (ctx: AuthedContext<TBody>) => Promise<Respons
  * All non-OK responses include the same CORS headers the success path would,
  * so cross-origin clients can read the status.
  */
-export const withAuth = <TBody = undefined>(
+export const withAuth = <TBody = undefined, TParams = Record<string, string>>(
   opts: WithAuthOptions<TBody>,
-  handler: RouteHandler<TBody>,
+  handler: RouteHandler<TBody, TParams>,
 ) => {
-  return async (req: Request): Promise<Response> => {
+  return async (
+    req: Request,
+    nextCtx?: { params: Promise<TParams> },
+  ): Promise<Response> => {
     if (req.method === "OPTIONS") return preflight(req, opts.cors);
 
     const cors = corsHeadersFor(req, opts.cors);
@@ -68,8 +72,10 @@ export const withAuth = <TBody = undefined>(
       body = parsed.data;
     }
 
+    const params = (nextCtx?.params ? await nextCtx.params : ({} as TParams));
+
     try {
-      return await handler({ user: auth.user, accessToken: auth.accessToken, body, req, cors });
+      return await handler({ user: auth.user, accessToken: auth.accessToken, body, params, req, cors });
     } catch {
       return jsonError("internal_error", 500, {}, cors);
     }

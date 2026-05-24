@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/site-builder/entreprises — list qualified entreprises for dropdowns
-export async function GET() {
-  const supabase = getSupabaseServiceClient();
+export const GET = withAuth({}, async () => {
+  const supabase = getServiceClient();
 
   const { data: companies, error } = await supabase
     .from("entreprises")
@@ -13,13 +13,10 @@ export async function GET() {
     .eq("qualifie", true)
     .order("name", { ascending: true });
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  if (error) return jsonError(error.message, 500);
 
   const list = (companies ?? []) as Array<{ id: number; nom: string }>;
 
-  // Fetch which companies have a pret_pour_lm=true lead magnet project
   const pretIds = new Set<number>();
   if (list.length > 0) {
     const { data: projects } = await supabase
@@ -33,7 +30,7 @@ export async function GET() {
     }
   }
 
-  return NextResponse.json(
-    list.map((c) => ({ id: c.id, nom: c.nom, pret_pour_lm: pretIds.has(c.id) }))
+  return json(
+    list.map((c) => ({ id: c.id, nom: c.nom, pret_pour_lm: pretIds.has(c.id) })),
   );
-}
+});

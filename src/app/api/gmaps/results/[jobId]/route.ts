@@ -1,15 +1,11 @@
-import { requireUser } from "@/app/api/_lib/auth";
 import { proxyToGmaps } from "@/app/api/_lib/gmaps-proxy";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const runtime = "nodejs";
 
-export async function GET(
-  req: Request,
-  { params }: { params: { jobId: string } }
-) {
-  const auth = await requireUser(req);
-  if (!auth.ok) return auth.response;
+type Params = { jobId: string };
 
+export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const search = new URL(req.url).search;
   return proxyToGmaps(`/results/${params.jobId}`, { search, forwardAuthFromReq: req });
-}
+});

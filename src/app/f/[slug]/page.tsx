@@ -1,4 +1,4 @@
-import { getSupabaseServiceClient } from '@/lib/supabase-service';
+import { getServiceClient } from '@/app/api/_lib/service-client';
 import { notFound } from 'next/navigation';
 import type { Form } from '@/types';
 import { FormRuntime } from '@/components/form-builder/runtime/FormRuntime';
@@ -10,7 +10,7 @@ type Props = { params: Promise<{ slug: string }> };
 
 export default async function PublicFormPage({ params }: Props) {
   const { slug } = await params;
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   const { data, error } = await supabase
     .from('forms')

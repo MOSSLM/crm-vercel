@@ -1,39 +1,30 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-interface RouteContext {
-  params: Promise<{ siteId: string }>;
-}
+type Params = { siteId: string };
 
 interface LibraryRef {
   theme_slug: string;
   section_id: string;
 }
 
-/** GET /api/site-builder/sites/[siteId]/instances
- *  Returns all section instances for a site.
- *  For library sections (section_def is null), enriches with theme_sections data. */
-export async function GET(_req: Request, { params }: RouteContext) {
-  const supabase = getSupabaseServiceClient();
-  const { siteId } = await params;
+export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
 
   const { data, error } = await supabase
     .from("site_section_instances")
-    .select(`
-      *,
-      section_def:site_sections (*)
-    `)
-    .eq("site_id", siteId)
+    .select(`*, section_def:site_sections (*)`)
+    .eq("site_id", params.siteId)
     .order("page_slug")
     .order("sort_order");
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return jsonError(error.message, 500);
 
   const instances = (data ?? []) as Array<Record<string, unknown>>;
 
-  // Collect library refs for instances that have no section_def (library sections)
   const libRefs: LibraryRef[] = [];
   for (const inst of instances) {
     const content = inst.content as Record<string, unknown> | null;
@@ -50,7 +41,7 @@ export async function GET(_req: Request, { params }: RouteContext) {
       .in("theme_slug", themeSlugs);
 
     const tsMap = new Map(
-      (themeSections ?? []).map((ts) => [`${ts.theme_slug}:${ts.section_id}`, ts])
+      (themeSections ?? []).map((ts) => [`${ts.theme_slug}:${ts.section_id}`, ts]),
     );
 
     for (const inst of instances) {
@@ -82,14 +73,11 @@ export async function GET(_req: Request, { params }: RouteContext) {
     }
   }
 
-  return NextResponse.json(instances);
-}
+  return json(instances);
+});
 
-/** PUT /api/site-builder/sites/[siteId]/instances
- *  Full replace: delete all existing and insert new ones */
-export async function PUT(req: Request, { params }: RouteContext) {
-  const supabase = getSupabaseServiceClient();
-  const { siteId } = await params;
+export const PUT = withAuth<undefined, Params>({}, async ({ req, params }) => {
+  const supabase = getServiceClient();
   const body = await req.json();
   const instances = body.instances as Array<{
     id: string;
@@ -102,24 +90,20 @@ export async function PUT(req: Request, { params }: RouteContext) {
     is_hidden?: boolean;
   }>;
 
-  if (!Array.isArray(instances)) {
-    return NextResponse.json({ error: "instances[] requis" }, { status: 400 });
-  }
+  if (!Array.isArray(instances)) return jsonError("instances[] requis", 400);
 
   const { error: deleteError } = await supabase
     .from("site_section_instances")
     .delete()
-    .eq("site_id", siteId);
+    .eq("site_id", params.siteId);
 
-  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+  if (deleteError) return jsonError(deleteError.message, 500);
 
-  if (instances.length === 0) {
-    return NextResponse.json({ count: 0 });
-  }
+  if (instances.length === 0) return json({ count: 0 });
 
   const toInsert = instances.map((inst) => ({
     id: inst.id,
-    site_id: siteId,
+    site_id: params.siteId,
     section_id: inst.section_id ?? null,
     page_slug: inst.page_slug,
     sort_order: inst.sort_order,
@@ -133,19 +117,16 @@ export async function PUT(req: Request, { params }: RouteContext) {
     .from("site_section_instances")
     .insert(toInsert);
 
-  if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 });
+  if (insertError) return jsonError(insertError.message, 500);
 
-  return NextResponse.json({ count: toInsert.length });
-}
+  return json({ count: toInsert.length });
+});
 
-/** PATCH /api/site-builder/sites/[siteId]/instances
- *  Update a single instance's content or style */
-export async function PATCH(req: Request, { params }: RouteContext) {
-  const supabase = getSupabaseServiceClient();
-  const { siteId } = await params;
+export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => {
+  const supabase = getServiceClient();
   const { instanceId, content, blocks, custom_style, is_hidden, sort_order } = await req.json();
 
-  if (!instanceId) return NextResponse.json({ error: "instanceId requis" }, { status: 400 });
+  if (!instanceId) return jsonError("instanceId requis", 400);
 
   const updates: Record<string, unknown> = {};
   if (content !== undefined) updates.content = content;
@@ -158,10 +139,10 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     .from("site_section_instances")
     .update(updates)
     .eq("id", instanceId)
-    .eq("site_id", siteId)
+    .eq("site_id", params.siteId)
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
-}
+  if (error) return jsonError(error.message, 500);
+  return json(data);
+});

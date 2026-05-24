@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { getServiceClient } from "@/app/api/_lib/service-client";
 import type { SiteConfig, SiteSection } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 async function authenticate(request: Request) {
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   const token = request.headers.get("x-portal-token");
   if (!token) return null;
 
@@ -20,7 +20,7 @@ async function authenticate(request: Request) {
 }
 
 export async function GET(request: Request) {
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   const enterpriseId = await authenticate(request);
   if (!enterpriseId) {
     return NextResponse.json({ error: "Non autorisé" }, { status: 401 });

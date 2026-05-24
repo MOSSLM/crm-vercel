@@ -1,45 +1,38 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
-import type { SiteVersion } from "@/types";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-interface RouteContext {
-  params: Promise<{ siteId: string }>;
-}
+type Params = { siteId: string };
 
-// GET /api/site-builder/sites/[siteId]/versions — liste les versions
-export async function GET(_request: Request, context: RouteContext) {
-  const supabase = getSupabaseServiceClient();
-  const { siteId } = await context.params;
+export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
 
   const { data, error } = await supabase
     .from("site_versions")
     .select("id, site_id, version_number, created_at, created_by, change_description")
-    .eq("site_id", siteId)
+    .eq("site_id", params.siteId)
     .order("version_number", { ascending: false })
     .limit(20);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
-}
+  if (error) return jsonError(error.message, 500);
+  return json(data ?? []);
+});
 
-// POST /api/site-builder/sites/[siteId]/versions — crée une nouvelle version
-export async function POST(request: Request, context: RouteContext) {
-  const supabase = getSupabaseServiceClient();
-  const { siteId } = await context.params;
-  const body = await request.json() as {
+export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
+  const supabase = getServiceClient();
+  const body = (await req.json()) as {
     style_guide?: unknown;
     sitemap?: unknown;
     change_description?: string;
     created_by?: string;
   };
 
-  // Calcule le prochain numéro de version
   const { data: last } = await supabase
     .from("site_versions")
     .select("version_number")
-    .eq("site_id", siteId)
+    .eq("site_id", params.siteId)
     .order("version_number", { ascending: false })
     .limit(1)
     .single();
@@ -49,7 +42,7 @@ export async function POST(request: Request, context: RouteContext) {
   const { data, error } = await supabase
     .from("site_versions")
     .insert({
-      site_id: siteId,
+      site_id: params.siteId,
       version_number: nextVersion,
       style_guide: body.style_guide ?? null,
       sitemap: body.sitemap ?? null,
@@ -59,6 +52,6 @@ export async function POST(request: Request, context: RouteContext) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { status: 201 });
-}
+  if (error) return jsonError(error.message, 500);
+  return json(data, { status: 201 });
+});

@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 import type { MediaImageType } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,7 @@ const ALLOWED_MIME = new Set([
   "image/avif",
 ]);
 
-const MAX_BYTES = 15 * 1024 * 1024; // 15 MB
+const MAX_BYTES = 15 * 1024 * 1024;
 
 function parseTags(raw: string | null): string[] {
   if (!raw) return [];
@@ -39,16 +40,7 @@ function parseImageType(raw: string | null): MediaImageType {
   return "stock";
 }
 
-/**
- * GET /api/media
- * Query params:
- *   ?tags=tag1,tag2     -> overlap filter on service_tags (JSONB array)
- *   ?image_type=stock   -> exact match
- *   ?entreprise_id=123  -> exact match
- *   ?search=keyword     -> ILIKE on file_name / alt_text / description
- *   ?limit=50&offset=0  -> pagination
- */
-export async function GET(req: Request) {
+export const GET = withAuth({}, async ({ req }) => {
   const { searchParams } = new URL(req.url);
   const tags = parseTags(searchParams.get("tags"));
   const imageType = searchParams.get("image_type");
@@ -57,7 +49,7 @@ export async function GET(req: Request) {
   const limit = Math.min(Number(searchParams.get("limit") ?? 100), 500);
   const offset = Math.max(Number(searchParams.get("offset") ?? 0), 0);
 
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   let query = supabase
     .from("media_library")
     .select("*", { count: "exact" })
@@ -65,7 +57,6 @@ export async function GET(req: Request) {
     .range(offset, offset + limit - 1);
 
   if (tags.length > 0) {
-    // JSONB array overlap: ?| operator -> "any tag matches"
     query = query.filter("service_tags", "?|", `{${tags.map((t) => `"${t.replace(/"/g, '\\"')}"`).join(",")}}`);
   }
   if (imageType && IMAGE_TYPES.has(imageType as MediaImageType)) {
@@ -83,33 +74,21 @@ export async function GET(req: Request) {
   }
 
   const { data, error, count } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return jsonError(error.message, 500);
 
-  return NextResponse.json({ items: data ?? [], total: count ?? 0, limit, offset });
-}
+  return json({ items: data ?? [], total: count ?? 0, limit, offset });
+});
 
-/**
- * POST /api/media
- * Body: FormData
- *   files: File[]            -> one or more files
- *   alt_text: string         -> applied to all uploaded files
- *   description: string
- *   tags: string             -> comma-separated, applied to all uploaded files
- *   image_type: MediaImageType
- *   entreprise_id: number    -> required when image_type === 'company'
- */
-export async function POST(req: Request) {
+export const POST = withAuth({}, async ({ req }) => {
   let formData: FormData;
   try {
     formData = await req.formData();
   } catch {
-    return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
+    return jsonError("Invalid form data", 400);
   }
 
   const files = formData.getAll("files").filter((f): f is File => f instanceof File);
-  if (files.length === 0) {
-    return NextResponse.json({ error: "No files provided" }, { status: 400 });
-  }
+  if (files.length === 0) return jsonError("No files provided", 400);
 
   const altText = (formData.get("alt_text") as string | null)?.trim() || null;
   const description = (formData.get("description") as string | null)?.trim() || null;
@@ -119,13 +98,10 @@ export async function POST(req: Request) {
   const entrepriseId = entrepriseIdRaw ? Number(entrepriseIdRaw) : null;
 
   if (imageType === "company" && (!entrepriseId || !Number.isFinite(entrepriseId))) {
-    return NextResponse.json(
-      { error: "entreprise_id requis pour image_type='company'" },
-      { status: 400 },
-    );
+    return jsonError("entreprise_id requis pour image_type='company'", 400);
   }
 
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   const inserted = [];
   const failures: { file_name: string; error: string }[] = [];
 
@@ -182,5 +158,5 @@ export async function POST(req: Request) {
     inserted.push(data);
   }
 
-  return NextResponse.json({ inserted, failures }, { status: failures.length && !inserted.length ? 400 : 200 });
-}
+  return json({ inserted, failures }, { status: failures.length && !inserted.length ? 400 : 200 });
+});

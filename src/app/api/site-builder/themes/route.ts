@@ -1,15 +1,14 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 import type { SerializedThemeConfig } from "@/lib/site-builder/theme-serializer";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/site-builder/themes?enterprise=<id>
-// Returns public themes + enterprise-specific themes
-export async function GET(req: Request) {
+export const GET = withAuth({}, async ({ req }) => {
   const { searchParams } = new URL(req.url);
   const enterpriseId = searchParams.get("enterprise");
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   let query = supabase
     .from("site_themes")
@@ -18,68 +17,50 @@ export async function GET(req: Request) {
     .order("created_at", { ascending: false });
 
   if (enterpriseId) {
-    // public themes OR themes belonging to this enterprise
     query = query.or(`is_public.eq.true,enterprise_id.eq.${enterpriseId}`);
   } else {
     query = query.eq("is_public", true);
   }
 
   const { data, error } = await query;
+  if (error) return jsonError(error.message, 500);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  return json(data ?? []);
+});
 
-  return NextResponse.json(data ?? []);
-}
+export const POST = withAuth({}, async ({ req }) => {
+  const supabase = getServiceClient();
+  const body = (await req.json()) as {
+    name: string;
+    description?: string;
+    config: SerializedThemeConfig;
+    enterprise_id?: number;
+    is_public?: boolean;
+  };
 
-// POST /api/site-builder/themes
-// Body: { name, description?, config, enterprise_id?, is_public? }
-export async function POST(req: Request) {
-  const supabase = getSupabaseServiceClient();
+  const { name, description, config, enterprise_id, is_public = false } = body;
 
-  try {
-    const body = await req.json() as {
-      name: string;
-      description?: string;
-      config: SerializedThemeConfig;
-      enterprise_id?: number;
-      is_public?: boolean;
-    };
+  if (!name?.trim()) return jsonError("name est requis", 400);
+  if (!config || typeof config !== "object") return jsonError("config est requis", 400);
 
-    const { name, description, config, enterprise_id, is_public = false } = body;
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
-    if (!name?.trim()) {
-      return NextResponse.json({ error: "name est requis" }, { status: 400 });
-    }
-    if (!config || typeof config !== "object") {
-      return NextResponse.json({ error: "config est requis" }, { status: 400 });
-    }
+  const { data, error } = await supabase
+    .from("site_themes")
+    .insert({
+      name: name.trim(),
+      description: description?.trim() ?? null,
+      slug: `${slug}-${Date.now()}`,
+      config,
+      enterprise_id: enterprise_id ?? null,
+      is_public,
+      is_builtin: false,
+      is_enabled: true,
+    })
+    .select("id, name, slug")
+    .single();
 
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  if (error) return jsonError(error.message, 500);
 
-    const { data, error } = await supabase
-      .from("site_themes")
-      .insert({
-        name: name.trim(),
-        description: description?.trim() ?? null,
-        slug: `${slug}-${Date.now()}`,
-        config,
-        enterprise_id: enterprise_id ?? null,
-        is_public,
-        is_builtin: false,
-        is_enabled: true,
-      })
-      .select("id, name, slug")
-      .single();
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json(data);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Erreur inconnue";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-}
+  return json(data);
+});

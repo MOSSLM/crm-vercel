@@ -1,28 +1,27 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
-export async function GET() {
-  const supabase = await createClient();
+export const dynamic = "force-dynamic";
+
+export const GET = withAuth({}, async () => {
+  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from("site_templates")
     .select("*")
     .order("created_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data ?? []);
-}
+  if (error) return jsonError(error.message, 500);
+  return json(data ?? []);
+});
 
-export async function POST(req: Request) {
-  const supabase = await createClient();
+export const POST = withAuth({}, async ({ req }) => {
+  const supabase = getServiceClient();
   const body = await req.json();
   const { name, description, preview_image_url, category, site_config } = body;
 
-  if (!name?.trim()) {
-    return NextResponse.json({ error: "Nom requis" }, { status: 400 });
-  }
-  if (!site_config) {
-    return NextResponse.json({ error: "Configuration requise" }, { status: 400 });
-  }
+  if (!name?.trim()) return jsonError("Nom requis", 400);
+  if (!site_config) return jsonError("Configuration requise", 400);
 
   const { data, error } = await supabase
     .from("site_templates")
@@ -36,6 +35,6 @@ export async function POST(req: Request) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data, { status: 201 });
-}
+  if (error) return jsonError(error.message, 500);
+  return json(data, { status: 201 });
+});

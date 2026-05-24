@@ -1,36 +1,29 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-/**
- * DELETE /api/site-builder/assets/:id
- * Remove an asset from storage and the database.
- */
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
-  const supabase = getSupabaseServiceClient();
+type Params = { id: string };
 
-  // Fetch to get the storage path
+export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
+
   const { data: asset, error: fetchError } = await supabase
     .from("site_builder_assets")
     .select("path")
-    .eq("id", id)
+    .eq("id", params.id)
     .single();
 
-  if (fetchError || !asset) {
-    return NextResponse.json({ error: "Asset not found" }, { status: 404 });
-  }
+  if (fetchError || !asset) return jsonError("Asset not found", 404);
 
-  // Remove from storage
   await supabase.storage.from("site-builder-assets").remove([asset.path]);
 
-  // Remove from DB
   const { error: dbError } = await supabase
     .from("site_builder_assets")
     .delete()
-    .eq("id", id);
+    .eq("id", params.id);
 
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
-}
+  if (dbError) return jsonError(dbError.message, 500);
+  return json({ ok: true });
+});

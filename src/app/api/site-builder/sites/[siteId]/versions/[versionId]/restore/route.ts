@@ -1,19 +1,15 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-interface RouteContext {
-  params: Promise<{ siteId: string; versionId: string }>;
-}
+type Params = { siteId: string; versionId: string };
 
-// POST /api/site-builder/sites/[siteId]/versions/[versionId]/restore
-// Restaure une version en créant une nouvelle version (= snapshot de l'ancienne)
-export async function POST(_request: Request, context: RouteContext) {
-  const supabase = getSupabaseServiceClient();
-  const { siteId, versionId } = await context.params;
+export const POST = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
+  const { siteId, versionId } = params;
 
-  // Récupère la version source
   const { data: source, error: fetchErr } = await supabase
     .from("site_versions")
     .select("*")
@@ -21,11 +17,8 @@ export async function POST(_request: Request, context: RouteContext) {
     .eq("site_id", siteId)
     .single();
 
-  if (fetchErr || !source) {
-    return NextResponse.json({ error: "Version introuvable" }, { status: 404 });
-  }
+  if (fetchErr || !source) return jsonError("Version introuvable", 404);
 
-  // Calcule le prochain numéro
   const { data: last } = await supabase
     .from("site_versions")
     .select("version_number")
@@ -36,7 +29,6 @@ export async function POST(_request: Request, context: RouteContext) {
 
   const nextVersion = (last?.version_number ?? 0) + 1;
 
-  // Insère la restauration comme nouvelle version
   const { data: restored, error: insertErr } = await supabase
     .from("site_versions")
     .insert({
@@ -49,14 +41,13 @@ export async function POST(_request: Request, context: RouteContext) {
     .select()
     .single();
 
-  if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 });
+  if (insertErr) return jsonError(insertErr.message, 500);
 
-  // Met à jour le site avec les données restaurées
   const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (source.style_guide) updates.style_guide = source.style_guide;
   if (source.sitemap) updates.sitemap = source.sitemap;
 
   await supabase.from("sites").update(updates).eq("id", siteId);
 
-  return NextResponse.json({ version: restored, message: `Restauré depuis v${source.version_number}` });
-}
+  return json({ version: restored, message: `Restauré depuis v${source.version_number}` });
+});

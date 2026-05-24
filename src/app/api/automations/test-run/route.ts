@@ -1,19 +1,14 @@
-// /api/automations/test-run — exécute une automatisation en mode test.
-import { requireUser } from '@/app/api/_lib/auth'
-import { corsHeadersFor, preflight } from '@/app/api/_lib/cors'
+import { preflight } from '@/app/api/_lib/cors'
 import { json, jsonError } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
+import { withAuth } from '@/app/api/_lib/with-auth'
 import { runWorkflowAutomation, enrollInSequence, type RunContext } from '@/lib/automations/engine'
 import type { Automation } from '@/components/automations/types'
 
 export const runtime = 'nodejs'
 export const OPTIONS = (req: Request) => preflight(req)
 
-export async function POST(req: Request) {
-  const cors = corsHeadersFor(req)
-  const auth = await requireUser(req, cors)
-  if (!auth.ok) return auth.response
-
+export const POST = withAuth({}, async ({ req, cors }) => {
   const body = (await req.json().catch(() => ({}))) as { automation_id?: string }
   if (!body.automation_id) return jsonError('automation_id requis', 400, {}, cors)
 
@@ -22,7 +17,6 @@ export async function POST(req: Request) {
   const auto = autoRow as Automation | null
   if (!auto) return jsonError('Automatisation introuvable', 404, {}, cors)
 
-  // Construit un contexte de test à partir d'une opportunité de l'échantillon
   let ctx: RunContext = { event: 'test' }
   if (auto.trigger_pipeline_id) {
     let q = sb
@@ -59,4 +53,4 @@ export async function POST(req: Request) {
   } catch (err) {
     return jsonError(err instanceof Error ? err.message : 'Échec du test', 500, {}, cors)
   }
-}
+})

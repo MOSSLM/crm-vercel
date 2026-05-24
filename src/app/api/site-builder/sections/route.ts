@@ -1,15 +1,11 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-/**
- * GET /api/site-builder/sections
- * Returns sections from the theme_sections library (user-created sections).
- * Each row is mapped to a SiteSectionDef-compatible object with a `code` field.
- */
-export async function GET(req: Request) {
-  const supabase = getSupabaseServiceClient();
+export const GET = withAuth({}, async ({ req }) => {
+  const supabase = getServiceClient();
   const { searchParams } = new URL(req.url);
   const category = searchParams.get("category");
   const search = searchParams.get("q");
@@ -27,9 +23,8 @@ export async function GET(req: Request) {
   if (search) query = query.ilike("name", `%${search}%`);
 
   const { data, error } = await query;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return jsonError(error.message, 500);
 
-  // Map theme_sections rows to SiteSectionDef-compatible format
   const sections = (data ?? []).map((row) => ({
     id: row.id,
     name: row.name,
@@ -42,7 +37,6 @@ export async function GET(req: Request) {
     tags: [row.category],
     created_at: row.created_at,
     updated_at: row.updated_at,
-    // Library-specific fields
     code: row.code,
     theme_slug: row.theme_slug,
     theme_section_id: row.section_id,
@@ -50,5 +44,5 @@ export async function GET(req: Request) {
     schema: row.schema ?? undefined,
   }));
 
-  return NextResponse.json(sections);
-}
+  return json(sections);
+});

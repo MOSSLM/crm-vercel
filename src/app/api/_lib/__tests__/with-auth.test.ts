@@ -150,6 +150,17 @@ describe('withAuth', () => {
     expect(res.headers.get('Access-Control-Allow-Methods')).toContain('POST');
   });
 
+  it('passes Next.js route params through to the inner handler', async () => {
+    mockAuthGetUser.mockResolvedValueOnce(okUser());
+    const inner = jest.fn().mockImplementation(async (ctx: { params: { id: string } }) =>
+      new Response(JSON.stringify({ id: ctx.params.id }), { status: 200 }),
+    );
+    const handler = withAuth<undefined, { id: string }>({}, inner);
+    const res = await handler(makeRequest({ method: 'GET' }), { params: Promise.resolve({ id: 'abc' }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 'abc' });
+  });
+
   it('attaches CORS headers to 401 responses', async () => {
     process.env.API_ALLOWED_ORIGINS = 'https://app.example';
     const handler = withAuth({}, jest.fn());

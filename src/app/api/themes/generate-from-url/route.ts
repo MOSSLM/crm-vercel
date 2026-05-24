@@ -1,30 +1,23 @@
-import { NextResponse } from "next/server";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { withAuth } from "@/app/api/_lib/with-auth";
 import { generateThemeFromUrl } from "@/lib/ai/theme-generator-from-url";
 
-export async function POST(request: Request) {
+export const POST = withAuth({}, async ({ req }) => {
+  const body = await req.json();
+  const { url, themeName, themeSlug } = body as {
+    url: string;
+    themeName?: string;
+    themeSlug?: string;
+  };
+
+  if (!url) return jsonError("url requis", 400);
+
   try {
-    const body = await request.json();
-    const { url, themeName, themeSlug } = body as {
-      url: string;
-      themeName?: string;
-      themeSlug?: string;
-    };
-
-    if (!url) {
-      return NextResponse.json({ error: "url requis" }, { status: 400 });
-    }
-
-    // Validate URL format
-    try {
-      new URL(url);
-    } catch {
-      return NextResponse.json({ error: "URL invalide" }, { status: 400 });
-    }
-
-    const result = await generateThemeFromUrl({ url, themeName, themeSlug });
-    return NextResponse.json({ theme: result });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Erreur inconnue";
-    return NextResponse.json({ error: message }, { status: 500 });
+    new URL(url);
+  } catch {
+    return jsonError("URL invalide", 400);
   }
-}
+
+  const result = await generateThemeFromUrl({ url, themeName, themeSlug });
+  return json({ theme: result });
+});

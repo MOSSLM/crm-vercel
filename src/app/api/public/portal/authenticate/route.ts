@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { getServiceClient } from "@/app/api/_lib/service-client";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   try {
     const { token } = await request.json();
     if (!token || typeof token !== "string") {

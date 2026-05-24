@@ -1,25 +1,20 @@
-// /api/automations/prospection/[id]/complete — complète une tâche de
-// démarchage et fait avancer la séquence associée le cas échéant.
-import { requireUser } from '@/app/api/_lib/auth'
-import { corsHeadersFor, preflight } from '@/app/api/_lib/cors'
+import { preflight } from '@/app/api/_lib/cors'
 import { json, jsonError } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
+import { withAuth } from '@/app/api/_lib/with-auth'
 import { advanceEnrollmentAfterTask } from '@/lib/automations/engine'
 import type { ProspectionTask } from '@/components/automations/types'
 
 export const runtime = 'nodejs'
 export const OPTIONS = (req: Request) => preflight(req)
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const cors = corsHeadersFor(req)
-  const auth = await requireUser(req, cors)
-  if (!auth.ok) return auth.response
+type Params = { id: string }
 
-  const { id } = await params
+export const POST = withAuth<undefined, Params>({}, async ({ req, params, cors }) => {
   const body = (await req.json().catch(() => ({}))) as { result?: string }
 
   const sb = getServiceClient()
-  const { data: taskRow } = await sb.from('prospection_tasks').select('*').eq('id', id).maybeSingle()
+  const { data: taskRow } = await sb.from('prospection_tasks').select('*').eq('id', params.id).maybeSingle()
   const task = taskRow as ProspectionTask | null
   if (!task) return jsonError('Tâche introuvable', 404, {}, cors)
 
@@ -30,7 +25,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       done_at: new Date().toISOString(),
       payload: { ...task.payload, ...(body.result ? { result: body.result } : {}) },
     })
-    .eq('id', id)
+    .eq('id', params.id)
 
   if (task.enrollment_id) {
     try {
@@ -41,4 +36,4 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   return json({ ok: true }, { headers: cors })
-}
+})

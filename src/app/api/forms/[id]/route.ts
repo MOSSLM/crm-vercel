@@ -1,62 +1,54 @@
-import { NextResponse } from 'next/server';
-import { getSupabaseServiceClient } from '@/lib/supabase-service';
+import { json, jsonError } from '@/app/api/_lib/respond';
+import { getServiceClient } from '@/app/api/_lib/service-client';
+import { withAuth } from '@/app/api/_lib/with-auth';
 import type { Form } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-type Ctx = { params: Promise<{ id: string }> };
+type Params = { id: string };
 
-// GET /api/forms/[id] — read one form (admin)
-export async function GET(_req: Request, { params }: Ctx) {
-  const { id } = await params;
-  const supabase = getSupabaseServiceClient();
+const ALLOWED_KEYS: (keyof Form)[] = [
+  'name', 'slug', 'description', 'tags',
+  'questions', 'logic', 'brand', 'settings', 'style',
+  'is_published', 'enterprise_id',
+];
+
+export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from('forms')
     .select('*')
-    .eq('id', id)
+    .eq('id', params.id)
     .single();
+  if (error) return jsonError(error.message, 404);
+  return json(data);
+});
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json(data);
-}
-
-// PUT /api/forms/[id] — update form (full or partial)
-export async function PUT(request: Request, { params }: Ctx) {
-  const { id } = await params;
-  const supabase = getSupabaseServiceClient();
+export const PUT = withAuth<undefined, Params>({}, async ({ req, params }) => {
+  const supabase = getServiceClient();
+  let body: Partial<Form>;
   try {
-    const body = await request.json() as Partial<Form>;
-
-    // Whitelist updatable columns
-    const allowed: (keyof Form)[] = [
-      'name', 'slug', 'description', 'tags',
-      'questions', 'logic', 'brand', 'settings', 'style',
-      'is_published', 'enterprise_id',
-    ];
-    const patch: Record<string, unknown> = {};
-    for (const key of allowed) {
-      if (key in body) patch[key] = body[key];
-    }
-
-    const { data, error } = await supabase
-      .from('forms')
-      .update(patch)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json(data);
+    body = (await req.json()) as Partial<Form>;
   } catch {
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    return jsonError('invalid_body', 400);
   }
-}
+  const patch: Record<string, unknown> = {};
+  for (const key of ALLOWED_KEYS) {
+    if (key in body) patch[key] = body[key];
+  }
+  const { data, error } = await supabase
+    .from('forms')
+    .update(patch)
+    .eq('id', params.id)
+    .select()
+    .single();
+  if (error) return jsonError(error.message, 500);
+  return json(data);
+});
 
-// DELETE /api/forms/[id]
-export async function DELETE(_req: Request, { params }: Ctx) {
-  const { id } = await params;
-  const supabase = getSupabaseServiceClient();
-  const { error } = await supabase.from('forms').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ ok: true });
-}
+export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
+  const { error } = await supabase.from('forms').delete().eq('id', params.id);
+  if (error) return jsonError(error.message, 500);
+  return json({ ok: true });
+});

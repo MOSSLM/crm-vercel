@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -14,52 +15,40 @@ interface BulkDeleteBody {
   ids: string[];
 }
 
-/**
- * PATCH /api/media/bulk — add/remove/replace tags across many items.
- * Body: { ids: string[], add_tags?: string[], remove_tags?: string[], replace_tags?: string[] }
- */
-export async function PATCH(req: Request) {
+export const PATCH = withAuth({}, async ({ req }) => {
   let body: BulkPatchBody;
   try {
     body = (await req.json()) as BulkPatchBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonError("Invalid JSON", 400);
   }
-
-  if (!Array.isArray(body.ids) || body.ids.length === 0) {
-    return NextResponse.json({ error: "ids required" }, { status: 400 });
-  }
+  if (!Array.isArray(body.ids) || body.ids.length === 0) return jsonError("ids required", 400);
 
   const add = (body.add_tags ?? []).map((t) => String(t).trim()).filter(Boolean);
   const remove = (body.remove_tags ?? []).map((t) => String(t).trim()).filter(Boolean);
   const replace = body.replace_tags;
 
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   if (replace !== undefined) {
-    if (!Array.isArray(replace)) {
-      return NextResponse.json({ error: "replace_tags must be array" }, { status: 400 });
-    }
+    if (!Array.isArray(replace)) return jsonError("replace_tags must be array", 400);
     const cleaned = Array.from(new Set(replace.map((t) => String(t).trim()).filter(Boolean)));
     const { data, error } = await supabase
       .from("media_library")
       .update({ service_tags: cleaned })
       .in("id", body.ids)
       .select("id, service_tags");
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ updated: data ?? [] });
+    if (error) return jsonError(error.message, 500);
+    return json({ updated: data ?? [] });
   }
 
-  if (add.length === 0 && remove.length === 0) {
-    return NextResponse.json({ error: "Nothing to do" }, { status: 400 });
-  }
+  if (add.length === 0 && remove.length === 0) return jsonError("Nothing to do", 400);
 
-  // Fetch current tags, mutate, write back. Acceptable for typical bulk sizes.
   const { data: rows, error: fetchError } = await supabase
     .from("media_library")
     .select("id, service_tags")
     .in("id", body.ids);
-  if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
+  if (fetchError) return jsonError(fetchError.message, 500);
 
   const updated: { id: string; service_tags: string[] }[] = [];
   for (const row of rows ?? []) {
@@ -74,30 +63,24 @@ export async function PATCH(req: Request) {
     if (!error) updated.push({ id: row.id, service_tags: next });
   }
 
-  return NextResponse.json({ updated });
-}
+  return json({ updated });
+});
 
-/**
- * DELETE /api/media/bulk — remove storage files + DB rows.
- * Body: { ids: string[] }
- */
-export async function DELETE(req: Request) {
+export const DELETE = withAuth({}, async ({ req }) => {
   let body: BulkDeleteBody;
   try {
     body = (await req.json()) as BulkDeleteBody;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonError("Invalid JSON", 400);
   }
-  if (!Array.isArray(body.ids) || body.ids.length === 0) {
-    return NextResponse.json({ error: "ids required" }, { status: 400 });
-  }
+  if (!Array.isArray(body.ids) || body.ids.length === 0) return jsonError("ids required", 400);
 
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   const { data: rows, error: fetchError } = await supabase
     .from("media_library")
     .select("id, storage_path")
     .in("id", body.ids);
-  if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
+  if (fetchError) return jsonError(fetchError.message, 500);
 
   const paths = (rows ?? []).map((r) => r.storage_path).filter(Boolean) as string[];
   if (paths.length > 0) {
@@ -108,7 +91,7 @@ export async function DELETE(req: Request) {
     .from("media_library")
     .delete()
     .in("id", body.ids);
-  if (dbError) return NextResponse.json({ error: dbError.message }, { status: 500 });
+  if (dbError) return jsonError(dbError.message, 500);
 
-  return NextResponse.json({ deleted: body.ids.length });
-}
+  return json({ deleted: body.ids.length });
+});
