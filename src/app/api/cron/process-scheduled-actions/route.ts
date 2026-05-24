@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 
@@ -5,6 +6,17 @@ export const runtime = "nodejs";
 
 /** After this many failed attempts the row is terminal (status='failed'). */
 const MAX_ATTEMPTS = 3;
+
+/**
+ * Shape of `crm_workflow_scheduled_actions.action` (jsonb). Strict enough to
+ * reject malformed rows but tolerant of unknown action types — those just
+ * become no-ops in the dispatcher below.
+ */
+const scheduledActionSchema = z.object({
+  type: z.string().optional(),
+  params: z.record(z.string(), z.string()).optional(),
+});
+type ParsedAction = z.infer<typeof scheduledActionSchema>;
 
 /**
  * Verifies the cron request:
@@ -46,7 +58,11 @@ export async function GET(req: Request) {
 
   for (const row of pending as ScheduledAction[]) {
     try {
-      const action = row.action as { type?: string; params?: Record<string, string> };
+      const actionResult = scheduledActionSchema.safeParse(row.action);
+      if (!actionResult.success) {
+        throw new Error(`Invalid action payload: ${actionResult.error.message}`);
+      }
+      const action: ParsedAction = actionResult.data;
       const actionType = action.type;
       const actionParams = action.params ?? {};
 
@@ -55,7 +71,7 @@ export async function GET(req: Request) {
           .from("opportunites")
           .select("entreprise_id")
           .eq("id", row.opportunite_id)
-          .single();
+          .maybeSingle();
 
         await db.from("opportunite_tasks").insert({
           opportunite_id: row.opportunite_id,

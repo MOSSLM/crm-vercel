@@ -32,6 +32,7 @@ import {
 
 import logger from '../utils/logger';
 import { journalApi } from '../utils/journalApi';
+import { type EnPriority, enToFrPriority, type FrPriority, frToEnPriority } from '@/lib/constants/priority';
 import {
   Achievement,
   Company,
@@ -84,18 +85,6 @@ export const VALID_OPPORTUNITY_COLUMNS = [
 type ValidOpportunityColumn = (typeof VALID_OPPORTUNITY_COLUMNS)[number];
 type OpportunityWritable = Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>;
 type OpportunityInsert = Partial<Pick<Opportunity, ValidOpportunityColumn>>;
-
-/* --------------------------------------------------------------
-   ✅ Helpers robustes pour le mapping priorité FR ⇄ EN
---------------------------------------------------------------- */
-type FrPriority = 'haute' | 'moyenne' | 'basse';
-type EnPriority = 'high' | 'medium' | 'low';
-
-const frToEnPriority = (p?: FrPriority): EnPriority | undefined =>
-  p === 'haute' ? 'high' : p === 'basse' ? 'low' : p === 'moyenne' ? 'medium' : undefined;
-
-const enToFrPriority = (p?: EnPriority): FrPriority | undefined =>
-  p === 'high' ? 'haute' : p === 'low' ? 'basse' : p === 'medium' ? 'moyenne' : undefined;
 
 const OPPORTUNITY_NAME_COMPANY_SEPARATOR = ' — ';
 

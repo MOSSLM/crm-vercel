@@ -1,5 +1,6 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { AiJsonParseError, extractJsonFromAiResponse } from "@/lib/parsers/ai-json";
 
 interface RegenerateRequest {
   siteId: string;
@@ -78,9 +79,10 @@ Exemples de clés composites : cta_primary → { label, href }, email_field → 
     const data = await response.json();
     text = data.content?.[0]?.text ?? "";
   }
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return jsonError("Aucun JSON dans la réponse IA", 502);
-
-  const content = JSON.parse(jsonMatch[0]);
-  return json({ content });
+  try {
+    return json({ content: extractJsonFromAiResponse(text) });
+  } catch (err) {
+    if (err instanceof AiJsonParseError) return jsonError(err.message, 502);
+    throw err;
+  }
 });

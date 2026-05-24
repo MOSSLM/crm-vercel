@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { AiJsonParseError, extractJsonFromAiResponse } from "@/lib/parsers/ai-json";
 
 export const dynamic = "force-dynamic";
 
@@ -102,9 +103,10 @@ Génère 3 à 5 sections pertinentes pour cette page. Réponds avec ce JSON:
 }`;
 
   const text = await callAI(systemPrompt, userPrompt, model);
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return jsonError("Aucun JSON dans la réponse IA", 502);
-  const result = JSON.parse(jsonMatch[0]);
-
-  return json(result);
+  try {
+    return json(extractJsonFromAiResponse(text));
+  } catch (err) {
+    if (err instanceof AiJsonParseError) return jsonError(err.message, 502);
+    throw err;
+  }
 });
