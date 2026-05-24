@@ -1,5 +1,5 @@
-// /api/automations/tick — ticker traité par Vercel Cron (voir vercel.json).
-// Traite la file automation_jobs + les inscriptions de séquence dues.
+// /api/automations/tick — ticker triggered by Vercel cron OR pg_cron.
+// Processes the automation_jobs queue + due sequence enrollments.
 import { json } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { dispatchEvent } from '@/lib/automations/dispatch'
@@ -10,18 +10,33 @@ import type { RunContext as EngineContext } from '@/lib/automations/engine'
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
-async function handle(req: Request): Promise<Response> {
+/** After this many failed attempts the job is terminal (status='error'). */
+const MAX_ATTEMPTS = 3
+
+/**
+ * Verifies the tick request:
+ *   - prod: at least one of CRON_SECRET / PG_CRON_SECRET MUST be set AND match → fail-closed
+ *   - dev/test: when neither secret is configured, allow (local cron testing)
+ */
+const verifyTick = (req: Request): boolean => {
   const cronSecret = process.env.CRON_SECRET
   const pgCronSecret = process.env.PG_CRON_SECRET
-  if (cronSecret || pgCronSecret) {
-    const auth = req.headers.get('authorization')
-    const pgHeader = req.headers.get('x-pg-cron-secret')
-    const validVercel = cronSecret && auth === `Bearer ${cronSecret}`
-    const validPgCron = pgCronSecret && pgHeader === pgCronSecret
-    if (!validVercel && !validPgCron) {
-      return json({ error: 'Unauthorized' }, { status: 401 })
-    }
+
+  if (process.env.NODE_ENV === 'production' && !cronSecret && !pgCronSecret) {
+    return false
   }
+
+  if (!cronSecret && !pgCronSecret) return true
+
+  const auth = req.headers.get('authorization')
+  const pgHeader = req.headers.get('x-pg-cron-secret')
+  const validVercel = !!cronSecret && auth === `Bearer ${cronSecret}`
+  const validPgCron = !!pgCronSecret && pgHeader === pgCronSecret
+  return validVercel || validPgCron
+}
+
+async function handle(req: Request): Promise<Response> {
+  if (!verifyTick(req)) return json({ error: 'Unauthorized' }, { status: 401 })
 
   const sb = getServiceClient()
   const now = new Date().toISOString()
@@ -43,9 +58,15 @@ async function handle(req: Request): Promise<Response> {
       result.events++
     } catch (e) {
       result.errors++
+      const nextAttempts = (job.attempts ?? 0) + 1
+      const terminal = nextAttempts >= MAX_ATTEMPTS
       await sb
         .from('automation_jobs')
-        .update({ status: 'error', last_error: String(e), attempts: job.attempts + 1 })
+        .update({
+          status: terminal ? 'error' : 'pending',
+          attempts: nextAttempts,
+          last_error: String(e),
+        })
         .eq('id', job.id)
     }
   }
@@ -73,7 +94,16 @@ async function handle(req: Request): Promise<Response> {
       result.workflowJobs++
     } catch (e) {
       result.errors++
-      await sb.from('automation_jobs').update({ status: 'error', last_error: String(e) }).eq('id', job.id)
+      const nextAttempts = (job.attempts ?? 0) + 1
+      const terminal = nextAttempts >= MAX_ATTEMPTS
+      await sb
+        .from('automation_jobs')
+        .update({
+          status: terminal ? 'error' : 'pending',
+          attempts: nextAttempts,
+          last_error: String(e),
+        })
+        .eq('id', job.id)
     }
   }
 

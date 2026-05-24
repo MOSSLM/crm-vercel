@@ -1,0 +1,39 @@
+-- Add covering indexes for the 35 FKs flagged by the perf advisor. Without
+-- these, FK joins and parent-delete cascade checks do sequential scans on
+-- the child tables. All row counts are still small (largest table 2,859
+-- rows) so creating them now is essentially free.
+CREATE INDEX IF NOT EXISTS audits_template_id_idx                                   ON public.audits (template_id);
+CREATE INDEX IF NOT EXISTS automation_jobs_automation_id_idx                        ON public.automation_jobs (automation_id);
+CREATE INDEX IF NOT EXISTS automation_jobs_enrollment_id_idx                        ON public.automation_jobs (enrollment_id);
+CREATE INDEX IF NOT EXISTS automation_jobs_run_id_idx                               ON public.automation_jobs (run_id);
+CREATE INDEX IF NOT EXISTS automations_owner_id_idx                                 ON public.automations (owner_id);
+CREATE INDEX IF NOT EXISTS automations_trigger_pipeline_id_idx                      ON public.automations (trigger_pipeline_id);
+CREATE INDEX IF NOT EXISTS automations_trigger_stage_id_idx                         ON public.automations (trigger_stage_id);
+CREATE INDEX IF NOT EXISTS crm_workflow_executions_opportunite_id_idx               ON public.crm_workflow_executions (opportunite_id);
+CREATE INDEX IF NOT EXISTS crm_workflow_executions_workflow_id_idx                  ON public.crm_workflow_executions (workflow_id);
+CREATE INDEX IF NOT EXISTS crm_workflow_scheduled_actions_opportunite_id_idx        ON public.crm_workflow_scheduled_actions (opportunite_id);
+CREATE INDEX IF NOT EXISTS crm_workflow_scheduled_actions_workflow_id_idx           ON public.crm_workflow_scheduled_actions (workflow_id);
+CREATE INDEX IF NOT EXISTS entreprises_enrich_history_entreprise_id_idx             ON public.entreprises_enrich_history (entreprise_id);
+CREATE INDEX IF NOT EXISTS entreprises_raw_recherche_id_idx                         ON public.entreprises_raw (recherche_id);
+CREATE INDEX IF NOT EXISTS form_submissions_enterprise_id_idx                       ON public.form_submissions (enterprise_id);
+CREATE INDEX IF NOT EXISTS freelance_paiements_assignment_id_idx                    ON public.freelance_paiements (assignment_id);
+CREATE INDEX IF NOT EXISTS media_library_uploaded_by_idx                            ON public.media_library (uploaded_by);
+CREATE INDEX IF NOT EXISTS notes_opportunite_id_idx                                 ON public.notes (opportunite_id);
+CREATE INDEX IF NOT EXISTS notifications_assignment_id_idx                          ON public.notifications (assignment_id);
+CREATE INDEX IF NOT EXISTS notifications_source_user_id_idx                         ON public.notifications (source_user_id);
+CREATE INDEX IF NOT EXISTS notifications_user_id_idx                                ON public.notifications (user_id);
+CREATE INDEX IF NOT EXISTS offres_included_items_included_offre_id_idx              ON public.offres_included_items (included_offre_id);
+CREATE INDEX IF NOT EXISTS opportunite_offres_offre_id_idx                          ON public.opportunite_offres (offre_id);
+CREATE INDEX IF NOT EXISTS opportunite_tasks_entreprise_id_idx                      ON public.opportunite_tasks (entreprise_id);
+CREATE INDEX IF NOT EXISTS opportunites_contact_id_idx                              ON public.opportunites (contact_id);
+CREATE INDEX IF NOT EXISTS opportunity_touchpoints_created_by_idx                   ON public.opportunity_touchpoints (created_by);
+CREATE INDEX IF NOT EXISTS production_lead_magnet_todos_tpl_checklist_item_id_idx   ON public.production_lead_magnet_todos (template_checklist_item_id);
+CREATE INDEX IF NOT EXISTS prospection_tasks_assignee_id_idx                        ON public.prospection_tasks (assignee_id);
+CREATE INDEX IF NOT EXISTS prospection_tasks_automation_id_idx                      ON public.prospection_tasks (automation_id);
+CREATE INDEX IF NOT EXISTS prospection_tasks_enrollment_id_idx                      ON public.prospection_tasks (enrollment_id);
+CREATE INDEX IF NOT EXISTS prospection_tasks_entreprise_id_idx                      ON public.prospection_tasks (entreprise_id);
+CREATE INDEX IF NOT EXISTS prospection_tasks_opportunite_id_idx                     ON public.prospection_tasks (opportunite_id);
+CREATE INDEX IF NOT EXISTS sequence_enrollments_contact_id_idx                      ON public.sequence_enrollments (contact_id);
+CREATE INDEX IF NOT EXISTS sequence_enrollments_entreprise_id_idx                   ON public.sequence_enrollments (entreprise_id);
+CREATE INDEX IF NOT EXISTS sequence_enrollments_opportunite_id_idx                  ON public.sequence_enrollments (opportunite_id);
+CREATE INDEX IF NOT EXISTS site_section_instances_section_id_idx                    ON public.site_section_instances (section_id);

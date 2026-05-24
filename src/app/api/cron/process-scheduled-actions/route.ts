@@ -1,13 +1,41 @@
+import { z } from "zod";
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 
 export const runtime = "nodejs";
 
-// Vercel sends `Authorization: Bearer <CRON_SECRET>` on cron requests.
+/** After this many failed attempts the row is terminal (status='failed'). */
+const MAX_ATTEMPTS = 3;
+
+/**
+ * Shape of `crm_workflow_scheduled_actions.action` (jsonb). Strict enough to
+ * reject malformed rows but tolerant of unknown action types — those just
+ * become no-ops in the dispatcher below.
+ */
+const scheduledActionSchema = z.object({
+  type: z.string().optional(),
+  params: z.record(z.string(), z.string()).optional(),
+});
+type ParsedAction = z.infer<typeof scheduledActionSchema>;
+
+/**
+ * Verifies the cron request:
+ *   - prod: CRON_SECRET MUST be set AND the header must match → fail-closed
+ *   - dev/test: missing secret is allowed (local cron testing)
+ */
 const verifyCron = (req: Request): boolean => {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // skip check in local dev if not configured
+  if (process.env.NODE_ENV === "production" && !secret) return false;
+  if (!secret) return true;
   return req.headers.get("authorization") === `Bearer ${secret}`;
+};
+
+type ScheduledAction = {
+  id: string;
+  workflow_id: string;
+  opportunite_id: string | null;
+  action: { type?: string; params?: Record<string, string> } | Record<string, unknown>;
+  attempts: number | null;
 };
 
 export async function GET(req: Request) {
@@ -28,31 +56,35 @@ export async function GET(req: Request) {
   let processed = 0;
   const errors: string[] = [];
 
-  for (const scheduled of pending) {
+  for (const row of pending as ScheduledAction[]) {
     try {
-      const action = scheduled.action as Record<string, unknown>;
-      const actionType = action.type as string;
-      const actionParams = (action.params ?? {}) as Record<string, string>;
+      const actionResult = scheduledActionSchema.safeParse(row.action);
+      if (!actionResult.success) {
+        throw new Error(`Invalid action payload: ${actionResult.error.message}`);
+      }
+      const action: ParsedAction = actionResult.data;
+      const actionType = action.type;
+      const actionParams = action.params ?? {};
 
       if (actionType === "create_task") {
         const { data: opp } = await db
           .from("opportunites")
           .select("entreprise_id")
-          .eq("id", scheduled.opportunite_id)
-          .single();
+          .eq("id", row.opportunite_id)
+          .maybeSingle();
 
         await db.from("opportunite_tasks").insert({
-          opportunite_id: scheduled.opportunite_id,
+          opportunite_id: row.opportunite_id,
           entreprise_id:  opp?.entreprise_id ?? null,
           titre:          actionParams.titre ?? "Tâche automatique",
           description:    actionParams.description ?? null,
           type:           actionParams.type ?? "relance",
           due_date:       new Date().toISOString(),
-          workflow_id:    scheduled.workflow_id,
+          workflow_id:    row.workflow_id,
         });
       } else if (actionType === "add_note") {
         await db.from("opportunite_notes").insert({
-          opportunite_id: scheduled.opportunite_id,
+          opportunite_id: row.opportunite_id,
           theme:          "autre",
           contenu:        actionParams.content ?? "",
         });
@@ -61,18 +93,24 @@ export async function GET(req: Request) {
       await db
         .from("crm_workflow_scheduled_actions")
         .update({ status: "executed" })
-        .eq("id", scheduled.id);
+        .eq("id", row.id);
 
       processed++;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Erreur inconnue";
-      errors.push(`[${scheduled.id}] ${msg}`);
+      errors.push(`[${row.id}] ${msg}`);
 
-      // Mark as cancelled so it doesn't loop on every cron run
+      const nextAttempts = (row.attempts ?? 0) + 1;
+      const terminal = nextAttempts >= MAX_ATTEMPTS;
+
       await db
         .from("crm_workflow_scheduled_actions")
-        .update({ status: "cancelled" })
-        .eq("id", scheduled.id);
+        .update({
+          status: terminal ? "failed" : "pending",
+          attempts: nextAttempts,
+          last_error: msg,
+        })
+        .eq("id", row.id);
     }
   }
 
