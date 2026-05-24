@@ -62,6 +62,7 @@ describe('GET /api/cron/process-scheduled-actions', () => {
     mockFrom.mockReset();
     process.env = { ...ORIGINAL_ENV };
     delete process.env.CRON_SECRET;
+    delete process.env.PG_CRON_SECRET;
     delete process.env.NODE_ENV;
   });
 
@@ -89,10 +90,31 @@ describe('GET /api/cron/process-scheduled-actions', () => {
       expect(res.status).toBe(401);
     });
 
-    it('rejects with 401 in production even if CRON_SECRET is unset', async () => {
+    it('rejects with 401 in production when neither secret is set', async () => {
       process.env.NODE_ENV = 'production';
       const { GET } = await importRoute();
       const res = await GET(cronRequest(null));
+      expect(res.status).toBe(401);
+    });
+
+    it('accepts a valid pg_cron secret header (x-pg-cron-secret)', async () => {
+      process.env.PG_CRON_SECRET = 'pg-shh';
+      mockFrom.mockReturnValueOnce(buildSelectChain({ data: [], error: null }));
+      const pgReq = new Request('http://localhost/api/cron/process-scheduled-actions', {
+        headers: { 'x-pg-cron-secret': 'pg-shh' },
+      });
+      const { GET } = await importRoute();
+      const res = await GET(pgReq);
+      expect(res.status).toBe(200);
+    });
+
+    it('rejects when only pg_cron is configured and the wrong header arrives', async () => {
+      process.env.PG_CRON_SECRET = 'pg-shh';
+      const pgReq = new Request('http://localhost/api/cron/process-scheduled-actions', {
+        headers: { 'x-pg-cron-secret': 'wrong' },
+      });
+      const { GET } = await importRoute();
+      const res = await GET(pgReq);
       expect(res.status).toBe(401);
     });
 
