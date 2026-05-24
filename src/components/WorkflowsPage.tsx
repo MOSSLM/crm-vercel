@@ -22,6 +22,7 @@ import {
   FileText,
 } from "lucide-react";
 import type { CrmWorkflow } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 const TRIGGER_META: Record<
   string,
@@ -77,7 +78,7 @@ export function WorkflowsPage() {
     const token = await getToken();
     if (!token) return;
     try {
-      const res = await fetch("/api/workflows", {
+      const res = await authedFetch("/api/workflows", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) setWorkflows(await res.json());
@@ -93,7 +94,7 @@ export function WorkflowsPage() {
     if (!token) return;
     const next = !wf.active;
     setWorkflows((prev) => prev.map((w) => (w.id === wf.id ? { ...w, active: next } : w)));
-    const res = await fetch(`/api/workflows/${wf.id}`, {
+    const res = await authedFetch(`/api/workflows/${wf.id}`, {
       method: "PATCH",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ active: next }),
@@ -111,7 +112,7 @@ export function WorkflowsPage() {
     if (!token) return;
     if (!window.confirm("Supprimer ce workflow ?")) return;
     setWorkflows((prev) => prev.filter((w) => w.id !== id));
-    const res = await fetch(`/api/workflows/${id}`, {
+    const res = await authedFetch(`/api/workflows/${id}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });

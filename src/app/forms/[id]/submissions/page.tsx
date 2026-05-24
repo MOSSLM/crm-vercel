@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import type { FormSubmission } from '@/types';
+import { authedFetch } from "@/utils/authedFetch";
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' });
@@ -17,7 +18,7 @@ export default function SubmissionsPage() {
 
   useEffect(() => {
     if (!id) return;
-    fetch(`/api/forms/${id}/submissions`)
+    authedFetch(`/api/forms/${id}/submissions`)
       .then((r) => r.json())
       .then((d) => { setSubmissions(Array.isArray(d) ? d : []); setLoading(false); });
   }, [id]);

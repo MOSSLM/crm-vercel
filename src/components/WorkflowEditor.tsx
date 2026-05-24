@@ -34,6 +34,7 @@ import {
   X,
 } from "lucide-react";
 import type { CrmWorkflow, WorkflowAction, WorkflowTriggerType, WorkflowActionType } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 // ─── Metadata maps ────────────────────────────────────────────────────────────
 
@@ -127,7 +128,7 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
     (async () => {
       const token = await getToken();
       if (!token) return;
-      const res = await fetch(`/api/workflows/${workflowId}`, {
+      const res = await authedFetch(`/api/workflows/${workflowId}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -153,12 +154,12 @@ export function WorkflowEditor({ workflowId }: { workflowId?: string }) {
     try {
       const body = { name, description: description || null, trigger_type: triggerType, trigger_conditions: triggerConditions, actions, active };
       const res = isNew
-        ? await fetch("/api/workflows", {
+        ? await authedFetch("/api/workflows", {
             method: "POST",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify(body),
           })
-        : await fetch(`/api/workflows/${workflowId}`, {
+        : await authedFetch(`/api/workflows/${workflowId}`, {
             method: "PATCH",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify(body),

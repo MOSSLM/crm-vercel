@@ -22,6 +22,7 @@ import { DesignWorkspace } from "./DesignWorkspace";
 import { ContentWorkspace } from "./ContentWorkspace";
 import "./site-builder-skin.css";
 import { AlertSoft, Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pop, Seg, TopChip, cx } from "./skin-primitives";
+import { authedFetch } from "@/utils/authedFetch";
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -76,7 +77,7 @@ function CompanyDropdown({
 
   const loadCompanies = React.useCallback(() => {
     setLoading(true);
-    fetch("/api/site-builder/entreprises")
+    authedFetch("/api/site-builder/entreprises")
       .then((r) => r.json())
       .then((data: unknown) => {
         const list = Array.isArray(data) ? (data as Entreprise[]) : [];
@@ -226,7 +227,7 @@ function ProjectDropdown({
   React.useEffect(() => {
     if (!enterpriseId) { setProjects([]); return; }
     setLoading(true);
-    fetch(`/api/site-builder/lead-magnet-projects?enterprise=${enterpriseId}`)
+    authedFetch(`/api/site-builder/lead-magnet-projects?enterprise=${enterpriseId}`)
       .then((r) => r.json())
       .then((data: unknown) => { if (Array.isArray(data)) setProjects(data as LMProject[]); })
       .catch(() => {})
@@ -413,7 +414,7 @@ function RelumeEditorInner({
     const params = new URLSearchParams({ enterprise: String(id) });
     if (pid) params.set("project", pid);
     if (siteId) params.set("site", siteId);
-    fetch(`/api/site-builder/variables?${params.toString()}`)
+    authedFetch(`/api/site-builder/variables?${params.toString()}`)
       .then((r) => r.json())
       .then((data: unknown) => {
         if (data && typeof data === "object" && !Array.isArray(data)) {
@@ -488,7 +489,7 @@ function RelumeEditorInner({
    * left over from before the 2 s autosave debounce fired).
    */
   const persistStateToDb = React.useCallback(async () => {
-    const r1 = await fetch(`/api/site-builder/sites/${siteId}`, {
+    const r1 = await authedFetch(`/api/site-builder/sites/${siteId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -510,7 +511,7 @@ function RelumeEditorInner({
       custom_style: inst.custom_style ?? {},
       is_hidden: inst.is_hidden ?? false,
     }));
-    const r2 = await fetch(`/api/site-builder/sites/${siteId}/instances`, {
+    const r2 = await authedFetch(`/api/site-builder/sites/${siteId}/instances`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ instances }),
@@ -525,7 +526,7 @@ function RelumeEditorInner({
     try {
       await persistStateToDb();
 
-      fetch(`/api/site-builder/sites/${siteId}/versions`, {
+      authedFetch(`/api/site-builder/sites/${siteId}/versions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ style_guide: state.styleGuide, sitemap: state.sitemap }),
@@ -554,7 +555,7 @@ function RelumeEditorInner({
         dispatch({ type: "MARK_SAVED" });
       }
 
-      const res = await fetch(`/api/site-builder/sites/${siteId}/publish`, {
+      const res = await authedFetch(`/api/site-builder/sites/${siteId}/publish`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subdomain: publishDomain.trim() }),
@@ -583,7 +584,7 @@ function RelumeEditorInner({
     setProjectId(undefined);
     fetchVariables(id ?? undefined, undefined);
     try {
-      await fetch(`/api/site-builder/sites/${siteId}`, {
+      await authedFetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enterprise_id: id, lead_magnet_project_id: null }),
@@ -598,7 +599,7 @@ function RelumeEditorInner({
     setProjectId(id ?? undefined);
     fetchVariables(enterpriseId, id ?? undefined);
     try {
-      await fetch(`/api/site-builder/sites/${siteId}`, {
+      await authedFetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lead_magnet_project_id: id }),
@@ -670,7 +671,7 @@ function RelumeEditorInner({
 
   const handleSaveTheme = async (name: string, description: string) => {
     const config = serializeTheme(state);
-    const res = await fetch("/api/site-builder/themes", {
+    const res = await authedFetch("/api/site-builder/themes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -693,7 +694,7 @@ function RelumeEditorInner({
     const sectionDef = instance?.section_def ?? (instance?.section_id ? sectionDefs[instance.section_id] : null);
     if (!instance || !sectionDef) return;
     try {
-      const res = await fetch("/api/site-builder/ai/regenerate-section", {
+      const res = await authedFetch("/api/site-builder/ai/regenerate-section", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

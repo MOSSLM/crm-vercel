@@ -14,6 +14,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { authedFetch } from "@/utils/authedFetch";
 
 export default function FormsPage() {
   const router = useRouter();
@@ -22,7 +23,7 @@ export default function FormsPage() {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    fetch('/api/forms')
+    authedFetch('/api/forms')
       .then((r) => r.json())
       .then((data) => setForms(Array.isArray(data) ? data : []))
       .catch(() => setForms([]))
@@ -32,7 +33,7 @@ export default function FormsPage() {
   async function handleCreate() {
     setCreating(true);
     try {
-      const res = await fetch('/api/forms', {
+      const res = await authedFetch('/api/forms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Nouveau formulaire' }),

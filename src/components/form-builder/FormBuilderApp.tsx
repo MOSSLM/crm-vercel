@@ -10,6 +10,7 @@ import { BuildView } from './build/BuildView';
 import { LogicView } from './logic/LogicView';
 import { PreviewView } from './preview/PreviewView';
 import { ShareView } from './share/ShareView';
+import { authedFetch } from "@/utils/authedFetch";
 
 const SAVE_DEBOUNCE_MS = 1000;
 
@@ -39,7 +40,7 @@ export default function FormBuilderApp({ formId }: FormBuilderAppProps) {
 
   // Load form
   useEffect(() => {
-    fetch(`/api/forms/${formId}`)
+    authedFetch(`/api/forms/${formId}`)
       .then((r) => r.json())
       .then((d: Form) => {
         setForm(d);
@@ -61,7 +62,7 @@ export default function FormBuilderApp({ formId }: FormBuilderAppProps) {
     saveTimerRef.current = setTimeout(async () => {
       setSaving(true);
       try {
-        await fetch(`/api/forms/${formId}`, {
+        await authedFetch(`/api/forms/${formId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

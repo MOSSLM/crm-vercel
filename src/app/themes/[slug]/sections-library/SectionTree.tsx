@@ -33,6 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { CATEGORIES, type ThemeSection } from "./types";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface Props {
   themeSlug: string;
@@ -84,7 +85,7 @@ export default function SectionTree({
     if (!newId.trim() || !newName.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/themes/${themeSlug}/sections`, {
+      const res = await authedFetch(`/api/themes/${themeSlug}/sections`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -116,7 +117,7 @@ export default function SectionTree({
   const handleDuplicate = async (section: ThemeSection) => {
     const newSectionId = `${section.section_id}_copy`;
     try {
-      const res = await fetch(`/api/themes/${themeSlug}/sections`, {
+      const res = await authedFetch(`/api/themes/${themeSlug}/sections`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

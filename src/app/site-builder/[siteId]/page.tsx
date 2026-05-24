@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { RelumeEditor } from "@/components/site-builder/relume-builder/RelumeEditor";
 import type { SiteV2, SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 export default function SiteBuilderV2Page() {
   const { siteId } = useParams<{ siteId: string }>();
@@ -16,9 +17,9 @@ export default function SiteBuilderV2Page() {
 
   React.useEffect(() => {
     Promise.all([
-      fetch(`/api/site-builder/sites/${siteId}`).then((r) => r.json()),
-      fetch(`/api/site-builder/sections`).then((r) => r.json()),
-      fetch(`/api/site-builder/sites/${siteId}/instances`).then((r) => r.json()),
+      authedFetch(`/api/site-builder/sites/${siteId}`).then((r) => r.json()),
+      authedFetch(`/api/site-builder/sections`).then((r) => r.json()),
+      authedFetch(`/api/site-builder/sites/${siteId}/instances`).then((r) => r.json()),
     ])
       .then(([siteData, sectionsData, instancesData]) => {
         setSite(siteData);

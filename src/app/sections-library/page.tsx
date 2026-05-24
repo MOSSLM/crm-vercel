@@ -5,13 +5,14 @@ import { useRouter } from "next/navigation";
 import { Loader2, BookOpen } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import type { ManagedTheme } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 export default function SectionsLibraryRedirectPage() {
   const router = useRouter();
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    fetch("/api/themes")
+    authedFetch("/api/themes")
       .then((res) => res.json())
       .then((themes: ManagedTheme[]) => {
         if (!themes || themes.length === 0) {

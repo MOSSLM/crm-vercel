@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { SiteV2 } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 export default function SiteBuilderV2ListPage() {
   const [sites, setSites] = React.useState<SiteV2[]>([]);
@@ -22,7 +23,7 @@ export default function SiteBuilderV2ListPage() {
 
   const fetchSites = async () => {
     try {
-      const res = await fetch("/api/site-builder/sites");
+      const res = await authedFetch("/api/site-builder/sites");
       if (!res.ok) throw new Error();
       setSites(await res.json());
     } catch {
@@ -38,7 +39,7 @@ export default function SiteBuilderV2ListPage() {
     if (!newName.trim()) { toast.error("Nom requis"); return; }
     setCreating(true);
     try {
-      const res = await fetch("/api/site-builder/sites", {
+      const res = await authedFetch("/api/site-builder/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName.trim() }),
@@ -59,7 +60,7 @@ export default function SiteBuilderV2ListPage() {
   const handleDelete = async (id: string) => {
     if (!window.confirm("Supprimer ce site ?")) return;
     try {
-      const res = await fetch(`/api/site-builder/sites/${id}`, { method: "DELETE" });
+      const res = await authedFetch(`/api/site-builder/sites/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       setSites((prev) => prev.filter((s) => s.id !== id));
       toast.success("Site supprimé");
