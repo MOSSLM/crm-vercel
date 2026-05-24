@@ -2,6 +2,7 @@
 
 import React from "react";
 import type { RelumeBuilderState } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 export type AutosaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -48,7 +49,7 @@ export function useSiteAutosave({
       }));
 
       const [r1, r2] = await Promise.all([
-        fetch(`/api/site-builder/sites/${siteId}`, {
+        authedFetch(`/api/site-builder/sites/${siteId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -57,7 +58,7 @@ export function useSiteAutosave({
             site_config: { menus: s.menus },
           }),
         }),
-        fetch(`/api/site-builder/sites/${siteId}/instances`, {
+        authedFetch(`/api/site-builder/sites/${siteId}/instances`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ instances }),

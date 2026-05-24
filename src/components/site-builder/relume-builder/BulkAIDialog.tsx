@@ -7,6 +7,7 @@ import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import type { SiteSectionInstance, SiteSectionDef } from "@/types";
 import { Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pill } from "./skin-primitives";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface BulkResult {
   instanceId: string;
@@ -52,7 +53,7 @@ export function BulkAIDialog({ open, onClose, instances, onApplyAll, variableCon
     await Promise.all(
       instances.map(async ({ instance, def }, i) => {
         try {
-          const res = await fetch("/api/site-builder/ai/regenerate-section", {
+          const res = await authedFetch("/api/site-builder/ai/regenerate-section", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({

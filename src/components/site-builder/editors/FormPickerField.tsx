@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import type { Form, SectionFormPickerField } from '@/types';
 import { scoreFormForSite } from '@/lib/form-builder/match-form-by-tags';
+import { authedFetch } from "@/utils/authedFetch";
 
 interface FormPickerFieldProps {
   field: SectionFormPickerField;
@@ -16,7 +17,7 @@ export function FormPickerField({ value, onChange, siteTags = [] }: FormPickerFi
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/forms')
+    authedFetch('/api/forms')
       .then((r) => r.json())
       .then((d: Form[]) => { setForms(Array.isArray(d) ? d : []); setLoading(false); })
       .catch(() => setLoading(false));

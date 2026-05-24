@@ -14,6 +14,7 @@ import { buildSitemapTree, normalizePageSlug } from "@/lib/site-builder/sitemap-
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { AlertSoft, Btn, Pane, PaneBody, PaneHeader, Pill, Pop } from "./skin-primitives";
+import { authedFetch } from "@/utils/authedFetch";
 
 // ─── AI Model config ──────────────────────────────────────────────────────────
 
@@ -183,7 +184,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     setAiStep("generating");
     try {
       const pageList = state.sitemap.map((p) => p.title).join(", ");
-      const res = await fetch("/api/site-builder/ai/generate-sitemap", {
+      const res = await authedFetch("/api/site-builder/ai/generate-sitemap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -257,7 +258,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     setPageLoading(page.id);
     try {
       const context = pageContexts[page.id] ?? "";
-      const res = await fetch("/api/site-builder/ai/regenerate-page", {
+      const res = await authedFetch("/api/site-builder/ai/regenerate-page", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

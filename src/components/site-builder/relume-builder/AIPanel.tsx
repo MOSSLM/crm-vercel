@@ -7,6 +7,7 @@ import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { ModelDropdown } from "./SitemapWorkspace";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface AIPanelProps {
   siteId: string;
@@ -32,7 +33,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
     setPreview(null);
 
     try {
-      const res = await fetch("/api/site-builder/ai/generate-sitemap", {
+      const res = await authedFetch("/api/site-builder/ai/generate-sitemap", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

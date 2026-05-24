@@ -28,6 +28,7 @@ import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerF
 import { VariableTextarea } from "./VariableTextarea";
 import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
 import type { SiteSectionInstance, SectionField, SectionBlockSchema, SectionImagePickerField } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 /** Block type used for the repeatable item of a tag-adaptive section. */
 const TAG_ITEM_TYPE = "tag_item";
@@ -122,7 +123,7 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
   React.useEffect(() => {
     if (!enterpriseId) { setStats([]); setStatsSnapshot([]); return; }
     let cancelled = false;
-    fetch(`/api/entreprises/${enterpriseId}/stats`)
+    authedFetch(`/api/entreprises/${enterpriseId}/stats`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { stats?: StatItem[] } | null) => {
         if (cancelled) return;
@@ -139,7 +140,7 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
     if (!enterpriseId) return;
     setSavingStats(true);
     try {
-      const res = await fetch(`/api/entreprises/${enterpriseId}/stats`, {
+      const res = await authedFetch(`/api/entreprises/${enterpriseId}/stats`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stats }),

@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { MediaImageType, MediaLibraryItem } from "@/types";
 import { MEDIA_LIBRARY_UNIVERSAL_TAG } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 const IMAGE_TYPE_LABELS: Record<MediaImageType, string> = {
   stock: "Stock",
@@ -124,7 +125,7 @@ export default function MediaLibraryPage() {
       if (search.trim()) params.set("search", search.trim());
       params.set("limit", "200");
 
-      const res = await fetch(`/api/media?${params.toString()}`);
+      const res = await authedFetch(`/api/media?${params.toString()}`);
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { items: MediaLibraryItem[]; total: number };
       setItems(data.items);
@@ -160,10 +161,10 @@ export default function MediaLibraryPage() {
   async function handleDelete(ids: string[]) {
     try {
       if (ids.length === 1) {
-        const res = await fetch(`/api/media/${ids[0]}`, { method: "DELETE" });
+        const res = await authedFetch(`/api/media/${ids[0]}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await res.text());
       } else {
-        const res = await fetch(`/api/media/bulk`, {
+        const res = await authedFetch(`/api/media/bulk`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ids }),
@@ -504,7 +505,7 @@ function UploadDialog({
       form.append("image_type", draft.image_type);
       if (draft.entreprise_id) form.append("entreprise_id", String(draft.entreprise_id));
 
-      const res = await fetch("/api/media", { method: "POST", body: form });
+      const res = await authedFetch("/api/media", { method: "POST", body: form });
       const json = (await res.json()) as {
         inserted: MediaLibraryItem[];
         failures: { file_name: string; error: string }[];
@@ -720,7 +721,7 @@ function DetailDialog({
   async function handleSave() {
     setSaving(true);
     try {
-      const res = await fetch(`/api/media/${item.id}`, {
+      const res = await authedFetch(`/api/media/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -879,7 +880,7 @@ function BulkTagDialog({
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/media/bulk", {
+      const res = await authedFetch("/api/media/bulk", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids, add_tags: tagsToAdd }),

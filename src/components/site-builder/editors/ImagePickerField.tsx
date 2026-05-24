@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { ImageIcon, Link, X, Upload, Library, Loader2, Trash2, Sparkles, ChevronDown } from "lucide-react";
 import type { SectionImagePickerField, MediaLibraryItemRanked } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface SiteAssetItem {
   id: string;
@@ -46,7 +47,7 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
   useEffect(() => {
     if (!siteId) return;
     let cancelled = false;
-    fetch(`/api/site-builder/sites/${encodeURIComponent(siteId)}`)
+    authedFetch(`/api/site-builder/sites/${encodeURIComponent(siteId)}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (!cancelled && data?.enterprise_id) {
@@ -63,7 +64,7 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
     if (!siteId) return;
     setLoadingSiteAssets(true);
     try {
-      const res = await fetch(`/api/site-builder/assets?site=${encodeURIComponent(siteId)}`);
+      const res = await authedFetch(`/api/site-builder/assets?site=${encodeURIComponent(siteId)}`);
       if (res.ok) setSiteAssets(await res.json());
     } finally {
       setLoadingSiteAssets(false);
@@ -88,7 +89,7 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
         }
       }
       // Fallback: no enterprise -> flat list, all in "others"
-      const res = await fetch(`/api/media?limit=200`);
+      const res = await authedFetch(`/api/media?limit=200`);
       if (res.ok) {
         const data = (await res.json()) as { items: MediaLibraryItemRanked[] };
         setSuggested([]);
@@ -124,7 +125,7 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
     try {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`/api/site-builder/assets?site=${encodeURIComponent(siteId)}`, {
+      const res = await authedFetch(`/api/site-builder/assets?site=${encodeURIComponent(siteId)}`, {
         method: "POST",
         body: form,
       });
@@ -143,7 +144,7 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
   async function handleDeleteSiteAsset(asset: SiteAssetItem, e: React.MouseEvent) {
     e.stopPropagation();
     if (!confirm(`Supprimer "${asset.filename}" ?`)) return;
-    await fetch(`/api/site-builder/assets/${asset.id}`, { method: "DELETE" });
+    await authedFetch(`/api/site-builder/assets/${asset.id}`, { method: "DELETE" });
     setSiteAssets((prev) => prev.filter((a) => a.id !== asset.id));
     if (value === asset.public_url) onChange("");
   }

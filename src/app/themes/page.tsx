@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import AppLayout from "@/components/layout/AppLayout";
 import type { ManagedTheme } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 export default function ThemesPage() {
   const [themes, setThemes] = React.useState<ManagedTheme[]>([]);
@@ -30,7 +31,7 @@ export default function ThemesPage() {
 
   const loadThemes = React.useCallback(async () => {
     try {
-      const res = await fetch("/api/themes");
+      const res = await authedFetch("/api/themes");
       if (!res.ok) throw new Error("Erreur de chargement");
       setThemes(await res.json());
     } catch {
@@ -44,7 +45,7 @@ export default function ThemesPage() {
 
   const handleToggle = async (theme: ManagedTheme) => {
     try {
-      const res = await fetch(`/api/themes/${theme.slug}`, {
+      const res = await authedFetch(`/api/themes/${theme.slug}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ is_enabled: !theme.is_enabled }),
@@ -62,7 +63,7 @@ export default function ThemesPage() {
   const handleDelete = async (theme: ManagedTheme) => {
     if (!window.confirm(`Supprimer le thème "${theme.name}" ?`)) return;
     try {
-      const res = await fetch(`/api/themes/${theme.slug}`, { method: "DELETE" });
+      const res = await authedFetch(`/api/themes/${theme.slug}`, { method: "DELETE" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setThemes((prev) => prev.filter((t) => t.slug !== theme.slug));
@@ -269,7 +270,7 @@ function CreateThemeDialog({
     if (!name.trim() || !slug.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/themes", {
+      const res = await authedFetch("/api/themes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -352,7 +353,7 @@ function GenerateFromUrlDialog({
     setStep("generating");
     setError("");
     try {
-      const res = await fetch("/api/themes/generate-from-url", {
+      const res = await authedFetch("/api/themes/generate-from-url", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url }),
@@ -371,7 +372,7 @@ function GenerateFromUrlDialog({
     if (!generatedTheme) return;
     setStep("saving");
     try {
-      const res = await fetch("/api/themes", {
+      const res = await authedFetch("/api/themes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

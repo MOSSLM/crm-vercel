@@ -17,6 +17,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import type { SiteTemplate } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 const CATEGORIES = [
   { value: "general", label: "Général" },
@@ -38,7 +39,7 @@ export default function SiteTemplatesPage() {
 
   const fetchTemplates = async () => {
     try {
-      const res = await fetch("/api/site-templates");
+      const res = await authedFetch("/api/site-templates");
       if (!res.ok) throw new Error();
       setTemplates(await res.json());
     } catch {
@@ -53,7 +54,7 @@ export default function SiteTemplatesPage() {
   const handleDelete = async (id: string) => {
     if (!window.confirm("Supprimer ce template ?")) return;
     try {
-      const res = await fetch(`/api/site-templates/${id}`, { method: "DELETE" });
+      const res = await authedFetch(`/api/site-templates/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();
       setTemplates((prev) => prev.filter((t) => t.id !== id));
       toast.success("Template supprimé");
@@ -65,7 +66,7 @@ export default function SiteTemplatesPage() {
   const handleApplyToNewSite = async (template: SiteTemplate) => {
     setApplyingId(template.id);
     try {
-      const res = await fetch("/api/site-builder/sites", {
+      const res = await authedFetch("/api/site-builder/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

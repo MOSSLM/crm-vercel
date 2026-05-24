@@ -16,6 +16,7 @@ import SectionChat from "./SectionChat";
 import SectionSettings from "./SectionSettings";
 import SectionSchemaEditor from "./SectionSchemaEditor";
 import type { ThemeSection } from "./types";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -40,7 +41,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
 
   const loadSections = React.useCallback(async (themeSlug: string) => {
     try {
-      const res = await fetch(`/api/themes/${themeSlug}/sections`);
+      const res = await authedFetch(`/api/themes/${themeSlug}/sections`);
       if (!res.ok) throw new Error("Erreur de chargement");
       const data: ThemeSection[] = await res.json();
       setSections(data);

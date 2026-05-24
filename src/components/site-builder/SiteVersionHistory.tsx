@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import type { SiteVersion } from "@/types";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface Props {
   siteId: string;
@@ -30,7 +31,7 @@ export function SiteVersionHistory({ siteId, onRestored }: Props) {
   const fetchVersions = React.useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/site-builder/sites/${siteId}/versions`);
+      const res = await authedFetch(`/api/site-builder/sites/${siteId}/versions`);
       if (!res.ok) throw new Error();
       setVersions(await res.json());
     } catch {

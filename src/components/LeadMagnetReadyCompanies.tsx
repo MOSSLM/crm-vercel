@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { getCompanyDisplayName, ensureHttpsUrl } from "../utils/displayHelpers";
+import { authedFetch } from "@/utils/authedFetch";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -197,7 +198,7 @@ export function LeadMagnetReadyCompanies() {
   React.useEffect(() => {
     const fetchLMProjects = async () => {
       try {
-        const res = await fetch("/api/lead-magnet-projects");
+        const res = await authedFetch("/api/lead-magnet-projects");
         if (res.ok) {
           const data: LMProject[] = await res.json();
           setLmProjects(new Map(data.map((p) => [p.opportunite_id, p])));
@@ -213,7 +214,7 @@ export function LeadMagnetReadyCompanies() {
 
   const handleLinkOpportunity = async (companyId: number, opportuniteId: string) => {
     try {
-      const res = await fetch("/api/opportunities/" + opportuniteId, {
+      const res = await authedFetch("/api/opportunities/" + opportuniteId, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lead_magnet: true }),
