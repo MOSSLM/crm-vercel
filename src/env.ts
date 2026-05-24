@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const envSchema = z.object({
   SUPABASE_URL: z.string().url({ message: "SUPABASE_URL doit être une URL valide" }),
   SUPABASE_SERVICE_ROLE_KEY: z
@@ -20,6 +22,14 @@ const envSchema = z.object({
   GMAPS_BASE_URL: z.string().url().optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   RESEND_FROM_EMAIL: z.string().email().optional(),
+  // Required in production so the cron endpoints fail closed. Optional in
+  // dev/test so local runs don't have to set it.
+  CRON_SECRET: isProd
+    ? z.string().min(1, { message: "CRON_SECRET est requis en production" })
+    : z.string().min(1).optional(),
+  // Optional secondary secret accepted by /api/automations/tick when called
+  // from pg_cron (header x-pg-cron-secret).
+  PG_CRON_SECRET: z.string().min(1).optional(),
 });
 
 const envResult = envSchema.safeParse({
@@ -32,6 +42,8 @@ const envResult = envSchema.safeParse({
   GMAPS_BASE_URL: process.env.GMAPS_BASE_URL,
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+  CRON_SECRET: process.env.CRON_SECRET,
+  PG_CRON_SECRET: process.env.PG_CRON_SECRET,
 });
 
 if (!envResult.success) {
@@ -53,4 +65,6 @@ export const {
   GMAPS_BASE_URL,
   RESEND_API_KEY,
   RESEND_FROM_EMAIL,
+  CRON_SECRET,
+  PG_CRON_SECRET,
 } = envResult.data;
