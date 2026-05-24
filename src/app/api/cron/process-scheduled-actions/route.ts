@@ -19,15 +19,34 @@ const scheduledActionSchema = z.object({
 type ParsedAction = z.infer<typeof scheduledActionSchema>;
 
 /**
- * Verifies the cron request:
- *   - prod: CRON_SECRET MUST be set AND the header must match → fail-closed
- *   - dev/test: missing secret is allowed (local cron testing)
+ * Verifies the cron request. Accepts either:
+ *   - `Authorization: Bearer ${CRON_SECRET}` (Vercel Cron), or
+ *   - `x-pg-cron-secret: ${PG_CRON_SECRET}` (Supabase pg_cron).
+ *
+ * Vercel hobby plans are restricted to daily cron schedules, so the primary
+ * scheduler for this endpoint is pg_cron (configured by the matching SQL
+ * migration). The Vercel header is still accepted for the case where the
+ * project moves to a paid plan or another caller wants to invoke it.
+ *
+ *   - prod: at least one of the two secrets MUST be set AND the matching
+ *     header MUST match → fail-closed.
+ *   - dev/test: when neither secret is configured, allow.
  */
 const verifyCron = (req: Request): boolean => {
-  const secret = process.env.CRON_SECRET;
-  if (process.env.NODE_ENV === "production" && !secret) return false;
-  if (!secret) return true;
-  return req.headers.get("authorization") === `Bearer ${secret}`;
+  const cronSecret = process.env.CRON_SECRET;
+  const pgCronSecret = process.env.PG_CRON_SECRET;
+
+  if (process.env.NODE_ENV === "production" && !cronSecret && !pgCronSecret) {
+    return false;
+  }
+
+  if (!cronSecret && !pgCronSecret) return true;
+
+  const auth = req.headers.get("authorization");
+  const pgHeader = req.headers.get("x-pg-cron-secret");
+  const validVercel = !!cronSecret && auth === `Bearer ${cronSecret}`;
+  const validPgCron = !!pgCronSecret && pgHeader === pgCronSecret;
+  return validVercel || validPgCron;
 };
 
 type ScheduledAction = {
