@@ -50,18 +50,23 @@ export const PATCH = withAuth({}, async ({ req }) => {
     .in("id", body.ids);
   if (fetchError) return jsonError(fetchError.message, 500);
 
-  const updated: { id: string; service_tags: string[] }[] = [];
-  for (const row of rows ?? []) {
-    const current = Array.isArray(row.service_tags) ? (row.service_tags as string[]) : [];
-    const next = Array.from(
-      new Set([...current.filter((t) => !remove.includes(t)), ...add]),
-    );
-    const { error } = await supabase
-      .from("media_library")
-      .update({ service_tags: next })
-      .eq("id", row.id);
-    if (!error) updated.push({ id: row.id, service_tags: next });
-  }
+  // Each row gets a different resulting tag set, so we can't collapse to one
+  // UPDATE without server-side computation. Fire the N updates in parallel
+  // instead of sequentially — same N round-trips but no head-of-line blocking.
+  const results = await Promise.all(
+    (rows ?? []).map(async (row) => {
+      const current = Array.isArray(row.service_tags) ? (row.service_tags as string[]) : [];
+      const next = Array.from(
+        new Set([...current.filter((t) => !remove.includes(t)), ...add]),
+      );
+      const { error } = await supabase
+        .from("media_library")
+        .update({ service_tags: next })
+        .eq("id", row.id);
+      return error ? null : { id: row.id, service_tags: next };
+    }),
+  );
+  const updated = results.filter((r): r is { id: string; service_tags: string[] } => r !== null);
 
   return json({ updated });
 });

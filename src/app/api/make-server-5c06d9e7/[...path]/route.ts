@@ -56,6 +56,21 @@ async function kvGetByPrefix(prefix: string) {
   return data?.map((d) => d.value) ?? [];
 }
 
+/**
+ * Batch counterpart to `kvGet`. Returns a Map<key, value> covering only the
+ * keys actually present in the table. Used to avoid N+1 KV lookups when
+ * enriching contact lists (one query instead of N).
+ */
+async function kvGetMany(keys: string[]): Promise<Map<string, any>> {
+  if (keys.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from(KV_TABLE)
+    .select("key,value")
+    .in("key", keys);
+  if (error) throw new Error(error.message);
+  return new Map((data ?? []).map((row: { key: string; value: any }) => [row.key, row.value]));
+}
+
 // ===================================================
 // =============== JOURNAL HELPERS ===================
 // ===================================================
@@ -869,16 +884,21 @@ export const GET = withAuth<undefined, RouterParams>({}, async ({ req, params, c
       if (error) return json({ error: "Failed to fetch contacts" }, 500);
 
       const contactList = contacts ?? [];
-      const enhanced = await Promise.all(
-        contactList.map(async (c: any) => {
-          try {
-            const ext = (await kvGet(`contact_extended_${c.id}`)) || {};
-            return { ...c, ...ext, nom: c.last_name, prenom: c.first_name };
-          } catch {
-            return { ...c, nom: c.last_name, prenom: c.first_name };
-          }
-        })
-      );
+      // Batch KV lookup: 1 query instead of N. Failure short-circuits to no
+      // enrichment instead of partial — same behavior as the old try/catch
+      // per row, only flipped to apply once.
+      let extMap: Map<string, any>;
+      try {
+        extMap = await kvGetMany(contactList.map((c: any) => `contact_extended_${c.id}`));
+      } catch {
+        extMap = new Map();
+      }
+      const enhanced = contactList.map((c: any) => ({
+        ...c,
+        ...(extMap.get(`contact_extended_${c.id}`) ?? {}),
+        nom: c.last_name,
+        prenom: c.first_name,
+      }));
       const nextCursor = contactList.length
         ? contactList[contactList.length - 1].created_at ?? null
         : null;
@@ -906,16 +926,18 @@ export const GET = withAuth<undefined, RouterParams>({}, async ({ req, params, c
       if (error) return json({ error: "Failed to fetch contacts" }, 500);
 
       const contactList = contacts ?? [];
-      const enhanced = await Promise.all(
-        contactList.map(async (c: any) => {
-          try {
-            const ext = (await kvGet(`contact_extended_${c.id}`)) || {};
-            return { ...c, ...ext, nom: c.last_name, prenom: c.first_name };
-          } catch {
-            return { ...c, nom: c.last_name, prenom: c.first_name };
-          }
-        })
-      );
+      let extMap: Map<string, any>;
+      try {
+        extMap = await kvGetMany(contactList.map((c: any) => `contact_extended_${c.id}`));
+      } catch {
+        extMap = new Map();
+      }
+      const enhanced = contactList.map((c: any) => ({
+        ...c,
+        ...(extMap.get(`contact_extended_${c.id}`) ?? {}),
+        nom: c.last_name,
+        prenom: c.first_name,
+      }));
       const nextCursor = contactList.length
         ? contactList[contactList.length - 1].created_at ?? null
         : null;
