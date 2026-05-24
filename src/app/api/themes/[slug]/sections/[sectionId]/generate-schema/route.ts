@@ -1,8 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
+
+type Params = { slug: string; sectionId: string };
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -39,7 +42,6 @@ Règles :
 - Maximum 15 champs dans settings
 - Réponds UNIQUEMENT avec un objet JSON valide, sans markdown, sans explications`;
 
-/** Appended when the section is tag-adaptive — requires a `tag_item` block. */
 const ADAPTIVE_SCHEMA_ADDENDUM = `
 
 SECTION ADAPTATIVE AUX SERVICES :
@@ -51,23 +53,17 @@ Les "settings" du bloc tag_item correspondent EXACTEMENT aux propriétés lues
 sur chaque \`item.*\` dans le code (un champ text/textarea/image_picker par clé).
 \`settings\` (racine) ne contient QUE les champs fixes de la section (titre, etc.).`;
 
-// POST /api/themes/[slug]/sections/[sectionId]/generate-schema
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ slug: string; sectionId: string }> }
-) {
-  const { sectionId } = await params;
+export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
+  const { sectionId } = params;
 
   let body: { code: string; isTagAdaptive?: boolean };
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonError("Invalid JSON", 400);
   }
 
-  if (!body.code?.trim()) {
-    return NextResponse.json({ error: "code is required" }, { status: 400 });
-  }
+  if (!body.code?.trim()) return jsonError("code is required", 400);
 
   const userMessage = `Section "${sectionId}" — code TSX :\n\`\`\`tsx\n${body.code}\n\`\`\`\n\nGénère le schéma JSON pour cette section.`;
   const systemPrompt = body.isTagAdaptive
@@ -84,7 +80,6 @@ export async function POST(
 
     const raw = response.content[0]?.type === "text" ? response.content[0].text.trim() : "";
 
-    // Strip markdown code fences if present
     const jsonStr = raw
       .replace(/^```json\s*/i, "")
       .replace(/^```\s*/i, "")
@@ -95,15 +90,12 @@ export async function POST(
     try {
       schema = JSON.parse(jsonStr);
     } catch {
-      return NextResponse.json(
-        { error: "L'IA n'a pas retourné un JSON valide", raw },
-        { status: 422 }
-      );
+      return jsonError("L'IA n'a pas retourné un JSON valide", 422);
     }
 
-    return NextResponse.json({ schema });
+    return json({ schema });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Erreur IA";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return jsonError(msg, 500);
   }
-}
+});

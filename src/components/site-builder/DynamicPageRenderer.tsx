@@ -1,5 +1,5 @@
 import React from "react";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { getServiceClient } from "@/app/api/_lib/service-client";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
@@ -135,7 +135,7 @@ interface DynamicPageRendererProps {
 
 /** Server component: renders a dynamic-sections page for the public site */
 export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances }: DynamicPageRendererProps) {
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   type RenderInstance = SiteSectionInstance & { section_def: SiteSectionDef | null };
   const allInstances = (preloadedInstances ?? []) as RenderInstance[];

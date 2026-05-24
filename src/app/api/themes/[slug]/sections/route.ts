@@ -1,47 +1,35 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/themes/[slug]/sections — list all sections for a theme
-export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
-) {
-  const { slug } = await params;
-  const supabase = getSupabaseServiceClient();
+type Params = { slug: string };
+
+export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
 
   const { data, error } = await supabase
     .from("theme_sections")
     .select("*")
-    .eq("theme_slug", slug)
+    .eq("theme_slug", params.slug)
     .order("category", { ascending: true })
     .order("sort_order", { ascending: true })
     .order("section_id", { ascending: true });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return jsonError(error.message, 500);
+  return json(data ?? []);
+});
 
-  return NextResponse.json(data ?? []);
-}
-
-// POST /api/themes/[slug]/sections — create a new section
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
-) {
-  const { slug } = await params;
+export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const body = await req.json();
   const { section_id, category, name, code, example_data, schema, is_tag_adaptive } = body;
 
   if (!section_id || !category || !name) {
-    return NextResponse.json(
-      { error: "section_id, category and name are required" },
-      { status: 400 }
-    );
+    return jsonError("section_id, category and name are required", 400);
   }
 
-  const supabase = getSupabaseServiceClient();
-
+  const supabase = getServiceClient();
   const adaptive = is_tag_adaptive === true;
   const resolvedCode =
     code ?? (adaptive ? getDefaultAdaptiveCode(section_id) : getDefaultCode(section_id));
@@ -50,7 +38,7 @@ export async function POST(
   const { data, error } = await supabase
     .from("theme_sections")
     .insert({
-      theme_slug: slug,
+      theme_slug: params.slug,
       section_id,
       category,
       name,
@@ -64,16 +52,13 @@ export async function POST(
 
   if (error) {
     if (error.code === "23505") {
-      return NextResponse.json(
-        { error: `Une section "${section_id}" existe déjà pour ce thème` },
-        { status: 409 }
-      );
+      return jsonError(`Une section "${section_id}" existe déjà pour ce thème`, 409);
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return jsonError(error.message, 500);
   }
 
-  return NextResponse.json(data, { status: 201 });
-}
+  return json(data, { status: 201 });
+});
 
 function getDefaultCode(sectionId: string): string {
   return `import React from 'react';
@@ -101,11 +86,6 @@ export default function ${toPascalCase(sectionId)}({ tokens = {}, data = {}, var
 `;
 }
 
-/**
- * Starter code for a tag-adaptive section: renders one card per item in
- * `data.items` (the array is materialised by the builder, one entry per
- * enterprise service_tag). The layout stays correct for any item count.
- */
 function getDefaultAdaptiveCode(sectionId: string): string {
   return `import React from 'react';
 
@@ -123,7 +103,6 @@ interface Item {
 }
 
 export default function ${toPascalCase(sectionId)}({ tokens = {}, data = {}, variables = {} }: Props) {
-  // data.items is the repeatable list — one entry per enterprise service tag.
   const items = (data.items as Item[]) ?? [];
   const eyebrow = (data.eyebrow as string) || '';
   const heading = (data.heading as string) || 'Nos services';
@@ -151,7 +130,6 @@ export default function ${toPascalCase(sectionId)}({ tokens = {}, data = {}, var
           )}
         </div>
 
-        {/* Repeatable item — rendered once per service tag */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {items.map((item, index) => (
             <div key={index} className="flex flex-col overflow-hidden"
@@ -183,8 +161,6 @@ export default function ${toPascalCase(sectionId)}({ tokens = {}, data = {}, var
 `;
 }
 
-/** Starter schema for a tag-adaptive section: section-level settings plus a
- *  single `tag_item` block — the template duplicated per service tag. */
 function getDefaultAdaptiveSchema(name: string): Record<string, unknown> {
   return {
     name,

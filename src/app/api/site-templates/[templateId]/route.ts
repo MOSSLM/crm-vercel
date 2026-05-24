@@ -1,26 +1,23 @@
-import { NextResponse } from "next/server";
-import { createClient } from "@/utils/supabase/server";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
-interface Params {
-  params: Promise<{ templateId: string }>;
-}
+type Params = { templateId: string };
 
-export async function GET(_req: Request, { params }: Params) {
-  const { templateId } = await params;
-  const supabase = await createClient();
+export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
   const { data, error } = await supabase
     .from("site_templates")
     .select("*")
-    .eq("id", templateId)
+    .eq("id", params.templateId)
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 });
-  return NextResponse.json(data);
-}
+  if (error) return jsonError(error.message, 404);
+  return json(data);
+});
 
-export async function PATCH(req: Request, { params }: Params) {
-  const { templateId } = await params;
-  const supabase = await createClient();
+export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => {
+  const supabase = getServiceClient();
   const body = await req.json();
   const { name, description, preview_image_url, category, site_config } = body;
 
@@ -34,22 +31,21 @@ export async function PATCH(req: Request, { params }: Params) {
   const { data, error } = await supabase
     .from("site_templates")
     .update(updates)
-    .eq("id", templateId)
+    .eq("id", params.templateId)
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
-}
+  if (error) return jsonError(error.message, 500);
+  return json(data);
+});
 
-export async function DELETE(_req: Request, { params }: Params) {
-  const { templateId } = await params;
-  const supabase = await createClient();
+export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
+  const supabase = getServiceClient();
   const { error } = await supabase
     .from("site_templates")
     .delete()
-    .eq("id", templateId);
+    .eq("id", params.templateId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return new NextResponse(null, { status: 204 });
-}
+  if (error) return jsonError(error.message, 500);
+  return new Response(null, { status: 204 });
+});

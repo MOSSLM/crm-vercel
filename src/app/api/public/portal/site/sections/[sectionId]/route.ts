@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { getServiceClient } from "@/app/api/_lib/service-client";
 import type { SiteConfig, SiteSection } from "@/types";
 
 export const dynamic = "force-dynamic";
 
 async function authenticate(request: Request): Promise<number | null> {
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   const token = request.headers.get("x-portal-token");
   if (!token) return null;
 
@@ -24,7 +24,7 @@ interface RouteContext {
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
   const { sectionId } = await context.params;
   const enterpriseId = await authenticate(request);
   if (!enterpriseId) {

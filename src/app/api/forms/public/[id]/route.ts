@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSupabaseServiceClient } from '@/lib/supabase-service';
+import { getServiceClient } from '@/app/api/_lib/service-client';
 
 export const dynamic = 'force-dynamic';
 
@@ -8,7 +8,7 @@ type Ctx = { params: Promise<{ id: string }> };
 // GET /api/forms/public/[id] — public runtime read (is_published only)
 export async function GET(_req: Request, { params }: Ctx) {
   const { id } = await params;
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   const { data, error } = await supabase
     .from('forms')

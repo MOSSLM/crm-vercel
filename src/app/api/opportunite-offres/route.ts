@@ -1,16 +1,12 @@
-import { requireUser } from "@/app/api/_lib/auth";
-import { corsHeadersFor, preflight } from "@/app/api/_lib/cors";
+import { preflight } from "@/app/api/_lib/cors";
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-export async function GET(req: Request) {
-  const cors = corsHeadersFor(req);
-  const auth = await requireUser(req, cors);
-  if (!auth.ok) return auth.response;
-
+export const GET = withAuth({}, async ({ req, cors }) => {
   const url = new URL(req.url);
   const opportuniteId = url.searchParams.get("opportunite_id");
 
@@ -24,13 +20,9 @@ export async function GET(req: Request) {
   const { data, error } = await query;
   if (error) return jsonError(error.message, 500, {}, cors);
   return json(data, { headers: cors });
-}
+});
 
-export async function POST(req: Request) {
-  const cors = corsHeadersFor(req);
-  const auth = await requireUser(req, cors);
-  if (!auth.ok) return auth.response;
-
+export const POST = withAuth({}, async ({ req, cors }) => {
   let body: Record<string, unknown>;
   try {
     body = await req.json();
@@ -40,9 +32,7 @@ export async function POST(req: Request) {
 
   const { opportunite_id, offre_id, offre_nom, offre_prix_ht, statut, notes } = body;
 
-  if (!opportunite_id || !offre_nom) {
-    return jsonError("opportunite_id et offre_nom requis", 400, {}, cors);
-  }
+  if (!opportunite_id || !offre_nom) return jsonError("opportunite_id et offre_nom requis", 400, {}, cors);
 
   const { data, error } = await getServiceClient()
     .from("opportunite_offres")
@@ -59,4 +49,4 @@ export async function POST(req: Request) {
 
   if (error) return jsonError(error.message, 500, {}, cors);
   return json(data, { status: 201, headers: cors });
-}
+});

@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 import { resolveEnterpriseVariables } from "@/lib/site-builder/resolve-variables";
 
 export const dynamic = "force-dynamic";
@@ -11,34 +12,20 @@ interface BackfillResult {
   reason?: string;
 }
 
-// POST /api/site-builder/admin/backfill-snapshots
-//
-// One-shot maintenance endpoint. Re-resolves enterprise variables and
-// snapshots the live site_section_instances for every site that is
-// is_published=true but has null published_variables or null
-// published_instances. Protected by ADMIN_BACKFILL_SECRET (header
-// x-admin-secret).
-export async function POST(request: Request) {
+export const POST = withAuth({ role: "admin" }, async ({ req }) => {
   const expected = process.env.ADMIN_BACKFILL_SECRET;
-  if (!expected) {
-    return NextResponse.json(
-      { error: "ADMIN_BACKFILL_SECRET not configured on server" },
-      { status: 500 }
-    );
-  }
-  const provided = request.headers.get("x-admin-secret");
-  if (provided !== expected) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  if (!expected) return jsonError("ADMIN_BACKFILL_SECRET not configured on server", 500);
+  const provided = req.headers.get("x-admin-secret");
+  if (provided !== expected) return jsonError("unauthorized", 401);
 
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   const { data: sites, error } = await supabase
     .from("sites")
     .select("id, name, enterprise_id, lead_magnet_project_id, content_overrides, site_config, published_variables, published_instances, published_reviews, published_site_config")
     .eq("is_published", true);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return jsonError(error.message, 500);
 
   const targets = (sites ?? []).filter((s) => {
     const vars = s.published_variables as Record<string, unknown> | null;
@@ -57,9 +44,7 @@ export async function POST(request: Request) {
 
       const updatePayload: Record<string, unknown> = {};
 
-      if (needsConfig) {
-        updatePayload.published_site_config = site.site_config ?? null;
-      }
+      if (needsConfig) updatePayload.published_site_config = site.site_config ?? null;
 
       if (needsVars) {
         const { variables, reviews } = await resolveEnterpriseVariables(supabase, {
@@ -105,10 +90,10 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({
+  return json({
     ok: true,
     scanned: sites?.length ?? 0,
     candidates: targets.length,
     results,
   });
-}
+});

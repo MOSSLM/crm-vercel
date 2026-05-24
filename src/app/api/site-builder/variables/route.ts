@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -42,30 +43,18 @@ type SiteOverridesRow = {
   } | null;
 };
 
-/**
- * GET /api/site-builder/variables?enterprise=<id>[&project=<uuid>][&site=<uuid>]
- *
- * Returns a flat Record<string, string>. Scalar variables are stringified;
- * structured collections (reviews, service tags, defaults, stats, overrides)
- * are JSON-stringified under keys prefixed with "__" so the renderer can
- * parse them back into objects/arrays.
- */
-export async function GET(req: Request) {
+export const GET = withAuth({}, async ({ req }) => {
   const { searchParams } = new URL(req.url);
   const enterpriseIdRaw = searchParams.get("enterprise");
   const projectId = searchParams.get("project");
   const siteId = searchParams.get("site");
 
-  if (!enterpriseIdRaw) {
-    return NextResponse.json({}, { status: 200 });
-  }
+  if (!enterpriseIdRaw) return json({});
 
   const enterpriseId = parseInt(enterpriseIdRaw, 10);
-  if (isNaN(enterpriseId)) {
-    return NextResponse.json({ error: "enterprise must be a number" }, { status: 400 });
-  }
+  if (isNaN(enterpriseId)) return jsonError("enterprise must be a number", 400);
 
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   const [entResult, projectResult, reviewsResult, siteResult] = await Promise.all([
     supabase
@@ -108,7 +97,7 @@ export async function GET(req: Request) {
   ]);
 
   if (entResult.error || !entResult.data) {
-    return NextResponse.json({ error: entResult.error?.message ?? "Not found" }, { status: 404 });
+    return jsonError(entResult.error?.message ?? "Not found", 404);
   }
 
   const ent = entResult.data as unknown as EnterpriseVariablesRow;
@@ -121,7 +110,6 @@ export async function GET(req: Request) {
     : (typeof ent.service_tags === "string" ? [ent.service_tags] : []);
   const servicesList = serviceTags.join(", ");
 
-  // Project overrides take priority over entreprise values
   const nom = proj?.override_entreprise_name ?? ent.nom ?? "";
   const ville = proj?.override_city ?? ent.ville ?? "";
   const telephone = proj?.override_phone ?? ent.telephone ?? "";
@@ -143,7 +131,6 @@ export async function GET(req: Request) {
     "entreprise.nombre_avis": String(ent.nombre_avis ?? ""),
     "entreprise.logo_url":    ent.logo_url ?? "",
     "entreprise.site_web":    ent.site_web_canonique ?? ent.canonical_url ?? "",
-    // Convenience aliases
     "company.name":    nom,
     "company.city":    ville,
     "company.phone":   telephone,
@@ -156,8 +143,6 @@ export async function GET(req: Request) {
     "company.website": ent.site_web_canonique ?? ent.canonical_url ?? "",
   };
 
-  // Merge free-form project variables. Scalars become "{{var}}"; objects/arrays
-  // are JSON-stringified under "__var" so the renderer can parse them.
   if (proj?.variables && typeof proj.variables === "object") {
     for (const [k, v] of Object.entries(proj.variables)) {
       if (v === null || v === undefined) continue;
@@ -169,7 +154,6 @@ export async function GET(req: Request) {
     }
   }
 
-  // Reviews as structured array for testimonial sections
   if (reviews.length > 0) {
     const reviewsArray = reviews.map((r) => ({
       name: r.author_name ?? "",
@@ -181,15 +165,12 @@ export async function GET(req: Request) {
     variables["__reviews"] = JSON.stringify(reviewsArray);
   }
 
-  // Service tags of the active enterprise. Consumed by the renderers to
-  // filter blocks/pages whose `service_tag` doesn't match.
   variables["__service_tags"] = JSON.stringify(serviceTags);
 
-  // Stats: site override > enterprise stats.
   const siteStats = siteOverrides?.stats;
   const entStats = Array.isArray(ent.stats) ? ent.stats : [];
   const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
   variables["__stats"] = JSON.stringify(resolvedStats);
 
-  return NextResponse.json(variables);
-}
+  return json(variables);
+});

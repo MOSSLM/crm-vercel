@@ -1,7 +1,7 @@
 import { ContactChannel, ContactDirection, ContactOutcome } from "@/types";
-import { requireUser } from "@/app/api/_lib/auth";
-import { corsHeadersFor, preflight } from "@/app/api/_lib/cors";
+import { preflight } from "@/app/api/_lib/cors";
 import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 import logger from '../../../../utils/logger';
 // —— Next.js route options ——
@@ -835,18 +835,13 @@ function transformRealKpiDataByPeriod(kpiData: any[], periodType: string) {
 
 export const OPTIONS = (req: Request) => preflight(req);
 
-export async function GET(
-  req: Request,
-  { params }: { params: Promise<{ path?: string[] }> }
-) {
-  const cors = corsHeadersFor(req);
+type RouterParams = { path?: string[] };
+
+export const GET = withAuth<undefined, RouterParams>({}, async ({ req, params, cors }) => {
   const json = buildJson(cors);
-  const auth = await requireUser(req, cors);
-  if (!auth.ok) return auth.response;
 
   try {
-    const { path: raw } = await params;
-    const segs = raw ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
     const url = new URL(req.url);
 
@@ -1188,20 +1183,13 @@ export async function GET(
     log("GET error", err);
     return json({ error: "Internal server error" }, 500);
   }
-}
+});
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ path?: string[] }> }
-) {
-  const cors = corsHeadersFor(req);
+export const POST = withAuth<undefined, RouterParams>({}, async ({ req, params, cors }) => {
   const json = buildJson(cors);
-  const auth = await requireUser(req, cors);
-  if (!auth.ok) return auth.response;
 
   try {
-    const { path: raw } = await params;
-    const segs = raw ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -1428,20 +1416,13 @@ export async function POST(
     log("POST error", err);
     return json({ error: "Internal server error" }, 500);
   }
-}
+});
 
-export async function PUT(
-  req: Request,
-  { params }: { params: Promise<{ path?: string[] }> }
-) {
-  const cors = corsHeadersFor(req);
+export const PUT = withAuth<undefined, RouterParams>({}, async ({ req, params, cors }) => {
   const json = buildJson(cors);
-  const auth = await requireUser(req, cors);
-  if (!auth.ok) return auth.response;
 
   try {
-    const { path: raw } = await params;
-    const segs = raw ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
     const body = await (async () => {
       try { return await req.json(); } catch { return {}; }
@@ -1521,20 +1502,13 @@ export async function PUT(
     log("PUT error", err);
     return json({ error: "Internal server error" }, 500);
   }
-}
+});
 
-export async function DELETE(
-  req: Request,
-  { params }: { params: Promise<{ path?: string[] }> }
-) {
-  const cors = corsHeadersFor(req);
+export const DELETE = withAuth<undefined, RouterParams>({}, async ({ req, params, cors }) => {
   const json = buildJson(cors);
-  const auth = await requireUser(req, cors);
-  if (!auth.ok) return auth.response;
 
   try {
-    const { path: raw } = await params;
-    const segs = raw ?? [];
+    const segs = params.path ?? [];
     const path = `/${segs.join("/")}`;
 
     // Delete note
@@ -1553,4 +1527,4 @@ export async function DELETE(
     log("DELETE error", err);
     return json({ error: "Internal server error" }, 500);
   }
-}
+});

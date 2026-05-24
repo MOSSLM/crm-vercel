@@ -1,28 +1,16 @@
 import { Resend } from "resend";
-import { requireUser } from "@/app/api/_lib/auth";
-import { corsHeadersFor, preflight } from "@/app/api/_lib/cors";
+import { preflight } from "@/app/api/_lib/cors";
 import { json, jsonError } from "@/app/api/_lib/respond";
-import { parseJson, sendEmailSchema, type SendEmailPayload } from "@/app/api/_lib/schemas";
+import { sendEmailSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const runtime = "nodejs";
-
 export const OPTIONS = (req: Request) => preflight(req);
 
-export async function POST(req: Request) {
-  const cors = corsHeadersFor(req);
-
-  const auth = await requireUser(req, cors);
-  if (!auth.ok) return auth.response;
-
+export const POST = withAuth({ body: sendEmailSchema }, async ({ body: payload, cors }) => {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    return jsonError("RESEND_API_KEY non configuré", 503, {}, cors);
-  }
-
-  const parsed = await parseJson<SendEmailPayload>(req, sendEmailSchema, cors);
-  if (!parsed.ok) return parsed.response;
-  const payload = parsed.data;
+  if (!apiKey) return jsonError("RESEND_API_KEY non configuré", 503, {}, cors);
 
   const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
   const resend = new Resend(apiKey);
@@ -31,14 +19,12 @@ export async function POST(req: Request) {
   let status: "sent" | "failed" = "sent";
   let errorMessage: string | undefined;
 
-  // Optionally fetch and attach the audit PDF (base64 content for Resend)
   const attachments: { filename: string; content: string }[] = [];
   if (payload.audit_pdf_url) {
     try {
       const pdfRes = await fetch(payload.audit_pdf_url);
       if (pdfRes.ok) {
         const arrayBuf = await pdfRes.arrayBuffer();
-        // Convert to base64 without Buffer (web-compatible)
         const bytes = new Uint8Array(arrayBuf);
         let binary = "";
         for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
@@ -70,7 +56,6 @@ export async function POST(req: Request) {
     errorMessage = err instanceof Error ? err.message : "Erreur inconnue";
   }
 
-  // Log to Supabase regardless of outcome
   try {
     await getServiceClient().from("email_logs").insert({
       resend_id: resendId ?? null,
@@ -92,9 +77,7 @@ export async function POST(req: Request) {
     console.error("[email/send] log error:", logErr);
   }
 
-  if (status === "failed") {
-    return jsonError(errorMessage ?? "Échec envoi", 502, {}, cors);
-  }
+  if (status === "failed") return jsonError(errorMessage ?? "Échec envoi", 502, {}, cors);
 
   return json({ success: true, resend_id: resendId }, { headers: cors });
-}
+});

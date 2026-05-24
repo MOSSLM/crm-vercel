@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -21,27 +22,23 @@ interface GenerateRequest {
   variableContext?: Record<string, string>;
 }
 
-export async function POST(req: Request) {
-  const supabase = getSupabaseServiceClient();
-  try {
-    const body = (await req.json()) as GenerateRequest;
-    const { siteId, enterpriseId, description, pages, availableSectionIds, availableSectionTypes, model = "claude-sonnet-4-6", variableContext } = body;
-    void availableSectionTypes;
+export const POST = withAuth({}, async ({ req }) => {
+  const supabase = getServiceClient();
+  const body = (await req.json()) as GenerateRequest;
+  const { siteId, enterpriseId, description, pages, availableSectionIds, availableSectionTypes, model = "claude-sonnet-4-6", variableContext } = body;
+  void availableSectionTypes;
 
-    if (!description?.trim()) {
-      return NextResponse.json({ error: "description requis" }, { status: 400 });
-    }
+  if (!description?.trim()) return jsonError("description requis", 400);
 
-    // Fetch enterprise data if available
-    let enterpriseInfo = "";
-    if (enterpriseId) {
-      const { data: ent } = await supabase
-        .from("entreprises")
-        .select("nom, ville, telephone, service_tags, note_moyenne, nombre_avis, logo_url")
-        .eq("id", enterpriseId)
-        .single();
-      if (ent) {
-        enterpriseInfo = `
+  let enterpriseInfo = "";
+  if (enterpriseId) {
+    const { data: ent } = await supabase
+      .from("entreprises")
+      .select("nom, ville, telephone, service_tags, note_moyenne, nombre_avis, logo_url")
+      .eq("id", enterpriseId)
+      .single();
+    if (ent) {
+      enterpriseInfo = `
 Données entreprise :
 - Nom : ${ent.nom ?? "Inconnu"}
 - Ville : ${ent.ville ?? "Non précisée"}
@@ -49,32 +46,31 @@ Données entreprise :
 - Services : ${Array.isArray(ent.service_tags) ? ent.service_tags.join(", ") : "Non précisé"}
 - Note Google : ${ent.note_moyenne ?? "N/A"} (${ent.nombre_avis ?? 0} avis)
 `.trim();
-      }
     }
+  }
 
-    const sectionsListJson = JSON.stringify((availableSectionIds ?? []).map((s) => ({
-      id: s.id,
-      type: s.type,
-      name: s.name,
-      category: s.category,
-    })));
+  const sectionsListJson = JSON.stringify((availableSectionIds ?? []).map((s) => ({
+    id: s.id,
+    type: s.type,
+    name: s.name,
+    category: s.category,
+  })));
 
-    // Build variable token hint for the AI
-    const variableHint = variableContext && Object.keys(variableContext).length > 0
-      ? `\nVARIABLES DISPONIBLES — utilise ces tokens exacts pour les données d'entreprise dans le contenu :\n${
-          Object.entries(variableContext)
-            .filter(([k]) => !k.startsWith("company."))
-            .map(([k, v]) => `  {{ ${k} }} → "${v}"`)
-            .join("\n")
-        }\nExemple : écris "{{ entreprise.nom }}" au lieu du nom réel de l'entreprise.`
-      : "";
+  const variableHint = variableContext && Object.keys(variableContext).length > 0
+    ? `\nVARIABLES DISPONIBLES — utilise ces tokens exacts pour les données d'entreprise dans le contenu :\n${
+        Object.entries(variableContext)
+          .filter(([k]) => !k.startsWith("company."))
+          .map(([k, v]) => `  {{ ${k} }} → "${v}"`)
+          .join("\n")
+      }\nExemple : écris "{{ entreprise.nom }}" au lieu du nom réel de l'entreprise.`
+    : "";
 
-    const systemPrompt = `Tu es un expert en création de sites web professionnels.
+  const systemPrompt = `Tu es un expert en création de sites web professionnels.
 Tu génères des configurations de sites complets en JSON pour un système de builder.
 Tu dois choisir les meilleures sections de la bibliothèque disponible et écrire du contenu professionnel en français.
 Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.${variableHint}`;
 
-    const userPrompt = `
+  const userPrompt = `
 Description de l'entreprise :
 ${description}
 
@@ -139,60 +135,55 @@ IMPORTANT:
   une page sans section n'est pas publiée comme page (elle ne sert que de catégorie).
 `.trim();
 
-    let text: string;
-    if (model.startsWith("gpt-")) {
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) throw new Error("OPENAI_API_KEY non configuré");
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          max_tokens: 8192,
-          messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
-        }),
-      });
-      if (!response.ok) throw new Error(`OpenAI error: ${response.status} — ${await response.text()}`);
-      const data = await response.json();
-      text = data.choices?.[0]?.message?.content ?? "";
-    } else {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) throw new Error("ANTHROPIC_API_KEY non configuré");
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model, max_tokens: 8192, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] }),
-      });
-      if (!response.ok) throw new Error(`Anthropic error: ${response.status} — ${await response.text()}`);
-      const data = await response.json();
-      text = data.content?.[0]?.text ?? "";
-    }
-
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("Aucun JSON dans la réponse IA");
-
-    const generated = JSON.parse(jsonMatch[0]);
-
-    // Persist the style_guide and sitemap to the site
-    if (siteId) {
-      await supabase
-        .from("sites")
-        .update({
-          style_guide: generated.styleGuide,
-          sitemap: generated.sitemap?.map((p: Record<string, unknown>, i: number) => ({
-            id: `page-${i}`,
-            slug: p.slug,
-            title: p.title,
-            metaTitle: p.metaTitle,
-            metaDescription: p.metaDescription,
-          })),
-        })
-        .eq("id", siteId);
-    }
-
-    return NextResponse.json(generated);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Erreur inconnue";
-    return NextResponse.json({ error: message }, { status: 500 });
+  let text: string;
+  if (model.startsWith("gpt-")) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return jsonError("OPENAI_API_KEY non configuré", 500);
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        max_tokens: 8192,
+        messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+      }),
+    });
+    if (!response.ok) return jsonError(`OpenAI error: ${response.status} — ${await response.text()}`, 502);
+    const data = await response.json();
+    text = data.choices?.[0]?.message?.content ?? "";
+  } else {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return jsonError("ANTHROPIC_API_KEY non configuré", 500);
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 8192, system: systemPrompt, messages: [{ role: "user", content: userPrompt }] }),
+    });
+    if (!response.ok) return jsonError(`Anthropic error: ${response.status} — ${await response.text()}`, 502);
+    const data = await response.json();
+    text = data.content?.[0]?.text ?? "";
   }
-}
+
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return jsonError("Aucun JSON dans la réponse IA", 502);
+
+  const generated = JSON.parse(jsonMatch[0]);
+
+  if (siteId) {
+    await supabase
+      .from("sites")
+      .update({
+        style_guide: generated.styleGuide,
+        sitemap: generated.sitemap?.map((p: Record<string, unknown>, i: number) => ({
+          id: `page-${i}`,
+          slug: p.slug,
+          title: p.title,
+          metaTitle: p.metaTitle,
+          metaDescription: p.metaDescription,
+        })),
+      })
+      .eq("id", siteId);
+  }
+
+  return json(generated);
+});

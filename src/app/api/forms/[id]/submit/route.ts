@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createHash } from 'crypto';
-import { getSupabaseServiceClient } from '@/lib/supabase-service';
+import { getServiceClient } from '@/app/api/_lib/service-client';
 import type { Form, FormQuestion } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -39,7 +39,7 @@ function extractContact(
 // POST /api/forms/[id]/submit — public submission
 export async function POST(request: Request, { params }: Ctx) {
   const { id } = await params;
-  const supabase = getSupabaseServiceClient();
+  const supabase = getServiceClient();
 
   // Fetch form to verify it's published and get questions
   const { data: form, error: formErr } = await supabase

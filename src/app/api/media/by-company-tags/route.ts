@@ -1,38 +1,23 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServiceClient } from "@/lib/supabase-service";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { getServiceClient } from "@/app/api/_lib/service-client";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 
-/**
- * GET /api/media/by-company-tags?entreprise_id=123
- *
- * Returns every media item ranked by overlap with the company's service_tags.
- * Items with the reserved tag 'all' are always included as universal.
- *
- * Response shape:
- *   { suggested: MediaLibraryItemRanked[], others: MediaLibraryItemRanked[], company_tags: string[] }
- */
-export async function GET(req: Request) {
+export const GET = withAuth({}, async ({ req }) => {
   const { searchParams } = new URL(req.url);
   const entrepriseIdRaw = searchParams.get("entreprise_id");
-  if (!entrepriseIdRaw) {
-    return NextResponse.json({ error: "entreprise_id required" }, { status: 400 });
-  }
+  if (!entrepriseIdRaw) return jsonError("entreprise_id required", 400);
   const entrepriseId = Number(entrepriseIdRaw);
-  if (!Number.isFinite(entrepriseId)) {
-    return NextResponse.json({ error: "entreprise_id must be a number" }, { status: 400 });
-  }
+  if (!Number.isFinite(entrepriseId)) return jsonError("entreprise_id must be a number", 400);
 
-  const supabase = getSupabaseServiceClient();
-
+  const supabase = getServiceClient();
   const [companyRes, rankedRes] = await Promise.all([
     supabase.from("entreprises").select("service_tags").eq("id", entrepriseId).maybeSingle(),
     supabase.rpc("media_library_by_company", { p_entreprise_id: entrepriseId }),
   ]);
 
-  if (rankedRes.error) {
-    return NextResponse.json({ error: rankedRes.error.message }, { status: 500 });
-  }
+  if (rankedRes.error) return jsonError(rankedRes.error.message, 500);
 
   const ranked = (rankedRes.data ?? []) as Array<
     Record<string, unknown> & { match_count: number; is_universal: boolean }
@@ -46,5 +31,5 @@ export async function GET(req: Request) {
       )
     : [];
 
-  return NextResponse.json({ suggested, others, company_tags: companyTags });
-}
+  return json({ suggested, others, company_tags: companyTags });
+});

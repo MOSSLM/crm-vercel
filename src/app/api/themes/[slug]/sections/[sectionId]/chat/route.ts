@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { json, jsonError } from "@/app/api/_lib/respond";
+import { withAuth } from "@/app/api/_lib/with-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -9,6 +10,8 @@ interface HistoryItem {
   role: Role;
   content: string;
 }
+
+type Params = { slug: string; sectionId: string };
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -132,11 +135,6 @@ FORMAT DE RÉPONSE OBLIGATOIRE quand un schéma est créé ou modifié :
 
 Si aucun schéma n'est créé ni modifié, omets le bloc \`\`\`json schema et réponds juste avec le tsx + explication.`;
 
-/**
- * Appended to the system prompt when the section is tag-adaptive. A
- * tag-adaptive section has ONE repeatable element (card, accordion item,
- * tab, row…) rendered once per enterprise service tag.
- */
 export const ADAPTIVE_PROMPT_ADDENDUM = `
 
 ═══════════════════════════════════════════════════════════════════
@@ -177,11 +175,8 @@ automatiquement : un exemplaire par service de l'entreprise.
    d. Expose les textes fixes (titres de section, etc.) dans \`settings\`.
    e. Garde la mise en forme et les interactions (accordéon, onglets…) intactes.`;
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ slug: string; sectionId: string }> }
-) {
-  const { sectionId } = await params;
+export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
+  const { sectionId } = params;
 
   let body: {
     model?: string;
@@ -195,17 +190,12 @@ export async function POST(
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonError("Invalid JSON", 400);
   }
 
   const { currentCode, message, history = [], model = "claude-sonnet-4-6", systemPrompt, isTagAdaptive } = body;
 
-  if (!currentCode || !message) {
-    return NextResponse.json(
-      { error: "currentCode and message are required" },
-      { status: 400 }
-    );
-  }
+  if (!currentCode || !message) return jsonError("currentCode and message are required", 400);
 
   const recentHistory = history.slice(-10);
   const basePrompt = systemPrompt?.trim() || DEFAULT_SYSTEM_PROMPT(sectionId);
@@ -244,10 +234,9 @@ export async function POST(
       const gptData = await openaiRes.json();
       const rawContent = gptData.choices?.[0]?.message?.content ?? "";
       const { newCode, newSchema, explanation } = extractCodeAndExplanation(rawContent);
-      return NextResponse.json({ newCode, newSchema, explanation });
+      return json({ newCode, newSchema, explanation });
     }
 
-    // Anthropic
     const anthropicModel = resolveAnthropicModel(model);
     const messages: Anthropic.MessageParam[] = [
       ...recentHistory.map((h) => ({ role: h.role, content: h.content })),
@@ -259,35 +248,27 @@ export async function POST(
 
     try {
       const response = await anthropic.messages.create(
-        {
-          model: anthropicModel,
-          max_tokens: 4096,
-          system: resolvedSystemPrompt,
-          messages,
-        },
-        { signal: controller.signal }
+        { model: anthropicModel, max_tokens: 4096, system: resolvedSystemPrompt, messages },
+        { signal: controller.signal },
       );
 
       clearTimeout(timeout);
       const rawContent =
         response.content[0]?.type === "text" ? response.content[0].text : "";
       const { newCode, newSchema, explanation } = extractCodeAndExplanation(rawContent);
-      return NextResponse.json({ newCode, newSchema, explanation });
+      return json({ newCode, newSchema, explanation });
     } catch (err) {
       clearTimeout(timeout);
       throw err;
     }
   } catch (err: unknown) {
     if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
-      return NextResponse.json(
-        { error: "Timeout: l'IA n'a pas répondu dans les 30 secondes" },
-        { status: 504 }
-      );
+      return jsonError("Timeout: l'IA n'a pas répondu dans les 30 secondes", 504);
     }
     const msg = err instanceof Error ? err.message : "Erreur inconnue";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return jsonError(msg, 500);
   }
-}
+});
 
 function resolveAnthropicModel(model: string): string {
   const map: Record<string, string> = {
