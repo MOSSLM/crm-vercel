@@ -52,6 +52,22 @@ function nodeAtPath(root: HTMLElement, path: number[]): HTMLElement | null {
   return node;
 }
 
+// React 19's react-dom/server emits resource hints (e.g. <link rel="preload">
+// for images detected in the render tree) BEFORE the component output. Editor
+// overrides reference DOM paths relative to the section's component root, so
+// we must skip these head-only tags when locating it — otherwise the walker
+// starts from <link>, finds no element children, and every override is silently
+// dropped on the deployed site.
+const HEAD_ONLY_TAGS = new Set(["link", "meta", "script", "style", "noscript", "title", "base"]);
+
+function findSectionRoot(elements: HTMLElement[]): HTMLElement | null {
+  for (const el of elements) {
+    const tag = (el.tagName ?? "").toLowerCase();
+    if (!HEAD_ONLY_TAGS.has(tag)) return el;
+  }
+  return null;
+}
+
 function setBackgroundImage(el: HTMLElement, url: string): void {
   const current = el.getAttribute("style") ?? "";
   const bg = url ? `url("${url.replace(/"/g, '\\"')}")` : "none";
@@ -90,10 +106,10 @@ export function applyOverridesToHTML(
   try {
     const doc = parse(html);
     // The HTML produced by renderToString for a section has the component's
-    // root element as the first child. The client/iframe code walks paths
-    // starting at that same root.
+    // root element as the first child — except React 19 may inject resource
+    // hints (<link rel="preload">) ahead of it. findSectionRoot skips those.
     const elementChildren = doc.childNodes.filter((c) => c.nodeType === 1) as HTMLElement[];
-    const root = elementChildren[0];
+    const root = findSectionRoot(elementChildren);
     if (!root) return { html, applied: 0, failed: 0 };
 
     for (const key of Object.keys(overrides)) {

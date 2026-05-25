@@ -54,4 +54,21 @@ describe("applyOverridesToHTML", () => {
     const out = applyOverridesToHTML(html, overrides, { name: "Sam" });
     expect(out.html).toContain("Hi Sam");
   });
+
+  it("skips React 19 resource hints (<link rel=preload>) when locating section root", () => {
+    // react-dom/server@19 emits <link rel="preload"> ahead of the rendered tree
+    // when the section contains <img> tags. The override walker must skip past
+    // these so DOM paths still resolve against the actual section root.
+    const html =
+      `<link rel="preload" as="image" href="/img.png"/>` +
+      `<section><h1>Default</h1></section>`;
+    const overrides: Record<string, OverrideEntry> = {
+      "0:text": { kind: "text", value: "Edited" },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    expect(out.applied).toBe(1);
+    expect(out.failed).toBe(0);
+    expect(out.html).toContain("Edited");
+    expect(out.html).toContain('<link rel="preload"'); // preload preserved
+  });
 });
