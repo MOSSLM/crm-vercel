@@ -61,6 +61,19 @@ function camelToKebab(name: string): string {
   return name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
 }
 
+// React 19 may emit resource hints (<link rel="preload">) inside the SSR
+// container before the actual section root. Editor override paths are anchored
+// at the section root, so we skip these tags when locating it.
+const HEAD_ONLY_TAGS = new Set(["LINK", "META", "SCRIPT", "STYLE", "NOSCRIPT", "TITLE", "BASE"]);
+
+function findSectionRoot(container: Element): Element | null {
+  let child: Element | null = container.firstElementChild;
+  while (child && HEAD_ONLY_TAGS.has(child.tagName)) {
+    child = child.nextElementSibling;
+  }
+  return child;
+}
+
 function applyOverridesToContainer(
   container: Element,
   overrides: Record<string, OverrideEntry>,
@@ -68,7 +81,7 @@ function applyOverridesToContainer(
 ): void {
   // Section components render a single root element inside the container,
   // matching the DOM path numbering used at edit time.
-  const root = container.firstElementChild;
+  const root = findSectionRoot(container);
   if (!root) return;
   for (const key of Object.keys(overrides)) {
     const entry = overrides[key];
