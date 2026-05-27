@@ -6,23 +6,24 @@ import { useAuth } from "@/components/AuthContext";
 import AppLoading from "@/components/AppLoading"; // tu l’as déjà dans ton projet
 
 export default function RequireAuth({ children }: PropsWithChildren) {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      // Redirige vers /login et garde la route demandée pour après la connexion
+    if (loading) return;
+    if (!isAuthenticated) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
+      return;
     }
-  }, [loading, isAuthenticated, router, pathname]);
+    if (user?.role === "client") {
+      router.replace("/espace-client/dashboard");
+    }
+  }, [loading, isAuthenticated, user?.role, router, pathname]);
 
-  // Pendant la vérification de session
   if (loading) return <AppLoading />;
-
-  // Si pas connecté, on a lancé la redirection → on ne rend rien
   if (!isAuthenticated) return null;
+  if (user?.role === "client") return null;
 
-  // User OK → on rend le contenu protégé
   return <>{children}</>;
 }

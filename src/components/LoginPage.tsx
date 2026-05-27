@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -14,9 +15,15 @@ import { toast } from "sonner";
 export const LoginPage: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/dashboard";
+  const nextParam = searchParams.get("next");
 
-  const { login, isAuthenticated, loading } = useAuth();
+  const { login, isAuthenticated, loading, user } = useAuth();
+
+  const targetForUser = (): string => {
+    if (nextParam) return nextParam;
+    if (user?.role === "client") return "/espace-client/dashboard";
+    return "/dashboard";
+  };
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,9 +33,10 @@ export const LoginPage: React.FC = () => {
   // Si déjà connecté, on redirige directement
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      router.replace(next);
+      const target = nextParam ?? (user?.role === "client" ? "/espace-client/dashboard" : "/dashboard");
+      router.replace(target);
     }
-  }, [loading, isAuthenticated, router, next]);
+  }, [loading, isAuthenticated, user?.role, nextParam, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +52,7 @@ export const LoginPage: React.FC = () => {
     }
 
     toast.success("Connecté !");
-    router.replace(next);
+    router.replace(targetForUser());
   };
 
   return (
@@ -103,10 +111,12 @@ export const LoginPage: React.FC = () => {
 
           <div className="mt-6 p-4 bg-muted rounded-lg">
             <div className="text-center text-sm text-muted-foreground">
-              <strong>Besoin d'un compte ?</strong>
+              Pas encore de compte client ?
             </div>
             <div className="text-center text-sm mt-1">
-              Contactez votre administrateur pour obtenir vos identifiants d'accès.
+              <Link href="/signup" className="underline text-foreground font-medium">
+                Créer un compte
+              </Link>
             </div>
           </div>
         </CardContent>
