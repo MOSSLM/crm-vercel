@@ -7,21 +7,21 @@ import { EmailTab } from "@/components/messaging/EmailTab";
 import { WhatsAppTab } from "@/components/messaging/WhatsAppTab";
 import { EmailTemplatesTab } from "@/components/messaging/EmailTemplatesTab";
 import { SignatureSettings } from "@/components/messaging/SignatureSettings";
-import { cn } from "@/lib/utils";
+import "@/components/automations/automations-skin.css";
 
 type TabKey = "email" | "whatsapp" | "templates" | "parametres";
 
-const TABS: { key: TabKey; label: string; icon: React.ElementType; color?: string; accent?: string }[] = [
-  { key: "email", label: "Email", icon: Mail, accent: "text-blue-500" },
-  { key: "whatsapp", label: "WhatsApp", icon: MessageCircle, color: "#25D366", accent: "text-[#25D366]" },
-  { key: "templates", label: "Templates", icon: LayoutTemplate, accent: "text-violet-500" },
-  { key: "parametres", label: "Paramètres", icon: Settings, accent: "text-muted-foreground" },
+const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
+  { key: "email",      label: "Email",      icon: Mail },
+  { key: "whatsapp",   label: "WhatsApp",   icon: MessageCircle },
+  { key: "templates",  label: "Templates",  icon: LayoutTemplate },
+  { key: "parametres", label: "Paramètres", icon: Settings },
 ];
 
 function MessagingInner() {
   const searchParams = useSearchParams();
-  const router = useRouter();
-  const activeTab = (searchParams.get("tab") as TabKey) ?? "email";
+  const router       = useRouter();
+  const activeTab    = (searchParams.get("tab") as TabKey) ?? "email";
 
   const setTab = (tab: TabKey) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -35,38 +35,67 @@ function MessagingInner() {
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
-      {/* Channel tab bar — compact, no duplicate with TopSubNav */}
-      <div className="flex shrink-0 items-center gap-0.5 border-b bg-background/95 px-3 pt-0">
+    <div
+      className="au-skin"
+      style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg)" }}
+    >
+      {/* ── Tab bar ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          borderBottom: "1px solid var(--border)",
+          background: "var(--surface)",
+          flexShrink: 0,
+          padding: "0 4px",
+          gap: 2,
+        }}
+      >
         {TABS.map((tab) => {
-          const Icon = tab.icon;
+          const Icon     = tab.icon;
           const isActive = activeTab === tab.key;
           return (
             <button
               key={tab.key}
+              type="button"
               onClick={() => setTab(tab.key)}
-              className={cn(
-                "flex items-center gap-1.5 border-b-2 px-3.5 py-2.5 text-sm font-medium transition-all",
-                isActive
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-border/60"
-              )}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                height: 38,
+                padding: "0 14px",
+                background: "transparent",
+                border: "none",
+                borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
+                color: isActive ? "var(--text)" : "var(--text-3)",
+                fontFamily: "var(--font-ui)",
+                fontSize: 12.5,
+                fontWeight: isActive ? 600 : 500,
+                cursor: "pointer",
+                transition: "color 0.15s, border-color 0.15s",
+                borderRadius: 0,
+                marginBottom: -1,
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) (e.currentTarget as HTMLButtonElement).style.color = "var(--text)";
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) (e.currentTarget as HTMLButtonElement).style.color = "var(--text-3)";
+              }}
             >
-              <Icon
-                className={cn("h-3.5 w-3.5", isActive ? tab.accent : "")}
-                style={isActive && tab.color ? { color: tab.color } : undefined}
-              />
-              <span>{tab.label}</span>
+              <Icon style={{ width: 13, height: 13 }} />
+              {tab.label}
             </button>
           );
         })}
       </div>
 
-      {/* Tab content — full remaining height */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {activeTab === "email" && <EmailTab />}
-        {activeTab === "whatsapp" && <WhatsAppTab />}
-        {activeTab === "templates" && <EmailTemplatesTab />}
+      {/* ── Tab content ── */}
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+        {activeTab === "email"      && <EmailTab />}
+        {activeTab === "whatsapp"   && <WhatsAppTab />}
+        {activeTab === "templates"  && <EmailTemplatesTab />}
         {activeTab === "parametres" && <SignatureSettings />}
       </div>
     </div>
@@ -76,7 +105,7 @@ function MessagingInner() {
 export function MessagingPage() {
   return (
     <Suspense fallback={
-      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
+      <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center", color: "var(--text-3)", fontSize: 13 }}>
         Chargement…
       </div>
     }>

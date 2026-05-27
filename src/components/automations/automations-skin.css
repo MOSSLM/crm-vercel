@@ -1525,3 +1525,47 @@
 
 /* Toast container reuse */
 .au-skin .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+
+/* ── MESSAGING ───────────────────────────────────────────────────────────── */
+.au-skin .msg-page {
+  display: grid;
+  grid-template-columns: 300px 1fr 300px;
+  height: 100%;
+  overflow: hidden;
+}
+.au-skin[data-density="compact"] .msg-page { grid-template-columns: 260px 1fr 260px; }
+
+.au-skin .msg-side {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.au-skin .msg-main {
+  background: var(--bg-2);
+  overflow: auto;
+  min-width: 0;
+}
+.au-skin .msg-main-inner {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 22px 28px 80px;
+}
+
+.au-skin .msg-aside {
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.au-skin .msg-aside > .pros-aside {
+  border-left: none;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* Spin keyframe for loaders */
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

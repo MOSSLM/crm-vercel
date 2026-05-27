@@ -1,5 +1,8 @@
 import type { SignatureData } from "@/components/messaging/SignatureSettings";
 
+// Re-export async React Email renderer for new code
+export { renderEmailHtml } from "@/emails/renderEmail";
+
 // SAMA brand tokens (email-safe, no CSS variables)
 const NUIT  = "#0B1D3A";
 const AZUR  = "#3A7BD5";
