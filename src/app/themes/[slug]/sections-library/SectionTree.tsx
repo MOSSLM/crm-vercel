@@ -144,7 +144,7 @@ export default function SectionTree({
   const handleDelete = async () => {
     if (!deleteTarget) return;
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/themes/${themeSlug}/sections/${deleteTarget.section_id}`,
         { method: "DELETE" }
       );
@@ -161,7 +161,7 @@ export default function SectionTree({
     if (!renameTarget || !newName.trim()) return;
     setSaving(true);
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/themes/${themeSlug}/sections/${renameTarget.section_id}`,
         {
           method: "PATCH",

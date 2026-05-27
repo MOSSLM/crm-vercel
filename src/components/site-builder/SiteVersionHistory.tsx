@@ -49,7 +49,7 @@ export function SiteVersionHistory({ siteId, onRestored }: Props) {
     if (!window.confirm(`Restaurer la version ${version.version_number} ? Cela créera une nouvelle version.`)) return;
     setRestoringId(version.id);
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/site-builder/sites/${siteId}/versions/${version.id}/restore`,
         { method: "POST" }
       );

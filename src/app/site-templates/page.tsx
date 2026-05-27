@@ -309,7 +309,7 @@ function TemplateFormDialog({ open, template, onClose, onSuccess }: TemplateForm
         ? `/api/site-templates/${template.id}`
         : "/api/site-templates";
       const method = template ? "PATCH" : "POST";
-      const res = await fetch(url, {
+      const res = await authedFetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

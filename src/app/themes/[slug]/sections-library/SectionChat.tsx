@@ -27,6 +27,7 @@ import {
 import { toast } from "sonner";
 import { AI_MODELS, type AIModel, type ChatMessage } from "./types";
 import { useSystemPrompt } from "./SectionSettings";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface Props {
   themeSlug: string;
@@ -104,7 +105,7 @@ export default function SectionChat({
       }));
 
       try {
-        const res = await fetch(
+        const res = await authedFetch(
           `/api/themes/${themeSlug}/sections/${sectionId}/chat`,
           {
             method: "POST",
