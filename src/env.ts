@@ -23,6 +23,9 @@ const envSchema = z
     GMAPS_BASE_URL: z.string().url().optional(),
     RESEND_API_KEY: z.string().min(1).optional(),
     RESEND_FROM_EMAIL: z.string().email().optional(),
+    // Stripe — optional; routes return 503 when keys are absent.
+    STRIPE_SECRET_KEY: z.string().min(1).optional(),
+    STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
     // The cron routes fail closed in production unless at least one of these
     // is set. Either is sufficient: CRON_SECRET is checked when the call comes
     // from Vercel Cron, PG_CRON_SECRET when it comes from Supabase pg_cron.
@@ -49,6 +52,8 @@ const envResult = envSchema.safeParse({
   GMAPS_BASE_URL: process.env.GMAPS_BASE_URL,
   RESEND_API_KEY: process.env.RESEND_API_KEY,
   RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
   CRON_SECRET: process.env.CRON_SECRET,
   PG_CRON_SECRET: process.env.PG_CRON_SECRET,
 });
@@ -72,6 +77,8 @@ export const {
   GMAPS_BASE_URL,
   RESEND_API_KEY,
   RESEND_FROM_EMAIL,
+  STRIPE_SECRET_KEY,
+  STRIPE_WEBHOOK_SECRET,
   CRON_SECRET,
   PG_CRON_SECRET,
 } = envResult.data;

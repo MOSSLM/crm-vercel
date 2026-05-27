@@ -9,6 +9,11 @@ import { jsonError } from "./respond";
  * Zod's flattened issues so the client can surface field-level errors.
  */
 
+export const stripeCheckoutSchema = z.object({
+  offre_id: z.string().uuid({ message: "offre_id must be a UUID" }),
+});
+export type StripeCheckoutPayload = z.infer<typeof stripeCheckoutSchema>;
+
 export const sendEmailSchema = z.object({
   to_email: z.string().email({ message: "to_email must be a valid email" }),
   to_name: z.string().min(1).max(200).optional(),
