@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
-import { DM_Sans, DM_Mono } from "next/font/google";
+import { DM_Sans, DM_Mono, Cormorant_Garamond } from "next/font/google";
 
 export const metadata: Metadata = {
   title: "Sama CRM",
@@ -10,12 +10,22 @@ export const metadata: Metadata = {
 
 const fontSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" });
 const fontMono = DM_Mono({ subsets: ["latin"], variable: "--font-dm-mono", weight: "400" });
+const fontSerif = Cormorant_Garamond({
+  subsets: ["latin"],
+  variable: "--font-cormorant",
+  weight: ["300", "400"],
+  style: ["normal", "italic"],
+});
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="fr" suppressHydrationWarning className={`${fontSans.variable} ${fontMono.variable}`}>
+    <html
+      lang="fr"
+      suppressHydrationWarning
+      className={`${fontSans.variable} ${fontMono.variable} ${fontSerif.variable}`}
+    >
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
