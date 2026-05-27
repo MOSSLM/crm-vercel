@@ -5,6 +5,7 @@ import { Loader2, Sparkles, Save, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
+import { authedFetch } from "@/utils/authedFetch";
 
 interface Props {
   themeSlug: string;
@@ -54,7 +55,7 @@ export default function SectionSchemaEditor({
     if (!sectionId || !code.trim()) return;
     setGenerating(true);
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/themes/${themeSlug}/sections/${sectionId}/generate-schema`,
         {
           method: "POST",

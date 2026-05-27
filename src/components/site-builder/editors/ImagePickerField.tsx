@@ -75,7 +75,7 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
     setLoadingLibrary(true);
     try {
       if (enterpriseId) {
-        const res = await fetch(
+        const res = await authedFetch(
           `/api/media/by-company-tags?entreprise_id=${enterpriseId}`,
         );
         if (res.ok) {

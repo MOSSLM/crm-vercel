@@ -81,7 +81,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
     if (!activeSection || !slug || !unsaved) return;
     setSaving(true);
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/themes/${slug}/sections/${activeSection.section_id}`,
         {
           method: "PATCH",
@@ -112,7 +112,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
 
   const handleSchemaSave = React.useCallback(async (newSchema: Record<string, unknown>) => {
     if (!activeSection || !slug) return;
-    const res = await fetch(
+    const res = await authedFetch(
       `/api/themes/${slug}/sections/${activeSection.section_id}`,
       {
         method: "PATCH",
@@ -151,7 +151,7 @@ export default function SectionsLibraryPage({ params }: PageProps) {
     if (!activeSection || !slug) return;
     const next = !activeSection.is_tag_adaptive;
     try {
-      const res = await fetch(
+      const res = await authedFetch(
         `/api/themes/${slug}/sections/${activeSection.section_id}`,
         {
           method: "PATCH",
