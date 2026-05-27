@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { fetchAuditByOpportunite } from "@/utils/auditApi";
 import { authedFetch } from "@/utils/authedFetch";
-import { wrapEmailBodyHtml } from "@/utils/emailTemplate";
+import { renderEmailHtml } from "@/utils/emailTemplate";
 import { TEMPLATES, interpolate, type ContactRow, type CompanyRow, type EmailTemplate } from "./emailTypes";
 import type { SignatureData } from "./SignatureSettings";
 import { ContactList } from "./ContactList";
@@ -185,7 +185,7 @@ export function EmailTab() {
     }
     setSending(true);
     try {
-      const bodyHtml = wrapEmailBodyHtml(body, signature);
+      const bodyHtml = await renderEmailHtml(body, signature);
       const res = await authedFetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
