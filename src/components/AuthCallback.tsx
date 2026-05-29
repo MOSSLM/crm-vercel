@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/utils/supabase/client";
+import { authedFetch } from "@/utils/authedFetch";
 
 export const AuthCallback: React.FC = () => {
   const router = useRouter();
@@ -21,7 +22,14 @@ export const AuthCallback: React.FC = () => {
 
     const supabase = createClient();
 
-    const finish = (target: string) => {
+    // Make sure a user_profiles row exists before leaving this page, so the
+    // destination never lands on an 'unknown' role (which would loop).
+    const finish = async (target: string) => {
+      try {
+        await authedFetch("/api/auth/ensure-profile", { method: "POST" });
+      } catch {
+        // Non-blocking: AuthContext has its own fallback.
+      }
       router.replace(target);
     };
 
@@ -33,7 +41,7 @@ export const AuthCallback: React.FC = () => {
             setError(exErr.message ?? "Impossible de confirmer la session.");
             return;
           }
-          finish(next);
+          void finish(next);
         })
         .catch((e: unknown) => {
           setError(e instanceof Error ? e.message : "Erreur inattendue.");
@@ -44,9 +52,9 @@ export const AuthCallback: React.FC = () => {
     // No code: maybe a token_hash flow or already-confirmed link — try reading the session.
     supabase.auth.getSession().then(({ data }) => {
       if (data.session) {
-        finish(next);
+        void finish(next);
       } else {
-        finish("/login");
+        router.replace("/login");
       }
     });
   }, [params, router]);
