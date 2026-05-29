@@ -18,6 +18,11 @@ interface AuthContextType {
   logout: () => void;
   refreshProfile: () => Promise<void>;
   isAuthenticated: boolean;
+  /**
+   * True while either the auth session OR the user_profile row is still
+   * loading. Components should treat `user.role` as untrusted until this is
+   * false — otherwise admin content can flash before the role resolves.
+   */
   loading: boolean;
 }
 
@@ -45,7 +50,8 @@ const baseUserFromSession = (sessionUser: SupabaseUser): User => ({
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const supabase = createClient();
   const currentUserIdRef = useRef<string | null>(null);
 
@@ -63,7 +69,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (!profile) {
-        logger.warn('No user_profiles row found for connected user. RLS may hide all CRM data.');
+        logger.warn('No user_profiles row found for connected user.');
         return;
       }
 
@@ -85,6 +91,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
     } catch (error) {
       logger.warn('Profile enrichment failed:', error);
+    } finally {
+      // Mark profileLoaded regardless of success/failure so the UI doesn't
+      // hang forever; downstream guards should redirect away if role didn't resolve.
+      setProfileLoaded(true);
     }
   }, [supabase]);
 
@@ -103,28 +113,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (session?.user) {
           currentUserIdRef.current = session.user.id;
           setUser(baseUserFromSession(session.user));
+          // Keep profileLoaded=false while we fetch — UI must wait.
+          setProfileLoaded(false);
           void enrichUserFromProfile(session.user.id);
+        } else {
+          // No session: nothing to enrich, mark as loaded so guards can decide.
+          setProfileLoaded(true);
         }
       } catch (error) {
         logger.error('Error checking auth:', error);
+        setProfileLoaded(true);
       } finally {
-        setLoading(false);
+        setSessionLoading(false);
       }
     };
 
-    const loadingTimeout = setTimeout(() => setLoading(false), 5000);
+    const loadingTimeout = setTimeout(() => {
+      setSessionLoading(false);
+      setProfileLoaded(true);
+    }, 5000);
     checkAuth().finally(() => clearTimeout(loadingTimeout));
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         currentUserIdRef.current = session.user.id;
         setUser(baseUserFromSession(session.user));
+        setProfileLoaded(false);
         void enrichUserFromProfile(session.user.id);
       } else {
         currentUserIdRef.current = null;
         setUser(null);
+        setProfileLoaded(true);
       }
-      setLoading(false);
+      setSessionLoading(false);
     });
 
     return () => {
@@ -153,6 +174,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const isAuthenticated = user !== null;
+  const loading = sessionLoading || (isAuthenticated && !profileLoaded);
 
   return (
     <AuthContext.Provider value={{ user, login, logout, refreshProfile, isAuthenticated, loading }}>

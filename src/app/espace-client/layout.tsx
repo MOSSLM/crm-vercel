@@ -23,16 +23,17 @@ export default function EspaceClientLayout({ children }: PropsWithChildren) {
       router.replace("/dashboard");
       return;
     }
-    if (user?.role !== "client") {
-      // Role still 'unknown' — wait for profile to load.
+    if (user?.role === "unknown") {
+      // Profile failed to load — bounce to login rather than render nothing.
+      router.replace("/login");
       return;
     }
-    if (!user.onboardedAt && pathname !== ONBOARDING_PATH) {
+    if (!user?.onboardedAt && pathname !== ONBOARDING_PATH) {
       router.replace(ONBOARDING_PATH);
     }
   }, [loading, isAuthenticated, user?.role, user?.onboardedAt, pathname, router]);
 
-  if (loading || !isAuthenticated || user?.role === "unknown") {
+  if (loading || !isAuthenticated) {
     return <AppLoading />;
   }
 

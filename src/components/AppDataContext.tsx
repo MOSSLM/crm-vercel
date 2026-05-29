@@ -463,12 +463,13 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   }, [selectedQualificationOfferIdState]);
 
-  // Load data from API when authenticated
+  // Load data from API only for staff users (admin/freelance). Clients have
+  // no CRM data to fetch — and RLS would block them anyway, just creating noise.
   useEffect(() => {
-    if (isAuthenticated && !authLoading) {
-      refreshData();
-    }
-  }, [isAuthenticated, authLoading]);
+    if (!isAuthenticated || authLoading) return;
+    if (user?.role !== 'admin' && user?.role !== 'freelance') return;
+    refreshData();
+  }, [isAuthenticated, authLoading, user?.role]);
 
   useEffect(() => {
     if (!isAuthenticated || authLoading) return;
