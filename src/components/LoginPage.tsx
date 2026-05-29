@@ -17,10 +17,11 @@ export const LoginPage: React.FC = () => {
   const searchParams = useSearchParams();
   const nextParam = searchParams.get("next");
 
-  const { login, isAuthenticated, loading, user } = useAuth();
+  const { login, isAuthenticated, loading, user, logout } = useAuth();
 
-  // Default-deny: only staff reach the CRM. Everyone else (client or an
-  // unresolved role) goes to the client portal — never /dashboard by default.
+  // Default-deny: only staff reach the CRM. A resolved client goes to the
+  // portal. An 'unknown' role means a stale/invalid session — never redirect
+  // it (that loops with the portal guard); we sign it out instead.
   const targetForUser = (): string => {
     const isStaff = user?.role === "admin" || user?.role === "freelance";
     if (isStaff) return nextParam ?? "/dashboard";
@@ -32,13 +33,19 @@ export const LoginPage: React.FC = () => {
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Si déjà connecté, on redirige directement
+  // Si déjà connecté avec un rôle résolu, on redirige directement.
   useEffect(() => {
-    if (!loading && isAuthenticated) {
-      const isStaff = user?.role === "admin" || user?.role === "freelance";
-      router.replace(isStaff ? (nextParam ?? "/dashboard") : "/espace-client/dashboard");
+    if (loading || !isAuthenticated) return;
+    const role = user?.role;
+    if (role === "admin" || role === "freelance") {
+      router.replace(nextParam ?? "/dashboard");
+    } else if (role === "client") {
+      router.replace("/espace-client/dashboard");
+    } else {
+      // Unknown role on a live session → clear it so the user can log in fresh.
+      void logout();
     }
-  }, [loading, isAuthenticated, user?.role, nextParam, router]);
+  }, [loading, isAuthenticated, user?.role, nextParam, router, logout]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

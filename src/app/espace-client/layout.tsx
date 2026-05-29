@@ -9,7 +9,7 @@ import ClientPortalLayout from "@/components/client-portal/ClientPortalLayout";
 const ONBOARDING_PATH = "/espace-client/onboarding";
 
 export default function EspaceClientLayout({ children }: PropsWithChildren) {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname() ?? "";
 
@@ -24,14 +24,16 @@ export default function EspaceClientLayout({ children }: PropsWithChildren) {
       return;
     }
     if (user?.role === "unknown") {
-      // Profile failed to load — bounce to login rather than render nothing.
-      router.replace("/login");
+      // Stale/invalid session (e.g. deleted account, missing profile that
+      // couldn't be created). Sign out to break the /login ↔ portal loop —
+      // redirecting to /login would just bounce back here.
+      void logout();
       return;
     }
     if (!user?.onboardedAt && pathname !== ONBOARDING_PATH) {
       router.replace(ONBOARDING_PATH);
     }
-  }, [loading, isAuthenticated, user?.role, user?.onboardedAt, pathname, router]);
+  }, [loading, isAuthenticated, user?.role, user?.onboardedAt, pathname, router, logout]);
 
   if (loading || !isAuthenticated) {
     return <AppLoading />;
