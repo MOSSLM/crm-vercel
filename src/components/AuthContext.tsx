@@ -57,15 +57,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const enrichUserFromProfile = useCallback(async (userId: string) => {
     try {
-      const { data: profile, error: profileError } = await supabase
+      const initial = await supabase
         .from('user_profiles')
         .select('role, full_name, onboarded_at, prenom')
         .eq('id', userId)
         .maybeSingle();
+      let profile = initial.data;
+      const profileError = initial.error;
 
       if (profileError) {
         logger.warn('Unable to load user profile role:', profileError);
         return;
+      }
+
+      // Safety net: the auth.users trigger may not have created the row
+      // (insufficient privilege on the auth schema). Create it server-side
+      // via service-role, then re-read — so the role never stays 'unknown'.
+      if (!profile) {
+        try {
+          const { authedFetch } = await import('../utils/authedFetch');
+          await authedFetch('/api/auth/ensure-profile', { method: 'POST' });
+          const retry = await supabase
+            .from('user_profiles')
+            .select('role, full_name, onboarded_at, prenom')
+            .eq('id', userId)
+            .maybeSingle();
+          profile = retry.data;
+        } catch (e) {
+          logger.warn('ensure-profile fallback failed:', e);
+        }
       }
 
       if (!profile) {

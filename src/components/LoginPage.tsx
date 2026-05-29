@@ -19,10 +19,12 @@ export const LoginPage: React.FC = () => {
 
   const { login, isAuthenticated, loading, user } = useAuth();
 
+  // Default-deny: only staff reach the CRM. Everyone else (client or an
+  // unresolved role) goes to the client portal — never /dashboard by default.
   const targetForUser = (): string => {
-    if (nextParam) return nextParam;
-    if (user?.role === "client") return "/espace-client/dashboard";
-    return "/dashboard";
+    const isStaff = user?.role === "admin" || user?.role === "freelance";
+    if (isStaff) return nextParam ?? "/dashboard";
+    return "/espace-client/dashboard";
   };
 
   const [email, setEmail] = useState("");
@@ -33,8 +35,8 @@ export const LoginPage: React.FC = () => {
   // Si déjà connecté, on redirige directement
   useEffect(() => {
     if (!loading && isAuthenticated) {
-      const target = nextParam ?? (user?.role === "client" ? "/espace-client/dashboard" : "/dashboard");
-      router.replace(target);
+      const isStaff = user?.role === "admin" || user?.role === "freelance";
+      router.replace(isStaff ? (nextParam ?? "/dashboard") : "/espace-client/dashboard");
     }
   }, [loading, isAuthenticated, user?.role, nextParam, router]);
 
