@@ -19,7 +19,7 @@ type Props = { children: ReactNode };
  * role) is routed to the client portal, not the CRM.
  */
 export default function AppLayout({ children }: Props) {
-  const { isAuthenticated, loading, user } = useAuth();
+  const { isAuthenticated, loading, user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname() ?? "";
 
@@ -31,10 +31,14 @@ export default function AppLayout({ children }: Props) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
-    if (!isStaff) {
+    if (isStaff) return;
+    if (user?.role === "client") {
       router.replace("/espace-client/dashboard");
+      return;
     }
-  }, [loading, isAuthenticated, isStaff, pathname, router]);
+    // Unknown role = stale/invalid session — sign out instead of looping.
+    void logout();
+  }, [loading, isAuthenticated, isStaff, user?.role, pathname, router, logout]);
 
   // Never render the admin shell until we're certain the user is staff.
   if (loading || !isAuthenticated || !isStaff) {
