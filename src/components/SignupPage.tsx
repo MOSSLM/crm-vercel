@@ -46,7 +46,7 @@ export const SignupPage: React.FC = () => {
 
     setSubmitting(true);
     const origin = typeof window !== "undefined" ? window.location.origin : "";
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -56,7 +56,18 @@ export const SignupPage: React.FC = () => {
     setSubmitting(false);
 
     if (error) {
-      setErr(error.message ?? "Impossible de créer le compte.");
+      if ((error.message ?? "").toLowerCase().includes("already registered")) {
+        setErr("Un compte existe déjà avec cet email. Connectez-vous.");
+      } else {
+        setErr(error.message ?? "Impossible de créer le compte.");
+      }
+      return;
+    }
+
+    // Supabase returns a user with an empty `identities` array when the email
+    // is already registered (it won't send a new email in that case).
+    if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      setErr("Un compte existe déjà avec cet email. Connectez-vous ou réinitialisez votre mot de passe.");
       return;
     }
 
