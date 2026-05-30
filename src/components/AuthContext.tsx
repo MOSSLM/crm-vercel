@@ -12,9 +12,13 @@ interface User {
   onboardedAt: string | null;
 }
 
+export type LoginResult =
+  | { ok: true }
+  | { ok: false; reason: "invalid_credentials" | "email_not_confirmed" | "unknown" };
+
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
   isAuthenticated: boolean;
@@ -173,14 +177,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [enrichUserFromProfile, supabase]);
 
-  const login = async (email: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (data.user && !error) return true;
-      return false;
+      if (data.user && !error) return { ok: true };
+      const code = error?.code ?? '';
+      const msg = (error?.message ?? '').toLowerCase();
+      if (code === 'email_not_confirmed' || msg.includes('not confirmed')) {
+        return { ok: false, reason: 'email_not_confirmed' };
+      }
+      if (code === 'invalid_credentials' || msg.includes('invalid login')) {
+        return { ok: false, reason: 'invalid_credentials' };
+      }
+      return { ok: false, reason: 'unknown' };
     } catch (error) {
       logger.error('Login error:', error);
-      return false;
+      return { ok: false, reason: 'unknown' };
     }
   };
 

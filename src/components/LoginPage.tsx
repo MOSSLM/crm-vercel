@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthContext";
+import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +33,8 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
+  const [resending, setResending] = useState(false);
 
   // Si déjà connecté avec un rôle résolu, on redirige directement.
   useEffect(() => {
@@ -51,17 +54,45 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setSubmitting(true);
     setErr("");
+    setNeedsConfirm(false);
 
-    const success = await login(email, password);
+    const result = await login(email, password);
     setSubmitting(false);
 
-    if (!success) {
-      setErr("Identifiants incorrects. Vérifiez votre email et mot de passe.");
+    if (!result.ok) {
+      if (result.reason === "email_not_confirmed") {
+        setNeedsConfirm(true);
+        setErr("Votre email n'est pas encore confirmé. Vérifiez votre boîte mail.");
+      } else if (result.reason === "invalid_credentials") {
+        setErr("Email ou mot de passe incorrect.");
+      } else {
+        setErr("Connexion impossible. Réessayez dans un instant.");
+      }
       return;
     }
 
     toast.success("Connecté !");
     router.replace(targetForUser());
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!email) {
+      setErr("Renseignez votre email d'abord.");
+      return;
+    }
+    setResending(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/espace-client/onboarding` },
+    });
+    setResending(false);
+    if (error) {
+      toast.error("Impossible de renvoyer l'email pour le moment.");
+    } else {
+      toast.success("Email de confirmation renvoyé !");
+    }
   };
 
   return (
@@ -109,7 +140,19 @@ export const LoginPage: React.FC = () => {
 
             {err && (
               <Alert variant="destructive">
-                <AlertDescription>{err}</AlertDescription>
+                <AlertDescription>
+                  {err}
+                  {needsConfirm && (
+                    <button
+                      type="button"
+                      onClick={handleResendConfirmation}
+                      disabled={resending}
+                      className="mt-2 block underline underline-offset-2"
+                    >
+                      {resending ? "Envoi…" : "Renvoyer l'email de confirmation"}
+                    </button>
+                  )}
+                </AlertDescription>
               </Alert>
             )}
 
