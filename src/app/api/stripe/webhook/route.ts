@@ -58,16 +58,9 @@ export async function POST(req: Request) {
         const session = event.data.object as Stripe.Checkout.Session;
         const clientId = session.metadata?.client_id;
         const offreId = session.metadata?.offre_id;
-        const subscriptionId =
-          typeof session.subscription === "string"
-            ? session.subscription
-            : session.subscription?.id;
-        if (!clientId || !offreId || !subscriptionId) break;
+        if (!clientId || !offreId) break;
 
-        const sub = await stripe.subscriptions.retrieve(subscriptionId);
-        const upsert = buildUpsert(sub);
-
-        // Update the pending row we pre-created. If no row, insert.
+        // Find the pending row we pre-inserted at /api/stripe/checkout.
         const { data: existing } = await supabase
           .from("client_subscriptions")
           .select("id")
@@ -78,17 +71,48 @@ export async function POST(req: Request) {
           .limit(1)
           .maybeSingle();
 
-        if (existing) {
-          await supabase
-            .from("client_subscriptions")
-            .update({ ...upsert, updated_at: new Date().toISOString() })
-            .eq("id", existing.id);
-        } else {
-          await supabase.from("client_subscriptions").insert({
-            client_id: clientId,
-            offre_id: offreId,
-            ...upsert,
-          });
+        if (session.mode === "subscription") {
+          const subscriptionId =
+            typeof session.subscription === "string"
+              ? session.subscription
+              : session.subscription?.id;
+          if (!subscriptionId) break;
+
+          const sub = await stripe.subscriptions.retrieve(subscriptionId);
+          const upsert = buildUpsert(sub);
+          if (existing) {
+            await supabase
+              .from("client_subscriptions")
+              .update({ ...upsert, updated_at: new Date().toISOString() })
+              .eq("id", existing.id);
+          } else {
+            await supabase.from("client_subscriptions").insert({
+              client_id: clientId,
+              offre_id: offreId,
+              ...upsert,
+            });
+          }
+        } else if (session.mode === "payment") {
+          // One-shot purchase — no Stripe Subscription object; mark the
+          // pending row as active and stash the payment intent for refs.
+          const paymentIntentId =
+            typeof session.payment_intent === "string"
+              ? session.payment_intent
+              : session.payment_intent?.id ?? null;
+          const patch = {
+            status: "active",
+            updated_at: new Date().toISOString(),
+            metadata: { payment_intent_id: paymentIntentId, checkout_session_id: session.id },
+          };
+          if (existing) {
+            await supabase.from("client_subscriptions").update(patch).eq("id", existing.id);
+          } else {
+            await supabase.from("client_subscriptions").insert({
+              client_id: clientId,
+              offre_id: offreId,
+              ...patch,
+            });
+          }
         }
         break;
       }

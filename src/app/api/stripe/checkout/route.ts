@@ -19,7 +19,7 @@ export const POST = withAuth(
 
     const { data: offre, error: offerErr } = await supabase
       .from("offres")
-      .select("id, nom, stripe_price_id, actif")
+      .select("id, nom, stripe_price_id, actif, billing_period")
       .eq("id", body.offre_id)
       .maybeSingle();
 
@@ -54,18 +54,30 @@ export const POST = withAuth(
           .eq("id", user.id);
       }
 
-      const session = await stripe.checkout.sessions.create({
-        mode: "subscription",
+      const isRecurring = offre.billing_period && offre.billing_period !== "one_shot";
+      const sessionParams: import("stripe").Stripe.Checkout.SessionCreateParams = {
+        mode: isRecurring ? "subscription" : "payment",
         customer: customerId,
         line_items: [{ price: offre.stripe_price_id, quantity: 1 }],
         success_url: `${origin}/espace-client/dashboard?subscribed=1&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}/espace-client/services?canceled=1`,
         allow_promotion_codes: true,
-        subscription_data: {
-          metadata: { client_id: user.id, offre_id: body.offre_id },
+        metadata: {
+          client_id: user.id,
+          offre_id: body.offre_id,
+          billing_mode: isRecurring ? "subscription" : "payment",
         },
-        metadata: { client_id: user.id, offre_id: body.offre_id },
-      });
+      };
+      if (isRecurring) {
+        sessionParams.subscription_data = {
+          metadata: { client_id: user.id, offre_id: body.offre_id },
+        };
+      } else {
+        sessionParams.payment_intent_data = {
+          metadata: { client_id: user.id, offre_id: body.offre_id },
+        };
+      }
+      const session = await stripe.checkout.sessions.create(sessionParams);
 
       await supabase.from("client_subscriptions").insert({
         client_id: user.id,
