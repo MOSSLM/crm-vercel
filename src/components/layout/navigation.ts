@@ -56,6 +56,7 @@ export const TOP_CATEGORIES: Array<NavItem & { key: TopCategoryKey }> = [
 export const CRM_ITEMS: NavItem[] = [
   { title: "Entreprises", icon: Building, href: "/companies" },
   { title: "Contacts", icon: Users, href: "/contacts" },
+  { title: "Clients", icon: Users, href: "/clients" },
   { title: "Opportunités", icon: Target, href: "/opportunities" },
   { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
 ];
