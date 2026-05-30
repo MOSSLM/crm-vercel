@@ -23,15 +23,19 @@ export function SubscribeButton({ offreId, disabled, label, size = "default" }: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ offre_id: offreId }),
       });
-      const data = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+      const data = (await res.json().catch(() => null)) as
+        | { url?: string; error?: string; message?: string; code?: string }
+        | null;
       if (!res.ok || !data?.url) {
-        toast.error(
+        const friendly =
           data?.error === "offer_missing_stripe_price"
             ? "Cette offre n'est pas encore configurée pour le paiement."
             : data?.error === "STRIPE_SECRET_KEY non configuré"
               ? "Paiements indisponibles pour le moment."
-              : "Impossible de démarrer le paiement.",
-        );
+              : data?.error === "stripe_error" && data.message
+                ? `Paiement refusé : ${data.message}`
+                : "Impossible de démarrer le paiement.";
+        toast.error(friendly);
         setLoading(false);
         return;
       }

@@ -17,10 +17,9 @@ export const POST = withAuth(
 
     const supabase = getServiceClient();
 
-    // Charger l'offre + son stripe_price_id
     const { data: offre, error: offerErr } = await supabase
       .from("offres")
-      .select("id, nom, stripe_price_id, actif")
+      .select("id, nom, stripe_price_id, actif, billing_period")
       .eq("id", body.offre_id)
       .maybeSingle();
 
@@ -30,7 +29,6 @@ export const POST = withAuth(
       return jsonError("offer_missing_stripe_price", 400, {}, cors);
     }
 
-    // Charger le profil pour récupérer/créer le Stripe customer
     const { data: profile, error: profileErr } = await supabase
       .from("user_profiles")
       .select("id, email, full_name, stripe_customer_id")
@@ -39,45 +37,68 @@ export const POST = withAuth(
     if (profileErr || !profile) return jsonError("profile_not_found", 404, {}, cors);
 
     const stripe = getStripe();
-    let customerId = profile.stripe_customer_id as string | null;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: profile.email ?? user.email,
-        name: profile.full_name ?? undefined,
-        metadata: { client_id: user.id },
-      });
-      customerId = customer.id;
-      await supabase
-        .from("user_profiles")
-        .update({ stripe_customer_id: customerId })
-        .eq("id", user.id);
-    }
-
     const origin = req.headers.get("origin") ?? new URL(req.url).origin;
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: offre.stripe_price_id, quantity: 1 }],
-      success_url: `${origin}/espace-client/dashboard?subscribed=1&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${origin}/espace-client/services?canceled=1`,
-      allow_promotion_codes: true,
-      subscription_data: {
-        metadata: { client_id: user.id, offre_id: body.offre_id },
-      },
-      metadata: { client_id: user.id, offre_id: body.offre_id },
-    });
+    try {
+      let customerId = profile.stripe_customer_id as string | null;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: profile.email ?? user.email,
+          name: profile.full_name ?? undefined,
+          metadata: { client_id: user.id },
+        });
+        customerId = customer.id;
+        await supabase
+          .from("user_profiles")
+          .update({ stripe_customer_id: customerId })
+          .eq("id", user.id);
+      }
 
-    // Pre-insert a pending subscription so the dashboard reflects intent.
-    await supabase.from("client_subscriptions").insert({
-      client_id: user.id,
-      offre_id: body.offre_id,
-      stripe_price_id: offre.stripe_price_id,
-      status: "pending",
-      metadata: { checkout_session_id: session.id },
-    });
+      const isRecurring = offre.billing_period && offre.billing_period !== "one_shot";
+      const sessionParams: import("stripe").Stripe.Checkout.SessionCreateParams = {
+        mode: isRecurring ? "subscription" : "payment",
+        customer: customerId,
+        line_items: [{ price: offre.stripe_price_id, quantity: 1 }],
+        success_url: `${origin}/espace-client/dashboard?subscribed=1&session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${origin}/espace-client/services?canceled=1`,
+        allow_promotion_codes: true,
+        metadata: {
+          client_id: user.id,
+          offre_id: body.offre_id,
+          billing_mode: isRecurring ? "subscription" : "payment",
+        },
+      };
+      if (isRecurring) {
+        sessionParams.subscription_data = {
+          metadata: { client_id: user.id, offre_id: body.offre_id },
+        };
+      } else {
+        sessionParams.payment_intent_data = {
+          metadata: { client_id: user.id, offre_id: body.offre_id },
+        };
+      }
+      const session = await stripe.checkout.sessions.create(sessionParams);
 
-    if (!session.url) return jsonError("checkout_no_url", 500, {}, cors);
-    return json({ url: session.url }, { headers: cors });
+      await supabase.from("client_subscriptions").insert({
+        client_id: user.id,
+        offre_id: body.offre_id,
+        stripe_price_id: offre.stripe_price_id,
+        status: "pending",
+        metadata: { checkout_session_id: session.id },
+      });
+
+      if (!session.url) return jsonError("checkout_no_url", 500, {}, cors);
+      return json({ url: session.url }, { headers: cors });
+    } catch (e) {
+      // Surface the actual Stripe error to the client and Vercel logs — the
+      // generic withAuth catch swallows it as "internal_error" otherwise.
+      const message = e instanceof Error ? e.message : String(e);
+      const code =
+        e && typeof e === "object" && "code" in e ? String((e as { code?: unknown }).code) : undefined;
+      const type =
+        e && typeof e === "object" && "type" in e ? String((e as { type?: unknown }).type) : undefined;
+      console.error("[stripe/checkout] failure:", { message, code, type, offre_id: body.offre_id });
+      return jsonError("stripe_error", 502, { message, code, type }, cors);
+    }
   },
 );
