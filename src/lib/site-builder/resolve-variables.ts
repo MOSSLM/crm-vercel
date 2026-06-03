@@ -108,8 +108,24 @@ export async function resolveEnterpriseVariables(
     }
   }
 
+  // Effective lead-magnet project: the explicit site link, else the linked
+  // enterprise's own project. This fallback makes company reviews resolve from
+  // lead_magnet_reviews everywhere (editor preview, publish snapshot, deployed
+  // site) even when the site has no explicit project link. Purely additive —
+  // when site.lead_magnet_project_id is set the behaviour is unchanged.
+  let projectId = site.lead_magnet_project_id;
+  if (!projectId && site.enterprise_id) {
+    const { data: proj } = await supabase
+      .from("lead_magnet_projects")
+      .select("id")
+      .eq("entreprise_id", site.enterprise_id)
+      .limit(1)
+      .maybeSingle();
+    projectId = (proj as { id?: string } | null)?.id ?? null;
+  }
+
   let reviews: ReviewItem[] = [];
-  if (site.lead_magnet_project_id) {
+  if (projectId) {
     const [projResult, reviewsResult] = await Promise.all([
       supabase
         .from("lead_magnet_projects")
@@ -117,12 +133,12 @@ export async function resolveEnterpriseVariables(
           "override_entreprise_name, override_city, override_location, " +
             "override_phone, override_email, override_address, variables"
         )
-        .eq("id", site.lead_magnet_project_id)
+        .eq("id", projectId)
         .single(),
       supabase
         .from("lead_magnet_reviews")
         .select("author_name, review_text, rating")
-        .eq("lead_magnet_project_id", site.lead_magnet_project_id)
+        .eq("lead_magnet_project_id", projectId)
         .eq("is_active", true)
         .order("display_order", { ascending: true }),
     ]);

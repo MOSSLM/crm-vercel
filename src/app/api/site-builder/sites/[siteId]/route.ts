@@ -40,6 +40,19 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
   if (style_guide !== undefined) patch.style_guide = style_guide;
   if (sitemap !== undefined) patch.sitemap = sitemap;
 
+  // When linking a company without an explicit project, auto-link that
+  // enterprise's lead-magnet project so its reviews (lead_magnet_reviews)
+  // resolve. (Each enterprise has at most one project.)
+  if (enterprise_id != null && lead_magnet_project_id === undefined) {
+    const { data: proj } = await supabase
+      .from("lead_magnet_projects")
+      .select("id")
+      .eq("entreprise_id", enterprise_id)
+      .limit(1)
+      .maybeSingle();
+    if (proj && (proj as { id?: string }).id) patch.lead_magnet_project_id = (proj as { id: string }).id;
+  }
+
   if (Object.keys(patch).length === 0) return jsonError("Aucun champ à mettre à jour", 400);
 
   const { data, error } = await supabase

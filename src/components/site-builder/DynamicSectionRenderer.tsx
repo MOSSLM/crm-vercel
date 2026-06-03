@@ -358,8 +358,12 @@ export function DynamicSectionRenderer({
   };
 
   const innerLayoutStyle = layoutToCSS(structure.layout);
+  // Mirror DynamicPageRenderer: a `gap` in custom_style relaxes the inner
+  // flex/grid wrapper's gap (preview matches the deployed render).
+  const customGap = (instance.custom_style as Record<string, unknown> | undefined)?.gap;
   const innerStyle: React.CSSProperties = {
     ...innerLayoutStyle,
+    ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
     maxWidth: "var(--max-content-width)",
     margin: "0 auto",
     width: "100%",

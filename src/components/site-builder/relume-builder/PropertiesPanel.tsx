@@ -13,6 +13,7 @@ import { getSchemaForSection } from "@/data/section-schemas";
 import type { ColorSchemePreset } from "@/lib/color-utils";
 import type { SectionAnimation, SectionPreset } from "@/types";
 import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
+import { AppearancePanel } from "./element-panels/ElementPanel";
 import {
   resolveNavbarLayout,
   DEFAULT_NAVBAR_LAYOUT,
@@ -263,6 +264,15 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
                 </div>
               );
             })()}
+
+            {/* Section-level appearance — border-radius, border, shadow,
+                background, spacing and flex gap. Stored as a root-path style
+                override (content.__overrides[":style"]) so it deploys for
+                library sections too, without touching the global style guide. */}
+            <div>
+              <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Apparence de la section</div>
+              <AppearancePanel instance={instance} pathStr="" />
+            </div>
 
             {/* Custom style overrides */}
             <div>

@@ -20,7 +20,7 @@ export async function generateMetadata({ params }: SitePageProps): Promise<Metad
   return {
     title: companyName,
     description: `Site de ${companyName}`,
-    icons: { icon: site.logoUrl ?? "/favicon.ico" },
+    icons: { icon: site.faviconUrl ?? site.logoUrl ?? "/favicon.ico" },
   };
 }
 
