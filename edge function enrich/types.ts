@@ -26,6 +26,8 @@ export interface EnrichResult {
   status: "success" | "failed" | "skipped" | "no_website";
   error?: string;
   updated_fields?: string[];
+  // Clés de problèmes d'audit pré-détectés (cf. audit.ts / src/data/auditIssues.ts)
+  detected_issues?: string[];
 }
 
 export interface EnrichResponse {
@@ -106,6 +108,11 @@ export interface LLMExtraction {
   // Site accessible ?
   site_accessible: boolean;
   site_accessible_reason?: string; // si false, pourquoi
+  // --- Signaux pour l'audit (pré-détection des problèmes du site) ---
+  // null = le LLM n'a pas pu juger (on ne conclut rien).
+  site_shows_testimonials: boolean | null; // le site affiche-t-il des avis/témoignages clients ?
+  site_has_clear_cta: boolean | null;      // appels à l'action clairs et visibles ?
+  site_design_modern: boolean | null;      // design moderne/pro (vs daté/amateur) ?
 }
 
 // Review Google Places

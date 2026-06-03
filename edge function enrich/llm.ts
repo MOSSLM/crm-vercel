@@ -30,6 +30,9 @@ const EXTRACTION_SCHEMA = {
     "surrounding_cities",
     "site_accessible",
     "site_accessible_reason",
+    "site_shows_testimonials",
+    "site_has_clear_cta",
+    "site_design_modern",
   ],
   properties: {
     services_tags: {
@@ -86,6 +89,18 @@ const EXTRACTION_SCHEMA = {
       type: ["string", "null"],
       description: "Si site_accessible=false, raison courte (ex: 'site_en_construction', 'no_content', 'generic_placeholder'). Sinon null.",
     },
+    site_shows_testimonials: {
+      type: ["boolean", "null"],
+      description: "Le site affiche-t-il des avis ou témoignages clients (section avis, étoiles, citations de clients, widget Google reviews) ? true si oui, false si on n'en voit aucun, null si impossible à juger.",
+    },
+    site_has_clear_cta: {
+      type: ["boolean", "null"],
+      description: "Le site a-t-il des appels à l'action clairs et visibles (boutons type 'Demander un devis', 'Contactez-nous', 'Appeler', ou un formulaire de contact mis en avant) ? true si oui, false si quasi aucun CTA, null si incertain.",
+    },
+    site_design_modern: {
+      type: ["boolean", "null"],
+      description: "Le design du site paraît-il moderne et professionnel ? false si visiblement daté, amateur ou négligé. true si correct/moderne. null si impossible à juger depuis le contenu.",
+    },
   },
 } as const;
 
@@ -117,7 +132,8 @@ RÈGLES IMPORTANTES :
 - Pour les services : utilise UNIQUEMENT la taxonomie fournie (climatisation, pompe à chaleur, chauffage, ventilation, plomberie, électricité, photovoltaïque, rénovation). Ajoute un tag custom SEULEMENT si un service mentionné ne rentre dans aucune catégorie.
 - Pour la géographie : raisonne sur la position réelle de la ville en France. Donne des vraies villes existantes. Évite de citer des communes trop petites (<3000 hab) ou trop lointaines (>50km).
 - Pour le logo : l'URL doit être ABSOLUE (https://...) et pointer vers une image (.png/.jpg/.svg/.webp). Regarde les balises <img> du header/footer dans le markdown.
-- Pour l'email : privilégie toujours un email de type contact@, info@, commercial@ plutôt qu'un email perso. S'il y a plusieurs emails, prends le plus pro.`;
+- Pour l'email : privilégie toujours un email de type contact@, info@, commercial@ plutôt qu'un email perso. S'il y a plusieurs emails, prends le plus pro.
+- Pour les signaux d'audit (site_shows_testimonials, site_has_clear_cta, site_design_modern) : juge HONNÊTEMENT et de façon critique à partir du contenu observé. Si un élément n'est pas clairement présent, réponds false ; si tu ne peux vraiment pas juger, réponds null. Ne sois pas complaisant : l'objectif est de repérer ce qui manque sur le site.`;
 
   const googleSection = input.google_data
     ? `\n\n--- DONNÉES GOOGLE BUSINESS ---\nNom Google: ${input.google_data.name ?? "N/A"}\nAdresse formatée: ${input.google_data.formatted_address ?? "N/A"}\nNombre total d'avis: ${input.google_data.total_reviews ?? "N/A"}`

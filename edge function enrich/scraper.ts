@@ -27,6 +27,16 @@ export interface ScrapedSite {
   error?: string;
 }
 
+// Signaux déterministes extraits du HTML BRUT de la home (pas du markdown Jina,
+// qui perd les liens tel:/mailto, les <form> et la balise viewport).
+export interface RawSiteSignals {
+  hasTelLink: boolean;
+  hasMailtoLink: boolean;
+  hasForm: boolean;
+  hasViewport: boolean;
+  phoneInText: boolean; // un numéro FR apparaît dans le texte visible
+}
+
 function normalizeBaseUrl(raw: string): string | null {
   if (!raw) return null;
   try {
@@ -123,6 +133,61 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
     total_chars: totalChars,
     accessible: true,
   };
+}
+
+/**
+ * Récupère le HTML brut de la home et en extrait des signaux déterministes
+ * utiles pour l'audit (tel: cliquable, formulaire, viewport, numéro affiché).
+ * Best-effort : retourne null si la page n'est pas récupérable.
+ */
+export async function fetchRawSignals(
+  rawUrl: string | null | undefined,
+  timeoutMs = 12000,
+): Promise<RawSiteSignals | null> {
+  const base = normalizeBaseUrl(rawUrl ?? "");
+  if (!base) return null;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(base, {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (compatible; SamaAuditBot/1.0; +https://samadigitalstudio.fr)",
+        "Accept": "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(`fetchRawSignals non-OK ${res.status} for ${base}`);
+      return null;
+    }
+    let html = await res.text();
+    if (html.length > 500000) html = html.slice(0, 500000); // cap mémoire
+
+    const hasTelLink = /href\s*=\s*["']\s*tel:/i.test(html);
+    const hasMailtoLink = /href\s*=\s*["']\s*mailto:/i.test(html);
+    const hasForm = /<form[\s>]/i.test(html);
+    const hasViewport = /<meta[^>]+name\s*=\s*["']\s*viewport\s*["']/i.test(html);
+
+    // Texte visible : on retire scripts/styles puis toutes les balises.
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ");
+    // Numéro FR : +33/0033/0 suivi d'un indicatif puis 4 paires de chiffres.
+    const phoneInText = /(?:\+33|0033|0)\s?[1-9](?:[\s. \-]?\d{2}){4}/.test(text);
+
+    return { hasTelLink, hasMailtoLink, hasForm, hasViewport, phoneInText };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn(`fetchRawSignals error for ${base}: ${msg}`);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 /**

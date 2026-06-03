@@ -315,6 +315,7 @@ export async function applyExtraction(
   ctx: ProjectContext,
   extraction: LLMExtraction,
   google: GooglePlaceData | null,
+  detectedIssues: string[] = [],
 ): Promise<ApplyResult> {
   const updatedFields: string[] = [];
   const lmpUpdate: Record<string, unknown> = {};
@@ -410,6 +411,15 @@ export async function applyExtraction(
       };
       updatedFields.push("variables.surrounding_cities");
     }
+  }
+
+  // --- problèmes d'audit pré-détectés : stockés dans variables (jsonb) ---
+  // Lus côté CRM (page d'audit) pour pré-cocher les cases. On écrase toujours
+  // avec la dernière détection, sans toucher aux autres clés de variables.
+  if (detectedIssues.length > 0) {
+    const baseVars = (lmpUpdate.variables as Record<string, unknown> | undefined) ?? ctx.lmp.variables ?? {};
+    lmpUpdate.variables = { ...baseVars, audit_detected_issues: detectedIssues };
+    updatedFields.push("variables.audit_detected_issues");
   }
 
   // --- stat_years_experience : uniquement si vide/default ---

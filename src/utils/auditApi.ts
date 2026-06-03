@@ -2,6 +2,12 @@ import { supabase } from './supabase/client';
 import type { Audit, AuditContent, AuditTemplate } from '@/types';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import {
+  DEFAULT_SELECTED_ISSUE_KEYS,
+  problemsFromKeys,
+  solutionsFromKeys,
+  ensureMinIssueKeys,
+} from '@/data/auditIssues';
 
 const DEFAULT_CONTENT: AuditContent = {
   page1: {
@@ -21,12 +27,7 @@ const DEFAULT_CONTENT: AuditContent = {
     section_title: 'Ce que nous avons',
     section_title_em: 'observé',
     section_intro: "Vous avez une activité sérieuse, des clients satisfaits, et un vrai savoir-faire. Mais votre présence en ligne ne reflète pas encore tout ça — et vous passez potentiellement à côté de clients qui vous cherchent.",
-    problems: [
-      { title: 'Site vieillissant', desc: "La première impression est décisive. Un site au design daté ou difficile à naviguer réduit fortement les chances qu'un visiteur passe à l'action." },
-      { title: 'Éléments mal positionnés', desc: "Des textes peu lisibles, des boutons difficiles à trouver ou une navigation confuse créent des obstacles qui découragent l'action, même chez un visiteur intéressé." },
-      { title: 'Vos avis clients ne sont pas mis en avant', desc: "Vous avez d'excellents retours clients, mais ils n'apparaissent pas sur votre site. C'est pourtant un élément clé qui rassure et convainc les visiteurs hésitants." },
-      { title: "Peu d'appels à l'action visibles", desc: "Sans formulaire express ou numéro de téléphone en un clic bien placé, un visiteur intéressé peut repartir sans laisser ses coordonnées." },
-    ],
+    problems: problemsFromKeys(DEFAULT_SELECTED_ISSUE_KEYS),
     quote: "75 % des internautes jugent la crédibilité d'une entreprise sur la base de son site web — la conception visuelle est le premier signal de confiance.",
     quote_source: 'Stanford Web Credibility Research · Comportement utilisateur web',
   },
@@ -35,13 +36,8 @@ const DEFAULT_CONTENT: AuditContent = {
     section_label: "02 · Ce que l'on fait",
     section_title: 'Un site conçu pour',
     section_title_em: 'convertir',
-    section_intro: "Pas un site vitrine de plus. Un outil de développement commercial, pensé pour votre métier et vos clients.",
-    solutions: [
-      { num: '1', name: 'Site vitrine premium', desc: "Design sur-mesure, mobile-first, chargement ultra-rapide. Une image qui inspire confiance dès les 3 premières secondes.", tag: 'Design' },
-      { num: '2', name: 'SEO local optimisé', desc: "Référencement Google Maps, mots-clés métier + ville, intégration Google Search Console. Apparaître quand ça compte.", tag: 'SEO' },
-      { num: '3', name: 'Action simplifiée et capture des prospects', desc: "Formulaires de devis express, appel en un clic, témoignages clients intégrés. Réduire les frictions pour transformer chaque visite en opportunité de contact.", tag: 'Conversion' },
-      { num: '4', name: 'Audit SEO local', desc: "Nous analysons les opportunités de référencement local et vous informons tout au long de l'année des mots-clés stratégiques sur lesquels vous positionner pour capter plus de clients dans votre zone.", tag: 'SEO' },
-    ],
+    section_intro: "Pas un site vitrine de plus. Un outil de développement commercial, pensé pour votre métier et vos clients. À chaque problème relevé, sa réponse.",
+    solutions: solutionsFromKeys(DEFAULT_SELECTED_ISSUE_KEYS),
   },
   page4: {
     header_section: 'Livrables inclus',
@@ -88,9 +84,9 @@ const DEFAULT_CONTENT: AuditContent = {
     ],
     cta_title: 'Prêt à avancer ?',
     cta_sub: 'Réservez un appel gratuit — sans engagement.',
-    contact_phone: '+33 6 XX XX XX XX',
-    contact_email: 'contact@votreagence.fr',
-    contact_website: '',
+    contact_phone: '07 49 19 67 15',
+    contact_email: 'matteos@samadigitalstudio.fr',
+    contact_website: 'samadigitalstudio.fr',
   },
 };
 
@@ -196,6 +192,8 @@ export async function createAudit(params: {
   entreprise_logo_url?: string;
   entreprise_secteur?: string;
   demo_site_url?: string;
+  /** Clés de problèmes pré-détectées par l'enrichissement (edge function). */
+  detected_issue_keys?: string[];
 }): Promise<Audit> {
   const content = getDefaultAuditContent({
     entreprise_nom: params.entreprise_nom,
@@ -205,7 +203,14 @@ export async function createAudit(params: {
     demo_url: params.demo_site_url,
   });
 
-  const { entreprise_adresse: _unusedAddress, ...insertableParams } = params;
+  // Pré-cocher les problèmes détectés automatiquement (au moins 3).
+  if (params.detected_issue_keys && params.detected_issue_keys.length > 0) {
+    const keys = ensureMinIssueKeys(params.detected_issue_keys);
+    content.page2.problems = problemsFromKeys(keys);
+    content.page3.solutions = solutionsFromKeys(keys);
+  }
+
+  const { entreprise_adresse: _unusedAddress, detected_issue_keys: _unusedKeys, ...insertableParams } = params;
 
   const { data, error } = await supabase
     .from('audits')
@@ -230,6 +235,7 @@ export async function upsertAudit(params: {
   entreprise_logo_url?: string;
   entreprise_secteur?: string;
   demo_site_url?: string;
+  detected_issue_keys?: string[];
 }): Promise<Audit> {
   const existing = await fetchAuditByOpportunite(params.opportunite_id);
   if (existing) return existing;
