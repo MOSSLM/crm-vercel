@@ -19,8 +19,12 @@ export default function EspaceClientLayout({ children }: PropsWithChildren) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
-    if (user?.role === "admin" || user?.role === "freelance") {
+    if (user?.role === "admin") {
       router.replace("/dashboard");
+      return;
+    }
+    if (user?.role === "freelance") {
+      router.replace("/espace-agent/dashboard");
       return;
     }
     if (user?.role === "unknown") {
