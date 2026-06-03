@@ -18,8 +18,10 @@
 // =====================================================================
 
 import type { EnrichRequest, EnrichResponse, EnrichResult } from "./types.ts";
-import { scrapeWebsite, buildSiteContext } from "./scraper.ts";
+import { scrapeWebsite, buildSiteContext, fetchRawSignals } from "./scraper.ts";
 import { fetchGooglePlace, resolvePlaceId } from "./google.ts";
+import { fetchPageSpeedPerf } from "./pagespeed.ts";
+import { detectAuditIssues } from "./audit.ts";
 import { extractWithLLM } from "./llm.ts";
 import {
   makeSupabaseClient,
@@ -35,6 +37,8 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const GOOGLE_PLACES_API_KEY = Deno.env.get("GOOGLE_PLACES_API_KEY") ?? "";
+// Optionnel : active la détection « site lent » via PageSpeed Insights.
+const PAGESPEED_API_KEY = Deno.env.get("PAGESPEED_API_KEY") ?? "";
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body, null, 2), {
@@ -99,6 +103,14 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       };
     }
 
+    // 4b. Signaux d'audit déterministes (HTML brut) + PageSpeed (best-effort)
+    //     En parallèle pour ne pas allonger le temps de traitement.
+    const [rawSignals, pagespeedPerf] = await Promise.all([
+      fetchRawSignals(siteUrl),
+      PAGESPEED_API_KEY ? fetchPageSpeedPerf(siteUrl, PAGESPEED_API_KEY) : Promise.resolve(null),
+    ]);
+    console.log(`[${projectId}] raw signals: ${rawSignals ? JSON.stringify(rawSignals) : "n/a"}, pagespeed: ${pagespeedPerf ?? "n/a"}`);
+
     // 5. Google Places (best-effort)
     const placeId = resolvePlaceId(
       ctx.entreprise.google_place_id,
@@ -155,8 +167,24 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       };
     }
 
-    // 7. Apply extraction
-    const applyRes = await applyExtraction(sb, ctx, extraction, googleData);
+    // 6b. Pré-détection des problèmes d'audit (combine HTML brut + PageSpeed
+    //     + avis Google + jugements du LLM). Pré-cochés ensuite dans l'audit.
+    const hasGoogleReviews =
+      (googleData?.total_reviews ?? 0) > 0 ||
+      (ctx.entreprise.nombre_avis ?? 0) > 0 ||
+      (Array.isArray(ctx.entreprise.google_reviews_5star) && ctx.entreprise.google_reviews_5star.length > 0);
+    const detectedIssues = detectAuditIssues({
+      hasGoogleReviews,
+      siteShowsTestimonials: extraction.site_shows_testimonials,
+      siteHasClearCta: extraction.site_has_clear_cta,
+      siteDesignModern: extraction.site_design_modern,
+      raw: rawSignals,
+      pagespeedPerf,
+    });
+    console.log(`[${projectId}] detected audit issues: ${detectedIssues.join(", ") || "(none)"}`);
+
+    // 7. Apply extraction (+ stockage des problèmes détectés dans lmp.variables)
+    const applyRes = await applyExtraction(sb, ctx, extraction, googleData, detectedIssues);
     console.log(`[${projectId}] applied: ${applyRes.updated_fields.join(", ")}`);
 
     // 8. Mark as framer
@@ -166,6 +194,7 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       project_id: projectId,
       status: "success",
       updated_fields: applyRes.updated_fields,
+      detected_issues: detectedIssues,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

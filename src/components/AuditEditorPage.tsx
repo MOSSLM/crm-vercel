@@ -1,14 +1,20 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Download, Save, Check, Loader2 } from 'lucide-react';
+import { ArrowLeft, Download, Save, Check, Loader2, Globe, MapPin } from 'lucide-react';
 import type { Audit, AuditContent, AuditGlobalStyle } from '@/types';
 import { AuditPreview } from './AuditPreview';
 import { saveAudit } from '@/utils/auditApi';
+import {
+  problemsFromKeys,
+  solutionsFromKeys,
+  renumberSolutions,
+  ensureMinIssueKeys,
+} from '@/data/auditIssues';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 import { supabase } from '@/utils/supabase/client';
 import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
@@ -57,9 +63,15 @@ const PAGE_LABELS = ['Couverture', 'Situation', 'Solution', 'Livrables', 'Tarifs
 interface AuditEditorPageProps {
   audit: Audit;
   opportunityName?: string;
+  /** URL du site actuel de l'entreprise (bouton de vérification). */
+  siteUrl?: string;
+  /** URL de la fiche Google / Maps (bouton de vérification). */
+  googleUrl?: string;
+  /** Problèmes pré-détectés par l'enrichissement, pour pré-cocher en un clic. */
+  detectedIssueKeys?: string[];
 }
 
-export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditEditorPageProps) {
+export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys }: AuditEditorPageProps) {
   const router = useRouter();
   const [content, setContent] = useState<AuditContent>(initialAudit.content);
   const debouncedContent = useDebounce(content, AUDIT_PREVIEW_DEBOUNCE_MS);
@@ -98,6 +110,52 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
     setContent(prev => ({ ...prev, global_style: { ...prev.global_style, ...patch } }));
     markChange();
   }, []);
+
+  // ── Problèmes / solutions du catalogue (cases à cocher) ──────────────
+  // La clé d'un problème coché est pairée à sa solution sur la page 3.
+  const selectedIssueKeys = useMemo(
+    () => (content.page2?.problems ?? []).map(p => p.key).filter((k): k is string => !!k),
+    [content.page2?.problems],
+  );
+
+  const toggleIssue = useCallback((key: string) => {
+    setContent(prev => {
+      const isOn = prev.page2.problems.some(p => p.key === key);
+      let problems = prev.page2.problems;
+      let solutions = prev.page3.solutions;
+      if (isOn) {
+        problems = problems.filter(p => p.key !== key);
+        solutions = solutions.filter(s => s.key !== key);
+      } else {
+        if (problems.length >= 6) {
+          toast.error('Maximum 6 problèmes — décochez-en un avant.');
+          return prev;
+        }
+        problems = [...problems, ...problemsFromKeys([key])];
+        solutions = [...solutions, ...solutionsFromKeys([key])];
+      }
+      return {
+        ...prev,
+        page2: { ...prev.page2, problems },
+        page3: { ...prev.page3, solutions: renumberSolutions(solutions) },
+      };
+    });
+    markChange();
+  }, []);
+
+  const applyDetectedIssues = useCallback(() => {
+    if (!detectedIssueKeys || detectedIssueKeys.length === 0) return;
+    const keys = ensureMinIssueKeys(detectedIssueKeys);
+    setContent(prev => {
+      const customProblems = prev.page2.problems.filter(p => !p.key);
+      const customSolutions = prev.page3.solutions.filter(s => !s.key);
+      const problems = [...problemsFromKeys(keys), ...customProblems].slice(0, 6);
+      const solutions = renumberSolutions([...solutionsFromKeys(keys), ...customSolutions]);
+      return { ...prev, page2: { ...prev.page2, problems }, page3: { ...prev.page3, solutions } };
+    });
+    markChange();
+    toast.success('Problèmes détectés appliqués');
+  }, [detectedIssueKeys]);
 
   const handleFieldClick = (field: string) => {
     setActiveField(field);
@@ -140,7 +198,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
     const win = window.open('', '_blank');
     if (!win) { toast.error("Impossible d'ouvrir une nouvelle fenêtre"); return; }
     Promise.resolve().then(() => {
-      const html = generateAuditHtml(content, { logoUrl });
+      const html = generateAuditHtml(content, { logoUrl, forPdf: true });
       win.document.write(html);
       win.document.close();
       win.focus();
@@ -176,6 +234,29 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {siteUrl && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(siteUrl, '_blank', 'noopener,noreferrer')}
+              title={siteUrl}
+            >
+              <Globe className="h-3.5 w-3.5 mr-1.5" />
+              Voir le site
+            </Button>
+          )}
+          {googleUrl && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.open(googleUrl, '_blank', 'noopener,noreferrer')}
+              title={googleUrl}
+            >
+              <MapPin className="h-3.5 w-3.5 mr-1.5" />
+              Voir Google
+            </Button>
+          )}
+          <div className="w-px h-5 bg-border mx-1" />
           <Button
             variant="outline"
             size="sm"
@@ -228,7 +309,14 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName }: AuditE
                 />
               )}
               {activePage === 2 && (
-                <Page2Editor data={content.page2} onChange={data => updatePage('page2', data)} />
+                <Page2Editor
+                  data={content.page2}
+                  onChange={data => updatePage('page2', data)}
+                  selectedIssueKeys={selectedIssueKeys}
+                  onToggleIssue={toggleIssue}
+                  hasDetectedIssues={!!detectedIssueKeys && detectedIssueKeys.length > 0}
+                  onApplyDetected={applyDetectedIssues}
+                />
               )}
               {activePage === 3 && (
                 <Page3Editor data={content.page3} onChange={data => updatePage('page3', data)} />

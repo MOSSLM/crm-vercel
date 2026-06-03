@@ -329,6 +329,9 @@ export interface AuditAdditionalService {
 export interface AuditProblem {
   title: string;
   desc: string;
+  // Catalog issue key when this card comes from the standard issue catalog
+  // (see src/data/auditIssues.ts). Absent for free-form / custom cards.
+  key?: string;
 }
 
 export interface AuditSolution {
@@ -336,6 +339,8 @@ export interface AuditSolution {
   name: string;
   desc: string;
   tag: string;
+  // Catalog issue key — pairs this solution to its matching problem card.
+  key?: string;
 }
 
 export interface AuditLivrable {

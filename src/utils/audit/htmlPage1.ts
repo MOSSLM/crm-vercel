@@ -5,10 +5,13 @@ function getDomain(url: string): string {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
-export function page1Html(content: AuditContent, logoUrl?: string) {
+export function page1Html(content: AuditContent, logoUrl?: string, opts?: { forPdf?: boolean }) {
   const p = content.page1;
   const domain = p.demo_url ? getDomain(p.demo_url) : '';
-  const screenshotUrl = p.demo_url ? `https://image.thum.io/get/width/800/crop/600/${p.demo_url}` : '';
+  // L'aperçu mockup est petit dans la maquette : une capture 640px suffit
+  // largement et allège nettement le PDF (vs 800px) sans perte visible.
+  const shotSize = opts?.forPdf ? 'width/640/crop/400' : 'width/800/crop/600';
+  const screenshotUrl = p.demo_url ? `https://image.thum.io/get/${shotSize}/${p.demo_url}` : '';
 
   return `
 <div class="page">

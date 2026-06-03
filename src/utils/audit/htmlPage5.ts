@@ -1,7 +1,7 @@
 import type { AuditContent } from '@/types';
 import { esc, innerHeader, innerFooter, getServices, calcTotal, fmtEur, makeGrainSvgUrl } from './htmlShared';
 
-export function page5Html(content: AuditContent) {
+export function page5Html(content: AuditContent, opts?: { forPdf?: boolean }) {
   const p = content.page5;
   const gs = content.global_style;
   const services = getServices(p);
@@ -9,7 +9,8 @@ export function page5Html(content: AuditContent) {
   const enabledServices = services.filter(s => s.enabled);
   const showGrain = p.show_grain !== false;
   const flattenForPdf = p.flatten_grain_for_pdf === true;
-  const useGrain = showGrain && !flattenForPdf;
+  // En mode PDF on force le grain off (bruit SVG = PDF très lourd).
+  const useGrain = showGrain && !flattenForPdf && opts?.forPdf !== true;
   const addlServices = p.additional_services || [];
   const grainUrl = makeGrainSvgUrl(gs?.grain_base_frequency ?? 0.75, gs?.grain_color ?? '#ffffff');
   const grainOpacity = gs?.grain_opacity ?? 0.045;

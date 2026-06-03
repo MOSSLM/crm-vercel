@@ -51,7 +51,8 @@ export function fmtEur(n: number) {
   return n.toLocaleString('fr-FR') + ' €';
 }
 
-export function generateCSS(gs?: AuditGlobalStyle): string {
+export function generateCSS(gs?: AuditGlobalStyle, opts?: { forPdf?: boolean }): string {
+  const forPdf = opts?.forPdf === true;
   const grainOpacity = gs?.grain_opacity ?? 0.045;
   const grainFreq = gs?.grain_base_frequency ?? 0.75;
   const grainColor = gs?.grain_color ?? '#ffffff';
@@ -59,6 +60,14 @@ export function generateCSS(gs?: AuditGlobalStyle): string {
   const fontCoverTitle = gs?.font_cover_title ?? 56;
   const fontSectionTitle = gs?.font_section_title ?? 38;
   const fontSectionIntro = gs?.font_section_intro ?? 14;
+
+  // Grain = bruit SVG (feTurbulence). À l'impression PDF, ce calque
+  // semi-transparent force le navigateur à rasteriser des pages entières en
+  // haute définition → fichiers très lourds (~20 Mo). On le désactive pour le
+  // PDF : à 0.045 d'opacité il est de toute façon quasi invisible.
+  const grainRule = forPdf
+    ? `.grain{display:none!important}`
+    : `.grain{position:absolute;inset:0;opacity:${grainOpacity};pointer-events:none;z-index:3;background-image:${grainUrl};background-repeat:repeat;background-size:200px 200px}`;
 
   return `
 :root{--nuit:#0B1D3A;--azur:#3A7BD5;--brume:#B5D0F0;--creme:#F4F1EB;--blanc:#E8F3FF;--page-w:794px}
@@ -69,7 +78,7 @@ body{background:#1a1a1e;font-family:'DM Sans',sans-serif;color:var(--nuit)}
 .page+.page{margin-top:24px}.page:first-child{margin-top:32px}.page:last-child{margin-bottom:32px}
 .cover{height:1123px;background:var(--nuit);display:flex;flex-direction:column;position:relative;overflow:hidden}
 .cover-sky{position:absolute;inset:0;background:radial-gradient(ellipse 500px 400px at 80% 20%,rgba(58,123,213,.35) 0%,transparent 65%),radial-gradient(ellipse 600px 500px at 15% 70%,rgba(58,123,213,.18) 0%,transparent 60%)}
-.grain{position:absolute;inset:0;opacity:${grainOpacity};pointer-events:none;z-index:3;background-image:${grainUrl};background-repeat:repeat;background-size:200px 200px}
+${grainRule}
 .cover-content{position:relative;z-index:4;display:flex;flex-direction:column;height:100%;padding:64px 72px}
 .cover-top{display:flex;align-items:center;justify-content:space-between}
 .logo-block{display:flex;align-items:center;gap:12px}
