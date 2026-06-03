@@ -2,14 +2,13 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
-import { getAgentPipeline } from "../_lib";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-// Claim an unowned prospect from the shared pool: atomically take ownership of
-// the company (only if still unowned) and open an opportunity in the agent
-// pipeline at the first stage. Returns 409 if another agent claimed it first.
+// Request a pool prospect. The agent no longer self-assigns — this opens a
+// pending claim request that the admin confirms (or refuses) from the Agents
+// page. Returns 409 if the company is already owned by someone else.
 export const POST = withAuth({ role: "freelance" }, async ({ user, req, cors }) => {
   let body: Record<string, unknown>;
   try {
@@ -22,36 +21,34 @@ export const POST = withAuth({ role: "freelance" }, async ({ user, req, cors }) 
   if (entrepriseId == null) return jsonError("entreprise_id requis", 400, {}, cors);
 
   const sc = getServiceClient();
-  const agent = await getAgentPipeline();
-  if (!agent || agent.stages.length === 0) {
-    return jsonError("pipeline_introuvable", 500, {}, cors);
+
+  // Only pool (unowned) companies can be requested.
+  const { data: ent, error: entErr } = await sc
+    .from("entreprises")
+    .select("id, owner_id")
+    .eq("id", entrepriseId)
+    .maybeSingle();
+  if (entErr) return jsonError(entErr.message, 500, {}, cors);
+  if (!ent) return jsonError("introuvable", 404, {}, cors);
+  if (ent.owner_id) {
+    return ent.owner_id === user.id
+      ? json({ ok: true, already_owned: true }, { headers: cors })
+      : jsonError("Ce prospect a déjà été attribué.", 409, {}, cors);
   }
 
-  // Atomic claim: the owner_id IS NULL filter means only one agent can win.
-  const { data: claimed, error: claimErr } = await sc
-    .from("entreprises")
-    .update({ owner_id: user.id })
-    .eq("id", entrepriseId)
-    .is("owner_id", null)
-    .select("id, name, ville")
+  const { data: reqRow, error: reqErr } = await sc
+    .from("prospect_claim_requests")
+    .insert({ entreprise_id: entrepriseId, agent_id: user.id })
+    .select("id, status")
     .maybeSingle();
 
-  if (claimErr) return jsonError(claimErr.message, 500, {}, cors);
-  if (!claimed) return jsonError("Ce prospect a déjà été réclamé.", 409, {}, cors);
+  if (reqErr) {
+    // unique_violation → a pending request already exists; treat as success.
+    if ((reqErr as { code?: string }).code === "23505") {
+      return json({ ok: true, already_requested: true }, { headers: cors });
+    }
+    return jsonError(reqErr.message, 500, {}, cors);
+  }
 
-  const { data: opp, error: oppErr } = await sc
-    .from("opportunites")
-    .insert({
-      entreprise_id: entrepriseId,
-      owner_id: user.id,
-      pipeline_id: agent.pipelineId,
-      stage_id: agent.stages[0].id,
-      name: claimed.name ?? "Nouveau prospect",
-    })
-    .select("id")
-    .single();
-
-  if (oppErr) return jsonError(oppErr.message, 500, {}, cors);
-
-  return json({ entreprise: claimed, opportunite: opp }, { status: 201, headers: cors });
+  return json({ ok: true, request: reqRow }, { status: 201, headers: cors });
 });

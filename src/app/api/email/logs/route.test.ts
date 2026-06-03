@@ -34,6 +34,8 @@ describe('GET /api/email/logs', () => {
       order: (...a: unknown[]) => { mockOrder(...a); return chain; },
       limit: (...a: unknown[]) => { mockLimit(...a); return chain; },
       eq: (...a: unknown[]) => { mockEq(...a); return chain; },
+      // requireRole (admin gate) looks up the caller's role in user_profiles.
+      maybeSingle: () => Promise.resolve({ data: { role: 'admin' }, error: null }),
       then: (resolve: (v: unknown) => void) => resolve({ data: [{ id: 'log-1' }], error: null }),
     };
     mockFrom.mockReturnValue(chain);

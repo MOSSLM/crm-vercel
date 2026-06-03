@@ -7,7 +7,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-export const GET = withAuth({}, async ({ req, cors }) => {
+export const GET = withAuth({ role: "admin" },async ({ req, cors }) => {
   const url = new URL(req.url);
   const parsed = parseQuery(url, emailLogsQuerySchema, cors);
   if (!parsed.ok) return parsed.response;

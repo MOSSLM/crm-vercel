@@ -15,8 +15,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import { authedFetch } from "@/utils/authedFetch";
+import AppLayout from "@/components/layout/AppLayout";
+import RequireAuth from "@/components/auth/RequireAuth";
 
-export default function FormsPage() {
+function FormsContent() {
   const router = useRouter();
   const [forms, setForms] = useState<Form[]>([]);
   const [loading, setLoading] = useState(true);
@@ -114,5 +116,15 @@ export default function FormsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function FormsPage() {
+  return (
+    <AppLayout>
+      <RequireAuth>
+        <FormsContent />
+      </RequireAuth>
+    </AppLayout>
   );
 }

@@ -6,7 +6,6 @@ import { authedFetch } from "@/utils/authedFetch";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Phone,
   MessageCircle,
@@ -28,7 +27,6 @@ type Task = {
   kind: string | null;
   status: string;
   title: string | null;
-  priority: string | null;
   due_at: string | null;
   opportunite_id: string | null;
   contact: Contact | Contact[] | null;
@@ -165,11 +163,6 @@ export default function AgentDemarchagePage() {
                       </div>
                     )}
                   </div>
-                  {task.priority && (
-                    <Badge variant="outline" className="shrink-0 text-[10px] capitalize">
-                      {task.priority}
-                    </Badge>
-                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-2">
