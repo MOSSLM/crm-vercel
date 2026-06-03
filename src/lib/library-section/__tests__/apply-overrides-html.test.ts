@@ -71,4 +71,46 @@ describe("applyOverridesToHTML", () => {
     expect(out.html).toContain("Edited");
     expect(out.html).toContain('<link rel="preload"'); // preload preserved
   });
+
+  it("merges arbitrary appearance CSS (radius/border/shadow/bg/gap) — element-level overrides deploy", () => {
+    const html = wrapHtml(`<div><button>Go</button></div>`);
+    const overrides: Record<string, OverrideEntry> = {
+      "0.0:style": {
+        kind: "style",
+        value: "",
+        meta: {
+          style: {
+            borderRadius: "12px",
+            borderWidth: "2px",
+            borderStyle: "solid",
+            borderColor: "#f00",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+            backgroundColor: "#fff",
+            gap: "10px",
+          },
+        },
+      },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    expect(out.applied).toBe(1);
+    expect(out.html).toContain("border-radius: 12px");
+    expect(out.html).toContain("border-width: 2px");
+    expect(out.html).toContain("border-style: solid");
+    expect(out.html).toContain("border-color: #f00");
+    expect(out.html).toContain("box-shadow: 0 4px 12px");
+    expect(out.html).toContain("background-color: #fff");
+    expect(out.html).toContain("gap: 10px");
+  });
+
+  it("applies a root-path style override (\":style\", empty path) to the section root", () => {
+    const html = wrapHtml(`<p>hi</p>`);
+    const overrides: Record<string, OverrideEntry> = {
+      ":style": { kind: "style", value: "", meta: { style: { borderRadius: "16px", gap: "8px" } } },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    expect(out.applied).toBe(1);
+    // The section root (the wrapper element) carries the style.
+    expect(out.html).toMatch(/data-root[^>]*style="[^"]*border-radius:\s*16px/);
+    expect(out.html).toContain("gap: 8px");
+  });
 });

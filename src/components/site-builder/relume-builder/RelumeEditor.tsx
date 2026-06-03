@@ -4,7 +4,7 @@ import React from "react";
 import {
   Save, Globe, Check, Share2, Upload,
   Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2,
-  Undo2, Redo2, ArrowUpDown, AlertTriangle,
+  Undo2, Redo2, ArrowUpDown, AlertTriangle, Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId } from "@/types";
@@ -20,6 +20,7 @@ import { WireframeWorkspace } from "./WireframeWorkspace";
 import { StyleGuideWorkspace } from "./StyleGuideWorkspace";
 import { DesignWorkspace } from "./DesignWorkspace";
 import { ContentWorkspace } from "./ContentWorkspace";
+import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 import "./site-builder-skin.css";
 import { AlertSoft, Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pop, Seg, TopChip, cx } from "./skin-primitives";
 import { authedFetch } from "@/utils/authedFetch";
@@ -38,6 +39,8 @@ export interface RelumeEditorProps {
   initialStyleGuide?: StyleGuide | null;
   initialSitemap?: SitemapPage[];
   initialMenus?: SiteMenus | null;
+  /** Favicon URL loaded from site_config.faviconUrl. */
+  initialFaviconUrl?: string | null;
   /** ISO timestamp of the last publish. Used to show "unpublished changes" indicator. */
   publishedAt?: string | null;
 }
@@ -363,6 +366,132 @@ function SaveAsThemeDialog({
   );
 }
 
+// ─── Site settings modal (logo + favicon) ──────────────────────────────────────
+
+function SiteSettingsModal({
+  open, onClose, siteId, enterpriseId, companyUrl, currentLogo, faviconUrl, onLogoSaved, onFaviconSet,
+}: {
+  open: boolean;
+  onClose: () => void;
+  siteId: string;
+  enterpriseId: number | undefined;
+  companyUrl: string;
+  currentLogo: string;
+  faviconUrl: string | null | undefined;
+  onLogoSaved: () => void;
+  onFaviconSet: (url: string) => void;
+}) {
+  const [savingLogo, setSavingLogo] = React.useState(false);
+  const [fetchingFavicon, setFetchingFavicon] = React.useState(false);
+
+  const saveLogo = async (url: string) => {
+    if (!enterpriseId) { toast.error("Liez d'abord une entreprise"); return; }
+    setSavingLogo(true);
+    try {
+      const res = await authedFetch(`/api/entreprises/${enterpriseId}/logo`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logo_url: url }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success("Logo mis à jour");
+      onLogoSaved();
+    } catch {
+      toast.error("Échec de la mise à jour du logo");
+    } finally {
+      setSavingLogo(false);
+    }
+  };
+
+  const grabFavicon = async () => {
+    if (!companyUrl) { toast.error("Aucune URL de site pour cette entreprise"); return; }
+    setFetchingFavicon(true);
+    try {
+      const res = await authedFetch(`/api/site-builder/fetch-favicon`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: companyUrl, siteId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = (await res.json()) as { faviconUrl?: string };
+      if (!data.faviconUrl) throw new Error("no favicon");
+      onFaviconSet(data.faviconUrl);
+      toast.success("Favicon récupéré depuis le site");
+    } catch {
+      toast.error("Favicon introuvable depuis l'URL du site");
+    } finally {
+      setFetchingFavicon(false);
+    }
+  };
+
+  return (
+    <ModalShell open={open} onClose={onClose} size="sm">
+      <ModalHd
+        icon={<Settings size={15} />}
+        title="Paramètres du site"
+        subtitle="Logo de l'entreprise et favicon"
+        right={<button onClick={onClose} className="modal-x" aria-label="Fermer"><X size={14} /></button>}
+      />
+      <ModalBody>
+        {/* LOGO */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>Logo de l&apos;entreprise</div>
+          <p style={{ fontSize: 11, color: "var(--text-3)", margin: "0 0 8px", lineHeight: 1.5 }}>
+            Corrige le logo stocké pour l&apos;entreprise (écrit dans la fiche entreprise et le projet lead-magnet).
+            Il sera bon partout après enregistrement.
+          </p>
+          {enterpriseId ? (
+            <>
+              <ImagePickerField
+                setting={{ type: "image_picker", id: "logo", label: "Logo" }}
+                value={currentLogo}
+                onChange={saveLogo}
+                siteId={siteId}
+              />
+              {savingLogo && (
+                <p style={{ fontSize: 10.5, color: "var(--text-4)", marginTop: 6, display: "flex", alignItems: "center", gap: 5 }}>
+                  <Loader2 size={11} className="animate-spin" /> Enregistrement…
+                </p>
+              )}
+            </>
+          ) : (
+            <AlertSoft tone="warn">Liez une entreprise pour modifier le logo.</AlertSoft>
+          )}
+        </div>
+
+        {/* FAVICON */}
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>Favicon</div>
+          <p style={{ fontSize: 11, color: "var(--text-3)", margin: "0 0 8px", lineHeight: 1.5 }}>
+            Récupère le favicon directement depuis le site de l&apos;entreprise et l&apos;héberge pour ce site.
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 8, border: "1px solid var(--border-2)", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", background: "var(--surface-2, #f5f5f5)", flexShrink: 0 }}>
+              {faviconUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={faviconUrl} alt="favicon" style={{ width: 32, height: 32, objectFit: "contain" }} />
+              ) : (
+                <Globe size={16} style={{ color: "var(--text-4)" }} />
+              )}
+            </div>
+            <Btn variant="outline" size="sm" onClick={grabFavicon} disabled={fetchingFavicon || !companyUrl}>
+              {fetchingFavicon ? <Loader2 size={12} className="animate-spin" /> : <Globe size={12} />}
+              {fetchingFavicon ? "Récupération…" : "Récupérer depuis le site"}
+            </Btn>
+          </div>
+          <p style={{ fontSize: 10.5, color: "var(--text-4)", marginTop: 6 }}>
+            {companyUrl ? `Source : ${companyUrl}` : "Aucune URL de site sur l'entreprise."}
+          </p>
+        </div>
+      </ModalBody>
+      <ModalFt>
+        <span style={{ flex: 1 }} />
+        <Btn variant="primary" onClick={onClose}>Fermer</Btn>
+      </ModalFt>
+    </ModalShell>
+  );
+}
+
 // ─── Inner Editor ─────────────────────────────────────────────────────────────
 
 function RelumeEditorInner({
@@ -378,6 +507,7 @@ function RelumeEditorInner({
   initialStyleGuide,
   initialSitemap,
   initialMenus,
+  initialFaviconUrl,
 }: RelumeEditorProps) {
   const { state, dispatch } = useRelumeBuilder();
   const [saving, setSaving] = React.useState(false);
@@ -408,6 +538,10 @@ function RelumeEditorInner({
   const [projectId, setProjectId] = React.useState<string | undefined>(initialProjectId);
   const [showSaveTheme, setShowSaveTheme] = React.useState(false);
   const [themeLibraryOpen, setThemeLibraryOpen] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(false);
+  // Global catalogue of authorized service tags (independent of the linked
+  // company) so the Contenu tab can prepare a template for every eventuality.
+  const [serviceTagCatalog, setServiceTagCatalog] = React.useState<string[]>([]);
 
   const fetchVariables = React.useCallback((id: number | undefined, pid?: string) => {
     if (!id) { dispatch({ type: "SET_VARIABLE_CONTEXT", payload: {} }); return; }
@@ -427,6 +561,15 @@ function RelumeEditorInner({
   React.useEffect(() => {
     if (initialEnterpriseId) fetchVariables(initialEnterpriseId, initialProjectId);
   }, [initialEnterpriseId, initialProjectId, fetchVariables]);
+
+  React.useEffect(() => {
+    authedFetch("/api/site-builder/service-tags")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { tags?: string[] } | null) => {
+        if (Array.isArray(data?.tags)) setServiceTagCatalog(data.tags);
+      })
+      .catch(() => {});
+  }, []);
 
   // Close publish popover on outside click
   React.useEffect(() => {
@@ -450,6 +593,7 @@ function RelumeEditorInner({
         styleGuide: initialStyleGuide ?? DEFAULT_STYLE_GUIDE,
         sitemap: initialSitemap ?? [{ id: "page-home", slug: "/", title: "Accueil" }],
         menus: initialMenus ?? undefined,
+        faviconUrl: initialFaviconUrl ?? null,
         instances: initialInstances.map((inst) => ({
           ...inst,
           section_def: inst.section_id ? sectionDefs[inst.section_id] : (inst as unknown as { section_def?: SiteSectionDef }).section_def,
@@ -495,7 +639,7 @@ function RelumeEditorInner({
       body: JSON.stringify({
         style_guide: state.styleGuide,
         sitemap: state.sitemap,
-        site_config: { menus: state.menus },
+        site_config: { menus: state.menus, faviconUrl: state.faviconUrl ?? undefined },
       }),
     });
     if (!r1.ok) { const e = await r1.json(); throw new Error(e.error ?? "Erreur PATCH site"); }
@@ -581,14 +725,21 @@ function RelumeEditorInner({
   const handleSelectCompany = async (id: number | null, nom: string) => {
     setEnterpriseId(id ?? undefined);
     setEnterpriseName(id ? nom : "");
-    setProjectId(undefined);
-    fetchVariables(id ?? undefined, undefined);
     try {
-      await authedFetch(`/api/site-builder/sites/${siteId}`, {
+      const res = await authedFetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enterprise_id: id, lead_magnet_project_id: null }),
+        // Linking: let the server auto-resolve the enterprise's lead-magnet
+        // project so its reviews load. Unlinking: clear both links.
+        body: JSON.stringify(id ? { enterprise_id: id } : { enterprise_id: null, lead_magnet_project_id: null }),
       });
+      const updated = res.ok ? await res.json().catch(() => null) : null;
+      const resolvedPid =
+        updated && typeof updated === "object"
+          ? (updated as { lead_magnet_project_id?: string | null }).lead_magnet_project_id ?? undefined
+          : undefined;
+      setProjectId(resolvedPid);
+      fetchVariables(id ?? undefined, resolvedPid);
       toast.success(id ? "Entreprise liée" : "Entreprise dissociée");
     } catch {
       toast.error("Erreur lors de la liaison");
@@ -751,6 +902,17 @@ function RelumeEditorInner({
         onApply={handleApplyTheme}
         enterpriseId={enterpriseId}
       />
+      <SiteSettingsModal
+        open={showSettings}
+        onClose={() => setShowSettings(false)}
+        siteId={siteId}
+        enterpriseId={enterpriseId}
+        companyUrl={state.variableContext["entreprise.site_web"] ?? ""}
+        currentLogo={state.variableContext["entreprise.logo_url"] ?? ""}
+        faviconUrl={state.faviconUrl}
+        onLogoSaved={() => fetchVariables(enterpriseId, projectId)}
+        onFaviconSet={(url) => dispatch({ type: "SET_FAVICON_URL", payload: url })}
+      />
 
       {/* ─ Topbar ─────────────────────────────────────────────────────────── */}
       <div className="topbar">
@@ -817,6 +979,11 @@ function RelumeEditorInner({
           <Btn variant="ghost" size="sm" onClick={() => setShowSaveTheme(true)} title="Enregistrer comme thème">
             <Bookmark size={12} />
             Sauver
+          </Btn>
+
+          <Btn variant="ghost" size="sm" onClick={() => setShowSettings(true)} title="Paramètres du site (logo, favicon)">
+            <Settings size={12} />
+            Paramètres
           </Btn>
 
           <Btn variant="outline" size="sm" onClick={handleSave} disabled={saving || !state.isDirty}>
@@ -912,6 +1079,7 @@ function RelumeEditorInner({
             siteId={siteId}
             enterpriseId={enterpriseId}
             availableSections={initialSections}
+            tagCatalog={serviceTagCatalog}
           />
         )}
         {state.activeWorkspace === "wireframe" && (
@@ -925,7 +1093,7 @@ function RelumeEditorInner({
           <StyleGuideWorkspace sectionDefs={sectionDefs} />
         )}
         {state.activeWorkspace === "content" && (
-          <ContentWorkspace enterpriseId={enterpriseId} />
+          <ContentWorkspace enterpriseId={enterpriseId} tagCatalog={serviceTagCatalog} />
         )}
         {state.activeWorkspace === "design" && (
           <DesignWorkspace

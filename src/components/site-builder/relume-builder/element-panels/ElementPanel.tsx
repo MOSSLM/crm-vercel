@@ -270,6 +270,263 @@ function writeStyleOverride(
   dispatch({ scope: "instance" }, { __overrides: all });
 }
 
+// ─── Shared appearance editor (box + flex overrides) ──────────────────────────
+
+const SHADOW_PRESETS: Array<{ id: string; label: string; value: string | undefined }> = [
+  { id: "none", label: "Aucune", value: undefined },
+  { id: "sm", label: "S", value: "0 1px 2px rgba(0,0,0,0.08)" },
+  { id: "md", label: "M", value: "0 4px 12px rgba(0,0,0,0.12)" },
+  { id: "lg", label: "L", value: "0 12px 32px rgba(0,0,0,0.18)" },
+];
+
+const BORDER_STYLE_OPTIONS: Array<{ id: string; label: string }> = [
+  { id: "", label: "Aucune" },
+  { id: "solid", label: "Pleine" },
+  { id: "dashed", label: "Tirets" },
+  { id: "dotted", label: "Points" },
+];
+
+const RADIUS_PRESETS = [0, 8, 16, 24];
+
+/** Style-guide colour swatches + hex input, shared by border / background. */
+function ColorSwatchRow({
+  value, onPick, onClear, colors,
+}: {
+  value: string;
+  onPick: (hex: string) => void;
+  onClear: () => void;
+  colors: Record<string, string>;
+}) {
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+        {STYLE_GUIDE_COLOR_KEYS.map((k) => {
+          const hex = colors[k] ?? "#000000";
+          const isOn = value.toLowerCase() === hex.toLowerCase();
+          return (
+            <button
+              key={k}
+              title={`${k} · ${hex}`}
+              onClick={() => onPick(hex)}
+              style={{
+                width: 24, height: 24, borderRadius: 6, background: hex,
+                border: "1.5px solid var(--surface)",
+                boxShadow: isOn ? "0 0 0 2px var(--text)" : "0 0 0 1px var(--border-2)",
+                cursor: "default",
+              }}
+            />
+          );
+        })}
+        {value && (
+          <button className="btn ghost xs" onClick={onClear} title="Retirer" style={{ height: 22 }}>Auto</button>
+        )}
+      </div>
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => (e.target.value ? onPick(e.target.value) : onClear())}
+        placeholder="#RRGGBB"
+        className="input mono"
+        style={{ width: "100%", height: 24, padding: "0 6px", fontSize: 11 }}
+      />
+    </div>
+  );
+}
+
+/** Generic per-element appearance editor: border-radius, border, shadow,
+ *  background, spacing and flex/grid layout. Every value is written as a
+ *  `<path>:style` override, so it applies in preview AND on the deployed site
+ *  (via applyOverridesToHTML) WITHOUT touching the global style guide.
+ *  Reused for section-level styling with `pathStr=""` (the section root). */
+export function AppearancePanel({
+  instance, pathStr, showFlex = true,
+}: {
+  instance: SiteSectionInstance;
+  pathStr: string;
+  showFlex?: boolean;
+}) {
+  const { state } = useRelumeBuilder();
+  const dispatch = useDispatcher(instance);
+  const s = readStyleOverride(instance, pathStr);
+  const patch = (p: Record<string, string | undefined>) => writeStyleOverride(instance, dispatch, pathStr, p);
+
+  const radiusPx = s.borderRadius ? parseInt(s.borderRadius) : null;
+  const borderStyleVal = s.borderStyle ?? "";
+  const borderWidthPx = s.borderWidth ? parseInt(s.borderWidth) : 1;
+  const shadowVal = s.boxShadow ?? "";
+  const shadowPreset = SHADOW_PRESETS.find((p) => p.value === shadowVal);
+  const gapPx = s.gap ? parseInt(s.gap) : null;
+
+  const setBorderStyle = (style: string) => {
+    if (!style) { patch({ borderStyle: undefined, borderWidth: undefined, borderColor: undefined }); return; }
+    patch({
+      borderStyle: style,
+      borderWidth: s.borderWidth ?? "1px",
+      borderColor: s.borderColor ?? state.styleGuide.colors.text,
+    });
+  };
+
+  return (
+    <div>
+      <div className="field-label"><span>Apparence</span></div>
+
+      {/* ARRONDI */}
+      <div className="range-row">
+        <label>Arrondi</label>
+        <input
+          type="range" min={0} max={64} step={1}
+          value={radiusPx ?? 0}
+          onChange={(e) => patch({ borderRadius: `${e.target.value}px` })}
+        />
+        <input
+          type="number" min={0} max={200} value={radiusPx ?? ""} placeholder="px"
+          onChange={(e) => { const n = parseInt(e.target.value); patch({ borderRadius: isNaN(n) ? undefined : `${n}px` }); }}
+          className="input mono" style={{ width: 56, height: 22, padding: "0 4px", fontSize: 10.5 }}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+        {RADIUS_PRESETS.map((r) => (
+          <button key={r} className="btn outline xs" style={{ height: 22, padding: "0 8px" }} onClick={() => patch({ borderRadius: `${r}px` })}>{r}</button>
+        ))}
+        <button className="btn outline xs" style={{ height: 22, padding: "0 8px" }} onClick={() => patch({ borderRadius: "9999px" })} title="Totalement arrondi">Plein</button>
+        {radiusPx != null && (
+          <button className="btn ghost xs" style={{ height: 22 }} onClick={() => patch({ borderRadius: undefined })}>Auto</button>
+        )}
+      </div>
+
+      {/* BORDURE */}
+      <div className="field" style={{ marginTop: 10 }}>
+        <div className="field-label"><span>Bordure</span></div>
+        <select className="select" value={borderStyleVal} onChange={(e) => setBorderStyle(e.target.value)}>
+          {BORDER_STYLE_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </div>
+      {borderStyleVal && (
+        <>
+          <div className="range-row">
+            <label>Épaisseur</label>
+            <input
+              type="range" min={1} max={12} step={1} value={borderWidthPx}
+              onChange={(e) => patch({ borderWidth: `${e.target.value}px` })}
+            />
+            <input
+              type="number" min={1} max={40} value={borderWidthPx} placeholder="px"
+              onChange={(e) => { const n = parseInt(e.target.value); patch({ borderWidth: isNaN(n) ? undefined : `${n}px` }); }}
+              className="input mono" style={{ width: 56, height: 22, padding: "0 4px", fontSize: 10.5 }}
+            />
+          </div>
+          <ColorSwatchRow
+            value={s.borderColor ?? ""}
+            onPick={(hex) => patch({ borderColor: hex })}
+            onClear={() => patch({ borderColor: undefined })}
+            colors={state.styleGuide.colors}
+          />
+        </>
+      )}
+
+      {/* OMBRE */}
+      <div className="field" style={{ marginTop: 10 }}>
+        <div className="field-label"><span>Ombre</span></div>
+        <div className="seg full">
+          {SHADOW_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              aria-pressed={(shadowPreset?.id ?? (shadowVal ? "custom" : "none")) === p.id ? "true" : "false"}
+              onClick={() => patch({ boxShadow: p.value })}
+            >{p.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* FOND */}
+      <div className="field" style={{ marginTop: 10 }}>
+        <div className="field-label"><span>Fond</span></div>
+        <ColorSwatchRow
+          value={s.backgroundColor ?? ""}
+          onPick={(hex) => patch({ backgroundColor: hex })}
+          onClear={() => patch({ backgroundColor: undefined })}
+          colors={state.styleGuide.colors}
+        />
+      </div>
+
+      {/* ESPACEMENT */}
+      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 9, color: "var(--text-4)" }}>Padding</label>
+          <input
+            type="text" value={s.padding ?? ""} placeholder="ex: 16px"
+            onChange={(e) => patch({ padding: e.target.value || undefined })}
+            className="input mono" style={{ width: "100%", height: 24, padding: "0 6px", fontSize: 11 }}
+          />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 9, color: "var(--text-4)" }}>Marge</label>
+          <input
+            type="text" value={s.margin ?? ""} placeholder="ex: 0 0 16px"
+            onChange={(e) => patch({ margin: e.target.value || undefined })}
+            className="input mono" style={{ width: "100%", height: 24, padding: "0 6px", fontSize: 11 }}
+          />
+        </div>
+      </div>
+
+      {/* FLEX / DISPOSITION */}
+      {showFlex && (
+        <details style={{ marginTop: 10 }}>
+          <summary style={{ fontSize: 10.5, color: "var(--text-3)", cursor: "default", userSelect: "none" }}>
+            Disposition (flex / grille)
+          </summary>
+          <div style={{ marginTop: 6 }}>
+            <p style={{ fontSize: 10, color: "var(--text-4)", marginBottom: 6, lineHeight: 1.4 }}>
+              N'a d'effet que si l'élément est un conteneur flex / grille.
+            </p>
+            <div className="range-row">
+              <label>Gap</label>
+              <input
+                type="range" min={0} max={64} step={1} value={gapPx ?? 0}
+                onChange={(e) => patch({ gap: `${e.target.value}px` })}
+              />
+              <input
+                type="number" min={0} max={200} value={gapPx ?? ""} placeholder="px"
+                onChange={(e) => { const n = parseInt(e.target.value); patch({ gap: isNaN(n) ? undefined : `${n}px` }); }}
+                className="input mono" style={{ width: 56, height: 22, padding: "0 4px", fontSize: 10.5 }}
+              />
+            </div>
+            <div className="field" style={{ marginTop: 6 }}>
+              <div className="field-label"><span>Justifier</span></div>
+              <select className="select" value={s.justifyContent ?? ""} onChange={(e) => patch({ justifyContent: e.target.value || undefined })}>
+                <option value="">(auto)</option>
+                <option value="flex-start">Début</option>
+                <option value="center">Centre</option>
+                <option value="flex-end">Fin</option>
+                <option value="space-between">Espacé</option>
+                <option value="space-around">Autour</option>
+              </select>
+            </div>
+            <div className="field" style={{ marginTop: 6 }}>
+              <div className="field-label"><span>Aligner</span></div>
+              <select className="select" value={s.alignItems ?? ""} onChange={(e) => patch({ alignItems: e.target.value || undefined })}>
+                <option value="">(auto)</option>
+                <option value="stretch">Étirer</option>
+                <option value="flex-start">Début</option>
+                <option value="center">Centre</option>
+                <option value="flex-end">Fin</option>
+              </select>
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-2)", marginTop: 6 }}>
+              <input
+                type="checkbox" checked={(s.flexWrap ?? "") === "wrap"}
+                onChange={(e) => patch({ flexWrap: e.target.checked ? "wrap" : undefined })}
+              />
+              Retour à la ligne (wrap)
+            </label>
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function TextPanel({ element, instance, binding }: { element: SelectedElementShape; instance: SiteSectionInstance; binding: BindingResult }) {
   const { state } = useRelumeBuilder();
   const dispatch = useDispatcher(instance);
@@ -564,6 +821,8 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
         </div>
       </div>
 
+      <AppearancePanel instance={instance} pathStr={pathStr} showFlex={false} />
+
       <DeleteRestoreFooter instance={instance} pathStr={pathStr} label="le texte" />
     </div>
   );
@@ -755,6 +1014,8 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
         </div>
       )}
 
+      <AppearancePanel instance={instance} pathStr={pathStr} showFlex={false} />
+
       <DeleteRestoreFooter instance={instance} pathStr={pathStr} label="l'image" />
     </div>
   );
@@ -914,6 +1175,8 @@ function ButtonOrLinkPanel({
           </div>
         </div>
 
+      <AppearancePanel instance={instance} pathStr={pathForOverride} />
+
       <DeleteRestoreFooter instance={instance} pathStr={fallbackPath} label={kind === "button" ? "le bouton" : "le lien"} />
     </div>
   );
@@ -1037,6 +1300,8 @@ function InputPanel({ element, instance, binding }: { element: SelectedElementSh
         />
       </div>
 
+      <AppearancePanel instance={instance} pathStr={overridePath} showFlex={false} />
+
       <DeleteRestoreFooter instance={instance} pathStr={overridePath} label="le champ" />
     </div>
   );
@@ -1102,6 +1367,8 @@ function FormPanel({ element, instance, binding }: { element: SelectedElementSha
           Ce formulaire est codé en dur. Pour le rendre éditable, déclare-le comme objet composite <code className="font-mono">{`{ action, method, submit_label }`}</code> dans le content.
         </p>
       )}
+
+      <AppearancePanel instance={instance} pathStr={element.path.join(".")} />
 
       <DeleteRestoreFooter instance={instance} pathStr={element.path.join(".")} label="le formulaire" />
     </div>

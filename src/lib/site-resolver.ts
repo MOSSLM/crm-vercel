@@ -33,6 +33,8 @@ export interface ResolvedSite {
   publishedSiteConfig?: Partial<SiteConfig> & { menus?: SiteMenus } | null;
   /** Convenience accessor: menus extracted from the published snapshot. */
   menus?: SiteMenus | null;
+  /** Favicon URL from the published site_config; preferred over the logo. */
+  faviconUrl?: string | null;
   /** Published snapshot of the sitemap. Used to filter pages by service_tag. */
   publishedSitemap?: SitemapPage[] | null;
 }
@@ -133,8 +135,9 @@ export async function resolveSite(
   }
 
   const publishedSiteConfig =
-    (siteRow as { published_site_config?: (Partial<SiteConfig> & { menus?: SiteMenus }) | null }).published_site_config ?? null;
+    (siteRow as { published_site_config?: (Partial<SiteConfig> & { menus?: SiteMenus; faviconUrl?: string }) | null }).published_site_config ?? null;
   const menus = publishedSiteConfig?.menus ?? null;
+  const faviconUrl = publishedSiteConfig?.faviconUrl ?? null;
 
   return {
     siteId: siteRow.id,
@@ -149,6 +152,7 @@ export async function resolveSite(
     publishedInstances: (siteRow.published_instances as Array<unknown>) ?? null,
     publishedSiteConfig,
     menus,
+    faviconUrl,
     reviews,
     publishedSitemap: (siteRow as { published_sitemap?: SitemapPage[] | null }).published_sitemap ?? null,
   };

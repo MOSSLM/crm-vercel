@@ -2,7 +2,7 @@
 
 import React from "react";
 import {
-  Laptop, Tablet, Smartphone, Plus, Trash2, Layers,
+  Laptop, Tablet, Smartphone, Plus, Trash2, Layers, Copy,
   Sparkles, MoreHorizontal,
   ChevronDown, ChevronUp, RefreshCw, Loader2, MessageSquare, Send, Search,
   ZoomIn, ZoomOut,
@@ -412,6 +412,16 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => {
+                const p = state.sitemap.find((pg) => pg.slug === state.activePage);
+                if (p) dispatch({ type: "DUPLICATE_PAGE", payload: p.id });
+              }}
+              className="btn outline sm"
+              title="Dupliquer cette page (sections, contenus et overrides inclus)"
+            >
+              <Copy size={11} />Dupliquer
+            </button>
             {(() => {
               const page = state.sitemap.find((p) => p.slug === state.activePage);
               if (!page) return null;

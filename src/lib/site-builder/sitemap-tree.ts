@@ -30,6 +30,36 @@ export function normalizePageSlug(input: string): string {
   return "/" + segments.join("/");
 }
 
+/** Literal parent path of a slug — its path minus the last segment, "" when
+ *  the page is top-level. (Distinct from `getParentSlug`, which finds the
+ *  nearest EXISTING ancestor; this is purely structural.) */
+export function parentPathOf(slug: string): string {
+  const parts = (slug ?? "").split("/").filter(Boolean);
+  if (parts.length <= 1) return "";
+  return "/" + parts.slice(0, -1).join("/");
+}
+
+/** Build a page slug from its parent path and a human title:
+ *  ("/services", "Climatisation Réversible") → "/services/climatisation-reversible". */
+export function deriveSlugFromTitle(parentPath: string, title: string): string {
+  const parent = parentPath && parentPath !== "/" ? parentPath : "";
+  return normalizePageSlug(parent + "/" + (title ?? ""));
+}
+
+/** True when `slug` still looks auto-derived from `title` under its current
+ *  parent — i.e. the user hasn't manually customised it. Tolerates a trailing
+ *  `-N` uniqueness suffix added at creation. Drives the "auto-adapt the path
+ *  from the name, unless edited by hand" behaviour. */
+export function isSlugAutoDerived(slug: string, title: string): boolean {
+  if (!slug || slug === "/") return false;
+  const expected = deriveSlugFromTitle(parentPathOf(slug), title);
+  if (slug === expected) return true;
+  if (slug.startsWith(expected + "-")) {
+    return /^\d+$/.test(slug.slice(expected.length + 1));
+  }
+  return false;
+}
+
 /** The slug of the nearest ancestor page that actually exists, or null when
  *  the page is top-level (its parent is the site root node). */
 export function getParentSlug(slug: string, existingSlugs: Set<string>): string | null {

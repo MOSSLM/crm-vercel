@@ -56,6 +56,20 @@ export const GET = withAuth({}, async ({ req }) => {
 
   const supabase = getServiceClient();
 
+  // Effective lead-magnet project: the explicit ?project param, else the
+  // enterprise's own project — so reviews (lead_magnet_reviews) show in the
+  // editor preview even before the site is explicitly linked to a project.
+  let effectiveProjectId = projectId;
+  if (!effectiveProjectId) {
+    const { data: proj } = await supabase
+      .from("lead_magnet_projects")
+      .select("id")
+      .eq("entreprise_id", enterpriseId)
+      .limit(1)
+      .maybeSingle();
+    effectiveProjectId = (proj as { id?: string } | null)?.id ?? null;
+  }
+
   const [entResult, projectResult, reviewsResult, siteResult] = await Promise.all([
     supabase
       .from("entreprises")
@@ -67,22 +81,22 @@ export const GET = withAuth({}, async ({ req }) => {
       .eq("id", enterpriseId)
       .single(),
 
-    projectId
+    effectiveProjectId
       ? supabase
           .from("lead_magnet_projects")
           .select(
             "override_entreprise_name, override_city, override_location, " +
             "override_phone, override_email, override_address, variables"
           )
-          .eq("id", projectId)
+          .eq("id", effectiveProjectId)
           .single()
       : Promise.resolve({ data: null, error: null }),
 
-    projectId
+    effectiveProjectId
       ? supabase
           .from("lead_magnet_reviews")
           .select("author_name, review_text, rating")
-          .eq("lead_magnet_project_id", projectId)
+          .eq("lead_magnet_project_id", effectiveProjectId)
           .eq("is_active", true)
           .order("display_order", { ascending: true })
       : Promise.resolve({ data: null, error: null }),

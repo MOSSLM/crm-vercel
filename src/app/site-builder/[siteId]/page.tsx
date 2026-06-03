@@ -52,7 +52,7 @@ export default function SiteBuilderV2Page() {
     );
   }
 
-  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus }; lead_magnet_project_id?: string; published_at?: string | null };
+  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus; faviconUrl?: string }; lead_magnet_project_id?: string; published_at?: string | null };
 
   return (
     <RelumeEditor
@@ -68,6 +68,7 @@ export default function SiteBuilderV2Page() {
       initialStyleGuide={siteExtra.style_guide ?? undefined}
       initialSitemap={siteExtra.sitemap ?? undefined}
       initialMenus={siteExtra.site_config?.menus ?? undefined}
+      initialFaviconUrl={siteExtra.site_config?.faviconUrl ?? null}
     />
   );
 }

@@ -1409,6 +1409,9 @@ export interface RelumeBuilderState {
   isDirty: boolean;
   history: RelumeHistoryEntry[];
   historyIndex: number;
+  /** Favicon URL stored in site_config.faviconUrl; persisted with menus so it
+   *  survives autosave and snapshots into published_site_config at publish. */
+  faviconUrl?: string | null;
   /** Resolved enterprise variables for template substitution, e.g. { "entreprise.nom": "Acme" } */
   variableContext: Record<string, string>;
   /**
@@ -1429,7 +1432,8 @@ export interface RelumeHistoryEntry {
 }
 
 export type RelumeBuilderAction =
-  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[]; menus?: SiteMenus; isDirty?: boolean } }
+  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[]; menus?: SiteMenus; faviconUrl?: string | null; isDirty?: boolean } }
+  | { type: 'SET_FAVICON_URL'; payload: string | null }
   | { type: 'SET_ACTIVE_PAGE'; payload: string }
   | { type: 'SET_DEVICE_VIEW'; payload: 'desktop' | 'tablet' | 'mobile' }
   | { type: 'SET_WORKSPACE'; payload: WorkspaceId }

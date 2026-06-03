@@ -48,12 +48,17 @@ function eq<T>(a: T, b: T): boolean {
 // ── Editor context — tags, siteId and variables for the field editors ──────
 interface ContentEditorCtx {
   enterpriseTags: string[];
+  /** enterpriseTags ∪ global catalog — every tag the editor may ASSIGN to a
+   *  block/section/page, so a template can be built before any company is
+   *  linked. Render-time filtering still keys off enterpriseTags only. */
+  assignableTags: string[];
   activeTags: string[];
   siteId: string;
   variables: Record<string, string>;
 }
 const ContentTagsCtx = React.createContext<ContentEditorCtx>({
   enterpriseTags: [],
+  assignableTags: [],
   activeTags: [],
   siteId: "",
   variables: {},
@@ -68,12 +73,20 @@ const useContentTags = () => React.useContext(ContentTagsCtx);
  * inspector handles service tags. All tags come from the site's linked
  * enterprise (`service_tags`), not the system-wide list.
  */
-export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | undefined }) {
+export function ContentWorkspace({ enterpriseId, tagCatalog = [] }: { enterpriseId: number | undefined; tagCatalog?: string[] }) {
   const { state, dispatch } = useRelumeBuilder();
 
   // ── Enterprise service tags ───────────────────────────────────────────────
   const tagsRaw = state.variableContext.__service_tags;
   const enterpriseTags = React.useMemo(() => parseServiceTags({ __service_tags: tagsRaw ?? "" }), [tagsRaw]);
+
+  // Every tag assignable while building (enterprise tags + global catalogue),
+  // so a template can be prepared with all eventual services even with no
+  // company linked. Filtering at render time still uses enterpriseTags only.
+  const assignableTags = React.useMemo(
+    () => Array.from(new Set([...enterpriseTags, ...tagCatalog])).sort((a, b) => a.localeCompare(b, "fr")),
+    [enterpriseTags, tagCatalog],
+  );
 
   // Simulation: a subset of the enterprise tags toggled for preview. null = all.
   const [simulatedTags, setSimulatedTags] = React.useState<string[] | null>(null);
@@ -186,7 +199,7 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
 
   return (
     <ContentTagsCtx.Provider
-      value={{ enterpriseTags, activeTags, siteId: state.siteId, variables: displayVariables }}
+      value={{ enterpriseTags, assignableTags, activeTags, siteId: state.siteId, variables: displayVariables }}
     >
       <div className="ct-grid">
         {/* ───────── Left pane ───────── */}
@@ -279,24 +292,26 @@ export function ContentWorkspace({ enterpriseId }: { enterpriseId: number | unde
                 <span>Services de l&apos;entreprise</span>
               </div>
               <div style={{ padding: "4px 12px 12px" }}>
-                {enterpriseTags.length === 0 ? (
+                {assignableTags.length === 0 ? (
                   <p style={{ fontSize: 11, color: "var(--text-4)", lineHeight: 1.5, margin: 0 }}>
-                    Aucun service tag sur l&apos;entreprise liée. Renseignez la colonne
+                    Aucun service tag disponible. Renseignez la colonne
                     {" "}<code style={{ fontFamily: "var(--font-mono)", fontSize: 10 }}>service_tags</code>{" "}
-                    de la fiche entreprise.
+                    d&apos;une entreprise.
                   </p>
                 ) : (
                   <>
                     <p style={{ fontSize: 10.5, color: "var(--text-3)", lineHeight: 1.5, margin: "0 0 8px" }}>
-                      Désactivez un service pour prévisualiser le site sans lui.
+                      Activez/désactivez un service pour prévisualiser le site avec lui. Les services
+                      hors entreprise liée servent à préparer un template.
                     </p>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                      {enterpriseTags.map((t) => (
+                      {assignableTags.map((t) => (
                         <button
                           key={t}
                           className="ct-tag-chip"
                           aria-pressed={activeTags.includes(t)}
-                          data-real="true"
+                          data-real={enterpriseTags.includes(t) ? "true" : "false"}
+                          title={enterpriseTags.includes(t) ? "Service de l'entreprise liée" : "Service du catalogue (template)"}
                           onClick={() => toggleSimTag(t)}
                         >
                           {t}
@@ -831,7 +846,7 @@ function TagControl({
 }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef<HTMLSpanElement>(null);
-  const { enterpriseTags } = useContentTags();
+  const { assignableTags } = useContentTags();
 
   React.useEffect(() => {
     if (!open) return;
@@ -850,12 +865,12 @@ function TagControl({
       {open && (
         <div className="ct-tag-pop" style={{ top: "calc(100% + 4px)", right: 0 }}>
           <div className="ct-pop-hd">Filtrer {scope === "section" ? "la section" : "le bloc"} par service</div>
-          {enterpriseTags.length === 0 && (
+          {assignableTags.length === 0 && (
             <div style={{ fontSize: 11, color: "var(--text-4)", padding: "4px 6px" }}>
-              Aucun service sur l&apos;entreprise.
+              Aucun service tag disponible.
             </div>
           )}
-          {enterpriseTags.map((t) => (
+          {assignableTags.map((t) => (
             <button
               key={t}
               className="ct-pop-item"
@@ -887,7 +902,7 @@ function ContentInspector({
   blockId: string | null;
 }) {
   const { dispatch } = useRelumeBuilder();
-  const { enterpriseTags, activeTags } = useContentTags();
+  const { enterpriseTags, assignableTags, activeTags } = useContentTags();
 
   if (!instance) {
     return (
@@ -957,9 +972,9 @@ function ContentInspector({
                   <strong style={{ color: "var(--text)" }}>{bTag ?? "—"}</strong> et est généré
                   automatiquement.
                 </p>
-              ) : enterpriseTags.length === 0 ? (
+              ) : assignableTags.length === 0 ? (
                 <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-4)" }}>
-                  Aucun service sur l&apos;entreprise.
+                  Aucun service tag disponible.
                 </p>
               ) : (
                 <>
@@ -967,12 +982,13 @@ function ContentInspector({
                     Ce bloc ne s&apos;affiche que si l&apos;entreprise possède le service sélectionné.
                   </p>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                    {enterpriseTags.map((t) => (
+                    {assignableTags.map((t) => (
                       <button
                         key={t}
                         className="ct-tag-chip"
                         aria-pressed={bTag === t}
-                        data-real="true"
+                        data-real={enterpriseTags.includes(t) ? "true" : "false"}
+                        title={enterpriseTags.includes(t) ? "Service de l'entreprise liée" : "Service du catalogue (template)"}
                         onClick={() =>
                           dispatch({ type: "UPDATE_BLOCK_TAG", payload: { instanceId: instance.id, blockId, service_tag: bTag === t ? null : t } })
                         }
@@ -1028,9 +1044,9 @@ function ContentInspector({
 
           <div className="insp-section">
             <div className="insp-section-hd">Tag de section</div>
-            {enterpriseTags.length === 0 ? (
+            {assignableTags.length === 0 ? (
               <p style={{ margin: 0, fontSize: 11.5, color: "var(--text-4)" }}>
-                Aucun service sur l&apos;entreprise liée.
+                Aucun service tag disponible.
               </p>
             ) : (
               <>
@@ -1038,12 +1054,13 @@ function ContentInspector({
                   Toute la section sera masquée si l&apos;entreprise n&apos;a pas ce service.
                 </p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                  {enterpriseTags.map((t) => (
+                  {assignableTags.map((t) => (
                     <button
                       key={t}
                       className="ct-tag-chip"
                       aria-pressed={sectionTagVal === t}
-                      data-real="true"
+                      data-real={enterpriseTags.includes(t) ? "true" : "false"}
+                      title={enterpriseTags.includes(t) ? "Service de l'entreprise liée" : "Service du catalogue (template)"}
                       onClick={() =>
                         dispatch({
                           type: "UPDATE_INSTANCE_CONTENT",

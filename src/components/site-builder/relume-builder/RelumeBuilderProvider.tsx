@@ -113,6 +113,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         activePage: firstPage,
         selectedInstanceId: null,
         selectedSnippetId: null,
+        faviconUrl: action.payload.faviconUrl ?? state.faviconUrl ?? null,
         isDirty: action.payload.isDirty ?? false,
         history: [],
         historyIndex: -1,
@@ -470,7 +471,13 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
       const srcPage = state.sitemap.find((p) => p.id === action.payload);
       if (!srcPage) return state;
       const newId = nanoid();
-      const newSlug = srcPage.slug === "/" ? `/copy-${newId.slice(0, 6)}` : `${srcPage.slug}-copy`;
+      // Unique slug for the copy (avoid two "-copy" pages colliding in the
+      // slug-derived hierarchy and in RENAME_PAGE_SLUG's collision guard).
+      const taken = new Set(state.sitemap.map((p) => p.slug));
+      const base = srcPage.slug === "/" ? "/copy" : `${srcPage.slug}-copy`;
+      let newSlug = normalizePageSlug(base);
+      let n = 2;
+      while (taken.has(newSlug)) newSlug = normalizePageSlug(`${base}-${n++}`);
       const newPage = { ...srcPage, id: newId, slug: newSlug, title: `${srcPage.title} (copie)` };
       const srcInstances = state.instancesByPage[srcPage.slug] ?? [];
       const newInstances = { ...state.instances };
@@ -483,8 +490,12 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
           ...src,
           id: newInstId,
           page_slug: newSlug,
-          // Deep-clone blocks with fresh ids so edits to the copy don't bleed back.
-          blocks: src.blocks.map((b) => ({ id: nanoid(), type: b.type, settings: { ...b.settings }, service_tag: b.service_tag })),
+          // Deep-clone everything (content incl. __overrides, custom_style and
+          // each block's settings) with fresh block ids so the copy is fully
+          // independent — edits to the copy never bleed back to the source.
+          content: structuredClone(src.content),
+          custom_style: src.custom_style ? structuredClone(src.custom_style) : src.custom_style,
+          blocks: src.blocks.map((b) => ({ id: nanoid(), type: b.type, settings: structuredClone(b.settings), service_tag: b.service_tag })),
         };
         newIds.push(newInstId);
       }
@@ -630,6 +641,9 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     case "SET_VARIABLE_CONTEXT":
       return { ...state, variableContext: action.payload };
 
+    case "SET_FAVICON_URL":
+      return { ...state, faviconUrl: action.payload, isDirty: true };
+
     default:
       return state;
   }
@@ -688,6 +702,7 @@ const initialState: RelumeBuilderState = {
   isDirty: false,
   history: [],
   historyIndex: -1,
+  faviconUrl: null,
   variableContext: {},
   previewReplace: null,
 };

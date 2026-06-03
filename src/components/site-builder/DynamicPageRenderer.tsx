@@ -456,8 +456,14 @@ function DynamicSectionPublic({ instance, sectionDef, guide, variables = {}, rev
     ...(instance.custom_style as React.CSSProperties ?? {}),
   };
 
+  // Section-level gap override: a `gap` set in custom_style targets the inner
+  // flex/grid wrapper (not the <section>), so a section can relax a too-tight
+  // forced gap without touching the global style guide. Additive — falls back
+  // to the section's own layout gap.
+  const customGap = (instance.custom_style as Record<string, unknown> | undefined)?.gap;
   const innerStyle: React.CSSProperties = {
     ...layoutStyle,
+    ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
     maxWidth: guide.spacing.maxContentWidth,
     margin: "0 auto",
     width: "100%",

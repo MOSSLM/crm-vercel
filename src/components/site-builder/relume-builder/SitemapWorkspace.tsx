@@ -10,7 +10,7 @@ import { toast } from "sonner";
 import type { SiteSectionDef, SitemapPage, SitemapSection } from "@/types";
 import { useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
-import { buildSitemapTree, normalizePageSlug } from "@/lib/site-builder/sitemap-tree";
+import { buildSitemapTree, normalizePageSlug, deriveSlugFromTitle, isSlugAutoDerived, parentPathOf } from "@/lib/site-builder/sitemap-tree";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { AlertSoft, Btn, Pane, PaneBody, PaneHeader, Pill, Pop } from "./skin-primitives";
@@ -150,14 +150,23 @@ interface SitemapWorkspaceProps {
   siteId: string;
   enterpriseId?: number;
   availableSections: SiteSectionDef[];
+  /** Global authorized service-tag catalogue, so service pages can be prepared
+   *  in advance even before a company is linked. */
+  tagCatalog?: string[];
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: SitemapWorkspaceProps) {
+export function SitemapWorkspace({ siteId, enterpriseId, availableSections, tagCatalog = [] }: SitemapWorkspaceProps) {
   const { state, dispatch } = useRelumeBuilder();
   const canvas = useCanvasPanZoom();
-  const serviceTags = parseServiceTags(state.variableContext);
+  const enterpriseServiceTags = parseServiceTags(state.variableContext);
+  // Enterprise tags + global catalogue: lets you assign a service tag to a page
+  // up front. Render-time visibility still depends on the linked enterprise.
+  const serviceTags = React.useMemo(
+    () => Array.from(new Set([...enterpriseServiceTags, ...tagCatalog])).sort((a, b) => a.localeCompare(b, "fr")),
+    [enterpriseServiceTags, tagCatalog],
+  );
   const [aiInput, setAiInput] = React.useState("");
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiStep, setAiStep] = React.useState<"idle" | "generating" | "done" | "error">("idle");
@@ -322,20 +331,42 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
     }
   };
 
+  /** Slug derived from a parent path + title, made unique against the sitemap. */
+  const uniqueSlug = (parentPath: string, title: string) => {
+    const taken = new Set(state.sitemap.map((p) => p.slug));
+    const wanted = deriveSlugFromTitle(parentPath, title);
+    let slug = wanted;
+    let n = 2;
+    while (taken.has(slug)) slug = `${wanted}-${n++}`;
+    return slug;
+  };
+
   const addPage = () => {
     const id = nanoid();
-    const slug = `/page-${Date.now()}`;
-    dispatch({ type: "ADD_PAGE", payload: { id, slug, title: "Nouvelle page", sections: [] } });
+    const title = "Nouvelle page";
+    dispatch({ type: "ADD_PAGE", payload: { id, slug: uniqueSlug("", title), title, sections: [] } });
   };
 
   const addSubPage = (parent: SitemapPage) => {
     const id = nanoid();
-    const base = `${parent.slug === "/" ? "" : parent.slug}/sous-page`;
-    const taken = new Set(state.sitemap.map((p) => p.slug));
-    let slug = normalizePageSlug(base);
-    let n = 2;
-    while (taken.has(slug)) slug = normalizePageSlug(`${base}-${n++}`);
-    dispatch({ type: "ADD_PAGE", payload: { id, slug, title: "Nouvelle sous-page", sections: [] } });
+    const title = "Nouvelle sous-page";
+    dispatch({ type: "ADD_PAGE", payload: { id, slug: uniqueSlug(parent.slug, title), title, sections: [] } });
+  };
+
+  /** Commit a page title rename and, when the slug is still auto-derived (not
+   *  manually customised), re-derive the path from the new name + parent path.
+   *  RENAME_PAGE_SLUG cascades to descendants, instances and menus. */
+  const commitTitle = (page: SitemapPage, rawTitle: string) => {
+    const title = rawTitle.trim();
+    setEditingPageId(null);
+    if (!title || title === page.title) return;
+    dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { title } } });
+    if (page.slug !== "/" && isSlugAutoDerived(page.slug, page.title)) {
+      const nextSlug = deriveSlugFromTitle(parentPathOf(page.slug), title);
+      if (nextSlug !== page.slug) {
+        dispatch({ type: "RENAME_PAGE_SLUG", payload: { id: page.id, slug: nextSlug } });
+      }
+    }
   };
 
   const removePage = (id: string) => {
@@ -625,15 +656,9 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections }: Si
                       autoFocus
                       value={editingTitle}
                       onChange={(e) => setEditingTitle(e.target.value)}
-                      onBlur={() => {
-                        if (editingTitle.trim()) dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { title: editingTitle.trim() } } });
-                        setEditingPageId(null);
-                      }}
+                      onBlur={() => commitTitle(page, editingTitle)}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          if (editingTitle.trim()) dispatch({ type: "UPDATE_PAGE", payload: { id: page.id, data: { title: editingTitle.trim() } } });
-                          setEditingPageId(null);
-                        }
+                        if (e.key === "Enter") commitTitle(page, editingTitle);
                         if (e.key === "Escape") setEditingPageId(null);
                       }}
                       onClick={(e) => e.stopPropagation()}
