@@ -39,8 +39,8 @@ describe('RequireAuth', () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  it('renders children when authenticated', () => {
-    mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false });
+  it('renders children for an authenticated admin', () => {
+    mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false, user: { role: 'admin' } });
     render(
       <RequireAuth>
         <Child />
@@ -48,6 +48,17 @@ describe('RequireAuth', () => {
     );
     expect(screen.getByTestId('child')).toBeInTheDocument();
     expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('redirects a freelance to the agent portal', async () => {
+    mockUseAuth.mockReturnValue({ isAuthenticated: true, loading: false, user: { role: 'freelance' } });
+    render(
+      <RequireAuth>
+        <Child />
+      </RequireAuth>,
+    );
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/espace-agent/dashboard'));
+    expect(screen.queryByTestId('child')).not.toBeInTheDocument();
   });
 
   it('redirects to /login with the encoded next path when unauthenticated', async () => {

@@ -7,8 +7,9 @@ import AppLoading from "@/components/AppLoading";
 
 /**
  * Gate the admin CRM. Renders nothing until we know for sure the connected
- * user is admin or freelance — preventing the briefly-visible admin shell
- * that used to leak while the user_profiles SELECT was still in flight.
+ * user is an admin — preventing the briefly-visible admin shell that used to
+ * leak while the user_profiles SELECT was still in flight. Freelance agents
+ * now have their own portal (/espace-agent) and are bounced there.
  */
 export default function RequireAuth({ children }: PropsWithChildren) {
   const { isAuthenticated, loading, user } = useAuth();
@@ -21,9 +22,13 @@ export default function RequireAuth({ children }: PropsWithChildren) {
       router.replace(`/login?next=${encodeURIComponent(pathname)}`);
       return;
     }
-    // Only staff can sit on /dashboard. Anything else gets bounced.
+    // Only admins can sit on /dashboard. Anything else gets bounced.
     if (user?.role === "client") {
       router.replace("/espace-client/dashboard");
+      return;
+    }
+    if (user?.role === "freelance") {
+      router.replace("/espace-agent/dashboard");
       return;
     }
     if (user?.role === "unknown") {
@@ -35,7 +40,7 @@ export default function RequireAuth({ children }: PropsWithChildren) {
 
   if (loading) return <AppLoading />;
   if (!isAuthenticated) return null;
-  if (user?.role !== "admin" && user?.role !== "freelance") return null;
+  if (user?.role !== "admin") return null;
 
   return <>{children}</>;
 }

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthContext";
+import { roleHome } from "@/lib/roleHome";
 import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,13 +21,14 @@ export const LoginPage: React.FC = () => {
 
   const { login, isAuthenticated, loading, user, logout } = useAuth();
 
-  // Default-deny: only staff reach the CRM. A resolved client goes to the
-  // portal. An 'unknown' role means a stale/invalid session — never redirect
-  // it (that loops with the portal guard); we sign it out instead.
+  // Default-deny: each role lands on its own portal (see roleHome). An admin or
+  // freelance may honor a `next` param toward their own space; a client always
+  // goes to the client portal. An 'unknown' role means a stale/invalid session
+  // — never redirect it (that loops with the portal guard); we sign it out.
   const targetForUser = (): string => {
-    const isStaff = user?.role === "admin" || user?.role === "freelance";
-    if (isStaff) return nextParam ?? "/dashboard";
-    return "/espace-client/dashboard";
+    const home = roleHome(user?.role);
+    if (user?.role === "admin" || user?.role === "freelance") return nextParam ?? home;
+    return home;
   };
 
   const [email, setEmail] = useState("");
@@ -41,9 +43,9 @@ export const LoginPage: React.FC = () => {
     if (loading || !isAuthenticated) return;
     const role = user?.role;
     if (role === "admin" || role === "freelance") {
-      router.replace(nextParam ?? "/dashboard");
+      router.replace(nextParam ?? roleHome(role));
     } else if (role === "client") {
-      router.replace("/espace-client/dashboard");
+      router.replace(roleHome(role));
     } else {
       // Unknown role on a live session → clear it so the user can log in fresh.
       void logout();
