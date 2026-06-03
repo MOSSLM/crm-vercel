@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/AuthContext";
-import { roleHome } from "@/lib/roleHome";
+import { roleHome, type AppRole } from "@/lib/roleHome";
 import { createClient } from "@/utils/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,11 +25,17 @@ export const LoginPage: React.FC = () => {
   // freelance may honor a `next` param toward their own space; a client always
   // goes to the client portal. An 'unknown' role means a stale/invalid session
   // — never redirect it (that loops with the portal guard); we sign it out.
-  const targetForUser = (): string => {
-    const home = roleHome(user?.role);
-    if (user?.role === "admin" || user?.role === "freelance") return nextParam ?? home;
-    return home;
+  // Honor a `next` only when it points inside the user's own portal. Admins own
+  // the whole CRM, so any next is fine; a freelance/client may only deep-link
+  // within their portal — never into the admin CRM.
+  const safeTarget = (role?: AppRole | null): string => {
+    const home = roleHome(role);
+    if (!nextParam) return home;
+    if (role === "admin") return nextParam;
+    const prefix = role === "freelance" ? "/espace-agent" : role === "client" ? "/espace-client" : null;
+    return prefix && nextParam.startsWith(prefix) ? nextParam : home;
   };
+  const targetForUser = (): string => safeTarget(user?.role);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,10 +48,8 @@ export const LoginPage: React.FC = () => {
   useEffect(() => {
     if (loading || !isAuthenticated) return;
     const role = user?.role;
-    if (role === "admin" || role === "freelance") {
-      router.replace(nextParam ?? roleHome(role));
-    } else if (role === "client") {
-      router.replace(roleHome(role));
+    if (role === "admin" || role === "freelance" || role === "client") {
+      router.replace(safeTarget(role));
     } else {
       // Unknown role on a live session → clear it so the user can log in fresh.
       void logout();

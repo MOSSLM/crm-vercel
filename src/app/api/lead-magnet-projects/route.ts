@@ -6,7 +6,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-export const GET = withAuth({}, async ({ cors }) => {
+export const GET = withAuth({ role: "admin" },async ({ cors }) => {
   const { data, error } = await getServiceClient()
     .from("lead_magnet_projects")
     .select("opportunite_id, statut, pret_pour_lm")

@@ -25,6 +25,7 @@ import {
   Globe,
   Palette,
   Phone,
+  UserCheck,
 } from "lucide-react";
 
 export type TopCategoryKey =
@@ -57,6 +58,7 @@ export const CRM_ITEMS: NavItem[] = [
   { title: "Entreprises", icon: Building, href: "/companies" },
   { title: "Contacts", icon: Users, href: "/contacts" },
   { title: "Clients", icon: Users, href: "/clients" },
+  { title: "Agents", icon: UserCheck, href: "/agents" },
   { title: "Opportunités", icon: Target, href: "/opportunities" },
   { title: "Pipeline", icon: GitBranch, href: "/pipeline" },
 ];
@@ -103,6 +105,7 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
   if (
     pathname.startsWith("/companies") ||
     pathname.startsWith("/contacts") ||
+    pathname.startsWith("/agents") ||
     pathname.startsWith("/opportunities") ||
     pathname.startsWith("/pipeline") ||
     pathname.startsWith("/offres")

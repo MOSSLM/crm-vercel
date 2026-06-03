@@ -6,7 +6,7 @@ import { SEED_FORM } from '@/lib/form-builder/seed-form';
 
 export const dynamic = 'force-dynamic';
 
-export const GET = withAuth({}, async ({ req }) => {
+export const GET = withAuth({ role: "admin" },async ({ req }) => {
   const supabase = getServiceClient();
   const url = new URL(req.url);
   const tagsParam = url.searchParams.get('tags');
@@ -34,7 +34,7 @@ export const GET = withAuth({}, async ({ req }) => {
   return json(forms);
 });
 
-export const POST = withAuth({}, async ({ req }) => {
+export const POST = withAuth({ role: "admin" },async ({ req }) => {
   const supabase = getServiceClient();
   let body: {
     name?: string;

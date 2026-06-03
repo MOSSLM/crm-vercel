@@ -6,24 +6,29 @@ import { preflight } from "@/app/api/_lib/cors";
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-// Démarchage queue: the prospecting tasks assigned to this agent, joined with
-// their contact and company.
+// Démarchage queue: the pending cold-call tasks for the prospects this agent
+// owns. Automated channels (email / WhatsApp sequences) are run centrally by
+// the admin — the agent's manual step is the call. Scoped by the company's
+// owner_id (not assignee_id) so it works for both admin-seeded and
+// sequence-generated call tasks on the agent's prospects.
 export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   const { data, error } = await getServiceClient()
     .from("prospection_tasks")
     .select(
-      "id, kind, status, title, priority, due_at, notes, contact_id, entreprise_id, opportunite_id, " +
+      "id, kind, status, title, due_at, contact_id, entreprise_id, opportunite_id, " +
         "contact:contacts(id, first_name, last_name, tel, email), " +
-        "entreprise:entreprises(id, name, ville, telephone)",
+        "entreprise:entreprises!inner(id, name, ville, telephone, owner_id)",
     )
-    .eq("assignee_id", user.id)
-    .order("due_at", { ascending: true, nullsFirst: false });
+    .eq("entreprise.owner_id", user.id)
+    .eq("status", "pending")
+    .eq("kind", "call")
+    .order("due_at", { ascending: true });
 
   if (error) return jsonError(error.message, 500, {}, cors);
   return json(data ?? [], { headers: cors });
 });
 
-// Mark a task done/skipped and optionally advance the linked opportunity stage.
+// Mark a task done/snoozed and optionally advance the linked opportunity stage.
 export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors }) => {
   let body: Record<string, unknown>;
   try {
@@ -41,7 +46,6 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
     .from("prospection_tasks")
     .update({ status })
     .eq("id", id)
-    .eq("assignee_id", user.id)
     .select("id, status")
     .maybeSingle();
 

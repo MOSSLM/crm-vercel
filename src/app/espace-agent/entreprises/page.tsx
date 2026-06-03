@@ -72,11 +72,12 @@ export default function AgentEntreprisesPage() {
   const [pool, setPool] = useState<Entreprise[]>([]);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState<number | null>(null);
+  const [requested, setRequested] = useState<Set<number>>(new Set());
 
   const load = useCallback(async () => {
     if (!user?.id) return;
     const supabase = createClient();
-    const [ownedRes, poolRes] = await Promise.all([
+    const [ownedRes, poolRes, reqRes] = await Promise.all([
       supabase.from("entreprises").select(SELECT).eq("owner_id", user.id).order("name"),
       supabase
         .from("entreprises")
@@ -85,9 +86,16 @@ export default function AgentEntreprisesPage() {
         .eq("qualifie", true)
         .order("note_moyenne", { ascending: false, nullsFirst: false })
         .limit(60),
+      supabase
+        .from("prospect_claim_requests")
+        .select("entreprise_id")
+        .eq("agent_id", user.id)
+        .eq("status", "pending"),
     ]);
     if (ownedRes.data) setOwned(ownedRes.data as Entreprise[]);
     if (poolRes.data) setPool(poolRes.data as Entreprise[]);
+    if (reqRes.data)
+      setRequested(new Set((reqRes.data as { entreprise_id: number }[]).map((r) => r.entreprise_id)));
     setLoading(false);
   }, [user?.id]);
 
@@ -104,14 +112,14 @@ export default function AgentEntreprisesPage() {
         body: JSON.stringify({ entreprise_id: id }),
       });
       if (res.status === 409) {
-        toast.error("Ce prospect vient d'être réclamé par un autre agent.");
+        toast.error("Ce prospect a déjà été attribué.");
       } else if (!res.ok) {
-        toast.error("Impossible de réclamer ce prospect.");
+        toast.error("Impossible d'envoyer la demande.");
       } else {
-        toast.success("Prospect ajouté à ton pipeline.");
+        toast.success("Demande envoyée à l'administrateur.");
       }
     } catch {
-      toast.error("Impossible de réclamer ce prospect.");
+      toast.error("Impossible d'envoyer la demande.");
     } finally {
       setClaiming(null);
       await load();
@@ -138,7 +146,8 @@ export default function AgentEntreprisesPage() {
             {owned.length === 0 ? (
               <Card>
                 <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                  Aucun prospect pour l&apos;instant. Réclame une entreprise du pool ci-dessous.
+                  Aucun prospect pour l&apos;instant. Demande une entreprise du pool ci-dessous,
+                  l&apos;admin validera.
                 </CardContent>
               </Card>
             ) : (
@@ -162,7 +171,7 @@ export default function AgentEntreprisesPage() {
 
           <section className="space-y-3">
             <h2 className="text-lg font-semibold">
-              Pool à réclamer <span className="text-muted-foreground">({pool.length})</span>
+              Pool commun <span className="text-muted-foreground">({pool.length})</span>
             </h2>
             {pool.length === 0 ? (
               <Card>
@@ -177,14 +186,20 @@ export default function AgentEntreprisesPage() {
                     key={e.id}
                     e={e}
                     action={
-                      <Button
-                        size="sm"
-                        onClick={() => claim(e.id)}
-                        disabled={claiming === e.id}
-                      >
-                        <Plus className="mr-1 h-4 w-4" />
-                        {claiming === e.id ? "…" : "Réclamer"}
-                      </Button>
+                      requested.has(e.id) ? (
+                        <Badge variant="outline" className="text-xs">
+                          Demande envoyée
+                        </Badge>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => claim(e.id)}
+                          disabled={claiming === e.id}
+                        >
+                          <Plus className="mr-1 h-4 w-4" />
+                          {claiming === e.id ? "…" : "Demander"}
+                        </Button>
+                      )
                     }
                   />
                 ))}

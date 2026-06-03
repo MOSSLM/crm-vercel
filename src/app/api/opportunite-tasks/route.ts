@@ -6,7 +6,7 @@ import { preflight } from "@/app/api/_lib/cors";
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-export const GET = withAuth({}, async ({ req, cors }) => {
+export const GET = withAuth({ role: "admin" },async ({ req, cors }) => {
   const url = new URL(req.url);
   const opportuniteId = url.searchParams.get("opportunite_id");
   const statut = url.searchParams.get("statut");
@@ -24,7 +24,7 @@ export const GET = withAuth({}, async ({ req, cors }) => {
   return json(data, { headers: cors });
 });
 
-export const POST = withAuth({}, async ({ req, cors }) => {
+export const POST = withAuth({ role: "admin" },async ({ req, cors }) => {
   let body: Record<string, unknown>;
   try {
     body = await req.json();
