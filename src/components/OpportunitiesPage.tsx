@@ -13,18 +13,13 @@ import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { 
-  Search, 
-  Filter, 
-  Calendar, 
-  DollarSign, 
-  ArrowUp, 
-  ArrowDown, 
+import {
+  Search,
+  ArrowUp,
+  ArrowDown,
   Minus,
   Edit,
   Target,
-  Clock,
-  AlertCircle,
   MessageSquare,
   Plus,
   LayoutGrid,
@@ -33,8 +28,17 @@ import {
   Columns3,
   Globe,
   Phone,
+  Mail,
+  Linkedin,
   Loader2,
   Monitor,
+  Zap,
+  FileText,
+  Check,
+  AlertCircle,
+  ArrowRight,
+  X,
+  Send,
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -55,7 +59,6 @@ import { EnrichmentProgressModal, type EnrichmentLogEntry } from './EnrichmentPr
 import { createNotification } from '../utils/notificationsApi';
 import { LeadMagnetQuickViewModal } from './LeadMagnetQuickViewModal';
 import { useRouter } from 'next/navigation';
-import { ClipboardList } from 'lucide-react';
 
 const OPPORTUNITY_FLAGS = [
   { value: 'site_merdique', label: 'Site merdique / inutilisable' },
@@ -93,18 +96,18 @@ interface KanbanDragItem {
 export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprintModule = false }) => {
   const router = useRouter();
   const supabase = createClient();
-  const { 
-    opportunities, 
+  const {
+    opportunities,
     pipelines,
-    pipelineStages, 
-    updateOpportunity, 
+    pipelineStages,
+    updateOpportunity,
     addOpportunityNote,
     toggleLeadMagnet,
     companies,
     addPipeline,
     refreshData,
   } = useAppData();
-  
+
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('all');
   const [pipelineFilter, setPipelineFilter] = useState('all');
@@ -203,6 +206,20 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     return new Date(dateString).toLocaleDateString('fr-FR');
   };
 
+  const formatRelativeDate = (dateString?: string) => {
+    if (!dateString) return '';
+    const then = new Date(dateString).getTime();
+    if (Number.isNaN(then)) return '';
+    const diffMs = Date.now() - then;
+    const diffH = Math.floor(diffMs / (1000 * 60 * 60));
+    if (diffH < 1) return "à l'instant";
+    if (diffH < 24) return `il y a ${diffH}h`;
+    const diffD = Math.floor(diffH / 24);
+    if (diffD === 1) return 'hier';
+    if (diffD < 30) return `il y a ${diffD}j`;
+    return formatDate(dateString);
+  };
+
   const getPriorityIcon = (priority?: string) => {
     switch (priority) {
       case 'haute': return <ArrowUp className="h-3 w-3 text-red-500" />;
@@ -226,6 +243,12 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     return stage || { nom: 'Inconnu', id: 0, ordre: 0, visible: true, pipeline_id: '' };
   };
 
+  const getLmStatusClass = (opportunityId: string): 'draft' | 'framer' | 'ready' | 'failed' => {
+    const s = lmProjectStatuts.get(opportunityId);
+    if (s === 'framer' || s === 'ready' || s === 'failed') return s;
+    return 'draft';
+  };
+
   const handleEditOpportunity = (opportunity: Opportunity) => {
     setEditingOpportunity({ ...opportunity });
     setSelectedOpportunity(null);
@@ -235,14 +258,14 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     if (editingOpportunity) {
       try {
         await updateOpportunity(editingOpportunity.id, editingOpportunity);
-        
+
         // Récupérer le nom d'affichage pour la notification
         const associatedCompany = companies.find(c => c.id === editingOpportunity.entreprise_id);
         const displayName = getCompanyDisplayName(
-          editingOpportunity.companyName, 
+          editingOpportunity.companyName,
           associatedCompany?.canonical_url
         );
-        
+
         toast.success(`Opportunité ${displayName} mise à jour`);
         setEditingOpportunity(null);
       } catch (error) {
@@ -261,16 +284,16 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
           contenu: noteContent.trim()
         });
         setNoteContent('');
-        
+
         // Récupérer le nom d'affichage pour la notification
         const associatedCompany = companies.find(c => c.id === selectedOpportunity.entreprise_id);
         const displayName = getCompanyDisplayName(
-          selectedOpportunity.companyName, 
+          selectedOpportunity.companyName,
           associatedCompany?.canonical_url
         );
-        
+
         toast.success(`Note ajoutée à ${displayName}`);
-        
+
         // Refresh selected opportunity (prend la version mise à jour depuis le store)
         const updated = opportunities.find(opp => opp.id === selectedOpportunity.id);
         if (updated) {
@@ -286,17 +309,17 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const handleLeadMagnetToggle = async (opportunityId: string) => {
     try {
       await toggleLeadMagnet(opportunityId);
-      
+
       const opportunity = opportunities.find(opp => opp.id === opportunityId);
       const associatedCompany = companies.find(c => c.id === opportunity?.entreprise_id);
       const displayName = getCompanyDisplayName(
-        opportunity?.companyName, 
+        opportunity?.companyName,
         associatedCompany?.canonical_url
       );
-      
+
       const isNowActive = !(opportunity?.leadMagnet || opportunity?.lead_magnet);
       toast.success(`Lead magnet ${isNowActive ? 'activé' : 'désactivé'} pour ${displayName}`);
-      
+
       if (selectedOpportunity?.id === opportunityId) {
         const updated = opportunities.find(opp => opp.id === opportunityId);
         if (updated) {
@@ -529,6 +552,15 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
 
   const getLabelForFlag = (flag: string) => OPPORTUNITY_FLAGS.find((item) => item.value === flag)?.label || flag;
 
+  const getFlagPillClass = (flag: string): string => {
+    switch (flag) {
+      case 'site_merdique': return 'pill warn';
+      case 'site_tres_ancien': return 'pill magic';
+      case 'a_revoir_plus_tard': return 'pill info';
+      default: return 'pill';
+    }
+  };
+
   const addTokenToOpportunity = async (type: KanbanGroupingMode, token: string) => {
     if (!selectedOpportunity) return;
     const cleaned = token.trim();
@@ -576,198 +608,142 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const OpportunityCard = ({ opportunity }: { opportunity: Opportunity }) => {
     const stageInfo = getStageInfo(opportunity.stage_id);
     const tags = parseTags(opportunity.tags);
+    const flags = parseFlags(opportunity.flags);
     const displayName = getDisplayNameForOpportunity(opportunity);
     const title = opportunity.name || opportunity.offre_nom_snapshot || displayName;
-    const companyAlreadyInTitle = Boolean(
-      title &&
-      displayName &&
-      title.toLowerCase().includes(displayName.toLowerCase())
-    );
     const associatedCompany = companies.find((company) => company.id === opportunity.entreprise_id);
     const websiteUrl = normalizeWebsiteUrl(opportunity.companyUrl || associatedCompany?.canonical_url);
-    
+    const rawUrl = (opportunity.companyUrl || associatedCompany?.canonical_url || '').replace(/^https?:\/\//i, '');
+    const value = opportunity.value || opportunity.montant;
+    const priorite = opportunity.priorite;
+    const lmClass = getLmStatusClass(opportunity.id);
+    const isSelected = selectedOpportunityIds.includes(opportunity.id);
+    const notes = (opportunity.opportunityNotes ?? [])
+      .slice()
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    const lastNote = notes[0];
+    const showLmQuickView = lmClass !== 'draft';
+
     return (
-      <Card className="relative hover:shadow-md transition-shadow cursor-pointer h-full">
-        <CardHeader className="pb-2 space-y-2">
-          {/* Titre avec badge en-dessous */}
-          <div className="space-y-2">
-            <div className="flex justify-end">
+      <div className="opp-card">
+        <span className={cn('lm-status', lmClass)} title={`Lead magnet · ${lmClass}`} />
+
+        <div className="hd">
+          <div className="top-line">
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, minWidth: 0 }}>
               <Checkbox
-                checked={selectedOpportunityIds.includes(opportunity.id)}
+                checked={isSelected}
                 onCheckedChange={(checked) => toggleOpportunitySelection(opportunity.id, checked === true)}
+                className="mt-0.5"
               />
-            </div>
-            <CardTitle className="text-sm md:text-base leading-tight break-words pr-1">
-              {title}
-            </CardTitle>
-            {displayName && !companyAlreadyInTitle && (
-              <p className="text-xs text-muted-foreground">Entreprise : {displayName}</p>
-            )}
-            <div className="flex flex-wrap gap-2 items-center">
-              <Badge variant="outline" className="text-xs">
-                {stageInfo.nom}
-              </Badge>
-              {opportunity.offre_nom_snapshot && (
-                <Badge variant="secondary" className="text-xs">
-                  {opportunity.offre_nom_snapshot}
-                </Badge>
-              )}
-              <div className="flex items-center gap-1">
-                {getPriorityIcon(opportunity.priorite)}
-                <span className="text-xs text-muted-foreground">
-                  {getPriorityLabel(opportunity.priorite)}
-                </span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+                <span className="nm">{title}</span>
+                {rawUrl && <span className="meta">{rawUrl}</span>}
               </div>
             </div>
+            {value ? <span className="vl">{value.toLocaleString()}€</span> : null}
           </div>
-        </CardHeader>
-        
-        <CardContent className="pt-2 space-y-3">
-          {/* Valeur */}
-          {(opportunity.value || opportunity.montant) && (
-            <div className="flex items-center gap-1">
-              <DollarSign className="h-3 w-3 md:h-4 md:w-4 text-green-600 flex-shrink-0" />
-              <span className="font-medium text-green-600 text-sm md:text-base">
-                {(opportunity.value || opportunity.montant || 0).toLocaleString()}€
+          <div className="meta" style={{ marginTop: 6 }}>
+            <span className="stage">
+              <span className="dot" style={{ background: 'var(--accent)' }} />
+              {stageInfo.nom}
+            </span>
+            <span style={{ color: 'var(--text-4)' }}>·</span>
+            <span
+              className={cn(
+                'pill',
+                priorite === 'haute' ? 'danger' : priorite === 'moyenne' ? 'warn' : undefined
+              )}
+            >
+              {getPriorityIcon(priorite)}
+              {getPriorityLabel(priorite)}
+            </span>
+            <Checkbox
+              checked={opportunity.leadMagnet || opportunity.lead_magnet || false}
+              onCheckedChange={() => handleLeadMagnetToggle(opportunity.id)}
+              title="Lead magnet"
+            />
+            <MagnetIcon className="ico-sm" style={{ color: 'var(--magic)' }} />
+          </div>
+        </div>
+
+        <div className="bd">
+          <div className="tags">
+            {tags.map((tag, index) => (
+              <span key={index} className="pill">{tag}</span>
+            ))}
+            {flags.map((flag) => (
+              <span key={flag} className={getFlagPillClass(flag)}>
+                {getLabelForFlag(flag)}
               </span>
+            ))}
+          </div>
+
+          {lastNote ? (
+            <div className="last-note">
+              <div className="h">
+                <MessageSquare className="ico-xs" />
+                {lastNote.theme} · {formatRelativeDate(lastNote.created_at)}
+              </div>
+              {lastNote.contenu}
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--text-4)', fontStyle: 'italic', padding: '4px 0' }}>
+              Aucune note encore — ajouter la première
             </div>
           )}
 
-          {/* Lead Magnet */}
-          <div className="flex items-start gap-2">
-            <div className="flex items-center gap-1 flex-1">
-              <Checkbox 
-                checked={opportunity.leadMagnet || opportunity.lead_magnet || false}
-                onCheckedChange={() => handleLeadMagnetToggle(opportunity.id)}
-              />
-              <MagnetIcon className="h-3 w-3 md:h-4 md:w-4 text-pink-600 flex-shrink-0" />
-              <span className="text-xs md:text-sm">Lead Magnet</span>
-            </div>
-            {(opportunity.leadMagnet || opportunity.lead_magnet) && opportunity.leadMagnetCreatedDate && (
-              <span className="text-xs text-muted-foreground flex-shrink-0">
-                ({formatDate(opportunity.leadMagnetCreatedDate)})
-              </span>
-            )}
-          </div>
-
-          {/* Audit — disponible dès que le lead magnet est prêt */}
           {(opportunity.leadMagnet || opportunity.lead_magnet) && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full h-7 text-xs gap-1.5"
-              onClick={(e) => { e.stopPropagation(); router.push(`/audits/${opportunity.id}`); }}
-            >
-              <ClipboardList className="h-3 w-3" />
-              Ouvrir l'audit
-            </Button>
-          )}
-
-          {/* Tags */}
-          {tags.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {tags.slice(0, 2).map((tag, index) => (
-                <Badge key={index} variant="secondary" className="text-xs px-1 py-0.5">
-                  {tag}
-                </Badge>
-              ))}
-              {tags.length > 2 && (
-                <Badge variant="secondary" className="text-xs px-1 py-0.5">
-                  +{tags.length - 2}
-                </Badge>
-              )}
-            </div>
-          )}
-
-          {parseFlags(opportunity.flags).length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {parseFlags(opportunity.flags).map((flag) => {
-                const found = OPPORTUNITY_FLAGS.find((item) => item.value === flag);
-                return (
-                  <Badge key={flag} variant="destructive" className="text-xs px-1 py-0.5">{found?.label || flag}</Badge>
-                );
-              })}
-            </div>
-          )}
-
-          {/* Dates */}
-          <div className="text-xs text-muted-foreground space-y-1">
-            <div className="flex items-center gap-1">
-              <Calendar className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">Créé le {formatDate(opportunity.created_at)}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Clock className="h-3 w-3 flex-shrink-0" />
-              <span className="truncate">Maj le {formatDate(opportunity.updated_at)}</span>
-            </div>
-          </div>
-
-          {/* Notes et suivi */}
-          <div className="space-y-1">
-            {opportunity.opportunityNotes && opportunity.opportunityNotes.length > 0 && (
-              <div className="flex items-center gap-1 text-xs text-blue-600">
-                <MessageSquare className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">
-                  {opportunity.opportunityNotes.length} note{opportunity.opportunityNotes.length > 1 ? 's' : ''}
-                </span>
-              </div>
-            )}
-
-            {opportunity.date_prochain_suivi && (
-              <div className="flex items-center gap-1 text-xs text-orange-600">
-                <AlertCircle className="h-3 w-3 flex-shrink-0" />
-                <span className="truncate">Suivi : {formatDate(opportunity.date_prochain_suivi)}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Boutons d'actions */}
-          <div className="flex gap-2 pt-2">
-            {websiteUrl && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs"
-                asChild
-                onClick={(event) => event.stopPropagation()}
-              >
-                <a href={websiteUrl} target="_blank" rel="noopener noreferrer">
-                  <Globe className="h-3 w-3 mr-1" />
-                  Site
-                </a>
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSelectedOpportunity(opportunity)}
-              className="flex-1 text-xs"
-            >
-              Voir
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => handleEditOpportunity(opportunity)}
-              className="flex-1 text-xs"
-            >
-              <Edit className="h-3 w-3 mr-1" />
-              Modifier
-            </Button>
-          </div>
-
-          {(() => { const s = lmProjectStatuts.get(opportunity.id); return s && s !== 'draft'; })() && (
             <button
               type="button"
-              className="absolute bottom-2 right-2 w-8 h-8 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center hover:shadow-md transition-shadow z-10"
-              onClick={(e) => { e.stopPropagation(); setLmModalOpportunityId(opportunity.id); }}
-              title="Voir lead magnet"
+              className="btn outline sm"
+              style={{ justifyContent: 'center' }}
+              onClick={(e) => { e.stopPropagation(); router.push(`/audits/${opportunity.id}`); }}
             >
-              <Monitor className="h-4 w-4 text-gray-400" />
+              <FileText className="ico-sm" />
+              Ouvrir l&apos;audit
             </button>
           )}
-        </CardContent>
-      </Card>
+        </div>
+
+        <div className="ft">
+          <button type="button" className="btn outline sm icon" title="Voir / Appeler" onClick={() => setSelectedOpportunity(opportunity)}>
+            <Phone className="ico-sm" />
+          </button>
+          <button type="button" className="btn outline sm icon" title="Voir / Email" onClick={() => setSelectedOpportunity(opportunity)}>
+            <Mail className="ico-sm" />
+          </button>
+          <button type="button" className="btn outline sm icon" title="Voir / LinkedIn" onClick={() => setSelectedOpportunity(opportunity)}>
+            <Linkedin className="ico-sm" />
+          </button>
+          {websiteUrl && (
+            <a
+              className="btn outline sm icon"
+              title="Site"
+              href={websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <Globe className="ico-sm" />
+            </a>
+          )}
+          {showLmQuickView && (
+            <button
+              type="button"
+              className="btn outline sm icon"
+              title="Voir lead magnet"
+              onClick={(e) => { e.stopPropagation(); setLmModalOpportunityId(opportunity.id); }}
+            >
+              <Monitor className="ico-sm" />
+            </button>
+          )}
+          <button type="button" className="btn outline sm" onClick={() => handleEditOpportunity(opportunity)}>
+            <Edit className="ico-sm" />
+            Éditer
+          </button>
+        </div>
+      </div>
     );
   };
 
@@ -784,7 +760,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     drag(dragRef);
 
     return (
-      <div ref={dragRef} style={{ opacity: isDragging ? 0.5 : 1 }}>
+      <div ref={dragRef} style={{ opacity: isDragging ? 0.5 : 1, cursor: 'grab' }}>
         <OpportunityCard opportunity={opportunity} />
       </div>
     );
@@ -815,13 +791,14 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     return (
       <div
         ref={dropRef}
-        className={`w-80 flex-shrink-0 rounded-lg border p-3 ${isOver ? 'border-blue-500 bg-blue-50/30' : ''}`}
+        className="kp-col"
+        style={{ width: 280, flexShrink: 0, ...(isOver ? { borderColor: 'var(--accent)', background: 'var(--accent-tint)' } : {}) }}
       >
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-medium">{title}</h3>
-          <Badge variant="secondary">{items.length}</Badge>
+        <div className="kp-col-hd">
+          <span className="nm">{title}</span>
+          <span className="ct">{items.length}</span>
         </div>
-        <div className="space-y-3 min-h-20">
+        <div className="kp-col-bd">
           {items.map((opportunity) => (
             <KanbanCard key={opportunity.id} opportunity={opportunity} columnValue={value} />
           ))}
@@ -918,343 +895,380 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     toast.success(`Sprint démarré avec ${finalSelection.length} opportunité(s)`);
   }, [opportunities, selectedOpportunityIds]);
 
+  const LM_TABS = [
+    { value: 'all', label: 'Toutes', icon: Zap },
+    { value: 'draft', label: 'Lead magnet draft', icon: FileText },
+    { value: 'framer', label: 'Framer', icon: Globe },
+    { value: 'ready', label: 'Ready', icon: Check },
+    { value: 'failed', label: 'Failed', icon: AlertCircle },
+  ] as const;
+
+  const VIEW_SEG = [
+    { value: 'grid', label: 'Grille', icon: LayoutGrid },
+    { value: 'list', label: 'Liste', icon: List },
+    { value: 'kanban', label: 'Kanban', icon: Columns3 },
+    { value: 'cold_call', label: 'Cold call', icon: Phone },
+  ] as const;
+
+  const selectedPipelineLabel =
+    pipelineFilter === 'all' ? 'Tous' : pipelines.find((p) => p.id === pipelineFilter)?.nom ?? 'Tous';
+  const selectedStageLabel =
+    stageFilter === 'all' ? 'Toutes' : stagesForSelectedPipeline.find((s) => s.id.toString() === stageFilter)?.nom ?? 'Toutes';
+  const selectedPriorityLabel = priorityFilter === 'all' ? 'Toutes' : getPriorityLabel(priorityFilter);
+  const selectedFlagLabel =
+    flagFilter === 'all' ? 'Tous' : OPPORTUNITY_FLAGS.find((f) => f.value === flagFilter)?.label ?? 'Tous';
+
   return (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-      {sprintModule && (
-        <SprintFlowBanner
-          currentStep="opportunities"
-          selectionCount={selectedOpportunityIds.length}
-          onStartFromSelection={startSprintFromSelection}
-          progressLabel="Sélectionne ton lot d'opportunités puis traite-les en série."
-        />
-      )}
-      <div>
-        <h1>Opportunités</h1>
-        <p className="text-muted-foreground">
-          Gérez toutes vos opportunités commerciales
-        </p>
+    <div className="studio-surface flex min-h-full flex-col">
+      {/* Tabs strip: lead magnet status filter + view segmented control */}
+      <div className="tabs-strip">
+        {LM_TABS.map(({ value, label, icon: TabIcon }) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={lmEnrichmentFilter === value}
+            className="tab"
+            onClick={() => setLmEnrichmentFilter(value)}
+          >
+            <TabIcon className="ico-sm" />
+            {label}
+            <span className="bd">{lmStatusCounts[value]}</span>
+          </button>
+        ))}
+        <span className="grow" />
+        <div className="seg">
+          {VIEW_SEG.map(({ value, label, icon: SegIcon }) => (
+            <button
+              key={value}
+              type="button"
+              className="s"
+              aria-pressed={viewMode === value}
+              onClick={() => setViewMode(value)}
+            >
+              <SegIcon className="ico-sm" />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Métriques rapides */}
-      <div className="grid gap-2 grid-cols-2 md:grid-cols-4 md:gap-6">
-        <Card className="min-h-[94px]">
-          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-            <CardTitle className="text-sm">Total opportunités</CardTitle>
-          </CardHeader>
-          <CardContent className="px-3 pb-3 md:pb-4">
-            <div className="text-xl md:text-2xl font-bold">{opportunities.length}</div>
-          </CardContent>
-        </Card>
+      <div className="ws-overview" style={{ padding: '16px 24px 40px' }}>
+        {sprintModule && (
+          <SprintFlowBanner
+            currentStep="opportunities"
+            selectionCount={selectedOpportunityIds.length}
+            onStartFromSelection={startSprintFromSelection}
+            progressLabel="Sélectionne ton lot d'opportunités puis traite-les en série."
+          />
+        )}
 
-        <Card className="min-h-[94px]">
-          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-            <CardTitle className="text-sm">Valeur totale</CardTitle>
-          </CardHeader>
-          <CardContent className="px-3 pb-3 md:pb-4">
-            <div className="text-xl md:text-2xl font-bold text-green-600">
-              {opportunities.reduce((sum, opp) => sum + (opp.value || opp.montant || 0), 0).toLocaleString()}€
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="min-h-[94px]">
-          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-            <CardTitle className="text-sm">Lead Magnets créés</CardTitle>
-          </CardHeader>
-          <CardContent className="px-3 pb-3 md:pb-4">
-            <div className="text-xl md:text-2xl font-bold text-pink-600">
-              {opportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {opportunities.length > 0 ? Math.round((opportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length / opportunities.length) * 100) : 0}% du total
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="min-h-[94px]">
-          <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-            <CardTitle className="text-sm">Priorité haute</CardTitle>
-          </CardHeader>
-          <CardContent className="px-3 pb-3 md:pb-4">
-            <div className="text-xl md:text-2xl font-bold text-red-600">
-              {opportunities.filter(opp => opp.priority === 'high' || opp.priorite === 'haute').length}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filtres et recherche */}
-      <div className="space-y-2 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
-        <div className="space-y-2 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-1">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Rechercher une opportunité..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-9 h-9"
-            />
+        <div className="ws-header">
+          <div>
+            <h1>Opportunités</h1>
+            <div className="sub">Gérez toutes vos opportunités commerciales</div>
           </div>
+        </div>
 
-          <div className="flex flex-wrap gap-2">
-            <PipelineCombobox
-              pipelines={pipelines}
-              selectedValue={pipelineFilter}
-              includeAllOption
-              onSelect={(value) => {
-                setPipelineFilter(value);
-                setStageFilter('all');
-              }}
-              onCreate={async (name) => {
-                const createdPipeline = await addPipeline(name);
-                if (createdPipeline) {
-                  setPipelineFilter(createdPipeline.id);
-                  setBulkPipelineTarget(createdPipeline.id);
-                  setStageFilter('all');
-                }
-                return createdPipeline;
-              }}
-              placeholder="Filtrer / créer un pipeline"
-            />
+        {/* Métriques rapides */}
+        <div className="grid gap-2 grid-cols-2 md:grid-cols-4 md:gap-6" style={{ marginBottom: 16 }}>
+          <Card className="min-h-[94px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
+              <CardTitle className="text-sm">Total opportunités</CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-xl md:text-2xl font-bold">{opportunities.length}</div>
+            </CardContent>
+          </Card>
 
-            <Select value={stageFilter} onValueChange={setStageFilter}>
-              <SelectTrigger className="w-[46vw] max-w-[190px] md:w-48 h-9">
-                <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Étape" />
+          <Card className="min-h-[94px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
+              <CardTitle className="text-sm">Valeur totale</CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-xl md:text-2xl font-bold text-green-600">
+                {opportunities.reduce((sum, opp) => sum + (opp.value || opp.montant || 0), 0).toLocaleString()}€
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="min-h-[94px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
+              <CardTitle className="text-sm">Lead Magnets créés</CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-xl md:text-2xl font-bold text-pink-600">
+                {opportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {opportunities.length > 0 ? Math.round((opportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length / opportunities.length) * 100) : 0}% du total
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card className="min-h-[94px]">
+            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
+              <CardTitle className="text-sm">Priorité haute</CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3 md:pb-4">
+              <div className="text-xl md:text-2xl font-bold text-red-600">
+                {opportunities.filter(opp => opp.priority === 'high' || opp.priorite === 'haute').length}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Bulk action bar */}
+        {selectedOpportunityIds.length > 0 && (
+          <div className="bulk-bar">
+            <span className="ct"><b>{selectedOpportunityIds.length}</b> opportunité(s) sélectionnée(s)</span>
+            <span style={{ width: 1, height: 18, background: 'rgba(255,255,255,.15)' }} />
+
+            <Select value={bulkPipelineTarget} onValueChange={setBulkPipelineTarget}>
+              <SelectTrigger className="h-[26px] border-0 bg-white/10 text-white text-[11.5px] rounded-md px-2.5 w-auto gap-1.5">
+                <SelectValue placeholder="Changer pipeline" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Toutes les étapes</SelectItem>
-                {stagesForSelectedPipeline.map((stage) => (
-                  <SelectItem key={stage.id} value={stage.id.toString()}>
-                    {stage.nom}
+                <SelectItem value="none">Choisir un pipeline</SelectItem>
+                {pipelines.map((pipeline) => (
+                  <SelectItem key={pipeline.id} value={pipeline.id}>
+                    {pipeline.nom}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
 
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-              <SelectTrigger className="w-[30vw] min-w-[120px] md:w-40 h-9">
-                <SelectValue placeholder="Priorité" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Toutes</SelectItem>
-                <SelectItem value="haute">Haute</SelectItem>
-                <SelectItem value="moyenne">Moyenne</SelectItem>
-                <SelectItem value="basse">Basse</SelectItem>
-              </SelectContent>
-            </Select>
-
-
-            <Select value={flagFilter} onValueChange={setFlagFilter}>
-              <SelectTrigger className="w-[46vw] max-w-[220px] md:w-56 h-9">
-                <SelectValue placeholder="Flags" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les flags</SelectItem>
-                {OPPORTUNITY_FLAGS.map((flag) => (
-                  <SelectItem key={flag.value} value={flag.value}>{flag.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <div className="flex flex-wrap gap-1">
-              {([
-                { value: 'all',    label: 'Tous' },
-                { value: 'draft',  label: 'Draft' },
-                { value: 'framer', label: 'Framer' },
-                { value: 'ready',  label: 'Ready' },
-                { value: 'failed', label: 'Échec' },
-              ] as const).map(({ value, label }) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setLmEnrichmentFilter(value)}
-                  className={cn(
-                    'px-3 py-1 rounded-full text-sm font-medium transition-colors',
-                    lmEnrichmentFilter === value
-                      ? 'bg-primary text-primary-foreground'
-                      : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                  )}
-                >
-                  {label}
-                  <span className="ml-1.5 text-xs opacity-70">{lmStatusCounts[value]}</span>
-                </button>
-              ))}
-            </div>
-
-            <Button
+            <button
               type="button"
-              variant={sortByPipeline ? 'default' : 'outline'}
-              onClick={() => setSortByPipeline((prev) => !prev)}
-              size="sm"
+              className="b"
+              onClick={handleBulkPipelineMove}
+              disabled={bulkPipelineTarget === 'none'}
             >
-              Trier par pipeline
-            </Button>
+              <ArrowRight className="ico-sm" />
+              Faire avancer
+            </button>
 
-            {viewMode === 'kanban' && (
-              <>
-                <Select value={kanbanMode} onValueChange={(value: KanbanGroupingMode) => setKanbanMode(value)}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue placeholder="Mode kanban" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="flags">Kanban par flags</SelectItem>
-                    <SelectItem value="tags">Kanban par tags</SelectItem>
-                  </SelectContent>
-                </Select>
+            <button
+              type="button"
+              className="b"
+              onClick={handleAutoEnrichSelection}
+              disabled={isAutoEnriching}
+            >
+              {isAutoEnriching ? <Loader2 className="ico-sm animate-spin" /> : <Zap className="ico-sm" />}
+              Enrichir auto
+            </button>
 
-                <div className="flex items-center gap-2">
-                  <Input
-                    placeholder={kanbanMode === 'flags' ? 'Nouveau flag...' : 'Nouveau tag...'}
-                    value={kanbanMode === 'flags' ? newFlagName : newTagName}
-                    onChange={(event) => {
-                      if (kanbanMode === 'flags') {
-                        setNewFlagName(event.target.value);
-                        return;
-                      }
-                      setNewTagName(event.target.value);
-                    }}
-                    className="w-44"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={async () => {
-                      if (kanbanMode === 'flags') {
-                        await addTokenToOpportunity('flags', newFlagName);
-                        setNewFlagName('');
-                        return;
-                      }
-                      await addTokenToOpportunity('tags', newTagName);
-                      setNewTagName('');
-                    }}
-                    disabled={!selectedOpportunity || !(kanbanMode === 'flags' ? newFlagName.trim() : newTagName.trim())}
-                  >
-                    <Plus className="h-4 w-4 mr-1" />
-                    Ajouter
-                  </Button>
-                </div>
-              </>
+            {sprintModule && (
+              <button
+                type="button"
+                className="b"
+                onClick={() => startSprintFromSelection(selectedOpportunityIds.length)}
+              >
+                <Send className="ico-sm" />
+                Lancer séquence
+              </button>
             )}
-          </div>
-        </div>
 
-        {/* Toggle grille/liste/kanban */}
-        <div className="flex border rounded-lg">
-          <Button
-            variant={viewMode === 'grid' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('grid')}
-            className="rounded-r-none"
-          >
-            <LayoutGrid className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'list' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('list')}
-            className="rounded-none"
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'kanban' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('kanban')}
-            className="rounded-none"
-          >
-            <Columns3 className="h-4 w-4" />
-          </Button>
-          <Button
-            variant={viewMode === 'cold_call' ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => setViewMode('cold_call')}
-            className="rounded-l-none"
-            title="Mode cold call"
-          >
-            <Phone className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
+            <span className="spacer" />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="text-sm text-muted-foreground">
-          {selectedOpportunityIds.length} sélectionnée(s) • {selectedFilteredCount}/{filteredOpportunityIds.length} sur les cartes filtrées
-        </span>
-        <Button
-          variant={allFilteredSelected ? "secondary" : "outline"}
-          onClick={allFilteredSelected ? handleClearFilteredSelection : handleSelectAllFiltered}
-          disabled={filteredOpportunityIds.length === 0}
-        >
-          {allFilteredSelected ? "Désélectionner les filtrées" : "Sélectionner toutes les filtrées"}
-        </Button>
-        <Select value={bulkPipelineTarget} onValueChange={setBulkPipelineTarget}>
-          <SelectTrigger className="w-56">
-            <SelectValue placeholder="Envoyer dans un pipeline" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Choisir un pipeline</SelectItem>
-            {pipelines.map((pipeline) => (
-              <SelectItem key={pipeline.id} value={pipeline.id}>
-                {pipeline.nom}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button onClick={handleBulkPipelineMove} disabled={selectedOpportunityIds.length === 0 || bulkPipelineTarget === 'none'}>
-          Déplacer la sélection
-        </Button>
-        <Button
-          variant="secondary"
-          onClick={handleAutoEnrichSelection}
-          disabled={isAutoEnriching || selectedOpportunityIds.length === 0}
-        >
-          {isAutoEnriching ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Enrichissement...
-            </>
-          ) : (
-            'Enrichir auto'
-          )}
-        </Button>
-      </div>
-
-      {/* Liste des opportunités */}
-      {viewMode === 'cold_call' ? (
-        <QualifiedColdCallWorkspace includeOnlyQualified={false} scopedCompanyIds={filteredOpportunityCompanyIds} />
-      ) : viewMode !== 'kanban' ? (
-        <div className={viewMode === 'grid' ? 'grid gap-3 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3' : 'space-y-4'}>
-          {filteredOpportunities.map((opportunity) => (
-            <OpportunityCard key={opportunity.id} opportunity={opportunity} />
-          ))}
-        </div>
-      ) : (
-        <DndProvider backend={HTML5Backend}>
-          <div className="overflow-x-auto">
-            <div className="flex gap-4 pb-4" style={{ minWidth: `${Math.max(kanbanColumns.length, 3) * 320}px` }}>
-              {kanbanColumns.map((column) => (
-                <KanbanColumn key={column.value} title={column.title} value={column.value} items={column.items} />
-              ))}
-            </div>
-          </div>
-        </DndProvider>
-      )}
-
-      {viewMode !== 'cold_call' && filteredOpportunities.length === 0 && (
-        <Card>
-          <CardContent className="text-center py-8 md:py-12">
-            <Target className="h-8 w-8 md:h-12 md:w-12 mx-auto mb-4 text-muted-foreground" />
-            <h3 className="font-medium mb-2 text-sm md:text-base">Aucune opportunité trouvée</h3>
-            <p className="text-muted-foreground text-xs md:text-sm">
-              {searchTerm || stageFilter !== 'all' || priorityFilter !== 'all' || flagFilter !== 'all' 
-                ? 'Modifiez vos filtres ou créez une nouvelle opportunité'
-                : 'Qualifiez des entreprises pour créer des opportunités'
+            <button
+              type="button"
+              className="b"
+              onClick={
+                allFilteredSelected ? handleClearFilteredSelection : handleSelectAllFiltered
               }
-            </p>
-          </CardContent>
-        </Card>
-      )}
+              disabled={filteredOpportunityIds.length === 0}
+              title={allFilteredSelected ? 'Désélectionner les filtrées' : 'Sélectionner toutes les filtrées'}
+            >
+              <Check className="ico-sm" />
+              {allFilteredSelected
+                ? 'Désélectionner les filtrées'
+                : `Sélectionner ${filteredOpportunityIds.length} filtrées`}
+            </button>
+
+            <button
+              type="button"
+              className="b x"
+              onClick={() => setSelectedOpportunityIds([])}
+              title="Effacer la sélection"
+            >
+              <X className="ico-sm" />
+            </button>
+          </div>
+        )}
+
+        {/* Filter bar */}
+        <div className="filter-bar">
+          <div className="search-w">
+            <Search className="ico-sm" />
+            <input
+              placeholder="Rechercher entreprise, tag, note…"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          <PipelineCombobox
+            pipelines={pipelines}
+            selectedValue={pipelineFilter}
+            includeAllOption
+            onSelect={(value) => {
+              setPipelineFilter(value);
+              setStageFilter('all');
+            }}
+            onCreate={async (name) => {
+              const createdPipeline = await addPipeline(name);
+              if (createdPipeline) {
+                setPipelineFilter(createdPipeline.id);
+                setBulkPipelineTarget(createdPipeline.id);
+                setStageFilter('all');
+              }
+              return createdPipeline;
+            }}
+            placeholder="Filtrer / créer un pipeline"
+          />
+
+          <Select value={stageFilter} onValueChange={setStageFilter}>
+            <SelectTrigger className="select-w h-[30px] border bg-[var(--surface-2)]" aria-label="Étape">
+              <span className="lb">Étape :</span>
+              <span className="val">{selectedStageLabel}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les étapes</SelectItem>
+              {stagesForSelectedPipeline.map((stage) => (
+                <SelectItem key={stage.id} value={stage.id.toString()}>
+                  {stage.nom}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="select-w h-[30px] border bg-[var(--surface-2)]" aria-label="Priorité">
+              <span className="lb">Priorité :</span>
+              <span className="val">{selectedPriorityLabel}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes</SelectItem>
+              <SelectItem value="haute">Haute</SelectItem>
+              <SelectItem value="moyenne">Moyenne</SelectItem>
+              <SelectItem value="basse">Basse</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={flagFilter} onValueChange={setFlagFilter}>
+            <SelectTrigger className="select-w h-[30px] border bg-[var(--surface-2)]" aria-label="Flag">
+              <span className="lb">Flag :</span>
+              <span className="val">{selectedFlagLabel}</span>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les flags</SelectItem>
+              {OPPORTUNITY_FLAGS.map((flag) => (
+                <SelectItem key={flag.value} value={flag.value}>{flag.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <span className="grow" />
+
+          <button
+            type="button"
+            className="toggle-w"
+            aria-pressed={sortByPipeline}
+            onClick={() => setSortByPipeline((prev) => !prev)}
+          >
+            <span>Tri par pipeline</span>
+            <span className={cn('switch sm', sortByPipeline && 'on')} />
+          </button>
+
+          {viewMode === 'kanban' && (
+            <>
+              <Select value={kanbanMode} onValueChange={(value: KanbanGroupingMode) => setKanbanMode(value)}>
+                <SelectTrigger className="select-w h-[30px] border bg-[var(--surface-2)]" aria-label="Mode kanban">
+                  <span className="lb">Kanban :</span>
+                  <span className="val">{kanbanMode === 'flags' ? 'Flags' : 'Tags'}</span>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="flags">Kanban par flags</SelectItem>
+                  <SelectItem value="tags">Kanban par tags</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <input
+                className="h-[30px] rounded-[7px] border border-[var(--border)] bg-[var(--surface-2)] px-2.5 text-[12.5px] outline-none"
+                placeholder={kanbanMode === 'flags' ? 'Nouveau flag...' : 'Nouveau tag...'}
+                value={kanbanMode === 'flags' ? newFlagName : newTagName}
+                onChange={(event) => {
+                  if (kanbanMode === 'flags') {
+                    setNewFlagName(event.target.value);
+                    return;
+                  }
+                  setNewTagName(event.target.value);
+                }}
+              />
+              <button
+                type="button"
+                className="btn ghost sm"
+                onClick={async () => {
+                  if (kanbanMode === 'flags') {
+                    await addTokenToOpportunity('flags', newFlagName);
+                    setNewFlagName('');
+                    return;
+                  }
+                  await addTokenToOpportunity('tags', newTagName);
+                  setNewTagName('');
+                }}
+                disabled={!selectedOpportunity || !(kanbanMode === 'flags' ? newFlagName.trim() : newTagName.trim())}
+              >
+                <Plus className="ico-sm" />
+                Ajouter
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Liste des opportunités */}
+        {viewMode === 'cold_call' ? (
+          <QualifiedColdCallWorkspace includeOnlyQualified={false} scopedCompanyIds={filteredOpportunityCompanyIds} />
+        ) : viewMode === 'list' ? (
+          <div className="space-y-4">
+            {filteredOpportunities.map((opportunity) => (
+              <OpportunityCard key={opportunity.id} opportunity={opportunity} />
+            ))}
+          </div>
+        ) : viewMode === 'grid' ? (
+          <div className="opp-grid">
+            {filteredOpportunities.map((opportunity) => (
+              <OpportunityCard key={opportunity.id} opportunity={opportunity} />
+            ))}
+          </div>
+        ) : (
+          <DndProvider backend={HTML5Backend}>
+            <div className="overflow-x-auto">
+              <div className="flex gap-3 pb-4" style={{ minWidth: `${Math.max(kanbanColumns.length, 3) * 292}px` }}>
+                {kanbanColumns.map((column) => (
+                  <KanbanColumn key={column.value} title={column.title} value={column.value} items={column.items} />
+                ))}
+              </div>
+            </div>
+          </DndProvider>
+        )}
+
+        {viewMode !== 'cold_call' && filteredOpportunities.length === 0 && (
+          <Card>
+            <CardContent className="text-center py-8 md:py-12">
+              <Target className="h-8 w-8 md:h-12 md:w-12 mx-auto mb-4 text-muted-foreground" />
+              <h3 className="font-medium mb-2 text-sm md:text-base">Aucune opportunité trouvée</h3>
+              <p className="text-muted-foreground text-xs md:text-sm">
+                {searchTerm || stageFilter !== 'all' || priorityFilter !== 'all' || flagFilter !== 'all'
+                  ? 'Modifiez vos filtres ou créez une nouvelle opportunité'
+                  : 'Qualifiez des entreprises pour créer des opportunités'
+                }
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* Modal de détail */}
       <Dialog open={!!selectedOpportunity} onOpenChange={() => setSelectedOpportunity(null)}>
@@ -1295,8 +1309,8 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                   <div>
                     <label className="text-sm font-medium">Valeur</label>
                     <div className="mt-1">
-                      {(selectedOpportunity.value || selectedOpportunity.montant) ? 
-                        `${(selectedOpportunity.value || selectedOpportunity.montant || 0).toLocaleString()}€` : 
+                      {(selectedOpportunity.value || selectedOpportunity.montant) ?
+                        `${(selectedOpportunity.value || selectedOpportunity.montant || 0).toLocaleString()}€` :
                         'Non définie'
                       }
                     </div>
@@ -1305,7 +1319,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                   <div>
                     <label className="text-sm font-medium">Lead Magnet</label>
                     <div className="flex items-center gap-2 mt-1">
-                      <Checkbox 
+                      <Checkbox
                         checked={selectedOpportunity.leadMagnet || selectedOpportunity.lead_magnet || false}
                         onCheckedChange={() => handleLeadMagnetToggle(selectedOpportunity.id)}
                       />
@@ -1325,10 +1339,10 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                 <div>
                   <label className="text-sm font-medium">Tags</label>
                   <div className="flex flex-wrap gap-1 mt-1">
-                    {selectedOpportunity.tags ? 
+                    {selectedOpportunity.tags ?
                       parseTags(selectedOpportunity.tags).map((tag, index) => (
                         <Badge key={index} variant="outline">{tag}</Badge>
-                      )) : 
+                      )) :
                       <span className="text-sm text-muted-foreground">Aucun tag</span>
                     }
                   </div>
@@ -1353,7 +1367,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                       showLabels={true}
                     />
                   </div>
-                  
+
                   <div className="flex gap-2">
                     <Button onClick={() => handleEditOpportunity(selectedOpportunity)}>
                       <Edit className="h-4 w-4 mr-2" />
@@ -1370,7 +1384,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                   entreprise_id={selectedOpportunity.entreprise_id}
                   showAddActions={false}
                 />
-                
+
                 <div className="space-y-3">
                   <div className="flex gap-2">
                     <Select
@@ -1450,8 +1464,8 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="priority">Priorité</Label>
-                  <Select 
-                    value={editingOpportunity.priorite} 
+                  <Select
+                    value={editingOpportunity.priorite}
                     onValueChange={(value: 'haute' | 'moyenne' | 'basse') =>
                       setEditingOpportunity({
                         ...editingOpportunity,
@@ -1486,7 +1500,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
               <div>
                 <Label htmlFor="leadMagnet">Lead Magnet</Label>
                 <div className="flex items-center gap-2 mt-2">
-                  <Checkbox 
+                  <Checkbox
                     checked={editingOpportunity.lead_magnet || false}
                     onCheckedChange={(checked) => setEditingOpportunity({
                       ...editingOpportunity,
@@ -1498,7 +1512,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                   <span className="text-sm">Lead magnet créé</span>
                 </div>
               </div>
-              
+
               <div>
                 <Label>Flags</Label>
                 <div className="mt-2 flex flex-wrap gap-3">
