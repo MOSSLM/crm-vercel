@@ -41,6 +41,10 @@
   --destructive: #B5322F;
   --destructive-foreground: #FFFFFF;
   --border: rgba(20, 18, 14, 0.10);
+  /* Studio nav — extra border/hover steps (from the Studio V1 design system) */
+  --border-2: rgba(20, 18, 14, 0.14);
+  --border-strong: rgba(20, 18, 14, 0.22);
+  --hover: rgba(20, 18, 14, 0.04);
   --input: rgba(20, 18, 14, 0.12);
   --input-background: #FFFFFF;
   --switch-background: #ECE9E1;
@@ -133,6 +137,9 @@
   --destructive: #ef4444;
   --destructive-foreground: #f5f8fc;
   --border: #25252c;
+  --border-2: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.24);
+  --hover: rgba(255, 255, 255, 0.05);
   --input: #10213d;
   --input-background: #08101e;
   --switch-background: #10213d;
