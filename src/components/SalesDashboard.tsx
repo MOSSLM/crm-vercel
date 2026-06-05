@@ -10,22 +10,15 @@ import {
   Mail,
   Phone,
   RefreshCw,
-  Target,
   Settings2,
   ChevronRight,
-  ArrowUpRight,
   CheckCircle2,
-  TrendingUp,
-  Zap,
   X,
   Save,
   GitBranch,
   MessageCircle,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
@@ -475,244 +468,187 @@ export function SalesDashboard() {
     month: "long",
   });
 
+  const expandedCardDef = expandedCard
+    ? ACTION_CARDS.find((c) => c.key === expandedCard)
+    : null;
+
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-background">
-      {/* Top header */}
-      <div className="flex shrink-0 items-center justify-between border-b px-6 py-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-orange-500" />
-            <h1 className="text-xl font-bold">Dashboard Sales</h1>
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground capitalize">
-            {today}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Global progress */}
-          <div className="mr-2 flex items-center gap-3 rounded-xl border bg-muted/30 px-4 py-2">
-            <div className="text-center">
-              <p className="text-lg font-bold">{globalPct}%</p>
-              <p className="text-xs text-muted-foreground">Objectifs</p>
-            </div>
-            <div className="h-10 w-24">
-              <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-orange-500 to-orange-400 transition-all duration-500"
-                  style={{ width: `${globalPct}%` }}
-                />
-              </div>
-              <p className="mt-1 text-[10px] text-muted-foreground">
-                {totalDone} / {totalObj} actions
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={handleOpenObjectives}
-          >
-            <Settings2 className="h-4 w-4" />
-            Objectifs
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={fetchData}
-            disabled={loading}
-          >
-            <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
-            Actualiser
-          </Button>
-          <Button size="sm" className="gap-1.5" asChild>
-            <Link href="/pipeline">
-              <GitBranch className="h-4 w-4" />
-              Pipeline
-            </Link>
-          </Button>
-        </div>
-      </div>
-
+    <div className="studio-surface flex min-h-full flex-col">
       <ScrollArea className="flex-1">
-        <div className="p-6 space-y-6">
-          {/* Action counters grid */}
-          <div>
-            <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              <Target className="h-4 w-4" />
-              Actions du jour
-            </h2>
-            <div className="-mx-6 w-screen overflow-x-auto pb-2">
-              <div className="grid min-w-[1000px] grid-cols-2 gap-3 px-6 lg:grid-cols-3 xl:grid-cols-6">
-                {ACTION_CARDS.map((card) => {
-                  const data = counters[card.key];
-                  const obj = objectives[card.key];
-                  const pct =
-                    obj > 0
-                      ? Math.min(Math.round((data.count / obj) * 100), 100)
-                      : 0;
-                  const isExpanded = expandedCard === card.key;
-                  const Icon = card.icon;
-
-                  return (
-                    <div key={card.key} className="flex flex-col">
-                      <button
-                        onClick={() =>
-                          setExpandedCard(isExpanded ? null : card.key)
-                        }
-                        className={cn(
-                          "relative flex flex-col rounded-xl border p-4 text-left transition-all hover:shadow-md",
-                          card.bgColor,
-                          card.borderColor,
-                          isExpanded &&
-                            "ring-2 ring-offset-1 ring-offset-background",
-                          data.count > 0 ? "cursor-pointer" : "opacity-60",
-                        )}
-                        style={
-                          isExpanded
-                            ? { ["--tw-ring-color" as string]: "currentColor" }
-                            : {}
-                        }
-                      >
-                        <div
-                          className={cn(
-                            "flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 shadow-sm dark:bg-black/20",
-                            card.color,
-                          )}
-                        >
-                          <Icon className="h-4.5 w-4.5 h-5 w-5" />
-                        </div>
-                        <div className="mt-3">
-                          <p
-                            className={cn(
-                              "text-3xl font-extrabold tracking-tight",
-                              card.color,
-                            )}
-                          >
-                            {loading ? "…" : data.count}
-                          </p>
-                          <p className="mt-0.5 text-xs font-semibold leading-tight">
-                            {card.label}
-                          </p>
-                          <p className="text-[10px] text-muted-foreground">
-                            {card.sublabel}
-                          </p>
-                        </div>
-                        {/* Progress bar */}
-                        <div className="mt-3">
-                          <div className="flex justify-between text-[10px] text-muted-foreground">
-                            <span>Obj. {obj}</span>
-                            <span>{pct}%</span>
-                          </div>
-                          <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
-                            <div
-                              className={cn(
-                                "h-full rounded-full transition-all duration-500",
-                                card.color.replace("text-", "bg-"),
-                              )}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        </div>
-                        {data.count > 0 && (
-                          <ChevronRight
-                            className={cn(
-                              "absolute right-2 top-2 h-4 w-4 transition-transform",
-                              card.color,
-                              isExpanded && "rotate-90",
-                            )}
-                          />
-                        )}
-                      </button>
-
-                      {/* Go to page link */}
-                      <Link
-                        href={card.href}
-                        className={cn(
-                          "mt-1 flex items-center justify-center gap-1 rounded-lg py-1 text-[10px] font-medium transition-colors hover:bg-accent",
-                          card.color,
-                        )}
-                      >
-                        Accéder <ArrowUpRight className="h-3 w-3" />
-                      </Link>
-                    </div>
-                  );
-                })}
+        <div className="ws-overview">
+          {/* Header */}
+          <div className="ws-header">
+            <div>
+              <div className="ws-eyebrow capitalize">{today}</div>
+              <h1>
+                Objectifs du jour — <em>{globalPct}%</em>
+              </h1>
+              <div className="sub">
+                {totalDone} / {totalObj} actions réalisées ·{" "}
+                {pipelineStages.length} étapes pipeline
               </div>
             </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button
+                type="button"
+                className="btn outline sm"
+                onClick={handleOpenObjectives}
+              >
+                <Settings2 className="ico-sm" />
+                Objectifs
+              </button>
+              <button
+                type="button"
+                className="btn outline sm"
+                onClick={fetchData}
+                disabled={loading}
+              >
+                <RefreshCw className={cn("ico-sm", loading && "animate-spin")} />
+                Actualiser
+              </button>
+              <Link href="/pipeline" className="btn outline sm">
+                <GitBranch className="ico-sm" />
+                Pipeline
+              </Link>
+            </div>
+          </div>
+
+          {/* KPI strip — action counters */}
+          <div
+            className="kpi-strip"
+            style={{ gridTemplateColumns: "repeat(6, 1fr)", marginBottom: 18 }}
+          >
+            {ACTION_CARDS.map((card) => {
+              const data = counters[card.key];
+              const obj = objectives[card.key];
+              const pct =
+                obj > 0
+                  ? Math.min(Math.round((data.count / obj) * 100), 100)
+                  : 0;
+              const isExpanded = expandedCard === card.key;
+              const Icon = card.icon;
+              const below = data.count < obj;
+
+              return (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => setExpandedCard(isExpanded ? null : card.key)}
+                  className="kpi"
+                  style={{
+                    textAlign: "left",
+                    border: 0,
+                    cursor: data.count > 0 ? "pointer" : "default",
+                    background: isExpanded ? "var(--surface-2)" : undefined,
+                    fontFamily: "inherit",
+                  }}
+                >
+                  <div className="lb">
+                    <Icon className="ico-xs" />
+                    {card.label}
+                  </div>
+                  <div className="vl">{loading ? "…" : data.count}</div>
+                  <div className={cn("delta", below && "dn")}>
+                    obj. {obj} · {pct}%
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           {/* Expanded company list */}
-          {expandedCard && (
-            <div className="rounded-xl border bg-card shadow-sm">
-              <div className="flex items-center justify-between border-b px-4 py-3">
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const card = ACTION_CARDS.find(
-                      (c) => c.key === expandedCard,
-                    )!;
-                    const Icon = card.icon;
-                    return (
-                      <>
-                        <Icon className={cn("h-4 w-4", card.color)} />
-                        <span className="font-semibold">{card.label}</span>
-                        <Badge variant="secondary">
-                          {counters[expandedCard].count}
-                        </Badge>
-                      </>
-                    );
-                  })()}
-                </div>
+          {expandedCard && expandedCardDef && (
+            <div className="card" style={{ marginBottom: 18 }}>
+              <div className="card-hd">
+                {(() => {
+                  const Icon = expandedCardDef.icon;
+                  return <Icon className="ico-lg" />;
+                })()}
+                <h3>{expandedCardDef.label}</h3>
+                <span className="meta">{counters[expandedCard].count}</span>
                 <button
+                  type="button"
                   onClick={() => setExpandedCard(null)}
-                  className="text-muted-foreground hover:text-foreground"
+                  className="btn ghost sm icon"
+                  aria-label="Fermer"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="ico-sm" />
                 </button>
               </div>
-              <div className="divide-y">
+              <div>
                 {counters[expandedCard].companies
                   .slice(0, 50)
                   .map((company) => (
                     <Link
                       key={company.id}
                       href={`/companies/${company.id}`}
-                      className="flex items-center justify-between px-4 py-2.5 transition-colors hover:bg-accent"
+                      className="src-row"
+                      style={{
+                        gridTemplateColumns: "28px 1fr auto auto",
+                        borderTop: "1px solid var(--border)",
+                      }}
                     >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-muted text-xs font-semibold">
-                          {(company.name[0] ?? "?").toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{company.name}</p>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            {company.tel && <span>{company.tel}</span>}
-                            {company.email && <span>{company.email}</span>}
-                          </div>
+                      <div
+                        className="icw"
+                        style={{
+                          background: "var(--bg-2)",
+                          color: "var(--text-2)",
+                          fontFamily: "var(--font-mono)",
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        {(company.name[0] ?? "?").toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="nm">{company.name}</div>
+                        <div className="det">
+                          {[company.tel, company.email]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {company.site_web && (
-                          <Badge variant="outline" className="text-[10px]">
-                            Site
-                          </Badge>
-                        )}
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
+                      {company.site_web ? (
+                        <span className="pill">Site</span>
+                      ) : (
+                        <span />
+                      )}
+                      <ChevronRight className="ico-sm" />
                     </Link>
                   ))}
                 {counters[expandedCard].companies.length === 0 && (
-                  <div className="flex flex-col items-center justify-center gap-2 py-10 text-muted-foreground">
-                    <CheckCircle2 className="h-8 w-8 text-emerald-500" />
-                    <p className="text-sm font-medium">Tout est bon ici !</p>
-                    <p className="text-xs">
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "40px 0",
+                      color: "var(--text-3)",
+                    }}
+                  >
+                    <CheckCircle2
+                      className="ico-xl"
+                      style={{ color: "var(--ok)" }}
+                    />
+                    <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>
+                      Tout est bon ici !
+                    </p>
+                    <p style={{ fontSize: 11.5, margin: 0 }}>
                       Aucune action requise pour cette catégorie.
                     </p>
                   </div>
                 )}
                 {counters[expandedCard].companies.length > 50 && (
-                  <p className="px-4 py-2 text-xs text-muted-foreground">
+                  <p
+                    style={{
+                      padding: "8px 16px",
+                      fontSize: 11,
+                      color: "var(--text-3)",
+                      fontFamily: "var(--font-mono)",
+                      margin: 0,
+                    }}
+                  >
                     … et {counters[expandedCard].companies.length - 50} autres
                   </p>
                 )}
@@ -722,12 +658,13 @@ export function SalesDashboard() {
 
           {/* Pipeline mini overview */}
           {pipelineStages.length > 0 && (
-            <div>
-              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-                <GitBranch className="h-4 w-4" />
-                Pipeline — vue rapide
-              </h2>
-              <div className="flex gap-2 overflow-x-auto pb-1">
+            <div className="card">
+              <div className="card-hd">
+                <GitBranch className="ico-lg" />
+                <h3>Pipeline — vue rapide</h3>
+                <span className="meta">{pipelineStages.length} étapes</span>
+              </div>
+              <div className="team-grid">
                 {pipelineStages.map((stage, i) => {
                   const maxCount = Math.max(
                     ...pipelineStages.map((s) => s.count),
@@ -735,25 +672,22 @@ export function SalesDashboard() {
                   );
                   const pct = Math.round((stage.count / maxCount) * 100);
                   return (
-                    <Link
-                      key={stage.id}
-                      href="/pipeline"
-                      className="flex min-w-[120px] flex-col rounded-xl border bg-card p-3 transition-all hover:shadow-md hover:border-primary/30"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-medium text-muted-foreground truncate">
-                          {stage.nom}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-1">
-                          #{i + 1}
-                        </span>
+                    <Link key={stage.id} href="/pipeline" className="team-row-2">
+                      <div
+                        className="av"
+                        style={{ background: "var(--text-3)" }}
+                      >
+                        {i + 1}
                       </div>
-                      <p className="mt-1 text-2xl font-bold">{stage.count}</p>
-                      <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary/60 transition-all"
-                          style={{ width: `${pct}%` }}
-                        />
+                      <div>
+                        <div className="nm">{stage.nom}</div>
+                        <div className="r">étape #{i + 1}</div>
+                      </div>
+                      <div className="vl">
+                        <div className="num">{stage.count}</div>
+                      </div>
+                      <div className="bar">
+                        <i style={{ width: `${pct}%` }} />
                       </div>
                     </Link>
                   );
@@ -767,16 +701,37 @@ export function SalesDashboard() {
       {/* Objectives modal */}
       {showObjectivesModal && editingObjectives && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border bg-background p-6 shadow-2xl">
+          <div className="studio-surface w-full max-w-md card" style={{ padding: 24 }}>
             <div className="mb-6 flex items-center justify-between">
               <div>
-                <h3 className="text-lg font-bold">Objectifs quotidiens</h3>
-                <p className="text-sm text-muted-foreground">
-                  Définissez vos objectifs d'actions par jour
+                <h3
+                  style={{
+                    fontFamily: "var(--font-serif)",
+                    fontWeight: 400,
+                    fontSize: 20,
+                    margin: 0,
+                    letterSpacing: "-0.005em",
+                  }}
+                >
+                  Objectifs quotidiens
+                </h3>
+                <p
+                  style={{
+                    fontSize: 12.5,
+                    color: "var(--text-3)",
+                    marginTop: 4,
+                  }}
+                >
+                  Définissez vos objectifs d&apos;actions par jour
                 </p>
               </div>
-              <button onClick={() => setShowObjectivesModal(false)}>
-                <X className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+              <button
+                type="button"
+                className="btn ghost sm icon"
+                aria-label="Fermer"
+                onClick={() => setShowObjectivesModal(false)}
+              >
+                <X className="ico-sm" />
               </button>
             </div>
             <div className="space-y-4">
@@ -785,17 +740,32 @@ export function SalesDashboard() {
                 return (
                   <div key={card.key} className="flex items-center gap-3">
                     <div
-                      className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                        card.bgColor,
-                        card.color,
-                      )}
+                      className="icw"
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "var(--bg-2)",
+                        color: "var(--text-2)",
+                        flexShrink: 0,
+                      }}
                     >
-                      <Icon className="h-4 w-4" />
+                      <Icon className="ico-sm" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium">{card.label}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p style={{ fontSize: 13, fontWeight: 500, margin: 0 }}>
+                        {card.label}
+                      </p>
+                      <p
+                        style={{
+                          fontSize: 11.5,
+                          color: "var(--text-3)",
+                          margin: 0,
+                        }}
+                      >
                         {card.sublabel}
                       </p>
                     </div>
@@ -820,30 +790,29 @@ export function SalesDashboard() {
               })}
             </div>
             <div className="mt-6 flex items-center justify-between">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground"
+              <button
+                type="button"
+                className="btn ghost sm"
                 onClick={() => setEditingObjectives(DEFAULT_OBJECTIVES)}
               >
                 Réinitialiser
-              </Button>
+              </button>
               <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
+                <button
+                  type="button"
+                  className="btn outline sm"
                   onClick={() => setShowObjectivesModal(false)}
                 >
                   Annuler
-                </Button>
-                <Button
-                  size="sm"
-                  className="gap-1.5"
+                </button>
+                <button
+                  type="button"
+                  className="btn accent sm"
                   onClick={handleSaveObjectives}
                 >
-                  <Save className="h-4 w-4" />
+                  <Save className="ico-sm" />
                   Enregistrer
-                </Button>
+                </button>
               </div>
             </div>
           </div>
