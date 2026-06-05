@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import React, { useState, useRef } from 'react';
 import { useAppData } from './AppDataContext';
 import { Opportunity, PipelineStage } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
@@ -15,7 +15,6 @@ import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { Checkbox } from './ui/checkbox';
 import {
-  DollarSign,
   Calendar,
   ArrowUp,
   ArrowDown,
@@ -28,9 +27,7 @@ import {
   MessageSquare,
   Grip,
   Settings,
-  EyeOff,
   Eye,
-  Maximize2,
   Minimize2,
   Phone,
   Mail,
@@ -196,7 +193,6 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
   const hasEmail = !!(opportunity.email);
   const hasLinkedin = !!(opportunity.linkedin_url || associatedCompany?.linkedin_url);
   const websiteUrl = normalizeWebsiteUrl(opportunity.companyUrl || associatedCompany?.canonical_url);
-  const hasWebsite = !!websiteUrl;
 
   if (isReduced) {
     return (
@@ -1082,8 +1078,6 @@ export const PipelinePage: React.FC = () => {
     return config?.isVisible !== false;
   });
 
-  const totalValue = sortedOpportunities.reduce((sum, opp) => sum + calculateOpportunityValue(opp), 0);
-  const averageValue = sortedOpportunities.length > 0 ? totalValue / sortedOpportunities.length : 0;
   const filteredOpportunityCompanyIds = React.useMemo(
     () =>
       Array.from(
