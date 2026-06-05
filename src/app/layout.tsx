@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./studio.css";
 import { Providers } from "./providers";
 import { DM_Sans, DM_Mono, Cormorant_Garamond } from "next/font/google";
 

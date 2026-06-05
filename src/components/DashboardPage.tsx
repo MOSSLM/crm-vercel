@@ -1,10 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useAppData } from "./AppDataContext";
 import { journalApi, JournalKpiTotals } from "../utils/journalApi";
-import { Zap } from "lucide-react";
+import { LayoutGrid, BarChart3, Zap } from "lucide-react";
 import logger from "../utils/logger";
 import { supabase } from "@/utils/supabase/client";
 
@@ -265,34 +264,83 @@ export const DashboardPage: React.FC = () => {
 
   const taskMonthLabel = taskCalendarMonth.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
 
+  const eur = (n: number) =>
+    n >= 1000 ? `${Math.round(n / 1000)} k€` : `${Math.round(n)} €`;
+  const todayDateLabel = new Date().toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+
   return (
-    <div className="mobile-safe-pb space-y-4 px-3 py-4 md:space-y-6 md:p-6">
-      <div>
-        <h1>Dashboard</h1>
-        <p className="text-muted-foreground">Vue d&apos;ensemble de votre activité commerciale</p>
+    <div className="studio-surface flex min-h-full flex-col mobile-safe-pb px-3 py-4 md:p-6">
+      <div className="ws-header">
+        <div>
+          <div className="ws-eyebrow">Tableau de bord · {todayDateLabel}</div>
+          <h1>
+            Pipeline à <em>{eur(totalPipelineValue)}</em>
+          </h1>
+          <div className="sub">
+            {eur(totalSigned)} signés · {totalSignatures} signatures · {totalAppels} appels
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button type="button" className="btn outline sm">
+            <Zap className="ico-sm" />
+            Activité
+          </button>
+        </div>
       </div>
 
-      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-        <TabsList className="w-full">
-          <TabsTrigger value="overview" className="flex-1 text-xs md:text-sm">
-            <span className="hidden md:inline">Vue d&apos;ensemble</span>
-            <span className="md:hidden">Vue</span>
-          </TabsTrigger>
-          <TabsTrigger value="commercial" className="flex-1 text-xs md:text-sm">
-            <span className="hidden md:inline">Performance commerciale</span>
-            <span className="md:hidden">Perf.</span>
-          </TabsTrigger>
-          <TabsTrigger value="funnel" className="flex-1 text-xs md:text-sm">
-            <div className="flex items-center gap-1 md:gap-2">
-              <Zap className="h-3 w-3 md:h-4 md:w-4" />
-              <span className="hidden md:inline">Entonnoir de conversion</span>
-              <span className="md:hidden">Entonnoir</span>
-            </div>
-          </TabsTrigger>
-        </TabsList>
+      {/* Main KPI strip */}
+      <div className="kpi-strip" style={{ marginBottom: 18 }}>
+        <div className="kpi">
+          <div className="lb"><BarChart3 className="ico-xs" />CA signé</div>
+          <div className="vl">{eur(totalSigned)}</div>
+        </div>
+        <div className="kpi">
+          <div className="lb"><LayoutGrid className="ico-xs" />pipeline</div>
+          <div className="vl">{eur(totalPipelineValue)}</div>
+        </div>
+        <div className="kpi">
+          <div className="lb"><Zap className="ico-xs" />panier moyen</div>
+          <div className="vl">{eur(averageDealValue)}</div>
+        </div>
+        <div className="kpi">
+          <div className="lb"><BarChart3 className="ico-xs" />signatures</div>
+          <div className="vl">{totalSignatures}</div>
+        </div>
+      </div>
 
-        {/* ── Overview ─────────────────────────── */}
-        <TabsContent value="overview" className="space-y-6 mt-6">
+      <div className="tabs-strip" role="tablist" style={{ position: "static", marginBottom: 18, borderRadius: 10, border: "1px solid var(--border)" }}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={viewMode === "overview"}
+          className="tab"
+          onClick={() => setViewMode("overview")}
+        >
+          <LayoutGrid className="ico-sm" />Vue d&apos;ensemble
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={viewMode === "commercial"}
+          className="tab"
+          onClick={() => setViewMode("commercial")}
+        >
+          <BarChart3 className="ico-sm" />Performance commerciale
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={viewMode === "funnel"}
+          className="tab"
+          onClick={() => setViewMode("funnel")}
+        >
+          <Zap className="ico-sm" />Entonnoir de conversion
+        </button>
+      </div>
+
+      {/* ── Overview ─────────────────────────── */}
+      {viewMode === "overview" && (
+        <div className="space-y-6">
           <KpiActivityCard
             journalKpis={journalKpis}
             selectedPeriod={selectedPeriod}
@@ -374,10 +422,12 @@ export const DashboardPage: React.FC = () => {
             onToggle={setShowByKeywords}
             isMobile={isMobile}
           />
-        </TabsContent>
+        </div>
+      )}
 
-        {/* ── Commercial ───────────────────────── */}
-        <TabsContent value="commercial" className="mt-6">
+      {/* ── Commercial ───────────────────────── */}
+      {viewMode === "commercial" && (
+        <div>
           <CommercialTabContent
             totalSigned={totalSigned}
             totalCollected={totalCollected}
@@ -395,17 +445,19 @@ export const DashboardPage: React.FC = () => {
             pipelineBreakdown={pipelineBreakdown}
             isMobile={isMobile}
           />
-        </TabsContent>
+        </div>
+      )}
 
-        {/* ── Funnel ───────────────────────────── */}
-        <TabsContent value="funnel" className="mt-6">
+      {/* ── Funnel ───────────────────────────── */}
+      {viewMode === "funnel" && (
+        <div>
           <FunnelTabContent
             funnelSteps={funnelSteps}
             funnelBarData={funnelBarData}
             isMobile={isMobile}
           />
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
     </div>
   );
 };

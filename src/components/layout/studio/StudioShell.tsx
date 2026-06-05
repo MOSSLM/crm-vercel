@@ -7,6 +7,7 @@ import { StudioCommandMenu } from "@/components/StudioCommandMenu";
 import { AppRail } from "./AppRail";
 import { SpaceSubNav } from "./SpaceSubNav";
 import { StudioTopbar } from "./StudioTopbar";
+import { StudioStatusBar } from "./StudioStatusBar";
 
 /** Fire this to open the Cmd+K palette from anywhere (e.g. the Hub hero). */
 export const STUDIO_OPEN_COMMAND_EVENT = "studio:open-command";
@@ -48,6 +49,7 @@ export function StudioShell({ children }: { children: ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           <StudioTopbar onOpenSearch={() => setCmdkOpen(true)} />
           <main className="flex flex-1 flex-col overflow-auto pb-24 md:pb-0">{children}</main>
+          <StudioStatusBar />
         </div>
       </div>
       <MobileBottomNav />

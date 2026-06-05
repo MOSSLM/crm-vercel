@@ -4,7 +4,7 @@ import logger from '../utils/logger';
 import React, { useState, useRef } from 'react';
 import { useAppData } from './AppDataContext';
 import { Opportunity, PipelineStage } from '@/types';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
@@ -15,7 +15,6 @@ import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { Checkbox } from './ui/checkbox';
 import {
-  DollarSign,
   Calendar,
   ArrowUp,
   ArrowDown,
@@ -28,9 +27,7 @@ import {
   MessageSquare,
   Grip,
   Settings,
-  EyeOff,
   Eye,
-  Maximize2,
   Minimize2,
   Phone,
   Mail,
@@ -44,7 +41,8 @@ import {
   ChevronDown,
   Trash2,
   Pencil,
-  Check
+  Check,
+  Filter
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -76,6 +74,13 @@ const OPPORTUNITY_FLAGS = [
   { value: 'site_tres_ancien', label: 'Site très ancien' },
   { value: 'a_revoir_plus_tard', label: 'À revoir plus tard' },
 ] as const;
+
+// Mapping flag identifier → studio flag presentation (class + short label + icon)
+const FLAG_PRESENTATION: Record<string, { cls: string; label: string }> = {
+  site_merdique: { cls: 'flag-site', label: 'site merdique' },
+  site_tres_ancien: { cls: 'flag-old', label: 'site très ancien' },
+  a_revoir_plus_tard: { cls: 'flag-later', label: 'revoir plus tard' },
+};
 
 const parseFlags = (flags?: string[]) =>
   Array.isArray(flags) ? flags.filter((flag): flag is string => typeof flag === 'string' && flag.length > 0) : [];
@@ -188,252 +193,247 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
   const hasEmail = !!(opportunity.email);
   const hasLinkedin = !!(opportunity.linkedin_url || associatedCompany?.linkedin_url);
   const websiteUrl = normalizeWebsiteUrl(opportunity.companyUrl || associatedCompany?.canonical_url);
-  const hasWebsite = !!websiteUrl;
 
   if (isReduced) {
     return (
       <div
         ref={ref}
-        className={`mb-2 pipeline-card border rounded-lg transition-all duration-200 border-l-4 ${
+        data-priority={opportunity.priorite}
+        className={`kp-card ${
           selectionMode
             ? isSelected
-              ? 'ring-2 ring-blue-500 cursor-pointer'
+              ? 'ring-2 ring-[var(--accent)] cursor-pointer'
               : 'cursor-pointer'
             : isDragging
-            ? 'opacity-50 transform rotate-2 shadow-lg'
+            ? 'cursor-grab'
             : 'cursor-grab active:cursor-grabbing'
         }`}
-        style={{
-          opacity: isDragging ? 0.5 : 1,
-          borderLeftColor: stageColor
-        }}
+        style={{ opacity: isDragging ? 0.5 : 1, padding: '7px 9px', gap: 4 }}
         onClick={() => selectionMode ? onToggleSelect?.(opportunity.id) : onView(opportunity)}
       >
-        <div className="p-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              {selectionMode ? (
-                <Checkbox
-                  checked={isSelected}
-                  onCheckedChange={() => onToggleSelect?.(opportunity.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-shrink-0"
-                />
-              ) : (
-                <Grip className="h-3 w-3 text-muted-foreground cursor-grab flex-shrink-0" />
-              )}
-              {associatedCompany?.logo_url
-                ? <img src={associatedCompany.logo_url} alt="" className="h-6 w-6 rounded object-cover flex-shrink-0" />
-                : null}
-              <div className="flex-1 min-w-0">
-                {/* Nom de l'opportunité en premier */}
-                <div className="text-xs font-medium truncate">{opportunityName}</div>
-                {/* Nom entreprise en dessous */}
-                <div className="text-xs text-muted-foreground truncate">{companyDisplayName}</div>
-                {/* Type et icônes de contact */}
-                <div className="flex items-center gap-1 mt-1">
-                  <Badge variant="secondary" className="text-xs px-1 py-0 h-4">
-                    {opportunity.type === 'mrr' ? 'MRR' : 'Ponctuel'}
-                  </Badge>
-                  {hasPhone && <Phone className="h-2 w-2 text-green-600" />}
-                  {hasEmail && <Mail className="h-2 w-2 text-blue-600" />}
-                  {hasLinkedin && <Linkedin className="h-2 w-2 text-blue-700" />}
-                </div>
-              </div>
-            </div>
-            {(opportunity.value || opportunity.montant || opportunity.mrr) && (
-              <span className="text-xs text-green-600 font-medium flex-shrink-0 ml-2">
-                {opportunity.type === 'mrr' && opportunity.mrr ? 
-                  `${opportunity.mrr.toLocaleString()}€/mois` :
-                  `${(opportunity.value || opportunity.montant || 0).toLocaleString()}€`
-                }
-              </span>
-            )}
-          </div>
+        <div className="top">
+          {selectionMode ? (
+            <Checkbox
+              checked={isSelected}
+              onCheckedChange={() => onToggleSelect?.(opportunity.id)}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-shrink-0 mt-0.5"
+            />
+          ) : (
+            <Grip className="ico-xs text-[var(--text-4)] flex-shrink-0 mt-0.5" />
+          )}
+          <span className="nm">{opportunityName}</span>
+          {(opportunity.value || opportunity.montant || opportunity.mrr) && (
+            <span className="vl">
+              {opportunity.type === 'mrr' && opportunity.mrr
+                ? `${opportunity.mrr.toLocaleString()}€/mois`
+                : `${(opportunity.value || opportunity.montant || 0).toLocaleString()}€`}
+            </span>
+          )}
+        </div>
+        <div className="meta-line">
+          <span>{companyDisplayName}</span>
+          {hasPhone && <Phone className="ico-xs text-[var(--ok)]" />}
+          {hasEmail && <Mail className="ico-xs text-[var(--info)]" />}
+          {hasLinkedin && <Linkedin className="ico-xs text-[var(--info)]" />}
         </div>
       </div>
     );
   }
 
-  const handleChannelChange = (value: string) => {
-    onContactChannelChange(opportunity.id, value as ContactChannel);
+  const handleChannelButton = (channel: ContactChannel) => {
+    // Re-cliquer le canal actif le remet à "pas défini" (toggle), sinon on le sélectionne.
+    onContactChannelChange(opportunity.id, contactChannel === channel ? ContactChannel.PasDefini : channel);
   };
+
+  const tags = (opportunity.tags || '')
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  const flags = parseFlags(opportunity.flags);
+  const note = opportunity.notes || opportunity.note_base;
+  const valueLabel =
+    opportunity.type === 'mrr' && opportunity.mrr
+      ? `${opportunity.mrr.toLocaleString()}€/mois`
+      : opportunity.value || opportunity.montant
+      ? `${(opportunity.value || opportunity.montant || 0).toLocaleString()}€`
+      : null;
 
   return (
     <div
       ref={ref}
-      className={`mb-3 pipeline-card border rounded-lg transition-all duration-200 border-l-4 ${
+      data-priority={opportunity.priorite}
+      className={`kp-card ${
         selectionMode
           ? isSelected
-            ? 'ring-2 ring-blue-500 cursor-pointer'
+            ? 'ring-2 ring-[var(--accent)] cursor-pointer'
             : 'cursor-pointer'
           : isDragging
-          ? 'opacity-50 transform rotate-2 shadow-lg'
+          ? 'cursor-grab'
           : 'cursor-grab active:cursor-grabbing'
       }`}
-      style={{
-        opacity: isDragging ? 0.5 : 1,
-        borderLeftColor: stageColor
-      }}
-      onClick={() => selectionMode ? onToggleSelect?.(opportunity.id) : onView(opportunity)}
+      style={{ opacity: isDragging ? 0.5 : 1, borderLeftColor: stageColor }}
+      onClick={() => (selectionMode ? onToggleSelect?.(opportunity.id) : onView(opportunity))}
     >
-      <div className="p-3">
-        <div className="flex items-start justify-between mb-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              {selectionMode ? (
-                <Checkbox
-                  checked={isSelected}
-                  onCheckedChange={() => onToggleSelect?.(opportunity.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-shrink-0"
-                />
-              ) : (
-                <Grip className="h-4 w-4 text-muted-foreground cursor-grab flex-shrink-0" />
-              )}
-              {associatedCompany?.logo_url
-                ? <img src={associatedCompany.logo_url} alt="" className="h-8 w-8 rounded object-cover flex-shrink-0" />
-                : null}
-              <div className="flex-1 min-w-0">
-                {/* Nom de l'opportunité en premier */}
-                <h4 className="text-sm font-medium leading-tight truncate">{opportunityName}</h4>
-                {/* Nom de l'entreprise en dessous */}
-                <p className="text-xs text-muted-foreground truncate mt-0.5">{companyDisplayName}</p>
-              </div>
-            </div>
-            
-            {/* Type, icônes de contact et valeur */}
-            <div className="flex items-center justify-between mt-2">
-              <div className="flex items-center gap-2">
-                {/* Badge de type */}
-                <Badge variant="secondary" className="text-xs">
-                  {opportunity.type === 'mrr' ? 'MRR' : 'Ponctuel'}
-                </Badge>
-                
-                {/* Icônes de contact */}
-                {hasPhone && <Phone className="h-3 w-3 text-green-600" />}
-                {hasEmail && <Mail className="h-3 w-3 text-blue-600" />}
-                {hasLinkedin && <Linkedin className="h-3 w-3 text-blue-700" />}
-                {hasWebsite && <Globe className="h-3 w-3 text-gray-600" />}
-              </div>
-              
-              {(opportunity.value || opportunity.montant || opportunity.mrr) && (
-                <div className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3 text-green-600" />
-                  <span className="text-xs text-green-600 font-medium">
-                    {opportunity.type === 'mrr' && opportunity.mrr ? 
-                      `${opportunity.mrr.toLocaleString()}€/mois` :
-                      `${(opportunity.value || opportunity.montant || 0).toLocaleString()}€`
-                    }
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1 ml-2">
-            {getPriorityIcon(opportunity.priorite)}
-          </div>
-        </div>
-
-        {parseFlags(opportunity.flags).length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1">
-            {parseFlags(opportunity.flags).map((flag) => {
-              const found = OPPORTUNITY_FLAGS.find((item) => item.value === flag);
-              return (
-                <Badge key={flag} variant="destructive" className="text-[10px] px-1 py-0">{found?.label || flag}</Badge>
-              );
-            })}
-          </div>
-        )}
-
-        <div className="space-y-2">
-          <div className="text-xs text-muted-foreground">
-            <div className="flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              Maj le {formatDate(opportunity.updated_at)}
-            </div>
-          </div>
-
-          {opportunity.opportunityNotes && opportunity.opportunityNotes.length > 0 && (
-            <div className="flex items-center gap-1 text-xs text-blue-600">
-              <MessageSquare className="h-3 w-3" />
-              {opportunity.opportunityNotes.length} note{opportunity.opportunityNotes.length > 1 ? 's' : ''}
-            </div>
-          )}
-
-          {opportunity.date_prochain_suivi && (
-            <div className="flex items-center gap-1 text-xs text-orange-600">
-              <AlertCircle className="h-3 w-3" />
-              Suivi : {formatDate(opportunity.date_prochain_suivi)}
-            </div>
-          )}
-
-          <div
-            className="flex flex-col gap-1"
+      <div className="top">
+        {selectionMode ? (
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggleSelect?.(opportunity.id)}
             onClick={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <Label className="text-xs text-muted-foreground">Canal de contact</Label>
-            <Select value={contactChannel} onValueChange={handleChannelChange}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Sélectionner un canal" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ContactChannel.PasDefini}>Pas défini</SelectItem>
-                <SelectItem value={ContactChannel.Telephone}>Téléphone</SelectItem>
-                <SelectItem value={ContactChannel.Email}>Email</SelectItem>
-                <SelectItem value={ContactChannel.Linkedin}>LinkedIn</SelectItem>
-                <SelectItem value={ContactChannel.Whatsapp}>WhatsApp</SelectItem>
-                <SelectItem value={ContactChannel.Sms}>SMS</SelectItem>
-                <SelectItem value={ContactChannel.Autre}>Autre</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+            className="flex-shrink-0 mt-0.5"
+          />
+        ) : (
+          <Grip className="ico-xs text-[var(--text-4)] flex-shrink-0 mt-0.5" />
+        )}
+        {associatedCompany?.logo_url ? (
+          <img src={associatedCompany.logo_url} alt="" className="h-6 w-6 rounded object-cover flex-shrink-0" />
+        ) : null}
+        <span className="nm">{opportunityName}</span>
+        {valueLabel && <span className="vl">{valueLabel}</span>}
+      </div>
 
-          <div className="flex gap-1 pt-2">
-            {websiteUrl && (
-              <Button
-                size="sm"
-                variant="outline"
-                className="text-xs px-2 py-1 h-6"
-                onClick={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                asChild
-              >
-                <a href={websiteUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1">
-                  <Globe className="h-3 w-3" />
-                  Site
-                </a>
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={(e) => {
-                e.stopPropagation();
-                onView(opportunity);
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="text-xs px-2 py-1 h-6"
-            >
-              Voir
-            </Button>
-            <Button 
-              size="sm" 
-              variant="outline"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(opportunity);
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              className="text-xs px-2 py-1 h-6"
-            >
-              <Edit className="h-3 w-3 mr-1" />
-              Modifier
-            </Button>
-          </div>
+      <div className="meta-line">
+        <span className="priority" data-p={opportunity.priorite}>
+          {getPriorityIcon(opportunity.priorite)}
+          {opportunity.priorite || 'non définie'}
+        </span>
+        <span style={{ color: 'var(--text-4)' }}>·</span>
+        <span>{companyDisplayName}</span>
+        {tags.length > 0 && (
+          <>
+            <span style={{ color: 'var(--text-4)' }}>·</span>
+            <span>{tags[0]}</span>
+            {tags.length > 1 && <span style={{ color: 'var(--text-4)' }}>+{tags.length - 1}</span>}
+          </>
+        )}
+      </div>
+
+      {flags.length > 0 && (
+        <div className="flags-line">
+          {flags.map((flag) => {
+            const presentation = FLAG_PRESENTATION[flag];
+            const found = OPPORTUNITY_FLAGS.find((item) => item.value === flag);
+            return (
+              <span key={flag} className={`flag ${presentation?.cls ?? ''}`}>
+                {flag === 'site_merdique' && <AlertCircle className="ico-xs" />}
+                {flag === 'site_tres_ancien' && <Clock className="ico-xs" />}
+                {flag === 'a_revoir_plus_tard' && <Calendar className="ico-xs" />}
+                {presentation?.label ?? found?.label ?? flag}
+              </span>
+            );
+          })}
         </div>
+      )}
+
+      {opportunity.date_prochain_suivi && (
+        <div
+          style={{
+            fontSize: 10.5,
+            color: 'var(--warn)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          <AlertCircle className="ico-xs" />
+          Suivi : {formatDate(opportunity.date_prochain_suivi)}
+        </div>
+      )}
+
+      {note && (
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--text-3)',
+            lineHeight: 1.4,
+            fontStyle: 'italic',
+            borderTop: '1px solid var(--border)',
+            paddingTop: 5,
+            marginTop: 2,
+          }}
+        >
+          <MessageSquare className="ico-xs" style={{ marginRight: 4, verticalAlign: '-2px', color: 'var(--text-4)' }} />
+          {note}
+        </div>
+      )}
+
+      <div
+        className="channels"
+        onClick={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="ch"
+          aria-pressed={contactChannel === ContactChannel.Telephone}
+          aria-label="Téléphone"
+          title={hasPhone ? 'Téléphone' : 'Téléphone (aucun numéro)'}
+          onClick={() => handleChannelButton(ContactChannel.Telephone)}
+        >
+          <Phone className="ico-sm" />
+        </button>
+        <button
+          type="button"
+          className="ch"
+          aria-pressed={contactChannel === ContactChannel.Email}
+          aria-label="Email"
+          title={hasEmail ? 'Email' : 'Email (aucune adresse)'}
+          onClick={() => handleChannelButton(ContactChannel.Email)}
+        >
+          <Mail className="ico-sm" />
+        </button>
+        <button
+          type="button"
+          className="ch"
+          aria-pressed={contactChannel === ContactChannel.Linkedin}
+          aria-label="LinkedIn"
+          title={hasLinkedin ? 'LinkedIn' : 'LinkedIn (aucun profil)'}
+          onClick={() => handleChannelButton(ContactChannel.Linkedin)}
+        >
+          <Linkedin className="ico-sm" />
+        </button>
+        <button
+          type="button"
+          className="ch"
+          aria-pressed={contactChannel === ContactChannel.Whatsapp}
+          aria-label="WhatsApp"
+          title="WhatsApp"
+          onClick={() => handleChannelButton(ContactChannel.Whatsapp)}
+        >
+          <MessageSquare className="ico-sm" />
+        </button>
+        {websiteUrl ? (
+          <a
+            className="ch"
+            href={websiteUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Site web"
+            title="Visiter le site"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Globe className="ico-sm" />
+          </a>
+        ) : (
+          <span className="ch" aria-hidden style={{ opacity: 0.4, cursor: 'default' }} title="Aucun site">
+            <Globe className="ico-sm" />
+          </span>
+        )}
+        <button
+          type="button"
+          className="ch"
+          aria-label="Modifier l'opportunité"
+          title="Modifier"
+          style={{ marginLeft: 'auto' }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEdit(opportunity);
+          }}
+        >
+          <Edit className="ico-sm" />
+        </button>
       </div>
     </div>
   );
@@ -493,31 +493,52 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
 
   drop(ref);
 
-  return (
-    <div 
-      ref={ref}
-      className={`rounded-lg p-4 transition-all duration-200 ${
-        isOver ? 'pipeline-drop-zone-active border-2 border-dashed' : 'pipeline-drop-zone'
-      } ${isReduced ? 'min-h-[400px]' : 'min-h-[600px]'}`}
-    >
-      <div className="mb-4">
-        <div className="flex items-center gap-2 mb-2">
+  const stageValueLabel = `${stageValue.toLocaleString()}€`;
+
+  if (isReduced) {
+    return (
+      <div
+        ref={ref}
+        className={`kp-col reduced ${isOver ? 'ring-2 ring-[var(--accent)]' : ''}`}
+        style={{ minHeight: '100%' }}
+        title={`${stage.nom} — ${opportunities.length} opp. — ${stageValueLabel}`}
+      >
+        <div className="kp-col-hd" style={{ flexDirection: 'column', padding: '10px 6px', gap: 6 }}>
+          <span className="dot" style={{ background: stageColor }} />
           <div
-            className="w-3 h-3 rounded-full flex-shrink-0"
-            style={{ backgroundColor: stageColor }}
-          ></div>
-          <h3 className={`font-medium ${isReduced ? 'text-sm' : ''}`}>{stage.nom}</h3>
-          <Badge variant="secondary" className="ml-auto">
-            {opportunities.length}
-          </Badge>
-        </div>
-        {stageValue > 0 && (
-          <div className={`text-muted-foreground ${isReduced ? 'text-xs' : 'text-sm'}`}>
-            {stageValue.toLocaleString()}€
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--text-2)',
+              writingMode: 'vertical-rl',
+              transform: 'rotate(180deg)',
+              whiteSpace: 'nowrap',
+              marginTop: 4,
+            }}
+          >
+            {stage.nom}
           </div>
-        )}
-        {selectionMode && opportunities.length > 0 && (
-          <label className="flex items-center gap-2 mt-2 cursor-pointer text-xs text-muted-foreground">
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)', marginTop: 'auto' }}>
+            {opportunities.length}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={ref}
+      className={`kp-col ${isOver ? 'ring-2 ring-[var(--accent)]' : ''}`}
+      style={{ minHeight: '100%' }}
+    >
+      <div className="kp-col-hd">
+        <span className="dot" style={{ background: stageColor }} />
+        <span className="nm">{stage.nom}</span>
+        <span className="ct">{opportunities.length}</span>
+        {stageValue > 0 && <span className="vl">{stageValueLabel}</span>}
+        {selectionMode && opportunities.length > 0 ? (
+          <label className="ck" style={{ cursor: 'pointer' }} title="Tout sélectionner" onMouseDown={(e) => e.stopPropagation()}>
             <Checkbox
               checked={opportunities.every((o) => selectedCardIds.has(o.id))}
               onCheckedChange={(checked) => {
@@ -528,12 +549,15 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
                 }
               }}
             />
-            Tout sélectionner
           </label>
+        ) : (
+          <span className="ck" aria-hidden title="Plus d'options">
+            <Settings className="ico-sm" />
+          </span>
         )}
       </div>
 
-      <div className="space-y-3">
+      <div className="kp-col-bd">
         {opportunities.map((opportunity) => (
           <OpportunityCard
             key={opportunity.id}
@@ -549,20 +573,30 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
             onToggleSelect={onToggleSelect}
           />
         ))}
-        
+
         {opportunities.length === 0 && (
-          <div className={`text-center text-muted-foreground transition-all ${
-            isOver ? 'text-blue-600' : ''
-          } ${isReduced ? 'py-4' : 'py-8'}`}>
-            <Target className={`mx-auto mb-2 ${
-              isOver ? 'text-blue-600' : 'opacity-50'
-            } ${isReduced ? 'h-6 w-6' : 'h-8 w-8'}`} />
-            <p className={isReduced ? 'text-xs' : 'text-sm'}>
-              {isOver ? 'Déposez ici' : 'Glissez une opportunité ici'}
-            </p>
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '24px 8px',
+              color: isOver ? 'var(--accent)' : 'var(--text-4)',
+            }}
+          >
+            <Target className="ico-lg" style={{ margin: '0 auto 6px', opacity: isOver ? 1 : 0.5 }} />
+            <p style={{ fontSize: 11.5 }}>{isOver ? 'Déposez ici' : 'Glissez une opportunité ici'}</p>
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        className="kp-add"
+        disabled
+        title="La création d'opportunités se fait depuis la liste des entreprises"
+      >
+        <Plus className="ico-sm" />
+        Ajouter une opp.
+      </button>
     </div>
   );
 };
@@ -586,6 +620,7 @@ export const PipelinePage: React.FC = () => {
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
   const [editingOpportunity, setEditingOpportunity] = useState<Opportunity | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
   const [contactChannels, setContactChannels] = useState<Record<string, ContactChannel>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [minPrice, setMinPrice] = useState('');
@@ -1043,8 +1078,6 @@ export const PipelinePage: React.FC = () => {
     return config?.isVisible !== false;
   });
 
-  const totalValue = sortedOpportunities.reduce((sum, opp) => sum + calculateOpportunityValue(opp), 0);
-  const averageValue = sortedOpportunities.length > 0 ? totalValue / sortedOpportunities.length : 0;
   const filteredOpportunityCompanyIds = React.useMemo(
     () =>
       Array.from(
@@ -1071,17 +1104,22 @@ export const PipelinePage: React.FC = () => {
     }
   };
 
+  const sortLabels: Record<SortOption, string> = {
+    recent: 'Récent',
+    'price-asc': 'Prix ↑',
+    'price-desc': 'Prix ↓',
+    'priority-high': 'Priorité ↑',
+    'priority-low': 'Priorité ↓',
+  };
+  const selectedPipeline = pipelines.find((p) => p.id === selectedPipelineId);
+  const pipelinePickLabel = selectedPipelineId === 'all' ? 'Tous les pipelines' : selectedPipeline?.nom ?? 'Pipeline';
+
   return (
     <DndProvider backend={HTML5Backend}>
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1>Pipeline des Ventes</h1>
-            <p className="text-muted-foreground">
-              Suivez vos opportunités à travers les différentes étapes du processus de vente
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="studio-surface flex min-h-full flex-col">
+        {/* Toolbar */}
+        <div className="pipe-bar">
+          <div className="pipeline-pick" style={{ padding: 0, border: 0, background: 'transparent' }}>
             <PipelineCombobox
               pipelines={pipelines}
               selectedValue={selectedPipelineId}
@@ -1090,46 +1128,131 @@ export const PipelinePage: React.FC = () => {
               onCreate={addPipeline}
               placeholder="Choisir ou créer un pipeline"
             />
-            <Button size="sm" variant={pipelineMode === 'standard' ? 'default' : 'outline'} onClick={() => setPipelineMode('standard')}>
-              Vue pipeline
-            </Button>
-            <Button size="sm" variant={pipelineMode === 'cold_call' ? 'default' : 'outline'} onClick={() => setPipelineMode('cold_call')}>
-              Mode Cold Call
-            </Button>
-            {pipelineMode === 'standard' && (
-              <>
-                <Button
-                  variant={selectionMode ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={handleToggleSelectionMode}
-                  className="flex items-center gap-2"
-                >
-                  <MousePointerClick className="h-4 w-4" />
-                  {selectionMode ? 'Annuler sélection' : 'Sélectionner'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowSettings(!showSettings)}
-                  className="flex items-center gap-2"
-                >
-                  <Settings className="h-4 w-4" />
-                  Configuration
-                </Button>
-              </>
-            )}
+            <span className="ct" title={pipelinePickLabel}>{sortedOpportunities.length} opp.</span>
           </div>
+
+          <div className="seg" aria-label="Mode d'affichage du pipeline">
+            <button
+              type="button"
+              className="s"
+              aria-pressed={pipelineMode === 'standard'}
+              onClick={() => setPipelineMode('standard')}
+            >
+              <Grip className="ico-sm" />
+              Kanban
+            </button>
+            <button
+              type="button"
+              className="s"
+              aria-pressed={pipelineMode === 'cold_call'}
+              onClick={() => setPipelineMode('cold_call')}
+            >
+              <Phone className="ico-sm" />
+              Cold call
+            </button>
+          </div>
+
+          <span className="grow" style={{ flex: 1 }} />
+
+          {pipelineMode === 'standard' && (
+            <>
+              <div className="select-w" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span className="lb">Tri :</span>
+                <Select value={sortOption} onValueChange={(value) => setSortOption(value as SortOption)}>
+                  <SelectTrigger className="h-7 border-0 bg-transparent px-1 text-[11.5px] shadow-none focus:ring-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recent">{sortLabels.recent}</SelectItem>
+                    <SelectItem value="price-asc">{sortLabels['price-asc']}</SelectItem>
+                    <SelectItem value="price-desc">{sortLabels['price-desc']}</SelectItem>
+                    <SelectItem value="priority-high">{sortLabels['priority-high']}</SelectItem>
+                    <SelectItem value="priority-low">{sortLabels['priority-low']}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <button
+                type="button"
+                className="btn ghost sm"
+                aria-pressed={showFilters}
+                onClick={() => setShowFilters((prev) => !prev)}
+              >
+                <Filter className="ico-sm" />
+                Filtres
+              </button>
+              <button
+                type="button"
+                className="btn ghost sm"
+                aria-pressed={showSettings}
+                onClick={() => setShowSettings(!showSettings)}
+              >
+                <Settings className="ico-sm" />
+                Étapes
+              </button>
+              <button
+                type="button"
+                className="btn ghost sm"
+                aria-pressed={selectionMode}
+                onClick={handleToggleSelectionMode}
+              >
+                <MousePointerClick className="ico-sm" />
+                {selectionMode ? 'Annuler' : 'Sélectionner'}
+              </button>
+            </>
+          )}
         </div>
 
         {pipelineMode === 'cold_call' && (
-          <QualifiedColdCallWorkspace includeOnlyQualified={false} scopedCompanyIds={filteredOpportunityCompanyIds} />
+          <div className="px-5 pb-6">
+            <QualifiedColdCallWorkspace includeOnlyQualified={false} scopedCompanyIds={filteredOpportunityCompanyIds} />
+          </div>
         )}
 
         {pipelineMode === 'standard' && (
           <>
 
+        {/* Strip KPI par étape */}
+        <div className="pipe-bar" style={{ paddingTop: 4 }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${Math.max(visibleStages.length, 1)}, minmax(0, 1fr))`,
+              gap: 1,
+              background: 'var(--border)',
+              border: '1px solid var(--border)',
+              borderRadius: 10,
+              overflow: 'hidden',
+              flex: 1,
+            }}
+          >
+            {visibleStages
+              .slice()
+              .sort((a, b) => a.ordre - b.ordre)
+              .map((stage) => {
+                const stageOpps = getFilteredOpportunitiesByStage(stage.id);
+                const stageSum = stageOpps.reduce((sum, opp) => sum + calculateOpportunityValue(opp), 0);
+                return (
+                  <div
+                    key={stage.id}
+                    style={{ background: 'var(--surface)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 2 }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: getStageColor(stage.nom), flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stage.nom}</span>
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-serif)', fontSize: 22, letterSpacing: '-.01em', lineHeight: 1, marginTop: 3 }}>
+                      {stageSum > 0 ? `${stageSum.toLocaleString()}€` : '—'}
+                    </div>
+                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text-3)' }}>{stageOpps.length} opp.</div>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+
         {/* Configuration des étapes */}
         {showSettings && (
+          <div className="px-5 pb-2">
           <Card className="p-4">
             <h3 className="font-medium mb-4">Configuration des étapes</h3>
             <div className="flex flex-col gap-2">
@@ -1277,58 +1400,11 @@ export const PipelinePage: React.FC = () => {
               </Button>
             </div>
           </Card>
+          </div>
         )}
 
-        <div className="grid gap-2 grid-cols-2 md:grid-cols-4 md:gap-6">
-          <Card className="min-h-[98px]">
-            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-              <CardTitle className="text-sm">Opportunités totales</CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 pb-3 md:pb-4">
-              <div className="text-lg md:text-2xl font-bold">{sortedOpportunities.length}</div>
-              <p className="text-xs text-muted-foreground">Dans le pipeline (après filtres)</p>
-            </CardContent>
-          </Card>
-
-          <Card className="min-h-[98px]">
-            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-              <CardTitle className="text-sm">Valeur totale</CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 pb-3 md:pb-4">
-              <div className="text-lg md:text-2xl font-bold text-green-600">
-                {totalValue.toLocaleString()}€
-              </div>
-              <p className="text-xs text-muted-foreground">Pipeline filtré</p>
-            </CardContent>
-          </Card>
-
-          <Card className="min-h-[98px]">
-            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-              <CardTitle className="text-sm">Valeur moyenne</CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 pb-3 md:pb-4">
-              <div className="text-lg md:text-2xl font-bold text-blue-600">
-                {Math.round(averageValue).toLocaleString()}€
-              </div>
-              <p className="text-xs text-muted-foreground">Par opportunité filtrée</p>
-            </CardContent>
-          </Card>
-
-          <Card className="min-h-[98px]">
-            <CardHeader className="px-3 pt-3 pb-1 md:pb-2">
-              <CardTitle className="text-sm">Étapes actives</CardTitle>
-            </CardHeader>
-            <CardContent className="px-3 pb-3 md:pb-4">
-              <div className="text-lg md:text-2xl font-bold text-purple-600">
-                {visibleStages.filter(stage =>
-                  getFilteredOpportunitiesByStage(stage.id).length > 0
-                ).length}
-              </div>
-              <p className="text-xs text-muted-foreground">Sur {visibleStages.length}</p>
-            </CardContent>
-          </Card>
-        </div>
-
+        {showFilters && (
+        <div className="px-5 pb-2">
         <Card className="p-3 md:p-4">
           <div className="flex flex-col gap-3">
             <div className="grid gap-2 md:gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -1507,51 +1583,43 @@ export const PipelinePage: React.FC = () => {
             </div>
           </div>
         </Card>
-
-        <div className="info-tooltip border rounded-lg p-4">
-          <div className="flex items-center gap-2">
-            <Grip className="h-4 w-4 text-blue-600" />
-            <span className="text-sm text-blue-600">
-              <strong>Glisser-déposer :</strong> Cliquez et maintenez sur l'icône de poignée ou sur la carte, puis glissez vers une nouvelle colonne
-            </span>
-          </div>
         </div>
+        )}
 
-        <div className="overflow-x-auto">
-          <div className="flex gap-4 pb-4" style={{ minWidth: `${visibleStages.length * 200}px` }}>
-            {visibleStages
-              .sort((a, b) => a.ordre - b.ordre)
-              .map((stage) => {
-                const config = stageConfigs.find(c => c.id === stage.id);
-                const isReduced = config?.isReduced || false;
-                const stageOpportunities = getFilteredOpportunitiesByStage(stage.id);
+        {/* Kanban */}
+        <div className="kb-pipeline">
+          {visibleStages
+            .slice()
+            .sort((a, b) => a.ordre - b.ordre)
+            .map((stage) => {
+              const config = stageConfigs.find(c => c.id === stage.id);
+              const isReduced = config?.isReduced || false;
+              const stageOpportunities = getFilteredOpportunitiesByStage(stage.id);
 
-                return (
-                  <div key={stage.id} className={`flex-shrink-0 ${isReduced ? 'w-48' : 'w-72'}`}>
-                    <PipelineColumn
-                      stage={stage}
-                      opportunities={stageOpportunities}
-                      onDrop={handleDrop}
-                      onView={setSelectedOpportunity}
-                      onEdit={handleEditOpportunity}
-                      contactChannels={contactChannels}
-                      onContactChannelChange={handleContactChannelChange}
-                      isReduced={isReduced}
-                      selectionMode={selectionMode}
-                      selectedCardIds={selectedCardIds}
-                      onToggleSelect={handleToggleSelectCard}
-                      onSelectAll={(ids) => {
-                        if (ids.length === 0) {
-                          handleDeselectAllInColumn(stageOpportunities.map((o) => o.id));
-                        } else {
-                          handleSelectAllInColumn(ids);
-                        }
-                      }}
-                    />
-                  </div>
-                );
-              })}
-          </div>
+              return (
+                <PipelineColumn
+                  key={stage.id}
+                  stage={stage}
+                  opportunities={stageOpportunities}
+                  onDrop={handleDrop}
+                  onView={setSelectedOpportunity}
+                  onEdit={handleEditOpportunity}
+                  contactChannels={contactChannels}
+                  onContactChannelChange={handleContactChannelChange}
+                  isReduced={isReduced}
+                  selectionMode={selectionMode}
+                  selectedCardIds={selectedCardIds}
+                  onToggleSelect={handleToggleSelectCard}
+                  onSelectAll={(ids) => {
+                    if (ids.length === 0) {
+                      handleDeselectAllInColumn(stageOpportunities.map((o) => o.id));
+                    } else {
+                      handleSelectAllInColumn(ids);
+                    }
+                  }}
+                />
+              );
+            })}
         </div>
 
         {/* Modal de détail d'opportunité avec changement d'étape */}
