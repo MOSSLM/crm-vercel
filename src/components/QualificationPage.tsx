@@ -35,6 +35,30 @@ import { normalizeServiceTags } from '../utils/serviceTags';
 
 type UrlFilter = 'all' | 'with-url' | 'without-url';
 
+// Persisted filter/view state so the queue keeps the same view (e.g. "URL
+// seulement") when the user navigates away and comes back or reloads the page.
+const FILTERS_STORAGE_KEY = 'qualification.filters.v1';
+
+type PersistedFilters = {
+  searchTerm: string;
+  selectedSources: string[];
+  showQualified: boolean;
+  urlFilter: UrlFilter;
+  viewMode: 'grid' | 'list';
+  showDuplicates: boolean;
+  showHiddenCompanies: boolean;
+};
+
+function loadPersistedFilters(): Partial<PersistedFilters> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(FILTERS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PersistedFilters>) : {};
+  } catch {
+    return {};
+  }
+}
+
 export const QualificationPage: React.FC = () => {
   const sourceOptions = [
     { value: 'google_search', label: 'Google Search' },
@@ -57,14 +81,38 @@ export const QualificationPage: React.FC = () => {
     setSelectedQualificationOfferId
   } = useAppData();
   
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedSources, setSelectedSources] = useState<string[]>(() => sourceOptions.map((option) => option.value));
-  const [showQualified, setShowQualified] = useState(false);
-  const [urlFilter, setUrlFilter] = useState<UrlFilter>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  // Read once on mount so a remount/reload restores the previous view.
+  const [persisted] = useState(loadPersistedFilters);
+  const [searchTerm, setSearchTerm] = useState(persisted.searchTerm ?? '');
+  const [selectedSources, setSelectedSources] = useState<string[]>(
+    () => persisted.selectedSources ?? sourceOptions.map((option) => option.value)
+  );
+  const [showQualified, setShowQualified] = useState(persisted.showQualified ?? false);
+  const [urlFilter, setUrlFilter] = useState<UrlFilter>(persisted.urlFilter ?? 'all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(persisted.viewMode ?? 'list');
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
-  const [showDuplicates, setShowDuplicates] = useState(false);
-  const [showHiddenCompanies, setShowHiddenCompanies] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(persisted.showDuplicates ?? false);
+  const [showHiddenCompanies, setShowHiddenCompanies] = useState(persisted.showHiddenCompanies ?? false);
+
+  // Persist filter/view changes (not the page number — that intentionally
+  // resets to 1 when filters change, see the effect below).
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const data: PersistedFilters = {
+      searchTerm,
+      selectedSources,
+      showQualified,
+      urlFilter,
+      viewMode,
+      showDuplicates,
+      showHiddenCompanies,
+    };
+    try {
+      window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // ignore quota/serialization errors
+    }
+  }, [searchTerm, selectedSources, showQualified, urlFilter, viewMode, showDuplicates, showHiddenCompanies]);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -312,9 +360,17 @@ export const QualificationPage: React.FC = () => {
               {company.telephone && <Phone className="ico-phone ico-xs" />}
             </div>
             {company.canonical_url && (
-              <div className="url mt-0.5" style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <a
+                href={ensureHttpsUrl(company.canonical_url)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(event) => event.stopPropagation()}
+                title={`Ouvrir ${company.canonical_url} dans un nouvel onglet`}
+                className="url mt-0.5 block hover:underline"
+                style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
                 {company.canonical_url}
-              </div>
+              </a>
             )}
           </div>
           <button
@@ -624,7 +680,18 @@ export const QualificationPage: React.FC = () => {
                       <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
                       {company.telephone && <Phone className="ico-phone ico-xs" />}
                     </div>
-                    {company.canonical_url && <div className="url">{company.canonical_url}</div>}
+                    {company.canonical_url && (
+                      <a
+                        href={ensureHttpsUrl(company.canonical_url)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                        title={`Ouvrir ${company.canonical_url} dans un nouvel onglet`}
+                        className="url hover:underline"
+                      >
+                        {company.canonical_url}
+                      </a>
+                    )}
                   </div>
                   <div>
                     <div className={`src-pill ${isMaps ? 'maps' : 'search'}`}>
