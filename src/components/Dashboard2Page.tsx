@@ -354,6 +354,12 @@ export const Dashboard2Page: React.FC = () => {
   );
 
   /* — Rendu — */
+  const kpiFootStyle: React.CSSProperties = {
+    fontFamily: "var(--font-mono)",
+    fontSize: 11,
+    color: "var(--text-3)",
+    marginTop: "auto",
+  };
   const dateLabel = today.toLocaleDateString("fr-FR", {
     weekday: "long",
     day: "numeric",
@@ -361,23 +367,27 @@ export const Dashboard2Page: React.FC = () => {
   });
 
   return (
-    <div className="da2">
-      <div className="da2-page">
-        <div className="da2-page-hd">
-          <div>
-            <h1>Dashboard</h1>
-            <div className="da2-sub">Votre plan d&apos;action de la semaine, en un coup d&apos;œil.</div>
-          </div>
-          <span className="da2-pill accent">Beta · Dashboard 2</span>
+    <div className="studio-surface da2 flex min-h-full flex-col px-3 py-4 md:p-6">
+      <div className="ws-header">
+        <div>
+          <div className="ws-eyebrow">{dateLabel} · semaine {isoWeekNumber(today)}</div>
+          <h1>
+            Plan de <em>la semaine</em>
+          </h1>
+          <div className="sub">Votre plan d&apos;action de la semaine, en un coup d&apos;œil.</div>
         </div>
+        <span className="pill">Beta · Dashboard 2</span>
+      </div>
 
-        <div className="da2-dash-grid">
+      <div className="da2-dash-grid">
           {/* ── GAUCHE — Tâches du jour ── */}
-          <aside className="da2-today">
-            <div className="da2-date">
+          <aside className="card" style={{ padding: "14px 18px 12px" }}>
+            <div className="ws-eyebrow" style={{ marginBottom: 6 }}>
               {dateLabel} · semaine {isoWeekNumber(today)}
             </div>
-            <h2>Aujourd&apos;hui</h2>
+            <h3 style={{ fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 22, margin: "0 0 4px", letterSpacing: "-0.01em" }}>
+              Aujourd&apos;hui
+            </h3>
             <div className="da2-greet-sub">
               {todayTasks.length === 0
                 ? "Aucune tâche planifiée."
@@ -411,9 +421,9 @@ export const Dashboard2Page: React.FC = () => {
             )}
 
             <div className="da2-today-foot">
-              <span className="da2-pill">{todayTasks.length - tasksDone} à faire</span>
-              <Link href="/calendar" className="da2-link">
-                Calendrier <ArrowRight size={11} />
+              <span className="pill">{todayTasks.length - tasksDone} à faire</span>
+              <Link href="/calendar" className="btn ghost sm">
+                Calendrier <ArrowRight className="ico-sm" />
               </Link>
             </div>
           </aside>
@@ -421,12 +431,12 @@ export const Dashboard2Page: React.FC = () => {
           {/* ── DROITE — Contenu principal ── */}
           <div className="da2-main">
             {/* Plan de la semaine */}
-            <div className="da2-card">
-              <div className="da2-card-hd">
+            <div className="card">
+              <div className="card-hd">
                 <h3>Plan de la semaine</h3>
-                <span className="da2-meta">objectif hebdo ÷ 5 · lun → ven</span>
-                <Link href="/objectifs" className="da2-link" style={{ marginLeft: "auto" }}>
-                  Modifier les objectifs <ArrowRight size={11} />
+                <span className="meta">objectif hebdo ÷ 5 · lun → ven</span>
+                <Link href="/objectifs" className="btn ghost sm" style={{ marginLeft: "auto" }}>
+                  Modifier les objectifs <ArrowRight className="ico-sm" />
                 </Link>
               </div>
               <div className="da2-card-bd" style={{ padding: "4px 18px 18px" }}>
@@ -511,60 +521,52 @@ export const Dashboard2Page: React.FC = () => {
             </div>
 
             {/* Bento KPI */}
-            <div className="da2-bento">
-              <div className="da2-kpi da2-dark">
-                <div className="da2-kpi-lb">
-                  <ListTodo size={12} />À traiter aujourd&apos;hui
-                </div>
-                <div className="da2-kpi-vl">
+            <div className="kpi-strip">
+              <div className="kpi">
+                <div className="lb"><ListTodo className="ico-xs" />à traiter aujourd&apos;hui</div>
+                <div className="vl">
                   {todayIdx > 4 ? "0" : todayTarget}
                   <small>entreprises</small>
                 </div>
-                <div className="da2-kpi-foot">
+                <div style={kpiFootStyle}>
                   {todayIdx > 4 ? "week-end · repos bien mérité" : "réparti sur les 4 activités"}
                 </div>
               </div>
 
-              <div className="da2-kpi">
-                <div className="da2-kpi-lb">
-                  <Layers size={12} />Pipeline ouvert
-                </div>
-                <div className="da2-kpi-vl">
+              <div className="kpi">
+                <div className="lb"><Layers className="ico-xs" />pipeline ouvert</div>
+                <div className="vl">
                   {eur(pipelineValue)}
                   <small>{opportunities.length} deals</small>
                 </div>
-                <div className="da2-kpi-foot">valeur totale des opportunités</div>
+                <div style={kpiFootStyle}>valeur totale des opportunités</div>
               </div>
 
-              <div className="da2-kpi">
-                <div className="da2-kpi-lb">
-                  <Building2 size={12} />Entreprises qualifiées
-                </div>
-                <div className="da2-kpi-vl">
+              <div className="kpi">
+                <div className="lb"><Building2 className="ico-xs" />entreprises qualifiées</div>
+                <div className="vl">
                   {fmtInt(totalQualifiedCompanies)}
                   <small>/ {fmtInt(totalCompanies)}</small>
                 </div>
-                <div className="da2-kpi-foot">{fmtInt(backlog.aQualifier)} encore à qualifier</div>
+                <div style={kpiFootStyle}>{fmtInt(backlog.aQualifier)} encore à qualifier</div>
               </div>
 
-              <div className="da2-kpi">
-                <div className="da2-kpi-lb">
-                  <TrendingUp size={12} />Tâches du jour
-                </div>
-                <div className="da2-kpi-vl">
+              <div className="kpi">
+                <div className="lb"><TrendingUp className="ico-xs" />tâches du jour</div>
+                <div className="vl">
                   {todayTasks.length}
                   <small>{tasksDone} faites</small>
                 </div>
-                <div className="da2-kpi-foot">{todayTasks.length - tasksDone} restantes</div>
+                <div style={kpiFootStyle}>{todayTasks.length - tasksDone} restantes</div>
               </div>
             </div>
 
             {/* Rangée 2 — Pipeline + Activité */}
             <div className="da2-row2">
-              <div className="da2-card">
-                <div className="da2-card-hd">
+              <div className="card">
+                <div className="card-hd">
                   <h3>Pipeline commercial</h3>
-                  <span className="da2-meta">opportunités par étape</span>
+                  <span className="meta">opportunités par étape</span>
                 </div>
                 <div className="da2-card-bd">
                   {pipelineRows.rows.length === 0 ? (
@@ -583,10 +585,10 @@ export const Dashboard2Page: React.FC = () => {
                 </div>
               </div>
 
-              <div className="da2-card">
-                <div className="da2-card-hd">
+              <div className="card">
+                <div className="card-hd">
                   <h3>Activité récente</h3>
-                  <span className="da2-meta">workspace</span>
+                  <span className="meta">workspace</span>
                 </div>
                 <div className="da2-card-bd">
                   {activity.length === 0 ? (
@@ -633,7 +635,6 @@ export const Dashboard2Page: React.FC = () => {
           </div>
         </div>
       </div>
-    </div>
   );
 };
 
