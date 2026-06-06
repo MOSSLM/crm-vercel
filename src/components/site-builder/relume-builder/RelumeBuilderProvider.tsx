@@ -641,6 +641,12 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     case "SET_VARIABLE_CONTEXT":
       return { ...state, variableContext: action.payload };
 
+    case "SET_TAG_CATALOG":
+      return { ...state, tagCatalog: action.payload };
+
+    case "SET_SIMULATED_TAGS":
+      return { ...state, simulatedTags: action.payload };
+
     case "SET_FAVICON_URL":
       return { ...state, faviconUrl: action.payload, isDirty: true };
 
@@ -704,6 +710,8 @@ const initialState: RelumeBuilderState = {
   historyIndex: -1,
   faviconUrl: null,
   variableContext: {},
+  tagCatalog: [],
+  simulatedTags: null,
   previewReplace: null,
 };
 

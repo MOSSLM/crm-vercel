@@ -566,10 +566,20 @@ function RelumeEditorInner({
     authedFetch("/api/site-builder/service-tags")
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { tags?: string[] } | null) => {
-        if (Array.isArray(data?.tags)) setServiceTagCatalog(data.tags);
+        if (Array.isArray(data?.tags)) {
+          setServiceTagCatalog(data.tags);
+          dispatch({ type: "SET_TAG_CATALOG", payload: data.tags });
+          // No enterprise linked → the site is being built as a template that
+          // should cover every possible service. Default the simulated-tags
+          // preview to the full catalogue so all tag-gated pages/sections are
+          // visible until the user narrows the selection.
+          if (!initialEnterpriseId) {
+            dispatch({ type: "SET_SIMULATED_TAGS", payload: data.tags });
+          }
+        }
       })
       .catch(() => {});
-  }, []);
+  }, [initialEnterpriseId]);
 
   // Close publish popover on outside click
   React.useEffect(() => {
@@ -740,6 +750,10 @@ function RelumeEditorInner({
           : undefined;
       setProjectId(resolvedPid);
       fetchVariables(id ?? undefined, resolvedPid);
+      // Linking a real company → preview its real service tags (null = use
+      // variableContext). Unlinking → fall back to simulating the whole
+      // catalogue so the template stays fully visible.
+      dispatch({ type: "SET_SIMULATED_TAGS", payload: id ? null : serviceTagCatalog });
       toast.success(id ? "Entreprise liée" : "Entreprise dissociée");
     } catch {
       toast.error("Erreur lors de la liaison");

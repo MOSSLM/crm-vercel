@@ -1414,6 +1414,16 @@ export interface RelumeBuilderState {
   faviconUrl?: string | null;
   /** Resolved enterprise variables for template substitution, e.g. { "entreprise.nom": "Acme" } */
   variableContext: Record<string, string>;
+  /** All service tags available for this account (catalogue), used by the
+   *  "simulated tags" control. Loaded from /api/site-builder/service-tags. */
+  tagCatalog: string[];
+  /**
+   * Editor-only simulated service tags. When non-null, the canvas filters
+   * pages/sections/blocks as if the linked enterprise had exactly these tags
+   * (by overriding `variables.__service_tags` in the preview). null = use the
+   * real variableContext. Used to preview templates that cover every service.
+   */
+  simulatedTags: string[] | null;
   /**
    * Live preview of a section replacement. When set, the canvas renders the
    * targeted instance using `sectionDef` (and a synthesised content) without
@@ -1468,6 +1478,8 @@ export type RelumeBuilderAction =
   | { type: 'REDO' }
   | { type: 'MARK_SAVED' }
   | { type: 'SET_VARIABLE_CONTEXT'; payload: Record<string, string> }
+  | { type: 'SET_TAG_CATALOG'; payload: string[] }
+  | { type: 'SET_SIMULATED_TAGS'; payload: string[] | null }
   | { type: 'REPLACE_INSTANCE'; payload: { instanceId: string; sectionDef: SiteSectionDef } }
   | { type: 'SET_PREVIEW_REPLACE'; payload: { instanceId: string; sectionDef: SiteSectionDef } | null };
 

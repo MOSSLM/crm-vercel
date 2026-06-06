@@ -569,6 +569,15 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
   const deviceWidth = state.deviceView === "mobile" ? 390 : state.deviceView === "tablet" ? 768 : 1200;
   const simulatedViewportHeight = getSimulatedViewportHeight(state.deviceView);
 
+  // When simulated tags are active (template preview), override __service_tags
+  // in the variables fed to the renderer so tag-gated sections/blocks/pages
+  // filter as if the linked enterprise had exactly these tags. null = use the
+  // real resolved context (the linked enterprise's tags, or none).
+  const effectiveVariables = React.useMemo(() => {
+    if (state.simulatedTags == null) return state.variableContext;
+    return { ...state.variableContext, __service_tags: JSON.stringify(state.simulatedTags) };
+  }, [state.variableContext, state.simulatedTags]);
+
   // Determine left panel mode
   // "element" = an element inside a section was clicked (any kind: text, image, button, link, input, form)
   const panelMode: "global" | "section" | "element" =
@@ -628,7 +637,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                     sectionDef={secDef}
                     styleGuide={state.styleGuide}
                     menus={state.menus}
-                    variables={state.variableContext}
+                    variables={effectiveVariables}
                     simulatedViewportHeight={simulatedViewportHeight}
                   />
                 );
@@ -838,17 +847,28 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
               <span className="slug">{state.activePage}</span>
             </div>
             <div className="page-tabs">
-              {state.sitemap.map((p, i) => (
-                <button
-                  key={p.id}
-                  onClick={(e) => { e.stopPropagation(); dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug }); }}
-                  className="page-tab"
-                  aria-selected={state.activePage === p.slug ? "true" : "false"}
-                >
-                  <span className="pgnum">{String(i + 1).padStart(2, "0")}</span>
-                  {p.title}
-                </button>
-              ))}
+              {state.sitemap.map((p, i) => {
+                // Page gated by a service tag that the simulated set excludes →
+                // it would 404 on the published company site. Dim it as a cue.
+                const tagHidden =
+                  state.simulatedTags != null &&
+                  !!p.service_tag &&
+                  !state.simulatedTags.includes(p.service_tag);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={(e) => { e.stopPropagation(); dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug }); }}
+                    className="page-tab"
+                    aria-selected={state.activePage === p.slug ? "true" : "false"}
+                    style={tagHidden ? { opacity: 0.4 } : undefined}
+                    title={tagHidden ? `Masquée pour les tags simulés (tag : ${p.service_tag})` : undefined}
+                  >
+                    <span className="pgnum">{String(i + 1).padStart(2, "0")}</span>
+                    {p.title}
+                    {tagHidden && <EyeOff size={10} style={{ marginLeft: 4, opacity: 0.7 }} />}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -906,7 +926,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                         sectionDef={secDef}
                         styleGuide={state.styleGuide}
                         menus={state.menus}
-                        variables={state.variableContext}
+                        variables={effectiveVariables}
                         editorMode
                         selected={isSelected}
                         onSelect={() => { dispatch({ type: "SELECT_INSTANCE", payload: instanceId }); setSelectedElement(null); }}
@@ -1253,6 +1273,75 @@ function GlobalPanel() {
               Géré depuis le panneau Menus (ouvrir via l&apos;en-tête).
             </div>
           </div>
+        )}
+      </SkinSection>
+
+      {/* Simulation de tags (templates) */}
+      <SkinSection label="Tags simulés" defaultOpen={state.simulatedTags != null}>
+        <p style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45, marginBottom: 8 }}>
+          Prévisualise le site comme si l&apos;entreprise n&apos;avait que ces services.
+          Les pages, sections et blocs liés à un tag absent sont masqués — idéal pour
+          préparer un template couvrant tous les services possibles.
+        </p>
+        {state.simulatedTags == null ? (
+          <button
+            className="btn outline xs"
+            style={{ width: "100%", justifyContent: "center" }}
+            onClick={() => dispatch({ type: "SET_SIMULATED_TAGS", payload: state.tagCatalog })}
+          >
+            Activer la simulation
+          </button>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <button
+                className="btn outline xs"
+                style={{ flex: 1, justifyContent: "center" }}
+                onClick={() => dispatch({ type: "SET_SIMULATED_TAGS", payload: state.tagCatalog })}
+              >
+                Tout cocher
+              </button>
+              <button
+                className="btn outline xs"
+                style={{ flex: 1, justifyContent: "center" }}
+                onClick={() => dispatch({ type: "SET_SIMULATED_TAGS", payload: [] })}
+              >
+                Tout décocher
+              </button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 220, overflowY: "auto" }}>
+              {state.tagCatalog.length === 0 && (
+                <p style={{ fontSize: 11, color: "var(--text-4)" }}>Aucun tag disponible.</p>
+              )}
+              {state.tagCatalog.map((tag) => {
+                const checked = state.simulatedTags!.includes(tag);
+                return (
+                  <label
+                    key={tag}
+                    style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: "var(--text-2)", padding: "2px 0", cursor: "default" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const cur = state.simulatedTags ?? [];
+                        const next = e.target.checked ? [...cur, tag] : cur.filter((t) => t !== tag);
+                        dispatch({ type: "SET_SIMULATED_TAGS", payload: next });
+                      }}
+                    />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tag}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <button
+              className="btn ghost xs"
+              style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
+              onClick={() => dispatch({ type: "SET_SIMULATED_TAGS", payload: null })}
+            >
+              Revenir aux vrais tags de l&apos;entreprise
+            </button>
+          </>
         )}
       </SkinSection>
 
