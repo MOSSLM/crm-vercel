@@ -237,6 +237,24 @@ function kindIcon(kind: ElementKind): React.ElementType {
  * Schema, when present, is used solely to read prettier labels via
  * schema.settings.find(s => s.id === key)?.label.
  */
+/** Human-friendly name for a container tag, so the layers panel reads
+ *  "Section / Navigation / Liste / Conteneur" instead of repeating the text
+ *  of a child element (the old behaviour gave every parent the same "T" label). */
+function friendlyContainerName(tag: string): string {
+  switch (tag) {
+    case "section": return "Section";
+    case "nav": return "Navigation";
+    case "header": return "En-tête";
+    case "footer": return "Pied de page";
+    case "main": return "Contenu";
+    case "article": return "Article";
+    case "aside": return "Aside";
+    case "ul":
+    case "ol": return "Liste";
+    default: return "Conteneur";
+  }
+}
+
 function DomLayerRow({
   node,
   depth,
@@ -253,7 +271,16 @@ function DomLayerRow({
   const hasChildren = node.children && node.children.length > 0;
   const pathKey = node.path.join(".");
   const isSel = selectedPath === pathKey;
-  const previewText = node.text || (node.attrs.alt as string | undefined) || "";
+  const isContainer = node.kind === "container";
+  const display = node.attrs.display as string | undefined;
+  // Only flex/grid carry a useful layout badge; block/inline are the default.
+  const layoutBadge = display && /(flex|grid)/.test(display)
+    ? (display.includes("grid") ? "grid" : "flex")
+    : null;
+  const idHint = (node.attrs.id as string | undefined) || "";
+  // Containers show a semantic name (not their children's text); leaf elements
+  // keep showing their own text/alt so headings, buttons and links stay legible.
+  const previewText = isContainer ? "" : (node.text || (node.attrs.alt as string | undefined) || "");
   return (
     <div>
       <div
@@ -277,8 +304,22 @@ function DomLayerRow({
           className="flex items-center gap-1 flex-1 min-w-0 text-left"
         >
           <Icon size={9} className="flex-shrink-0 text-gray-400" />
-          <span className="font-mono text-[9px] text-gray-400 flex-shrink-0">{node.tag}</span>
-          {previewText && <span className="truncate text-gray-500">{previewText}</span>}
+          {isContainer ? (
+            <>
+              <span className="truncate text-gray-600 font-medium">{friendlyContainerName(node.tag)}</span>
+              {layoutBadge && (
+                <span className="flex-shrink-0 rounded px-1 text-[8px] font-medium uppercase tracking-wide bg-violet-50 text-violet-600">
+                  {layoutBadge}
+                </span>
+              )}
+              {idHint && <span className="font-mono text-[9px] text-gray-300 truncate">#{idHint}</span>}
+            </>
+          ) : (
+            <>
+              <span className="font-mono text-[9px] text-gray-400 flex-shrink-0">{node.tag}</span>
+              {previewText && <span className="truncate text-gray-500">{previewText}</span>}
+            </>
+          )}
         </button>
       </div>
       {open && hasChildren && (
