@@ -72,10 +72,12 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
         title: string;
         metaTitle?: string;
         metaDescription?: string;
+        service_tag?: string | null;
         sections?: Array<{
           section_id: string;
+          service_tag?: string | null;
           content: Record<string, unknown>;
-          blocks?: Array<{ id: string; type: string; settings: Record<string, unknown> }>;
+          blocks?: Array<{ id: string; type: string; settings: Record<string, unknown>; service_tag?: string | null }>;
         }>;
       }>;
     },
@@ -85,26 +87,40 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
 
     // 1. Update style guide if provided
     if (data.styleGuide) {
-        dispatch({ type: "UPDATE_STYLE_GUIDE", payload: data.styleGuide as any });
+      dispatch({ type: "UPDATE_STYLE_GUIDE", payload: data.styleGuide as Partial<import("@/types").StyleGuide> });
     }
 
-    // 2. Build sitemap pages
-    const sitemapPages = (data.sitemap ?? []).map((p, i) => ({
+    // 2. Order parents before children so the slug-derived menu nests correctly
+    //    (e.g. "/services" before "/services/climatisation"). Stable sort keeps
+    //    the AI's order within a depth.
+    const depthOf = (slug: string) => (slug === "/" ? 0 : slug.replace(/^\//, "").split("/").filter(Boolean).length);
+    const orderedSitemap = [...(data.sitemap ?? [])]
+      .map((p, i) => ({ p, i }))
+      .sort((a, b) => depthOf(a.p.slug) - depthOf(b.p.slug) || a.i - b.i)
+      .map(({ p }) => p);
+
+    // 3. Rebuild from scratch: remove every existing page first (REMOVE_PAGE
+    //    also drops that page's instances), then add the generated ones. This
+    //    fixes the previous bug where pages were only appended → duplicates.
+    for (const page of [...state.sitemap]) {
+      dispatch({ type: "REMOVE_PAGE", payload: page.id });
+    }
+
+    const sitemapPages = orderedSitemap.map((p, i) => ({
       id: `page-${i}-${nanoid()}`,
       slug: p.slug,
       title: p.title,
       metaTitle: p.metaTitle,
       metaDescription: p.metaDescription,
+      service_tag: p.service_tag ?? null,
     }));
-
-    // 3. Clear and rebuild: remove all existing pages first, then add new ones
-    // (simplest approach: rebuild from scratch)
     for (const page of sitemapPages) {
       dispatch({ type: "ADD_PAGE", payload: page });
     }
 
-    // 4. Create section instances for each page
-    for (const page of data.sitemap ?? []) {
+    // 4. Create section instances for each page, carrying service tags so the
+    //    tag-based visibility (menu-overrides) works on the published site.
+    for (const page of orderedSitemap) {
       for (let idx = 0; idx < (page.sections ?? []).length; idx++) {
         const sectionData = (page.sections ?? [])[idx];
         const sectionDef = sectionById[sectionData.section_id];
@@ -114,6 +130,17 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
         if (sectionDef.theme_slug && sectionDef.theme_section_id) {
           baseContent.__library = { theme_slug: sectionDef.theme_slug, section_id: sectionDef.theme_section_id };
         }
+        if (sectionData.service_tag) baseContent.__service_tag = sectionData.service_tag;
+
+        const blocks = Array.isArray(sectionData.blocks)
+          ? sectionData.blocks.map((b) => ({
+              id: b.id ?? nanoid(),
+              type: b.type,
+              settings: b.settings ?? {},
+              service_tag: b.service_tag ?? null,
+            }))
+          : [];
+
         const instance: SiteSectionInstance = {
           id: nanoid(),
           site_id: siteId,
@@ -121,7 +148,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
           page_slug: page.slug,
           sort_order: idx,
           content: baseContent,
-          blocks: Array.isArray(sectionData.blocks) ? sectionData.blocks : [],
+          blocks,
           custom_style: {},
           is_hidden: false,
           created_at: new Date().toISOString(),
@@ -136,7 +163,7 @@ export function AIPanel({ siteId, enterpriseId, availableSections, onClose }: AI
       }
     }
 
-    // 5. Navigate to first page
+    // 5. Navigate to the first (top-level) page.
     if (sitemapPages[0]) {
       dispatch({ type: "SET_ACTIVE_PAGE", payload: sitemapPages[0].slug });
     }

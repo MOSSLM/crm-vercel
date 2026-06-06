@@ -2,6 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { AiJsonParseError, extractJsonFromAiResponse } from "@/lib/parsers/ai-json";
+import { buildSectionsPromptDoc } from "@/lib/ai/schema-prompt-doc";
 
 export const dynamic = "force-dynamic";
 
@@ -57,6 +58,42 @@ Données entreprise :
     category: s.category,
   })));
 
+  // Section schema reference (content keys per section type), filtered to the
+  // types actually available so the prompt stays compact and relevant.
+  const typeSet = new Set((availableSectionIds ?? []).map((s) => s.type).filter(Boolean));
+  const schemaDoc = buildSectionsPromptDoc(typeSet);
+
+  // Media library: give the AI real image URLs it can drop into image fields.
+  let mediaHint = "";
+  try {
+    type MediaRow = { public_url?: string; alt_text?: string | null; service_tags?: unknown; match_count?: number; is_universal?: boolean };
+    let media: MediaRow[] = [];
+    if (enterpriseId) {
+      const { data } = await supabase.rpc("media_library_by_company", { p_entreprise_id: enterpriseId });
+      const ranked = (data ?? []) as MediaRow[];
+      const suggested = ranked.filter((r) => (r.match_count ?? 0) > 0 || r.is_universal);
+      media = (suggested.length > 0 ? suggested : ranked).slice(0, 24);
+    } else {
+      const { data } = await supabase
+        .from("media_library")
+        .select("public_url, alt_text, service_tags")
+        .limit(24);
+      media = (data ?? []) as MediaRow[];
+    }
+    const list = media
+      .filter((m) => typeof m.public_url === "string" && m.public_url)
+      .map((m) => ({
+        url: m.public_url as string,
+        tags: Array.isArray(m.service_tags) ? (m.service_tags as string[]).slice(0, 4) : [],
+        alt: m.alt_text ?? "",
+      }));
+    if (list.length > 0) {
+      mediaHint = `\n\nIMAGES DISPONIBLES (médiathèque) — pour tout champ image, choisis une URL EXACTE de cette liste correspondant au service/au contenu (sinon laisse le champ vide) :\n${JSON.stringify(list)}`;
+    }
+  } catch {
+    // media is best-effort; ignore failures
+  }
+
   const variableHint = variableContext && Object.keys(variableContext).length > 0
     ? `\nVARIABLES DISPONIBLES — utilise ces tokens exacts pour les données d'entreprise dans le contenu :\n${
         Object.entries(variableContext)
@@ -66,10 +103,14 @@ Données entreprise :
       }\nExemple : écris "{{ entreprise.nom }}" au lieu du nom réel de l'entreprise.`
     : "";
 
+  const schemaHint = schemaDoc
+    ? `\n\nRÉFÉRENCE DES SECTIONS (clés de contenu par type) — le section_id doit venir de la liste fournie ; son "type" correspond à un bloc ci-dessous, dont les clés indiquent EXACTEMENT quoi mettre dans "content" :\n${schemaDoc}`
+    : "";
+
   const systemPrompt = `Tu es un expert en création de sites web professionnels.
 Tu génères des configurations de sites complets en JSON pour un système de builder.
 Tu dois choisir les meilleures sections de la bibliothèque disponible et écrire du contenu professionnel en français.
-Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.${variableHint}`;
+Tu réponds UNIQUEMENT avec un JSON valide, sans texte avant ni après.${variableHint}${schemaHint}`;
 
   const userPrompt = `
 Description de l'entreprise :
@@ -80,10 +121,10 @@ ${enterpriseInfo}
 Pages souhaitées : ${Array.isArray(pages) ? pages.join(", ") : pages}
 
 Sections disponibles dans la bibliothèque :
-${sectionsListJson}
+${sectionsListJson}${mediaHint}
 
-Génère un sitemap complet avec le contenu pour chaque page.
-Pour chaque page, choisis 3-6 sections pertinentes parmi celles disponibles.
+Génère un sitemap complet, COHÉRENT et à PLUSIEURS NIVEAUX, avec le contenu de chaque page.
+Pour chaque page, choisis 3-6 sections pertinentes parmi celles disponibles et remplis leur contenu.
 Écris du contenu professionnel et convaincant adapté à l'entreprise.
 
 Réponds avec ce format JSON exact :
@@ -110,9 +151,11 @@ Réponds avec ce format JSON exact :
       "title": "Accueil",
       "metaTitle": "...",
       "metaDescription": "...",
+      "service_tag": null,
       "sections": [
         {
           "section_id": "<id exact de la section>",
+          "service_tag": null,
           "content": {
             "<clé placeholder>": "<valeur>",
             ...
@@ -124,16 +167,24 @@ Réponds avec ce format JSON exact :
 }
 
 IMPORTANT:
-- Utilise uniquement les IDs de sections fournis dans la liste
-- Le contenu doit remplir les clés correspondant aux placeholders des sections
-- Écris en français, style professionnel et convaincant
-- Adapte le style guide aux couleurs de l'entreprise si pertinent
-- Si des variables sont disponibles, utilise les tokens {{ entreprise.* }} pour les données dynamiques
-- Les "slug" sont des chemins : tu peux créer des pages imbriquées. Pour une page
-  dédiée à un service précis, utilise un chemin enfant, ex: "/services/climatisation",
-  "/services/chauffage". La page parente "/services" peut rester une page catégorie.
-- Chaque page que tu crées DOIT avoir des sections. Ne crée jamais une page vide :
-  une page sans section n'est pas publiée comme page (elle ne sert que de catégorie).
+- Utilise UNIQUEMENT les IDs de sections fournis dans la liste (champ "section_id").
+- Remplis "content" avec les clés EXACTES documentées pour le type de la section
+  (voir la référence des sections). Écris en français, style professionnel.
+- Pour les champs image, n'utilise QUE des URLs de la liste IMAGES DISPONIBLES
+  (choisis la plus pertinente par tags) ; sinon laisse le champ vide.
+- Si des variables sont disponibles, utilise les tokens {{ entreprise.* }} pour les
+  données dynamiques (nom, téléphone, ville…).
+- Adapte le style guide aux couleurs de l'entreprise si pertinent.
+- HIÉRARCHIE MULTI-NIVEAUX : les "slug" sont des chemins. Crée une page catégorie
+  parente (ex: "/services") ET une page enfant par service précis
+  (ex: "/services/climatisation", "/services/chauffage", "/services/pac"). Les
+  enfants doivent partager le préfixe du parent.
+- TAGS SERVICE : pour une page (ou une section) dédiée à un service précis,
+  renseigne "service_tag" avec le tag EXACT du service (ex: "climatisation").
+  Mets null pour le contenu générique affiché partout. Cela permet de masquer
+  automatiquement ce contenu pour les entreprises qui n'offrent pas ce service.
+- Chaque page DOIT avoir au moins une section. Ne crée jamais de page vide
+  (une page sans section n'est pas publiée).
 `.trim();
 
   let text: string;
@@ -184,6 +235,7 @@ IMPORTANT:
           title: p.title,
           metaTitle: p.metaTitle,
           metaDescription: p.metaDescription,
+          service_tag: p.service_tag ?? null,
         })),
       })
       .eq("id", siteId);

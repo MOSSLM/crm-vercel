@@ -93,9 +93,10 @@ function describeSchema(typeId: string, schema: SectionSchema): string {
  * same schema) are deduplicated by referenced schema identity, with the
  * canonical (shortest) key preserved.
  */
-export function buildSectionsPromptDoc(): string {
+export function buildSectionsPromptDoc(typeFilter?: Set<string>): string {
   const seen = new Map<SectionSchema, string>();
   for (const [key, schema] of Object.entries(SECTION_SCHEMAS)) {
+    if (typeFilter && !typeFilter.has(key)) continue;
     const existing = seen.get(schema);
     if (!existing || key.length < existing.length) seen.set(schema, key);
   }
