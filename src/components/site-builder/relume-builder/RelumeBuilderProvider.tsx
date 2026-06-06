@@ -114,6 +114,7 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
         selectedInstanceId: null,
         selectedSnippetId: null,
         faviconUrl: action.payload.faviconUrl ?? state.faviconUrl ?? null,
+        seo: action.payload.seo ?? state.seo ?? {},
         isDirty: action.payload.isDirty ?? false,
         history: [],
         historyIndex: -1,
@@ -650,6 +651,9 @@ function reducer(state: RelumeBuilderState, action: RelumeBuilderAction): Relume
     case "SET_FAVICON_URL":
       return { ...state, faviconUrl: action.payload, isDirty: true };
 
+    case "UPDATE_SEO":
+      return { ...state, seo: { ...state.seo, ...action.payload }, isDirty: true };
+
     default:
       return state;
   }
@@ -709,6 +713,7 @@ const initialState: RelumeBuilderState = {
   history: [],
   historyIndex: -1,
   faviconUrl: null,
+  seo: {},
   variableContext: {},
   tagCatalog: [],
   simulatedTags: null,

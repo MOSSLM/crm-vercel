@@ -2,6 +2,7 @@ import React from "react";
 import { headers } from "next/headers";
 import { resolveSite } from "@/lib/site-resolver";
 import { SitePageView } from "@/components/site-builder/SitePageView";
+import { buildPageMetadata } from "@/lib/site-builder/build-page-metadata";
 import type { Metadata } from "next";
 
 interface CatchAllProps {
@@ -24,13 +25,8 @@ export async function generateMetadata({ params }: CatchAllProps): Promise<Metad
 
   const pageSlug = slugFromPath(path);
   const page = site.publishedSitemap?.find((p) => p.slug === pageSlug);
-  const companyName = site.companyName ?? subdomain;
 
-  return {
-    title: page?.metaTitle || (page ? `${page.title} — ${companyName}` : companyName),
-    description: page?.metaDescription || `Site de ${companyName}`,
-    icons: { icon: site.logoUrl ?? "/favicon.ico" },
-  };
+  return buildPageMetadata(site, page, subdomain);
 }
 
 export default async function CatchAllSitePage({ params }: CatchAllProps) {

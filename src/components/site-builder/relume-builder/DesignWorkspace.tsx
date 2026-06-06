@@ -37,6 +37,7 @@ import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
 import { AnimationFieldEditor } from "@/components/site-builder/editors/AnimationFieldEditor";
 import type { SectionAnimation } from "@/types";
+import { SiteSeoSection } from "./SeoPanel";
 
 // ─── Pan/Zoom hook ────────────────────────────────────────────────────────────
 
@@ -1389,6 +1390,11 @@ function GlobalPanel() {
             </button>
           </>
         )}
+      </SkinSection>
+
+      {/* SEO & Méta (défauts du site) */}
+      <SkinSection label="SEO & Méta">
+        <SiteSeoSection />
       </SkinSection>
 
       {/* Couleurs */}

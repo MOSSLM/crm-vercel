@@ -7,7 +7,7 @@ import {
   Undo2, Redo2, ArrowUpDown, AlertTriangle, Settings,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId } from "@/types";
+import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId, SeoMeta } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { RelumeBuilderProvider, useRelumeBuilder, nanoid } from "./RelumeBuilderProvider";
 import { serializeTheme, type SerializedThemeConfig } from "@/lib/site-builder/theme-serializer";
@@ -41,6 +41,8 @@ export interface RelumeEditorProps {
   initialMenus?: SiteMenus | null;
   /** Favicon URL loaded from site_config.faviconUrl. */
   initialFaviconUrl?: string | null;
+  /** Site-level SEO/social defaults loaded from site_config.seo. */
+  initialSeo?: SeoMeta | null;
   /** ISO timestamp of the last publish. Used to show "unpublished changes" indicator. */
   publishedAt?: string | null;
 }
@@ -508,6 +510,7 @@ function RelumeEditorInner({
   initialSitemap,
   initialMenus,
   initialFaviconUrl,
+  initialSeo,
 }: RelumeEditorProps) {
   const { state, dispatch } = useRelumeBuilder();
   const [saving, setSaving] = React.useState(false);
@@ -604,6 +607,7 @@ function RelumeEditorInner({
         sitemap: initialSitemap ?? [{ id: "page-home", slug: "/", title: "Accueil" }],
         menus: initialMenus ?? undefined,
         faviconUrl: initialFaviconUrl ?? null,
+        seo: initialSeo ?? {},
         instances: initialInstances.map((inst) => ({
           ...inst,
           section_def: inst.section_id ? sectionDefs[inst.section_id] : (inst as unknown as { section_def?: SiteSectionDef }).section_def,

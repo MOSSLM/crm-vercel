@@ -13,6 +13,7 @@ import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
 import { buildSitemapTree, normalizePageSlug, deriveSlugFromTitle, isSlugAutoDerived, parentPathOf } from "@/lib/site-builder/sitemap-tree";
 import { useAIModel } from "@/hooks/useAIModel";
 import { VariableTextarea } from "./VariableTextarea";
+import { PageSeoFields } from "./SeoPanel";
 import { AlertSoft, Btn, Pane, PaneBody, PaneHeader, Pill, Pop } from "./skin-primitives";
 import { authedFetch } from "@/utils/authedFetch";
 
@@ -792,6 +793,16 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections, tagC
                     ))}
                   </select>
                 </div>
+
+                {/* Per-page SEO override (falls back to the site defaults) */}
+                <details style={{ borderTop: "1px solid var(--line-1)" }}>
+                  <summary style={{ fontSize: 10, color: "var(--text-3)", fontWeight: 500, padding: "6px 10px", cursor: "default", userSelect: "none", display: "flex", alignItems: "center", gap: 6 }}>
+                    <Search size={10} style={{ color: "var(--text-3)" }} /> SEO &amp; méta de la page
+                  </summary>
+                  <div style={{ padding: "4px 10px 10px" }}>
+                    <PageSeoFields page={page} />
+                  </div>
+                </details>
 
                 {/* Per-page AI context */}
                 {isContextOpen && (

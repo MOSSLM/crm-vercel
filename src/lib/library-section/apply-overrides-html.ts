@@ -17,6 +17,7 @@
 import "server-only";
 import { parse, type HTMLElement } from "node-html-parser";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
+import { interpolateVars } from "@/lib/site-builder/interpolate-vars";
 
 export interface OverrideEntry {
   kind:
@@ -31,14 +32,6 @@ export interface OverrideEntry {
     | "style";
   value: string;
   meta?: { attrName?: string; style?: Record<string, string> };
-}
-
-function interpolate(text: string, variables: Record<string, string>): string {
-  if (typeof text !== "string" || !text) return text;
-  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
-    const v = variables[key];
-    return v != null ? v : "";
-  });
 }
 
 function nodeAtPath(root: HTMLElement, path: number[]): HTMLElement | null {
@@ -126,7 +119,7 @@ export function applyOverridesToHTML(
         failed++;
         continue;
       }
-      const value = interpolate(entry.value, variables);
+      const value = interpolateVars(entry.value, variables);
       try {
         switch (entry.kind) {
           case "text":
