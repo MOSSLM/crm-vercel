@@ -21,7 +21,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
 export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const supabase = getServiceClient();
   const body = await req.json();
-  const { name, description, site_config, enterprise_id, lead_magnet_project_id, style_guide, sitemap } = body as {
+  const { name, description, site_config, enterprise_id, lead_magnet_project_id, style_guide, sitemap, is_template } = body as {
     name?: string;
     description?: string;
     site_config?: SiteConfig;
@@ -29,6 +29,7 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
     lead_magnet_project_id?: string | null;
     style_guide?: StyleGuide;
     sitemap?: SitemapPage[];
+    is_template?: boolean;
   };
 
   const patch: Record<string, unknown> = {};
@@ -39,6 +40,7 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
   if (lead_magnet_project_id !== undefined) patch.lead_magnet_project_id = lead_magnet_project_id;
   if (style_guide !== undefined) patch.style_guide = style_guide;
   if (sitemap !== undefined) patch.sitemap = sitemap;
+  if (is_template !== undefined) patch.is_template = is_template;
 
   // When linking a company without an explicit project, auto-link that
   // enterprise's lead-magnet project so its reviews (lead_magnet_reviews)

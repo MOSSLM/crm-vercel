@@ -4,7 +4,7 @@ import React from "react";
 import {
   Save, Globe, Check, Share2, Upload,
   Building2, ChevronDown, Search, Bookmark, Palette, X, Loader2,
-  Undo2, Redo2, ArrowUpDown, AlertTriangle, Settings,
+  Undo2, Redo2, ArrowUpDown, AlertTriangle, Settings, Rocket,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, WorkspaceId, SeoMeta } from "@/types";
@@ -20,6 +20,7 @@ import { WireframeWorkspace } from "./WireframeWorkspace";
 import { StyleGuideWorkspace } from "./StyleGuideWorkspace";
 import { DesignWorkspace } from "./DesignWorkspace";
 import { ContentWorkspace } from "./ContentWorkspace";
+import { TemplateDeployPanel } from "./TemplateDeployPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 import "./site-builder-skin.css";
 import { AlertSoft, Btn, ModalBody, ModalFt, ModalHd, ModalShell, Pop, Seg, TopChip, cx } from "./skin-primitives";
@@ -43,6 +44,8 @@ export interface RelumeEditorProps {
   initialFaviconUrl?: string | null;
   /** Site-level SEO/social defaults loaded from site_config.seo. */
   initialSeo?: SeoMeta | null;
+  /** Whether this site is a reusable template (sites.is_template). */
+  initialIsTemplate?: boolean;
   /** ISO timestamp of the last publish. Used to show "unpublished changes" indicator. */
   publishedAt?: string | null;
 }
@@ -372,6 +375,7 @@ function SaveAsThemeDialog({
 
 function SiteSettingsModal({
   open, onClose, siteId, enterpriseId, companyUrl, currentLogo, faviconUrl, onLogoSaved, onFaviconSet,
+  isTemplate, onToggleTemplate,
 }: {
   open: boolean;
   onClose: () => void;
@@ -382,6 +386,8 @@ function SiteSettingsModal({
   faviconUrl: string | null | undefined;
   onLogoSaved: () => void;
   onFaviconSet: (url: string) => void;
+  isTemplate: boolean;
+  onToggleTemplate: (next: boolean) => void;
 }) {
   const [savingLogo, setSavingLogo] = React.useState(false);
   const [fetchingFavicon, setFetchingFavicon] = React.useState(false);
@@ -435,6 +441,25 @@ function SiteSettingsModal({
         right={<button onClick={onClose} className="modal-x" aria-label="Fermer"><X size={14} /></button>}
       />
       <ModalBody>
+        {/* TEMPLATE */}
+        <div style={{ marginBottom: 20, paddingBottom: 16, borderBottom: "1px solid var(--border-2, #e5e2da)" }}>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "default" }}>
+            <input
+              type="checkbox"
+              checked={isTemplate}
+              onChange={(e) => onToggleTemplate(e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>Ce site est un template</span>
+              <p style={{ fontSize: 11, color: "var(--text-3)", margin: "2px 0 0", lineHeight: 1.5 }}>
+                Un template couvre tous les services (via les tags simulés) et sert de base pour
+                générer en masse les sites des entreprises. Le bouton « Déployer » apparaît dans la barre du haut.
+              </p>
+            </span>
+          </label>
+        </div>
+
         {/* LOGO */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>Logo de l&apos;entreprise</div>
@@ -511,9 +536,12 @@ function RelumeEditorInner({
   initialMenus,
   initialFaviconUrl,
   initialSeo,
+  initialIsTemplate,
 }: RelumeEditorProps) {
   const { state, dispatch } = useRelumeBuilder();
   const [saving, setSaving] = React.useState(false);
+  const [isTemplate, setIsTemplate] = React.useState(!!initialIsTemplate);
+  const [showDeploy, setShowDeploy] = React.useState(false);
   const [publishing, setPublishing] = React.useState(false);
   const [hasDraftChanges, setHasDraftChanges] = React.useState(false);
   void publishedAt;
@@ -779,6 +807,22 @@ function RelumeEditorInner({
     }
   };
 
+  const handleToggleTemplate = async (next: boolean) => {
+    setIsTemplate(next);
+    try {
+      const res = await authedFetch(`/api/site-builder/sites/${siteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_template: next }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(next ? "Marqué comme template" : "N'est plus un template");
+    } catch {
+      setIsTemplate(!next);
+      toast.error("Erreur lors du changement de statut template");
+    }
+  };
+
   const handleApplyTheme = (config: SerializedThemeConfig) => {
     // Every modern-builder section is a library section (section_id null +
     // content.__library). Resolve its definition from the loaded catalog so
@@ -930,6 +974,15 @@ function RelumeEditorInner({
         faviconUrl={state.faviconUrl}
         onLogoSaved={() => fetchVariables(enterpriseId, projectId)}
         onFaviconSet={(url) => dispatch({ type: "SET_FAVICON_URL", payload: url })}
+        isTemplate={isTemplate}
+        onToggleTemplate={handleToggleTemplate}
+      />
+
+      <TemplateDeployPanel
+        open={showDeploy}
+        onClose={() => setShowDeploy(false)}
+        templateSiteId={siteId}
+        tagsCsv={(state.simulatedTags ?? state.tagCatalog).join(",")}
       />
 
       {/* ─ Topbar ─────────────────────────────────────────────────────────── */}
@@ -998,6 +1051,13 @@ function RelumeEditorInner({
             <Bookmark size={12} />
             Sauver
           </Btn>
+
+          {isTemplate && (
+            <Btn variant="ghost" size="sm" onClick={() => setShowDeploy(true)} title="Déployer ce template sur des entreprises prêtes pour LM">
+              <Rocket size={12} />
+              Déployer
+            </Btn>
+          )}
 
           <Btn variant="ghost" size="sm" onClick={() => setShowSettings(true)} title="Paramètres du site (logo, favicon)">
             <Settings size={12} />

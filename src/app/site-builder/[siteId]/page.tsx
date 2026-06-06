@@ -52,7 +52,7 @@ export default function SiteBuilderV2Page() {
     );
   }
 
-  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus; faviconUrl?: string; seo?: SeoMeta }; lead_magnet_project_id?: string; published_at?: string | null };
+  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus; faviconUrl?: string; seo?: SeoMeta }; lead_magnet_project_id?: string; published_at?: string | null; is_template?: boolean };
 
   return (
     <RelumeEditor
@@ -70,6 +70,7 @@ export default function SiteBuilderV2Page() {
       initialMenus={siteExtra.site_config?.menus ?? undefined}
       initialFaviconUrl={siteExtra.site_config?.faviconUrl ?? null}
       initialSeo={siteExtra.site_config?.seo ?? null}
+      initialIsTemplate={!!siteExtra.is_template}
     />
   );
 }
