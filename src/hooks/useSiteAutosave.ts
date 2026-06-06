@@ -55,7 +55,7 @@ export function useSiteAutosave({
           body: JSON.stringify({
             style_guide: s.styleGuide,
             sitemap: s.sitemap,
-            site_config: { menus: s.menus, faviconUrl: s.faviconUrl ?? undefined },
+            site_config: { menus: s.menus, faviconUrl: s.faviconUrl ?? undefined, seo: s.seo },
           }),
         }),
         authedFetch(`/api/site-builder/sites/${siteId}/instances`, {
@@ -100,7 +100,7 @@ export function useSiteAutosave({
           [JSON.stringify({
             style_guide: s.styleGuide,
             sitemap: s.sitemap,
-            site_config: { menus: s.menus },
+            site_config: { menus: s.menus, faviconUrl: s.faviconUrl ?? undefined, seo: s.seo },
           })],
           { type: "application/json" }
         )

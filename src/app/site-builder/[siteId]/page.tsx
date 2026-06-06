@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 import { RelumeEditor } from "@/components/site-builder/relume-builder/RelumeEditor";
-import type { SiteV2, SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus } from "@/types";
+import type { SiteV2, SiteSectionDef, SiteSectionInstance, StyleGuide, SitemapPage, SiteMenus, SeoMeta } from "@/types";
 import { authedFetch } from "@/utils/authedFetch";
 
 export default function SiteBuilderV2Page() {
@@ -52,7 +52,7 @@ export default function SiteBuilderV2Page() {
     );
   }
 
-  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus; faviconUrl?: string }; lead_magnet_project_id?: string; published_at?: string | null };
+  const siteExtra = site as unknown as { style_guide?: StyleGuide; sitemap?: SitemapPage[]; site_config?: { menus?: SiteMenus; faviconUrl?: string; seo?: SeoMeta }; lead_magnet_project_id?: string; published_at?: string | null; is_template?: boolean };
 
   return (
     <RelumeEditor
@@ -69,6 +69,8 @@ export default function SiteBuilderV2Page() {
       initialSitemap={siteExtra.sitemap ?? undefined}
       initialMenus={siteExtra.site_config?.menus ?? undefined}
       initialFaviconUrl={siteExtra.site_config?.faviconUrl ?? null}
+      initialSeo={siteExtra.site_config?.seo ?? null}
+      initialIsTemplate={!!siteExtra.is_template}
     />
   );
 }

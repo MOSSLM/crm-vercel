@@ -37,13 +37,25 @@ describe("applyOverridesToHTML", () => {
     expect(out.html).toContain('src="/desk.png"');
   });
 
-  it("merges style override (display:none hides element)", () => {
+  it("merges style override (display:none hides element) with !important", () => {
     const html = wrapHtml(`<p>hello</p>`);
     const overrides: Record<string, OverrideEntry> = {
       "0:style": { kind: "style", value: "", meta: { style: { display: "none" } } },
     };
     const out = applyOverridesToHTML(html, overrides, {});
-    expect(out.html).toMatch(/style="[^"]*display:\s*none/);
+    // !important so per-element overrides win over CTA rules / Tailwind utilities.
+    expect(out.html).toMatch(/display:\s*none\s*!important/);
+  });
+
+  it("re-applying the same style override is idempotent (no double !important)", () => {
+    const html = wrapHtml(`<p>hi</p>`);
+    const overrides: Record<string, OverrideEntry> = {
+      "0:style": { kind: "style", value: "", meta: { style: { color: "#f00" } } },
+    };
+    const first = applyOverridesToHTML(html, overrides, {});
+    const second = applyOverridesToHTML(first.html, overrides, {});
+    expect(second.html).toMatch(/color:\s*#f00\s*!important/);
+    expect(second.html).not.toMatch(/!important\s*!important/);
   });
 
   it("interpolates {{ variables }} in text overrides", () => {
@@ -93,7 +105,7 @@ describe("applyOverridesToHTML", () => {
     };
     const out = applyOverridesToHTML(html, overrides, {});
     expect(out.applied).toBe(1);
-    expect(out.html).toContain("border-radius: 12px");
+    expect(out.html).toContain("border-radius: 12px !important");
     expect(out.html).toContain("border-width: 2px");
     expect(out.html).toContain("border-style: solid");
     expect(out.html).toContain("border-color: #f00");

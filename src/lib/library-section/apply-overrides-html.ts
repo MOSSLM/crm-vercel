@@ -17,6 +17,7 @@
 import "server-only";
 import { parse, type HTMLElement } from "node-html-parser";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
+import { interpolateVars } from "@/lib/site-builder/interpolate-vars";
 
 export interface OverrideEntry {
   kind:
@@ -31,14 +32,6 @@ export interface OverrideEntry {
     | "style";
   value: string;
   meta?: { attrName?: string; style?: Record<string, string> };
-}
-
-function interpolate(text: string, variables: Record<string, string>): string {
-  if (typeof text !== "string" || !text) return text;
-  return text.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
-    const v = variables[key];
-    return v != null ? v : "";
-  });
 }
 
 function nodeAtPath(root: HTMLElement, path: number[]): HTMLElement | null {
@@ -126,7 +119,7 @@ export function applyOverridesToHTML(
         failed++;
         continue;
       }
-      const value = interpolate(entry.value, variables);
+      const value = interpolateVars(entry.value, variables);
       try {
         switch (entry.kind) {
           case "text":
@@ -228,24 +221,39 @@ function escapeText(text: string): string {
 }
 
 /** Merge style declarations into the element's inline style attribute,
- *  overwriting existing properties when keys collide. */
+ *  overwriting existing properties when keys collide.
+ *
+ *  Override-provided properties are emitted with `!important` so per-element
+ *  edits win over the style-guide CTA rules (`.cta-primary` etc. use
+ *  `!important`) and hardcoded Tailwind utilities — Framer/Webflow-style.
+ *  Pre-existing inline declarations keep their original priority, and the
+ *  `!important` flag is parsed/stripped on read so re-applying is idempotent. */
 function mergeStyles(el: HTMLElement, styles: Record<string, string>): void {
   const current = el.getAttribute("style") ?? "";
-  const map: Record<string, string> = {};
+  const map: Record<string, { value: string; important: boolean }> = {};
   for (const decl of current.split(";")) {
     const [k, ...rest] = decl.split(":");
     const key = (k ?? "").trim();
     if (!key) continue;
-    map[key] = rest.join(":").trim();
+    let value = rest.join(":").trim();
+    let important = false;
+    if (/!important\s*$/i.test(value)) {
+      value = value.replace(/!important\s*$/i, "").trim();
+      important = true;
+    }
+    map[key] = { value, important };
   }
   for (const [k, v] of Object.entries(styles)) {
+    const kebab = camelToKebab(k);
     if (typeof v !== "string" || !v) {
-      delete map[camelToKebab(k)];
+      delete map[kebab];
       continue;
     }
-    map[camelToKebab(k)] = v;
+    map[kebab] = { value: v, important: true };
   }
-  const merged = Object.entries(map).map(([k, v]) => `${k}: ${v}`).join("; ");
+  const merged = Object.entries(map)
+    .map(([k, { value, important }]) => `${k}: ${value}${important ? " !important" : ""}`)
+    .join("; ");
   el.setAttribute("style", merged);
 }
 

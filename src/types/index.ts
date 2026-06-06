@@ -619,6 +619,22 @@ export interface SiteGlobalSettings {
   isActive?: boolean;
 }
 
+/**
+ * SEO / social metadata fields. Values may contain `{{ variables }}` which are
+ * interpolated at render time. Used both as site-level defaults
+ * (RelumeBuilderState.seo, persisted in site_config.seo) and — for title/
+ * description/og — as per-page overrides on SitemapPage.
+ */
+export interface SeoMeta {
+  metaTitle?: string;
+  metaDescription?: string;
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
+  /** OpenGraph type, defaults to "website". */
+  ogType?: string;
+}
+
 export interface ThemePageStructure {
   mode: 'single' | 'multi';
   requiredPages?: { slug: string; title: string }[];
@@ -1347,6 +1363,10 @@ export interface SitemapPage {
   sections?: SitemapSection[];
   metaTitle?: string;
   metaDescription?: string;
+  /** Per-page OpenGraph/social overrides (fall back to site-level seo defaults). */
+  ogTitle?: string;
+  ogDescription?: string;
+  ogImage?: string;
   /**
    * If set, this page is removed from the published sitemap (and 404s on the
    * public site) when the enterprise does not have this tag in its
@@ -1412,8 +1432,21 @@ export interface RelumeBuilderState {
   /** Favicon URL stored in site_config.faviconUrl; persisted with menus so it
    *  survives autosave and snapshots into published_site_config at publish. */
   faviconUrl?: string | null;
+  /** Site-level SEO/social defaults, persisted in site_config.seo. Per-page
+   *  overrides live on each SitemapPage; both support {{ variables }}. */
+  seo: SeoMeta;
   /** Resolved enterprise variables for template substitution, e.g. { "entreprise.nom": "Acme" } */
   variableContext: Record<string, string>;
+  /** All service tags available for this account (catalogue), used by the
+   *  "simulated tags" control. Loaded from /api/site-builder/service-tags. */
+  tagCatalog: string[];
+  /**
+   * Editor-only simulated service tags. When non-null, the canvas filters
+   * pages/sections/blocks as if the linked enterprise had exactly these tags
+   * (by overriding `variables.__service_tags` in the preview). null = use the
+   * real variableContext. Used to preview templates that cover every service.
+   */
+  simulatedTags: string[] | null;
   /**
    * Live preview of a section replacement. When set, the canvas renders the
    * targeted instance using `sectionDef` (and a synthesised content) without
@@ -1432,8 +1465,9 @@ export interface RelumeHistoryEntry {
 }
 
 export type RelumeBuilderAction =
-  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[]; menus?: SiteMenus; faviconUrl?: string | null; isDirty?: boolean } }
+  | { type: 'LOAD'; payload: { styleGuide: StyleGuide; sitemap: SitemapPage[]; instances: SiteSectionInstance[]; menus?: SiteMenus; faviconUrl?: string | null; seo?: SeoMeta; isDirty?: boolean } }
   | { type: 'SET_FAVICON_URL'; payload: string | null }
+  | { type: 'UPDATE_SEO'; payload: Partial<SeoMeta> }
   | { type: 'SET_ACTIVE_PAGE'; payload: string }
   | { type: 'SET_DEVICE_VIEW'; payload: 'desktop' | 'tablet' | 'mobile' }
   | { type: 'SET_WORKSPACE'; payload: WorkspaceId }
@@ -1468,6 +1502,8 @@ export type RelumeBuilderAction =
   | { type: 'REDO' }
   | { type: 'MARK_SAVED' }
   | { type: 'SET_VARIABLE_CONTEXT'; payload: Record<string, string> }
+  | { type: 'SET_TAG_CATALOG'; payload: string[] }
+  | { type: 'SET_SIMULATED_TAGS'; payload: string[] | null }
   | { type: 'REPLACE_INSTANCE'; payload: { instanceId: string; sectionDef: SiteSectionDef } }
   | { type: 'SET_PREVIEW_REPLACE'; payload: { instanceId: string; sectionDef: SiteSectionDef } | null };
 

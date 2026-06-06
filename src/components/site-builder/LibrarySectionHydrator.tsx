@@ -161,7 +161,10 @@ function applyOverridesToContainer(
               el.style.removeProperty(camelToKebab(k));
               continue;
             }
-            el.style.setProperty(camelToKebab(k), v);
+            // "important" so per-element overrides win over the style-guide
+            // CTA rules (.cta-primary/.cta-secondary use !important) and
+            // hardcoded Tailwind utilities.
+            el.style.setProperty(camelToKebab(k), v, "important");
           }
           break;
         }

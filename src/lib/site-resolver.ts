@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus, SitemapPage } from "@/types";
+import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus, SitemapPage, SeoMeta } from "@/types";
 import {
   deriveLayoutFieldsFromVariables,
   type ReviewItem,
@@ -37,6 +37,8 @@ export interface ResolvedSite {
   faviconUrl?: string | null;
   /** Published snapshot of the sitemap. Used to filter pages by service_tag. */
   publishedSitemap?: SitemapPage[] | null;
+  /** Site-level SEO/social defaults from the published site_config snapshot. */
+  seo?: SeoMeta | null;
 }
 
 // Resolve a site by subdomain or custom domain
@@ -135,9 +137,10 @@ export async function resolveSite(
   }
 
   const publishedSiteConfig =
-    (siteRow as { published_site_config?: (Partial<SiteConfig> & { menus?: SiteMenus; faviconUrl?: string }) | null }).published_site_config ?? null;
+    (siteRow as { published_site_config?: (Partial<SiteConfig> & { menus?: SiteMenus; faviconUrl?: string; seo?: SeoMeta }) | null }).published_site_config ?? null;
   const menus = publishedSiteConfig?.menus ?? null;
   const faviconUrl = publishedSiteConfig?.faviconUrl ?? null;
+  const seo = publishedSiteConfig?.seo ?? null;
 
   return {
     siteId: siteRow.id,
@@ -155,6 +158,7 @@ export async function resolveSite(
     faviconUrl,
     reviews,
     publishedSitemap: (siteRow as { published_sitemap?: SitemapPage[] | null }).published_sitemap ?? null,
+    seo,
   };
 }
 

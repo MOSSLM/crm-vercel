@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, Trash2, RotateCcw } from "lucide-react";
+import { Link as LinkIcon, ExternalLink, RefreshCw, Image as ImageIcon, MousePointer, FormInput, Type as TypeIcon, AlignLeft, AlignCenter, AlignRight, AlignJustify, Trash2, RotateCcw, Box } from "lucide-react";
 import type { SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "../RelumeBuilderProvider";
 import { resolveContentBinding, type BindingResult, type BindingLocation } from "@/lib/site-builder/resolve-content-binding";
@@ -33,6 +33,7 @@ const KIND_LABELS: Record<ElementKind, string> = {
   link: "Lien",
   input: "Champ de saisie",
   form: "Formulaire",
+  container: "Conteneur",
 };
 
 const KIND_ICONS: Record<ElementKind, React.ElementType> = {
@@ -42,6 +43,7 @@ const KIND_ICONS: Record<ElementKind, React.ElementType> = {
   link: LinkIcon,
   input: FormInput,
   form: FormInput,
+  container: Box,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -339,16 +341,26 @@ function ColorSwatchRow({
  *  (via applyOverridesToHTML) WITHOUT touching the global style guide.
  *  Reused for section-level styling with `pathStr=""` (the section root). */
 export function AppearancePanel({
-  instance, pathStr, showFlex = true,
+  instance, pathStr, showFlex = true, display,
 }: {
   instance: SiteSectionInstance;
   pathStr: string;
   showFlex?: boolean;
+  /** Effective `display` of the element. When provided, the layout sub-controls
+   *  (gap/justify/align/wrap) are shown only when the element is flex/grid and a
+   *  hint is shown otherwise — instead of the static "only works on flex/grid"
+   *  disclaimer used when display is unknown. */
+  display?: string;
 }) {
   const { state } = useRelumeBuilder();
   const dispatch = useDispatcher(instance);
   const s = readStyleOverride(instance, pathStr);
   const patch = (p: Record<string, string | undefined>) => writeStyleOverride(instance, dispatch, pathStr, p);
+
+  const hasDisplay = typeof display === "string" && display.length > 0;
+  const isFlexLike = !hasDisplay || /flex/.test(display as string);
+  const isGridLike = !hasDisplay || /grid/.test(display as string);
+  const showLayoutControls = !hasDisplay || isFlexLike || isGridLike;
 
   const radiusPx = s.borderRadius ? parseInt(s.borderRadius) : null;
   const borderStyleVal = s.borderStyle ?? "";
@@ -472,14 +484,22 @@ export function AppearancePanel({
 
       {/* FLEX / DISPOSITION */}
       {showFlex && (
-        <details style={{ marginTop: 10 }}>
+        <details open={hasDisplay && showLayoutControls} style={{ marginTop: 10 }}>
           <summary style={{ fontSize: 10.5, color: "var(--text-3)", cursor: "default", userSelect: "none" }}>
-            Disposition (flex / grille)
+            Disposition{hasDisplay ? ` · ${display}` : " (flex / grille)"}
           </summary>
           <div style={{ marginTop: 6 }}>
-            <p style={{ fontSize: 10, color: "var(--text-4)", marginBottom: 6, lineHeight: 1.4 }}>
-              N'a d'effet que si l'élément est un conteneur flex / grille.
-            </p>
+            {!hasDisplay && (
+              <p style={{ fontSize: 10, color: "var(--text-4)", marginBottom: 6, lineHeight: 1.4 }}>
+                N'a d'effet que si l'élément est un conteneur flex / grille.
+              </p>
+            )}
+            {hasDisplay && !showLayoutControls && (
+              <p style={{ fontSize: 10, color: "var(--text-4)", marginBottom: 6, lineHeight: 1.4 }}>
+                Élément en « {display} ». Passez-le en flex ou grille pour gérer le gap et l'alignement.
+              </p>
+            )}
+            {showLayoutControls && (<>
             <div className="range-row">
               <label>Gap</label>
               <input
@@ -513,13 +533,16 @@ export function AppearancePanel({
                 <option value="flex-end">Fin</option>
               </select>
             </div>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-2)", marginTop: 6 }}>
-              <input
-                type="checkbox" checked={(s.flexWrap ?? "") === "wrap"}
-                onChange={(e) => patch({ flexWrap: e.target.checked ? "wrap" : undefined })}
-              />
-              Retour à la ligne (wrap)
-            </label>
+            {isFlexLike && (
+              <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--text-2)", marginTop: 6 }}>
+                <input
+                  type="checkbox" checked={(s.flexWrap ?? "") === "wrap"}
+                  onChange={(e) => patch({ flexWrap: e.target.checked ? "wrap" : undefined })}
+                />
+                Retour à la ligne (wrap)
+              </label>
+            )}
+            </>)}
           </div>
         </details>
       )}
@@ -1375,6 +1398,96 @@ function FormPanel({ element, instance, binding }: { element: SelectedElementSha
   );
 }
 
+// ─── Container editor (layout: display / flex / grid + appearance) ────────────
+
+function ContainerPanel({ element, instance }: { element: SelectedElementShape; instance: SiteSectionInstance }) {
+  const dispatch = useDispatcher(instance);
+  const pathStr = element.path.join(".");
+  const s = readStyleOverride(instance, pathStr);
+  const patch = (p: Record<string, string | undefined>) => writeStyleOverride(instance, dispatch, pathStr, p);
+
+  // Effective display = explicit override, else the live computed value from
+  // the iframe. Drives which layout controls are shown (updates immediately
+  // when the user changes display, before the iframe re-reports the tree).
+  const detected = element.attrs.display ?? "";
+  const effectiveDisplay = s.display || detected;
+  const isFlex = /flex/.test(effectiveDisplay);
+  const isGrid = /grid/.test(effectiveDisplay);
+
+  const DISPLAY_OPTIONS: Array<{ id: string; label: string }> = [
+    { id: "", label: "Auto" },
+    { id: "block", label: "Bloc" },
+    { id: "flex", label: "Flex" },
+    { id: "grid", label: "Grille" },
+  ];
+
+  return (
+    <div className="p-3" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gray-50 border-b border-gray-100 sticky top-0 z-10" style={{ margin: "-12px -12px 0" }}>
+        <div className="flex items-center gap-2 min-w-0">
+          <Box size={14} className="text-gray-500 shrink-0" />
+          <span className="text-xs font-semibold text-gray-700">Conteneur</span>
+          <span className="text-[9px] font-mono text-gray-400">&lt;{element.tag}&gt;</span>
+        </div>
+        <span className="text-[9px] font-mono text-gray-400 truncate max-w-[120px]" title={effectiveDisplay}>
+          {effectiveDisplay || "block"}
+        </span>
+      </div>
+
+      {/* DISPOSITION (display) */}
+      <div>
+        <div className="field-label"><span>Disposition (display)</span></div>
+        <div className="seg full">
+          {DISPLAY_OPTIONS.map((o) => (
+            <button
+              key={o.id}
+              type="button"
+              aria-pressed={(s.display ?? "") === o.id ? "true" : "false"}
+              onClick={() => patch({ display: o.id || undefined })}
+            >{o.label}</button>
+          ))}
+        </div>
+        {!s.display && detected && (
+          <p style={{ fontSize: 10, color: "var(--text-4)", marginTop: 4 }}>Display actuel : {detected}</p>
+        )}
+      </div>
+
+      {/* FLEX DIRECTION */}
+      {isFlex && (
+        <div className="field">
+          <div className="field-label"><span>Direction</span></div>
+          <select className="select" value={s.flexDirection ?? ""} onChange={(e) => patch({ flexDirection: e.target.value || undefined })}>
+            <option value="">(auto)</option>
+            <option value="row">Ligne (row)</option>
+            <option value="column">Colonne (column)</option>
+            <option value="row-reverse">Ligne inversée</option>
+            <option value="column-reverse">Colonne inversée</option>
+          </select>
+        </div>
+      )}
+
+      {/* GRID COLUMNS */}
+      {isGrid && (
+        <div className="field">
+          <div className="field-label"><span>Colonnes (grid-template-columns)</span></div>
+          <input
+            type="text"
+            className="input mono"
+            placeholder="ex: repeat(3, 1fr)"
+            value={s.gridTemplateColumns ?? ""}
+            onChange={(e) => patch({ gridTemplateColumns: e.target.value || undefined })}
+            style={{ width: "100%", height: 26, fontSize: 11 }}
+          />
+        </div>
+      )}
+
+      <AppearancePanel instance={instance} pathStr={pathStr} showFlex display={effectiveDisplay} />
+
+      <DeleteRestoreFooter instance={instance} pathStr={pathStr} label="le conteneur" />
+    </div>
+  );
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export function ElementPanel({ element, instance }: ElementPanelProps) {
@@ -1390,6 +1503,7 @@ export function ElementPanel({ element, instance }: ElementPanelProps) {
     case "link": return <ButtonOrLinkPanel element={element} instance={instance} binding={binding} kind="link" />;
     case "input": return <InputPanel element={element} instance={instance} binding={binding} />;
     case "form": return <FormPanel element={element} instance={instance} binding={binding} />;
+    case "container": return <ContainerPanel element={element} instance={instance} />;
     default: return null;
   }
 }
