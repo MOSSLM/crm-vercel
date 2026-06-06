@@ -12,7 +12,7 @@
 
 import type { SectionBlockInstance } from "@/types";
 
-export type ElementKind = "text" | "image" | "button" | "link" | "input" | "form";
+export type ElementKind = "text" | "image" | "button" | "link" | "input" | "form" | "container";
 
 export interface ElementClickInfo {
   kind: ElementKind;

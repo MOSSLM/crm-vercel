@@ -108,7 +108,7 @@ function useCanvasPanZoom() {
 
 // ─── Selected element info ────────────────────────────────────────────────────
 
-export type ElementKind = "text" | "image" | "button" | "link" | "input" | "form";
+export type ElementKind = "text" | "image" | "button" | "link" | "input" | "form" | "container";
 
 export interface ElementAttrs {
   src?: string;
@@ -125,6 +125,10 @@ export interface ElementAttrs {
   method?: string;
   /** True when the "image" kind was inferred from a CSS background-image. */
   isBackground?: boolean;
+  /** Computed display (flex/grid/block/...) for containers and any node. */
+  display?: string;
+  /** Element id, if any. */
+  id?: string;
 }
 
 interface SelectedElement {
@@ -218,6 +222,7 @@ function kindIcon(kind: ElementKind): React.ElementType {
     case "link": return LinkIcon;
     case "input":
     case "form": return Square;
+    case "container": return Box;
     case "text":
     default: return TypeIcon;
   }

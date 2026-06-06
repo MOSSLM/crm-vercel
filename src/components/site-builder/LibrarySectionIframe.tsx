@@ -6,7 +6,7 @@ import { generateColorShades } from "@/lib/color-utils";
 import { buildCtaCSSVars, CTA_CSS_RULES } from "@/lib/button-style";
 import { buildGoogleFontsLinks } from "@/lib/site-builder/google-fonts";
 
-export type IframeElementKind = "text" | "image" | "button" | "link" | "input" | "form";
+export type IframeElementKind = "text" | "image" | "button" | "link" | "input" | "form" | "container";
 
 export interface IframeElementAttrs {
   src?: string;
@@ -24,6 +24,11 @@ export interface IframeElementAttrs {
   /** True when the "image" kind was inferred from a CSS background-image
    *  rather than an `<img src>` attribute. */
   isBackground?: boolean;
+  /** Computed `display` (flex/grid/block/...) — captured for every node so the
+   *  layers panel and the element panel can show layout-aware controls. */
+  display?: string;
+  /** Element id, if any — used to build legible, unique layer names. */
+  id?: string;
 }
 
 export interface IframeElementClickInfo {
@@ -766,7 +771,7 @@ function buildHTML(
             if (Object.prototype.hasOwnProperty.call(styleMap, sk)) {
               var sv = styleMap[sk];
               var prop = sk.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
-              if (typeof sv === 'string' && sv) el.style.setProperty(prop, sv);
+              if (typeof sv === 'string' && sv) el.style.setProperty(prop, sv, 'important');
               else el.style.removeProperty(prop);
             }
           }
@@ -849,8 +854,9 @@ function buildHTML(
   <\/script>
   ${selectionEnabled ? `<script>
     (function () {
-      var SELECTABLE = 'h1,h2,h3,h4,h5,h6,p,span,a,button,img,svg,picture,li,blockquote,label,input,textarea,form';
+      var SELECTABLE = 'h1,h2,h3,h4,h5,h6,p,span,a,button,img,svg,picture,li,blockquote,label,input,textarea,form,div,section,ul,ol,nav,header,footer,main,article,aside';
       var BTN_CLASS_RE = /(^|\\s)(cta-primary|cta-secondary|btn|button)(\\s|$)/i;
+      var CONTAINER_TAGS = { div:1, section:1, ul:1, ol:1, nav:1, header:1, footer:1, main:1, article:1, aside:1 };
       var lastSelected = null;
 
       function pathOf(el) {
@@ -900,6 +906,7 @@ function buildHTML(
         if (tag === 'input' || tag === 'textarea') return 'input';
         if (tag === 'form') return 'form';
         if (extractBgUrl(el)) return 'image';
+        if (CONTAINER_TAGS[tag]) return 'container';
         return 'text';
       }
 
@@ -923,6 +930,10 @@ function buildHTML(
         } else if (kind === 'form') {
           a.action = el.getAttribute('action') || '';
           a.method = (el.getAttribute('method') || 'GET').toUpperCase();
+        } else if (kind === 'container') {
+          try { a.display = window.getComputedStyle(el).display; } catch (_) {}
+          a.className = el.getAttribute('class') || '';
+          a.id = el.id || '';
         }
         return a;
       }
@@ -964,16 +975,24 @@ function buildHTML(
         var tag = el.tagName ? el.tagName.toLowerCase() : '';
         if (SKIP_TAGS[tag]) return null;
         // Honour display:none — Layers should reflect what the user sees.
+        var cs = null;
         try {
-          var cs = window.getComputedStyle(el);
+          cs = window.getComputedStyle(el);
           if (cs && cs.display === 'none') return null;
         } catch (_) {}
         var kind = nodeKind(el);
+        var attrs = nodeAttrs(kind, el);
+        // Capture layout metadata on EVERY node so the layers panel and the
+        // element panel can show display-aware labels/controls (not just for
+        // the 'container' kind).
+        if (cs && cs.display) attrs.display = cs.display;
+        if (!attrs.className) attrs.className = el.getAttribute('class') || '';
+        if (!attrs.id) attrs.id = el.id || '';
         var node = {
           tag: tag,
           kind: kind,
           text: shortText(el),
-          attrs: nodeAttrs(kind, el),
+          attrs: attrs,
           path: path,
           children: []
         };
