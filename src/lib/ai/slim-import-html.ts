@@ -75,3 +75,50 @@ export function slimImportHtml(html: string, opts: SlimOptions = {}): string {
 
   return root.toString();
 }
+
+/**
+ * Split a (slimmed) page into conversion-sized HTML chunks while preserving
+ * section integrity: <section>/<header>/<footer> are kept whole; other
+ * containers are recursed into until each block fits, then adjacent blocks are
+ * packed into chunks ≤ maxLen. This lets the importer convert a large page in
+ * several bounded AI calls instead of one that overflows the token budget.
+ */
+function collectBlocks(el: HTMLElement, out: HTMLElement[], maxLen: number): void {
+  for (const child of el.childNodes) {
+    if (!(child instanceof HTMLElement)) continue;
+    const tag = (child.rawTagName || "").toLowerCase();
+    if (tag === "section" || tag === "header" || tag === "footer") {
+      out.push(child);
+    } else if (child.toString().length <= maxLen) {
+      out.push(child);
+    } else {
+      collectBlocks(child, out, maxLen);
+    }
+  }
+}
+
+export function splitForConversion(html: string, maxLen = 22000): string[] {
+  const root = parse(html, { comment: false });
+  const body = root.querySelector("body") ?? root;
+  const blocks: HTMLElement[] = [];
+  collectBlocks(body, blocks, maxLen);
+
+  // Drop purely-decorative empty wrappers (overlays, spacers).
+  const meaningful = blocks.filter((b) => {
+    if (/<(img|svg|input|button|use|video|iframe)\b/i.test(b.toString())) return true;
+    return (b.textContent || "").trim().length > 0;
+  });
+
+  const chunks: string[] = [];
+  let cur = "";
+  for (const b of meaningful) {
+    const s = b.toString();
+    if (cur && cur.length + s.length > maxLen) {
+      chunks.push(cur);
+      cur = "";
+    }
+    cur += s;
+  }
+  if (cur) chunks.push(cur);
+  return chunks.length > 0 ? chunks : [html];
+}
