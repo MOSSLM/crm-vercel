@@ -114,6 +114,63 @@ function stripCodeFences(code: string): string {
 }
 
 /**
+ * Extract the page's inline <style> CSS and external stylesheet <link> hrefs.
+ * Claude/Figma pages usually style via a custom stylesheet (`.site-footer`,
+ * `.eyebrow`, `.btn-primary`…) in <head> rather than Tailwind utilities. That
+ * CSS is lost when we slice the page into per-section components, so we capture
+ * it here and re-attach it to every section (see `injectStyles`).
+ */
+export function extractPageAssets(html: string): { css: string; links: string[] } {
+  const css: string[] = [];
+  const styleRe = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = styleRe.exec(html))) css.push(m[1]);
+
+  const links: string[] = [];
+  const linkRe = /<link\b[^>]*>/gi;
+  let lm: RegExpExecArray | null;
+  while ((lm = linkRe.exec(html))) {
+    const tag = lm[0];
+    if (!/rel=["']?stylesheet/i.test(tag)) continue;
+    const href = tag.match(/href=["']([^"']+)["']/i)?.[1];
+    if (href && /^https?:\/\//i.test(href)) links.push(href); // skip local/relative refs we can't resolve
+  }
+  return { css: css.join("\n").trim(), links: [...new Set(links)] };
+}
+
+/**
+ * Make a converted section self-contained by re-attaching the page stylesheet,
+ * so it renders identically in the editor iframe and the published site. Done
+ * deterministically (no extra AI tokens): rename the model's default export to
+ * a plain function and wrap it in a new default export that renders the
+ * <link>/<style> before the section markup.
+ */
+function injectStyles(code: string, css: string, links: string[]): string {
+  if (!css && links.length === 0) return code;
+  const nameMatch = code.match(/export\s+default\s+function\s+([A-Za-z0-9_$]+)/);
+  if (!nameMatch) return code; // unexpected shape — leave as-is (Tailwind CDN may still cover it)
+  const name = nameMatch[1];
+  const inner = code.replace(/export\s+default\s+function\s+/g, "function ");
+  const head = [
+    ...links.map((href) => `      <link rel="stylesheet" href=${JSON.stringify(href)} />`),
+    css ? `      <style dangerouslySetInnerHTML={{ __html: ${JSON.stringify(css)} }} />` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return `${inner}
+
+export default function ${name}WithStyles(props: { tokens?: Record<string, string>; data?: Record<string, unknown>; variables?: Record<string, string> }) {
+  return (
+    <>
+${head}
+      <${name} {...props} />
+    </>
+  );
+}
+`;
+}
+
+/**
  * Run the AI conversion. Returns the faithful sections (raw render mode).
  * Throws on AI/transport errors (including abort); returns [] if the model
  * produced no parseable blocks.
@@ -141,5 +198,13 @@ export async function convertHtmlToSections(
   const raw = message.content
     .map((c) => (c.type === "text" ? c.text : ""))
     .join("");
-  return parseImportedSections(raw);
+  const sections = parseImportedSections(raw);
+
+  // Re-attach the page's stylesheet so each section is self-contained and
+  // renders faithfully (custom CSS classes, fonts) — not just Tailwind utilities.
+  const { css, links } = extractPageAssets(html);
+  if (css || links.length > 0) {
+    for (const s of sections) s.code = injectStyles(s.code, css, links);
+  }
+  return sections;
 }
