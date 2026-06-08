@@ -114,18 +114,38 @@ function stripCodeFences(code: string): string {
 }
 
 /**
- * Extract the page's inline <style> CSS and external stylesheet <link> hrefs.
- * Claude/Figma pages usually style via a custom stylesheet (`.site-footer`,
- * `.eyebrow`, `.btn-primary`…) in <head> rather than Tailwind utilities. That
- * CSS is lost when we slice the page into per-section components, so we capture
- * it here and re-attach it to every section (see `injectStyles`).
+ * Extract the page's CSS and external stylesheet <link> hrefs.
+ *
+ * Handles the common paste patterns:
+ *  - inline `<style>` blocks;
+ *  - the stylesheet's *raw contents* pasted outside the document (after
+ *    `</html>` or before `<!doctype>`), NOT wrapped in <style> — frequent when
+ *    a user copies the HTML and the CSS file separately;
+ *  - absolute stylesheet <link>s (e.g. Google Fonts). Relative links like
+ *    `assets/styles.css` are skipped — we can't fetch them.
+ *
+ * The captured CSS is suffixed with a small "static snapshot" override that
+ * un-hides JS-gated reveal/animation classes (the imported page's scripts don't
+ * run, so `.reveal { opacity: 0 }` would otherwise leave content invisible).
  */
 export function extractPageAssets(html: string): { css: string; links: string[] } {
-  const css: string[] = [];
+  const cssParts: string[] = [];
+
+  // 1. Inline <style> blocks.
   const styleRe = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
   let m: RegExpExecArray | null;
-  while ((m = styleRe.exec(html))) css.push(m[1]);
+  while ((m = styleRe.exec(html))) cssParts.push(m[1]);
 
+  // 2. Raw CSS pasted outside the HTML document.
+  const doc = html.match(/<(?:!doctype|html)\b[\s\S]*?<\/html\s*>/i);
+  const outside = doc
+    ? html.slice(0, doc.index ?? 0) + "\n" + html.slice((doc.index ?? 0) + doc[0].length)
+    : /<(?:html|body|main|section|div|header|footer|nav)\b/i.test(html)
+      ? ""
+      : html;
+  if (looksLikeCss(outside)) cssParts.push(outside);
+
+  // 3. Absolute stylesheet <link>s only.
   const links: string[] = [];
   const linkRe = /<link\b[^>]*>/gi;
   let lm: RegExpExecArray | null;
@@ -133,9 +153,39 @@ export function extractPageAssets(html: string): { css: string; links: string[] 
     const tag = lm[0];
     if (!/rel=["']?stylesheet/i.test(tag)) continue;
     const href = tag.match(/href=["']([^"']+)["']/i)?.[1];
-    if (href && /^https?:\/\//i.test(href)) links.push(href); // skip local/relative refs we can't resolve
+    if (href && /^https?:\/\//i.test(href)) links.push(href);
   }
-  return { css: css.join("\n").trim(), links: [...new Set(links)] };
+
+  let css = cssParts.join("\n").trim();
+  if (css) css += "\n" + STATIC_SNAPSHOT_CSS;
+  return { css, links: [...new Set(links)] };
+}
+
+/** Heuristic: does this text look like a CSS stylesheet (vs HTML/prose)? */
+function looksLikeCss(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 40) return false;
+  if (/@media|@font-face|@keyframes|:root\b/i.test(t)) return true;
+  const braces = (t.match(/\{/g) || []).length;
+  return braces >= 3 && /[a-z-]+\s*:\s*[^;{}]+;/i.test(t);
+}
+
+// Imported pages are static snapshots — their scripts (scroll reveal, counters,
+// menus) don't run. Force JS-gated "hidden until revealed" classes visible so
+// content isn't stuck at opacity:0.
+const STATIC_SNAPSHOT_CSS =
+  ".reveal,[data-reveal],[data-aos],.fade-in,.fade-up,.fade-left,.fade-right,.animate,.animate-in,.will-reveal,.scroll-reveal{opacity:1 !important;transform:none !important;visibility:visible !important}";
+
+/**
+ * Static snapshot: animated counters (`<span data-counter="4200">0</span>`)
+ * rely on JS to count up from 0. Without the script they'd show 0, so we set
+ * the displayed text to the target value.
+ */
+function resolveStaticCounters(code: string): string {
+  return code.replace(
+    /(data-counter=["'](\d[\d.,]*)["'][^>]*>)\s*0[\d.,]*\s*(<)/gi,
+    (_full, pre: string, num: string, post: string) => `${pre}${num}${post}`,
+  );
 }
 
 /**
@@ -203,8 +253,9 @@ export async function convertHtmlToSections(
   // Re-attach the page's stylesheet so each section is self-contained and
   // renders faithfully (custom CSS classes, fonts) — not just Tailwind utilities.
   const { css, links } = extractPageAssets(html);
-  if (css || links.length > 0) {
-    for (const s of sections) s.code = injectStyles(s.code, css, links);
+  for (const s of sections) {
+    s.code = resolveStaticCounters(s.code);
+    if (css || links.length > 0) s.code = injectStyles(s.code, css, links);
   }
   return sections;
 }
