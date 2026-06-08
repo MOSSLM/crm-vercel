@@ -177,6 +177,18 @@ const STATIC_SNAPSHOT_CSS =
   ".reveal,[data-reveal],[data-aos],.fade-in,.fade-up,.fade-left,.fade-right,.animate,.animate-in,.will-reveal,.scroll-reveal{opacity:1 !important;transform:none !important;visibility:visible !important}";
 
 /**
+ * Static snapshot: animated counters (`<span data-counter="4200">0</span>`)
+ * rely on JS to count up from 0. Without the script they'd show 0, so we set
+ * the displayed text to the target value.
+ */
+function resolveStaticCounters(code: string): string {
+  return code.replace(
+    /(data-counter=["'](\d[\d.,]*)["'][^>]*>)\s*0[\d.,]*\s*(<)/gi,
+    (_full, pre: string, num: string, post: string) => `${pre}${num}${post}`,
+  );
+}
+
+/**
  * Make a converted section self-contained by re-attaching the page stylesheet,
  * so it renders identically in the editor iframe and the published site. Done
  * deterministically (no extra AI tokens): rename the model's default export to
@@ -241,8 +253,9 @@ export async function convertHtmlToSections(
   // Re-attach the page's stylesheet so each section is self-contained and
   // renders faithfully (custom CSS classes, fonts) — not just Tailwind utilities.
   const { css, links } = extractPageAssets(html);
-  if (css || links.length > 0) {
-    for (const s of sections) s.code = injectStyles(s.code, css, links);
+  for (const s of sections) {
+    s.code = resolveStaticCounters(s.code);
+    if (css || links.length > 0) s.code = injectStyles(s.code, css, links);
   }
   return sections;
 }
