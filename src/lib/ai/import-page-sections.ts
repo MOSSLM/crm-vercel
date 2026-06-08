@@ -207,13 +207,18 @@ function injectStyles(code: string, css: string, links: string[]): string {
   ]
     .filter(Boolean)
     .join("\n");
+  // The section element MUST stay first: the editor iframe roots selection,
+  // the DOM tree and override application at `#root.firstElementChild`, so the
+  // <link>/<style> go AFTER the section (leading head tags would make
+  // firstElementChild a <link> and break all element overrides). CSS/links
+  // apply regardless of source order. (SSR's findSectionRoot also skips them.)
   return `${inner}
 
 export default function ${name}WithStyles(props: { tokens?: Record<string, string>; data?: Record<string, unknown>; variables?: Record<string, string> }) {
   return (
     <>
-${head}
       <${name} {...props} />
+${head}
     </>
   );
 }
