@@ -63,6 +63,12 @@ interface Props {
   onSectionsChanged: () => void;
 }
 
+// Kept in sync with resolveImportModel() in @/lib/ai/import-page-sections.
+const IMPORT_MODEL_OPTIONS = [
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (rapide)" },
+  { id: "claude-opus-4-7", label: "Claude Opus 4.7 (qualité supérieure)" },
+];
+
 export default function ProjectsTree({
   themeSlug,
   sections,
@@ -84,7 +90,9 @@ export default function ProjectsTree({
   const [impSlug, setImpSlug] = React.useState("");
   const [impHtml, setImpHtml] = React.useState("");
   const [impTag, setImpTag] = React.useState("");
+  const [impModel, setImpModel] = React.useState("claude-sonnet-4-6");
   const [importing, setImporting] = React.useState(false);
+  const [serviceTags, setServiceTags] = React.useState<string[]>([]);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Project | null>(null);
   const [instantiatingId, setInstantiatingId] = React.useState<string | null>(null);
@@ -108,6 +116,24 @@ export default function ProjectsTree({
   React.useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
+
+  // Catalogue of service tags (distinct enterprise service_tags) for the dropdown.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authedFetch(`/api/site-builder/service-tags`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.tags)) setServiceTags(data.tags as string[]);
+      } catch {
+        /* optional — leave the dropdown with just "Aucun service" */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const toggle = (set: React.Dispatch<React.SetStateAction<Set<string>>>, id: string) =>
     set((prev) => {
@@ -144,6 +170,7 @@ export default function ProjectsTree({
     setImpSlug("");
     setImpHtml("");
     setImpTag("");
+    setImpModel("claude-sonnet-4-6");
   };
 
   const handleImport = async () => {
@@ -160,6 +187,7 @@ export default function ProjectsTree({
             page_slug: impSlug.trim(),
             html: impHtml,
             service_tag: impTag.trim() || null,
+            model: impModel,
           }),
         },
       );
@@ -407,14 +435,36 @@ export default function ProjectsTree({
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <Label className="text-zinc-300">Service tag (optionnel)</Label>
-              <Input
-                value={impTag}
-                onChange={(e) => setImpTag(e.target.value)}
-                placeholder="ex: plomberie"
-                className="bg-zinc-800 border-zinc-700 text-white"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-zinc-300">Modèle IA</Label>
+                <select
+                  value={impModel}
+                  onChange={(e) => setImpModel(e.target.value)}
+                  className="w-full h-9 rounded-md bg-zinc-800 border border-zinc-700 text-white text-sm px-2"
+                >
+                  {IMPORT_MODEL_OPTIONS.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-zinc-300">Service</Label>
+                <select
+                  value={impTag}
+                  onChange={(e) => setImpTag(e.target.value)}
+                  className="w-full h-9 rounded-md bg-zinc-800 border border-zinc-700 text-white text-sm px-2"
+                >
+                  <option value="">Aucun service</option>
+                  {serviceTags.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label className="text-zinc-300">HTML / CSS de la page</Label>
