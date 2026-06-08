@@ -67,6 +67,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
             theme_section_id: ts.section_id,
             is_tag_adaptive: ts.is_tag_adaptive ?? false,
             schema: ts.schema ?? null,
+            render_mode: ts.render_mode ?? "managed",
           };
         }
       }

@@ -21,6 +21,7 @@ import {
   filterBlocksByEnterpriseTags,
 } from "@/lib/site-builder/menu-overrides";
 import { convertVhToPx } from "@/lib/site-builder/preview-viewport";
+import { isUnmanaged } from "@/lib/site-builder/render-mode";
 
 interface DynamicSectionRendererProps {
   instance: SiteSectionInstance;
@@ -338,36 +339,52 @@ export function DynamicSectionRenderer({
     : undefined;
 
   const padding = structure.padding ?? {};
-  const sectionStyle: React.CSSProperties = {
-    ...cssVars,
-    // Color scheme overrides (applied after base vars so they take precedence)
-    ...colorSchemeVars,
-    paddingTop: padTop ?? padding.top ?? "var(--section-padding)",
-    paddingBottom: padBottom ?? padding.bottom ?? "var(--section-padding)",
-    paddingLeft: padX ?? padding.left ?? "24px",
-    paddingRight: padX ?? padding.right ?? "24px",
-    ...(minHeight ? { minHeight } : {}),
-    ...(marginTop ? { marginTop } : {}),
-    ...(marginBottom ? { marginBottom } : {}),
-    backgroundColor: structure.background ?? "var(--color-background)",
-    position: "relative",
-    fontFamily: "var(--font-body)",
-    fontSize: "var(--font-base-size)",
-    color: "var(--color-text)",
-    ...(instance.custom_style as React.CSSProperties ?? {}),
-  };
+  // Raw (unmanaged) mode: drop the forced envelope (padding / background /
+  // color-scheme / fonts) so the section keeps its own design. CSS vars stay
+  // available for any snippet that references them.
+  const rawStyle = isUnmanaged(instance.content, sectionDef.render_mode);
+  const sectionStyle: React.CSSProperties = rawStyle
+    ? {
+        ...cssVars,
+        position: "relative",
+        ...(instance.custom_style as React.CSSProperties ?? {}),
+      }
+    : {
+        ...cssVars,
+        // Color scheme overrides (applied after base vars so they take precedence)
+        ...colorSchemeVars,
+        paddingTop: padTop ?? padding.top ?? "var(--section-padding)",
+        paddingBottom: padBottom ?? padding.bottom ?? "var(--section-padding)",
+        paddingLeft: padX ?? padding.left ?? "24px",
+        paddingRight: padX ?? padding.right ?? "24px",
+        ...(minHeight ? { minHeight } : {}),
+        ...(marginTop ? { marginTop } : {}),
+        ...(marginBottom ? { marginBottom } : {}),
+        backgroundColor: structure.background ?? "var(--color-background)",
+        position: "relative",
+        fontFamily: "var(--font-body)",
+        fontSize: "var(--font-base-size)",
+        color: "var(--color-text)",
+        ...(instance.custom_style as React.CSSProperties ?? {}),
+      };
 
   const innerLayoutStyle = layoutToCSS(structure.layout);
   // Mirror DynamicPageRenderer: a `gap` in custom_style relaxes the inner
   // flex/grid wrapper's gap (preview matches the deployed render).
   const customGap = (instance.custom_style as Record<string, unknown> | undefined)?.gap;
-  const innerStyle: React.CSSProperties = {
-    ...innerLayoutStyle,
-    ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
-    maxWidth: "var(--max-content-width)",
-    margin: "0 auto",
-    width: "100%",
-  };
+  const innerStyle: React.CSSProperties = rawStyle
+    ? {
+        ...innerLayoutStyle,
+        ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
+        width: "100%",
+      }
+    : {
+        ...innerLayoutStyle,
+        ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
+        maxWidth: "var(--max-content-width)",
+        margin: "0 auto",
+        width: "100%",
+      };
 
   const handleSectionClick = editorMode
     ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); }
@@ -460,6 +477,10 @@ function LibrarySectionRender({
   const formId = instance.content.form_id as string | undefined;
 
   const handleClick = editorMode ? (e: React.MouseEvent) => { e.stopPropagation(); onSelect?.(); } : undefined;
+
+  // Raw (unmanaged) mode: tells the iframe to skip the forced coherence reset
+  // (heading/body fonts, card radius, CTA styles) so the section stays faithful.
+  const rawStyle = isUnmanaged(instance.content, sectionDef.render_mode);
 
   const effectiveStyleGuide: StyleGuide = {
     ...styleGuide,
@@ -556,6 +577,7 @@ function LibrarySectionRender({
           styleGuide={effectiveStyleGuide}
           variables={variables}
           wireframe={wireframe}
+          rawStyle={rawStyle}
           selectionEnabled={selectionEnabled}
           onElementClick={onElementClick}
           onDomTree={onDomTree}

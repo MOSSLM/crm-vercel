@@ -43,7 +43,7 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
   const body = await req.json();
   const supabase = getServiceClient();
 
-  const allowed = ["name", "category", "code", "example_data", "sort_order", "section_id", "schema", "is_tag_adaptive"];
+  const allowed = ["name", "category", "code", "example_data", "sort_order", "section_id", "schema", "is_tag_adaptive", "render_mode"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (key in body) updates[key] = body[key];

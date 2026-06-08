@@ -3,6 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import type { SiteSectionInstance, SiteSectionDef, StyleGuide, SiteMenus } from "@/types";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { adaptContentForRender } from "@/lib/site-builder/legacy-content-adapter";
+import { isUnmanaged } from "@/lib/site-builder/render-mode";
 import { generateShadeCSSVars, getContrastColor } from "@/lib/color-utils";
 import { buildCtaCSSVars } from "@/lib/button-style";
 import {
@@ -76,21 +77,11 @@ function styleGuideToCSSVars(sg: StyleGuide): React.CSSProperties {
 
 // Scoped reset applied only inside [data-lsi] wrappers, so library sections
 // inherit the style guide tokens without polluting native sections.
-const LIBRARY_SCOPED_CSS = `
+// Base reset applied to ALL library sections (managed AND raw): box-sizing and
+// the image overflow guard mirror Tailwind's preflight, which every section
+// already assumes — so they don't "alter" an imported design.
+const LIBRARY_BASE_CSS = `
 [data-lsi] * { box-sizing: border-box; }
-[data-lsi] h1,[data-lsi] h2,[data-lsi] h3,[data-lsi] h4,[data-lsi] h5,[data-lsi] h6 {
-  font-family: var(--font-heading, Inter, sans-serif) !important;
-}
-[data-lsi] body,[data-lsi] p,[data-lsi] span,[data-lsi] a,
-[data-lsi] button,[data-lsi] input,[data-lsi] textarea,[data-lsi] select,[data-lsi] li {
-  font-family: var(--font-body, Inter, sans-serif);
-}
-[data-lsi] .card,[data-lsi] [class*="shadow-"],[data-lsi] .rounded-card {
-  border-radius: var(--card-radius) !important;
-}
-[data-lsi] img,[data-lsi] picture,[data-lsi] video {
-  border-radius: var(--card-image-radius);
-}
 /* Prevent images escaping their container on the deployed site. We avoid
    !important on height so sections that explicitly size their images via
    classes like h-full (e.g. carousel tiles in Layout414) keep working;
@@ -99,7 +90,26 @@ const LIBRARY_SCOPED_CSS = `
    only on top" bug). The synchronously-loaded Tailwind CDN provides the
    same defaults via its preflight. */
 [data-lsi] img,[data-lsi] picture,[data-lsi] video { max-width: 100%; }
-[data-lsi] .cta-primary {
+`;
+
+// Coherence layer — forced font / radius / CTA tokens. Every selector is scoped
+// with :not([data-raw]) so RAW (unmanaged) sections are excluded and render
+// exactly as imported.
+const LIBRARY_MANAGED_CSS = `
+[data-lsi]:not([data-raw]) h1,[data-lsi]:not([data-raw]) h2,[data-lsi]:not([data-raw]) h3,[data-lsi]:not([data-raw]) h4,[data-lsi]:not([data-raw]) h5,[data-lsi]:not([data-raw]) h6 {
+  font-family: var(--font-heading, Inter, sans-serif) !important;
+}
+[data-lsi]:not([data-raw]) body,[data-lsi]:not([data-raw]) p,[data-lsi]:not([data-raw]) span,[data-lsi]:not([data-raw]) a,
+[data-lsi]:not([data-raw]) button,[data-lsi]:not([data-raw]) input,[data-lsi]:not([data-raw]) textarea,[data-lsi]:not([data-raw]) select,[data-lsi]:not([data-raw]) li {
+  font-family: var(--font-body, Inter, sans-serif);
+}
+[data-lsi]:not([data-raw]) .card,[data-lsi]:not([data-raw]) [class*="shadow-"],[data-lsi]:not([data-raw]) .rounded-card {
+  border-radius: var(--card-radius) !important;
+}
+[data-lsi]:not([data-raw]) img,[data-lsi]:not([data-raw]) picture,[data-lsi]:not([data-raw]) video {
+  border-radius: var(--card-image-radius);
+}
+[data-lsi]:not([data-raw]) .cta-primary {
   background-color: var(--btn-primary-bg) !important;
   color: var(--btn-primary-text) !important;
   border: var(--btn-primary-border-width) solid var(--btn-primary-border-color) !important;
@@ -108,7 +118,7 @@ const LIBRARY_SCOPED_CSS = `
   box-shadow: var(--btn-primary-shadow) !important;
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
-[data-lsi] .cta-secondary {
+[data-lsi]:not([data-raw]) .cta-secondary {
   background-color: var(--btn-secondary-bg) !important;
   color: var(--btn-secondary-text) !important;
   border: var(--btn-secondary-border-width) solid var(--btn-secondary-border-color) !important;
@@ -117,9 +127,11 @@ const LIBRARY_SCOPED_CSS = `
   box-shadow: var(--btn-secondary-shadow) !important;
   transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
 }
-[data-lsi] .cta-primary:hover { filter: brightness(0.92); transform: translateY(-1px); }
-[data-lsi] .cta-secondary:hover { filter: brightness(0.96); transform: translateY(-1px); }
+[data-lsi]:not([data-raw]) .cta-primary:hover { filter: brightness(0.92); transform: translateY(-1px); }
+[data-lsi]:not([data-raw]) .cta-secondary:hover { filter: brightness(0.96); transform: translateY(-1px); }
 `;
+
+const LIBRARY_SCOPED_CSS = LIBRARY_BASE_CSS + LIBRARY_MANAGED_CSS;
 
 interface DynamicPageRendererProps {
   siteId: string;
@@ -183,7 +195,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
 
   // Resolve every library section's theme code/category in one query —
   // covering both this page's sections and the inherited home chrome.
-  const themeSectionMap = new Map<string, { code: string; example_data: Record<string, unknown> | null; category: string | null }>();
+  const themeSectionMap = new Map<string, { code: string; example_data: Record<string, unknown> | null; category: string | null; render_mode: string | null }>();
   const lookupRefs = [...instances, ...homeChrome]
     .map(refOf)
     .filter((r): r is { theme_slug: string; section_id: string } => Boolean(r));
@@ -191,13 +203,14 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     const themeSlugs = [...new Set(lookupRefs.map((r) => r.theme_slug))];
     const { data: themeSections } = await supabase
       .from("theme_sections")
-      .select("theme_slug, section_id, code, example_data, category")
+      .select("theme_slug, section_id, code, example_data, category, render_mode")
       .in("theme_slug", themeSlugs);
     for (const ts of themeSections ?? []) {
       themeSectionMap.set(`${ts.theme_slug}:${ts.section_id}`, {
         code: ts.code,
         example_data: ts.example_data,
         category: ts.category ?? null,
+        render_mode: ts.render_mode ?? null,
       });
     }
   }
@@ -330,6 +343,10 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
             ...adaptiveOverrides,
             ...adaptContentForRender({}, filteredBlocks),
           };
+          const unmanaged = isUnmanaged(
+            instance.content as Record<string, unknown> | null,
+            ts.render_mode,
+          );
           const node = (
             <LibrarySectionInline
               key={instance.id}
@@ -338,6 +355,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
               content={content}
               styleGuide={guide}
               variables={variables}
+              unmanaged={unmanaged}
             />
           );
           if (navLayout && navLayout.position !== "static") {
@@ -446,28 +464,43 @@ function DynamicSectionPublic({ instance, sectionDef, guide, variables = {}, rev
   const padding = structure.padding ?? {};
   const layoutStyle = getLayoutStyle(structure.layout);
 
-  const sectionStyle: React.CSSProperties = {
-    ...cssVars,
-    paddingTop: padding.top ?? guide.spacing.sectionPadding,
-    paddingBottom: padding.bottom ?? guide.spacing.sectionPadding,
-    paddingLeft: padding.left ?? "24px",
-    paddingRight: padding.right ?? "24px",
-    backgroundColor: structure.background ?? guide.colors.background,
-    ...(instance.custom_style as React.CSSProperties ?? {}),
-  };
+  // Raw (unmanaged) mode: drop the forced envelope (padding / background /
+  // max-width) so the section keeps its own design; CSS vars stay available.
+  const rawStyle = isUnmanaged(instance.content, sectionDef.render_mode);
+
+  const sectionStyle: React.CSSProperties = rawStyle
+    ? {
+        ...cssVars,
+        ...(instance.custom_style as React.CSSProperties ?? {}),
+      }
+    : {
+        ...cssVars,
+        paddingTop: padding.top ?? guide.spacing.sectionPadding,
+        paddingBottom: padding.bottom ?? guide.spacing.sectionPadding,
+        paddingLeft: padding.left ?? "24px",
+        paddingRight: padding.right ?? "24px",
+        backgroundColor: structure.background ?? guide.colors.background,
+        ...(instance.custom_style as React.CSSProperties ?? {}),
+      };
 
   // Section-level gap override: a `gap` set in custom_style targets the inner
   // flex/grid wrapper (not the <section>), so a section can relax a too-tight
   // forced gap without touching the global style guide. Additive — falls back
   // to the section's own layout gap.
   const customGap = (instance.custom_style as Record<string, unknown> | undefined)?.gap;
-  const innerStyle: React.CSSProperties = {
-    ...layoutStyle,
-    ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
-    maxWidth: guide.spacing.maxContentWidth,
-    margin: "0 auto",
-    width: "100%",
-  };
+  const innerStyle: React.CSSProperties = rawStyle
+    ? {
+        ...layoutStyle,
+        ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
+        width: "100%",
+      }
+    : {
+        ...layoutStyle,
+        ...(typeof customGap === "string" && customGap ? { gap: customGap } : {}),
+        maxWidth: guide.spacing.maxContentWidth,
+        margin: "0 auto",
+        width: "100%",
+      };
 
   return (
     <section style={sectionStyle}>

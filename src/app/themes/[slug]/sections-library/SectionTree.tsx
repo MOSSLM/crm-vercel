@@ -33,6 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { CATEGORIES, type ThemeSection } from "./types";
+import ProjectsTree from "./ProjectsTree";
 import { authedFetch } from "@/utils/authedFetch";
 
 interface Props {
@@ -66,6 +67,7 @@ export default function SectionTree({
   const grouped = React.useMemo(() => {
     const map: Record<string, ThemeSection[]> = {};
     for (const s of sections) {
+      if (s.project_id) continue; // project sections live under the Projets tree
       if (!map[s.category]) map[s.category] = [];
       map[s.category].push(s);
     }
@@ -182,6 +184,16 @@ export default function SectionTree({
 
   return (
     <div className="flex flex-col h-full bg-zinc-950">
+      {/* Projects (multi-page design units) */}
+      <div className="max-h-[45%] overflow-y-auto flex-shrink-0">
+        <ProjectsTree
+          themeSlug={themeSlug}
+          sections={sections}
+          onSelectSection={onSelect}
+          onSectionsChanged={onRefresh}
+        />
+      </div>
+
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
         <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">

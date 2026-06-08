@@ -8,6 +8,10 @@ export interface ThemeSection {
   example_data: Record<string, unknown>;
   schema?: Record<string, unknown> | null;
   is_tag_adaptive: boolean;
+  /** 'managed' (default house-style layer) | 'raw' (faithful, no forced styles). */
+  render_mode?: "managed" | "raw";
+  /** Set when the section was created by a project import (grouped under it). */
+  project_id?: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;

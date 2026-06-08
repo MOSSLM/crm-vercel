@@ -171,6 +171,30 @@ export default function SectionsLibraryPage({ params }: PageProps) {
     }
   }, [activeSection, slug]);
 
+  const handleToggleRenderMode = React.useCallback(async () => {
+    if (!activeSection || !slug) return;
+    const next = activeSection.render_mode === "raw" ? "managed" : "raw";
+    try {
+      const res = await authedFetch(
+        `/api/themes/${slug}/sections/${activeSection.section_id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ render_mode: next }),
+        }
+      );
+      if (!res.ok) throw new Error("Erreur");
+      const updated: ThemeSection = await res.json();
+      setActiveSection(updated);
+      setSections((prev) =>
+        prev.map((s) => (s.section_id === updated.section_id ? updated : s))
+      );
+      toast.success(next === "raw" ? "Section en mode brut (design fidèle)" : "Section en mode géré");
+    } catch {
+      toast.error("Impossible de modifier le mode de rendu");
+    }
+  }, [activeSection, slug]);
+
   if (!slug) {
     return (
       <div className="flex items-center justify-center h-screen bg-zinc-950 text-zinc-500">
@@ -279,6 +303,19 @@ export default function SectionsLibraryPage({ params }: PageProps) {
                         title="Une section adaptative répète un élément par service de l'entreprise"
                       >
                         {activeSection.is_tag_adaptive ? "● Adaptative" : "○ Adaptative"}
+                      </button>
+                    )}
+                    {activeSection && (
+                      <button
+                        onClick={handleToggleRenderMode}
+                        className={`mr-1 px-2 py-1 text-[11px] font-medium rounded transition-colors ${
+                          activeSection.render_mode === "raw"
+                            ? "bg-amber-600/20 text-amber-300 border border-amber-600/40"
+                            : "text-zinc-500 hover:text-zinc-300 border border-transparent"
+                        }`}
+                        title="Mode brut : la section s'affiche exactement comme conçue, le builder n'impose aucun style (espacements, arrondis, police, couleurs)"
+                      >
+                        {activeSection.render_mode === "raw" ? "● Brut" : "○ Brut"}
                       </button>
                     )}
                   </div>

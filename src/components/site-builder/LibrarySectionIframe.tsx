@@ -99,6 +99,13 @@ interface LibrarySectionIframeProps {
    *  its px equivalent. Leave undefined on the published site to keep
    *  native `vh`. */
   simulatedViewportHeight?: number;
+  /**
+   * Raw (unmanaged) rendering: when true, the iframe does NOT inject the
+   * coherence-layer reset (forced heading/body fonts, card radius, CTA styles,
+   * default body font). The section renders exactly as its own markup/CSS
+   * defines. Style-guide CSS vars stay exposed (opt-in) but nothing is forced.
+   */
+  rawStyle?: boolean;
 }
 
 /**
@@ -122,6 +129,7 @@ export function LibrarySectionIframe({
   onCanvasWheel,
   onFormSlot,
   simulatedViewportHeight,
+  rawStyle = false,
 }: LibrarySectionIframeProps) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   // In editor mode: start at a real viewport height so min-h-screen sections
@@ -138,9 +146,9 @@ export function LibrarySectionIframe({
   // data (content, variables, overrides) is pushed via postMessage so the
   // iframe never reloads + Babel never recompiles during user edits.
   const srcDoc = React.useMemo(
-    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides, simulatedViewportHeight }),
+    () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides, simulatedViewportHeight, rawStyle }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [code, styleGuide, wireframe, selectionEnabled, simulatedViewportHeight],
+    [code, styleGuide, wireframe, selectionEnabled, simulatedViewportHeight, rawStyle],
   );
 
   const isReadyRef = React.useRef(false);
@@ -364,6 +372,8 @@ interface BuildOptions {
   overrides?: Record<string, unknown>;
   /** Simulated viewport height in px for preview vh→px rewriting. */
   simulatedViewportHeight?: number;
+  /** Raw mode: skip the coherence-layer reset CSS (see component prop). */
+  rawStyle?: boolean;
 }
 
 function buildHTML(
@@ -376,7 +386,7 @@ function buildHTML(
   const overridesPayload = options.overrides ?? {};
   const cssVars = styleGuide ? styleGuideToCSSVars(styleGuide) : "";
   const googleFontsLinks = buildGoogleFontsLinks(styleGuide?.fonts);
-  const { wireframe = false, selectionEnabled = false, simulatedViewportHeight } = options;
+  const { wireframe = false, selectionEnabled = false, simulatedViewportHeight, rawStyle = false } = options;
 
   // Extract export default name BEFORE stripping keywords
   const exportDefaultFnMatch = code.match(/export\s+default\s+function\s+([A-Z]\w*)/);
@@ -468,7 +478,11 @@ function buildHTML(
   // IMPORTANT: only `.cta-primary` and `.cta-secondary` get button token
   // overrides — other interactive elements (FAQ toggles, slider arrows, etc.)
   // keep their native styles.
-  const resetCss = `
+  // Raw mode keeps only the layout-neutral height reset (needed for section
+  // measurement) and forces nothing else, so imported designs render faithfully.
+  const resetCss = rawStyle
+    ? `html, body { height: auto; min-height: 0; }`
+    : `
     html, body { height: auto; min-height: 0; }
     /* Apply font tokens globally so heading vs body fonts respect Style Guide. */
     h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading, Inter, sans-serif) !important; }
@@ -606,7 +620,7 @@ function buildHTML(
     :root {
       ${cssVars}
     }
-    html, body { margin: 0; font-family: var(--font-body, Inter, sans-serif); background: transparent; color: var(--color-text, #111); }
+    html, body { margin: 0; background: transparent; ${rawStyle ? "" : "font-family: var(--font-body, Inter, sans-serif); color: var(--color-text, #111);"} }
     body { overflow-x: hidden; }
     * { box-sizing: border-box; }
     ${resetCss}

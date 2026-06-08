@@ -20,6 +20,7 @@ import {
   type NavbarPosition,
 } from "@/lib/site-builder/position-layout";
 import { NAVBAR_CATEGORIES } from "@/lib/site-builder/menu-overrides";
+import { isUnmanaged } from "@/lib/site-builder/render-mode";
 
 interface PropertiesPanelProps {
   onRegenerateSection?: (instanceId: string, prompt: string, model: string) => Promise<void>;
@@ -210,6 +211,28 @@ export function PropertiesPanel({ onRegenerateSection }: PropertiesPanelProps) {
 
         {activeTab === "style" && (
           <div className="px-4 py-3 space-y-4">
+            {/* Render mode: faithful (raw) vs managed house style. When raw, the
+                builder imposes nothing (no forced padding / radius / fonts /
+                colors) so the section renders exactly as designed. */}
+            <div>
+              <div className="text-[10px] font-semibold text-white/30 uppercase tracking-widest mb-2">Rendu</div>
+              <label className="flex items-start gap-2.5 rounded-md border border-white/10 bg-white/5 p-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isUnmanaged(instance.content, sectionDef.render_mode)}
+                  onChange={(e) => updateContent("__unmanaged_style", e.target.checked)}
+                  className="mt-0.5 accent-blue-500"
+                />
+                <span className="text-sm">
+                  <span className="text-white/90 font-medium">Respecter le design original</span>
+                  <span className="block text-xs text-white/40 mt-0.5">
+                    Mode brut : le builder n&apos;impose ni espacements, ni arrondis, ni police,
+                    ni couleurs. La section s&apos;affiche exactement comme conçue.
+                  </span>
+                </span>
+              </label>
+            </div>
+
             {/* Position settings — only for navbar sections */}
             {sectionDef.category && NAVBAR_CATEGORIES.has(sectionDef.category) && (
               <NavbarPositionPanel instance={instance} updateContent={updateContent} />

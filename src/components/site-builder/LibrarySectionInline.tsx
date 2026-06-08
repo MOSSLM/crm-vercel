@@ -21,6 +21,12 @@ interface Props {
   content: Record<string, unknown>;
   styleGuide?: StyleGuide;
   variables?: Record<string, string>;
+  /**
+   * Raw (unmanaged) mode: marks the container with `data-raw` so the page's
+   * scoped coherence CSS (`[data-lsi]:not([data-raw])`) skips this section,
+   * keeping the imported design faithful.
+   */
+  unmanaged?: boolean;
 }
 
 /** Safely embeds an arbitrary value as inline JSON without breaking the HTML parser. */
@@ -37,6 +43,7 @@ export async function LibrarySectionInline({
   content,
   styleGuide,
   variables = {},
+  unmanaged = false,
 }: Props) {
   let html = "";
   let compiledJs = "";
@@ -125,6 +132,7 @@ export async function LibrarySectionInline({
       <>
         <div
           data-lsi={instanceId}
+          data-raw={unmanaged ? "" : undefined}
           suppressHydrationWarning
           style={{ minHeight: 0 }}
         />
@@ -142,6 +150,7 @@ export async function LibrarySectionInline({
       {/* suppressHydrationWarning: tolerate minor server/client HTML differences */}
       <div
         data-lsi={instanceId}
+        data-raw={unmanaged ? "" : undefined}
         suppressHydrationWarning
         dangerouslySetInnerHTML={{ __html: html }}
       />
