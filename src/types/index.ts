@@ -1222,6 +1222,45 @@ export interface SiteSectionInstance {
    */
 }
 
+// ─── Section Projects (multi-page design units in the section builder) ────────
+
+/** One ordered section reference inside a project page. */
+export interface SectionProjectPageRef {
+  /** theme_sections.section_id of the library section to place. */
+  section_id: string;
+  /** Optional service tag; controls per-enterprise visibility once instantiated. */
+  service_tag?: string | null;
+}
+
+/** A row in section_project_pages — one page of a project, composed of sections. */
+export interface SectionProjectPage {
+  id: string;
+  project_id: string;
+  slug: string;
+  title: string;
+  sort_order: number;
+  sections: SectionProjectPageRef[];
+  seo?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A row in section_projects — a named, multi-page design unit per theme. */
+export interface SectionProject {
+  id: string;
+  theme_slug: string;
+  slug: string;
+  name: string;
+  description?: string | null;
+  /** Design tokens extracted from the imported design; used as the site default. */
+  style_guide?: StyleGuide | null;
+  source_meta?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  /** Joined pages (when fetched with detail). */
+  pages?: SectionProjectPage[];
+}
+
 /** Box-shadow components for a button variant */
 export interface ButtonShadow {
   x: number;        // px offset
