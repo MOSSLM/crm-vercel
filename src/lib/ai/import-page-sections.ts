@@ -12,7 +12,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { slugify } from "@/lib/site-builder/slug";
-import { slimImportHtml } from "./slim-import-html";
+import { slimImportHtml, splitForConversion } from "./slim-import-html";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -248,6 +248,31 @@ ${head}
  * silently hits gateway/SDK timeouts. Streaming keeps the connection alive and
  * lets the caller bound it with an AbortSignal.
  */
+/** Max slimmed-HTML length still converted in a single AI call. */
+const SINGLE_CALL_MAX = 24000;
+/** How many section chunks to convert in parallel for large pages. */
+const CONVERSION_CONCURRENCY = 4;
+
+/** Convert one HTML chunk (one or more sections) into parsed sections. */
+async function convertChunk(
+  htmlChunk: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<ImportedSection[]> {
+  const stream = anthropic.messages.stream(
+    {
+      model,
+      max_tokens: 32000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: buildUserMessage(htmlChunk) }],
+    },
+    signal ? { signal } : undefined,
+  );
+  const message = await stream.finalMessage();
+  const raw = message.content.map((c) => (c.type === "text" ? c.text : "")).join("");
+  return parseImportedSections(raw);
+}
+
 export async function convertHtmlToSections(
   html: string,
   opts: { model?: string; signal?: AbortSignal; css?: string; links?: string[] } = {},
@@ -257,8 +282,7 @@ export async function convertHtmlToSections(
   // Strip non-structural bulk (inline CSS, scripts, triplicated responsive
   // variants, hydration JSON) before sending to the model. The page stylesheet
   // is captured + re-attached separately below, so this slashes token usage
-  // (a Framer homepage drops from ~500K to a few tens of KB) without losing
-  // fidelity. Fall back to the raw HTML if slimming yields nothing.
+  // without losing fidelity. Fall back to the raw HTML if slimming yields nothing.
   let aiHtml = html;
   try {
     const slim = slimImportHtml(html);
@@ -267,20 +291,21 @@ export async function convertHtmlToSections(
     /* keep raw html */
   }
 
-  const stream = anthropic.messages.stream(
-    {
-      model,
-      max_tokens: 32000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildUserMessage(aiHtml) }],
-    },
-    opts.signal ? { signal: opts.signal } : undefined,
+  // A whole large page overflows a single response's token budget (and the
+  // function timeout). Split it into section-sized chunks and convert them
+  // concurrently, preserving document order. Small pages stay a single call.
+  const chunks = aiHtml.length <= SINGLE_CALL_MAX ? [aiHtml] : splitForConversion(aiHtml);
+  const results: ImportedSection[][] = new Array(chunks.length);
+  let next = 0;
+  const runWorker = async (): Promise<void> => {
+    for (let i = next++; i < chunks.length; i = next++) {
+      results[i] = await convertChunk(chunks[i], model, opts.signal);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(CONVERSION_CONCURRENCY, chunks.length) }, runWorker),
   );
-  const message = await stream.finalMessage();
-  const raw = message.content
-    .map((c) => (c.type === "text" ? c.text : ""))
-    .join("");
-  const sections = parseImportedSections(raw);
+  const sections = results.flat();
 
   // Re-attach the page's stylesheet so each section is self-contained and
   // renders faithfully (custom CSS classes, fonts) — not just Tailwind utilities.
