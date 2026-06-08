@@ -24,12 +24,14 @@ function normalizePageSlug(raw: string): string {
  */
 export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const body = await req.json();
-  const { page_title, page_slug, html, service_tag, model } = body as {
+  const { page_title, page_slug, html, service_tag, model, css, links } = body as {
     page_title?: string;
     page_slug?: string;
     html?: string;
     service_tag?: string | null;
     model?: string;
+    css?: string;
+    links?: string[];
   };
 
   if (!html?.trim()) return jsonError("html requis", 400);
@@ -55,7 +57,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const timeout = setTimeout(() => controller.abort(), 290_000);
   let sections;
   try {
-    sections = await convertHtmlToSections(html, { model, signal: controller.signal });
+    sections = await convertHtmlToSections(html, { model, signal: controller.signal, css, links });
   } catch (err: unknown) {
     const name = err instanceof Error ? err.name : "";
     if (name === "APIUserAbortError" || name === "AbortError") {

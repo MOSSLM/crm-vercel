@@ -100,6 +100,7 @@ export default function ProjectsTree({
     warnings: string[];
     chars: number;
   } | null>(null);
+  const [fetchedAssets, setFetchedAssets] = React.useState<{ css: string; links: string[] } | null>(null);
   const [serviceTags, setServiceTags] = React.useState<string[]>([]);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Project | null>(null);
@@ -182,6 +183,7 @@ export default function ProjectsTree({
     setImpMode("url");
     setImpUrl("");
     setFetchInfo(null);
+    setFetchedAssets(null);
   };
 
   const handleFetchUrl = async () => {
@@ -196,6 +198,7 @@ export default function ProjectsTree({
       const data = await res.json();
       if (!res.ok) throw new Error(data.hint ? `${data.error} ${data.hint}` : data.error);
       setImpHtml(data.html ?? "");
+      setFetchedAssets({ css: data.css ?? "", links: data.links ?? [] });
       if (data.title && !impTitle.trim()) setImpTitle(data.title);
       setFetchInfo({
         method: data.method,
@@ -225,6 +228,7 @@ export default function ProjectsTree({
             html: impHtml,
             service_tag: impTag.trim() || null,
             model: impModel,
+            ...(fetchedAssets ? { css: fetchedAssets.css, links: fetchedAssets.links } : {}),
           }),
         },
       );
@@ -464,7 +468,10 @@ export default function ProjectsTree({
               </button>
               <button
                 type="button"
-                onClick={() => setImpMode("html")}
+                onClick={() => {
+                  setImpMode("html");
+                  setFetchedAssets(null);
+                }}
                 className={`px-3 py-1 text-xs rounded transition-colors ${
                   impMode === "html" ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-zinc-200"
                 }`}
@@ -479,7 +486,10 @@ export default function ProjectsTree({
                 <div className="flex gap-2">
                   <Input
                     value={impUrl}
-                    onChange={(e) => setImpUrl(e.target.value)}
+                    onChange={(e) => {
+                      setImpUrl(e.target.value);
+                      setFetchedAssets(null);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
                         e.preventDefault();

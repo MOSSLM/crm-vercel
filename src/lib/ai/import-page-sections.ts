@@ -250,7 +250,7 @@ ${head}
  */
 export async function convertHtmlToSections(
   html: string,
-  opts: { model?: string; signal?: AbortSignal } = {},
+  opts: { model?: string; signal?: AbortSignal; css?: string; links?: string[] } = {},
 ): Promise<ImportedSection[]> {
   const model = resolveImportModel(opts.model);
 
@@ -284,7 +284,12 @@ export async function convertHtmlToSections(
 
   // Re-attach the page's stylesheet so each section is self-contained and
   // renders faithfully (custom CSS classes, fonts) — not just Tailwind utilities.
-  const { css, links } = extractPageAssets(html);
+  // The URL importer pre-extracts the stylesheet (the HTML it sends is already
+  // stripped of <style>), so prefer caller-provided assets when present.
+  const { css, links } =
+    opts.css !== undefined || opts.links !== undefined
+      ? { css: opts.css ?? "", links: opts.links ?? [] }
+      : extractPageAssets(html);
   for (const s of sections) {
     s.code = resolveStaticCounters(s.code);
     if (css || links.length > 0) s.code = injectStyles(s.code, css, links);

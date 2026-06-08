@@ -17,12 +17,18 @@
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 import { normalizeImportedHtml, type NormalizeResult } from "./normalize-imported-html";
+import { extractPageAssets } from "@/lib/ai/import-page-sections";
+import { slimImportHtml } from "@/lib/ai/slim-import-html";
 
 export interface FetchPageResult extends NormalizeResult {
   /** URL actually fetched (after redirects). */
   finalUrl: string;
   /** Which tier produced the result. */
   method: "direct";
+  /** Page stylesheet captured for re-attachment (kept OUT of `html`). */
+  css: string;
+  /** Absolute stylesheet links captured for re-attachment. */
+  links: string[];
 }
 
 /** Error carrying an HTTP status + an optional actionable hint for the UI. */
@@ -227,5 +233,18 @@ export async function fetchPageHtml(input: string): Promise<FetchPageResult> {
   }
 
   const normalized = normalizeImportedHtml(rawHtml, res.url || url.href);
-  return { ...normalized, finalUrl: res.url || url.href, method: "direct" };
+  // Capture the stylesheet now, then strip it (and other bulk) from the HTML we
+  // hand back, so the editor textarea + AI conversion stay small. The CSS rides
+  // separately and is re-attached to each section at import time.
+  const { css, links } = extractPageAssets(normalized.html);
+  const slim = slimImportHtml(normalized.html);
+  return {
+    html: slim,
+    title: normalized.title,
+    warnings: normalized.warnings,
+    finalUrl: res.url || url.href,
+    method: "direct",
+    css,
+    links,
+  };
 }
