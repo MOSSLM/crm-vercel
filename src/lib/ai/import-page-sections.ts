@@ -28,6 +28,20 @@ export interface ImportedSection {
   code: string;
 }
 
+/** Models offered for import conversion (kept in sync with the UI dropdown). */
+export const IMPORT_MODEL_OPTIONS = [
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (rapide)" },
+  { id: "claude-opus-4-7", label: "Claude Opus 4.7 (qualité supérieure)" },
+] as const;
+
+const IMPORT_MODEL_IDS = new Set<string>(IMPORT_MODEL_OPTIONS.map((m) => m.id));
+const DEFAULT_IMPORT_MODEL = "claude-sonnet-4-6";
+
+/** Validate a requested model against the allowlist; fall back to the default. */
+export function resolveImportModel(model?: string | null): string {
+  return model && IMPORT_MODEL_IDS.has(model) ? model : DEFAULT_IMPORT_MODEL;
+}
+
 const SYSTEM_PROMPT = `Tu convertis une page HTML/CSS (souvent générée avec Tailwind) en sections React TSX FIDÈLES, pour un site builder. Tu ne dois RIEN inventer ni embellir : tu reproduis le design tel quel.
 
 DÉCOUPAGE
@@ -101,20 +115,30 @@ function stripCodeFences(code: string): string {
 
 /**
  * Run the AI conversion. Returns the faithful sections (raw render mode).
- * Throws on AI/transport errors; returns [] if the model produced no blocks.
+ * Throws on AI/transport errors (including abort); returns [] if the model
+ * produced no parseable blocks.
+ *
+ * The request is STREAMED: converting a whole page into multiple full TSX
+ * components is a long, high-`max_tokens` generation, and a non-streamed call
+ * silently hits gateway/SDK timeouts. Streaming keeps the connection alive and
+ * lets the caller bound it with an AbortSignal.
  */
 export async function convertHtmlToSections(
   html: string,
-  opts: { model?: string } = {},
+  opts: { model?: string; signal?: AbortSignal } = {},
 ): Promise<ImportedSection[]> {
-  const model = opts.model || "claude-sonnet-4-6";
-  const response = await anthropic.messages.create({
-    model,
-    max_tokens: 16000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: buildUserMessage(html) }],
-  });
-  const raw = response.content
+  const model = resolveImportModel(opts.model);
+  const stream = anthropic.messages.stream(
+    {
+      model,
+      max_tokens: 32000,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: buildUserMessage(html) }],
+    },
+    opts.signal ? { signal: opts.signal } : undefined,
+  );
+  const message = await stream.finalMessage();
+  const raw = message.content
     .map((c) => (c.type === "text" ? c.text : ""))
     .join("");
   return parseImportedSections(raw);

@@ -5,7 +5,7 @@ import { slugify } from "@/lib/site-builder/slug";
 import { convertHtmlToSections } from "@/lib/ai/import-page-sections";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 type Params = { slug: string; projectId: string };
 
@@ -49,15 +49,30 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const pageSlug = normalizePageSlug(page_slug || page_title);
   const pageSan = pageSlug === "/" ? "home" : slugify(pageSlug.replace(/^\/+/, ""));
 
-  // AI conversion (segment + adapt to faithful TSX).
+  // AI conversion (segment + adapt to faithful TSX). Streamed + bounded so a
+  // stuck or over-long generation returns a clear error instead of hanging.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 290_000);
   let sections;
   try {
-    sections = await convertHtmlToSections(html, { model });
+    sections = await convertHtmlToSections(html, { model, signal: controller.signal });
   } catch (err: unknown) {
+    const name = err instanceof Error ? err.name : "";
+    if (name === "APIUserAbortError" || name === "AbortError") {
+      return jsonError(
+        "La conversion IA a expiré (page trop longue). Réessaie avec une page plus courte, découpe-la en plusieurs imports, ou choisis un modèle plus rapide.",
+        504,
+      );
+    }
     return jsonError(err instanceof Error ? err.message : "Erreur IA", 502);
+  } finally {
+    clearTimeout(timeout);
   }
   if (sections.length === 0) {
-    return jsonError("Aucune section détectée dans le HTML fourni", 422);
+    return jsonError(
+      "L'IA n'a pas pu segmenter cette page (aucune section détectée). Vérifie que le HTML est complet, ou encadre chaque section avec data-section.",
+      422,
+    );
   }
 
   // Re-import: drop the previous version of this page (and its sections) so the
