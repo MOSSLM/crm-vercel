@@ -52,9 +52,26 @@ CONVERSION (une section = un module TSX autonome)
 - Structure imposée :
   interface Props { tokens?: Record<string, string>; data?: Record<string, unknown>; variables?: Record<string, string>; }
   export default function NomEnPascalCase({ tokens = {}, data = {}, variables = {} }: Props) { return ( <JSX/> ); }
-- FIDÉLITÉ ABSOLUE : conserve exactement le markup, les classes Tailwind et les styles inline d'origine. NE remplace PAS les couleurs/polices par des tokens/variables. Ne change pas la mise en page.
+- FIDÉLITÉ ABSOLUE : conserve exactement le markup, les classes Tailwind et les styles inline d'origine. NE remplace PAS les couleurs/polices par des tokens/variables. Ne change pas la mise en page. SEULE EXCEPTION : les données d'identité de l'entreprise et les avis clients (voir « DONNÉES DYNAMIQUES » et « AVIS CLIENTS » ci-dessous).
 - HTML → JSX valide : class→className, for→htmlFor, balises auto-fermantes (<img/>, <br/>, <input/>, <hr/>), style="..."→objet style={{ ... }} (camelCase), commentaires <!-- -->→{/* */}, attributs SVG en camelCase (stroke-width→strokeWidth, etc.).
 - Un seul export default par section. Aucun import hormis 'react' implicite (n'écris PAS de ligne import). Pas de hooks nécessaires (sections présentationnelles). Pas de balises <html>/<head>/<body>.
+
+DONNÉES DYNAMIQUES — adapter le site à l'entreprise (IMPORTANT)
+La section reçoit en props variables (les données de l'entreprise liée) et data (le contenu injecté). Quand tu reconnais SANS AMBIGUÏTÉ une donnée d'IDENTITÉ de l'entreprise dans le HTML (logo, nom de l'entreprise, téléphone, email, adresse, ville, lien vers le site), lie-la à la variable correspondante en gardant TOUJOURS la valeur d'origine en REPLI (pour rester fidèle quand aucune entreprise n'est liée). Au moindre doute, garde la valeur en dur. Ne lie JAMAIS les titres marketing, slogans, ni descriptions de services.
+- Variables disponibles : entreprise.nom, entreprise.logo_url, entreprise.telephone, entreprise.email, entreprise.adresse, entreprise.ville, entreprise.code_postal, entreprise.pays, entreprise.site_web.
+- Accès en JSX uniquement via variables['entreprise.xxx'] avec repli || (n'utilise JAMAIS de tokens {{ }} ni de backticks).
+- Nom : {variables['entreprise.nom'] || "Nom d'origine"}
+- Logo : <img src={variables['entreprise.logo_url'] || "url-du-logo-d-origine"} alt={variables['entreprise.nom'] || "Nom d'origine"} ... /> (garde les mêmes className/attributs que l'original)
+- Téléphone : <a href={"tel:" + (variables['entreprise.telephone'] || "0123456789")}>{variables['entreprise.telephone'] || "01 23 45 67 89"}</a>
+- Email : <a href={"mailto:" + (variables['entreprise.email'] || "contact@exemple.fr")}>{variables['entreprise.email'] || "contact@exemple.fr"}</a>
+- Adresse / ville : {variables['entreprise.adresse'] || "Adresse d'origine"} / {variables['entreprise.ville'] || "Ville d'origine"}
+- Site web : <a href={variables['entreprise.site_web'] || "#"} ...>
+
+AVIS CLIENTS — uniquement pour la catégorie testimonials (IMPORTANT)
+Si (et SEULEMENT si) la section est une liste d'avis / témoignages clients (category: testimonials), rends les cartes en parcourant data.reviews — un tableau d'objets de forme { name, role, text, rating, avatar } — avec les avis d'origine du HTML en REPLI quand le tableau est vide :
+  const avis = (Array.isArray(data.reviews) && data.reviews.length > 0) ? data.reviews : [/* reprends ici TOUS les avis d'origine du HTML, même forme : { name, role, text, rating, avatar } */];
+Puis rends-les avec : {avis.map((a, i) => ( ... UNE carte d'origine servant de gabarit, en utilisant a.name, a.text, a.role, a.rating (ex: étoiles), et a.avatar pour l'image ... ))}
+Conserve EXACTEMENT le markup et les classes d'UNE carte d'origine comme gabarit ; n'ajoute aucun style ni structure. Mets une key={i} sur chaque carte. Pour toutes les autres catégories, n'utilise PAS data.reviews.
 
 SORTIE — réponds UNIQUEMENT avec une suite de blocs, sans aucun texte autour, au format EXACT :
 @@@SECTION@@@
