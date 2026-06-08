@@ -8,6 +8,8 @@ export interface ThemeSection {
   example_data: Record<string, unknown>;
   schema?: Record<string, unknown> | null;
   is_tag_adaptive: boolean;
+  /** 'managed' (default house-style layer) | 'raw' (faithful, no forced styles). */
+  render_mode?: "managed" | "raw";
   sort_order: number;
   created_at: string;
   updated_at: string;

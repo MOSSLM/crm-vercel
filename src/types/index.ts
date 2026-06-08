@@ -1188,6 +1188,15 @@ export interface SiteSectionDef {
   is_tag_adaptive?: boolean;
   /** Shopify-like schema defining editable settings for this section */
   schema?: SectionSchema;
+  /**
+   * Render mode (mirrored from theme_sections.render_mode):
+   * - 'managed' (default): builder applies its coherence layer (forced padding,
+   *   max-width, color-scheme, !important font/radius/CTA rules).
+   * - 'raw': section renders exactly as authored, builder imposes nothing.
+   * A per-instance override lives in content.__unmanaged_style. See
+   * `@/lib/site-builder/render-mode`.
+   */
+  render_mode?: "managed" | "raw";
 }
 
 /** A row in site_section_instances — a section placed on a site page */
