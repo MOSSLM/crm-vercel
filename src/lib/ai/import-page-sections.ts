@@ -12,6 +12,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { slugify } from "@/lib/site-builder/slug";
+import { slimImportHtml } from "./slim-import-html";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -252,12 +253,26 @@ export async function convertHtmlToSections(
   opts: { model?: string; signal?: AbortSignal } = {},
 ): Promise<ImportedSection[]> {
   const model = resolveImportModel(opts.model);
+
+  // Strip non-structural bulk (inline CSS, scripts, triplicated responsive
+  // variants, hydration JSON) before sending to the model. The page stylesheet
+  // is captured + re-attached separately below, so this slashes token usage
+  // (a Framer homepage drops from ~500K to a few tens of KB) without losing
+  // fidelity. Fall back to the raw HTML if slimming yields nothing.
+  let aiHtml = html;
+  try {
+    const slim = slimImportHtml(html);
+    if (slim.trim()) aiHtml = slim;
+  } catch {
+    /* keep raw html */
+  }
+
   const stream = anthropic.messages.stream(
     {
       model,
       max_tokens: 32000,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildUserMessage(html) }],
+      messages: [{ role: "user", content: buildUserMessage(aiHtml) }],
     },
     opts.signal ? { signal: opts.signal } : undefined,
   );
