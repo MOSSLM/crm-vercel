@@ -659,7 +659,7 @@ function TextPanel({ element, instance, binding }: { element: SelectedElementSha
           value={looksLikeRichText(currentValue) ? sanitizeRichText(currentValue) : currentValue}
           onChange={handleRichChange}
           placeholder="Texte…"
-          variables={state.variableContext}
+          variables={enterpriseVarCatalog(state.variableContext)}
           minHeight={92}
         />
         {binding.strategy === "override" && (
@@ -862,6 +862,93 @@ const ASPECT_RATIO_OPTIONS: Array<{ id: string; label: string; value: string | u
   { id: "2/3", label: "2:3", value: "2 / 3" },
 ];
 
+// ─── Enterprise data binding (shared) ─────────────────────────────────────────
+// Binding an element to an enterprise variable simply stores a `{{ entreprise.* }}`
+// token as the value. Every render path already interpolates override values
+// (iframe applyOne, apply-overrides-html on SSR, the public hydrator), so a bound
+// element fills automatically with the assigned enterprise's data.
+
+const ENTREPRISE_VAR_LABELS: Record<string, string> = {
+  "entreprise.nom": "Nom de l'entreprise",
+  "entreprise.logo_url": "Logo de l'entreprise",
+  "entreprise.ville": "Ville",
+  "entreprise.adresse": "Adresse",
+  "entreprise.code_postal": "Code postal",
+  "entreprise.pays": "Pays",
+  "entreprise.telephone": "Téléphone",
+  "entreprise.email": "Email",
+  "entreprise.site_web": "Site web",
+};
+
+function friendlyVarLabel(key: string): string {
+  return ENTREPRISE_VAR_LABELS[key] ?? key;
+}
+
+const ENTREPRISE_BASE_KEYS = Object.keys(ENTREPRISE_VAR_LABELS);
+
+/** Variable catalog for the in-panel pickers (text / link / button). Always
+ *  includes the standard enterprise fields so binding is available even before
+ *  an enterprise is linked; merges in any extra real variables from the live
+ *  context (excluding the english `company.*` aliases and internal `__` keys). */
+function enterpriseVarCatalog(variableContext: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const k of ENTREPRISE_BASE_KEYS) out[k] = variableContext[k] ?? "";
+  for (const [k, v] of Object.entries(variableContext)) {
+    if (k.startsWith("company.") || k.startsWith("__")) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/** Image-type enterprise variables: the logo (always offered, so templates can be
+ *  bound before an enterprise is linked) plus any logo/image/photo-ish key present
+ *  in the live variable context. */
+function enterpriseImageOptions(variableContext: Record<string, string>): Array<{ token: string; label: string; preview?: string }> {
+  const keys = new Set<string>(["entreprise.logo_url"]);
+  for (const k of Object.keys(variableContext)) {
+    if (k.startsWith("company.") || k.startsWith("__")) continue;
+    if (/logo|image|photo|avatar|icon|illustration|visuel/i.test(k)) keys.add(k);
+  }
+  return Array.from(keys).map((k) => ({ token: `{{ ${k} }}`, label: friendlyVarLabel(k), preview: variableContext[k] }));
+}
+
+/** Compact "bind to enterprise data" selector. Selecting an option writes the
+ *  token; "manual" clears the binding via onClear. */
+function EnterpriseDataSelect({
+  label, options, value, onBind, onClear, manualLabel = "Valeur manuelle",
+}: {
+  label: string;
+  options: Array<{ token: string; label: string; preview?: string }>;
+  value: string;
+  onBind: (token: string) => void;
+  onClear: () => void;
+  manualLabel?: string;
+}) {
+  const bound = options.find((o) => o.token === value.trim());
+  return (
+    <div className="field">
+      <div className="field-label"><span>{label}</span></div>
+      <select
+        className="select"
+        value={bound ? bound.token : ""}
+        onChange={(e) => { const t = e.target.value; if (t) onBind(t); else onClear(); }}
+      >
+        <option value="">{manualLabel}</option>
+        {options.map((o) => (
+          <option key={o.token} value={o.token}>
+            {o.label}{o.preview ? ` — ${o.preview.length > 28 ? o.preview.slice(0, 28) + "…" : o.preview}` : ""}
+          </option>
+        ))}
+      </select>
+      {bound && (
+        <p style={{ fontSize: 10, color: "var(--text-4)", marginTop: 4, lineHeight: 1.4 }}>
+          Se remplit automatiquement avec « {bound.label} » de l'entreprise assignée.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ImagePanel({ element, instance, binding }: { element: SelectedElementShape; instance: SiteSectionInstance; binding: BindingResult }) {
   const { state } = useRelumeBuilder();
   const dispatch = useDispatcher(instance);
@@ -931,16 +1018,29 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
     }
   };
 
+  const imageOptions = enterpriseImageOptions(state.variableContext);
+  const isBoundToVariable = imageOptions.some((o) => o.token === currentValue.trim());
+
   return (
     <div className="p-3 space-y-3">
       <PanelHeader kind="image" binding={binding} />
-      <ImagePickerField
-        setting={{ type: "image_picker", id: "image", label: "Image" }}
+      <EnterpriseDataSelect
+        label="Donnée dynamique"
+        manualLabel="Image manuelle"
+        options={imageOptions}
         value={currentValue}
-        onChange={onChange}
-        siteId={state.siteId}
+        onBind={(token) => onChange(token)}
+        onClear={restoreVariable}
       />
-      {(binding.strategy === "direct" || binding.strategy === "field-id") && currentValue && isFromVariable === false && (
+      {!isBoundToVariable && (
+        <ImagePickerField
+          setting={{ type: "image_picker", id: "image", label: "Image" }}
+          value={currentValue}
+          onChange={onChange}
+          siteId={state.siteId}
+        />
+      )}
+      {!isBoundToVariable && (binding.strategy === "direct" || binding.strategy === "field-id") && currentValue && isFromVariable === false && (
         <button
           onClick={restoreVariable}
           className="flex items-center gap-1.5 text-[10px] text-gray-500 hover:text-gray-700 transition-colors"
@@ -950,7 +1050,7 @@ function ImagePanel({ element, instance, binding }: { element: SelectedElementSh
           Rétablir la valeur de la variable
         </button>
       )}
-      {binding.strategy === "override" && (
+      {!isBoundToVariable && binding.strategy === "override" && (
         <p className="text-[10px] text-amber-700 bg-amber-50 rounded px-2 py-1">
           Cette image est codée en dur dans la section. La modification est appliquée via un override DOM.
         </p>
@@ -1153,7 +1253,7 @@ function ButtonOrLinkPanel({
           placeholder="Texte…"
           rows={2}
           className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-          variables={state.variableContext}
+          variables={enterpriseVarCatalog(state.variableContext)}
           variant="light"
         />
       </div>
@@ -1173,7 +1273,7 @@ function ButtonOrLinkPanel({
           placeholder="/page ou https://…"
           rows={1}
           className="w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-xs text-gray-800 focus:outline-none focus:border-blue-400 resize-none"
-          variables={state.variableContext}
+          variables={enterpriseVarCatalog(state.variableContext)}
           variant="light"
         />
       </div>
