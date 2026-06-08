@@ -92,6 +92,14 @@ export default function ProjectsTree({
   const [impTag, setImpTag] = React.useState("");
   const [impModel, setImpModel] = React.useState("claude-sonnet-4-6");
   const [importing, setImporting] = React.useState(false);
+  const [impMode, setImpMode] = React.useState<"url" | "html">("url");
+  const [impUrl, setImpUrl] = React.useState("");
+  const [fetchingUrl, setFetchingUrl] = React.useState(false);
+  const [fetchInfo, setFetchInfo] = React.useState<{
+    method: string;
+    warnings: string[];
+    chars: number;
+  } | null>(null);
   const [serviceTags, setServiceTags] = React.useState<string[]>([]);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Project | null>(null);
@@ -171,6 +179,35 @@ export default function ProjectsTree({
     setImpHtml("");
     setImpTag("");
     setImpModel("claude-sonnet-4-6");
+    setImpMode("url");
+    setImpUrl("");
+    setFetchInfo(null);
+  };
+
+  const handleFetchUrl = async () => {
+    if (!impUrl.trim()) return;
+    setFetchingUrl(true);
+    try {
+      const res = await authedFetch(`/api/site-builder/fetch-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: impUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.hint ? `${data.error} ${data.hint}` : data.error);
+      setImpHtml(data.html ?? "");
+      if (data.title && !impTitle.trim()) setImpTitle(data.title);
+      setFetchInfo({
+        method: data.method,
+        warnings: data.warnings ?? [],
+        chars: (data.html ?? "").length,
+      });
+      toast.success(`Page récupérée (${Math.round((data.html ?? "").length / 1000)} ko)`);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Échec de récupération");
+    } finally {
+      setFetchingUrl(false);
+    }
   };
 
   const handleImport = async () => {
@@ -415,6 +452,73 @@ export default function ProjectsTree({
             <DialogTitle>Importer une page — {importTarget?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
+            <div className="flex gap-1 rounded-md bg-zinc-800 border border-zinc-700 p-1 w-fit">
+              <button
+                type="button"
+                onClick={() => setImpMode("url")}
+                className={`px-3 py-1 text-xs rounded transition-colors ${
+                  impMode === "url" ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Depuis une URL
+              </button>
+              <button
+                type="button"
+                onClick={() => setImpMode("html")}
+                className={`px-3 py-1 text-xs rounded transition-colors ${
+                  impMode === "html" ? "bg-blue-600 text-white" : "text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                Coller le HTML
+              </button>
+            </div>
+
+            {impMode === "url" && (
+              <div className="space-y-1.5">
+                <Label className="text-zinc-300">URL de la page</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={impUrl}
+                    onChange={(e) => setImpUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleFetchUrl();
+                      }
+                    }}
+                    placeholder="https://exemple.fr/"
+                    className="bg-zinc-800 border-zinc-700 text-white"
+                  />
+                  <Button
+                    onClick={handleFetchUrl}
+                    disabled={fetchingUrl || !impUrl.trim()}
+                    variant="secondary"
+                    className="shrink-0"
+                  >
+                    {fetchingUrl ? (
+                      <span className="flex items-center gap-1.5">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Récupération…
+                      </span>
+                    ) : (
+                      "Récupérer"
+                    )}
+                  </Button>
+                </div>
+                {fetchInfo && (
+                  <p className="text-[11px] text-emerald-400/80">
+                    ✓ Page récupérée ({Math.round(fetchInfo.chars / 1000)} ko).
+                    {fetchInfo.warnings.length > 0 && (
+                      <span className="text-amber-400/80"> ⚠ {fetchInfo.warnings.join(" · ")}</span>
+                    )}
+                  </p>
+                )}
+                <p className="text-[11px] text-zinc-500">
+                  Récupération directe (sans navigateur). Si le site bloque les robots ou nécessite
+                  JavaScript, basculez sur « Coller le HTML ».
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-zinc-300">Titre de la page</Label>
@@ -467,18 +571,23 @@ export default function ProjectsTree({
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-zinc-300">HTML / CSS de la page</Label>
+              <Label className="text-zinc-300">
+                {impMode === "url" ? "HTML récupéré (modifiable)" : "HTML / CSS de la page"}
+              </Label>
               <Textarea
                 value={impHtml}
                 onChange={(e) => setImpHtml(e.target.value)}
-                placeholder="Collez ici le HTML (Tailwind de préférence) généré avec Claude ou exporté de Figma…"
+                placeholder={
+                  impMode === "url"
+                    ? "Le HTML récupéré apparaîtra ici après « Récupérer »…"
+                    : "Collez ici le HTML (Tailwind de préférence) généré avec Claude ou exporté de Figma…"
+                }
                 className="bg-zinc-800 border-zinc-700 text-white font-mono text-xs h-56"
               />
               <p className="text-[11px] text-zinc-500">
-                L&apos;IA découpe la page en sections et les convertit en React, fidèlement
-                (mode brut). Astuce : encadrez chaque section avec
-                <code className="mx-1 text-zinc-400">data-section</code>/
-                <code className="text-zinc-400">data-service-tag</code> pour un découpage fiable.
+                L&apos;IA découpe la page en sections et les convertit en React, fidèlement (mode
+                brut). Les URLs (images, CSS) sont absolutisées automatiquement ; le logo, le nom et
+                les avis se lient à l&apos;entreprise à l&apos;import.
               </p>
             </div>
           </div>
