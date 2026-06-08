@@ -707,10 +707,22 @@ function buildHTML(
           }
         } catch (_) {}
       }
+      // Mirror of apply-overrides-html.ts findSectionRoot / HEAD_ONLY_TAGS:
+      // imported sections render leading <link>/<style> siblings (React 18 does
+      // not hoist them to <head>), so the real section root is the first NON-head
+      // element child of #root — not firstElementChild. Editor paths (pathOf,
+      // buildDomTree) are all relative to this same root.
+      function sectionRootEl() {
+        var root = document.getElementById('root');
+        if (!root) return null;
+        var HEAD = { LINK: 1, META: 1, SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TITLE: 1, BASE: 1 };
+        var c = root.firstElementChild;
+        while (c && HEAD[c.tagName]) c = c.nextElementSibling;
+        return c || root.firstElementChild;
+      }
       function nodeAtPath(path) {
-        var node = document.getElementById('root');
-        if (!node || !node.firstElementChild) return null;
-        node = node.firstElementChild;
+        var node = sectionRootEl();
+        if (!node) return null;
         for (var i = 0; i < path.length; i++) {
           if (!node || !node.children || !node.children[path[i]]) return null;
           node = node.children[path[i]];
@@ -968,7 +980,7 @@ function buildHTML(
         return attrsFor(kind, el);
       }
 
-      var SKIP_TAGS = { script: 1, style: 1, noscript: 1, template: 1 };
+      var SKIP_TAGS = { script: 1, style: 1, noscript: 1, template: 1, link: 1, meta: 1 };
 
       function shortText(el) {
         // Prefer the first direct text node so we don't capture deep nested text.
@@ -1018,11 +1030,22 @@ function buildHTML(
         return node;
       }
 
-      function sendDomTree() {
+      // Same head-tag-skipping root as the override applicator (see
+      // sectionRootEl in the applicator script). Kept as a separate copy because
+      // these two <script> IIFEs don't share a JS scope.
+      function sectionRootEl() {
         var root = document.getElementById('root');
-        if (!root || !root.firstElementChild) return;
+        if (!root) return null;
+        var HEAD = { LINK: 1, META: 1, SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, TITLE: 1, BASE: 1 };
+        var c = root.firstElementChild;
+        while (c && HEAD[c.tagName]) c = c.nextElementSibling;
+        return c || root.firstElementChild;
+      }
+      function sendDomTree() {
+        var root = sectionRootEl();
+        if (!root) return;
         try {
-          var tree = buildDomTree(root.firstElementChild, [], 0);
+          var tree = buildDomTree(root, [], 0);
           if (!tree) return;
           parent.postMessage({ __siteBuilder: 'dom-tree', tree: tree }, '*');
         } catch (_) {}
