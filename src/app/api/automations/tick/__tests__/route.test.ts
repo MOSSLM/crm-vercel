@@ -27,6 +27,8 @@ jest.mock('@/lib/automations/dispatch', () => ({
 jest.mock('@/lib/automations/engine', () => ({
   runWorkflowAutomation: (...args: unknown[]) => mockRunWorkflowAutomation(...args),
   processSequenceEnrollment: (...args: unknown[]) => mockProcessSequenceEnrollment(...args),
+  // Deterministic gap for throttle assertions (real impl: 2-7 min random).
+  randomSendGapMs: () => 120_000,
 }));
 
 const ORIGINAL_ENV = { ...process.env };
@@ -39,6 +41,7 @@ const buildSelectChain = (result: { data: unknown; error?: unknown }) => ({
   eq: jest.fn().mockReturnThis(),
   not: jest.fn().mockReturnThis(),
   lte: jest.fn().mockReturnThis(),
+  order: jest.fn().mockReturnThis(),
   limit: jest.fn().mockResolvedValue(result),
   maybeSingle: jest.fn().mockResolvedValue(result),
 });
@@ -240,6 +243,47 @@ describe('GET /api/automations/tick', () => {
       expect(body.events).toBe(1);
       expect(body.errors).toBe(1);
       expect(markDone2.captured.updates).toEqual([{ status: 'done' }]);
+    });
+  });
+
+  describe('sequence throttling', () => {
+    it('shares one throttle (seeded from email_logs) across all due enrollments', async () => {
+      const lastSent = new Date(Date.now() - 60_000).toISOString();
+      const enrollments = [
+        { id: 'enr-1', status: 'active', current_step: 0 },
+        { id: 'enr-2', status: 'active', current_step: 1 },
+      ];
+
+      mockFrom
+        .mockReturnValueOnce(buildSelectChain({ data: [], error: null }))           // event jobs fetch
+        .mockReturnValueOnce(buildSelectChain({ data: [], error: null }))           // wf jobs fetch
+        .mockReturnValueOnce(buildSelectChain({ data: enrollments, error: null }))  // enrollments fetch
+        .mockReturnValueOnce(buildSelectChain({ data: [{ sent_at: lastSent }], error: null })); // last sequence email
+
+      mockProcessSequenceEnrollment.mockResolvedValue(undefined);
+
+      const { GET } = await importRoute();
+      const res = await GET(cronRequest());
+
+      expect(res.status).toBe(200);
+      expect(mockFrom.mock.calls.map((c) => c[0])).toContain('email_logs');
+      expect(mockProcessSequenceEnrollment).toHaveBeenCalledTimes(2);
+
+      const [, throttle1] = mockProcessSequenceEnrollment.mock.calls[0];
+      const [, throttle2] = mockProcessSequenceEnrollment.mock.calls[1];
+      expect(throttle1).toBeDefined();
+      expect(throttle1).toBe(throttle2); // same shared object → cumulative slots
+      // Seeded at least one gap after the last sent sequence email.
+      expect((throttle1 as { nextSlot: number }).nextSlot).toBeGreaterThanOrEqual(
+        new Date(lastSent).getTime() + 120_000,
+      );
+    });
+
+    it('does not query email_logs when no enrollment is due', async () => {
+      emptyAll();
+      const { GET } = await importRoute();
+      await GET(cronRequest());
+      expect(mockFrom.mock.calls.map((c) => c[0])).not.toContain('email_logs');
     });
   });
 

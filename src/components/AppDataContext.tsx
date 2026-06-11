@@ -80,6 +80,7 @@ export const VALID_OPPORTUNITY_COLUMNS = [
   'type',
   'mrr',
   'recurrence_months',
+  'is_test',
 ] as const;
 
 type ValidOpportunityColumn = (typeof VALID_OPPORTUNITY_COLUMNS)[number];

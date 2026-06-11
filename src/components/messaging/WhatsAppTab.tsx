@@ -75,48 +75,46 @@ const DEFAULT_TEMPLATES: WaTemplate[] = [
   {
     id: "lead_magnet",
     label: "Envoi Lead Magnet",
-    body: `Bonjour {{prénom}} 👋
+    body: `Bonjour {{prénom}},
 
-Suite à notre échange, j'ai préparé votre audit personnalisé pour *{{entreprise}}* :
+Comme convenu, voici l'audit préparé pour {{entreprise}} :
 
-👉 {{lien_site}}
+{{lien_site}}
 
-Vous y trouverez des recommandations concrètes pour booster votre visibilité en ligne.
+Vous y trouverez des recommandations concrètes pour votre visibilité en ligne.
 
-Dites-moi ce que vous en pensez ! 😊`,
+Dites-moi ce que vous en pensez.`,
   },
   {
     id: "suivi",
     label: "Relance douce",
     body: `Bonjour {{prénom}},
 
-Je me permets de revenir vers vous concernant *{{entreprise}}*.
+Je reviens vers vous concernant {{entreprise}}.
 
-Avez-vous eu l'occasion de consulter ce qu'on avait préparé ?
-
-N'hésitez pas à me faire signe 🙂`,
+Avez-vous eu le temps de regarder ce que je vous avais envoyé ?`,
   },
   {
     id: "premier_contact",
     label: "Premier contact",
-    body: `Bonjour {{prénom}} 👋
+    body: `Bonjour {{prénom}},
 
-Je m'appelle [Votre prénom] et j'accompagne des entreprises comme *{{entreprise}}* à développer leur présence en ligne.
+Je m'appelle [Votre prénom], j'accompagne des entreprises comme {{entreprise}} sur leur présence en ligne.
 
 J'aurais quelques idées à vous soumettre — auriez-vous 10 min cette semaine ?`,
   },
   {
     id: "envoi_audit",
     label: "Envoi Audit PDF",
-    body: `Bonjour {{prénom}} 👋
+    body: `Bonjour {{prénom}},
 
-Voici votre audit personnalisé pour *{{entreprise}}* :
+Voici votre audit pour {{entreprise}} :
 
-📄 {{lien_audit}}
+{{lien_audit}}
 
-Ce document détaille les points d'amélioration identifiés sur votre présence en ligne.
+Il détaille les points d'amélioration identifiés sur votre présence en ligne.
 
-N'hésitez pas si vous avez des questions 🙂`,
+N'hésitez pas si vous avez des questions.`,
   },
 ];
 

@@ -3,6 +3,8 @@
 import { Resend } from 'resend'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getServiceClient } from '@/app/api/_lib/service-client'
+import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
+import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import type {
   Automation,
@@ -90,11 +92,19 @@ export function interpolate(text: string | null | undefined, vars: VarBag): stri
   return (text ?? '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k: string) => vars[k] ?? '')
 }
 
-function htmlify(text: string): string {
-  return text
-    .split(/\n{2,}/)
-    .map((p) => `<p>${p.replace(/\n/g, '<br/>')}</p>`)
-    .join('')
+/** Signature du CRM (mono-équipe) : la plus récemment mise à jour. */
+async function getEngineSignature(sb: SupabaseClient): Promise<SignatureData | null> {
+  try {
+    const { data } = await sb
+      .from('email_signature_settings')
+      .select('first_name,last_name,job_title,company,email,phone,website,linkedin_url,accent_color')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    return (data as SignatureData | null) ?? null
+  } catch {
+    return null
+  }
 }
 
 // ── Envoi d'email (Resend) ─────────────────────────────────────────────────
@@ -104,8 +114,7 @@ export async function sendEngineEmail(
     to: string
     toName?: string | null
     subject: string
-    html: string
-    text?: string
+    text: string
     contactId?: string | null
     entrepriseId?: number | null
     opportuniteId?: string | null
@@ -114,6 +123,12 @@ export async function sendEngineEmail(
 ): Promise<{ ok: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY non configuré' }
+
+  // Rendu identique aux envois manuels : HTML minimal + signature simple.
+  const signature = await getEngineSignature(sb)
+  const html = wrapEmailBodyHtml(opts.text, signature)
+  const sigText = signature ? buildSignatureText(signature) : ''
+  const text = sigText ? `${opts.text}\n\n${sigText}` : opts.text
 
   let fromEmail = process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev'
   try {
@@ -134,8 +149,8 @@ export async function sendEngineEmail(
       from: fromEmail,
       to: opts.toName ? `${opts.toName} <${opts.to}>` : opts.to,
       subject: opts.subject,
-      html: opts.html,
-      text: opts.text,
+      html,
+      text,
     })
     if (result.error) {
       status = 'failed'
@@ -158,8 +173,8 @@ export async function sendEngineEmail(
       to_name: opts.toName ?? null,
       from_email: fromEmail,
       subject: opts.subject,
-      body_html: opts.html,
-      body_text: opts.text ?? null,
+      body_html: html,
+      body_text: text,
       type: opts.type ?? 'automation',
       status,
       error_message: errorMessage ?? null,
@@ -199,7 +214,6 @@ async function executeAction(
           to: ent.contactEmail,
           toName: ent.contactName,
           subject,
-          html: htmlify(text),
           text,
           contactId: ent.contactId,
           entrepriseId: ent.entrepriseId,
@@ -423,6 +437,20 @@ export async function runWorkflowAutomation(
   return { runId }
 }
 
+// ── Espacement des envois de séquence ──────────────────────────────────────
+/** Écart aléatoire entre deux emails de séquence : 2 à 7 minutes. */
+export function randomSendGapMs(): number {
+  return 120_000 + Math.random() * 300_000
+}
+
+/**
+ * Créneau d'envoi partagé par tous les enrollments d'un même tick :
+ * garantit que les emails d'un batch ne partent jamais en même temps.
+ */
+export interface SendThrottle {
+  nextSlot: number
+}
+
 // ── Séquences : inscription + avancement ───────────────────────────────────
 function stepIsManual(step: SequenceStep): boolean {
   return step.kind === 'call' || step.kind === 'whatsapp' || step.kind === 'linkedin' || step.kind === 'task'
@@ -455,7 +483,10 @@ export async function enrollInSequence(automation: Automation, ctx: RunContext):
   return true
 }
 
-export async function processSequenceEnrollment(enrollment: SequenceEnrollment): Promise<void> {
+export async function processSequenceEnrollment(
+  enrollment: SequenceEnrollment,
+  throttle?: SendThrottle,
+): Promise<void> {
   const sb = getServiceClient()
   const { data: autoRow } = await sb.from('automations').select('*').eq('id', enrollment.automation_id).maybeSingle()
   const automation = autoRow as Automation | null
@@ -485,6 +516,17 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
 
   if (step.kind === 'email') {
     if (ent.contactEmail && step.template) {
+      // Créneau pas encore atteint : on repousse l'envoi sans avancer l'étape
+      // et on réserve le créneau suivant pour le prochain enrollment du batch.
+      if (throttle && Date.now() < throttle.nextSlot) {
+        const slot = throttle.nextSlot
+        throttle.nextSlot += randomSendGapMs()
+        await sb
+          .from('sequence_enrollments')
+          .update({ next_run_at: new Date(slot).toISOString() })
+          .eq('id', enrollment.id)
+        return
+      }
       const { data: tpl } = await sb.from('email_templates').select('subject,body').eq('id', step.template).maybeSingle()
       if (tpl) {
         const text = interpolate(tpl.body, ent.vars)
@@ -492,13 +534,13 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
           to: ent.contactEmail,
           toName: ent.contactName,
           subject: interpolate(tpl.subject, ent.vars),
-          html: htmlify(text),
           text,
           contactId: ent.contactId,
           entrepriseId: ent.entrepriseId,
           opportuniteId: enrollment.opportunite_id,
           type: 'sequence',
         })
+        if (throttle) throttle.nextSlot = Date.now() + randomSendGapMs()
       }
     }
     await scheduleNextStep(sb, enrollment, steps, idx + 1)

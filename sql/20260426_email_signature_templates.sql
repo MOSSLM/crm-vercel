@@ -46,8 +46,8 @@ values
     null,
     'Premier contact',
     'premier_contact',
-    'Développer la visibilité de {{company_name}} en ligne',
-    E'Bonjour {{contact_name}},\n\nJe me permets de vous contacter car j''ai identifié plusieurs opportunités pour renforcer la présence en ligne de {{company_name}}.\n\nJe serais ravi(e) de vous présenter notre approche en quelques minutes — auriez-vous un créneau cette semaine ?\n\nCordialement,',
+    'Présence en ligne de {{company_name}}',
+    E'Bonjour {{contact_name}},\n\nJe me permets de vous contacter : en regardant la présence en ligne de {{company_name}}, j''ai repéré quelques pistes d''amélioration concrètes.\n\nAuriez-vous un créneau cette semaine pour que je vous les présente rapidement ?\n\nCordialement,',
     true,
     1
   ),
@@ -55,8 +55,8 @@ values
     null,
     'Relance / Suivi',
     'relance',
-    'Suite à notre conversation — {{company_name}}',
-    E'Bonjour {{contact_name}},\n\nJe me permets de revenir vers vous suite à notre dernier échange concernant {{company_name}}.\n\nAvez-vous eu l''occasion de réfléchir à notre proposition ? Je serais ravi(e) d''échanger avec vous pour répondre à vos éventuelles questions.\n\nDans l''attente de vous lire,',
+    'Suite à notre échange — {{company_name}}',
+    E'Bonjour {{contact_name}},\n\nJe reviens vers vous suite à notre dernier échange concernant {{company_name}}.\n\nAvez-vous eu le temps d''y réfléchir ? Je reste disponible si vous avez des questions.\n\nBonne journée,',
     true,
     2
   ),
@@ -64,8 +64,8 @@ values
     null,
     'Envoi Lead Magnet',
     'lead_magnet',
-    'Votre audit gratuit est prêt — {{company_name}}',
-    E'Bonjour {{contact_name}},\n\nJ''espère que vous allez bien.\n\nSuite à notre échange, j''ai le plaisir de vous partager votre audit personnalisé pour {{company_name}} :\n\n👉 {{lead_magnet_url}}\n\nCe document vous donne une vision claire de vos opportunités d''amélioration et des leviers concrets pour développer votre activité.\n\nN''hésitez pas à me faire part de vos questions — je reste disponible pour en discuter.\n\nBonne lecture,',
+    'Votre audit — {{company_name}}',
+    E'Bonjour {{contact_name}},\n\nComme convenu, voici votre audit pour {{company_name}} :\n\n{{lead_magnet_url}}\n\nIl reprend les points d''amélioration identifiés et des pistes concrètes pour développer votre activité.\n\nDites-moi si vous avez des questions.\n\nBonne lecture,',
     true,
     3
   )
