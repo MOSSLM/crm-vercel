@@ -135,6 +135,7 @@ export interface Opportunity {
   type?: 'one_shot' | 'mrr';
   mrr?: number;
   recurrence_months?: number;
+  is_test?: boolean;
   companyName?: string;
   companyUrl?: string;
   contactId?: string;

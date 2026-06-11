@@ -170,7 +170,7 @@ export function EmailTab() {
       setSubject(interpolate(auditTemplate.subject, vars));
       setBody(
         interpolate(auditTemplate.body, vars) +
-        (auditPdfUrl ? `\n\n📄 Votre audit : ${auditPdfUrl}` : "")
+        (auditPdfUrl ? `\n\nVotre audit : ${auditPdfUrl}` : "")
       );
       setTemplateId(auditTemplate.id);
     }

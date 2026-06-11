@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Save, User, Briefcase, Phone, Globe, Linkedin, Mail, Palette, CheckCircle2, Loader2 } from "lucide-react";
+import { Save, User, Briefcase, Phone, Globe, Linkedin, Mail, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,17 +34,6 @@ const EMPTY: SignatureData = {
   linkedin_url: "",
   accent_color: "#3A7BD5",
 };
-
-const ACCENT_COLORS = [
-  { label: "SAMA Azur",value: "#3A7BD5" },
-  { label: "Indigo",   value: "#6366f1" },
-  { label: "Bleu",     value: "#3b82f6" },
-  { label: "Violet",   value: "#8b5cf6" },
-  { label: "Emerald",  value: "#10b981" },
-  { label: "Amber",    value: "#f59e0b" },
-  { label: "Rose",     value: "#f43f5e" },
-  { label: "Gris",     value: "#64748b" },
-];
 
 /** Re-exported for callers that only need the HTML string (e.g. EmailCompose preview). */
 export function generateSignatureHtml(sig: SignatureData): string {
@@ -125,11 +114,6 @@ export function SignatureSettings() {
 
   const set = useCallback((field: keyof SignatureData) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setSig((prev) => ({ ...prev, [field]: e.target.value }));
-    setSaved(false);
-  }, []);
-
-  const setColor = useCallback((color: string) => {
-    setSig((prev) => ({ ...prev, accent_color: color }));
     setSaved(false);
   }, []);
 
@@ -269,42 +253,6 @@ export function SignatureSettings() {
                     <Linkedin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input value={sig.linkedin_url} onChange={set("linkedin_url")} placeholder="https://linkedin.com/in/jean-dupont" className="h-8 text-sm pl-8" />
                   </div>
-                </div>
-              </div>
-            </section>
-
-            <Separator />
-
-            {/* Couleur d'accent */}
-            <section className="space-y-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                <Palette className="h-3.5 w-3.5" />
-                Couleur d&apos;accent
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {ACCENT_COLORS.map((c) => (
-                  <button
-                    key={c.value}
-                    onClick={() => setColor(c.value)}
-                    title={c.label}
-                    className="relative h-8 w-8 rounded-full border-2 transition-transform hover:scale-110 focus:outline-none"
-                    style={{
-                      backgroundColor: c.value,
-                      borderColor: sig.accent_color === c.value ? "#111827" : "transparent",
-                      boxShadow: sig.accent_color === c.value ? `0 0 0 2px white, 0 0 0 4px ${c.value}` : undefined,
-                    }}
-                    aria-label={c.label}
-                  />
-                ))}
-                <div className="flex items-center gap-2 ml-1">
-                  <input
-                    type="color"
-                    value={sig.accent_color}
-                    onChange={(e) => setColor(e.target.value)}
-                    className="h-8 w-8 rounded-full cursor-pointer border border-input bg-transparent"
-                    title="Couleur personnalisée"
-                  />
-                  <span className="text-xs text-muted-foreground">Personnalisée</span>
                 </div>
               </div>
             </section>

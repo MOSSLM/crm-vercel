@@ -65,42 +65,40 @@ export const TEMPLATES = [
   {
     id: "lead_magnet",
     label: "Envoi Lead Magnet",
-    subject: "Votre audit gratuit est prêt — {{company_name}}",
+    subject: "Votre audit — {{company_name}}",
     body: `Bonjour {{contact_name}},
 
-J'espère que vous allez bien.
+Comme convenu, voici votre audit pour {{company_name}} :
 
-Suite à notre échange, j'ai le plaisir de vous partager votre audit personnalisé pour {{company_name}} :
+{{lead_magnet_url}}
 
-👉 {{lead_magnet_url}}
+Il reprend les points d'amélioration identifiés et des pistes concrètes pour développer votre activité.
 
-Ce document vous donne une vision claire de vos opportunités d'amélioration et des leviers concrets pour développer votre activité.
-
-N'hésitez pas à me faire part de vos questions — je reste disponible pour en discuter.
+Dites-moi si vous avez des questions.
 
 Bonne lecture,`,
   },
   {
     id: "suivi",
     label: "Relance / Suivi",
-    subject: "Suite à notre conversation — {{company_name}}",
+    subject: "Suite à notre échange — {{company_name}}",
     body: `Bonjour {{contact_name}},
 
-Je me permets de revenir vers vous suite à notre dernier échange concernant {{company_name}}.
+Je reviens vers vous suite à notre dernier échange concernant {{company_name}}.
 
-Avez-vous eu l'occasion de réfléchir à notre proposition ? Je serais ravi(e) d'échanger avec vous pour répondre à vos éventuelles questions.
+Avez-vous eu le temps d'y réfléchir ? Je reste disponible si vous avez des questions.
 
-Dans l'attente de vous lire,`,
+Bonne journée,`,
   },
   {
     id: "premier_contact",
     label: "Premier contact",
-    subject: "Développer la visibilité de {{company_name}} en ligne",
+    subject: "Présence en ligne de {{company_name}}",
     body: `Bonjour {{contact_name}},
 
-Je me permets de vous contacter car j'ai identifié plusieurs opportunités pour renforcer la présence en ligne de {{company_name}}.
+Je me permets de vous contacter : en regardant la présence en ligne de {{company_name}}, j'ai repéré quelques pistes d'amélioration concrètes.
 
-Je serais ravi(e) de vous présenter notre approche en quelques minutes — auriez-vous un créneau cette semaine ?
+Auriez-vous un créneau cette semaine pour que je vous les présente rapidement ?
 
 Cordialement,`,
   },

@@ -39,6 +39,7 @@ import {
   ArrowRight,
   X,
   Send,
+  FlaskConical,
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -58,6 +59,7 @@ import logger from '../utils/logger';
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from './EnrichmentProgressModal';
 import { createNotification } from '../utils/notificationsApi';
 import { LeadMagnetQuickViewModal } from './LeadMagnetQuickViewModal';
+import { TestModeDialog } from './TestModeDialog';
 import { useRouter } from 'next/navigation';
 
 const OPPORTUNITY_FLAGS = [
@@ -126,6 +128,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const [bulkPipelineTarget, setBulkPipelineTarget] = useState<string>('none');
   const [sortByPipeline, setSortByPipeline] = useState(false);
   const [isAutoEnriching, setIsAutoEnriching] = useState(false);
+  const [showTestModeDialog, setShowTestModeDialog] = useState(false);
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [enrichmentLogs, setEnrichmentLogs] = useState<EnrichmentLogEntry[]>([]);
   const [enrichmentProgress, setEnrichmentProgress] = useState({ current: 0, total: 0, isComplete: false });
@@ -637,7 +640,10 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
                 className="mt-0.5"
               />
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-                <span className="nm">{title}</span>
+                <span className="nm">
+                  {opportunity.is_test && <span className="pill warn" style={{ marginRight: 6 }}>TEST</span>}
+                  {title}
+                </span>
                 {rawUrl && <span className="meta">{rawUrl}</span>}
               </div>
             </div>
@@ -968,6 +974,10 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
             <h1>Opportunités</h1>
             <div className="sub">Gérez toutes vos opportunités commerciales</div>
           </div>
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setShowTestModeDialog(true)}>
+            <FlaskConical className="ico-sm" />
+            Mode test
+          </Button>
         </div>
 
         {/* Métriques rapides */}
@@ -1275,6 +1285,9 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>
+              {selectedOpportunity?.is_test && (
+                <Badge variant="outline" className="mr-2 border-amber-400 text-amber-600">TEST</Badge>
+              )}
               Opportunité : {selectedOpportunity ? getDisplayNameForOpportunity(selectedOpportunity) : ''}
             </DialogTitle>
             <DialogDescription>Détails et actions</DialogDescription>
@@ -1623,6 +1636,8 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
           }
         }}
       />
+
+      <TestModeDialog open={showTestModeDialog} onOpenChange={setShowTestModeDialog} />
     </div>
   );
 };

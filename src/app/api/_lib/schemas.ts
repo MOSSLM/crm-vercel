@@ -29,6 +29,14 @@ export const sendEmailSchema = z.object({
 });
 export type SendEmailPayload = z.infer<typeof sendEmailSchema>;
 
+export const createTestOpportunitySchema = z.object({
+  test_address_id: z.string().uuid({ message: "test_address_id must be a UUID" }),
+  pipeline_id: z.string().uuid({ message: "pipeline_id must be a UUID" }),
+  stage_id: z.coerce.number().int(),
+  name: z.string().min(1).max(200).optional(),
+});
+export type CreateTestOpportunityPayload = z.infer<typeof createTestOpportunitySchema>;
+
 export const emailLogsQuerySchema = z.object({
   contact_id: z.string().uuid().optional(),
   entreprise_id: z.coerce.number().int().positive().optional(),

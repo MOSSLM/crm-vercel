@@ -3,9 +3,9 @@
 import { json } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { dispatchEvent } from '@/lib/automations/dispatch'
-import { runWorkflowAutomation, processSequenceEnrollment } from '@/lib/automations/engine'
+import { runWorkflowAutomation, processSequenceEnrollment, randomSendGapMs } from '@/lib/automations/engine'
 import type { Automation, AutomationJob, SequenceEnrollment } from '@/components/automations/types'
-import type { RunContext as EngineContext } from '@/lib/automations/engine'
+import type { RunContext as EngineContext, SendThrottle } from '@/lib/automations/engine'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -114,10 +114,29 @@ async function handle(req: Request): Promise<Response> {
     .eq('status', 'active')
     .not('next_run_at', 'is', null)
     .lte('next_run_at', now)
+    .order('next_run_at', { ascending: true })
     .limit(50)
-  for (const enr of (enrollments ?? []) as SequenceEnrollment[]) {
+  const due = (enrollments ?? []) as SequenceEnrollment[]
+
+  // Espacement aléatoire (2-7 min) entre les emails de séquence, y compris
+  // d'un tick à l'autre : le premier créneau part du dernier email envoyé.
+  let throttle: SendThrottle | undefined
+  if (due.length > 0) {
+    const { data: lastLogs } = await sb
+      .from('email_logs')
+      .select('sent_at')
+      .eq('type', 'sequence')
+      .eq('status', 'sent')
+      .order('sent_at', { ascending: false })
+      .limit(1)
+    const lastSentAt = (lastLogs as { sent_at: string }[] | null)?.[0]?.sent_at
+    const lastSentMs = lastSentAt ? new Date(lastSentAt).getTime() : 0
+    throttle = { nextSlot: Math.max(Date.now(), lastSentMs + randomSendGapMs()) }
+  }
+
+  for (const enr of due) {
     try {
-      await processSequenceEnrollment(enr)
+      await processSequenceEnrollment(enr, throttle)
       result.sequenceSteps++
     } catch {
       result.errors++
