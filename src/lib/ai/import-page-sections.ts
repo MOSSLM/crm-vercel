@@ -29,6 +29,18 @@ export interface ImportedSection {
   code: string;
 }
 
+/**
+ * A rendered-page visual (base64) handed to the model alongside the HTML so it
+ * can reproduce the design faithfully even when the CSS is incomplete or
+ * JS-driven. `image/*` → image block; `application/pdf` → document block.
+ */
+export interface ImportVisual {
+  type: "image" | "pdf";
+  media_type: string;
+  /** base64, no data: prefix. */
+  data: string;
+}
+
 /** Models offered for import conversion (kept in sync with the UI dropdown). */
 export const IMPORT_MODEL_OPTIONS = [
   { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6 (rapide)" },
@@ -37,13 +49,23 @@ export const IMPORT_MODEL_OPTIONS = [
 
 const IMPORT_MODEL_IDS = new Set<string>(IMPORT_MODEL_OPTIONS.map((m) => m.id));
 const DEFAULT_IMPORT_MODEL = "claude-sonnet-4-6";
+/** When a visual is attached, default to the stronger-vision Opus model. */
+const DEFAULT_VISUAL_IMPORT_MODEL = "claude-opus-4-7";
 
-/** Validate a requested model against the allowlist; fall back to the default. */
-export function resolveImportModel(model?: string | null): string {
-  return model && IMPORT_MODEL_IDS.has(model) ? model : DEFAULT_IMPORT_MODEL;
+/**
+ * Validate a requested model against the allowlist; fall back to the default.
+ * An explicit allowlisted choice always wins; only the *default* shifts to Opus
+ * when a visual is present (better vision fidelity).
+ */
+export function resolveImportModel(model?: string | null, hasVisual = false): string {
+  if (model && IMPORT_MODEL_IDS.has(model)) return model;
+  return hasVisual ? DEFAULT_VISUAL_IMPORT_MODEL : DEFAULT_IMPORT_MODEL;
 }
 
 const SYSTEM_PROMPT = `Tu convertis une page HTML/CSS (souvent générée avec Tailwind) en sections React TSX FIDÈLES, pour un site builder. Tu ne dois RIEN inventer ni embellir : tu reproduis le design tel quel.
+
+RENDU VISUEL (si fourni)
+Si une capture d'écran (image) ou un PDF du rendu de la page est joint au message, traite-le comme la SOURCE DE VÉRITÉ VISUELLE : reproduis fidèlement ce que tu vois (couleurs, espacements, typographie, disposition, images/dégradés de fond, ombres, arrondis). Le HTML donne la STRUCTURE exacte, le TEXTE et les LIENS ; l'image montre l'APPARENCE cible (utile quand le CSS est incomplet ou chargé en JavaScript). En cas de conflit, privilégie le rendu visuel pour l'apparence et le HTML pour le contenu textuel et les liens. Ne décris jamais l'image : produis uniquement les sections TSX.
 
 DÉCOUPAGE
 - Découpe la page en sections logiques (header/navbar, hero, features, à-propos, témoignages, galerie, faq, cta, footer, etc.).
@@ -86,8 +108,42 @@ service_tag: <laisse vide, ou la valeur de data-service-tag si présente>
 
 Répète ce bloc pour chaque section, dans l'ordre d'apparition dans la page.`;
 
-function buildUserMessage(html: string): string {
-  return `Voici le HTML de la page à convertir en sections TSX fidèles :\n\n${html}`;
+function buildUserMessage(html: string, hasVisual = false): string {
+  const visualNote = hasVisual
+    ? "Un rendu visuel de la page (image/PDF) est joint ci-dessus : utilise-le comme référence d'APPARENCE (couleurs, espacements, typo, disposition). Le HTML ci-dessous donne la STRUCTURE exacte, le texte et les liens.\n\n"
+    : "";
+  return `${visualNote}Voici le HTML de la page à convertir en sections TSX fidèles :\n\n${html}`;
+}
+
+/**
+ * Build the user-turn content. With visuals, returns a content-block array
+ * (image/document blocks first, then the HTML text); without, a plain string.
+ */
+function buildChunkContent(
+  html: string,
+  visuals?: ImportVisual[],
+): string | Anthropic.ContentBlockParam[] {
+  if (!visuals || visuals.length === 0) return buildUserMessage(html);
+  const blocks: Anthropic.ContentBlockParam[] = [];
+  for (const v of visuals) {
+    if (v.type === "pdf") {
+      blocks.push({
+        type: "document",
+        source: { type: "base64", media_type: "application/pdf", data: v.data },
+      });
+    } else {
+      blocks.push({
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: v.media_type as "image/png" | "image/jpeg" | "image/gif" | "image/webp",
+          data: v.data,
+        },
+      });
+    }
+  }
+  blocks.push({ type: "text", text: buildUserMessage(html, true) });
+  return blocks;
 }
 
 /** Parse the delimiter-based AI output into structured sections. */
@@ -258,13 +314,14 @@ async function convertChunk(
   htmlChunk: string,
   model: string,
   signal?: AbortSignal,
+  visuals?: ImportVisual[],
 ): Promise<ImportedSection[]> {
   const stream = anthropic.messages.stream(
     {
       model,
       max_tokens: 32000,
       system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: buildUserMessage(htmlChunk) }],
+      messages: [{ role: "user", content: buildChunkContent(htmlChunk, visuals) }],
     },
     signal ? { signal } : undefined,
   );
@@ -275,9 +332,16 @@ async function convertChunk(
 
 export async function convertHtmlToSections(
   html: string,
-  opts: { model?: string; signal?: AbortSignal; css?: string; links?: string[] } = {},
+  opts: {
+    model?: string;
+    signal?: AbortSignal;
+    css?: string;
+    links?: string[];
+    visuals?: ImportVisual[];
+  } = {},
 ): Promise<ImportedSection[]> {
-  const model = resolveImportModel(opts.model);
+  const hasVisual = (opts.visuals?.length ?? 0) > 0;
+  const model = resolveImportModel(opts.model, hasVisual);
 
   // Strip non-structural bulk (inline CSS, scripts, triplicated responsive
   // variants, hydration JSON) before sending to the model. The page stylesheet
@@ -299,7 +363,11 @@ export async function convertHtmlToSections(
   let next = 0;
   const runWorker = async (): Promise<void> => {
     for (let i = next++; i < chunks.length; i = next++) {
-      results[i] = await convertChunk(chunks[i], model, opts.signal);
+      // Attach the (full-page) visual to the first chunk only — it covers the
+      // top sections and bounds image/PDF token cost on multi-chunk pages.
+      // Most pages stay single-call, so the lone chunk still gets the visual.
+      const chunkVisuals = i === 0 ? opts.visuals : undefined;
+      results[i] = await convertChunk(chunks[i], model, opts.signal, chunkVisuals);
     }
   };
   await Promise.all(

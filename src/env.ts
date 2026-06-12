@@ -26,6 +26,12 @@ const envSchema = z
     // Stripe — optional; routes return 503 when keys are absent.
     STRIPE_SECRET_KEY: z.string().min(1).optional(),
     STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+    // External page-rendering provider for the visual site import (screenshots /
+    // rendered HTML). All optional: when RENDER_API_KEY is absent the "auto"
+    // capture is disabled and the import falls back to manual upload.
+    RENDER_PROVIDER: z.string().min(1).optional(),
+    RENDER_API_KEY: z.string().min(1).optional(),
+    RENDER_API_URL: z.string().url().optional(),
     // The cron routes fail closed in production unless at least one of these
     // is set. Either is sufficient: CRON_SECRET is checked when the call comes
     // from Vercel Cron, PG_CRON_SECRET when it comes from Supabase pg_cron.
@@ -54,6 +60,9 @@ const envResult = envSchema.safeParse({
   RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+  RENDER_PROVIDER: process.env.RENDER_PROVIDER,
+  RENDER_API_KEY: process.env.RENDER_API_KEY,
+  RENDER_API_URL: process.env.RENDER_API_URL,
   CRON_SECRET: process.env.CRON_SECRET,
   PG_CRON_SECRET: process.env.PG_CRON_SECRET,
 });
@@ -79,6 +88,9 @@ export const {
   RESEND_FROM_EMAIL,
   STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET,
+  RENDER_PROVIDER,
+  RENDER_API_KEY,
+  RENDER_API_URL,
   CRON_SECRET,
   PG_CRON_SECRET,
 } = envResult.data;
