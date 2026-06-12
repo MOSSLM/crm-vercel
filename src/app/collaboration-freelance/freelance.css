@@ -1,0 +1,122 @@
+/* Styles additionnels pour la page collaboration freelance,
+   en complément de landing.css (mêmes tokens .sama-landing). */
+
+/* ── RÉMUNÉRATION : carte tarif ── */
+.sama-landing .pricing-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 72px;
+  align-items: start;
+}
+.sama-landing .pricing-intro {
+  font-size: 15px; line-height: 1.8; color: var(--ink-soft);
+  font-weight: 300; margin-top: 16px; max-width: 520px;
+}
+.sama-landing .pricing-compare {
+  display: inline-flex; align-items: center; gap: 10px;
+  margin-top: 28px;
+  font-size: 12px; letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  border: 1px solid rgba(10, 26, 64, 0.12);
+  border-radius: 2px; padding: 12px 18px;
+  background: var(--cream);
+}
+.sama-landing .pricing-compare strong {
+  font-weight: 500; color: var(--navy);
+}
+.sama-landing .validity-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 400; font-size: 22px; color: var(--navy);
+  margin: 40px 0 16px;
+}
+.sama-landing .validity-list { display: flex; flex-direction: column; gap: 12px; }
+.sama-landing .validity-item {
+  display: flex; gap: 14px; align-items: flex-start;
+  font-size: 13.5px; line-height: 1.7; color: var(--ink-soft); font-weight: 300;
+}
+.sama-landing .validity-num {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 22px; font-weight: 300; line-height: 1.2;
+  color: rgba(90, 169, 230, 0.7);
+  flex-shrink: 0; width: 20px;
+}
+
+.sama-landing .pricing-card {
+  position: relative; overflow: hidden;
+  background: var(--navy);
+  border-radius: 4px;
+  padding: 48px 44px;
+  box-shadow: 0 28px 70px rgba(10, 26, 64, 0.22);
+}
+.sama-landing .pricing-card-glow {
+  position: absolute; top: -80px; right: -80px;
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(90, 169, 230, 0.28) 0%, transparent 70%);
+  pointer-events: none;
+}
+.sama-landing .pricing-card-label {
+  font-size: 9px; font-weight: 500;
+  letter-spacing: 0.28em; text-transform: uppercase;
+  color: var(--sky); margin-bottom: 22px;
+  display: flex; align-items: center; gap: 10px;
+  position: relative;
+}
+.sama-landing .pricing-card-label::before {
+  content: ''; width: 24px; height: 1px;
+  background: var(--sky); display: block;
+}
+.sama-landing .pricing-price {
+  font-family: 'Cormorant Garamond', serif;
+  font-weight: 300; font-size: 72px; line-height: 1;
+  color: var(--horizon); position: relative;
+}
+.sama-landing .pricing-price sup {
+  font-size: 26px; vertical-align: super; margin-left: 4px;
+}
+.sama-landing .pricing-price-unit {
+  font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(214, 228, 240, 0.55); margin-top: 10px;
+  font-weight: 500; position: relative;
+}
+.sama-landing .pricing-divider {
+  height: 1px; background: rgba(214, 228, 240, 0.12);
+  margin: 30px 0; position: relative;
+}
+.sama-landing .pricing-includes-title {
+  font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: rgba(214, 228, 240, 0.45); font-weight: 500;
+  margin-bottom: 16px; position: relative;
+}
+.sama-landing .pricing-includes {
+  display: flex; flex-direction: column; gap: 12px;
+  position: relative;
+}
+.sama-landing .pricing-include {
+  display: flex; gap: 12px; align-items: flex-start;
+  font-size: 13.5px; line-height: 1.65;
+  color: rgba(214, 228, 240, 0.85); font-weight: 300;
+}
+.sama-landing .pricing-include svg {
+  width: 15px; height: 15px; flex-shrink: 0;
+  color: var(--sky); margin-top: 3px;
+}
+.sama-landing .pricing-conditions {
+  display: flex; flex-direction: column; gap: 10px;
+  position: relative;
+}
+.sama-landing .pricing-condition {
+  display: flex; gap: 12px; align-items: flex-start;
+  font-size: 12.5px; line-height: 1.65;
+  color: rgba(214, 228, 240, 0.55); font-weight: 300;
+}
+.sama-landing .pricing-condition svg {
+  width: 13px; height: 13px; flex-shrink: 0;
+  color: rgba(214, 228, 240, 0.4); margin-top: 3px;
+}
+.sama-landing .pricing-card .btn-primary {
+  margin-top: 32px; position: relative;
+}
+
+@media (max-width: 900px) {
+  .sama-landing .pricing-grid { grid-template-columns: 1fr; gap: 40px; }
+  .sama-landing .pricing-card { padding: 36px 28px; }
+  .sama-landing .pricing-price { font-size: 56px; }
+}
