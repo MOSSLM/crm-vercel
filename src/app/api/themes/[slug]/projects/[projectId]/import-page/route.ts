@@ -2,7 +2,14 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { slugify } from "@/lib/site-builder/slug";
-import { convertHtmlToSections } from "@/lib/ai/import-page-sections";
+import { convertHtmlToSections, type ImportVisual } from "@/lib/ai/import-page-sections";
+import {
+  loadImportVisual,
+  type ImportVisualRef,
+} from "@/lib/site-builder/import-visuals";
+
+/** Hard cap on visuals attached to one import (bounds vision token cost). */
+const MAX_VISUALS = 6;
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -24,7 +31,7 @@ function normalizePageSlug(raw: string): string {
  */
 export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const body = await req.json();
-  const { page_title, page_slug, html, service_tag, model, css, links } = body as {
+  const { page_title, page_slug, html, service_tag, model, css, links, visuals } = body as {
     page_title?: string;
     page_slug?: string;
     html?: string;
@@ -32,10 +39,22 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     model?: string;
     css?: string;
     links?: string[];
+    visuals?: ImportVisualRef[];
   };
 
   if (!html?.trim()) return jsonError("html requis", 400);
   if (!page_title?.trim()) return jsonError("page_title requis", 400);
+
+  // Load any attached visuals (rendered screenshot / PDF) and base64-encode them
+  // server-side so they ride in the Anthropic message, not the client request.
+  let visualData: ImportVisual[] | undefined;
+  if (Array.isArray(visuals) && visuals.length > 0) {
+    try {
+      visualData = await Promise.all(visuals.slice(0, MAX_VISUALS).map(loadImportVisual));
+    } catch (err) {
+      return jsonError(err instanceof Error ? err.message : "Visuel illisible", 400);
+    }
+  }
 
   const supabase = getServiceClient();
 
@@ -57,7 +76,13 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const timeout = setTimeout(() => controller.abort(), 290_000);
   let sections;
   try {
-    sections = await convertHtmlToSections(html, { model, signal: controller.signal, css, links });
+    sections = await convertHtmlToSections(html, {
+      model,
+      signal: controller.signal,
+      css,
+      links,
+      visuals: visualData,
+    });
   } catch (err: unknown) {
     const name = err instanceof Error ? err.name : "";
     if (name === "APIUserAbortError" || name === "AbortError") {

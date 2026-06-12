@@ -55,6 +55,13 @@ interface Project {
   pages: ProjectPage[];
 }
 
+/** Reference to a stored import visual (rendered screenshot / PDF). */
+interface ImportVisualRef {
+  type: "image" | "pdf";
+  media_type: string;
+  storage_path: string;
+}
+
 interface Props {
   themeSlug: string;
   sections: ThemeSection[];
@@ -102,6 +109,17 @@ export default function ProjectsTree({
   } | null>(null);
   const [fetchedAssets, setFetchedAssets] = React.useState<{ css: string; links: string[] } | null>(null);
   const [serviceTags, setServiceTags] = React.useState<string[]>([]);
+  // Visual reference (rendered screenshot/PDF) given to the AI for fidelity.
+  const [visual, setVisual] = React.useState<ImportVisualRef | null>(null);
+  const [visualSource, setVisualSource] = React.useState<"auto" | "manual" | null>(null);
+  const [renderingAuto, setRenderingAuto] = React.useState(false);
+  const [uploadingVisual, setUploadingVisual] = React.useState(false);
+  const visualInputRef = React.useRef<HTMLInputElement | null>(null);
+  // Manual visual always wins over a later-arriving auto render.
+  const visualSourceRef = React.useRef<"auto" | "manual" | null>(null);
+  React.useEffect(() => {
+    visualSourceRef.current = visualSource;
+  }, [visualSource]);
 
   const [deleteTarget, setDeleteTarget] = React.useState<Project | null>(null);
   const [instantiatingId, setInstantiatingId] = React.useState<string | null>(null);
@@ -184,6 +202,55 @@ export default function ProjectsTree({
     setImpUrl("");
     setFetchInfo(null);
     setFetchedAssets(null);
+    setVisual(null);
+    setVisualSource(null);
+  };
+
+  /**
+   * Best-effort: render the page via the external provider to capture a visual
+   * (and higher-fidelity rendered HTML). Silent on failure / not-configured —
+   * manual upload remains available. A manual visual is never overwritten.
+   */
+  const tryAutoRender = async (url: string) => {
+    setRenderingAuto(true);
+    try {
+      const res = await authedFetch(`/api/site-builder/screenshot`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (res.status === 501) return; // provider not configured
+      const data = await res.json();
+      if (!res.ok) return;
+      if (visualSourceRef.current === "manual") return;
+      if (data.visual) {
+        setVisual(data.visual as ImportVisualRef);
+        setVisualSource("auto");
+      }
+      if (data.renderedHtml) setImpHtml(data.renderedHtml as string);
+    } catch {
+      /* silent — manual upload remains available */
+    } finally {
+      setRenderingAuto(false);
+    }
+  };
+
+  const handleUploadVisual = async (file: File) => {
+    setUploadingVisual(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await authedFetch(`/api/site-builder/import-visual`, { method: "POST", body: form });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setVisual(data as ImportVisualRef);
+      setVisualSource("manual");
+      toast.success("Visuel ajouté");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : "Échec de l'envoi du visuel");
+    } finally {
+      setUploadingVisual(false);
+    }
   };
 
   const handleFetchUrl = async () => {
@@ -206,6 +273,9 @@ export default function ProjectsTree({
         chars: (data.html ?? "").length,
       });
       toast.success(`Page récupérée (${Math.round((data.html ?? "").length / 1000)} ko)`);
+      // Fire-and-forget visual capture (rendered page) — improves fidelity when
+      // the render provider is configured; otherwise silently a no-op.
+      void tryAutoRender(impUrl.trim());
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : "Échec de récupération");
     } finally {
@@ -229,6 +299,7 @@ export default function ProjectsTree({
             service_tag: impTag.trim() || null,
             model: impModel,
             ...(fetchedAssets ? { css: fetchedAssets.css, links: fetchedAssets.links } : {}),
+            ...(visual ? { visuals: [visual] } : {}),
           }),
         },
       );
@@ -580,6 +651,66 @@ export default function ProjectsTree({
                 </select>
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label className="text-zinc-300">Rendu visuel (fidélité)</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={visualInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="sr-only"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) handleUploadVisual(f);
+                    e.target.value = "";
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => visualInputRef.current?.click()}
+                  disabled={uploadingVisual}
+                >
+                  {uploadingVisual ? (
+                    <span className="flex items-center gap-1.5">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Envoi…
+                    </span>
+                  ) : (
+                    "Ajouter une capture (PDF/image)"
+                  )}
+                </Button>
+                {renderingAuto && (
+                  <span className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Capture auto…
+                  </span>
+                )}
+                {visual && !renderingAuto && (
+                  <span className="text-[11px] text-emerald-400/80">
+                    ✓ Visuel {visualSource === "manual" ? "importé" : "auto"} ({visual.type.toUpperCase()})
+                  </span>
+                )}
+                {visual && (
+                  <button
+                    type="button"
+                    className="text-[11px] text-zinc-500 hover:text-red-400"
+                    onClick={() => {
+                      setVisual(null);
+                      setVisualSource(null);
+                    }}
+                  >
+                    retirer
+                  </button>
+                )}
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                Une capture du rendu (idéalement un PDF pleine page paginé, ex. extension
+                GoFullPage) aide l&apos;IA à reproduire fidèlement l&apos;apparence. En mode URL elle
+                est générée automatiquement si le service de rendu est configuré ; sinon, ajoutez-la
+                manuellement.
+              </p>
+            </div>
+
             <div className="space-y-1.5">
               <Label className="text-zinc-300">
                 {impMode === "url" ? "HTML récupéré (modifiable)" : "HTML / CSS de la page"}
