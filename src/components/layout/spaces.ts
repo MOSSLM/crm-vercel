@@ -30,6 +30,7 @@ import {
   ClipboardList,
   Images,
   LayoutDashboard,
+  StickyNote,
   Phone,
   CalendarDays,
   Settings,
@@ -112,6 +113,7 @@ export const SPACES: Space[] = [
       { title: "Tâches", href: "/production/taches", icon: ListChecks },
       { title: "Templates", href: "/production/templates", icon: LayoutTemplate },
       { title: "Apps", href: "/production/apps", icon: AppWindow },
+      { title: "Planches", href: "/planches", icon: StickyNote },
       { title: "Lead magnets", href: "/production/lead-magnets", icon: Magnet },
       { title: "Copywriting", href: "/production/copywriting", icon: PenLine },
       { title: "Enrichissement", href: "/production/enrichissement", icon: Sparkles },
@@ -189,6 +191,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/messagerie", "relation"],
 
   ["/production", "production"],
+  ["/planches", "production"],
 
   ["/site-builder", "web"],
   ["/site-templates", "web"],
