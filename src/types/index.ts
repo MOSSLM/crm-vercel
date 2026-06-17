@@ -1587,3 +1587,107 @@ export interface MediaLibraryItemRanked extends MediaLibraryItem {
   match_count: number;
   is_universal: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Planches (Milanote-style infinite-canvas boards)
+// ---------------------------------------------------------------------------
+
+export type PlancheCardType =
+  | 'note'
+  | 'text'
+  | 'image'
+  | 'file'
+  | 'link'
+  | 'todo'
+  | 'color'
+  | 'column'
+  | 'board';
+
+export interface PlancheBoard {
+  id: string;
+  title: string;
+  parent_board_id: string | null;
+  parent_card_id: string | null;
+  icon: string | null;
+  color: string | null;
+  owner_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlancheTodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+/** Free-form content payload, shape depends on the card `type`. */
+export interface PlancheCardContent {
+  // note / text
+  html?: string;
+  // image / file
+  url?: string;
+  file_name?: string;
+  mime?: string;
+  size?: number;
+  natural_width?: number;
+  natural_height?: number;
+  // link
+  title?: string;
+  description?: string;
+  image?: string;
+  favicon?: string;
+  // todo
+  items?: PlancheTodoItem[];
+  // color
+  color?: string;
+  label?: string;
+  // column / board
+  linked_board_id?: string;
+}
+
+export interface PlancheCardStyle {
+  background?: string;
+  color?: string;
+  fontSize?: number;
+  align?: 'left' | 'center' | 'right';
+}
+
+export interface PlancheCard {
+  id: string;
+  board_id: string;
+  type: PlancheCardType;
+  position_x: number;
+  position_y: number;
+  width: number;
+  height: number | null;
+  z_index: number;
+  rotation: number;
+  content: PlancheCardContent;
+  style: PlancheCardStyle;
+  parent_card_id: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlancheConnection {
+  id: string;
+  board_id: string;
+  from_card_id: string;
+  to_card_id: string;
+  label: string | null;
+  style: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface PlancheBoardDetail {
+  board: PlancheBoard;
+  cards: PlancheCard[];
+  connections: PlancheConnection[];
+  breadcrumb: Pick<PlancheBoard, 'id' | 'title'>[];
+}
+
+export interface PlancheBoardSummary extends PlancheBoard {
+  card_count: number;
+}
