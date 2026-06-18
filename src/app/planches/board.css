@@ -1583,3 +1583,10 @@
   color: var(--text-2); cursor: pointer; text-decoration: none; margin-right: 2px;
 }
 .pboard .tb-back:hover { background: var(--hover); color: var(--text); }
+
+/* line endpoint handles */
+.pboard .line-handle {
+  position: absolute; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--surface); border: 2px solid var(--accent);
+  cursor: grab; z-index: 45;
+}

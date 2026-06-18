@@ -1601,7 +1601,9 @@ export type PlancheCardType =
   | 'todo'
   | 'color'
   | 'column'
-  | 'board';
+  | 'board'
+  | 'table'
+  | 'line';
 
 export interface PlancheBoard {
   id: string;

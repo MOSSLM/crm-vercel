@@ -3,7 +3,7 @@
 import React from "react";
 import { Icon } from "./boardIcons";
 import { Markdown, Editable } from "./Markdown";
-import { Popover, MenuItem } from "./BoardMenus";
+import { Popover, MenuItem, MenuSep } from "./BoardMenus";
 import {
   CARD_COLORS,
   CARD_HEX,
@@ -35,6 +35,16 @@ export type El = {
   meta?: string;
   linked_board_id?: string;
   storage_path?: string;
+  // table
+  columns?: string[];
+  rows?: { t: string; mono?: boolean; tint?: string }[][];
+  // column
+  subtitle?: string;
+  // line
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
 };
 
 type Patch = (p: Partial<El>) => void;
@@ -152,9 +162,14 @@ export function ElementToolbar({
           {() => <IconPicker value={el.icon} onPick={(v) => onPatch({ icon: v })} />}
         </ToolBtn>
       )}
-      {(kind === "board" || kind === "link" || kind === "file") && (
+      {(kind === "board" || kind === "link" || kind === "file" || kind === "table" || kind === "line") && (
         <ToolBtn swatch={CARD_HEX[el.color ?? "slate"] || "#697586"} title="Couleur">
           {() => <ColorPicker value={el.color} onPick={(v) => onPatch({ color: v })} />}
+        </ToolBtn>
+      )}
+      {kind === "column" && (
+        <ToolBtn swatch={CARD_HEX[el.accent ?? "violet"] || "#7A5AE0"} title="Couleur">
+          {() => <ColorPicker value={el.accent} onPick={(v) => onPatch({ accent: v })} />}
         </ToolBtn>
       )}
       {kind === "note" && (
@@ -403,6 +418,194 @@ export function ImageEl({ el, onPatch, onCommit }: { el: El; onPatch: Patch; onC
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Table (coloured cells) ────────────────────────────────────────────────────
+export function TableEl({ el, onPatch, onCommit }: { el: El; onPatch: Patch; onCommit?: () => void }) {
+  const hex = CARD_HEX[el.color ?? "violet"] || "#7A5AE0";
+  const columns = el.columns ?? ["Colonne A", "Colonne B"];
+  const rows = el.rows ?? [];
+  const [cellPick, setCellPick] = React.useState<{ r: number; c: number; rect: DOMRect } | null>(null);
+
+  const commit = () => onCommit?.();
+  const setCell = (r: number, c: number, patch: Partial<{ t: string; mono: boolean; tint: string }>) => {
+    onPatch({ rows: rows.map((row, ri) => (ri === r ? row.map((cell, ci) => (ci === c ? { ...cell, ...patch } : cell)) : row)) });
+  };
+  const addRow = () => { onPatch({ rows: [...rows, columns.map(() => ({ t: "" }))] }); commit(); };
+  const addCol = () => { onPatch({ columns: [...columns, `Colonne ${columns.length + 1}`], rows: rows.map((r) => [...r, { t: "" }]) }); commit(); };
+  const removeRow = (ri: number) => { onPatch({ rows: rows.filter((_, i) => i !== ri) }); commit(); };
+  const removeCol = (ci: number) => { onPatch({ columns: columns.filter((_, i) => i !== ci), rows: rows.map((r) => r.filter((_, i) => i !== ci)) }); commit(); };
+
+  return (
+    <div className="table-el" style={{ ["--th" as string]: hex }}>
+      <Editable className="table-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} onBlur={commit} placeholder="Tableau" />
+      <div className="tbl">
+        <div className="tbl-row tbl-head" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+          {columns.map((col, ci) => (
+            <div key={ci} className="tbl-cell th">
+              <Editable value={col} onChange={(v) => { const cols = [...columns]; cols[ci] = v; onPatch({ columns: cols }); }} onBlur={commit} />
+            </div>
+          ))}
+        </div>
+        {rows.map((row, ri) => (
+          <div key={ri} className="tbl-row" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+            {row.map((cell, ci) => (
+              <div
+                key={ci}
+                className={`tbl-cell ${cell.tint ? "filled" : ""} ${cell.mono ? "mono" : ""}`}
+                style={{ background: cell.tint ? NOTE_BG[cell.tint] : undefined }}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCellPick({ r: ri, c: ci, rect: (e.currentTarget as HTMLElement).getBoundingClientRect() }); }}
+              >
+                {cell.tint ? <span className="tbl-swatch-dot" style={{ background: NOTE_BAR[cell.tint] }} /> : null}
+                <Editable value={cell.t} onChange={(v) => setCell(ri, ci, { t: v })} onBlur={commit} placeholder="" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="tbl-actions">
+        <button className="tbl-add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); addRow(); }}>
+          <Icon name="plus" className="ico-sm" />Ligne
+        </button>
+        <button className="tbl-add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); addCol(); }}>
+          <Icon name="plus" className="ico-sm" />Colonne
+        </button>
+      </div>
+      <Popover open={!!cellPick} anchorRect={cellPick?.rect ?? null} onClose={() => setCellPick(null)} className="pad">
+        <div className="pop-title">Couleur de cellule</div>
+        <ColorPicker
+          value={cellPick ? rows[cellPick.r]?.[cellPick.c]?.tint : undefined}
+          palette={NOTE_COLORS}
+          onPick={(v) => { if (cellPick) { setCell(cellPick.r, cellPick.c, { tint: v }); commit(); } setCellPick(null); }}
+        />
+        <MenuSep />
+        <MenuItem icon="minus" onClick={() => { if (cellPick && rows.length > 1) removeRow(cellPick.r); setCellPick(null); }}>Supprimer la ligne</MenuItem>
+        <MenuItem icon="minus" onClick={() => { if (cellPick && columns.length > 1) removeCol(cellPick.c); setCellPick(null); }}>Supprimer la colonne</MenuItem>
+      </Popover>
+    </div>
+  );
+}
+
+// ── Line / arrow (drawn relative to the wrapper's top-left) ───────────────────
+export function LineEl({ el }: { el: El }) {
+  const hex = CARD_HEX[el.color ?? "violet"] || "#7A5AE0";
+  const x1 = el.x1 ?? 0, y1 = el.y1 ?? 0, x2 = el.x2 ?? 120, y2 = el.y2 ?? 60;
+  const minX = Math.min(x1, x2), minY = Math.min(y1, y2);
+  const w = Math.abs(x2 - x1) + 24, h = Math.abs(y2 - y1) + 24;
+  return (
+    <svg className="line-el" width={w} height={h} style={{ overflow: "visible" }}>
+      <defs>
+        <marker id={`arw-${el.id}`} markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0 0 L9 4.5 L0 9 z" fill={hex} />
+        </marker>
+      </defs>
+      <line
+        x1={x1 - minX + 12}
+        y1={y1 - minY + 12}
+        x2={x2 - minX + 12}
+        y2={y2 - minY + 12}
+        stroke={hex}
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        markerEnd={`url(#arw-${el.id})`}
+      />
+    </svg>
+  );
+}
+
+// ── A child element inside a column ───────────────────────────────────────────
+export function ChildElement({
+  el,
+  selected,
+  onSelect,
+  onPointerDown,
+  onPatch,
+  onCommit,
+  onDelete,
+  onDuplicate,
+}: {
+  el: El;
+  selected: boolean;
+  onSelect: () => void;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onPatch: Patch;
+  onCommit?: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+}) {
+  const kind = el.type;
+  return (
+    <div
+      className={`child-el ${selected ? "sel" : ""}`}
+      data-type={el.type}
+      onPointerDown={onPointerDown}
+      onClick={(e) => { e.stopPropagation(); onSelect(); }}
+    >
+      {selected && <ElementToolbar kind={kind} el={el} onPatch={onPatch} onDelete={onDelete} onDuplicate={onDuplicate} />}
+      {el.type === "board" && <CardEl el={el} onPatch={onPatch} />}
+      {el.type === "note" && <NoteEl el={el} selected={selected} onPatch={onPatch} onCommit={onCommit} />}
+      {el.type === "todo" && <TodoEl el={el} onPatch={onPatch} onCommit={onCommit} />}
+      {el.type === "link" && <LinkEl el={el} onPatch={onPatch} onCommit={onCommit} />}
+      {el.type === "file" && <FileEl el={el} onPatch={onPatch} onCommit={onCommit} />}
+    </div>
+  );
+}
+
+// ── Column container ──────────────────────────────────────────────────────────
+export function ColumnEl({
+  el,
+  items,
+  selectedId,
+  onSelectChild,
+  onChildPointerDown,
+  onPatchChild,
+  onCommitChild,
+  onDeleteChild,
+  onDuplicateChild,
+  onPatch,
+  onCommit,
+  onAddChild,
+}: {
+  el: El;
+  items: El[];
+  selectedId: string | null;
+  onSelectChild: (id: string) => void;
+  onChildPointerDown: (e: React.PointerEvent, id: string) => void;
+  onPatchChild: (id: string, p: Partial<El>) => void;
+  onCommitChild: (id: string) => void;
+  onDeleteChild: (id: string) => void;
+  onDuplicateChild: (id: string) => void;
+  onPatch: Patch;
+  onCommit?: () => void;
+  onAddChild: () => void;
+}) {
+  const accent = CARD_HEX[el.accent ?? "violet"] || "#7A5AE0";
+  return (
+    <div className="column-el" style={{ ["--accent" as string]: accent }}>
+      <div className="column-hd" style={{ borderTopColor: accent }}>
+        <Editable className="column-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} onBlur={onCommit} placeholder="Colonne" />
+        <Editable className="column-sub" value={el.subtitle ?? ""} onChange={(v) => onPatch({ subtitle: v })} onBlur={onCommit} placeholder="Sous-titre" />
+      </div>
+      <div className="column-body">
+        {items.map((ch) => (
+          <ChildElement
+            key={ch.id}
+            el={ch}
+            selected={selectedId === ch.id}
+            onSelect={() => onSelectChild(ch.id)}
+            onPointerDown={(e) => onChildPointerDown(e, ch.id)}
+            onPatch={(p) => onPatchChild(ch.id, p)}
+            onCommit={() => onCommitChild(ch.id)}
+            onDelete={() => onDeleteChild(ch.id)}
+            onDuplicate={() => onDuplicateChild(ch.id)}
+          />
+        ))}
+        <button className="column-add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onAddChild(); }}>
+          <Icon name="plus" className="ico-sm" />Ajouter une note
+        </button>
+      </div>
     </div>
   );
 }

@@ -14,6 +14,9 @@ import {
   LinkEl,
   FileEl,
   ImageEl,
+  TableEl,
+  LineEl,
+  ColumnEl,
   type El,
 } from "./BoardElements";
 import { CARD_HEX } from "./boardData";
@@ -31,6 +34,19 @@ const DEFAULTS: Record<string, { w: number; content: Record<string, unknown> }> 
   link: { w: 300, content: { title: "Nouveau lien", url: "exemple.com", desc: "Aperçu du lien", color: "blue" } },
   file: { w: 300, content: { name: "document.pdf", kind: "pdf", size: "—", color: "slate" } },
   image: { w: 320, content: { title: "Galerie", cols: 2, cells: ["image 1", "image 2"] } },
+  table: {
+    w: 360,
+    content: {
+      title: "Tableau",
+      color: "violet",
+      columns: ["Colonne A", "Colonne B"],
+      rows: [
+        [{ t: "" }, { t: "" }],
+        [{ t: "" }, { t: "" }],
+      ],
+    },
+  },
+  column: { w: 320, content: { title: "Nouvelle colonne", subtitle: "", accent: "blue" } },
 };
 
 type Menu = "share" | "export" | "view" | "railmore" | "trash" | null;
@@ -153,6 +169,10 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
       const def = DEFAULTS[type] ?? DEFAULTS.note;
       const pos = at ?? viewportPoint();
       setCtx(null);
+      const content =
+        type === "line"
+          ? { x1: Math.round(pos.x), y1: Math.round(pos.y), x2: Math.round(pos.x) + 140, y2: Math.round(pos.y) + 80, color: "violet" }
+          : def.content;
       try {
         const card = await planchesApi.createCard(boardId, {
           type: type as PlancheCardType,
@@ -161,7 +181,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
           width: def.w,
           height: null,
           z_index: maxZ() + 1,
-          content: def.content,
+          content,
         });
         setCards((prev) => [...prev, card]);
         setSel(card.id);
@@ -211,6 +231,183 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
       }
     },
     [boardId, maxZ],
+  );
+
+  // ── column children ─────────────────────────────────────────────────────────
+  const addChild = React.useCallback(
+    async (columnId: string) => {
+      const siblings = cardsRef.current.filter((c) => c.parent_card_id === columnId);
+      const so = siblings.reduce((m, c) => Math.max(m, c.sort_order), 0) + 1;
+      try {
+        const card = await planchesApi.createCard(boardId, {
+          type: "note",
+          parent_card_id: columnId,
+          sort_order: so,
+          width: 240,
+          height: null,
+          z_index: maxZ() + 1,
+          content: { title: "Nouvelle note", body: "", color: "paper" },
+        });
+        setCards((prev) => [...prev, card]);
+        setSel(card.id);
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    [boardId, maxZ],
+  );
+
+  const dupChild = React.useCallback(
+    async (id: string) => {
+      const c = cardsRef.current.find((x) => x.id === id);
+      if (!c) return;
+      try {
+        const created = await planchesApi.createCard(boardId, {
+          type: c.type,
+          parent_card_id: c.parent_card_id,
+          sort_order: c.sort_order + 0.5,
+          width: c.width,
+          height: c.height,
+          z_index: maxZ() + 1,
+          content: c.content,
+          style: c.style,
+        });
+        setCards((prev) => [...prev, created]);
+        setSel(created.id);
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    [boardId, maxZ],
+  );
+
+  // Drag a column child; once it clears the column it detaches to a free card.
+  const startChildDrag = React.useCallback((e: React.PointerEvent, childId: string) => {
+    if (e.button !== 0) return;
+    if (isInteractive(e.target)) {
+      setSel(childId);
+      return;
+    }
+    e.stopPropagation();
+    setSel(childId);
+    const sc = scrollRef.current;
+    if (!sc) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const st = {
+      sx: e.clientX,
+      sy: e.clientY,
+      grabX: e.clientX - rect.left,
+      grabY: e.clientY - rect.top,
+      w: Math.round(rect.width / zoomRef.current),
+      detached: false,
+    };
+    const move = (ev: PointerEvent) => {
+      if (!st.detached) {
+        if (Math.abs(ev.clientX - st.sx) + Math.abs(ev.clientY - st.sy) < 6) return;
+        st.detached = true;
+      }
+      const scRect = sc.getBoundingClientRect();
+      const nx = Math.round((ev.clientX - st.grabX - scRect.left + sc.scrollLeft) / zoomRef.current);
+      const ny = Math.round((ev.clientY - st.grabY - scRect.top + sc.scrollTop) / zoomRef.current);
+      setCards((arr) =>
+        arr.map((c) =>
+          c.id === childId ? { ...c, parent_card_id: null, position_x: nx, position_y: ny, width: Math.max(220, st.w) } : c,
+        ),
+      );
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (st.detached) {
+        const c = cardsRef.current.find((x) => x.id === childId);
+        if (c)
+          void planchesApi
+            .updateCard(childId, { parent_card_id: null, position_x: c.position_x, position_y: c.position_y, width: c.width })
+            .catch((err) => console.error(err));
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, []);
+
+  // ── line dragging ───────────────────────────────────────────────────────────
+  const startLineDrag = React.useCallback(
+    (e: React.PointerEvent, id: string) => {
+      if (e.button !== 0) return;
+      if (isInteractive(e.target)) {
+        setSel(id);
+        return;
+      }
+      setSel(id);
+      const c = cardsRef.current.find((x) => x.id === id);
+      if (!c) return;
+      const ct = c.content as { x1?: number; y1?: number; x2?: number; y2?: number };
+      const st = { sx: e.clientX, sy: e.clientY, x1: ct.x1 ?? 0, y1: ct.y1 ?? 0, x2: ct.x2 ?? 0, y2: ct.y2 ?? 0, moved: false };
+      const move = (ev: PointerEvent) => {
+        const z = zoomRef.current;
+        const dx = (ev.clientX - st.sx) / z;
+        const dy = (ev.clientY - st.sy) / z;
+        if (Math.abs(dx) + Math.abs(dy) > 2) st.moved = true;
+        setCards((arr) =>
+          arr.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  content: {
+                    ...x.content,
+                    x1: Math.round(st.x1 + dx),
+                    y1: Math.round(st.y1 + dy),
+                    x2: Math.round(st.x2 + dx),
+                    y2: Math.round(st.y2 + dy),
+                  },
+                }
+              : x,
+          ),
+        );
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        if (st.moved) void persistCard(id);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    },
+    [persistCard],
+  );
+
+  const startLineEndpoint = React.useCallback(
+    (e: React.PointerEvent, id: string, which: "a" | "b") => {
+      e.stopPropagation();
+      if (e.button !== 0) return;
+      setSel(id);
+      const move = (ev: PointerEvent) => {
+        const p = clientToCanvas(ev.clientX, ev.clientY);
+        setCards((arr) =>
+          arr.map((x) =>
+            x.id === id
+              ? {
+                  ...x,
+                  content: {
+                    ...x.content,
+                    ...(which === "a"
+                      ? { x1: Math.round(p.x), y1: Math.round(p.y) }
+                      : { x2: Math.round(p.x), y2: Math.round(p.y) }),
+                  },
+                }
+              : x,
+          ),
+        );
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        void persistCard(id);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    },
+    [clientToCanvas, persistCard],
   );
 
   const restore = React.useCallback(
@@ -402,6 +599,21 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
   };
 
   // ── element rendering ──────────────────────────────────────────────────────────
+  const childrenByParent = React.useMemo(() => {
+    const m = new Map<string, PlancheCard[]>();
+    for (const c of cards) {
+      if (c.parent_card_id) {
+        const a = m.get(c.parent_card_id) ?? [];
+        a.push(c);
+        m.set(c.parent_card_id, a);
+      }
+    }
+    for (const a of m.values()) a.sort((x, y) => x.sort_order - y.sort_order);
+    return m;
+  }, [cards]);
+
+  const freeCards = React.useMemo(() => cards.filter((c) => !c.parent_card_id), [cards]);
+
   const toEl = (c: PlancheCard): El => ({ id: c.id, type: c.type, ...(c.content as Record<string, unknown>) });
 
   const renderBody = (c: PlancheCard) => {
@@ -427,6 +639,27 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
         return <FileEl el={el} onPatch={onPatch} onCommit={onCommit} />;
       case "image":
         return <ImageEl el={el} onPatch={onPatch} onCommit={onCommit} />;
+      case "table":
+        return <TableEl el={el} onPatch={onPatch} onCommit={onCommit} />;
+      case "column": {
+        const kids = (childrenByParent.get(c.id) ?? []).map(toEl);
+        return (
+          <ColumnEl
+            el={el}
+            items={kids}
+            selectedId={sel}
+            onSelectChild={setSel}
+            onChildPointerDown={startChildDrag}
+            onPatchChild={patchContent}
+            onCommitChild={(cid) => scheduleSave(cid)}
+            onDeleteChild={removeEl}
+            onDuplicateChild={dupChild}
+            onPatch={onPatch}
+            onCommit={onCommit}
+            onAddChild={() => addChild(c.id)}
+          />
+        );
+      }
       default:
         return null;
     }
@@ -538,30 +771,63 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
           }}
         >
           <div className="canvas" style={{ transform: `scale(${zoom})`, width: canvasSize.w, height: canvasSize.h }}>
-            {cards.map((c) => (
-              <div
-                key={c.id}
-                className={`free-el ${sel === c.id ? "sel" : ""} ${c.type}`}
-                style={{ left: c.position_x, top: c.position_y, width: c.width }}
-                onPointerDown={(e) => startDrag(e, c.id)}
-              >
-                {sel === c.id && (
-                  <ElementToolbar
-                    kind={c.type}
-                    el={toEl(c)}
-                    onPatch={(p) => { patchContent(c.id, p); void persistCard(c.id); }}
-                    onDelete={() => removeEl(c.id)}
-                    onDuplicate={() => duplicateEl(c.id)}
-                  />
-                )}
-                {renderBody(c)}
-                {sel === c.id && (
-                  <div className="resize-e" title="Redimensionner" onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => startResize(e, c.id)}>
-                    <span />
+            {freeCards.map((c) => {
+              if (c.type === "line") {
+                const el = toEl(c);
+                const x1 = el.x1 ?? 0, y1 = el.y1 ?? 0, x2 = el.x2 ?? 0, y2 = el.y2 ?? 0;
+                const left = Math.min(x1, x2) - 12;
+                const top = Math.min(y1, y2) - 12;
+                return (
+                  <div
+                    key={c.id}
+                    className={`free-el line-wrap ${sel === c.id ? "sel" : ""}`}
+                    style={{ left, top }}
+                    onPointerDown={(e) => startLineDrag(e, c.id)}
+                  >
+                    {sel === c.id && (
+                      <ElementToolbar
+                        kind="line"
+                        el={el}
+                        onPatch={(p) => { patchContent(c.id, p); void persistCard(c.id); }}
+                        onDelete={() => removeEl(c.id)}
+                        onDuplicate={() => duplicateEl(c.id)}
+                      />
+                    )}
+                    <LineEl el={el} />
+                    {sel === c.id && (
+                      <>
+                        <span className="line-handle" style={{ left: x1 - left - 5, top: y1 - top - 5 }} onPointerDown={(e) => startLineEndpoint(e, c.id, "a")} />
+                        <span className="line-handle" style={{ left: x2 - left - 5, top: y2 - top - 5 }} onPointerDown={(e) => startLineEndpoint(e, c.id, "b")} />
+                      </>
+                    )}
                   </div>
-                )}
-              </div>
-            ))}
+                );
+              }
+              return (
+                <div
+                  key={c.id}
+                  className={`free-el ${sel === c.id ? "sel" : ""} ${c.type}`}
+                  style={{ left: c.position_x, top: c.position_y, width: c.width }}
+                  onPointerDown={(e) => startDrag(e, c.id)}
+                >
+                  {sel === c.id && (
+                    <ElementToolbar
+                      kind={c.type}
+                      el={toEl(c)}
+                      onPatch={(p) => { patchContent(c.id, p); void persistCard(c.id); }}
+                      onDelete={() => removeEl(c.id)}
+                      onDuplicate={() => duplicateEl(c.id)}
+                    />
+                  )}
+                  {renderBody(c)}
+                  {sel === c.id && (
+                    <div className="resize-e" title="Redimensionner" onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => startResize(e, c.id)}>
+                      <span />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {cards.length === 0 && (
               <div style={{ position: "absolute", left: 60, top: 80, color: "var(--text-3)", fontSize: 13, maxWidth: 360 }}>
@@ -589,15 +855,21 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
         <MenuItem icon="note" onClick={() => ctx && addEl("note", { x: ctx.cx, y: ctx.cy })}>Note</MenuItem>
         <MenuItem icon="board" onClick={() => ctx && addEl("board", { x: ctx.cx, y: ctx.cy })}>Planche</MenuItem>
         <MenuItem icon="todo" onClick={() => ctx && addEl("todo", { x: ctx.cx, y: ctx.cy })}>Liste à faire</MenuItem>
+        <MenuItem icon="column" onClick={() => ctx && addEl("column", { x: ctx.cx, y: ctx.cy })}>Colonne</MenuItem>
         <MenuItem icon="link" onClick={() => ctx && addEl("link", { x: ctx.cx, y: ctx.cy })}>Lien</MenuItem>
+        <MenuItem icon="table" onClick={() => ctx && addEl("table", { x: ctx.cx, y: ctx.cy })}>Tableau</MenuItem>
         <MenuItem icon="image" onClick={() => ctx && addEl("image", { x: ctx.cx, y: ctx.cy })}>Galerie d&apos;images</MenuItem>
         <MenuSep />
+        <MenuItem icon="line" onClick={() => ctx && addEl("line", { x: ctx.cx, y: ctx.cy })}>Ligne / flèche</MenuItem>
         <MenuItem icon="upload" onClick={() => pickFiles(false)}>Importer un fichier…</MenuItem>
       </FloatingMenu>
 
       {/* Rail "more" */}
       <Popover open={menu === "railmore"} anchorRect={menuRect} onClose={() => setMenu(null)} className="menu">
         <MenuLabel>Autres éléments</MenuLabel>
+        <MenuItem icon="column" onClick={() => { void addEl("column"); setMenu(null); }}>Colonne</MenuItem>
+        <MenuItem icon="table" onClick={() => { void addEl("table"); setMenu(null); }}>Tableau</MenuItem>
+        <MenuItem icon="line" onClick={() => { void addEl("line"); setMenu(null); }}>Ligne / flèche</MenuItem>
         <MenuItem icon="image" onClick={() => { void addEl("image"); setMenu(null); }}>Galerie d&apos;images</MenuItem>
         <MenuItem icon="upload" onClick={() => { setMenu(null); pickFiles(false); }}>Fichier</MenuItem>
       </Popover>
