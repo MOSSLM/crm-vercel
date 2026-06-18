@@ -502,8 +502,9 @@ export function TableEl({ el, onPatch, onCommit }: { el: El; onPatch: Patch; onC
   return (
     <div className="table-el" style={{ ["--th" as string]: hex }}>
       <Editable className="table-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} onBlur={commit} placeholder="Tableau" />
-      <div className="tbl">
-        <div className="tbl-row tbl-head" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+      <div className="tbl-wrap">
+        <div className="tbl">
+          <div className="tbl-row tbl-head" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
           {columns.map((col, ci) => (
             <div key={ci} className="tbl-cell th">
               <Editable value={col} onChange={(v) => { const cols = [...columns]; cols[ci] = v; onPatch({ columns: cols }); }} onBlur={commit} />
@@ -525,13 +526,19 @@ export function TableEl({ el, onPatch, onCommit }: { el: El; onPatch: Patch; onC
             ))}
           </div>
         ))}
+        </div>
+        <button
+          className="tbl-addcol"
+          title="Ajouter une colonne"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); addCol(); }}
+        >
+          <Icon name="plus" className="ico-sm" />
+        </button>
       </div>
       <div className="tbl-actions">
         <button className="tbl-add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); addRow(); }}>
           <Icon name="plus" className="ico-sm" />Ligne
-        </button>
-        <button className="tbl-add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); addCol(); }}>
-          <Icon name="plus" className="ico-sm" />Colonne
         </button>
       </div>
       <Popover open={!!cellPick} anchorRect={cellPick?.rect ?? null} onClose={() => setCellPick(null)} className="pad">
