@@ -17,6 +17,7 @@ import {
   TableEl,
   LineEl,
   ColumnEl,
+  TextEl,
   type El,
 } from "./BoardElements";
 import { CARD_HEX } from "./boardData";
@@ -29,7 +30,8 @@ const MAX_ZOOM = 1.6;
 // Default geometry + content per element type (mirrors the SAMA design).
 const DEFAULTS: Record<string, { w: number; content: Record<string, unknown> }> = {
   note: { w: 280, content: { title: "Nouvelle note", body: "Écrivez en **markdown**…", color: "paper" } },
-  board: { w: 280, content: { title: "Nouvelle planche", icon: "board", color: "blue", meta: "Ouvrir →" } },
+  text: { w: 300, content: { body: "Titre" } },
+  board: { w: 150, content: { title: "Nouvelle planche", icon: "board", color: "blue", meta: "Ouvrir →" } },
   todo: { w: 300, content: { title: "À faire", items: [{ id: "t1", text: "Première tâche", done: false }] } },
   link: { w: 300, content: { title: "Nouveau lien", url: "exemple.com", desc: "Aperçu du lien", color: "blue" } },
   file: { w: 300, content: { name: "document.pdf", kind: "pdf", size: "—", color: "slate" } },
@@ -78,8 +80,9 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
   cardsRef.current = cards;
   const zoomRef = React.useRef(zoom);
   zoomRef.current = zoom;
-  const drag = React.useRef<{ id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
   const saveTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [dropTarget, setDropTarget] = React.useState<{ columnId: string; index: number } | null>(null);
+  const dropTargetRef = React.useRef<{ columnId: string; index: number } | null>(null);
 
   // ── load ──────────────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -281,55 +284,6 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     [boardId, maxZ],
   );
 
-  // Drag a column child; once it clears the column it detaches to a free card.
-  const startChildDrag = React.useCallback((e: React.PointerEvent, childId: string) => {
-    if (e.button !== 0) return;
-    if (isInteractive(e.target)) {
-      setSel(childId);
-      return;
-    }
-    e.stopPropagation();
-    setSel(childId);
-    const sc = scrollRef.current;
-    if (!sc) return;
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const st = {
-      sx: e.clientX,
-      sy: e.clientY,
-      grabX: e.clientX - rect.left,
-      grabY: e.clientY - rect.top,
-      w: Math.round(rect.width / zoomRef.current),
-      detached: false,
-    };
-    const move = (ev: PointerEvent) => {
-      if (!st.detached) {
-        if (Math.abs(ev.clientX - st.sx) + Math.abs(ev.clientY - st.sy) < 6) return;
-        st.detached = true;
-      }
-      const scRect = sc.getBoundingClientRect();
-      const nx = Math.round((ev.clientX - st.grabX - scRect.left + sc.scrollLeft) / zoomRef.current);
-      const ny = Math.round((ev.clientY - st.grabY - scRect.top + sc.scrollTop) / zoomRef.current);
-      setCards((arr) =>
-        arr.map((c) =>
-          c.id === childId ? { ...c, parent_card_id: null, position_x: nx, position_y: ny, width: Math.max(220, st.w) } : c,
-        ),
-      );
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      if (st.detached) {
-        const c = cardsRef.current.find((x) => x.id === childId);
-        if (c)
-          void planchesApi
-            .updateCard(childId, { parent_card_id: null, position_x: c.position_x, position_y: c.position_y, width: c.width })
-            .catch((err) => console.error(err));
-      }
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }, []);
-
   // ── line dragging ───────────────────────────────────────────────────────────
   const startLineDrag = React.useCallback(
     (e: React.PointerEvent, id: string) => {
@@ -434,38 +388,122 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     [boardId, maxZ, trash],
   );
 
-  // ── drag / resize ─────────────────────────────────────────────────────────────
-  const startDrag = (e: React.PointerEvent, id: string) => {
-    if (e.button !== 0) return;
-    if (isInteractive(e.target)) {
-      setSel(id);
-      return;
+  // ── drag (unified: free move + magnetic drop into / out of columns) ───────────
+  const columnHitTest = React.useCallback((clientX: number, clientY: number, draggingId: string) => {
+    const bodies = document.querySelectorAll<HTMLElement>(".pboard .column-body[data-col-id]");
+    for (const body of Array.from(bodies)) {
+      const colId = body.dataset.colId;
+      if (!colId || colId === draggingId) continue;
+      const r = body.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+        const kids = Array.from(body.querySelectorAll<HTMLElement>(":scope > [data-child-id]")).filter(
+          (k) => k.dataset.childId !== draggingId,
+        );
+        let index = kids.length;
+        for (let i = 0; i < kids.length; i++) {
+          const kr = kids[i].getBoundingClientRect();
+          if (clientY < kr.top + kr.height / 2) {
+            index = i;
+            break;
+          }
+        }
+        return { columnId: colId, index };
+      }
     }
-    setSel(id);
-    const el = cardsRef.current.find((x) => x.id === id);
-    if (!el) return;
-    drag.current = { id, sx: e.clientX, sy: e.clientY, ox: el.position_x, oy: el.position_y, moved: false };
-    const move = (ev: PointerEvent) => {
-      const d = drag.current;
-      if (!d) return;
-      const z = zoomRef.current;
-      const dx = (ev.clientX - d.sx) / z;
-      const dy = (ev.clientY - d.sy) / z;
-      if (Math.abs(dx) + Math.abs(dy) > 2) d.moved = true;
-      setCards((arr) =>
-        arr.map((x) => (x.id === d.id ? { ...x, position_x: Math.round(d.ox + dx), position_y: Math.round(d.oy + dy) } : x)),
-      );
-    };
-    const up = () => {
-      const d = drag.current;
-      drag.current = null;
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      if (d?.moved) void persistCard(d.id);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
+    return null;
+  }, []);
+
+  const attachToColumn = React.useCallback(async (id: string, columnId: string, index: number) => {
+    const sibs = cardsRef.current
+      .filter((c) => c.parent_card_id === columnId && c.id !== id)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    let so: number;
+    if (sibs.length === 0) so = 1;
+    else if (index <= 0) so = sibs[0].sort_order - 1;
+    else if (index >= sibs.length) so = sibs[sibs.length - 1].sort_order + 1;
+    else so = (sibs[index - 1].sort_order + sibs[index].sort_order) / 2;
+    setCards((arr) => arr.map((c) => (c.id === id ? { ...c, parent_card_id: columnId, sort_order: so } : c)));
+    try {
+      await planchesApi.updateCard(id, { parent_card_id: columnId, sort_order: so });
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  const persistFreePosition = React.useCallback(async (id: string) => {
+    const c = cardsRef.current.find((x) => x.id === id);
+    if (!c) return;
+    try {
+      await planchesApi.updateCard(id, {
+        parent_card_id: c.parent_card_id,
+        position_x: c.position_x,
+        position_y: c.position_y,
+        width: c.width,
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }, []);
+
+  const beginDrag = React.useCallback(
+    (e: React.PointerEvent, id: string) => {
+      if (e.button !== 0) return;
+      if (isInteractive(e.target)) {
+        setSel(id);
+        return;
+      }
+      e.stopPropagation();
+      setSel(id);
+      const card = cardsRef.current.find((c) => c.id === id);
+      const sc = scrollRef.current;
+      if (!card || !sc) return;
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const st = {
+        sx: e.clientX,
+        sy: e.clientY,
+        grabX: e.clientX - rect.left,
+        grabY: e.clientY - rect.top,
+        w: Math.max(180, Math.round(rect.width / zoomRef.current)),
+        moved: false,
+        wasChild: !!card.parent_card_id,
+      };
+      const moveFree = (ev: PointerEvent) => {
+        const scRect = sc.getBoundingClientRect();
+        const nx = Math.round((ev.clientX - st.grabX - scRect.left + sc.scrollLeft) / zoomRef.current);
+        const ny = Math.round((ev.clientY - st.grabY - scRect.top + sc.scrollTop) / zoomRef.current);
+        setCards((arr) =>
+          arr.map((c) =>
+            c.id === id
+              ? { ...c, parent_card_id: null, position_x: nx, position_y: ny, width: c.parent_card_id ? st.w : c.width }
+              : c,
+          ),
+        );
+      };
+      const move = (ev: PointerEvent) => {
+        if (!st.moved) {
+          if (Math.abs(ev.clientX - st.sx) + Math.abs(ev.clientY - st.sy) < 4) return;
+          st.moved = true;
+        }
+        const over = columnHitTest(ev.clientX, ev.clientY, id);
+        dropTargetRef.current = over;
+        setDropTarget(over);
+        if (!over) moveFree(ev);
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        const over = dropTargetRef.current;
+        dropTargetRef.current = null;
+        setDropTarget(null);
+        if (!st.moved) return;
+        if (over) void attachToColumn(id, over.columnId, over.index);
+        else void persistFreePosition(id);
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    },
+    [attachToColumn, columnHitTest, persistFreePosition],
+  );
 
   const startResize = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
@@ -625,12 +663,16 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
         return (
           <CardEl
             el={el}
-            onPatch={(p) => { onPatch(p); void persistCard(c.id); }}
+            floating
+            onPatch={onPatch}
+            onCommit={onCommit}
             onOpen={() => el.linked_board_id && router.push(`/planches/${el.linked_board_id}`)}
           />
         );
       case "note":
         return <NoteEl el={el} selected={sel === c.id} onPatch={onPatch} onCommit={onCommit} />;
+      case "text":
+        return <TextEl el={el} selected={sel === c.id} onPatch={onPatch} onCommit={onCommit} />;
       case "todo":
         return <TodoEl el={el} onPatch={onPatch} onCommit={onCommit} />;
       case "link":
@@ -649,7 +691,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
             items={kids}
             selectedId={sel}
             onSelectChild={setSel}
-            onChildPointerDown={startChildDrag}
+            onChildPointerDown={beginDrag}
             onPatchChild={patchContent}
             onCommitChild={(cid) => scheduleSave(cid)}
             onDeleteChild={removeEl}
@@ -657,6 +699,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
             onPatch={onPatch}
             onCommit={onCommit}
             onAddChild={() => addChild(c.id)}
+            dropIndex={dropTarget?.columnId === c.id ? dropTarget.index : null}
           />
         );
       }
@@ -743,6 +786,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
       <div className="body">
         <aside className="rail">
           <RailTool icon="note" label="Note" onClick={() => addEl("note")} />
+          <RailTool icon="type" label="Texte" onClick={() => addEl("text")} />
           <RailTool icon="link" label="Lien" onClick={() => addEl("link")} />
           <RailTool icon="todo" label="À faire" onClick={() => addEl("todo")} />
           <RailTool icon="board" label="Planche" active onClick={() => addEl("board")} />
@@ -808,7 +852,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
                   key={c.id}
                   className={`free-el ${sel === c.id ? "sel" : ""} ${c.type}`}
                   style={{ left: c.position_x, top: c.position_y, width: c.width }}
-                  onPointerDown={(e) => startDrag(e, c.id)}
+                  onPointerDown={(e) => beginDrag(e, c.id)}
                 >
                   {sel === c.id && (
                     <ElementToolbar
@@ -853,6 +897,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
       <FloatingMenu point={ctx ? { x: ctx.x, y: ctx.y } : null} open={!!ctx} onClose={() => setCtx(null)}>
         <MenuLabel>Ajouter au canvas</MenuLabel>
         <MenuItem icon="note" onClick={() => ctx && addEl("note", { x: ctx.cx, y: ctx.cy })}>Note</MenuItem>
+        <MenuItem icon="type" onClick={() => ctx && addEl("text", { x: ctx.cx, y: ctx.cy })}>Texte</MenuItem>
         <MenuItem icon="board" onClick={() => ctx && addEl("board", { x: ctx.cx, y: ctx.cy })}>Planche</MenuItem>
         <MenuItem icon="todo" onClick={() => ctx && addEl("todo", { x: ctx.cx, y: ctx.cy })}>Liste à faire</MenuItem>
         <MenuItem icon="column" onClick={() => ctx && addEl("column", { x: ctx.cx, y: ctx.cy })}>Colonne</MenuItem>
