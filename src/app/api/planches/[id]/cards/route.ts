@@ -17,6 +17,8 @@ const CARD_TYPES: ReadonlySet<PlancheCardType> = new Set([
   "color",
   "column",
   "board",
+  "table",
+  "line",
 ]);
 
 type CreateBody = {

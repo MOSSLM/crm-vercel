@@ -127,12 +127,14 @@ export function Editable({
   tag?: "div" | "span";
 }) {
   const ref = React.useRef<HTMLElement>(null);
-  const ext = React.useRef(value);
+  // Uncontrolled: write the DOM only on mount + external changes while NOT
+  // focused. Letting React render `value` as children resets the caret on every
+  // keystroke (text ends up reversed), so we never pass it as children.
   React.useEffect(() => {
-    if (ext.current !== value && ref.current && ref.current.innerText !== value) {
-      ref.current.innerText = value || "";
+    const node = ref.current;
+    if (node && document.activeElement !== node && node.innerText !== (value || "")) {
+      node.innerText = value || "";
     }
-    ext.current = value;
   }, [value]);
   const Tag = tag as "div";
   return (
@@ -148,11 +150,7 @@ export function Editable({
       onMouseDown={(e) => e.stopPropagation()}
       onFocus={onFocus}
       onBlur={onBlur}
-      onInput={(e) => {
-        const v = (e.currentTarget as HTMLElement).innerText;
-        ext.current = v;
-        onChange?.(v);
-      }}
+      onInput={(e) => onChange?.((e.currentTarget as HTMLElement).innerText)}
       onKeyDown={(e) => {
         if (!multiline && e.key === "Enter") {
           e.preventDefault();
@@ -160,8 +158,6 @@ export function Editable({
         }
         if (e.key === "Escape") (e.currentTarget as HTMLElement).blur();
       }}
-    >
-      {value || ""}
-    </Tag>
+    />
   );
 }

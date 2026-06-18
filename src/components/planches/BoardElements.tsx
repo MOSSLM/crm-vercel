@@ -185,17 +185,85 @@ export function ElementToolbar({
 }
 
 // ── Card (sub-board) ─────────────────────────────────────────────────────────
-export function CardEl({ el, onPatch, onOpen }: { el: El; onPatch: Patch; onOpen?: () => void }) {
+export function CardEl({
+  el,
+  onPatch,
+  onOpen,
+  onCommit,
+  floating,
+}: {
+  el: El;
+  onPatch: Patch;
+  onOpen?: () => void;
+  onCommit?: () => void;
+  floating?: boolean;
+}) {
   const hex = CARD_HEX[el.color ?? "slate"] || "#697586";
+  // Floating on the canvas: just the coloured square with the title below it,
+  // no card chrome. Inside a column: the horizontal white card (unchanged).
+  if (floating) {
+    return (
+      <div className="board-float" onDoubleClick={(e) => { e.stopPropagation(); onOpen?.(); }}>
+        <div className="card-icon lg" style={{ background: hex }}>
+          <Icon name={el.icon || "board"} className="ico" />
+        </div>
+        <Editable className="board-float-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} onBlur={onCommit} placeholder="Sans titre" />
+      </div>
+    );
+  }
   return (
     <div className="card-el" onDoubleClick={(e) => { e.stopPropagation(); onOpen?.(); }}>
       <div className="card-icon" style={{ background: hex }}>
         <Icon name={el.icon || "board"} className="ico" />
       </div>
       <div className="card-meta">
-        <Editable className="card-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} placeholder="Sans titre" />
+        <Editable className="card-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} onBlur={onCommit} placeholder="Sans titre" />
         <div className="card-sub">{el.meta || "Ouvrir →"}</div>
       </div>
+    </div>
+  );
+}
+
+// ── Plain text / heading (no background) ─────────────────────────────────────
+export function TextEl({ el, selected, onPatch, onCommit }: { el: El; selected: boolean; onPatch: Patch; onCommit?: () => void }) {
+  const [editing, setEditing] = React.useState(false);
+  const taRef = React.useRef<HTMLTextAreaElement>(null);
+  React.useEffect(() => {
+    if (!selected && editing) {
+      onCommit?.();
+      setEditing(false);
+    }
+  }, [selected]);  
+  React.useEffect(() => {
+    if (editing && taRef.current) {
+      const ta = taRef.current;
+      ta.style.height = "auto";
+      ta.style.height = ta.scrollHeight + "px";
+      ta.focus();
+    }
+  }, [editing]);
+  return (
+    <div className="text-el">
+      {editing ? (
+        <textarea
+          ref={taRef}
+          className="text-ta"
+          value={el.body || ""}
+          onMouseDown={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onChange={(e) => {
+            onPatch({ body: e.target.value });
+            e.target.style.height = "auto";
+            e.target.style.height = e.target.scrollHeight + "px";
+          }}
+          onBlur={() => { setEditing(false); onCommit?.(); }}
+          placeholder="Titre ou texte… (markdown)"
+        />
+      ) : (
+        <div className="text-render" onClick={(e) => { e.stopPropagation(); setEditing(true); }}>
+          {el.body ? <Markdown source={el.body} /> : <span className="note-ph">Texte — cliquez pour écrire</span>}
+        </div>
+      )}
     </div>
   );
 }
@@ -401,23 +469,16 @@ export function FileEl({ el, onPatch, onCommit }: { el: El; onPatch: Patch; onCo
   );
 }
 
-// ── Image ────────────────────────────────────────────────────────────────────
-export function ImageEl({ el, onPatch, onCommit }: { el: El; onPatch: Patch; onCommit?: () => void }) {
+// ── Image (bare, just the picture — resizable) ───────────────────────────────
+export function ImageEl({ el }: { el: El; onPatch?: Patch; onCommit?: () => void }) {
+  if (el.image_url) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={el.image_url} alt={el.title ?? ""} draggable={false} className="image-bare" />;
+  }
   return (
-    <div className="image-el">
-      <Editable className="image-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} onBlur={onCommit} placeholder="Image" />
-      {el.image_url ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={el.image_url} alt={el.title ?? ""} draggable={false} className="image-single" />
-      ) : (
-        <div className="image-grid" style={{ gridTemplateColumns: `repeat(${el.cols || 2}, 1fr)` }}>
-          {(el.cells ?? ["image 1", "image 2"]).map((c, i) => (
-            <div key={i} className="stripe-ph" style={{ height: 92, borderRadius: 8 }}>
-              <span className="stripe-cap">{c}</span>
-            </div>
-          ))}
-        </div>
-      )}
+    <div className="image-drop">
+      <Icon name="image" className="ico" />
+      <span>Image</span>
     </div>
   );
 }
@@ -540,11 +601,12 @@ export function ChildElement({
     <div
       className={`child-el ${selected ? "sel" : ""}`}
       data-type={el.type}
+      data-child-id={el.id}
       onPointerDown={onPointerDown}
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
     >
       {selected && <ElementToolbar kind={kind} el={el} onPatch={onPatch} onDelete={onDelete} onDuplicate={onDuplicate} />}
-      {el.type === "board" && <CardEl el={el} onPatch={onPatch} />}
+      {el.type === "board" && <CardEl el={el} onPatch={onPatch} onCommit={onCommit} />}
       {el.type === "note" && <NoteEl el={el} selected={selected} onPatch={onPatch} onCommit={onCommit} />}
       {el.type === "todo" && <TodoEl el={el} onPatch={onPatch} onCommit={onCommit} />}
       {el.type === "link" && <LinkEl el={el} onPatch={onPatch} onCommit={onCommit} />}
@@ -567,6 +629,7 @@ export function ColumnEl({
   onPatch,
   onCommit,
   onAddChild,
+  dropIndex,
 }: {
   el: El;
   items: El[];
@@ -580,6 +643,7 @@ export function ColumnEl({
   onPatch: Patch;
   onCommit?: () => void;
   onAddChild: () => void;
+  dropIndex?: number | null;
 }) {
   const accent = CARD_HEX[el.accent ?? "violet"] || "#7A5AE0";
   return (
@@ -588,20 +652,23 @@ export function ColumnEl({
         <Editable className="column-title" value={el.title ?? ""} onChange={(v) => onPatch({ title: v })} onBlur={onCommit} placeholder="Colonne" />
         <Editable className="column-sub" value={el.subtitle ?? ""} onChange={(v) => onPatch({ subtitle: v })} onBlur={onCommit} placeholder="Sous-titre" />
       </div>
-      <div className="column-body">
-        {items.map((ch) => (
-          <ChildElement
-            key={ch.id}
-            el={ch}
-            selected={selectedId === ch.id}
-            onSelect={() => onSelectChild(ch.id)}
-            onPointerDown={(e) => onChildPointerDown(e, ch.id)}
-            onPatch={(p) => onPatchChild(ch.id, p)}
-            onCommit={() => onCommitChild(ch.id)}
-            onDelete={() => onDeleteChild(ch.id)}
-            onDuplicate={() => onDuplicateChild(ch.id)}
-          />
+      <div className="column-body" data-col-id={el.id}>
+        {items.map((ch, i) => (
+          <React.Fragment key={ch.id}>
+            {dropIndex === i && <div className="drop-line" />}
+            <ChildElement
+              el={ch}
+              selected={selectedId === ch.id}
+              onSelect={() => onSelectChild(ch.id)}
+              onPointerDown={(e) => onChildPointerDown(e, ch.id)}
+              onPatch={(p) => onPatchChild(ch.id, p)}
+              onCommit={() => onCommitChild(ch.id)}
+              onDelete={() => onDeleteChild(ch.id)}
+              onDuplicate={() => onDuplicateChild(ch.id)}
+            />
+          </React.Fragment>
         ))}
+        {dropIndex != null && dropIndex >= items.length && <div className="drop-line" />}
         <button className="column-add" onMouseDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onAddChild(); }}>
           <Icon name="plus" className="ico-sm" />Ajouter une note
         </button>
