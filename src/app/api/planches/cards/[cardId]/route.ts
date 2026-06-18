@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { collectBoardIds, purgeBoardStorage, removeStoragePaths } from "@/app/api/planches/_storage";
 
 export const dynamic = "force-dynamic";
 
@@ -56,9 +57,19 @@ export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
   const { error } = await supabase.from("planche_cards").delete().eq("id", params.cardId);
   if (error) return jsonError(error.message, 500);
 
-  const linkedBoardId = (card?.content as { linked_board_id?: string } | null)?.linked_board_id;
-  if (card?.type === "board" && linkedBoardId) {
-    await supabase.from("planches").delete().eq("id", linkedBoardId);
+  const content = (card?.content ?? {}) as { storage_path?: string; linked_board_id?: string };
+
+  // Drop the uploaded object (image / file cards) so it doesn't linger in the
+  // public bucket.
+  if (content.storage_path) {
+    await removeStoragePaths(supabase, [content.storage_path]);
+  }
+
+  // A board card also removes its linked nested board and that subtree's files.
+  if (card?.type === "board" && content.linked_board_id) {
+    const boardIds = await collectBoardIds(supabase, content.linked_board_id);
+    await purgeBoardStorage(supabase, boardIds);
+    await supabase.from("planches").delete().eq("id", content.linked_board_id);
   }
 
   return json({ ok: true });

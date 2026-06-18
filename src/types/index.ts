@@ -1619,30 +1619,34 @@ export interface PlancheTodoItem {
   id: string;
   text: string;
   done: boolean;
+  due?: string;
 }
 
-/** Free-form content payload, shape depends on the card `type`. */
+/**
+ * Free-form content payload — the shape depends on the card `type`, so this is
+ * an open record (JSONB). Common fields are typed for convenience.
+ */
 export interface PlancheCardContent {
-  // note / text
+  [key: string]: unknown;
   html?: string;
-  // image / file
+  body?: string;
   url?: string;
   file_name?: string;
+  name?: string;
+  kind?: string;
   mime?: string;
-  size?: number;
-  natural_width?: number;
-  natural_height?: number;
-  // link
+  size?: number | string;
   title?: string;
   description?: string;
-  image?: string;
-  favicon?: string;
-  // todo
+  desc?: string;
   items?: PlancheTodoItem[];
-  // color
   color?: string;
-  label?: string;
-  // column / board
+  icon?: string;
+  cells?: string[];
+  cols?: number;
+  image_url?: string;
+  storage_path?: string;
+  meta?: string;
   linked_board_id?: string;
 }
 
