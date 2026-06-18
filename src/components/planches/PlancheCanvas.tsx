@@ -3,102 +3,69 @@
 import React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Icon } from "./boardIcons";
+import { Editable } from "./Markdown";
+import { FloatingMenu, Popover, MenuItem, MenuSep, MenuLabel } from "./BoardMenus";
 import {
-  ArrowLeft,
-  StickyNote,
-  Type,
-  CheckSquare,
-  ImagePlus,
-  Paperclip,
-  Link2,
-  Palette,
-  Layers,
-  Loader2,
-  ZoomIn,
-  ZoomOut,
-  Maximize,
-  Trash2,
-  Copy,
-} from "lucide-react";
-import Link from "next/link";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+  ElementToolbar,
+  CardEl,
+  NoteEl,
+  TodoEl,
+  LinkEl,
+  FileEl,
+  ImageEl,
+  type El,
+} from "./BoardElements";
+import { CARD_HEX } from "./boardData";
 import { planchesApi } from "@/lib/planches/api";
-import { CardView } from "./CardView";
-import type {
-  PlancheBoard,
-  PlancheCard,
-  PlancheCardContent,
-  PlancheCardType,
-  PlancheConnection,
-} from "@/types";
+import type { PlancheBoard, PlancheCard, PlancheCardContent, PlancheCardType } from "@/types";
 
-type View = { x: number; y: number; scale: number };
+const MIN_ZOOM = 0.4;
+const MAX_ZOOM = 1.6;
 
-const MIN_SCALE = 0.2;
-const MAX_SCALE = 3;
-
-const DEFAULTS: Record<
-  PlancheCardType,
-  { width: number; height: number | null; content?: PlancheCardContent }
-> = {
-  note: { width: 220, height: null },
-  text: { width: 300, height: null, content: { html: "" } },
-  todo: { width: 240, height: null, content: { items: [] } },
-  link: { width: 260, height: null, content: {} },
-  color: { width: 120, height: 120, content: { color: "#f59e0b" } },
-  board: { width: 200, height: 130 },
-  image: { width: 260, height: null },
-  file: { width: 240, height: null },
-  column: { width: 240, height: 320, content: {} },
+// Default geometry + content per element type (mirrors the SAMA design).
+const DEFAULTS: Record<string, { w: number; content: Record<string, unknown> }> = {
+  note: { w: 280, content: { title: "Nouvelle note", body: "Écrivez en **markdown**…", color: "paper" } },
+  board: { w: 280, content: { title: "Nouvelle planche", icon: "board", color: "blue", meta: "Ouvrir →" } },
+  todo: { w: 300, content: { title: "À faire", items: [{ id: "t1", text: "Première tâche", done: false }] } },
+  link: { w: 300, content: { title: "Nouveau lien", url: "exemple.com", desc: "Aperçu du lien", color: "blue" } },
+  file: { w: 300, content: { name: "document.pdf", kind: "pdf", size: "—", color: "slate" } },
+  image: { w: 320, content: { title: "Galerie", cols: 2, cells: ["image 1", "image 2"] } },
 };
 
-const TOOLS: { type: PlancheCardType; label: string; icon: React.ElementType; upload?: boolean }[] =
-  [
-    { type: "note", label: "Note", icon: StickyNote },
-    { type: "text", label: "Texte / titre", icon: Type },
-    { type: "todo", label: "Liste de tâches", icon: CheckSquare },
-    { type: "image", label: "Image", icon: ImagePlus, upload: true },
-    { type: "file", label: "Fichier", icon: Paperclip, upload: true },
-    { type: "link", label: "Lien", icon: Link2 },
-    { type: "color", label: "Couleur", icon: Palette },
-    { type: "board", label: "Sous-planche", icon: Layers },
-  ];
+type Menu = "share" | "export" | "view" | "railmore" | "trash" | null;
 
-type Interaction =
-  | { kind: "pan"; startX: number; startY: number; origX: number; origY: number }
-  | { kind: "drag"; startX: number; startY: number; moved: boolean; cards: { id: string; x: number; y: number }[] }
-  | { kind: "resize"; cardId: string; startX: number; startY: number; startW: number; startH: number; aspect: number | null }
-  | { kind: "marquee"; start: { x: number; y: number }; current: { x: number; y: number } }
-  | { kind: "connect"; fromId: string; current: { x: number; y: number } }
-  | null;
+const isInteractive = (target: EventTarget | null) =>
+  target instanceof Element &&
+  !!target.closest(".editable, textarea, input, button, a, .todo-box, .el-toolbar, .popover, .file-dl");
 
 export function PlancheCanvas({ boardId }: { boardId: string }) {
   const router = useRouter();
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+  const fileRef = React.useRef<HTMLInputElement>(null);
+  const fileAcceptImages = React.useRef(false);
 
   const [board, setBoard] = React.useState<PlancheBoard | null>(null);
   const [cards, setCards] = React.useState<PlancheCard[]>([]);
-  const [connections, setConnections] = React.useState<PlancheConnection[]>([]);
   const [breadcrumb, setBreadcrumb] = React.useState<Pick<PlancheBoard, "id" | "title">[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [titleDraft, setTitleDraft] = React.useState("");
 
-  const [view, setView] = React.useState<View>({ x: 0, y: 0, scale: 1 });
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
-  const [editingId, setEditingId] = React.useState<string | null>(null);
-  const [marquee, setMarquee] = React.useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [, forceTick] = React.useReducer((n) => n + 1, 0);
+  const [sel, setSel] = React.useState<string | null>(null);
+  const [zoom, setZoom] = React.useState(1);
+  const [ctx, setCtx] = React.useState<{ x: number; y: number; cx: number; cy: number } | null>(null);
+  const [menu, setMenu] = React.useState<Menu>(null);
+  const [menuRect, setMenuRect] = React.useState<DOMRect | null>(null);
+  const [trash, setTrash] = React.useState<(PlancheCard & { _at: string })[]>([]);
 
-  const interaction = React.useRef<Interaction>(null);
-  const viewRef = React.useRef(view);
-  viewRef.current = view;
   const cardsRef = React.useRef(cards);
   cardsRef.current = cards;
-  const spaceDown = React.useRef(false);
-  const heights = React.useRef<Map<string, number>>(new Map());
+  const zoomRef = React.useRef(zoom);
+  zoomRef.current = zoom;
+  const drag = React.useRef<{ id: string; sx: number; sy: number; ox: number; oy: number; moved: boolean } | null>(null);
+  const saveTimers = React.useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
-  // ----- load --------------------------------------------------------------
+  // ── load ──────────────────────────────────────────────────────────────────
   React.useEffect(() => {
     let alive = true;
     setLoading(true);
@@ -109,7 +76,6 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
         setBoard(data.board);
         setTitleDraft(data.board.title);
         setCards(data.cards);
-        setConnections(data.connections);
         setBreadcrumb(data.breadcrumb);
       })
       .catch((err) => {
@@ -122,410 +88,264 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     };
   }, [boardId]);
 
-  // ----- geometry helpers --------------------------------------------------
-  const screenToWorld = React.useCallback((clientX: number, clientY: number) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    const v = viewRef.current;
-    const sx = clientX - (rect?.left ?? 0);
-    const sy = clientY - (rect?.top ?? 0);
-    return { x: (sx - v.x) / v.scale, y: (sy - v.y) / v.scale };
-  }, []);
-
-  const viewportCenterWorld = React.useCallback(() => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    return screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
-  }, [screenToWorld]);
-
-  const cardHeight = React.useCallback((c: PlancheCard) => {
-    return heights.current.get(c.id) ?? c.height ?? 100;
-  }, []);
-
-  const maxZ = React.useCallback(
-    () => cardsRef.current.reduce((m, c) => Math.max(m, c.z_index), 0),
-    [],
-  );
-
-  // ----- card measurement (for connection endpoints) ----------------------
-  React.useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      let changed = false;
-      for (const entry of entries) {
-        const id = (entry.target as HTMLElement).dataset.cardId;
-        if (!id) continue;
-        const h = (entry.target as HTMLElement).offsetHeight;
-        if (heights.current.get(id) !== h) {
-          heights.current.set(id, h);
-          changed = true;
-        }
-      }
-      if (changed) forceTick();
-    });
-    el.querySelectorAll<HTMLElement>("[data-card-id]").forEach((node) => ro.observe(node));
-    return () => ro.disconnect();
-  }, [cards.length]);
-
-  // ----- persistence -------------------------------------------------------
-  const persistCard = React.useCallback(async (id: string, patch?: Partial<PlancheCard>) => {
-    const base = cardsRef.current.find((c) => c.id === id);
-    if (!base || base.id.startsWith("tmp-")) return;
-    // A `patch` carries values just set in the same tick — apply it to state
-    // (so the UI updates) and use it for the PATCH instead of the stale ref.
-    if (patch) setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
-    const card = patch ? { ...base, ...patch } : base;
+  // ── persistence ─────────────────────────────────────────────────────────────
+  const persistCard = React.useCallback(async (id: string) => {
+    const c = cardsRef.current.find((x) => x.id === id);
+    if (!c) return;
     try {
       await planchesApi.updateCard(id, {
-        position_x: card.position_x,
-        position_y: card.position_y,
-        width: card.width,
-        height: card.height,
-        z_index: card.z_index,
-        content: card.content,
-        style: card.style,
+        position_x: c.position_x,
+        position_y: c.position_y,
+        width: c.width,
+        height: c.height,
+        z_index: c.z_index,
+        content: c.content,
+        style: c.style,
       });
     } catch (err) {
       console.error(err);
     }
   }, []);
 
-  const persistBulk = React.useCallback(async (ids: string[]) => {
-    const payload = cardsRef.current
-      .filter((c) => ids.includes(c.id) && !c.id.startsWith("tmp-"))
-      .map((c) => ({
-        id: c.id,
-        position_x: c.position_x,
-        position_y: c.position_y,
-        width: c.width,
-        height: c.height,
-        z_index: c.z_index,
-      }));
-    if (payload.length === 0) return;
-    try {
-      await planchesApi.bulkUpdateCards(boardId, payload);
-    } catch (err) {
-      console.error(err);
-    }
-  }, [boardId]);
+  const scheduleSave = React.useCallback(
+    (id: string) => {
+      const timers = saveTimers.current;
+      const existing = timers.get(id);
+      if (existing) clearTimeout(existing);
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id);
+          void persistCard(id);
+        }, 500),
+      );
+    },
+    [persistCard],
+  );
 
-  const updateContent = React.useCallback((id: string, content: PlancheCardContent) => {
-    setCards((prev) => prev.map((c) => (c.id === id ? { ...c, content } : c)));
+  const patchContent = React.useCallback((id: string, partial: Partial<El>) => {
+    setCards((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, content: { ...c.content, ...partial } } : c)),
+    );
   }, []);
 
-  // ----- create / delete / duplicate --------------------------------------
-  const addCard = React.useCallback(
-    async (type: PlancheCardType, at?: { x: number; y: number }) => {
-      const def = DEFAULTS[type];
-      const pos = at ?? viewportCenterWorld();
-      const z = maxZ() + 1;
+  // ── geometry helpers ─────────────────────────────────────────────────────────
+  const maxZ = React.useCallback(() => cardsRef.current.reduce((m, c) => Math.max(m, c.z_index), 0), []);
+
+  const viewportPoint = React.useCallback(() => {
+    const sc = scrollRef.current;
+    const z = zoomRef.current;
+    if (!sc) return { x: 200, y: 160 };
+    return { x: (sc.scrollLeft + sc.clientWidth / 2 - 150) / z, y: (sc.scrollTop + 140) / z };
+  }, []);
+
+  const clientToCanvas = React.useCallback((clientX: number, clientY: number) => {
+    const sc = scrollRef.current;
+    const z = zoomRef.current;
+    if (!sc) return { x: 0, y: 0 };
+    const r = sc.getBoundingClientRect();
+    return { x: (clientX - r.left + sc.scrollLeft) / z, y: (clientY - r.top + sc.scrollTop) / z };
+  }, []);
+
+  // ── create / delete / duplicate ──────────────────────────────────────────────
+  const addEl = React.useCallback(
+    async (type: string, at?: { x: number; y: number }) => {
+      const def = DEFAULTS[type] ?? DEFAULTS.note;
+      const pos = at ?? viewportPoint();
+      setCtx(null);
       try {
         const card = await planchesApi.createCard(boardId, {
-          type,
-          position_x: Math.round(pos.x - def.width / 2),
-          position_y: Math.round(pos.y - (def.height ?? 60) / 2),
-          width: def.width,
-          height: def.height,
-          z_index: z,
-          content: def.content ?? {},
+          type: type as PlancheCardType,
+          position_x: Math.round(pos.x),
+          position_y: Math.round(pos.y),
+          width: def.w,
+          height: null,
+          z_index: maxZ() + 1,
+          content: def.content,
         });
         setCards((prev) => [...prev, card]);
-        setSelectedIds(new Set([card.id]));
-        if (type === "note" || type === "text" || type === "link") setEditingId(card.id);
+        setSel(card.id);
       } catch (err) {
         console.error(err);
         toast.error("Création échouée");
       }
     },
-    [boardId, maxZ, viewportCenterWorld],
+    [boardId, maxZ, viewportPoint],
   );
 
-  const deleteSelected = React.useCallback(async () => {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    setCards((prev) => prev.filter((c) => !selectedIds.has(c.id)));
-    setConnections((prev) =>
-      prev.filter((cn) => !selectedIds.has(cn.from_card_id) && !selectedIds.has(cn.to_card_id)),
-    );
-    setSelectedIds(new Set());
-    setEditingId(null);
-    await Promise.all(ids.map((id) => planchesApi.deleteCard(id).catch((e) => console.error(e))));
-  }, [selectedIds]);
+  const removeEl = React.useCallback(
+    async (id: string) => {
+      const c = cardsRef.current.find((x) => x.id === id);
+      if (!c) return;
+      setTrash((t) => [{ ...c, _at: "à l'instant" }, ...t].slice(0, 30));
+      setCards((prev) => prev.filter((x) => x.id !== id));
+      if (sel === id) setSel(null);
+      try {
+        await planchesApi.deleteCard(id);
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    [sel],
+  );
 
-  const duplicateSelected = React.useCallback(async () => {
-    const toCopy = cardsRef.current.filter((c) => selectedIds.has(c.id) && c.type !== "board");
-    if (toCopy.length === 0) return;
-    const newIds = new Set<string>();
-    let z = maxZ();
-    for (const c of toCopy) {
+  const duplicateEl = React.useCallback(
+    async (id: string) => {
+      const c = cardsRef.current.find((x) => x.id === id);
+      if (!c || c.type === "board") return;
       try {
         const created = await planchesApi.createCard(boardId, {
           type: c.type,
-          position_x: c.position_x + 24,
-          position_y: c.position_y + 24,
+          position_x: c.position_x + 28,
+          position_y: c.position_y + 28,
           width: c.width,
           height: c.height,
-          z_index: ++z,
+          z_index: maxZ() + 1,
           content: c.content,
           style: c.style,
         });
         setCards((prev) => [...prev, created]);
-        newIds.add(created.id);
+        setSel(created.id);
       } catch (err) {
         console.error(err);
       }
-    }
-    setSelectedIds(newIds);
-  }, [boardId, maxZ, selectedIds]);
+    },
+    [boardId, maxZ],
+  );
 
-  // ----- selection + drag --------------------------------------------------
-  const onCardPointerDown = React.useCallback(
-    (e: React.PointerEvent, card: PlancheCard) => {
-      if (editingId === card.id) return;
-      e.stopPropagation();
-      setEditingId(null);
-
-      let nextSelected: Set<string>;
-      if (e.shiftKey) {
-        nextSelected = new Set(selectedIds);
-        if (nextSelected.has(card.id)) nextSelected.delete(card.id);
-        else nextSelected.add(card.id);
-      } else if (selectedIds.has(card.id)) {
-        nextSelected = new Set(selectedIds);
-      } else {
-        nextSelected = new Set([card.id]);
+  const restore = React.useCallback(
+    async (id: string) => {
+      const it = trash.find((t) => t.id === id);
+      if (!it) return;
+      setTrash((t) => t.filter((x) => x.id !== id));
+      try {
+        const created = await planchesApi.createCard(boardId, {
+          type: it.type,
+          position_x: it.position_x,
+          position_y: it.position_y,
+          width: it.width,
+          height: it.height,
+          z_index: maxZ() + 1,
+          content: it.content,
+          style: it.style,
+        });
+        setCards((prev) => [...prev, created]);
+      } catch (err) {
+        console.error(err);
       }
-      setSelectedIds(nextSelected);
-
-      const dragging = cardsRef.current.filter((c) => nextSelected.has(c.id));
-      interaction.current = {
-        kind: "drag",
-        startX: e.clientX,
-        startY: e.clientY,
-        moved: false,
-        cards: dragging.map((c) => ({ id: c.id, x: c.position_x, y: c.position_y })),
-      };
     },
-    [editingId, selectedIds],
+    [boardId, maxZ, trash],
   );
 
-  const onResizeStart = React.useCallback((e: React.PointerEvent, card: PlancheCard) => {
-    const h = card.height ?? heights.current.get(card.id) ?? 120;
-    const aspect = card.type === "image" ? card.width / h : null;
-    interaction.current = {
-      kind: "resize",
-      cardId: card.id,
-      startX: e.clientX,
-      startY: e.clientY,
-      startW: card.width,
-      startH: h,
-      aspect,
-    };
-  }, []);
-
-  const onConnectStart = React.useCallback(
-    (e: React.PointerEvent, card: PlancheCard) => {
-      interaction.current = {
-        kind: "connect",
-        fromId: card.id,
-        current: screenToWorld(e.clientX, e.clientY),
-      };
-      forceTick();
-    },
-    [screenToWorld],
-  );
-
-  const openBoard = React.useCallback(
-    (id: string) => router.push(`/planches/${id}`),
-    [router],
-  );
-
-  const onDoubleClickCard = React.useCallback(
-    (card: PlancheCard) => {
-      if (card.type === "board") {
-        if (card.content.linked_board_id) openBoard(card.content.linked_board_id);
-        return;
-      }
-      setSelectedIds(new Set([card.id]));
-      setEditingId(card.id);
-    },
-    [openBoard],
-  );
-
-  // ----- background interactions ------------------------------------------
-  const onBackgroundPointerDown = (e: React.PointerEvent) => {
-    if (e.button === 1 || spaceDown.current) {
-      interaction.current = {
-        kind: "pan",
-        startX: e.clientX,
-        startY: e.clientY,
-        origX: viewRef.current.x,
-        origY: viewRef.current.y,
-      };
+  // ── drag / resize ─────────────────────────────────────────────────────────────
+  const startDrag = (e: React.PointerEvent, id: string) => {
+    if (e.button !== 0) return;
+    if (isInteractive(e.target)) {
+      setSel(id);
       return;
     }
-    if (e.button !== 0) return;
-    setEditingId(null);
-    if (!e.shiftKey) setSelectedIds(new Set());
-    const w = screenToWorld(e.clientX, e.clientY);
-    interaction.current = { kind: "marquee", start: w, current: w };
+    setSel(id);
+    const el = cardsRef.current.find((x) => x.id === id);
+    if (!el) return;
+    drag.current = { id, sx: e.clientX, sy: e.clientY, ox: el.position_x, oy: el.position_y, moved: false };
+    const move = (ev: PointerEvent) => {
+      const d = drag.current;
+      if (!d) return;
+      const z = zoomRef.current;
+      const dx = (ev.clientX - d.sx) / z;
+      const dy = (ev.clientY - d.sy) / z;
+      if (Math.abs(dx) + Math.abs(dy) > 2) d.moved = true;
+      setCards((arr) =>
+        arr.map((x) => (x.id === d.id ? { ...x, position_x: Math.round(d.ox + dx), position_y: Math.round(d.oy + dy) } : x)),
+      );
+    };
+    const up = () => {
+      const d = drag.current;
+      drag.current = null;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      if (d?.moved) void persistCard(d.id);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
   };
 
-  // global pointer move / up
-  React.useEffect(() => {
-    const onMove = (e: PointerEvent) => {
-      const it = interaction.current;
-      if (!it) return;
-      const v = viewRef.current;
-      if (it.kind === "pan") {
-        setView((p) => ({ ...p, x: it.origX + (e.clientX - it.startX), y: it.origY + (e.clientY - it.startY) }));
-      } else if (it.kind === "drag") {
-        const dx = (e.clientX - it.startX) / v.scale;
-        const dy = (e.clientY - it.startY) / v.scale;
-        if (Math.abs(e.clientX - it.startX) + Math.abs(e.clientY - it.startY) > 3) it.moved = true;
-        setCards((prev) =>
-          prev.map((c) => {
-            const s = it.cards.find((x) => x.id === c.id);
-            return s ? { ...c, position_x: Math.round(s.x + dx), position_y: Math.round(s.y + dy) } : c;
-          }),
-        );
-      } else if (it.kind === "resize") {
-        const dx = (e.clientX - it.startX) / v.scale;
-        const newW = Math.max(60, Math.round(it.startW + dx));
-        const newH = it.aspect ? Math.round(newW / it.aspect) : Math.max(40, Math.round(it.startH + (e.clientY - it.startY) / v.scale));
-        setCards((prev) => prev.map((c) => (c.id === it.cardId ? { ...c, width: newW, height: newH } : c)));
-      } else if (it.kind === "marquee") {
-        it.current = screenToWorld(e.clientX, e.clientY);
-        const x = Math.min(it.start.x, it.current.x);
-        const y = Math.min(it.start.y, it.current.y);
-        const w = Math.abs(it.current.x - it.start.x);
-        const h = Math.abs(it.current.y - it.start.y);
-        setMarquee({ x, y, w, h });
-        const sel = new Set<string>();
-        for (const c of cardsRef.current) {
-          const ch = cardHeight(c);
-          if (c.position_x < x + w && c.position_x + c.width > x && c.position_y < y + h && c.position_y + ch > y) {
-            sel.add(c.id);
-          }
-        }
-        setSelectedIds(sel);
-      } else if (it.kind === "connect") {
-        it.current = screenToWorld(e.clientX, e.clientY);
-        forceTick();
-      }
-    };
-
-    const onUp = (e: PointerEvent) => {
-      const it = interaction.current;
-      interaction.current = null;
-      if (!it) return;
-      if (it.kind === "drag" && it.moved) {
-        void persistBulk(it.cards.map((c) => c.id));
-      } else if (it.kind === "resize") {
-        void persistCard(it.cardId);
-      } else if (it.kind === "marquee") {
-        setMarquee(null);
-      } else if (it.kind === "connect") {
-        const w = screenToWorld(e.clientX, e.clientY);
-        const target = [...cardsRef.current].reverse().find((c) => {
-          const ch = cardHeight(c);
-          return c.id !== it.fromId && w.x >= c.position_x && w.x <= c.position_x + c.width && w.y >= c.position_y && w.y <= c.position_y + ch;
-        });
-        if (target) {
-          planchesApi
-            .createConnection(boardId, it.fromId, target.id)
-            .then((cn) => setConnections((prev) => [...prev, cn]))
-            .catch((err) => console.error(err));
-        }
-        forceTick();
-      }
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-    };
-  }, [boardId, cardHeight, persistBulk, persistCard, screenToWorld]);
-
-  // ----- wheel (pan + zoom) ------------------------------------------------
-  React.useEffect(() => {
-    const el = containerRef.current;
+  const startResize = (e: React.PointerEvent, id: string) => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    setSel(id);
+    const el = cardsRef.current.find((x) => x.id === id);
     if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const v = viewRef.current;
-      if (e.ctrlKey || e.metaKey) {
-        const rect = el.getBoundingClientRect();
-        const px = e.clientX - rect.left;
-        const py = e.clientY - rect.top;
-        const factor = Math.exp(-e.deltaY * 0.0015);
-        const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
-        const k = newScale / v.scale;
-        setView({ scale: newScale, x: px - (px - v.x) * k, y: py - (py - v.y) * k });
-      } else {
-        setView((p) => ({ ...p, x: p.x - e.deltaX, y: p.y - e.deltaY }));
-      }
+    const r = { sx: e.clientX, ow: el.width };
+    const move = (ev: PointerEvent) => {
+      const dw = (ev.clientX - r.sx) / zoomRef.current;
+      setCards((arr) => arr.map((x) => (x.id === id ? { ...x, width: Math.max(180, Math.round(r.ow + dw)) } : x)));
     };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      void persistCard(id);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
-  // ----- keyboard ----------------------------------------------------------
+  // ── context menu + keyboard ───────────────────────────────────────────────────
+  const onCanvasContext = (e: React.MouseEvent) => {
+    if (e.target instanceof Element && e.target.closest(".free-el, .el-toolbar, .popover")) return;
+    e.preventDefault();
+    const p = clientToCanvas(e.clientX, e.clientY);
+    setCtx({ x: e.clientX, y: e.clientY, cx: p.x - 140, cy: p.y - 20 });
+  };
+
   React.useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const typing =
-        target.isContentEditable ||
-        ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-      if (e.code === "Space" && !typing) spaceDown.current = true;
-      if (typing) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.size > 0) {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.matches?.("input, textarea, [contenteditable=true]")) return;
+      if ((e.key === "Backspace" || e.key === "Delete") && sel) {
         e.preventDefault();
-        void deleteSelected();
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "d") {
-        e.preventDefault();
-        void duplicateSelected();
-      }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") {
-        e.preventDefault();
-        setSelectedIds(new Set(cardsRef.current.map((c) => c.id)));
+        void removeEl(sel);
       }
       if (e.key === "Escape") {
-        setEditingId(null);
-        setSelectedIds(new Set());
+        setSel(null);
+        setCtx(null);
+        setMenu(null);
       }
     };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === "Space") spaceDown.current = false;
-    };
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [deleteSelected, duplicateSelected, selectedIds.size]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [sel, removeEl]);
 
-  // ----- uploads -----------------------------------------------------------
+  // ── uploads ───────────────────────────────────────────────────────────────────
   const uploadFiles = React.useCallback(
     async (files: File[], at: { x: number; y: number }) => {
-      if (files.length === 0) return;
-      const toastId = toast.loading(`Import de ${files.length} fichier(s)…`);
+      if (!files.length) return;
+      const id = toast.loading(`Import de ${files.length} fichier(s)…`);
       try {
         const { cards: created, failures } = await planchesApi.uploadFiles(boardId, files, {
           x: at.x,
           y: at.y,
           z: maxZ() + 1,
         });
-        setCards((prev) => [...prev, ...created]);
-        if (failures.length) toast.error(`${failures.length} échec(s)`, { id: toastId });
-        else toast.success(`${created.length} ajouté(s)`, { id: toastId });
+        // Adapt uploaded cards to the design's content shape.
+        const adapted: PlancheCard[] = created.map((c) => {
+          const cu = c.content as Record<string, unknown>;
+          if (c.type === "image") {
+            return { ...c, content: { ...cu, image_url: cu.url, title: cu.file_name } as PlancheCardContent };
+          }
+          const ext = String(cu.file_name ?? "").split(".").pop()?.toLowerCase();
+          const kind = ext === "pdf" ? "pdf" : ext === "zip" ? "zip" : ext === "doc" || ext === "docx" ? "doc" : "file";
+          const size = typeof cu.size === "number" ? `${(cu.size / 1024).toFixed(0)} Ko` : "—";
+          return { ...c, content: { ...cu, name: cu.file_name, kind, size, color: "slate" } as PlancheCardContent };
+        });
+        // Persist the adapted content so it survives a reload.
+        setCards((prev) => [...prev, ...adapted]);
+        for (const c of adapted) void planchesApi.updateCard(c.id, { content: c.content }).catch(() => {});
+        if (failures.length) toast.error(`${failures.length} échec(s)`, { id });
+        else toast.success(`${created.length} ajouté(s)`, { id });
       } catch (err) {
         console.error(err);
-        toast.error("Import échoué", { id: toastId });
+        toast.error("Import échoué", { id });
       }
     },
     [boardId, maxZ],
@@ -534,38 +354,28 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const files = Array.from(e.dataTransfer.files);
-    if (files.length) void uploadFiles(files, screenToWorld(e.clientX, e.clientY));
+    if (files.length) void uploadFiles(files, clientToCanvas(e.clientX, e.clientY));
   };
 
   const onPaste = (e: React.ClipboardEvent) => {
-    const target = e.target as HTMLElement;
-    if (target.isContentEditable || ["INPUT", "TEXTAREA"].includes(target.tagName)) return;
+    if (isInteractive(e.target)) return;
     const files = Array.from(e.clipboardData.files);
-    const center = viewportCenterWorld();
-    if (files.length) {
-      void uploadFiles(files, center);
-      return;
-    }
-    const text = e.clipboardData.getData("text/plain").trim();
-    if (!text) return;
-    if (/^https?:\/\//i.test(text)) void addCard("link", center).then(() => {});
-    else void addCard("note", center);
+    if (files.length) void uploadFiles(files, viewportPoint());
   };
 
-  const onToolClick = (tool: (typeof TOOLS)[number]) => {
-    if (tool.upload) {
-      fileInputRef.current?.click();
-    } else {
-      void addCard(tool.type);
-    }
+  const pickFiles = (imagesOnly: boolean) => {
+    fileAcceptImages.current = imagesOnly;
+    if (fileRef.current) fileRef.current.accept = imagesOnly ? "image/*" : "";
+    fileRef.current?.click();
   };
 
   const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     e.target.value = "";
-    if (files.length) void uploadFiles(files, viewportCenterWorld());
+    if (files.length) void uploadFiles(files, viewportPoint());
   };
 
+  // ── title + zoom + menus ────────────────────────────────────────────────────────
   const saveTitle = async () => {
     if (!board || titleDraft.trim() === board.title) return;
     try {
@@ -576,242 +386,293 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     }
   };
 
-  // ----- connection geometry ----------------------------------------------
-  const centerOf = (c: PlancheCard) => ({
-    x: c.position_x + c.width / 2,
-    y: c.position_y + cardHeight(c) / 2,
-  });
-
-  const cardById = React.useMemo(() => {
-    const m = new Map<string, PlancheCard>();
-    for (const c of cards) m.set(c.id, c);
-    return m;
-  }, [cards]);
-
-  const zoomBy = (factor: number) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const px = rect.width / 2;
-    const py = rect.height / 2;
-    setView((v) => {
-      const newScale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, v.scale * factor));
-      const k = newScale / v.scale;
-      return { scale: newScale, x: px - (px - v.x) * k, y: py - (py - v.y) * k };
-    });
+  const openMenu = (name: Menu, e: React.MouseEvent) => {
+    setMenuRect((e.currentTarget as HTMLElement).getBoundingClientRect());
+    setMenu(name);
   };
 
-  const resetView = () => setView({ x: 0, y: 0, scale: 1 });
+  const copyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("Lien copié");
+    } catch {
+      /* ignore */
+    }
+    setMenu(null);
+  };
+
+  // ── element rendering ──────────────────────────────────────────────────────────
+  const toEl = (c: PlancheCard): El => ({ id: c.id, type: c.type, ...(c.content as Record<string, unknown>) });
+
+  const renderBody = (c: PlancheCard) => {
+    const el = toEl(c);
+    const onPatch = (p: Partial<El>) => patchContent(c.id, p);
+    const onCommit = () => scheduleSave(c.id);
+    switch (c.type) {
+      case "board":
+        return (
+          <CardEl
+            el={el}
+            onPatch={(p) => { onPatch(p); void persistCard(c.id); }}
+            onOpen={() => el.linked_board_id && router.push(`/planches/${el.linked_board_id}`)}
+          />
+        );
+      case "note":
+        return <NoteEl el={el} selected={sel === c.id} onPatch={onPatch} onCommit={onCommit} />;
+      case "todo":
+        return <TodoEl el={el} onPatch={onPatch} onCommit={onCommit} />;
+      case "link":
+        return <LinkEl el={el} onPatch={onPatch} onCommit={onCommit} />;
+      case "file":
+        return <FileEl el={el} onPatch={onPatch} onCommit={onCommit} />;
+      case "image":
+        return <ImageEl el={el} onPatch={onPatch} onCommit={onCommit} />;
+      default:
+        return null;
+    }
+  };
+
+  // canvas size grows to contain content
+  const canvasSize = React.useMemo(() => {
+    let w = 2200;
+    let h = 1500;
+    for (const c of cards) {
+      w = Math.max(w, c.position_x + c.width + 400);
+      h = Math.max(h, c.position_y + (c.height ?? 320) + 400);
+    }
+    return { w, h };
+  }, [cards]);
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement de la planche…
+      <div className="pboard" id="pboard-root" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span className="saved"><i />chargement…</span>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="pboard" id="pboard-root">
       {/* Top bar */}
-      <div className="flex items-center gap-2 border-b bg-background px-4 py-2">
-        <Link
-          href="/planches"
-          className="flex items-center gap-1 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <div className="flex items-center gap-1 text-sm">
-          {breadcrumb.slice(0, -1).map((b) => (
-            <React.Fragment key={b.id}>
-              <Link href={`/planches/${b.id}`} className="text-muted-foreground hover:text-foreground">
-                {b.title}
-              </Link>
-              <span className="text-muted-foreground/50">/</span>
-            </React.Fragment>
-          ))}
-          <input
-            value={titleDraft}
-            onChange={(e) => setTitleDraft(e.target.value)}
-            onBlur={saveTitle}
-            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-            className="min-w-[120px] rounded bg-transparent px-1 py-0.5 font-semibold outline-none hover:bg-muted focus:bg-muted"
-          />
+      <header className="topbar">
+        <div className="tb-left">
+          <button className="tb-back" title="Retour au CRM" onClick={() => router.push("/planches")}>
+            <Icon name="back" className="ico-sm" />
+          </button>
+          <div className="brand">
+            <span className="brand-mark"><Icon name="board" className="ico" /></span>
+          </div>
+          <nav className="crumbs">
+            <button className="crumb" onClick={() => router.push("/planches")}>
+              <Icon name="home" className="ico-sm" />
+              <span>Planches</span>
+            </button>
+            {breadcrumb.map((b, i) => (
+              <React.Fragment key={b.id}>
+                <span className="crumb-sep">/</span>
+                <button
+                  className={`crumb ${i === breadcrumb.length - 1 ? "cur" : ""}`}
+                  onClick={() => i < breadcrumb.length - 1 && router.push(`/planches/${b.id}`)}
+                >
+                  <span>{b.title}</span>
+                </button>
+              </React.Fragment>
+            ))}
+          </nav>
+          <span className="saved"><i />enregistré</span>
         </div>
-        <div className="ml-auto flex items-center gap-1">
-          {selectedIds.size > 0 && (
-            <>
-              <button
-                onClick={duplicateSelected}
-                title="Dupliquer (Cmd+D)"
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              >
-                <Copy className="h-4 w-4" />
-              </button>
-              <button
-                onClick={deleteSelected}
-                title="Supprimer (Suppr)"
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-red-500"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-              <div className="mx-1 h-5 w-px bg-border" />
-            </>
-          )}
-          <button onClick={() => zoomBy(1 / 1.2)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
-            <ZoomOut className="h-4 w-4" />
-          </button>
-          <span className="w-10 text-center text-xs tabular-nums text-muted-foreground">
-            {Math.round(view.scale * 100)}%
-          </span>
-          <button onClick={() => zoomBy(1.2)} className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
-            <ZoomIn className="h-4 w-4" />
-          </button>
-          <button onClick={resetView} title="Réinitialiser la vue" className="rounded-md p-1.5 text-muted-foreground hover:bg-muted">
-            <Maximize className="h-4 w-4" />
-          </button>
+        <div className="tb-right">
+          <button className="ic-btn" title="Rechercher" onClick={() => router.push("/planches")}><Icon name="search" className="ico-sm" /></button>
+          <button className="ic-btn" title="Aide"><Icon name="help" className="ico-sm" /></button>
+          <button className="ic-btn" title="Réglages" onClick={() => router.push("/settings")}><Icon name="settings" className="ico-sm" /></button>
+        </div>
+      </header>
+
+      {/* Sub header */}
+      <div className="subhead">
+        <div />
+        <input
+          className="board-title"
+          value={titleDraft}
+          onChange={(e) => setTitleDraft(e.target.value)}
+          onBlur={saveTitle}
+          onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+          style={{ border: 0, background: "transparent", outline: "none", minWidth: 240 }}
+        />
+        <div className="subhead-actions">
+          <button className="btn ghost" onClick={(e) => openMenu("share", e)}><Icon name="userPlus" className="ico-sm" />Partager</button>
+          <button className="btn ghost" onClick={(e) => openMenu("export", e)}><Icon name="download" className="ico-sm" />Exporter<Icon name="chevdown" className="ico-xs" /></button>
+          <button className="btn ghost" onClick={(e) => openMenu("view", e)}><Icon name="eye" className="ico-sm" />Vue<Icon name="chevdown" className="ico-xs" /></button>
         </div>
       </div>
 
-      <div className="relative flex flex-1 overflow-hidden">
-        {/* Tool palette */}
-        <div className="absolute left-3 top-1/2 z-20 flex -translate-y-1/2 flex-col gap-1 rounded-2xl border bg-background/95 p-1.5 shadow-lg backdrop-blur">
-          {TOOLS.map((tool) => (
-            <Tooltip key={tool.type}>
-              <TooltipTrigger asChild>
-                <button
-                  onClick={() => onToolClick(tool)}
-                  className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
-                >
-                  <tool.icon className="h-5 w-5" strokeWidth={1.8} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="right">{tool.label}</TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
+      {/* Body */}
+      <div className="body">
+        <aside className="rail">
+          <RailTool icon="note" label="Note" onClick={() => addEl("note")} />
+          <RailTool icon="link" label="Lien" onClick={() => addEl("link")} />
+          <RailTool icon="todo" label="À faire" onClick={() => addEl("todo")} />
+          <RailTool icon="board" label="Planche" active onClick={() => addEl("board")} />
+          <RailTool icon="more" label="Plus" onClick={(e) => openMenu("railmore", e!)} />
+          <span className="rail-div" />
+          <RailTool icon="image" label="Images" onClick={() => pickFiles(true)} />
+          <RailTool icon="upload" label="Importer" onClick={() => pickFiles(false)} />
+          <span className="rail-grow" />
+          <RailTool icon="trash" label="Corbeille" badge={trash.length || null} onClick={(e) => openMenu("trash", e!)} />
+        </aside>
 
-        {/* Canvas */}
         <div
-          ref={containerRef}
-          onPointerDown={onBackgroundPointerDown}
-          onDoubleClick={(e) => {
-            if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.canvasbg) {
-              void addCard("note", screenToWorld(e.clientX, e.clientY));
-            }
-          }}
+          className="canvas-scroll"
+          ref={scrollRef}
+          onContextMenu={onCanvasContext}
           onDrop={onDrop}
           onDragOver={(e) => e.preventDefault()}
           onPaste={onPaste}
           tabIndex={0}
-          className="relative flex-1 overflow-hidden bg-[var(--bg-2,#f6f6f4)] outline-none dark:bg-slate-950"
-          style={{
-            backgroundImage: "radial-gradient(circle, rgba(120,120,120,0.18) 1px, transparent 1px)",
-            backgroundSize: `${24 * view.scale}px ${24 * view.scale}px`,
-            backgroundPosition: `${view.x}px ${view.y}px`,
-            cursor: spaceDown.current ? "grab" : "default",
+          onMouseDown={(e) => {
+            const cl = (e.target as HTMLElement).classList;
+            if (cl.contains("canvas") || cl.contains("canvas-scroll")) {
+              setSel(null);
+              setCtx(null);
+            }
           }}
         >
-          <div
-            data-canvasbg="1"
-            className="absolute left-0 top-0 h-full w-full"
-            style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: "0 0" }}
-          >
-            {/* Connections */}
-            <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" style={{ width: 1, height: 1 }}>
-              <defs>
-                <marker id="planche-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
-                </marker>
-              </defs>
-              {connections.map((cn) => {
-                const from = cardById.get(cn.from_card_id);
-                const to = cardById.get(cn.to_card_id);
-                if (!from || !to) return null;
-                const a = centerOf(from);
-                const b = centerOf(to);
-                return (
-                  <g key={cn.id} className="pointer-events-auto cursor-pointer">
-                    <line
-                      x1={a.x}
-                      y1={a.y}
-                      x2={b.x}
-                      y2={b.y}
-                      stroke="transparent"
-                      strokeWidth={12}
-                      onClick={() => {
-                        setConnections((prev) => prev.filter((c) => c.id !== cn.id));
-                        void planchesApi.deleteConnection(cn.id).catch((e) => console.error(e));
-                      }}
-                    />
-                    <line
-                      x1={a.x}
-                      y1={a.y}
-                      x2={b.x}
-                      y2={b.y}
-                      stroke="#94a3b8"
-                      strokeWidth={2}
-                      markerEnd="url(#planche-arrow)"
-                    />
-                  </g>
-                );
-              })}
-              {interaction.current?.kind === "connect" &&
-                (() => {
-                  const from = cardById.get(interaction.current.fromId);
-                  if (!from) return null;
-                  const a = centerOf(from);
-                  const b = interaction.current.current;
-                  return <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 4" />;
-                })()}
-            </svg>
-
-            {/* Cards */}
-            {cards.map((card) => (
-              <CardView
-                key={card.id}
-                card={card}
-                selected={selectedIds.has(card.id)}
-                editing={editingId === card.id}
-                scale={view.scale}
-                onPointerDown={onCardPointerDown}
-                onResizeStart={onResizeStart}
-                onConnectStart={onConnectStart}
-                onDoubleClick={onDoubleClickCard}
-                onContentChange={updateContent}
-                onCommit={persistCard}
-                onOpenBoard={openBoard}
-              />
+          <div className="canvas" style={{ transform: `scale(${zoom})`, width: canvasSize.w, height: canvasSize.h }}>
+            {cards.map((c) => (
+              <div
+                key={c.id}
+                className={`free-el ${sel === c.id ? "sel" : ""} ${c.type}`}
+                style={{ left: c.position_x, top: c.position_y, width: c.width }}
+                onPointerDown={(e) => startDrag(e, c.id)}
+              >
+                {sel === c.id && (
+                  <ElementToolbar
+                    kind={c.type}
+                    el={toEl(c)}
+                    onPatch={(p) => { patchContent(c.id, p); void persistCard(c.id); }}
+                    onDelete={() => removeEl(c.id)}
+                    onDuplicate={() => duplicateEl(c.id)}
+                  />
+                )}
+                {renderBody(c)}
+                {sel === c.id && (
+                  <div className="resize-e" title="Redimensionner" onMouseDown={(e) => e.stopPropagation()} onPointerDown={(e) => startResize(e, c.id)}>
+                    <span />
+                  </div>
+                )}
+              </div>
             ))}
 
-            {/* Marquee */}
-            {marquee && (
-              <div
-                className="pointer-events-none absolute border border-primary/60 bg-primary/10"
-                style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
-              />
+            {cards.length === 0 && (
+              <div style={{ position: "absolute", left: 60, top: 80, color: "var(--text-3)", fontSize: 13, maxWidth: 360 }}>
+                <div style={{ fontFamily: "var(--font-serif)", fontSize: 22, color: "var(--text-2)", marginBottom: 6 }}>
+                  Planche vide
+                </div>
+                Cliquez sur un outil à gauche, faites un clic droit pour ajouter, ou déposez des fichiers.
+              </div>
             )}
           </div>
 
-          {cards.length === 0 && (
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="text-center text-muted-foreground">
-                <StickyNote className="mx-auto mb-3 h-10 w-10 opacity-30" />
-                <p className="text-sm">Double-cliquez pour ajouter une note,</p>
-                <p className="text-sm">déposez des fichiers, ou utilisez la palette à gauche.</p>
-              </div>
-            </div>
-          )}
+          <div className="tosort-pill"><b>{cards.length}</b> élément{cards.length > 1 ? "s" : ""}</div>
+
+          <div className="zoom-ctl">
+            <button onClick={() => setZoom((z) => Math.max(MIN_ZOOM, +(z - 0.1).toFixed(2)))}><Icon name="minus" className="ico-sm" /></button>
+            <span onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</span>
+            <button onClick={() => setZoom((z) => Math.min(MAX_ZOOM, +(z + 0.1).toFixed(2)))}><Icon name="plus" className="ico-sm" /></button>
+          </div>
         </div>
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={onFilePicked}
-      />
+      {/* Right-click add menu */}
+      <FloatingMenu point={ctx ? { x: ctx.x, y: ctx.y } : null} open={!!ctx} onClose={() => setCtx(null)}>
+        <MenuLabel>Ajouter au canvas</MenuLabel>
+        <MenuItem icon="note" onClick={() => ctx && addEl("note", { x: ctx.cx, y: ctx.cy })}>Note</MenuItem>
+        <MenuItem icon="board" onClick={() => ctx && addEl("board", { x: ctx.cx, y: ctx.cy })}>Planche</MenuItem>
+        <MenuItem icon="todo" onClick={() => ctx && addEl("todo", { x: ctx.cx, y: ctx.cy })}>Liste à faire</MenuItem>
+        <MenuItem icon="link" onClick={() => ctx && addEl("link", { x: ctx.cx, y: ctx.cy })}>Lien</MenuItem>
+        <MenuItem icon="image" onClick={() => ctx && addEl("image", { x: ctx.cx, y: ctx.cy })}>Galerie d&apos;images</MenuItem>
+        <MenuSep />
+        <MenuItem icon="upload" onClick={() => pickFiles(false)}>Importer un fichier…</MenuItem>
+      </FloatingMenu>
+
+      {/* Rail "more" */}
+      <Popover open={menu === "railmore"} anchorRect={menuRect} onClose={() => setMenu(null)} className="menu">
+        <MenuLabel>Autres éléments</MenuLabel>
+        <MenuItem icon="image" onClick={() => { void addEl("image"); setMenu(null); }}>Galerie d&apos;images</MenuItem>
+        <MenuItem icon="upload" onClick={() => { setMenu(null); pickFiles(false); }}>Fichier</MenuItem>
+      </Popover>
+
+      {/* Share */}
+      <Popover open={menu === "share"} anchorRect={menuRect} onClose={() => setMenu(null)} align="end" className="sheet">
+        <div className="sheet-title">Partager cette planche</div>
+        <MenuItem icon="link" onClick={copyShareLink}>Copier le lien de la planche</MenuItem>
+      </Popover>
+
+      {/* Export */}
+      <Popover open={menu === "export"} anchorRect={menuRect} onClose={() => setMenu(null)} align="end" className="menu">
+        <MenuLabel>Exporter</MenuLabel>
+        <MenuItem icon="image" onClick={() => setMenu(null)}>Image PNG (bientôt)</MenuItem>
+        <MenuItem icon="file" onClick={() => setMenu(null)}>PDF (bientôt)</MenuItem>
+      </Popover>
+
+      {/* View */}
+      <Popover open={menu === "view"} anchorRect={menuRect} onClose={() => setMenu(null)} align="end" className="menu">
+        <MenuLabel>Affichage</MenuLabel>
+        <MenuItem icon="expand" onClick={() => { setZoom(1); setMenu(null); }}>Zoom 100 %</MenuItem>
+        <MenuItem icon="collapse" onClick={() => { setZoom(0.6); setMenu(null); }}>Vue d&apos;ensemble</MenuItem>
+      </Popover>
+
+      {/* Trash */}
+      <Popover open={menu === "trash"} anchorRect={menuRect} onClose={() => setMenu(null)} className="sheet">
+        <div className="sheet-title">Corbeille</div>
+        {trash.length === 0 && <div className="trash-empty">La corbeille est vide</div>}
+        {trash.map((t) => {
+          const el = toEl(t);
+          return (
+            <div key={t.id} className="trash-row">
+              <span className="trash-ic"><Icon name={t.type === "board" ? "board" : t.type} className="ico-sm" /></span>
+              <div className="trash-meta">
+                <b>{el.title || el.name || t.type}</b>
+                <span>supprimé {t._at}</span>
+              </div>
+              <button className="btn ghost sm" onClick={() => restore(t.id)}>Restaurer</button>
+            </div>
+          );
+        })}
+        {trash.length > 0 && (
+          <>
+            <MenuSep />
+            <MenuItem icon="trash" danger onClick={() => setTrash([])}>Vider la corbeille</MenuItem>
+          </>
+        )}
+      </Popover>
+
+      <input ref={fileRef} type="file" multiple className="hidden" style={{ display: "none" }} onChange={onFilePicked} />
     </div>
+  );
+}
+
+function RailTool({
+  icon,
+  label,
+  active,
+  badge,
+  onClick,
+}: {
+  icon: string;
+  label: string;
+  active?: boolean;
+  badge?: number | null;
+  onClick?: (e?: React.MouseEvent) => void;
+}) {
+  return (
+    <button className={`rail-tool ${active ? "active" : ""}`} onClick={(e) => onClick?.(e)} title={label}>
+      <span className="rail-ic">
+        <Icon name={icon} className="ico" />
+        {badge != null && <span className="rail-badge">{badge}</span>}
+      </span>
+      <span className="rail-lbl">{label}</span>
+    </button>
   );
 }
 
