@@ -46,16 +46,15 @@ export function RichTextEditor({
   className,
 }: Props) {
   const ref = React.useRef<HTMLDivElement>(null);
-  const lastValue = React.useRef(value);
 
-  // Keep the DOM in sync with external value changes only (not every keystroke,
-  // which would reset the caret).
+  // Hydrate the DOM from `value` on mount and whenever it changes externally —
+  // but never while the user is actively editing, which would reset the caret.
+  // (During editing the contentEditable DOM is the source of truth.)
   React.useEffect(() => {
-    if (ref.current && value !== ref.current.innerHTML && value !== lastValue.current) {
+    if (ref.current && !editing && value !== ref.current.innerHTML) {
       ref.current.innerHTML = value;
-      lastValue.current = value;
     }
-  }, [value]);
+  }, [value, editing]);
 
   React.useEffect(() => {
     if (editing && ref.current) {
@@ -75,17 +74,13 @@ export function RichTextEditor({
   const exec = (command: string, arg?: string) => {
     document.execCommand(command, false, arg);
     if (ref.current) {
-      const html = sanitizeHtml(ref.current.innerHTML);
-      lastValue.current = html;
-      onChange(html);
+      onChange(sanitizeHtml(ref.current.innerHTML));
     }
   };
 
   const handleInput = () => {
     if (!ref.current) return;
-    const html = sanitizeHtml(ref.current.innerHTML);
-    lastValue.current = html;
-    onChange(html);
+    onChange(sanitizeHtml(ref.current.innerHTML));
   };
 
   const applyBlock = (tag: string) => exec("formatBlock", tag);

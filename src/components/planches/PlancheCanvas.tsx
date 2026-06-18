@@ -168,9 +168,13 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
   }, [cards.length]);
 
   // ----- persistence -------------------------------------------------------
-  const persistCard = React.useCallback(async (id: string) => {
-    const card = cardsRef.current.find((c) => c.id === id);
-    if (!card || card.id.startsWith("tmp-")) return;
+  const persistCard = React.useCallback(async (id: string, patch?: Partial<PlancheCard>) => {
+    const base = cardsRef.current.find((c) => c.id === id);
+    if (!base || base.id.startsWith("tmp-")) return;
+    // A `patch` carries values just set in the same tick — apply it to state
+    // (so the UI updates) and use it for the PATCH instead of the stale ref.
+    if (patch) setCards((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+    const card = patch ? { ...base, ...patch } : base;
     try {
       await planchesApi.updateCard(id, {
         position_x: card.position_x,
@@ -331,15 +335,21 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     [screenToWorld],
   );
 
-  const onDoubleClickCard = React.useCallback((card: PlancheCard) => {
-    if (card.type === "board") return;
-    setSelectedIds(new Set([card.id]));
-    setEditingId(card.id);
-  }, []);
-
   const openBoard = React.useCallback(
     (id: string) => router.push(`/planches/${id}`),
     [router],
+  );
+
+  const onDoubleClickCard = React.useCallback(
+    (card: PlancheCard) => {
+      if (card.type === "board") {
+        if (card.content.linked_board_id) openBoard(card.content.linked_board_id);
+        return;
+      }
+      setSelectedIds(new Set([card.id]));
+      setEditingId(card.id);
+    },
+    [openBoard],
   );
 
   // ----- background interactions ------------------------------------------

@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { collectBoardIds, purgeBoardStorage } from "@/app/api/planches/_storage";
 import type { PlancheBoard } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -79,9 +80,12 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
   return json({ board: data });
 });
 
-/** Delete a board (cards, child boards and connections cascade). */
+/** Delete a board (cards, child boards and connections cascade). Uploaded
+ *  objects in storage don't cascade, so purge them across the whole subtree. */
 export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
+  const boardIds = await collectBoardIds(supabase, params.id);
+  await purgeBoardStorage(supabase, boardIds);
   const { error } = await supabase.from("planches").delete().eq("id", params.id);
   if (error) return jsonError(error.message, 500);
   return json({ ok: true });

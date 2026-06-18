@@ -24,7 +24,9 @@ export type CardViewProps = {
   onConnectStart: (e: React.PointerEvent, card: PlancheCard) => void;
   onDoubleClick: (card: PlancheCard) => void;
   onContentChange: (id: string, content: PlancheCardContent) => void;
-  onCommit: (id: string) => void;
+  /** Persist the card. Pass a `patch` to persist values that were just set in
+   *  the same tick (state updates are async and would otherwise be missed). */
+  onCommit: (id: string, patch?: Partial<PlancheCard>) => void;
   onOpenBoard: (boardId: string) => void;
 };
 
@@ -103,10 +105,7 @@ function CardBody(props: CardViewProps) {
             editing={editing}
             placeholder="Titre…"
             onChange={(html) => props.onContentChange(card.id, { ...content, html })}
-            onCommit={(html) => {
-              props.onContentChange(card.id, { ...content, html });
-              props.onCommit(card.id);
-            }}
+            onCommit={(html) => props.onCommit(card.id, { content: { ...content, html } })}
           />
         </div>
       );
@@ -123,10 +122,7 @@ function CardBody(props: CardViewProps) {
             placeholder="Écrire une note…"
             className="h-full"
             onChange={(html) => props.onContentChange(card.id, { ...content, html })}
-            onCommit={(html) => {
-              props.onContentChange(card.id, { ...content, html });
-              props.onCommit(card.id);
-            }}
+            onCommit={(html) => props.onCommit(card.id, { content: { ...content, html } })}
           />
         </div>
       );
@@ -146,9 +142,8 @@ function CardBody(props: CardViewProps) {
               value={content.color ?? "#f59e0b"}
               onPointerDown={(e) => e.stopPropagation()}
               onChange={(e) =>
-                props.onContentChange(card.id, { ...content, color: e.target.value })
+                props.onCommit(card.id, { content: { ...content, color: e.target.value } })
               }
-              onBlur={() => props.onCommit(card.id)}
               className="absolute right-1.5 top-1.5 h-6 w-6 cursor-pointer rounded border-0 bg-transparent p-0"
               title="Choisir une couleur"
             />
@@ -204,20 +199,24 @@ function CardBody(props: CardViewProps) {
       return <TodoCard {...props} />;
 
     case "board":
+      // Plain div so the wrapper's pointer handlers still drive select/drag;
+      // double-click (handled by the canvas) or the explicit button opens it.
       return (
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onDoubleClick={(e) => e.stopPropagation()}
-          onClick={() => content.linked_board_id && props.onOpenBoard(content.linked_board_id)}
-          className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center transition-colors hover:bg-primary/10"
-        >
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-[12px] border-2 border-dashed border-primary/30 bg-primary/5 p-4 text-center">
           <Layers className="h-7 w-7 text-primary" />
           <span className="text-sm font-medium text-foreground">
             {content.title || "Sous-planche"}
           </span>
-          <span className="text-[11px] text-muted-foreground">Ouvrir →</span>
-        </button>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onClick={() => content.linked_board_id && props.onOpenBoard(content.linked_board_id)}
+            className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20"
+          >
+            Ouvrir →
+          </button>
+        </div>
       );
 
     default:
@@ -246,14 +245,10 @@ function LinkCard(props: CardViewProps) {
           value={url}
           placeholder="https://…"
           onChange={(e) => setUrl(e.target.value)}
-          onBlur={() => {
-            props.onContentChange(card.id, { ...content, url: url.trim() });
-            props.onCommit(card.id);
-          }}
+          onBlur={() => props.onCommit(card.id, { content: { ...content, url: url.trim() } })}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              props.onContentChange(card.id, { ...content, url: url.trim() });
-              props.onCommit(card.id);
+              props.onCommit(card.id, { content: { ...content, url: url.trim() } });
               (e.target as HTMLInputElement).blur();
             }
           }}
@@ -300,8 +295,7 @@ function TodoCard(props: CardViewProps) {
   const [adding, setAdding] = React.useState("");
 
   const update = (next: Partial<PlancheCardContent>) => {
-    props.onContentChange(card.id, { ...content, ...next });
-    props.onCommit(card.id);
+    props.onCommit(card.id, { content: { ...content, ...next } });
   };
 
   const toggle = (id: string) =>
