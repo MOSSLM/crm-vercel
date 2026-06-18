@@ -133,6 +133,10 @@ const MAP: Record<string, LucideIcon> = {
 };
 
 export function Icon({ name, className }: { name: string; className?: string }) {
+  // Digits 0-9 are rendered as (non-editable) text, treated like an icon.
+  if (/^[0-9]$/.test(name)) {
+    return <span className={`${className ?? ""} ico-num`}>{name}</span>;
+  }
   const Cmp = MAP[name] ?? LayoutGrid;
   return <Cmp className={className} strokeWidth={1.8} />;
 }
