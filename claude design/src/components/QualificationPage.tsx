@@ -1,0 +1,1033 @@
+"use client";
+
+import React, { useState } from 'react';
+import { useAppData } from './AppDataContext';
+import { Company } from '@/types';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Switch } from './ui/switch';
+import { Label } from './ui/label';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
+import { Pagination, PaginationContent, PaginationEllipsis, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from './ui/pagination';
+import { 
+  Search, 
+  ExternalLink, 
+  MapPin, 
+  Calendar,
+  Target,
+  LayoutGrid,
+  List,
+  Eye,
+  EyeOff,
+  CheckCircle,
+  Phone,
+  X,
+  Trash2,
+  Ban,
+  ChevronDown
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { getCompanyDisplayName, ensureHttpsUrl } from '../utils/displayHelpers';
+import { SprintFlowBanner, useSprintFlowState } from './SprintFlowBanner';
+import logger from '../utils/logger';
+import { normalizeServiceTags } from '../utils/serviceTags';
+
+type UrlFilter = 'all' | 'with-url' | 'without-url';
+
+export const QualificationPage: React.FC = () => {
+  const sourceOptions = [
+    { value: 'google_search', label: 'Google Search' },
+    { value: 'google_maps', label: 'Google Maps' },
+  ];
+
+  const {
+    companies,
+    qualifyCompany,
+    unqualifyCompany,
+    updateCompany,
+    deleteCompany,
+    loading,
+    isDuplicate,
+    blacklistCompany,
+    blacklistDomain,
+    isCompanyBlacklisted,
+    offers,
+    selectedQualificationOfferId,
+    setSelectedQualificationOfferId
+  } = useAppData();
+  
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedSources, setSelectedSources] = useState<string[]>(() => sourceOptions.map((option) => option.value));
+  const [showQualified, setShowQualified] = useState(false);
+  const [urlFilter, setUrlFilter] = useState<UrlFilter>('all');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [showDuplicates, setShowDuplicates] = useState(false);
+  const [showHiddenCompanies, setShowHiddenCompanies] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12; // 12 items per page
+  
+  // Delete confirmation state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
+  const { sprintFlow, save } = useSprintFlowState();
+
+  const filteredCompanies = companies.filter(company => {
+    const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+    const matchesSearch =
+      displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (company.adresse && company.adresse.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      normalizeServiceTags(company.service_tags, company.premiers_tags)
+        .some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesSource =
+      selectedSources.length === 0 ||
+      selectedSources.some((source) => company.sources.includes(source));
+
+    const matchesQualification = showQualified ? company.qualifie : !company.qualifie;
+
+    const hasUrl = Boolean(company.canonical_url?.trim());
+    const matchesUrl =
+      urlFilter === 'all' ||
+      (urlFilter === 'with-url' && hasUrl) ||
+      (urlFilter === 'without-url' && !hasUrl);
+    
+    const hideByDuplicate =
+      !showDuplicates &&
+      (isDuplicate(company.id) || isCompanyBlacklisted(company));
+
+    const hideByManual =
+      !showHiddenCompanies && company.hidden_in_qualification;
+
+    return matchesSearch && matchesSource && matchesQualification && matchesUrl && !hideByDuplicate && !hideByManual;
+  });
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredCompanies.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedCompanies = filteredCompanies.slice(startIndex, endIndex);
+
+  // Reset to first page when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedSources, showQualified, urlFilter, showHiddenCompanies]);
+
+  const toggleSource = (source: string) => {
+    setSelectedSources((previous) =>
+      previous.includes(source)
+        ? previous.filter((value) => value !== source)
+        : [...previous, source]
+    );
+  };
+
+  const sourceFilterLabel =
+    selectedSources.length === 0 || selectedSources.length === sourceOptions.length
+      ? 'Toutes les sources'
+      : `${selectedSources.length} source${selectedSources.length > 1 ? 's' : ''}`;
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('fr-FR');
+  };
+
+
+  const handleQualificationToggle = async (company: Company) => {
+    const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+    
+    try {
+      if (company.qualifie) {
+        await unqualifyCompany(company.id);
+        if (sprintFlow?.companyIds.includes(company.id)) {
+          save({
+            ...sprintFlow,
+            companyIds: sprintFlow.companyIds.filter((companyId) => companyId !== company.id),
+          });
+        }
+        toast.success(`${displayName} déqualifiée`);
+      } else {
+        await qualifyCompany(company.id);
+        if (sprintFlow && sprintFlow.companyIds.length < sprintFlow.targetCount && !sprintFlow.companyIds.includes(company.id)) {
+          save({
+            ...sprintFlow,
+            companyIds: [...sprintFlow.companyIds, company.id],
+          });
+        }
+        toast.success(`${displayName} qualifiée avec succès !`);
+      }
+    } catch (error) {
+      logger.error('Erreur lors de la qualification:', error);
+      toast.error('Erreur lors de la modification de la qualification');
+    }
+  };
+
+  const handleVisitWebsite = (company: Company) => {
+    if (company.canonical_url) {
+      const url = ensureHttpsUrl(company.canonical_url);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      
+      const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+      toast.success(`Site web de ${displayName} ouvert`);
+    } else {
+      toast.error('Aucune URL disponible pour cette entreprise');
+    }
+  };
+
+  const [companyToBlacklist, setCompanyToBlacklist] = useState<Company | null>(null);
+  const [isProcessingBlacklist, setIsProcessingBlacklist] = useState(false);
+
+  const qualificationOffers = offers.filter((offer) => offer.actif && offer.visible_in_qualification);
+
+  const handleBlacklistClick = (company: Company) => {
+    setCompanyToBlacklist(company);
+  };
+
+  const handleToggleHidden = async (company: Company) => {
+    if (company.qualifie) return;
+    try {
+      await updateCompany(company.id, {
+        hidden_in_qualification: !company.hidden_in_qualification,
+      });
+      const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+      toast.success(
+        company.hidden_in_qualification
+          ? `${displayName} réaffichée`
+          : `${displayName} masquée`
+      );
+    } catch (error) {
+      logger.error('Erreur lors du masquage:', error);
+      toast.error('Erreur lors du masquage de l’entreprise');
+    }
+  };
+
+  const handleBlacklistExact = async () => {
+    if (!companyToBlacklist) return;
+
+    setIsProcessingBlacklist(true);
+    try {
+      await blacklistCompany(companyToBlacklist.id);
+      const displayName = getCompanyDisplayName(
+        companyToBlacklist.name,
+        companyToBlacklist.canonical_url
+      );
+      toast.success(`${displayName} black-listée (URL exacte)`);
+      setCompanyToBlacklist(null);
+    } catch (error) {
+      logger.error('Erreur lors du blacklist (URL exacte):', error);
+      toast.error('Erreur lors du blacklist de l\'URL exacte');
+    } finally {
+      setIsProcessingBlacklist(false);
+    }
+  };
+
+  const handleBlacklistDomain = async () => {
+    if (!companyToBlacklist) return;
+    if (!companyToBlacklist.canonical_url) {
+      toast.error('Impossible de blacklister le domaine : aucune URL disponible');
+      return;
+    }
+
+    setIsProcessingBlacklist(true);
+    try {
+      await blacklistDomain(companyToBlacklist.canonical_url);
+      const displayName = getCompanyDisplayName(
+        companyToBlacklist.name,
+        companyToBlacklist.canonical_url
+      );
+      toast.success(`Domaine black-listé pour ${displayName}`);
+      setCompanyToBlacklist(null);
+    } catch (error) {
+      logger.error('Erreur lors du blacklist du domaine:', error);
+      toast.error('Erreur lors du blacklist du domaine');
+    } finally {
+      setIsProcessingBlacklist(false);
+    }
+  };
+
+  const handleDeleteClick = (company: Company) => {
+    setCompanyToDelete(company);
+    setShowDeleteModal(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!companyToDelete) return;
+
+    try {
+      await deleteCompany(companyToDelete.id);
+      setShowDeleteModal(false);
+      setCompanyToDelete(null);
+    } catch (error) {
+      logger.error('Error deleting company:', error);
+    }
+  };
+
+  const CompanyCard = ({ company }: { company: Company }) => {
+    const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+    const tags = normalizeServiceTags(company.service_tags, company.premiers_tags);
+    
+    return (
+      <Card className={`hover:shadow-md transition-shadow ${company.qualifie ? 'bg-green-50 border-green-200' : ''}`}>
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <CardTitle className="text-base leading-tight">{displayName}</CardTitle>
+              <div className="flex items-center gap-2 mt-1">
+                <Badge variant={company.qualifie ? 'default' : 'secondary'}>
+                  {company.qualifie ? 'Qualifiée' : 'En attente'}
+                </Badge>
+                <Badge variant="outline">
+                  {company.sources.includes('google_maps') ? 'Maps' : 'Search'}
+                </Badge>
+                {/* Contact info indicators */}
+                {company.telephone && (
+                  <Phone className="h-3 w-3 text-blue-600" />
+                )}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleDeleteClick(company)}
+              className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+              title="Supprimer l'entreprise"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <div className="space-y-3">
+            {company.adresse && (
+              <div className="flex items-start gap-2">
+                <MapPin className="h-4 w-4 text-gray-500 mt-0.5 flex-shrink-0" />
+                <span className="text-sm text-gray-600 leading-tight">{company.adresse}</span>
+              </div>
+            )}
+
+            {tags.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {tags.slice(0, 3).map((tag, index) => (
+                  <Badge key={index} variant="outline" className="text-xs">
+                    {tag}
+                  </Badge>
+                ))}
+                {tags.length > 3 && (
+                  <Badge variant="outline" className="text-xs">
+                    +{tags.length - 3}
+                  </Badge>
+                )}
+              </div>
+            )}
+
+            {/* Contact information if available */}
+            {company.telephone && (
+              <div className="flex items-center gap-1 text-xs text-blue-600">
+                <Phone className="h-3 w-3" />
+                {company.telephone}
+              </div>
+            )}
+
+            <div className="text-xs text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                Créé le {formatDate(company.created_at)}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              {company.canonical_url && (
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => handleVisitWebsite(company)}
+                  className="px-2"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+              )}
+              {!company.qualifie && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleToggleHidden(company)}
+                  className="px-2"
+                  title={company.hidden_in_qualification ? "Réafficher" : "Masquer"}
+                >
+                  {company.hidden_in_qualification ? (
+                    <Eye className="h-3 w-3" />
+                  ) : (
+                    <EyeOff className="h-3 w-3" />
+                  )}
+                </Button>
+              )}
+              <Button 
+                size="sm" 
+                variant="outline"
+                onClick={() => setSelectedCompany(company)}
+                className="flex-1"
+              >
+                <Eye className="h-3 w-3 mr-1" />
+                Voir
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 border-t">
+              <span className="text-sm font-medium">
+                {company.qualifie ? 'Qualifiée' : 'Qualifier'}
+              </span>
+              <Switch
+                checked={company.qualifie}
+                onCheckedChange={() => handleQualificationToggle(company)}
+                disabled={loading}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+      <SprintFlowBanner currentStep="opportunities" />
+      <div>
+        <h1>Qualification des Entreprises</h1>
+        <p className="text-muted-foreground">
+          Qualifiez les entreprises trouvées pour créer automatiquement des opportunités liées à vos offres/services.
+        </p>
+      </div>
+
+
+      <Card className="max-w-xl">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Offre / package pour la qualification</CardTitle>
+          <CardDescription>
+            Choisissez l'offre utilisée pour créer les opportunités lors de la qualification.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <Label htmlFor="qualification-offer" className="text-xs text-muted-foreground">Offre visible en qualification</Label>
+          <Select
+            value={selectedQualificationOfferId ?? undefined}
+            onValueChange={setSelectedQualificationOfferId}
+          >
+            <SelectTrigger id="qualification-offer">
+              <SelectValue placeholder="Sélectionnez une offre" />
+            </SelectTrigger>
+            <SelectContent>
+              {qualificationOffers.map((offer) => (
+                <SelectItem key={offer.id} value={offer.id}>
+                  {offer.nom} {typeof offer.prix_ht === 'number' ? `• ${offer.prix_ht.toLocaleString('fr-FR')}€` : ''} {offer.billing_period === 'monthly' ? '• MRR' : '• Ponctuel'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {/* Filtres et recherche - optimisés pour mobile */}
+      <div className="space-y-2 md:space-y-0 md:flex md:flex-wrap md:gap-4 md:items-center md:justify-between">
+        <div className="space-y-2 md:space-y-0 md:flex md:gap-4 md:items-center md:flex-1">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Rechercher une entreprise..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 h-9"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 md:flex md:gap-4 md:items-center">
+            <details className="relative">
+              <summary className="list-none cursor-pointer select-none px-2.5 py-2 border border-border rounded-md bg-card text-card-foreground text-sm flex items-center justify-between gap-3 min-w-[180px]">
+                <span>{sourceFilterLabel}</span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </summary>
+              <div className="absolute z-20 mt-2 w-56 rounded-md border bg-card p-3 shadow-lg space-y-2">
+                {sourceOptions.map((option) => (
+                  <label key={option.value} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedSources.includes(option.value)}
+                      onChange={() => toggleSource(option.value)}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+
+            <div className="min-w-[180px] space-y-1">
+              <Label htmlFor="url-filter" className="text-xs md:text-sm">Filtre URL</Label>
+              <Select value={urlFilter} onValueChange={(value) => setUrlFilter(value as UrlFilter)}>
+                <SelectTrigger id="url-filter" className="h-9 bg-card">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Toutes les entreprises</SelectItem>
+                  <SelectItem value="with-url">Avec URL uniquement</SelectItem>
+                  <SelectItem value="without-url">Sans URL uniquement</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2 px-2.5 py-2 border border-border rounded-md bg-card">
+              <Label htmlFor="qualification-toggle" className="text-xs md:text-sm">
+                {showQualified ? 'Qualifiées' : 'Non qualifiées'}
+              </Label>
+              <Switch
+                id="qualification-toggle"
+                checked={showQualified}
+                onCheckedChange={setShowQualified}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs md:text-sm">
+            <Switch
+              checked={showDuplicates}
+              onCheckedChange={setShowDuplicates}
+            />
+            <Label>Afficher les duplicats</Label>
+          </div>
+          <div className="flex items-center gap-2 text-xs md:text-sm">
+            <Switch
+              checked={showHiddenCompanies}
+              onCheckedChange={setShowHiddenCompanies}
+            />
+            <Label>Afficher les masquées</Label>
+          </div>
+        </div>
+
+        {/* Toggle grille/liste unifié */}
+        <div className="flex border rounded-lg">
+          <Button
+            variant={viewMode === 'grid' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('grid')}
+            className="rounded-r-none"
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            variant={viewMode === 'list' ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => setViewMode('list')}
+            className="rounded-l-none"
+          >
+            <List className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+
+      {/* Liste/Grille des entreprises - optimisée pour mobile */}
+      {viewMode === 'grid' ? (
+        <div className="grid gap-4 grid-cols-2 md:gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {paginatedCompanies.map((company) => (
+            <CompanyCard key={company.id} company={company} />
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Entreprise</TableHead>
+                  <TableHead className="hidden md:table-cell">Source</TableHead>
+                  <TableHead className="hidden lg:table-cell">Adresse</TableHead>
+                  <TableHead className="hidden lg:table-cell">Tags</TableHead>
+                  <TableHead className="hidden md:table-cell">Date</TableHead>
+                  <TableHead>Actions</TableHead>
+                  <TableHead className="text-center">Qualification</TableHead>
+                  <TableHead className="w-12"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paginatedCompanies.map((company) => {
+                  const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+                  const tags = normalizeServiceTags(company.service_tags, company.premiers_tags);
+                  
+                  return (
+                    <TableRow 
+                      key={company.id} 
+                      className={company.qualifie ? 'bg-green-50' : ''}
+                    >
+                      <TableCell>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{displayName}</span>
+                            {/* Contact info indicators */}
+                            {company.telephone && (
+                              <Phone className="h-3 w-3 text-blue-600" />
+                            )}
+                          </div>
+                          {company.canonical_url && (
+                            <div className="text-xs text-muted-foreground truncate max-w-xs">
+                              {company.canonical_url}
+                            </div>
+                          )}
+                          {/* Contact info on mobile */}
+                          <div className="md:hidden space-y-1 mt-1">
+                            <Badge variant="outline" className="text-xs">
+                              {company.sources.includes('google_maps') ? 'Maps' : 'Search'}
+                            </Badge>
+                            {company.telephone && (
+                              <div className="text-xs text-muted-foreground">
+                                {`📞 ${company.telephone}`}
+                              </div>
+                            )}
+                            <div className="text-xs text-muted-foreground">
+                              {formatDate(company.created_at)}
+                            </div>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Badge variant="outline">
+                          {company.sources.includes('google_maps') ? 'Maps' : 'Search'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell max-w-xs">
+                        {company.adresse ? (
+                          <div className="flex items-start gap-1">
+                            <MapPin className="h-3 w-3 text-gray-500 mt-0.5 flex-shrink-0" />
+                            <span className="text-sm truncate">{company.adresse}</span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <div className="flex flex-wrap gap-1">
+                          {tags.slice(0, 2).map((tag, index) => (
+                            <Badge key={index} variant="secondary" className="text-xs">
+                              {tag}
+                            </Badge>
+                          ))}
+                          {tags.length > 2 && (
+                            <Badge variant="secondary" className="text-xs">
+                              +{tags.length - 2}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                        {formatDate(company.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button 
+                            size="sm" 
+                            variant="outline"
+                            onClick={() => handleVisitWebsite(company)}
+                            disabled={!company.canonical_url}
+                            title="Visiter le site"
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                          {!company.qualifie && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleToggleHidden(company)}
+                              title={company.hidden_in_qualification ? "Réafficher" : "Masquer"}
+                            >
+                              {company.hidden_in_qualification ? (
+                                <Eye className="h-3 w-3" />
+                              ) : (
+                                <EyeOff className="h-3 w-3" />
+                              )}
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setSelectedCompany(company)}
+                            title="Voir détails"
+                          >
+                            <Eye className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleBlacklistClick(company)}
+                            title="Blacklister"
+                          >
+                            <Ban className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <Switch
+                            checked={company.qualifie}
+                            onCheckedChange={() => handleQualificationToggle(company)}
+                            disabled={loading}
+                          />
+                          {company.qualifie && (
+                            <CheckCircle className="h-4 w-4 text-green-600" />
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteClick(company)}
+                          className="h-8 w-8 p-0 text-red-600 hover:text-red-700 hover:bg-red-50"
+                          title="Supprimer l'entreprise"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </Card>
+      )}
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex flex-col items-center gap-4">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious 
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+              
+              {/* First page */}
+              {currentPage > 2 && (
+                <>
+                  <PaginationItem>
+                    <PaginationLink onClick={() => setCurrentPage(1)} className="cursor-pointer">
+                      1
+                    </PaginationLink>
+                  </PaginationItem>
+                  {currentPage > 3 && (
+                    <PaginationItem>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  )}
+                </>
+              )}
+              
+              {/* Current page and adjacent pages */}
+              {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+                let pageNum;
+                if (totalPages <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 2) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 1) {
+                  pageNum = totalPages - 2 + i;
+                } else {
+                  pageNum = currentPage - 1 + i;
+                }
+                
+                if (pageNum < 1 || pageNum > totalPages) return null;
+                
+                return (
+                  <PaginationItem key={pageNum}>
+                    <PaginationLink 
+                      onClick={() => setCurrentPage(pageNum)}
+                      isActive={currentPage === pageNum}
+                      className="cursor-pointer"
+                    >
+                      {pageNum}
+                    </PaginationLink>
+                  </PaginationItem>
+                );
+              })}
+              
+              {/* Last page */}
+              {currentPage < totalPages - 1 && (
+                <>
+                  {currentPage < totalPages - 2 && (
+                    <PaginationItem>
+                      <PaginationEllipsis />
+                    </PaginationItem>
+                  )}
+                  <PaginationItem>
+                    <PaginationLink onClick={() => setCurrentPage(totalPages)} className="cursor-pointer">
+                      {totalPages}
+                    </PaginationLink>
+                  </PaginationItem>
+                </>
+              )}
+              
+              <PaginationItem>
+                <PaginationNext 
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+          
+          <div className="text-sm text-muted-foreground">
+            Page {currentPage} sur {totalPages} ({filteredCompanies.length} entreprise{filteredCompanies.length > 1 ? 's' : ''} au total)
+          </div>
+        </div>
+      )}
+
+      {filteredCompanies.length === 0 && (
+        <Card>
+          <CardContent className="text-center py-12">
+            <Target className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="font-medium mb-2">Aucune entreprise trouvée</h3>
+            <p className="text-muted-foreground">
+              {searchTerm || urlFilter !== 'all' || selectedSources.length !== sourceOptions.length || showQualified 
+                ? 'Modifiez vos filtres pour voir plus d\'entreprises'
+                : 'Lancez une recherche pour découvrir des entreprises'
+              }
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog
+        open={!!companyToBlacklist}
+        onOpenChange={(open) => {
+          if (!open) {
+            setCompanyToBlacklist(null);
+            setIsProcessingBlacklist(false);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="h-5 w-5" />
+              Blacklister une entreprise
+            </DialogTitle>
+            <DialogDescription>
+              Choisissez si vous souhaitez blacklister uniquement cette URL ou tout le domaine associé.
+            </DialogDescription>
+          </DialogHeader>
+
+          {companyToBlacklist && (
+            <div className="rounded-md border p-3 text-sm space-y-1">
+              <div className="font-medium">
+                {getCompanyDisplayName(companyToBlacklist.name, companyToBlacklist.canonical_url)}
+              </div>
+              <div className="text-muted-foreground break-words">
+                {companyToBlacklist.canonical_url || 'Aucune URL disponible'}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3 text-sm text-muted-foreground">
+            <p>
+              <strong>URL exacte :</strong> seule cette fiche d'entreprise sera retirée de la qualification.
+            </p>
+            <p>
+              <strong>Domaine complet :</strong> toutes les entreprises partageant ce domaine seront blacklistées.
+            </p>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCompanyToBlacklist(null);
+                setIsProcessingBlacklist(false);
+              }}
+            >
+              Annuler
+            </Button>
+            <Button variant="destructive" onClick={handleBlacklistExact} disabled={isProcessingBlacklist}>
+              Blacklister l'URL exacte
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleBlacklistDomain}
+              disabled={isProcessingBlacklist || !companyToBlacklist?.canonical_url}
+            >
+              Blacklister le domaine
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de détail */}
+      <Dialog open={!!selectedCompany} onOpenChange={() => setSelectedCompany(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedCompany ? getCompanyDisplayName(selectedCompany.name, selectedCompany.canonical_url) : ''}
+            </DialogTitle>
+            <DialogDescription>Détails de l'entreprise</DialogDescription>
+          </DialogHeader>
+
+          {selectedCompany && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Statut de qualification</label>
+                  <div className="mt-1">
+                    <Badge variant={selectedCompany.qualifie ? 'default' : 'secondary'}>
+                      {selectedCompany.qualifie ? 'Qualifiée' : 'En attente'}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Source</label>
+                  <div className="mt-1">
+                    <Badge variant="outline">
+                      {selectedCompany.sources.includes('google_maps') ? 'Google Maps' : 'Google Search'}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              {selectedCompany.canonical_url && (
+                <div>
+                  <label className="text-sm font-medium">Site web</label>
+                  <div className="mt-1">
+                    <a 
+                      href={ensureHttpsUrl(selectedCompany.canonical_url)} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline text-sm break-all"
+                    >
+                      {selectedCompany.canonical_url}
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {selectedCompany.adresse && (
+                <div>
+                  <label className="text-sm font-medium">Adresse</label>
+                  <div className="mt-1 flex items-start gap-2">
+                    <MapPin className="h-4 w-4 text-gray-500 mt-0.5" />
+                    <span className="text-sm">{selectedCompany.adresse}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Contact information section */}
+              {selectedCompany.telephone && (
+                <div>
+                  <label className="text-sm font-medium">Informations de contact</label>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm">{selectedCompany.telephone}</span>
+                  </div>
+                </div>
+              )}
+
+              {selectedCompany.premiers_tags && (
+                <div>
+                  <label className="text-sm font-medium">Tags</label>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {selectedCompany.premiers_tags.split(',').map(t => t.trim()).map((tag, index) => (
+                      <Badge key={index} variant="outline">{tag}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium">Créée le</label>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    {formatDate(selectedCompany.created_at)}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium">Mise à jour le</label>
+                  <div className="mt-1 text-sm text-muted-foreground">
+                    {formatDate(selectedCompany.updated_at)}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-4 border-t">
+                <Button 
+                  onClick={() => handleVisitWebsite(selectedCompany)}
+                  disabled={!selectedCompany.canonical_url}
+                  className="flex-1"
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Visiter le site
+                </Button>
+                <Button 
+                  variant={selectedCompany.qualifie ? "destructive" : "default"}
+                  onClick={() => {
+                    handleQualificationToggle(selectedCompany);
+                    setSelectedCompany(null);
+                  }}
+                  className="flex-1"
+                >
+                  {selectedCompany.qualifie ? 'Déqualifier' : 'Qualifier'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal de confirmation de suppression */}
+      <Dialog open={showDeleteModal} onOpenChange={setShowDeleteModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-5 w-5 text-red-600" />
+              Supprimer l'entreprise
+            </DialogTitle>
+            <DialogDescription>
+              {companyToDelete && (
+                <>
+                  Êtes-vous sûr de vouloir supprimer <strong>{getCompanyDisplayName(companyToDelete.name, companyToDelete.canonical_url)}</strong> ?
+                  <br /><br />
+                  Cette action supprimera également :
+                  <ul className="list-disc list-inside mt-2 space-y-1">
+                    <li>Toutes les données brutes associées</li>
+                    <li>Tous les contacts liés à cette entreprise</li>
+                    <li>Toutes les opportunités en cours</li>
+                  </ul>
+                  <br />
+                  <strong>Cette action est irréversible.</strong>
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="flex gap-3 justify-end mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteModal(false)}
+            >
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={loading}
+              className="flex items-center gap-2"
+            >
+              <Trash2 className="h-4 w-4" />
+              Supprimer définitivement
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
