@@ -593,6 +593,7 @@ export function ChildElement({
   onCommit,
   onDelete,
   onDuplicate,
+  onOpen,
 }: {
   el: El;
   selected: boolean;
@@ -602,6 +603,7 @@ export function ChildElement({
   onCommit?: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onOpen?: () => void;
 }) {
   const kind = el.type;
   return (
@@ -613,7 +615,7 @@ export function ChildElement({
       onClick={(e) => { e.stopPropagation(); onSelect(); }}
     >
       {selected && <ElementToolbar kind={kind} el={el} onPatch={onPatch} onDelete={onDelete} onDuplicate={onDuplicate} />}
-      {el.type === "board" && <CardEl el={el} onPatch={onPatch} onCommit={onCommit} />}
+      {el.type === "board" && <CardEl el={el} onPatch={onPatch} onCommit={onCommit} onOpen={onOpen} />}
       {el.type === "note" && <NoteEl el={el} selected={selected} onPatch={onPatch} onCommit={onCommit} />}
       {el.type === "todo" && <TodoEl el={el} onPatch={onPatch} onCommit={onCommit} />}
       {el.type === "link" && <LinkEl el={el} onPatch={onPatch} onCommit={onCommit} />}
@@ -636,6 +638,7 @@ export function ColumnEl({
   onPatch,
   onCommit,
   onAddChild,
+  onOpenBoard,
   dropIndex,
 }: {
   el: El;
@@ -650,6 +653,7 @@ export function ColumnEl({
   onPatch: Patch;
   onCommit?: () => void;
   onAddChild: () => void;
+  onOpenBoard: (boardId: string) => void;
   dropIndex?: number | null;
 }) {
   const accent = CARD_HEX[el.accent ?? "violet"] || "#7A5AE0";
@@ -672,6 +676,7 @@ export function ColumnEl({
               onCommit={() => onCommitChild(ch.id)}
               onDelete={() => onDeleteChild(ch.id)}
               onDuplicate={() => onDuplicateChild(ch.id)}
+              onOpen={() => ch.linked_board_id && onOpenBoard(ch.linked_board_id)}
             />
           </React.Fragment>
         ))}

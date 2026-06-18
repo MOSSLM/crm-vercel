@@ -1641,3 +1641,12 @@
   background: var(--accent-tint);
   border-radius: 3px; z-index: 60; pointer-events: none;
 }
+
+/* numeric "icons" (0-9) rendered as text but treated like an icon */
+.pboard .ico-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-weight: 700; line-height: 1; font-size: 14px;
+}
+.pboard .card-icon .ico-num { font-size: 24px; }
+.pboard .card-icon.lg .ico-num { font-size: 30px; }
+.pboard .icon-cell .ico-num { font-size: 16px; }

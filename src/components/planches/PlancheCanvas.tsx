@@ -794,6 +794,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
             onPatch={onPatch}
             onCommit={onCommit}
             onAddChild={() => addChild(c.id)}
+            onOpenBoard={(bid) => router.push(`/planches/${bid}`)}
             dropIndex={dropTarget?.columnId === c.id ? dropTarget.index : null}
           />
         );
