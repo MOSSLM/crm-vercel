@@ -69,7 +69,16 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
   const [loading, setLoading] = React.useState(true);
   const [titleDraft, setTitleDraft] = React.useState("");
 
-  const [sel, setSel] = React.useState<string | null>(null);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  // Single-selection id (for the per-element toolbar / resize / inline editing).
+  const sel = selected.size === 1 ? (selected.values().next().value as string) : null;
+  const setSel = React.useCallback(
+    (id: string | null) => setSelected(id ? new Set([id]) : new Set()),
+    [],
+  );
+  const selectedRef = React.useRef(selected);
+  selectedRef.current = selected;
+  const [marquee, setMarquee] = React.useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [zoom, setZoom] = React.useState(1);
   const [ctx, setCtx] = React.useState<{ x: number; y: number; cx: number; cy: number } | null>(null);
   const [menu, setMenu] = React.useState<Menu>(null);
@@ -453,6 +462,47 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
         return;
       }
       e.stopPropagation();
+
+      // Shift-click toggles membership without starting a drag.
+      if (e.shiftKey) {
+        setSelected((prev) => {
+          const n = new Set(prev);
+          if (n.has(id)) n.delete(id);
+          else n.add(id);
+          return n;
+        });
+        return;
+      }
+
+      // Group move: dragging one element of a multi-selection moves them all.
+      if (selectedRef.current.has(id) && selectedRef.current.size > 1) {
+        const starts = Array.from(selectedRef.current)
+          .map((sid) => cardsRef.current.find((c) => c.id === sid))
+          .filter((c): c is PlancheCard => !!c && !c.parent_card_id)
+          .map((c) => ({ id: c.id, ox: c.position_x, oy: c.position_y }));
+        let moved = false;
+        const move = (ev: PointerEvent) => {
+          const z = zoomRef.current;
+          const dx = (ev.clientX - e.clientX) / z;
+          const dy = (ev.clientY - e.clientY) / z;
+          if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
+          setCards((arr) =>
+            arr.map((c) => {
+              const s = starts.find((x) => x.id === c.id);
+              return s ? { ...c, position_x: Math.round(s.ox + dx), position_y: Math.round(s.oy + dy) } : c;
+            }),
+          );
+        };
+        const up = () => {
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+          if (moved) void Promise.all(starts.map((s) => persistFreePosition(s.id)));
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+        return;
+      }
+
       setSel(id);
       const card = cardsRef.current.find((c) => c.id === id);
       const sc = scrollRef.current;
@@ -505,6 +555,41 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     [attachToColumn, columnHitTest, persistFreePosition],
   );
 
+  // Rubber-band selection: drag on empty canvas to select everything inside.
+  const startMarquee = React.useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (!target.classList.contains("canvas") && !target.classList.contains("canvas-scroll")) return;
+    setCtx(null);
+    const additive = e.shiftKey;
+    const base = additive ? new Set(selectedRef.current) : new Set<string>();
+    if (!additive) setSelected(new Set());
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const move = (ev: PointerEvent) => {
+      const left = Math.min(x0, ev.clientX);
+      const top = Math.min(y0, ev.clientY);
+      const width = Math.abs(ev.clientX - x0);
+      const height = Math.abs(ev.clientY - y0);
+      setMarquee({ left, top, width, height });
+      const next = new Set(base);
+      document.querySelectorAll<HTMLElement>(".pboard .canvas > .free-el[data-el-id]").forEach((node) => {
+        const r = node.getBoundingClientRect();
+        if (r.left < left + width && r.right > left && r.top < top + height && r.bottom > top) {
+          if (node.dataset.elId) next.add(node.dataset.elId);
+        }
+      });
+      setSelected(next);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setMarquee(null);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }, []);
+
   const startResize = (e: React.PointerEvent, id: string) => {
     e.stopPropagation();
     if (e.button !== 0) return;
@@ -533,23 +618,33 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     setCtx({ x: e.clientX, y: e.clientY, cx: p.x - 140, cy: p.y - 20 });
   };
 
+  const deleteSelected = React.useCallback(async () => {
+    const ids = Array.from(selectedRef.current);
+    if (ids.length === 0) return;
+    const snaps = cardsRef.current.filter((c) => ids.includes(c.id));
+    setTrash((t) => [...snaps.map((c) => ({ ...c, _at: "à l'instant" })), ...t].slice(0, 30));
+    setSelected(new Set());
+    setCards((prev) => prev.filter((c) => !ids.includes(c.id)));
+    await Promise.all(ids.map((id) => planchesApi.deleteCard(id).catch((err) => console.error(err))));
+  }, []);
+
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.matches?.("input, textarea, [contenteditable=true]")) return;
-      if ((e.key === "Backspace" || e.key === "Delete") && sel) {
+      if ((e.key === "Backspace" || e.key === "Delete") && selectedRef.current.size > 0) {
         e.preventDefault();
-        void removeEl(sel);
+        void deleteSelected();
       }
       if (e.key === "Escape") {
-        setSel(null);
+        setSelected(new Set());
         setCtx(null);
         setMenu(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sel, removeEl]);
+  }, [deleteSelected]);
 
   // ── uploads ───────────────────────────────────────────────────────────────────
   const uploadFiles = React.useCallback(
@@ -806,13 +901,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
           onDragOver={(e) => e.preventDefault()}
           onPaste={onPaste}
           tabIndex={0}
-          onMouseDown={(e) => {
-            const cl = (e.target as HTMLElement).classList;
-            if (cl.contains("canvas") || cl.contains("canvas-scroll")) {
-              setSel(null);
-              setCtx(null);
-            }
-          }}
+          onPointerDown={startMarquee}
         >
           <div className="canvas" style={{ transform: `scale(${zoom})`, width: canvasSize.w, height: canvasSize.h }}>
             {freeCards.map((c) => {
@@ -824,7 +913,8 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
                 return (
                   <div
                     key={c.id}
-                    className={`free-el line-wrap ${sel === c.id ? "sel" : ""}`}
+                    data-el-id={c.id}
+                    className={`free-el line-wrap ${selected.has(c.id) ? "sel" : ""}`}
                     style={{ left, top }}
                     onPointerDown={(e) => startLineDrag(e, c.id)}
                   >
@@ -850,7 +940,8 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
               return (
                 <div
                   key={c.id}
-                  className={`free-el ${sel === c.id ? "sel" : ""} ${c.type}`}
+                  data-el-id={c.id}
+                  className={`free-el ${selected.has(c.id) ? "sel" : ""} ${c.type}`}
                   style={{ left: c.position_x, top: c.position_y, width: c.width }}
                   onPointerDown={(e) => beginDrag(e, c.id)}
                 >
@@ -890,6 +981,13 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
             <span onClick={() => setZoom(1)}>{Math.round(zoom * 100)}%</span>
             <button onClick={() => setZoom((z) => Math.min(MAX_ZOOM, +(z + 0.1).toFixed(2)))}><Icon name="plus" className="ico-sm" /></button>
           </div>
+
+          {marquee && (
+            <div
+              className="marquee"
+              style={{ position: "fixed", left: marquee.left, top: marquee.top, width: marquee.width, height: marquee.height }}
+            />
+          )}
         </div>
       </div>
 
