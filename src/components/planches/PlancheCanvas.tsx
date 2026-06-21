@@ -67,6 +67,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
   const [cards, setCards] = React.useState<PlancheCard[]>([]);
   const [breadcrumb, setBreadcrumb] = React.useState<Pick<PlancheBoard, "id" | "title">[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [saving, setSaving] = React.useState(false);
   const [titleDraft, setTitleDraft] = React.useState("");
 
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -117,9 +118,20 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
   }, [boardId]);
 
   // ── persistence ─────────────────────────────────────────────────────────────
+  const savingRef = React.useRef(0);
+  const beginSave = React.useCallback(() => {
+    savingRef.current += 1;
+    setSaving(true);
+  }, []);
+  const endSave = React.useCallback(() => {
+    savingRef.current = Math.max(0, savingRef.current - 1);
+    if (savingRef.current === 0) setSaving(false);
+  }, []);
+
   const persistCard = React.useCallback(async (id: string) => {
     const c = cardsRef.current.find((x) => x.id === id);
     if (!c) return;
+    beginSave();
     try {
       await planchesApi.updateCard(id, {
         position_x: c.position_x,
@@ -132,8 +144,10 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
       });
     } catch (err) {
       console.error(err);
+    } finally {
+      endSave();
     }
-  }, []);
+  }, [beginSave, endSave]);
 
   const scheduleSave = React.useCallback(
     (id: string) => {
@@ -432,16 +446,20 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     else if (index >= sibs.length) so = sibs[sibs.length - 1].sort_order + 1;
     else so = (sibs[index - 1].sort_order + sibs[index].sort_order) / 2;
     setCards((arr) => arr.map((c) => (c.id === id ? { ...c, parent_card_id: columnId, sort_order: so } : c)));
+    beginSave();
     try {
       await planchesApi.updateCard(id, { parent_card_id: columnId, sort_order: so });
     } catch (err) {
       console.error(err);
+    } finally {
+      endSave();
     }
-  }, []);
+  }, [beginSave, endSave]);
 
   const persistFreePosition = React.useCallback(async (id: string) => {
     const c = cardsRef.current.find((x) => x.id === id);
     if (!c) return;
+    beginSave();
     try {
       await planchesApi.updateCard(id, {
         parent_card_id: c.parent_card_id,
@@ -451,8 +469,10 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
       });
     } catch (err) {
       console.error(err);
+    } finally {
+      endSave();
     }
-  }, []);
+  }, [beginSave, endSave]);
 
   const beginDrag = React.useCallback(
     (e: React.PointerEvent, id: string) => {
@@ -815,14 +835,6 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
     return { w, h };
   }, [cards]);
 
-  if (loading) {
-    return (
-      <div className="pboard" id="pboard-root" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span className="saved"><i />chargement…</span>
-      </div>
-    );
-  }
-
   return (
     <div className="pboard" id="pboard-root">
       {/* Top bar */}
@@ -851,7 +863,15 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
               </React.Fragment>
             ))}
           </nav>
-          <span className="saved"><i />enregistré</span>
+          <span className="saved">
+            {loading ? (
+              <><span className="saved-spin" />chargement…</>
+            ) : saving ? (
+              <><span className="saved-spin" />enregistrement…</>
+            ) : (
+              <><i />enregistré</>
+            )}
+          </span>
         </div>
         <div className="tb-right">
           <button className="ic-btn" title="Rechercher" onClick={() => router.push("/planches")}><Icon name="search" className="ico-sm" /></button>
@@ -866,6 +886,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
         <input
           className="board-title"
           value={titleDraft}
+          placeholder="Planche"
           onChange={(e) => setTitleDraft(e.target.value)}
           onBlur={saveTitle}
           onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
@@ -965,7 +986,7 @@ export function PlancheCanvas({ boardId }: { boardId: string }) {
               );
             })}
 
-            {cards.length === 0 && (
+            {!loading && cards.length === 0 && (
               <div style={{ position: "absolute", left: 60, top: 80, color: "var(--text-3)", fontSize: 13, maxWidth: 360 }}>
                 <div style={{ fontFamily: "var(--font-serif)", fontSize: 22, color: "var(--text-2)", marginBottom: 6 }}>
                   Planche vide

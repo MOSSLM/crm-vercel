@@ -1650,3 +1650,11 @@
 .pboard .card-icon .ico-num { font-size: 24px; }
 .pboard .card-icon.lg .ico-num { font-size: 30px; }
 .pboard .icon-cell .ico-num { font-size: 16px; }
+
+/* small inline spinner for the save / load indicator */
+.pboard .saved-spin {
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 1.5px solid var(--border-2); border-top-color: var(--text-3);
+  display: inline-block; animation: pboard-spin .7s linear infinite;
+}
+@keyframes pboard-spin { to { transform: rotate(360deg); } }
