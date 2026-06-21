@@ -160,7 +160,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
+        const sameUser = currentUserIdRef.current === session.user.id;
         currentUserIdRef.current = session.user.id;
+        // Token refreshes / tab-refocus fire this for the user we already have
+        // loaded. Re-initialising would blank the UI (loading=true) and force
+        // every page to refetch, so skip it — just clear the session spinner.
+        if (sameUser) {
+          setSessionLoading(false);
+          return;
+        }
         setUser(baseUserFromSession(session.user));
         setProfileLoaded(false);
         void enrichUserFromProfile(session.user.id);
