@@ -3,8 +3,9 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Globe, Pencil, Trash2 } from "lucide-react";
+import { Plus, Globe, Pencil, Trash2, Sparkles } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
+import { DesignImportDialog } from "@/components/site-builder/claude-design/DesignImportDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ export default function SiteBuilderV2ListPage() {
   const [sites, setSites] = React.useState<SiteV2[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [importOpen, setImportOpen] = React.useState(false);
   const [newName, setNewName] = React.useState("");
   const [creating, setCreating] = React.useState(false);
 
@@ -79,10 +81,16 @@ export default function SiteBuilderV2ListPage() {
               Créez et gérez des sites avec le nouveau système de thèmes à sections
             </p>
           </div>
-          <Button onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nouveau site
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => setImportOpen(true)} variant="outline" className="gap-2">
+              <Sparkles className="h-4 w-4" />
+              Importer un design Claude
+            </Button>
+            <Button onClick={() => setCreateOpen(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nouveau site
+            </Button>
+          </div>
         </div>
 
         {loading ? (
@@ -179,6 +187,8 @@ export default function SiteBuilderV2ListPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <DesignImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={fetchSites} />
     </AppLayout>
   );
 }
