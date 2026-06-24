@@ -28,8 +28,11 @@ create table if not exists public.crm_calendar_events (
   category_id uuid references public.crm_calendar_categories(id) on delete set null,
   color text,                              -- override optionnel ; sinon couleur de la catégorie
   all_day boolean not null default false,
-  start_at timestamptz not null,           -- 1re occurrence : date + heure de début
-  end_at   timestamptz not null,           -- 1re occurrence : fin (définit la durée)
+  -- Heures LOCALES « flottantes » (08:00 = 08:00 quel que soit le fuseau).
+  -- L'app écrit/relit des chaînes locales sans fuseau ; un timestamptz serait
+  -- réinterprété en UTC et réaffiché décalé. D'où timestamp SANS fuseau.
+  start_at timestamp without time zone not null,  -- 1re occurrence : date + heure de début
+  end_at   timestamp without time zone not null,  -- 1re occurrence : fin (définit la durée)
   -- récurrence
   recurrence_freq text not null default 'none',       -- 'none' | 'daily' | 'weekly' | 'monthly'
   recurrence_interval integer not null default 1,     -- toutes les N (jours/semaines/mois)
