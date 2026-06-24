@@ -11,6 +11,11 @@ export const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const minutesFromMidnight = (d: Date) => d.getHours() * 60 + d.getMinutes();
 const fmtTime = (d: Date) =>
   d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+export const fmtMinutes = (min: number) =>
+  `${`${Math.floor(min / 60)}`.padStart(2, "0")}:${`${min % 60}`.padStart(2, "0")}`;
+
+export type DragMode = "move" | "resize";
+export const occKey = (occ: EventOccurrence) => `${occ.event.id}-${occ.occurrenceDate}`;
 
 /** Répartit en colonnes les occurrences qui se chevauchent dans une même journée. */
 export function layoutOverlaps(
@@ -57,12 +62,14 @@ const EventBlock = ({
   occ,
   col,
   cols,
-  onSelect,
+  dimmed,
+  onPointerDown,
 }: {
   occ: EventOccurrence;
   col: number;
   cols: number;
-  onSelect: (occ: EventOccurrence) => void;
+  dimmed: boolean;
+  onPointerDown: (e: React.PointerEvent, occ: EventOccurrence, mode: DragMode) => void;
 }) => {
   const top = (minutesFromMidnight(occ.start) / 60) * HOUR_HEIGHT;
   const rawHeight = ((occ.end.getTime() - occ.start.getTime()) / 3_600_000) * HOUR_HEIGHT;
@@ -71,13 +78,13 @@ const EventBlock = ({
   const text = getContrastColor(occ.event.color);
 
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect(occ);
-      }}
-      className="absolute overflow-hidden rounded-md px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm ring-1 ring-black/5 transition hover:brightness-95"
+    <div
+      role="button"
+      tabIndex={0}
+      onPointerDown={(e) => onPointerDown(e, occ, "move")}
+      className={`absolute cursor-grab overflow-hidden rounded-md px-1.5 py-1 text-left text-[11px] leading-tight shadow-sm ring-1 ring-black/5 transition active:cursor-grabbing ${
+        dimmed ? "opacity-40" : "hover:brightness-95"
+      }`}
       style={{
         top,
         height,
@@ -85,6 +92,7 @@ const EventBlock = ({
         width: `calc(${widthPct}% - 4px)`,
         backgroundColor: occ.event.color,
         color: text,
+        touchAction: "none",
       }}
       title={`${occ.event.title} · ${fmtTime(occ.start)}–${fmtTime(occ.end)}`}
     >
@@ -94,23 +102,35 @@ const EventBlock = ({
           {fmtTime(occ.start)}–{fmtTime(occ.end)}
         </span>
       )}
-    </button>
+      {/* Poignée de redimensionnement */}
+      <span
+        onPointerDown={(e) => {
+          e.stopPropagation();
+          onPointerDown(e, occ, "resize");
+        }}
+        className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize"
+        style={{ touchAction: "none" }}
+        aria-hidden
+      />
+    </div>
   );
 };
 
 export interface DayColumnProps {
   date: Date;
   occurrences: EventOccurrence[];
-  onSelectOccurrence: (occ: EventOccurrence) => void;
   onCreateAt: (date: Date, hour: number) => void;
+  onBlockPointerDown: (e: React.PointerEvent, occ: EventOccurrence, mode: DragMode) => void;
+  activeKey?: string | null;
   isToday?: boolean;
 }
 
 export const DayColumn = ({
   date,
   occurrences,
-  onSelectOccurrence,
   onCreateAt,
+  onBlockPointerDown,
+  activeKey,
   isToday,
 }: DayColumnProps) => {
   const placed = React.useMemo(() => layoutOverlaps(occurrences), [occurrences]);
@@ -130,13 +150,50 @@ export const DayColumn = ({
       ))}
       {placed.map(({ occ, col, cols }) => (
         <EventBlock
-          key={`${occ.event.id}-${occ.occurrenceDate}`}
+          key={occKey(occ)}
           occ={occ}
           col={col}
           cols={cols}
-          onSelect={onSelectOccurrence}
+          dimmed={activeKey === occKey(occ)}
+          onPointerDown={onBlockPointerDown}
         />
       ))}
+    </div>
+  );
+};
+
+/** Aperçu fantôme rendu pendant un glisser-déposer. */
+export const DragGhost = ({
+  occ,
+  startMinutes,
+  endMinutes,
+  dayIndex,
+  dayCount,
+}: {
+  occ: EventOccurrence;
+  startMinutes: number;
+  endMinutes: number;
+  dayIndex: number;
+  dayCount: number;
+}) => {
+  const widthPct = 100 / dayCount;
+  return (
+    <div
+      className="pointer-events-none absolute z-20 overflow-hidden rounded-md px-1.5 py-1 text-[11px] leading-tight shadow-lg ring-2 ring-primary"
+      style={{
+        top: (startMinutes / 60) * HOUR_HEIGHT,
+        height: Math.max(18, ((endMinutes - startMinutes) / 60) * HOUR_HEIGHT),
+        left: `calc(${dayIndex * widthPct}% + 2px)`,
+        width: `calc(${widthPct}% - 4px)`,
+        backgroundColor: occ.event.color,
+        color: getContrastColor(occ.event.color),
+        opacity: 0.95,
+      }}
+    >
+      <span className="block truncate font-semibold">{occ.event.title}</span>
+      <span className="block truncate opacity-80">
+        {fmtMinutes(startMinutes)}–{fmtMinutes(endMinutes)}
+      </span>
     </div>
   );
 };
@@ -176,7 +233,7 @@ export const OverlayChip = ({ item }: { item: OverlayItem }) => (
 
 /** Colonne d'heures (gouttière de gauche). */
 export const HoursGutter = () => (
-  <div className="relative" style={{ height: HOUR_HEIGHT * 24 }}>
+  <div className="relative w-14 shrink-0" style={{ height: HOUR_HEIGHT * 24 }}>
     {HOURS.map((hour) => (
       <div
         key={hour}

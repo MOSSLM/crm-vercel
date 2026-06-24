@@ -8,10 +8,12 @@ import { buildBuckets, getBucket } from "./occurrences";
 import {
   AllDayEventChip,
   DayColumn,
+  DragGhost,
   HOUR_HEIGHT,
   HoursGutter,
   OverlayChip,
 } from "./dayColumn";
+import { useGridDrag } from "./useGridDrag";
 
 const WEEKDAY_LABELS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
@@ -24,6 +26,7 @@ export interface WeekGridProps {
   onSelectDay: (date: Date) => void;
   onSelectOccurrence: (occ: EventOccurrence) => void;
   onCreateAt: (date: Date, hour: number) => void;
+  onChanged: () => void;
 }
 
 export const WeekGrid = ({
@@ -35,15 +38,22 @@ export const WeekGrid = ({
   onSelectDay,
   onSelectOccurrence,
   onCreateAt,
+  onChanged,
 }: WeekGridProps) => {
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const columnsRef = React.useRef<HTMLDivElement>(null);
+  const { preview, beginDrag } = useGridDrag({
+    columnsRef,
+    days,
+    onSelect: onSelectOccurrence,
+    onChanged,
+  });
 
   const buckets = React.useMemo(() => {
     if (days.length === 0) return new Map();
     return buildBuckets(events, overlay, startOfDay(days[0]), endOfDay(days[days.length - 1]));
   }, [events, overlay, days]);
 
-  // Faire défiler jusqu'à ~7h à l'ouverture.
   React.useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = 7 * HOUR_HEIGHT;
   }, []);
@@ -112,18 +122,34 @@ export const WeekGrid = ({
 
       {/* Grille horaire */}
       <div ref={scrollRef} className="max-h-[60vh] overflow-y-auto">
-        <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))]">
+        <div className="flex">
           <HoursGutter />
-          {days.map((day) => (
-            <DayColumn
-              key={day.toISOString()}
-              date={day}
-              occurrences={getBucket(buckets, toDateKey(day)).timed}
-              onSelectOccurrence={onSelectOccurrence}
-              onCreateAt={onCreateAt}
-              isToday={isSameDay(day, today)}
-            />
-          ))}
+          <div
+            ref={columnsRef}
+            className="relative grid flex-1"
+            style={{ gridTemplateColumns: `repeat(${days.length}, minmax(0, 1fr))` }}
+          >
+            {days.map((day) => (
+              <DayColumn
+                key={day.toISOString()}
+                date={day}
+                occurrences={getBucket(buckets, toDateKey(day)).timed}
+                onCreateAt={onCreateAt}
+                onBlockPointerDown={beginDrag}
+                activeKey={preview?.key ?? null}
+                isToday={isSameDay(day, today)}
+              />
+            ))}
+            {preview && (
+              <DragGhost
+                occ={preview.occ}
+                startMinutes={preview.startMinutes}
+                endMinutes={preview.endMinutes}
+                dayIndex={preview.dayIndex}
+                dayCount={days.length}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

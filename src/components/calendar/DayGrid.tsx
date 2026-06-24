@@ -8,10 +8,12 @@ import { buildBuckets, getBucket } from "./occurrences";
 import {
   AllDayEventChip,
   DayColumn,
+  DragGhost,
   HOUR_HEIGHT,
   HoursGutter,
   OverlayChip,
 } from "./dayColumn";
+import { useGridDrag } from "./useGridDrag";
 
 export interface DayGridProps {
   date: Date;
@@ -20,6 +22,7 @@ export interface DayGridProps {
   today: Date;
   onSelectOccurrence: (occ: EventOccurrence) => void;
   onCreateAt: (date: Date, hour: number) => void;
+  onChanged: () => void;
 }
 
 export const DayGrid = ({
@@ -29,8 +32,17 @@ export const DayGrid = ({
   today,
   onSelectOccurrence,
   onCreateAt,
+  onChanged,
 }: DayGridProps) => {
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const columnsRef = React.useRef<HTMLDivElement>(null);
+  const days = React.useMemo(() => [date], [date]);
+  const { preview, beginDrag } = useGridDrag({
+    columnsRef,
+    days,
+    onSelect: onSelectOccurrence,
+    onChanged,
+  });
 
   const bucket = React.useMemo(() => {
     const map = buildBuckets(events, overlay, startOfDay(date), endOfDay(date));
@@ -64,15 +76,27 @@ export const DayGrid = ({
       )}
 
       <div ref={scrollRef} className="max-h-[65vh] overflow-y-auto">
-        <div className="grid grid-cols-[56px_minmax(0,1fr)]">
+        <div className="flex">
           <HoursGutter />
-          <DayColumn
-            date={date}
-            occurrences={bucket.timed}
-            onSelectOccurrence={onSelectOccurrence}
-            onCreateAt={onCreateAt}
-            isToday={isSameDay(date, today)}
-          />
+          <div ref={columnsRef} className="relative grid flex-1" style={{ gridTemplateColumns: "minmax(0, 1fr)" }}>
+            <DayColumn
+              date={date}
+              occurrences={bucket.timed}
+              onCreateAt={onCreateAt}
+              onBlockPointerDown={beginDrag}
+              activeKey={preview?.key ?? null}
+              isToday={isSameDay(date, today)}
+            />
+            {preview && (
+              <DragGhost
+                occ={preview.occ}
+                startMinutes={preview.startMinutes}
+                endMinutes={preview.endMinutes}
+                dayIndex={0}
+                dayCount={1}
+              />
+            )}
+          </div>
         </div>
       </div>
     </div>

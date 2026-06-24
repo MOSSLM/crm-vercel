@@ -169,7 +169,8 @@ export const CalendarPage = () => {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">Calendrier</h1>
             <p className="text-sm text-muted-foreground">
-              Blocs de travail récurrents, code couleur, et échéances de tes projets.
+              Blocs récurrents et code couleur. Cliquez un créneau pour créer, glissez un bloc pour le
+              déplacer, étirez son bord bas pour changer la durée.
             </p>
           </div>
 
@@ -220,6 +221,7 @@ export const CalendarPage = () => {
           today={today}
           onSelectOccurrence={openEdit}
           onCreateAt={openCreateAt}
+          onChanged={refresh}
         />
       )}
 
@@ -233,6 +235,7 @@ export const CalendarPage = () => {
           onSelectDay={openDay}
           onSelectOccurrence={openEdit}
           onCreateAt={openCreateAt}
+          onChanged={refresh}
         />
       )}
 
