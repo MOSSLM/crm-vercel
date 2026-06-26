@@ -4,6 +4,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { publishSite } from "@/lib/site-builder/publish-site";
 import { deriveSubdomainLabel, uniqueSubdomain } from "@/lib/site-builder/derive-subdomain";
+import { cloneTemplateSite, type TemplateSlice, type TemplateInstance } from "@/lib/site-builder/clone-template-site";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +42,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const [{ data: template, error: tErr }, { data: templateInstances, error: iErr }] = await Promise.all([
     supabase
       .from("sites")
-      .select("id, style_guide, sitemap, site_config, content_overrides")
+      .select("style_guide, sitemap, site_config, content_overrides, shared_assets, tweaks, is_claude_design")
       .eq("id", templateId)
       .single(),
     supabase
@@ -77,11 +78,8 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     (existing ?? []).map((s) => (s.published_subdomain as string)).filter(Boolean),
   );
 
-  const tpl = template as { style_guide: unknown; sitemap: unknown; site_config: unknown; content_overrides: unknown };
-  const tplInstances = (templateInstances ?? []) as Array<{
-    section_id: string | null; page_slug: string; sort_order: number;
-    content: Record<string, unknown> | null; blocks: unknown; custom_style: unknown; is_hidden: boolean | null;
-  }>;
+  const tpl = template as unknown as TemplateSlice;
+  const tplInstances = (templateInstances ?? []) as TemplateInstance[];
 
   const results: DeployResult[] = [];
 
@@ -99,40 +97,16 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
       );
       takenSubdomains.add(label); // reserve within this batch
 
-      // Insert the new company site cloned from the template.
-      const { data: newSite, error: insErr } = await supabase
-        .from("sites")
-        .insert({
-          name: company.nom || `Site ${entrepriseId}`,
-          enterprise_id: entrepriseId,
-          lead_magnet_project_id: projectByCompany.get(entrepriseId) ?? null,
-          is_template: false,
-          style_guide: tpl.style_guide ?? null,
-          sitemap: tpl.sitemap ?? null,
-          site_config: tpl.site_config ?? null,
-          content_overrides: tpl.content_overrides ?? null,
-        })
-        .select("id")
-        .single();
-      if (insErr || !newSite) throw new Error(insErr?.message ?? "Création du site échouée");
-      const newSiteId = (newSite as { id: string }).id;
-
-      // Clone the template's section instances (fresh ids, deep-copied content).
-      if (tplInstances.length > 0) {
-        const cloned = tplInstances.map((inst) => ({
-          id: crypto.randomUUID(),
-          site_id: newSiteId,
-          section_id: inst.section_id ?? null,
-          page_slug: inst.page_slug,
-          sort_order: inst.sort_order,
-          content: structuredClone(inst.content ?? {}),
-          blocks: structuredClone(inst.blocks ?? []),
-          custom_style: structuredClone(inst.custom_style ?? {}),
-          is_hidden: inst.is_hidden ?? false,
-        }));
-        const { error: cloneErr } = await supabase.from("site_section_instances").insert(cloned);
-        if (cloneErr) throw new Error(cloneErr.message);
-      }
+      // Clone the template (config + instances + shared assets/theme) via the
+      // shared helper, reusing the batch-loaded template to avoid re-querying.
+      const clone = await cloneTemplateSite(supabase, templateId, {
+        enterpriseId: entrepriseId,
+        name: company.nom || `Site ${entrepriseId}`,
+        leadMagnetProjectId: projectByCompany.get(entrepriseId) ?? null,
+        preloaded: { template: tpl, instances: tplInstances },
+      });
+      if (!clone.ok || !clone.siteId) throw new Error(clone.error ?? "Clonage échoué");
+      const newSiteId = clone.siteId;
 
       // Publish the demo immediately on the derived subdomain.
       const pub = await publishSite(supabase, newSiteId, { subdomain: label });
