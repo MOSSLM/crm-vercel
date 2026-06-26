@@ -39,6 +39,8 @@ export const TOKENIZABLE_VARIABLES: Array<{ token: string; label: string }> = [
   { token: "{{ entreprise.email_domain }}", label: "Domaine email" },
   { token: "{{ entreprise.annee_experience }}", label: "Années d'expérience" },
   { token: "{{ entreprise.clients_count }}", label: "Nombre de clients" },
+  { token: "{{ entreprise.region }}", label: "Région" },
+  { token: "{{ entreprise.departement }}", label: "Département" },
 ];
 
 const ALLOWED_TOKENS = new Set(TOKENIZABLE_VARIABLES.map((v) => v.token));

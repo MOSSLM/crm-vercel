@@ -32,6 +32,7 @@ export const POST = withAuth({}, async ({ req, cors }) => {
     sharedCss?: string;
     fontLinks?: string[];
     tweaks?: Record<string, unknown>;
+    tweaksSchema?: Record<string, unknown>;
     enterpriseId?: number | null;
   };
   try {
@@ -63,6 +64,7 @@ export const POST = withAuth({}, async ({ req, cors }) => {
       sharedCss: body.sharedCss ?? "",
       fontLinks: Array.isArray(body.fontLinks) ? body.fontLinks : [],
       tweaks: body.tweaks ?? {},
+      tweaksSchema: body.tweaksSchema ?? {},
       enterpriseId: body.enterpriseId ?? null,
     });
     return json({ siteId: result.siteId, pageCount: result.pageCount }, { status: 201, headers: cors });

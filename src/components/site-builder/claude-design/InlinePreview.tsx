@@ -5,6 +5,7 @@ import {
   tweaksToCssVars,
   tweaksDataAttrs,
   tweaksFontLinkHref,
+  tweaksExtrasScript,
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
@@ -74,7 +75,8 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, o
     const fonts = [tweaksFontLinkHref(tweaks), ...fontLinks].map((h) => `<link rel="stylesheet" href="${h}">`).join("");
     const body = resolveSampleVars(html);
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
-    return `<!doctype html><html ${attrStr}><head><meta charset="utf-8">${fonts}<style>${rootVars}\n${sharedCss}\nbody{margin:0}[contenteditable]{cursor:text}</style></head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CLAUDE_DESIGN_RUNTIME}</script><script>${EDIT_SCRIPT}</script></body></html>`;
+    const extras = tweaksExtrasScript(tweaks);
+    return `<!doctype html><html ${attrStr}><head><meta charset="utf-8">${fonts}<style>${rootVars}\n${sharedCss}\nbody{margin:0}[contenteditable]{cursor:text}</style></head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CLAUDE_DESIGN_RUNTIME}</script>${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, overrides]);
 
   return (

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
+import type { TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { TweaksPanel } from "./TweaksPanel";
 import { VariablesPanel } from "./VariablesPanel";
@@ -24,6 +25,7 @@ interface BoardData {
   name: string;
   sharedAssets: { css?: string; fonts?: string[] };
   tweaks: Tweaks;
+  tweaksSchema: TweaksSchema;
   sitemap: SitemapPage[];
   pages: PageData[];
 }
@@ -152,7 +154,16 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               </button>
             ))}
           </div>
-          {tab === "tweaks" && <TweaksPanel tweaks={data.tweaks} onChange={handleTweak} />}
+          {tab === "tweaks" && (
+            <TweaksPanel
+              controls={[
+                ...(data.tweaksSchema?.theme ?? []),
+                ...(data.tweaksSchema?.pageExtras?.[activeSlug] ?? []),
+              ]}
+              tweaks={data.tweaks}
+              onChange={handleTweak}
+            />
+          )}
           {tab === "variables" && <VariablesPanel siteId={siteId} onRetokenised={load} />}
           {tab === "tags" && <TagToggles sitemap={data.sitemap} onChange={handleTag} />}
         </div>

@@ -17,6 +17,7 @@ import {
   defaultMappingFromTokens,
   applyBracketTokens,
 } from "@/lib/site-builder/claude-design/bracket-tokens";
+import { buildTweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 
 interface Props {
   open: boolean;
@@ -104,6 +105,15 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
         html: applyBracketTokens(sourceHtml, mapping).html,
       }));
 
+      // Tweaks schema (preset palettes + per-page extras) from the *-tweaks.jsx.
+      const pageTweaksBySlug: Record<string, string> = {};
+      for (const p of bundle.pages) {
+        if (p.tweaksFile && bundle.tweaksJsx[p.tweaksFile]) {
+          pageTweaksBySlug[p.slug] = bundle.tweaksJsx[p.tweaksFile];
+        }
+      }
+      const tweaksSchema = buildTweaksSchema(bundle.tweaksJsx["theme-tweaks.jsx"] ?? "", pageTweaksBySlug);
+
       setProgress("Création du site…");
       const res = await authedFetch("/api/site-builder/designs/import-bundle", {
         method: "POST",
@@ -115,6 +125,7 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
           sharedCss,
           fontLinks: bundle.fontLinks,
           tweaks: bundle.tweaksDefaults,
+          tweaksSchema,
         }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec de l'import");
