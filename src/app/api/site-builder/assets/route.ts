@@ -36,6 +36,10 @@ export const POST = withAuth({}, async ({ req }) => {
   const file = formData.get("file") as File | null;
   if (!file) return jsonError("No file provided", 400);
 
+  // Optional template-relative path (e.g. "images/hero.jpg") so a Claude Design
+  // import can map the original reference → public URL deterministically.
+  const originalPath = (formData.get("original_path") as string | null)?.trim() || null;
+
   const ext = file.name.split(".").pop() ?? "bin";
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
   const storagePath = `${siteId}/${unique}`;
@@ -65,6 +69,7 @@ export const POST = withAuth({}, async ({ req }) => {
       filename: file.name,
       size: file.size,
       mime_type: file.type,
+      original_path: originalPath,
     })
     .select("id, public_url, filename, size, mime_type, created_at")
     .single();
