@@ -32,6 +32,10 @@ export interface BundlePage {
   /** Service tag derived from the file name (service-<tag>.html), else null. */
   serviceTag: string | null;
   fontLinks: string[];
+  /** The page-specific `*-tweaks.jsx` it referenced (e.g. "index-tweaks.jsx"),
+   *  excluding the shared theme-tweaks.jsx / tweaks-panel.jsx. Used to build the
+   *  per-page Tweaks schema. */
+  tweaksFile: string | null;
 }
 
 export interface BundleImage {
@@ -46,6 +50,9 @@ export interface ParsedBundle {
   fontLinks: string[];
   images: BundleImage[];
   tweaksDefaults: TweaksDefaults;
+  /** Raw source of every `*.jsx` in the bundle, keyed by lowercased basename
+   *  (e.g. "theme-tweaks.jsx", "service-tweaks.jsx"). Feeds parse-tweaks-schema. */
+  tweaksJsx: Record<string, string>;
 }
 
 const IMAGE_EXT_MIME: Record<string, string> = {
@@ -104,12 +111,23 @@ interface ParsedPage {
   title: string;
   html: string;
   fontLinks: string[];
+  tweaksFile: string | null;
 }
+
+const SHARED_TWEAKS = new Set(["theme-tweaks.jsx", "tweaks-panel.jsx"]);
 
 /** Extracts body markup + head styles/font links from a full HTML page. */
 function parsePageHtml(rawHtml: string): ParsedPage {
   const root = parse(rawHtml, {
     blockTextElements: { script: true, noscript: true, style: true, pre: true },
+  });
+
+  // Before stripping, note the page-specific *-tweaks.jsx referenced (excluding
+  // the shared theme-tweaks.jsx / tweaks-panel.jsx) — drives the per-page schema.
+  let tweaksFile: string | null = null;
+  root.querySelectorAll("script").forEach((s) => {
+    const src = (s.getAttribute("src") ?? "").replace(/^.*\//, "").toLowerCase();
+    if (src.endsWith("-tweaks.jsx") && !SHARED_TWEAKS.has(src)) tweaksFile = src;
   });
 
   // Strip scripts + inline handlers / javascript: URLs (the template's own JS is
@@ -143,7 +161,7 @@ function parsePageHtml(rawHtml: string): ParsedPage {
   const body = root.querySelector("body");
   const bodyHtml = body ? body.innerHTML : root.toString();
   const html = [...headStyles, bodyHtml].filter(Boolean).join("\n");
-  return { title, html, fontLinks };
+  return { title, html, fontLinks, tweaksFile };
 }
 
 /**
@@ -156,6 +174,7 @@ export function parseTemplateBundle(files: BundleInputFile[]): ParsedBundle {
   const cssByName = new Map<string, string>();
   const editmodeBlocks: TweaksDefaults[] = [];
   const allFontLinks = new Set<string>();
+  const tweaksJsx: Record<string, string> = {};
 
   for (const file of files) {
     const e = ext(file.path);
@@ -173,12 +192,15 @@ export function parseTemplateBundle(files: BundleInputFile[]): ParsedBundle {
         html: parsed.html,
         serviceTag: serviceTagFromFile(fileName),
         fontLinks: parsed.fontLinks,
+        tweaksFile: parsed.tweaksFile,
       });
     } else if (e === "css") {
       cssByName.set(name, decodeText(file.bytes));
     } else if (e === "jsx") {
+      const src = decodeText(file.bytes);
+      tweaksJsx[name] = src;
       // Only *-tweaks.jsx carry an EDITMODE defaults block; others return {}.
-      editmodeBlocks.push(parseEditmode(decodeText(file.bytes)));
+      editmodeBlocks.push(parseEditmode(src));
     } else if (IMAGE_EXT_MIME[e]) {
       images.push({ path: file.path, bytes: file.bytes, mime: file.mime || IMAGE_EXT_MIME[e] });
     }
@@ -206,5 +228,6 @@ export function parseTemplateBundle(files: BundleInputFile[]): ParsedBundle {
     fontLinks: Array.from(allFontLinks),
     images,
     tweaksDefaults: mergeTweaksDefaults(editmodeBlocks),
+    tweaksJsx,
   };
 }

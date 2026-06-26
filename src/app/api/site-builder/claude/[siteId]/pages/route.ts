@@ -19,7 +19,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
 
   const [{ data: site }, { data: instances, error: iErr }] = await Promise.all([
-    supabase.from("sites").select("sitemap, shared_assets, tweaks, name").eq("id", params.siteId).single(),
+    supabase.from("sites").select("sitemap, shared_assets, tweaks, tweaks_schema, name").eq("id", params.siteId).single(),
     supabase
       .from("site_section_instances")
       .select("id, page_slug, content")
@@ -74,6 +74,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
     name: (site as { name?: string } | null)?.name ?? "",
     sharedAssets: (site as { shared_assets?: unknown } | null)?.shared_assets ?? {},
     tweaks: (site as { tweaks?: unknown } | null)?.tweaks ?? {},
+    tweaksSchema: (site as { tweaks_schema?: unknown } | null)?.tweaks_schema ?? {},
     sitemap,
     pages,
   });

@@ -1,56 +1,103 @@
 "use client";
 
 import React from "react";
-import { FONT_SETS, WEIGHT_SETS, CORNER_SETS, type Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
+import { Check } from "lucide-react";
+import type { TweakControl } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 
-const COLORS: Array<{ key: keyof Tweaks; label: string }> = [
-  { key: "fond", label: "Fond principal" },
-  { key: "fondAlt", label: "Fond secondaire" },
-  { key: "sable", label: "Neutre / sable" },
-  { key: "sombre", label: "Sombre" },
-  { key: "accent", label: "Accent" },
-  { key: "accentChaud", label: "Accent chaud" },
-];
-
-const POLICE_OPTS = Object.keys(FONT_SETS);
-const EPAISSEUR_OPTS = Object.keys(WEIGHT_SETS);
-const ANGLES_OPTS = Object.keys(CORNER_SETS);
-
-/** Theme controls mirroring the template's theme-tweaks.jsx panel. */
-export function TweaksPanel({ tweaks, onChange }: { tweaks: Tweaks; onChange: (key: string, value: string) => void }) {
+/**
+ * Faithful reproduction of the template's own Tweaks panel: preset color
+ * swatches (no native color picker), selects and per-page radios, driven by the
+ * schema extracted from the template's *-tweaks.jsx (parse-tweaks-schema).
+ */
+export function TweaksPanel({
+  controls,
+  tweaks,
+  onChange,
+}: {
+  controls: TweakControl[];
+  tweaks: Record<string, unknown>;
+  onChange: (key: string, value: string) => void;
+}) {
   const val = (k: string, d = "") => (typeof tweaks[k] === "string" ? (tweaks[k] as string) : d);
+
+  if (controls.length === 0) {
+    return <p className="text-xs text-muted-foreground">Aucun réglage de thème pour ce template.</p>;
+  }
+
+  // Group consecutive controls under their <TweakSection> header.
+  const groups: Array<{ group?: string; items: TweakControl[] }> = [];
+  for (const c of controls) {
+    const last = groups[groups.length - 1];
+    if (last && last.group === c.group) last.items.push(c);
+    else groups.push({ group: c.group, items: [c] });
+  }
+
   return (
     <div className="flex flex-col gap-4 text-sm">
-      <div>
-        <div className="mb-2 font-medium">Couleurs</div>
-        <div className="grid grid-cols-2 gap-2">
-          {COLORS.map((c) => (
-            <label key={c.key as string} className="flex items-center gap-2">
-              <input
-                type="color"
-                className="h-6 w-8 rounded border"
-                value={val(c.key as string, "#000000")}
-                onChange={(e) => onChange(c.key as string, e.target.value)}
-              />
-              <span className="text-xs text-muted-foreground">{c.label}</span>
-            </label>
+      {groups.map((g, gi) => (
+        <div key={gi} className="flex flex-col gap-3">
+          {g.group && (
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{g.group}</div>
+          )}
+          {g.items.map((c) => (
+            <Control key={c.key} control={c} value={val(c.key, c.options[0] ?? "")} onChange={(v) => onChange(c.key, v)} />
           ))}
         </div>
-      </div>
-
-      <Select label="Police" value={val("police", "Éditorial")} options={POLICE_OPTS} onChange={(v) => onChange("police", v)} />
-      <Select label="Épaisseur" value={val("epaisseur", "Normal")} options={EPAISSEUR_OPTS} onChange={(v) => onChange("epaisseur", v)} />
-      <Select label="Angles" value={val("angles", "Doux")} options={ANGLES_OPTS} onChange={(v) => onChange("angles", v)} />
+      ))}
     </div>
   );
 }
 
-function Select({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (v: string) => void }) {
+function Control({ control, value, onChange }: { control: TweakControl; value: string; onChange: (v: string) => void }) {
+  if (control.type === "color") {
+    return (
+      <div>
+        <div className="mb-1.5 text-xs text-muted-foreground">{control.label}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {control.options.map((hex) => {
+            const selected = value.toLowerCase() === hex.toLowerCase();
+            return (
+              <button
+                key={hex}
+                title={hex}
+                onClick={() => onChange(hex)}
+                className={`relative h-7 w-7 rounded-md border ${selected ? "ring-2 ring-offset-1 ring-primary" : "border-black/10"}`}
+                style={{ backgroundColor: hex }}
+              >
+                {selected && <Check className="absolute inset-0 m-auto h-3.5 w-3.5 text-white mix-blend-difference" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (control.type === "radio") {
+    return (
+      <div>
+        <div className="mb-1.5 text-xs text-muted-foreground">{control.label}</div>
+        <div className="inline-flex flex-wrap gap-1 rounded-md bg-muted p-0.5">
+          {control.options.map((o) => (
+            <button
+              key={o}
+              onClick={() => onChange(o)}
+              className={`rounded px-2.5 py-1 text-xs ${value === o ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              {o}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // select
   return (
     <label className="flex items-center justify-between gap-2">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">{control.label}</span>
       <select className="rounded-md border bg-background px-2 py-1 text-sm" value={value} onChange={(e) => onChange(e.target.value)}>
-        {options.map((o) => <option key={o} value={o}>{o}</option>)}
+        {control.options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </label>
   );

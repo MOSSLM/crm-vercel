@@ -13,6 +13,7 @@ import {
   tweaksDataAttrs,
   tweaksFontLinkHref,
   seedThemeScript,
+  tweaksExtrasScript,
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
@@ -41,6 +42,12 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesig
     .map(([k, v]) => `d.setAttribute(${JSON.stringify(k)},${JSON.stringify(v)});`)
     .join("")}${seedThemeScript(tweaks)}}catch(e){}`;
 
+  // Per-page section tweaks (stepper/pro) — run once the DOM is parsed.
+  const extras = tweaksExtrasScript(tweaks);
+  const extrasJs = extras
+    ? `(function(){function r(){${extras}}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',r);else r();})();`
+    : "";
+
   return (
     <>
       <link rel="stylesheet" href={fontHref} />
@@ -48,7 +55,7 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesig
         <link key={i} rel="stylesheet" href={href} />
       ))}
       <style data-cd-theme dangerouslySetInnerHTML={{ __html: `${rootVars}\n${sharedCss}` }} />
-      <script dangerouslySetInnerHTML={{ __html: `${setAttrsJs}\n${CLAUDE_DESIGN_RUNTIME}` }} />
+      <script dangerouslySetInnerHTML={{ __html: `${setAttrsJs}\n${CLAUDE_DESIGN_RUNTIME}\n${extrasJs}` }} />
     </>
   );
 }

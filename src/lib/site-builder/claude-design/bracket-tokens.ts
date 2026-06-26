@@ -33,6 +33,12 @@ const SUGGESTION_MAP: Record<string, BracketSuggestion> = {
   "prenom": { token: "{{ entreprise.fondateur }}", label: "Prénom du fondateur" },
   "entreprise": { token: "{{ entreprise.email_domain }}", label: "Domaine email" },
   "aco": { token: "{{ entreprise.attestation_fluides }}", label: "Attestation fluides" },
+  "ville": { token: "{{ entreprise.ville }}", label: "Ville" },
+  "code postal": { token: "{{ entreprise.code_postal }}", label: "Code postal" },
+  "région": { token: "{{ entreprise.region }}", label: "Région" },
+  "region": { token: "{{ entreprise.region }}", label: "Région" },
+  "département": { token: "{{ entreprise.departement }}", label: "Département" },
+  "departement": { token: "{{ entreprise.departement }}", label: "Département" },
 };
 
 export interface BracketToken {

@@ -125,3 +125,31 @@ export function seedThemeScript(tweaks: Tweaks): string {
   const json = JSON.stringify(tweaks || {});
   return `try{localStorage.setItem('cvc-theme', ${JSON.stringify(json)});}catch(e){}`;
 }
+
+// Per-page section tweaks → the style key + CSS class the template toggles
+// (mirrors service-tweaks.jsx applyStepperStyle / applyProStyle).
+const STEPPER_STYLE_MAP: Record<string, string> = {
+  "Encadré": "framed", "Flottant": "float", "Pile": "deck", "Roue": "wheel", "Roue 2": "wheel2",
+};
+const PRO_STYLE_MAP: Record<string, string> = { "Deck": "deck", "Slider": "slider" };
+
+/**
+ * Trusted inline-script body that applies the per-page section tweaks
+ * (stepperStyle / proStyle): seeds the localStorage keys the template reads and
+ * toggles the CSS classes on `.solution-stepper` / `.pro-stage`. No-op when the
+ * elements or values are absent. Returns JS (no tags).
+ */
+export function tweaksExtrasScript(tweaks: Tweaks): string {
+  const stepper = STEPPER_STYLE_MAP[tweaks?.stepperStyle as string];
+  const pro = PRO_STYLE_MAP[tweaks?.proStyle as string];
+  const parts: string[] = [];
+  if (stepper) {
+    parts.push(`try{localStorage.setItem('cvc-stepper-style', ${JSON.stringify(stepper)});}catch(e){}`);
+    parts.push(`(function(){var s=document.querySelector('.solution-stepper');if(s){['framed','float','deck','wheel','wheel2'].forEach(function(k){s.classList.toggle('is-'+k, k===${JSON.stringify(stepper)});});}})();`);
+  }
+  if (pro) {
+    parts.push(`try{localStorage.setItem('cvc-pro-style', ${JSON.stringify(pro)});}catch(e){}`);
+    parts.push(`(function(){var p=document.querySelector('.pro-stage');if(p){p.classList.toggle('pro-mode-deck', ${JSON.stringify(pro)}==='deck');p.classList.toggle('pro-mode-slider', ${JSON.stringify(pro)}==='slider');}})();`);
+  }
+  return parts.join("");
+}

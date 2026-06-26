@@ -14,6 +14,8 @@ export const CLAUDE_DESIGN_VARIABLES: Array<{ token: string; label: string; samp
   { token: "{{ entreprise.adresse }}", label: "Adresse", sample: "12 rue de la Paix" },
   { token: "{{ entreprise.ville }}", label: "Ville", sample: "Annecy" },
   { token: "{{ entreprise.code_postal }}", label: "Code postal", sample: "74000" },
+  { token: "{{ entreprise.region }}", label: "Région", sample: "Auvergne-Rhône-Alpes" },
+  { token: "{{ entreprise.departement }}", label: "Département", sample: "Haute-Savoie" },
   { token: "{{ entreprise.horaires }}", label: "Horaires", sample: "Lun–Ven 8h–18h" },
   { token: "{{ entreprise.logo_url }}", label: "Logo", sample: "" },
   { token: "{{ entreprise.siret }}", label: "SIRET", sample: "123 456 789 00012" },

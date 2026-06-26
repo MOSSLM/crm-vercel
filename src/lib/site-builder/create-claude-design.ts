@@ -127,6 +127,8 @@ export interface CreateClaudeDesignMultiPageInput {
   fontLinks: string[];
   /** Resolved theme (cvc-theme shape) seeded from the EDITMODE defaults. */
   tweaks: Record<string, unknown>;
+  /** Controls schema extracted from the template's *-tweaks.jsx (palettes…). */
+  tweaksSchema?: Record<string, unknown>;
   enterpriseId?: number | null;
 }
 
@@ -196,6 +198,7 @@ export async function createClaudeDesignMultiPage(
     sitemap,
     shared_assets: { css: input.sharedCss, fonts: input.fontLinks },
     tweaks: input.tweaks ?? {},
+    tweaks_schema: input.tweaksSchema ?? {},
   });
   if (siteErr) {
     await cleanup();
