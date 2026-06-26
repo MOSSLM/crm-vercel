@@ -27,6 +27,7 @@ import { extractClassTokens } from "@/lib/library-section/preprocess";
 import { generateTailwindCSS } from "@/lib/library-section/tailwind-jit";
 import { LibrarySectionInline } from "./LibrarySectionInline";
 import { LibrarySectionHydrator } from "./LibrarySectionHydrator";
+import { ClaudeDesignAssets, type ClaudeDesignAssetsData } from "./claude-design/ClaudeDesignAssets";
 
 const SHADOW_MAP: Record<string, string> = {
   none: "none",
@@ -143,10 +144,12 @@ interface DynamicPageRendererProps {
   menus?: SiteMenus | null;
   /** Pre-loaded published snapshot of instances. When provided, skips the DB query. */
   preloadedInstances?: Array<unknown> | null;
+  /** When set, the site is a Claude design: inject its shared CSS, fonts, theme + runtime. */
+  claudeDesign?: ClaudeDesignAssetsData | null;
 }
 
 /** Server component: renders a dynamic-sections page for the public site */
-export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances }: DynamicPageRendererProps) {
+export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances, claudeDesign }: DynamicPageRendererProps) {
   const supabase = getServiceClient();
 
   type RenderInstance = SiteSectionInstance & { section_def: SiteSectionDef | null };
@@ -262,6 +265,15 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
 
   return (
     <div style={{ ...cssVars, fontFamily: "var(--font-body)", color: "var(--color-text)" } as React.CSSProperties}>
+      {/* Claude Design site: shared CSS + fonts + theme (CSS vars) + trusted runtime */}
+      {claudeDesign && (
+        <ClaudeDesignAssets
+          sharedCss={claudeDesign.sharedCss}
+          fontLinks={claudeDesign.fontLinks}
+          tweaks={claudeDesign.tweaks}
+        />
+      )}
+
       {/* Inject library-section styles once for the whole page */}
       {hasLibrarySections && (
         <>

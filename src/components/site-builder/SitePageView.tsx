@@ -41,6 +41,7 @@ export async function SitePageView({ subdomain, host, pageSlug }: SitePageViewPr
     styleGuide,
     menus,
     publishedSitemap,
+    claudeDesign,
   } = site;
 
   // resolveSite() enforces a strict snapshot lock; reaching here without
@@ -73,6 +74,7 @@ export async function SitePageView({ subdomain, host, pageSlug }: SitePageViewPr
       reviews={reviews}
       menus={visibleMenus}
       preloadedInstances={publishedInstances}
+      claudeDesign={claudeDesign}
     />
   );
 }
