@@ -160,7 +160,9 @@ export async function createClaudeDesignMultiPage(
       category: "misc",
       name: `${input.name} — ${page.title}`,
       code: wrapRawHtml(page.html),
-      example_data: { __source_html: page.sourceHtml },
+      // __source_html: rewritten-but-still-bracketed source (mapping re-runs).
+      // __token_html: tokenised body the builder loads for preview + inline edit.
+      example_data: { __source_html: page.sourceHtml, __token_html: page.html },
       schema: null,
       is_tag_adaptive: false,
       render_mode: "raw",

@@ -73,7 +73,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
       .from("theme_sections")
       .update({
         code: wrapRawHtml(result.html),
-        example_data: { ...exampleData, __var_mapping: result.applied },
+        example_data: { ...exampleData, __token_html: result.html, __var_mapping: result.applied },
       })
       .eq("id", section.id);
     if (updErr) return jsonError(updErr.message, 500);

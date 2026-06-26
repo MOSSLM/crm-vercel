@@ -3,9 +3,10 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Plus, Globe, Pencil, Trash2, Sparkles } from "lucide-react";
+import { Plus, Globe, Pencil, Trash2, Sparkles, LayoutGrid, FileArchive } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { DesignImportDialog } from "@/components/site-builder/claude-design/DesignImportDialog";
+import { MultiPageImportDialog } from "@/components/site-builder/claude-design/MultiPageImportDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +21,7 @@ export default function SiteBuilderV2ListPage() {
   const [loading, setLoading] = React.useState(true);
   const [createOpen, setCreateOpen] = React.useState(false);
   const [importOpen, setImportOpen] = React.useState(false);
+  const [multiImportOpen, setMultiImportOpen] = React.useState(false);
   const [newName, setNewName] = React.useState("");
   const [creating, setCreating] = React.useState(false);
 
@@ -82,6 +84,16 @@ export default function SiteBuilderV2ListPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <Link href="/site-builder/claude">
+              <Button variant="outline" className="gap-2">
+                <LayoutGrid className="h-4 w-4" />
+                Projets (Kanban)
+              </Button>
+            </Link>
+            <Button onClick={() => setMultiImportOpen(true)} variant="outline" className="gap-2">
+              <FileArchive className="h-4 w-4" />
+              Importer un template (ZIP)
+            </Button>
             <Button onClick={() => setImportOpen(true)} variant="outline" className="gap-2">
               <Sparkles className="h-4 w-4" />
               Importer un design Claude
@@ -142,7 +154,7 @@ export default function SiteBuilderV2ListPage() {
                   </a>
                 )}
                 <div className="flex gap-2 mt-4">
-                  <Link href={`/site-builder/${site.id}`} className="flex-1">
+                  <Link href={(site as SiteV2 & { is_claude_design?: boolean }).is_claude_design ? `/site-builder/claude/${site.id}` : `/site-builder/${site.id}`} className="flex-1">
                     <Button variant="outline" size="sm" className="w-full gap-2 text-xs">
                       <Pencil className="h-3 w-3" />
                       Éditer
@@ -189,6 +201,7 @@ export default function SiteBuilderV2ListPage() {
       </Dialog>
 
       <DesignImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={fetchSites} />
+      <MultiPageImportDialog open={multiImportOpen} onOpenChange={setMultiImportOpen} onImported={fetchSites} />
     </AppLayout>
   );
 }
