@@ -5,10 +5,14 @@ import { cloneTemplateSite } from "@/lib/site-builder/clone-template-site";
 
 export const dynamic = "force-dynamic";
 
-type Params = { templateId: string };
+// The dynamic segment is named [siteId] to match the sibling [siteId]/pages
+// route (Next.js forbids two slug names at the same path level). The value
+// carried here is the TEMPLATE site's id.
+type Params = { siteId: string };
 
 /**
- * POST /api/site-builder/claude/[templateId]/create-demo   (JSON: { companyId })
+ * POST /api/site-builder/claude/[siteId]/create-demo   (JSON: { companyId })
+ *   ([siteId] = the template's id)
  *
  * Creates ONE demo site for a company by cloning a Claude Design template,
  * WITHOUT publishing — it lands in the kanban "À faire" column, pre-filled with
@@ -34,7 +38,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   ]);
   if (!company) return jsonError("Entreprise introuvable", 404);
 
-  const clone = await cloneTemplateSite(supabase, params.templateId, {
+  const clone = await cloneTemplateSite(supabase, params.siteId, {
     enterpriseId: companyId,
     name: (company as { name?: string }).name || `Site ${companyId}`,
     leadMagnetProjectId: (project as { id?: string } | null)?.id ?? null,
