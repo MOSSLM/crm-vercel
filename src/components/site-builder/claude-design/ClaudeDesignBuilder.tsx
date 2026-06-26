@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Rocket, FileText } from "lucide-react";
+import { ArrowLeft, CopyPlus, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
@@ -115,15 +115,17 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
     });
   };
 
-  const handleDeploy = async () => {
-    const t = toast.loading("Déploiement…");
+  // No publishing here — we only prepare templates. "Créer template" snapshots
+  // the current tweaks/edits into a new reusable variation.
+  const handleCreateTemplate = async () => {
+    const t = toast.loading("Création du template…");
     try {
-      const res = await authedFetch(`/api/site-builder/sites/${siteId}/deploy`, { method: "POST" });
+      const res = await authedFetch(`/api/site-builder/claude/${siteId}/duplicate`, { method: "POST" });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Échec");
-      toast.success(`Déployé : ${body.url}`, { id: t });
+      toast.success(`Template créé : ${body.name}`, { id: t });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Déploiement impossible", { id: t });
+      toast.error(e instanceof Error ? e.message : "Création impossible", { id: t });
     }
   };
 
@@ -150,8 +152,8 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
             </button>
           ))}
         </div>
-        <Button size="sm" variant="outline" className="gap-2" onClick={handleDeploy}>
-          <Rocket className="h-4 w-4" /> Déployer
+        <Button size="sm" className="gap-2" onClick={handleCreateTemplate}>
+          <CopyPlus className="h-4 w-4" /> Créer template
         </Button>
       </header>
 

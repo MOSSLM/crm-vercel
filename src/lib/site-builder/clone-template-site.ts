@@ -18,6 +18,7 @@ export interface TemplateSlice {
   content_overrides: unknown;
   shared_assets: unknown;
   tweaks: unknown;
+  tweaks_schema: unknown;
   is_claude_design: boolean | null;
 }
 
@@ -32,16 +33,19 @@ export interface TemplateInstance {
 }
 
 const TEMPLATE_COLUMNS =
-  "style_guide, sitemap, site_config, content_overrides, shared_assets, tweaks, is_claude_design";
+  "style_guide, sitemap, site_config, content_overrides, shared_assets, tweaks, tweaks_schema, is_claude_design";
 const INSTANCE_COLUMNS =
   "section_id, page_slug, sort_order, content, blocks, custom_style, is_hidden";
 
 export interface CloneTemplateOptions {
-  enterpriseId: number;
+  /** Linked company for a demo site; null/0 when duplicating as a template. */
+  enterpriseId?: number | null;
   name: string;
   leadMagnetProjectId?: string | null;
   /** Kanban stage for the new demo. Defaults to 'a_faire'. */
   buildStage?: "a_faire" | "en_cours" | "a_verifier" | "pret";
+  /** Duplicate as a reusable TEMPLATE (is_template=true, no company) instead of a demo. */
+  asTemplate?: boolean;
   /** Avoid re-querying when the caller already loaded the template (bulk path). */
   preloaded?: { template: TemplateSlice; instances: TemplateInstance[] };
 }
@@ -75,9 +79,9 @@ export async function cloneTemplateSite(
     .from("sites")
     .insert({
       name: opts.name,
-      enterprise_id: opts.enterpriseId,
-      lead_magnet_project_id: opts.leadMagnetProjectId ?? null,
-      is_template: false,
+      enterprise_id: opts.asTemplate ? null : (opts.enterpriseId ?? null),
+      lead_magnet_project_id: opts.asTemplate ? null : (opts.leadMagnetProjectId ?? null),
+      is_template: opts.asTemplate ?? false,
       is_claude_design: template.is_claude_design ?? false,
       build_stage: opts.buildStage ?? "a_faire",
       style_guide: template.style_guide ?? null,
@@ -86,6 +90,7 @@ export async function cloneTemplateSite(
       content_overrides: template.content_overrides ?? null,
       shared_assets: template.shared_assets ?? {},
       tweaks: template.tweaks ?? {},
+      tweaks_schema: template.tweaks_schema ?? {},
     })
     .select("id")
     .single();
