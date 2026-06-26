@@ -11,6 +11,7 @@ import React from "react";
 import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
+import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
@@ -87,6 +88,18 @@ export async function LibrarySectionInline({
     html = result.html;
     applied = result.applied;
     failed = result.failed;
+  }
+
+  // Section-level service-tag conditioning for raw Claude Design markup. Runs
+  // AFTER overrides so positional override paths aren't shifted by stripping.
+  // Only relevant when the design carries data-service-tag regions.
+  if (html.includes("data-service-tag")) {
+    let tags: string[] = [];
+    try {
+      const parsed = JSON.parse(variables["__service_tags"] ?? "[]");
+      if (Array.isArray(parsed)) tags = parsed.map((t) => String(t));
+    } catch { /* no tags → strip all tagged regions */ }
+    html = stripTaggedRegions(html, tags);
   }
   if (typeof console !== "undefined") {
     console.info("[SB:ssr]", {

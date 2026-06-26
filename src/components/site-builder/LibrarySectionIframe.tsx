@@ -300,6 +300,13 @@ const DEFAULT_VARIABLES: Record<string, string> = {
   "entreprise.logo_url": "",
   "entreprise.slogan": "L'excellence à votre service",
   "entreprise.horaires": "Lun-Ven 9h-18h",
+  "entreprise.siret": "123 456 789 00012",
+  "entreprise.fondateur": "Alex",
+  "entreprise.attestation_fluides": "ACO-00000",
+  "entreprise.email_domain": "entreprise.fr",
+  "entreprise.annee_experience": "15",
+  "entreprise.clients_count": "500",
+  "entreprise.site_web_canonique": "https://entreprise.fr",
 };
 
 // ─── StyleGuide → CSS custom properties ─────────────────────────────────────

@@ -34,7 +34,7 @@ export async function publishSite(
   const [{ data: currentSite }, { data: currentInstances }] = await Promise.all([
     supabase
       .from("sites")
-      .select("style_guide, sitemap, site_config, enterprise_id, lead_magnet_project_id, content_overrides")
+      .select("style_guide, sitemap, site_config, enterprise_id, lead_magnet_project_id, content_overrides, shared_assets, tweaks")
       .eq("id", siteId)
       .single(),
     supabase
@@ -66,6 +66,10 @@ export async function publishSite(
     published_instances: currentInstances ?? [],
     published_variables: publishedVariables,
     published_reviews: publishedReviews,
+    // Claude Design snapshot so the deployed page serves its CSS/theme from the
+    // locked snapshot (same strict-snapshot principle as the rest).
+    published_shared_assets: (currentSite as { shared_assets?: unknown } | null)?.shared_assets ?? null,
+    published_tweaks: (currentSite as { tweaks?: unknown } | null)?.tweaks ?? null,
     published_at: new Date().toISOString(),
   };
   if (subdomain) updatePayload.published_subdomain = subdomain;

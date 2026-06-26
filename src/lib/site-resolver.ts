@@ -39,6 +39,8 @@ export interface ResolvedSite {
   publishedSitemap?: SitemapPage[] | null;
   /** Site-level SEO/social defaults from the published site_config snapshot. */
   seo?: SeoMeta | null;
+  /** Claude Design render data (shared CSS, fonts, theme) when this is one. */
+  claudeDesign?: { sharedCss: string; fontLinks: string[]; tweaks: Record<string, unknown> } | null;
 }
 
 // Resolve a site by subdomain or custom domain
@@ -52,7 +54,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_sitemap, published_instances, published_variables, published_reviews"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_sitemap, published_instances, published_variables, published_reviews, is_claude_design, shared_assets, tweaks, published_shared_assets, published_tweaks"
     )
     .eq("is_published", true);
 
@@ -142,6 +144,26 @@ export async function resolveSite(
   const faviconUrl = publishedSiteConfig?.faviconUrl ?? null;
   const seo = publishedSiteConfig?.seo ?? null;
 
+  // Claude Design render data: prefer the published snapshot, fall back to live
+  // (consistent with the rest of the resolver). Only set for is_claude_design.
+  type SharedAssets = { css?: string; fonts?: string[] } | null;
+  const cd = siteRow as {
+    is_claude_design?: boolean | null;
+    shared_assets?: SharedAssets;
+    tweaks?: Record<string, unknown> | null;
+    published_shared_assets?: SharedAssets;
+    published_tweaks?: Record<string, unknown> | null;
+  };
+  let claudeDesign: ResolvedSite["claudeDesign"] = null;
+  if (cd.is_claude_design) {
+    const assets = cd.published_shared_assets ?? cd.shared_assets ?? {};
+    claudeDesign = {
+      sharedCss: assets?.css ?? "",
+      fontLinks: Array.isArray(assets?.fonts) ? assets.fonts : [],
+      tweaks: cd.published_tweaks ?? cd.tweaks ?? {},
+    };
+  }
+
   return {
     siteId: siteRow.id,
     config,
@@ -159,6 +181,7 @@ export async function resolveSite(
     reviews,
     publishedSitemap: (siteRow as { published_sitemap?: SitemapPage[] | null }).published_sitemap ?? null,
     seo,
+    claudeDesign,
   };
 }
 

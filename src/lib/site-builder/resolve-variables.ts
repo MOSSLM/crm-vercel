@@ -63,7 +63,7 @@ export async function resolveEnterpriseVariables(
       .from("entreprises")
       .select(
         "id, name, telephone, email, adresse, ville, code_postal, logo_url, " +
-        "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats"
+        "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats, horaires"
       )
       .eq("id", site.enterprise_id)
       .single();
@@ -82,6 +82,7 @@ export async function resolveEnterpriseVariables(
       nombre_avis: number | string | null;
       service_tags: string[] | string | null;
       stats: Array<{ label: string; value: string; display_order?: number }> | null;
+      horaires: string | null;
     } | null;
 
     if (company) {
@@ -95,6 +96,7 @@ export async function resolveEnterpriseVariables(
       vars["entreprise.site_web_canonique"] = company.site_web_canonique ?? "";
       vars["entreprise.note_moyenne"] = String(company.note_moyenne ?? "");
       vars["entreprise.nombre_avis"] = String(company.nombre_avis ?? "");
+      vars["entreprise.horaires"] = company.horaires ?? "";
       companyName = company.name ?? undefined;
       logoUrl = company.logo_url ?? undefined;
       phone = company.telephone ?? undefined;
@@ -198,6 +200,14 @@ export async function resolveEnterpriseVariables(
   const siteStats = site.content_overrides?.stats;
   const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
   vars["__stats"] = JSON.stringify(resolvedStats);
+
+  // Email domain (for templates that show "contact@<domain>"), derived from the
+  // resolved email (after any lead-magnet override). Only set when present so a
+  // missing value renders empty rather than the literal token.
+  const email = vars["entreprise.email"];
+  if (email && email.includes("@")) {
+    vars["entreprise.email_domain"] = email.slice(email.indexOf("@") + 1);
+  }
 
   return { variables: vars, reviews, companyName, logoUrl, phone };
 }
