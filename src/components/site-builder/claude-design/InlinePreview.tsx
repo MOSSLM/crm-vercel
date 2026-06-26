@@ -9,6 +9,7 @@ import {
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
+import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 
 export interface OverrideEntry {
@@ -24,10 +25,22 @@ interface Props {
   overrides: Record<string, OverrideEntry>;
   /** Called when the user edits text/image inline. key is "path:kind". */
   onEdit: (key: string, entry: OverrideEntry) => void;
+  /** Real company variables (Entreprises tab). When set, the preview uses them
+   *  instead of sample values and filters service-tag regions accordingly. */
+  variables?: Record<string, string> | null;
 }
 
-function resolveSampleVars(html: string): string {
-  return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, k) => SAMPLE_VARIABLES[k] ?? "");
+function resolveVars(html: string, vars: Record<string, string>): string {
+  return html.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_m, k) => vars[k] ?? "");
+}
+
+function enterpriseTagsOf(vars: Record<string, string>): string[] {
+  try {
+    const parsed = JSON.parse(vars["__service_tags"] ?? "[]");
+    return Array.isArray(parsed) ? parsed.map((t) => String(t)) : [];
+  } catch {
+    return [];
+  }
 }
 
 const EDIT_SCRIPT = `
@@ -53,7 +66,7 @@ const EDIT_SCRIPT = `
 `;
 
 /** Faithful per-page preview with inline text/image editing. */
-export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit }: Props) {
+export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit, variables }: Props) {
   const onEditRef = React.useRef(onEdit);
   onEditRef.current = onEdit;
 
@@ -73,11 +86,16 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, o
     const dataAttrs = tweaksDataAttrs(tweaks);
     const attrStr = Object.entries(dataAttrs).map(([k, v]) => `${k}="${v}"`).join(" ");
     const fonts = [tweaksFontLinkHref(tweaks), ...fontLinks].map((h) => `<link rel="stylesheet" href="${h}">`).join("");
-    const body = resolveSampleVars(html);
+    // Entreprises tab: resolve with the company's real variables + filter the
+    // service-tag regions it doesn't have. Otherwise use sample values (all shown).
+    let body = resolveVars(html, variables ?? SAMPLE_VARIABLES);
+    if (variables && body.includes("data-service-tag")) {
+      body = stripTaggedRegions(body, enterpriseTagsOf(variables));
+    }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     const extras = tweaksExtrasScript(tweaks);
     return `<!doctype html><html ${attrStr}><head><meta charset="utf-8">${fonts}<style>${rootVars}\n${sharedCss}\nbody{margin:0}[contenteditable]{cursor:text}</style></head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CLAUDE_DESIGN_RUNTIME}</script>${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
-  }, [html, sharedCss, fontLinks, tweaks, overrides]);
+  }, [html, sharedCss, fontLinks, tweaks, overrides, variables]);
 
   return (
     <iframe
