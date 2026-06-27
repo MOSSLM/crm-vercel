@@ -3,19 +3,21 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, FileArchive, Pencil, Plus, LayoutGrid, Layers } from "lucide-react";
+import { ArrowLeft, FileArchive, Pencil, Plus, LayoutGrid, Layers, Upload } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { authedFetch } from "@/utils/authedFetch";
 import { SiteKanban } from "@/components/site-builder/claude-design/SiteKanban";
 import { MultiPageImportDialog } from "@/components/site-builder/claude-design/MultiPageImportDialog";
+import { ClaudeDesignTheme } from "@/components/site-builder/claude-design/ClaudeDesignTheme";
 
 interface TemplateRef { id: string; name: string }
 interface Company { id: number; nom: string; pret_pour_lm?: boolean }
 
 type Tab = "templates" | "projets";
+
+const CARD_ACCENTS = ["#E2552B", "#2A6FDB", "#1F8A5B", "#7A5AE0", "#C8881F"];
 
 export default function ClaudeDesignHubPage() {
   const [tab, setTab] = React.useState<Tab>("templates");
@@ -41,58 +43,87 @@ export default function ClaudeDesignHubPage() {
 
   return (
     <AppLayout>
-      <div className="flex flex-col gap-6 p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">Claude Design</h1>
-            <p className="text-sm text-muted-foreground mt-0.5">Templates et création des sites démo</p>
-          </div>
-          <div className="flex gap-2">
-            <Button onClick={() => setImportOpen(true)} variant="outline" className="gap-2">
-              <FileArchive className="h-4 w-4" /> Importer un template (ZIP)
-            </Button>
-            <Link href="/site-builder"><Button variant="ghost" className="gap-2"><ArrowLeft className="h-4 w-4" /> Site Builder</Button></Link>
-          </div>
-        </div>
-
-        <div className="flex gap-1 rounded-md bg-muted p-0.5 w-fit">
-          {(["templates", "projets"] as Tab[]).map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-sm ${tab === t ? "bg-background shadow-sm" : "text-muted-foreground"}`}>
-              {t === "templates" ? <Layers className="h-4 w-4" /> : <LayoutGrid className="h-4 w-4" />}
-              {t === "templates" ? "Templates" : "Projets"}
+      <div className="cd-scope" style={{ background: "var(--bg)", minHeight: "100%" }}>
+        <ClaudeDesignTheme />
+        <div style={{ padding: "30px 40px 60px" }}>
+          {/* Hero head */}
+          <div className="cd-hub-head">
+            <div>
+              <div className="cd-hub-kicker">Designs importés depuis Claude</div>
+              <h1 className="cd-serif" style={{ fontSize: 42, margin: 0, lineHeight: 1, letterSpacing: "-.01em" }}>
+                Vos designs <em style={{ fontStyle: "italic", color: "var(--cd-accent)" }}>importés</em>
+              </h1>
+              <p style={{ fontSize: 13.5, color: "var(--text-3)", margin: "12px 0 0", maxWidth: 460, lineHeight: 1.55 }}>
+                Importez un <code style={{ background: "var(--bg-2)", padding: "1px 6px", borderRadius: 4, fontSize: 11.5, color: "var(--text-2)" }}>.zip</code> généré par Claude,
+                liez ses zones à vos variables CRM, et enregistrez autant de templates que de cibles.
+              </p>
+            </div>
+            <button className="cd-import-tile" onClick={() => setImportOpen(true)}>
+              <span className="cd-import-tile-ic"><Upload className="ico-lg" /></span>
+              <b>Importer un .zip</b><span>Glissez votre export Claude</span>
             </button>
-          ))}
-        </div>
+          </div>
 
-        {tab === "templates" ? (
-          loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(3)].map((_, i) => <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />)}
-            </div>
-          ) : templates.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-              Aucun template. Importe un ZIP Claude Design pour commencer.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {templates.map((t) => (
-                <Card key={t.id} className="p-5 flex flex-col gap-3">
-                  <h3 className="font-semibold truncate">{t.name}</h3>
-                  <div className="flex gap-2 mt-auto">
-                    <Link href={`/site-builder/claude/${t.id}`} className="flex-1">
-                      <Button variant="outline" size="sm" className="w-full gap-2 text-xs"><Pencil className="h-3 w-3" /> Ouvrir l&apos;éditeur</Button>
-                    </Link>
-                    <Button size="sm" className="gap-1 text-xs" onClick={() => setCreateFor(t)}><Plus className="h-3 w-3" /> Créer un site</Button>
-                  </div>
-                </Card>
+          {/* Toolbar: tabs + actions */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "26px 0 22px" }}>
+            <div className="cd-seg" style={{ width: "fit-content" }}>
+              {(["templates", "projets"] as Tab[]).map((t) => (
+                <button key={t} className={"cd-seg-b" + (tab === t ? " on" : "")} style={{ padding: "0 14px", display: "inline-flex", alignItems: "center", gap: 6, height: 28 }} onClick={() => setTab(t)}>
+                  {t === "templates" ? <Layers className="ico-sm" /> : <LayoutGrid className="ico-sm" />}
+                  {t === "templates" ? "Templates" : "Projets"}
+                </button>
               ))}
             </div>
-          )
-        ) : (
-          <SiteKanban />
-        )}
+            <div className="cd-grow" />
+            <button className="cd-btn outline" onClick={() => setImportOpen(true)}><FileArchive className="ico-sm" />Importer un template (ZIP)</button>
+            <Link href="/site-builder"><button className="cd-btn ghost"><ArrowLeft className="ico-sm" />Site Builder</button></Link>
+          </div>
+
+          {/* Templates grid */}
+          {tab === "templates" ? (
+            loading ? (
+              <div className="cd-hub-grid">
+                {[...Array(3)].map((_, i) => <div key={i} style={{ height: 240, background: "var(--bg-2)", borderRadius: 14 }} />)}
+              </div>
+            ) : templates.length === 0 ? (
+              <div style={{ border: "1.5px dashed var(--border-strong)", borderRadius: 14, padding: 40, textAlign: "center", fontSize: 13, color: "var(--text-3)" }}>
+                Aucun template. Importez un .zip Claude Design pour commencer.
+              </div>
+            ) : (
+              <div className="cd-hub-grid">
+                {templates.map((t, i) => {
+                  const accent = CARD_ACCENTS[i % CARD_ACCENTS.length];
+                  return (
+                    <div key={t.id} className="cd-design-card">
+                      <Link href={`/site-builder/claude/${t.id}`} className="cd-design-thumb-link">
+                        <div className="cd-design-thumb" style={{ "--c": accent } as React.CSSProperties}>
+                          <div className="cd-thumb-nav"><span className="cd-thumb-logo" style={{ background: accent }} /><span className="cd-thumb-dots"><i /><i /><i /></span></div>
+                          <div className="cd-thumb-hero"><div className="cd-thumb-h1" /><div className="cd-thumb-line" /><div className="cd-thumb-line s" /><div className="cd-thumb-btn" style={{ background: accent }} /></div>
+                          <div className="cd-thumb-grid"><i /><i /><i /></div>
+                          <span className="cd-thumb-kind">Template</span>
+                        </div>
+                      </Link>
+                      <div className="cd-design-meta">
+                        <div className="cd-design-name">{t.name}</div>
+                        <div className="cd-design-file"><Upload className="ico-xs" />claude-design</div>
+                        <div className="cd-design-actions">
+                          <Link href={`/site-builder/claude/${t.id}`} style={{ flex: 1 }}>
+                            <button className="cd-btn outline"><Pencil className="ico-xs" />Éditeur</button>
+                          </Link>
+                          <button className="cd-btn accent" onClick={() => setCreateFor(t)}><Plus className="ico-xs" />Créer un site</button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          ) : null}
+        </div>
       </div>
+
+      {/* Projets board rendered outside .cd-scope to keep its shadcn styling intact */}
+      {tab === "projets" ? <div className="p-6"><SiteKanban /></div> : null}
 
       <MultiPageImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={loadTemplates} />
       <CreateSiteDialog

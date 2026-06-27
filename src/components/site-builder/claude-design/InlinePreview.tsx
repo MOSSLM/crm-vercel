@@ -6,6 +6,7 @@ import {
   tweaksDataAttrs,
   tweaksFontLinkHref,
   tweaksExtrasScript,
+  tweaksInlineStyle,
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
@@ -30,6 +31,11 @@ interface Props {
   variables?: Record<string, string> | null;
   /** Internal link clicked in the preview → switch the active page (no navigation). */
   onNavigate?: (slug: string) => void;
+  /** Reports the rendered document height so the canvas can size the device
+   *  frame and apply zoom without an inner scrollbar. */
+  onHeight?: (height: number) => void;
+  /** Extra className merged onto the iframe (defaults to a bordered card). */
+  className?: string;
 }
 
 function resolveVars(html: string, vars: Record<string, string>): string {
@@ -60,6 +66,12 @@ const EDIT_SCRIPT = `
     if(href && href.charAt(0) === '/'){ parent.postMessage({source:'cd',kind:'nav',slug:(href.split('#')[0]||'/')},'*'); }
   }, true);
   document.addEventListener('submit', function(ev){ ev.preventDefault(); }, true);
+  // Report the document height so the parent can size the device frame (the
+  // canvas scrolls, never the iframe) and apply a precise zoom transform.
+  function reportH(){ try{ var h=Math.max(document.documentElement.scrollHeight, document.body.scrollHeight); parent.postMessage({source:'cd',kind:'height',value:h},'*'); }catch(e){} }
+  reportH(); setTimeout(reportH, 60); setTimeout(reportH, 350);
+  window.addEventListener('load', reportH);
+  if(window.ResizeObserver){ try{ new ResizeObserver(reportH).observe(document.body); }catch(e){} }
   var OV = window.__cdOverrides || {};
   function nodeAt(path){ var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n; }
   Object.keys(OV).forEach(function(key){ var e=OV[key]; var p=key.split(':')[0].split('.').map(Number); var el=nodeAt(p); if(!el) return; if(e.kind==='text') el.textContent=e.value; else if(e.kind==='image') el.setAttribute('src', e.value); else if(e.kind==='bg_image'){ el.style.backgroundImage='url("'+e.value+'")'; } });
@@ -79,17 +91,20 @@ const EDIT_SCRIPT = `
 `;
 
 /** Faithful per-page preview with inline text/image editing. */
-export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit, variables, onNavigate }: Props) {
+export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit, variables, onNavigate, onHeight, className }: Props) {
   const onEditRef = React.useRef(onEdit);
   onEditRef.current = onEdit;
   const onNavRef = React.useRef(onNavigate);
   onNavRef.current = onNavigate;
+  const onHeightRef = React.useRef(onHeight);
+  onHeightRef.current = onHeight;
 
   React.useEffect(() => {
     const handler = (ev: MessageEvent) => {
       const d = ev.data;
       if (!d || d.source !== "cd") return;
       if (d.kind === "nav") { if (typeof d.slug === "string") onNavRef.current?.(d.slug); return; }
+      if (d.kind === "height") { if (typeof d.value === "number") onHeightRef.current?.(d.value); return; }
       if (!Array.isArray(d.path)) return;
       const key = `${d.path.join(".")}:${d.kind}`;
       onEditRef.current(key, { kind: d.kind === "image" ? "image" : "text", value: String(d.value ?? "") });
@@ -100,6 +115,10 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, o
 
   const srcDoc = React.useMemo(() => {
     const rootVars = `:root{${Object.entries(tweaksToCssVars(tweaks)).map(([k, v]) => `${k}:${v}`).join(";")}}`;
+    // Apply the tweak vars as an INLINE style on <html> (like the template's own
+    // theme-apply.js). Inline custom-properties beat any `:root{}` the imported
+    // design ships in sharedCss, so colours / fonts / corners actually update.
+    const htmlStyle = tweaksInlineStyle(tweaks).replace(/'/g, "&#39;");
     const dataAttrs = tweaksDataAttrs(tweaks);
     const attrStr = Object.entries(dataAttrs).map(([k, v]) => `${k}="${v}"`).join(" ");
     const fonts = [tweaksFontLinkHref(tweaks), ...fontLinks].map((h) => `<link rel="stylesheet" href="${h}">`).join("");
@@ -111,13 +130,15 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, o
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     const extras = tweaksExtrasScript(tweaks);
-    return `<!doctype html><html ${attrStr}><head><meta charset="utf-8">${fonts}<style>${rootVars}\n${sharedCss}\nbody{margin:0}[contenteditable]{cursor:text}</style></head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CLAUDE_DESIGN_RUNTIME}</script>${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
+    // sharedCss first, then rootVars — so even the stylesheet fallback wins over
+    // the design's own :root defaults (the inline html style wins over both).
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8">${fonts}<style>${sharedCss}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style></head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CLAUDE_DESIGN_RUNTIME}</script>${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, overrides, variables]);
 
   return (
     <iframe
       title="Aperçu"
-      className="h-full w-full rounded-lg border bg-white"
+      className={className ?? "h-full w-full rounded-lg border bg-white"}
       sandbox="allow-scripts allow-same-origin allow-modals"
       srcDoc={srcDoc}
     />

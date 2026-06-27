@@ -3,16 +3,18 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, CopyPlus, FileText } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
+  Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
+  Wand2, AlertTriangle, Eye, EyeOff,
+} from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
-import type { TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
+import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 import { InlinePreview, type OverrideEntry } from "./InlinePreview";
-import { TweaksPanel } from "./TweaksPanel";
-import { VariablesPanel } from "./VariablesPanel";
-import { TagToggles } from "./TagToggles";
+import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
+import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
 
 interface PageData {
   slug: string;
@@ -32,16 +34,25 @@ interface BoardData {
 }
 interface Company { id: number; nom: string; pret_pour_lm?: boolean }
 
-type TopTab = "pages" | "entreprises";
-type RightTab = "tweaks" | "variables" | "tags";
+type LeftTab = "theme" | "tags";
+type Viewport = "desktop" | "mobile";
+type SaveState = "saved" | "pending";
+
+/* ── small helpers ─────────────────────────────────────────────── */
+const DOT_COLORS = ["#E2552B", "#2A6FDB", "#1F8A5B", "#7A5AE0", "#C8881F", "#B5322F"];
+function companyColor(id: number) { return DOT_COLORS[Math.abs(id) % DOT_COLORS.length]; }
+function companyInitials(nom: string) {
+  return nom.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
+}
 
 export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [data, setData] = React.useState<BoardData | null>(null);
   const [activeSlug, setActiveSlug] = React.useState("/");
-  const [topTab, setTopTab] = React.useState<TopTab>("pages");
-  const [rightTab, setRightTab] = React.useState<RightTab>("tweaks");
+  const [leftTab, setLeftTab] = React.useState<LeftTab>("theme");
+  const [viewport, setViewport] = React.useState<Viewport>("desktop");
+  const [save, setSave] = React.useState<SaveState>("saved");
   const [companies, setCompanies] = React.useState<Company[]>([]);
-  const [companyId, setCompanyId] = React.useState<number | null>(null);
+  const [company, setCompany] = React.useState<Company | null>(null);
   const [companyVars, setCompanyVars] = React.useState<Record<string, string> | null>(null);
   const saveTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
@@ -55,27 +66,28 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
 
   React.useEffect(() => { load(); }, [load]);
 
-  // Lazy-load the company list the first time the Entreprises tab opens.
-  React.useEffect(() => {
-    if (topTab !== "entreprises" || companies.length > 0) return;
+  // Lazy-load companies the first time the picker is opened.
+  const ensureCompanies = React.useCallback(() => {
+    if (companies.length > 0) return;
     authedFetch("/api/site-builder/entreprises")
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => setCompanies(Array.isArray(list) ? list : []))
       .catch(() => toast.error("Liste des entreprises indisponible"));
-  }, [topTab, companies.length]);
+  }, [companies.length]);
 
-  const selectCompany = async (id: number | null) => {
-    setCompanyId(id);
-    if (!id) { setCompanyVars(null); return; }
+  const selectCompany = async (c: Company | null) => {
+    setCompany(c);
+    if (!c) { setCompanyVars(null); return; }
     try {
-      const res = await authedFetch(`/api/site-builder/variables?enterprise=${id}&site=${siteId}`);
+      const res = await authedFetch(`/api/site-builder/variables?enterprise=${c.id}&site=${siteId}`);
       setCompanyVars(res.ok ? ((await res.json()) as Record<string, string>) : null);
     } catch { setCompanyVars(null); }
   };
 
-  const debounce = (key: string, fn: () => void, ms = 600) => {
+  const debounce = (key: string, fn: () => Promise<void>, ms = 600) => {
+    setSave("pending");
     clearTimeout(saveTimers.current[key]);
-    saveTimers.current[key] = setTimeout(fn, ms);
+    saveTimers.current[key] = setTimeout(async () => { await fn(); setSave("saved"); }, ms);
   };
 
   const active = data?.pages.find((p) => p.slug === activeSlug) ?? null;
@@ -115,8 +127,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
     });
   };
 
-  // No publishing here — we only prepare templates. "Créer template" snapshots
-  // the current tweaks/edits into a new reusable variation.
+  // "Créer template" snapshots the current tweaks/edits into a new reusable variation.
   const handleCreateTemplate = async () => {
     const t = toast.loading("Création du template…");
     try {
@@ -129,53 +140,87 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
     }
   };
 
-  if (!data) return <div className="p-6 text-sm text-muted-foreground">Chargement…</div>;
+  if (!data) {
+    return (
+      <div className="cd-scope" style={{ height: "100%", background: "var(--bg)" }}>
+        <ClaudeDesignTheme />
+        <div style={{ padding: 24, fontSize: 13, color: "var(--text-3)" }}>Chargement…</div>
+      </div>
+    );
+  }
 
-  const previewVars = topTab === "entreprises" ? companyVars : null;
-  const taggedOnActive = active ? (active.html.match(/data-service-tag="([^"]+)"/g) ?? []).map((m) => m.replace(/.*"([^"]+)".*/, "$1")) : [];
+  const previewVars = company ? companyVars : null;
+  const themeControls: TweakControl[] = [
+    ...(data.tweaksSchema?.theme ?? []),
+    ...(data.tweaksSchema?.pageExtras?.[activeSlug] ?? []),
+  ];
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Topbar */}
-      <header className="flex items-center justify-between gap-3 border-b px-4 py-2">
-        <div className="flex items-center gap-3">
-          <Link href="/site-builder/claude" title="Retour au CRM">
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
-          </Link>
-          <span className="text-sm font-semibold truncate max-w-[240px]">{data.name}</span>
-        </div>
-        <div className="flex gap-1 rounded-md bg-muted p-0.5">
-          {(["pages", "entreprises"] as TopTab[]).map((t) => (
-            <button key={t} onClick={() => setTopTab(t)}
-              className={`rounded px-3 py-1 text-xs ${topTab === t ? "bg-background shadow-sm" : "text-muted-foreground"}`}>
-              {t === "pages" ? "Pages" : "Entreprises"}
-            </button>
-          ))}
-        </div>
-        <Button size="sm" className="gap-2" onClick={handleCreateTemplate}>
-          <CopyPlus className="h-4 w-4" /> Créer template
-        </Button>
-      </header>
+    <div className="cd-scope cd-editor" style={{ background: "var(--bg)" }}>
+      <ClaudeDesignTheme />
 
-      <div className="grid flex-1 grid-cols-[200px_1fr_320px] overflow-hidden">
-        {/* Left: vertical pages list */}
-        <nav className="flex flex-col gap-0.5 overflow-y-auto border-r p-2">
-          <div className="px-2 pb-1 text-[10px] font-semibold uppercase text-muted-foreground">Pages</div>
-          {data.pages.map((p) => (
-            <button key={p.slug} onClick={() => setActiveSlug(p.slug)}
-              className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs ${p.slug === activeSlug ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}>
-              <FileText className="h-3.5 w-3.5 shrink-0 opacity-70" />
-              <span className="truncate">{p.title}</span>
-              {p.serviceTag && <span className="ml-auto shrink-0 rounded bg-black/10 px-1 text-[9px]">{p.serviceTag}</span>}
-            </button>
-          ))}
-        </nav>
+      {/* ── TOPBAR ───────────────────────────────────────────── */}
+      <div className="cd-topbar">
+        <Link href="/site-builder/claude" title="Retour aux designs">
+          <button className="cd-back"><ChevronLeft className="ico-sm" />Designs</button>
+        </Link>
+        <div className="cd-crumbs"><span className="cur">{data.name}</span></div>
+        <span className={"cd-saved" + (save === "pending" ? " dirty" : "")}>
+          <i />{save === "pending" ? "Enregistrement…" : "Enregistré"}
+        </span>
+        <div className="cd-grow" />
+        <CompanyPicker
+          company={company}
+          companies={companies}
+          onOpen={ensureCompanies}
+          onPick={selectCompany}
+        />
+        <div className="cd-vp-pick">
+          <button className={"cd-vp" + (viewport === "desktop" ? " on" : "")} onClick={() => setViewport("desktop")} title="Bureau"><Monitor className="ico-sm" /></button>
+          <button className={"cd-vp" + (viewport === "mobile" ? " on" : "")} onClick={() => setViewport("mobile")} title="Mobile"><Smartphone className="ico-sm" /></button>
+        </div>
+        <div className="cd-save-group">
+          <button className="cd-btn accent" onClick={handleCreateTemplate}><CopyPlus className="ico-sm" />Créer un template</button>
+        </div>
+      </div>
 
-        {/* Center: preview */}
-        <div className="overflow-hidden p-2">
-          {active && (
+      {/* ── PAGES BAR ────────────────────────────────────────── */}
+      <div className="cd-tpl-bar">
+        <span className="cd-tpl-lab"><Sparkles className="ico-xs" />Pages</span>
+        {data.pages.map((p) => (
+          <button key={p.slug} className={"cd-tpl" + (activeSlug === p.slug ? " on" : "")} onClick={() => setActiveSlug(p.slug)}>
+            <span className="cd-tpl-dot" style={{ background: p.serviceTag ? "var(--info)" : "var(--text-4)" }} />
+            {p.title || p.slug}
+            {p.serviceTag ? <span className="cd-tpl-meta">{p.serviceTag}</span> : null}
+          </button>
+        ))}
+        <div className="cd-grow" />
+        <span className="cd-tpl-hint"><Sparkles className="ico-xs" />Clique un texte pour l’éditer, une image pour changer son URL</span>
+      </div>
+
+      {/* ── BODY ─────────────────────────────────────────────── */}
+      <div className="cd-body">
+        {/* LEFT */}
+        <aside className="cd-pane cd-left">
+          <div className="cd-left-tabs">
+            <button className={"cd-left-tab" + (leftTab === "theme" ? " on" : "")} onClick={() => setLeftTab("theme")}><Sparkles className="ico-sm" />Thème</button>
+            <button className={"cd-left-tab" + (leftTab === "tags" ? " on" : "")} onClick={() => setLeftTab("tags")}><Tags className="ico-sm" />Tags</button>
+          </div>
+          <div className="cd-left-body">
+            {leftTab === "theme"
+              ? <DesignTweaks controls={themeControls} tweaks={data.tweaks} onChange={handleTweak} />
+              : <PageTags sitemap={data.sitemap} company={company} companyVars={companyVars} onChange={handleTag} />}
+          </div>
+        </aside>
+
+        {/* CENTER */}
+        {active && (
+          <CanvasStage
+            key={active.slug + (previewVars ? `:${company?.id}` : "")}
+            viewport={viewport}
+            company={company}
+          >
             <InlinePreview
-              key={active.slug + (previewVars ? `:${companyId}` : "")}
               html={active.html}
               sharedCss={data.sharedAssets.css ?? ""}
               fontLinks={data.sharedAssets.fonts ?? []}
@@ -185,66 +230,279 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               variables={previewVars}
               onNavigate={(slug) => { if (data.pages.some((p) => p.slug === slug)) setActiveSlug(slug); }}
             />
-          )}
-        </div>
+          </CanvasStage>
+        )}
 
-        {/* Right: contextual panel */}
-        <aside className="flex flex-col gap-3 overflow-y-auto border-l p-3">
-          {topTab === "pages" ? (
-            <>
-              <div className="flex gap-1">
-                {(["tweaks", "variables", "tags"] as RightTab[]).map((t) => (
-                  <button key={t} onClick={() => setRightTab(t)}
-                    className={`flex-1 rounded-md px-2 py-1 text-xs ${rightTab === t ? "bg-primary text-primary-foreground" : "bg-muted hover:bg-muted/70"}`}>
-                    {t === "tweaks" ? "Thème" : t === "variables" ? "Variables" : "Tags"}
-                  </button>
-                ))}
-              </div>
-              {rightTab === "tweaks" && (
-                <TweaksPanel
-                  controls={[...(data.tweaksSchema?.theme ?? []), ...(data.tweaksSchema?.pageExtras?.[activeSlug] ?? [])]}
-                  tweaks={data.tweaks}
-                  onChange={handleTweak}
-                />
-              )}
-              {rightTab === "variables" && <VariablesPanel siteId={siteId} onRetokenised={load} />}
-              {rightTab === "tags" && (
-                <>
-                  <TagToggles sitemap={data.sitemap} onChange={handleTag} />
-                  {taggedOnActive.length > 0 && (
-                    <div className="rounded-md border p-2 text-[11px] text-muted-foreground">
-                      Sections conditionnées sur cette page : {[...new Set(taggedOnActive)].join(", ")}
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          ) : (
-            <div className="flex flex-col gap-3 text-sm">
-              <div className="text-xs text-muted-foreground">
-                Choisis une entreprise pour prévisualiser le template avec ses vraies données et ses pages/sections filtrées par ses services.
-              </div>
-              <select className="rounded-md border bg-background px-2 py-1.5 text-sm"
-                value={companyId ?? ""} onChange={(e) => selectCompany(e.target.value ? Number(e.target.value) : null)}>
-                <option value="">— Données d&apos;exemple —</option>
-                {companies.map((c) => <option key={c.id} value={c.id}>{c.nom}{c.pret_pour_lm ? " · LM" : ""}</option>)}
-              </select>
-              {companyVars && (
-                <div className="rounded-md border p-2 text-[11px]">
-                  <div><b>{companyVars["entreprise.nom"]}</b></div>
-                  <div className="text-muted-foreground">{companyVars["entreprise.ville"]} · {companyVars["entreprise.telephone"]}</div>
-                  {(() => { try { const t = JSON.parse(companyVars["__service_tags"] ?? "[]"); return Array.isArray(t) && t.length ? <div className="mt-1 text-muted-foreground">Services : {t.join(", ")}</div> : null; } catch { return null; } })()}
-                </div>
-              )}
-            </div>
-          )}
+        {/* RIGHT */}
+        <aside className="cd-pane cd-inspector">
+          <VariableBrowser siteId={siteId} company={company} companyVars={companyVars} onRetokenised={load} />
         </aside>
       </div>
-      {topTab === "pages" && (
-        <p className="border-t px-4 py-1.5 text-[11px] text-muted-foreground">
-          Clique un texte pour l&apos;éditer, une image pour changer son URL. Enregistrement automatique.
-        </p>
+    </div>
+  );
+}
+
+/* ════════════════ Company picker ════════════════ */
+function CompanyPicker({ company, companies, onOpen, onPick }: {
+  company: Company | null;
+  companies: Company[];
+  onOpen: () => void;
+  onPick: (c: Company | null) => void;
+}) {
+  const [open, setOpen] = React.useState(false);
+  const toggle = () => { setOpen((o) => { const n = !o; if (n) onOpen(); return n; }); };
+  return (
+    <div className="cd-pick-wrap">
+      <button className={"cd-company-btn" + (company ? " active" : "")} onClick={toggle}>
+        <Play className="ico-sm" />
+        <span className="cd-company-lab">Tester :</span>
+        {company ? (
+          <span className="cd-company-cur"><span className="cd-company-dot" style={{ background: companyColor(company.id) }}>{companyInitials(company.nom)}</span>{company.nom}</span>
+        ) : (
+          <span className="cd-company-cur muted">Données d’exemple</span>
+        )}
+        <ChevronDown className="ico-xs" />
+      </button>
+      {open ? (
+        <>
+          <div className="cd-pop-backdrop" onClick={() => setOpen(false)} />
+          <div className="cd-pop cd-company-pop">
+            <div className="cd-pop-hd">Entreprises qualifiées · CRM</div>
+            <button className={"cd-company-row" + (!company ? " sel" : "")} onClick={() => { onPick(null); setOpen(false); }}>
+              <span className="cd-company-dot ghost" />
+              <div className="cd-grow"><b>Données d’exemple</b><span>Affiche les contenus d’origine</span></div>
+              {!company ? <Check className="ico-sm" /> : null}
+            </button>
+            {companies.length === 0 ? (
+              <div style={{ padding: "10px 8px", fontSize: 11, color: "var(--text-3)" }}>Chargement…</div>
+            ) : companies.map((c) => (
+              <button key={c.id} className={"cd-company-row" + (company?.id === c.id ? " sel" : "")} onClick={() => { onPick(c); setOpen(false); }}>
+                <span className="cd-company-dot" style={{ background: companyColor(c.id) }}>{companyInitials(c.nom)}</span>
+                <div className="cd-grow"><b>{c.nom}</b><span>{c.pret_pour_lm ? "Prêt pour Lead Magnet" : "Qualifiée"}</span></div>
+                {company?.id === c.id ? <Check className="ico-sm" /> : null}
+              </button>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/* ════════════════ Canvas stage (device frame + zoom) ════════════════ */
+function CanvasStage({ viewport, company, children }: {
+  viewport: Viewport;
+  company: Company | null;
+  children: React.ReactElement<{ onHeight?: (h: number) => void; className?: string }>;
+}) {
+  const siteW = viewport === "mobile" ? 390 : 1080;
+  const areaRef = React.useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = React.useState(0.7);
+  const [frameH, setFrameH] = React.useState(1400);
+
+  const fit = React.useCallback(() => {
+    const area = areaRef.current; if (!area) return;
+    const f = Math.min(1, (area.clientWidth - 72) / siteW);
+    setZoom(viewport === "mobile" ? Math.min(1, f * 1.4) : f);
+  }, [siteW, viewport]);
+
+  React.useLayoutEffect(() => { fit(); }, [fit]);
+
+  const framed = React.cloneElement(children, {
+    onHeight: (h: number) => setFrameH(Math.max(600, h)),
+    className: "cd-frame-iframe",
+  });
+
+  return (
+    <main className="cd-canvas-host">
+      <div className="cd-canvas-area grid-dots" ref={areaRef}>
+        <div className="cd-frame-sizer" style={{ width: siteW * zoom, height: frameH * zoom }}>
+          <div
+            className={"cd-frame" + (viewport === "mobile" ? " mobile" : "")}
+            style={{ width: siteW, height: frameH, transform: `scale(${zoom})` }}
+          >
+            {framed}
+          </div>
+        </div>
+      </div>
+
+      <div className="cd-canvas-tools">
+        <button onClick={() => setZoom((z) => Math.max(0.3, +(z - 0.1).toFixed(2)))}><Minus className="ico-sm" /></button>
+        <span className="cd-zoom-val">{Math.round(zoom * 100)}%</span>
+        <button onClick={() => setZoom((z) => Math.min(1.2, +(z + 0.1).toFixed(2)))}><Plus className="ico-sm" /></button>
+        <span className="cd-tools-sep" />
+        <button onClick={fit}><Maximize2 className="ico-sm" />Ajuster</button>
+      </div>
+
+      {company ? (
+        <div className="cd-testing-badge">
+          <span className="cd-company-dot" style={{ background: companyColor(company.id) }}>{companyInitials(company.nom)}</span>
+          Aperçu : <b>{company.nom}</b>
+        </div>
+      ) : (
+        <div className="cd-testing-badge muted"><AlertTriangle className="ico-xs" />Données d’exemple — choisis une entreprise pour tester</div>
       )}
+    </main>
+  );
+}
+
+/* ════════════════ Design tweaks (left · Thème) ════════════════ */
+function DesignTweaks({ controls, tweaks, onChange }: {
+  controls: TweakControl[];
+  tweaks: Record<string, unknown>;
+  onChange: (key: string, value: string) => void;
+}) {
+  const val = (k: string, d = "") => (typeof tweaks[k] === "string" ? (tweaks[k] as string) : d);
+  if (controls.length === 0) {
+    return <div className="cd-dtweaks"><div className="cd-dtweaks-note"><Sparkles className="ico-sm" />Aucun réglage de thème détecté pour ce design.</div></div>;
+  }
+  return (
+    <div className="cd-dtweaks">
+      <div className="cd-dtweaks-note">
+        <Sparkles className="ico-sm" />
+        Tweaks détectés dans le design Claude — réglables ici, figés au déploiement.
+      </div>
+      {controls.map((c) => {
+        const current = val(c.key, c.options[0] ?? "");
+        return (
+          <div className="cd-dtweak" key={c.key}>
+            <div className="cd-dtweak-lab">{c.label}</div>
+            {c.type === "color" ? (
+              <div className="cd-swatches">
+                {c.options.map((hex) => (
+                  <button key={hex} title={hex} className={"cd-swatch" + (current.toLowerCase() === hex.toLowerCase() ? " sel" : "")} style={{ background: hex }} onClick={() => onChange(c.key, hex)} />
+                ))}
+              </div>
+            ) : (
+              <div className="cd-seg">
+                {c.options.map((o) => (
+                  <button key={o} className={"cd-seg-b" + (current === o ? " on" : "")} onClick={() => onChange(c.key, o)}>{o}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ════════════════ Per-page tags (left · Tags) ════════════════ */
+function PageTags({ sitemap, company, companyVars, onChange }: {
+  sitemap: SitemapPage[];
+  company: Company | null;
+  companyVars: Record<string, string> | null;
+  onChange: (slug: string, serviceTag: string | null) => void;
+}) {
+  const companyTags = React.useMemo<string[]>(() => {
+    try { const t = JSON.parse(companyVars?.["__service_tags"] ?? "[]"); return Array.isArray(t) ? t.map(String) : []; }
+    catch { return []; }
+  }, [companyVars]);
+
+  return (
+    <div className="cd-dtweaks">
+      <div className="cd-dtweaks-note" style={{ color: "var(--info)", background: "var(--info-tint)", borderColor: "rgba(42,111,219,.2)" }}>
+        <Tags className="ico-sm" />
+        Une page avec un tag de service ne s’affiche que pour les entreprises ayant ce service.
+      </div>
+      {sitemap.map((p) => {
+        const tag = p.service_tag ?? "";
+        const state = tag && company ? (companyTags.includes(tag) ? "on" : "off") : null;
+        return (
+          <div className="cd-dtweak" key={p.slug}>
+            <div className="cd-dtweak-lab">{p.title || p.slug}</div>
+            <input
+              className="cd-select"
+              style={{ width: "100%" }}
+              placeholder="Aucun tag (toujours visible)"
+              defaultValue={tag}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v !== tag) onChange(p.slug, v || null); }}
+            />
+            {state ? (
+              <div className={"cd-cond-state " + state} style={{ marginTop: 6 }}>
+                {state === "on"
+                  ? <><Eye className="ico-xs" />Visible pour {company?.nom}</>
+                  : <><EyeOff className="ico-xs" />Masquée — {company?.nom} n’a pas ce service</>}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ════════════════ Variable browser (right · inspector) ════════════════ */
+const VAR_GROUP_ICON = Building2;
+function VariableBrowser({ siteId, company, companyVars, onRetokenised }: {
+  siteId: string;
+  company: Company | null;
+  companyVars: Record<string, string> | null;
+  onRetokenised: () => void;
+}) {
+  const [busy, setBusy] = React.useState(false);
+  const retokenise = async () => {
+    setBusy(true);
+    try {
+      const res = await authedFetch(`/api/site-builder/designs/${siteId}/tokenize`, { method: "POST" });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+      const { mapping } = (await res.json()) as { mapping?: unknown[] };
+      toast.success(`${mapping?.length ?? 0} variable(s) détectée(s)`);
+      onRetokenised();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Détection impossible");
+    } finally { setBusy(false); }
+  };
+
+  const services = React.useMemo<string[]>(() => {
+    try { const t = JSON.parse(companyVars?.["__service_tags"] ?? "[]"); return Array.isArray(t) ? t.map(String) : []; }
+    catch { return []; }
+  }, [companyVars]);
+
+  return (
+    <div className="cd-varbrowser">
+      {company && companyVars ? (
+        <div className="cd-company-card">
+          <div className="cd-company-card-hd">
+            <span className="cd-company-dot" style={{ background: companyColor(company.id) }}>{companyInitials(company.nom)}</span>
+            <div className="cd-grow">
+              <b>{companyVars["entreprise.nom"] || company.nom}</b>
+              <span>{[companyVars["entreprise.ville"], companyVars["entreprise.telephone"]].filter(Boolean).join(" · ")}</span>
+            </div>
+          </div>
+          {services.length > 0 ? <div className="cd-company-card-tags">{services.map((s) => <span key={s} className="cd-tag-chip">{s}</span>)}</div> : null}
+        </div>
+      ) : (
+        <div className="cd-vb-empty">
+          <span className="cd-vb-ic"><Variable className="ico-lg" /></span>
+          <p>Choisis une entreprise dans la barre du haut pour prévisualiser le design avec ses vraies données.</p>
+        </div>
+      )}
+
+      <div className="cd-vb-actions">
+        <button className="cd-btn outline" onClick={retokenise} disabled={busy}><Wand2 className="ico-sm" />{busy ? "Détection…" : "Re-détecter (IA)"}</button>
+      </div>
+
+      <div className="cd-vb-hd">Variables disponibles</div>
+      <div className="cd-vb-group">
+        <div className="cd-vb-group-hd">
+          <VAR_GROUP_ICON className="ico-sm" style={{ color: "var(--cd-accent)" }} />
+          <span>Entreprise</span><code>entreprises</code><span className="cd-vb-count">{CLAUDE_DESIGN_VARIABLES.length}</span>
+        </div>
+        <div className="cd-vb-vars">
+          {CLAUDE_DESIGN_VARIABLES.map((v) => {
+            const key = v.token.replace(/\{\{\s*|\s*\}\}/g, "");
+            const resolved = company ? companyVars?.[key] : undefined;
+            return (
+              <div className="cd-vb-var" key={v.token} title={v.token}>
+                <span className="cd-var-dot" style={{ background: "var(--cd-accent)" }} />
+                <span className="cd-vb-var-lab">{v.label}</span>
+                <span className="cd-vb-var-kind">{resolved || v.sample || "—"}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

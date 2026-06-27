@@ -14,7 +14,7 @@ export default function ClaudeDesignEditorPage() {
   const siteId = params?.siteId;
   if (!siteId) return null;
   return (
-    <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
+    <div className="flex h-screen w-screen flex-col overflow-hidden">
       <ClaudeDesignBuilder siteId={siteId} />
     </div>
   );
