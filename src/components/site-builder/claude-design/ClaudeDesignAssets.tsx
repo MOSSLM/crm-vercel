@@ -30,7 +30,10 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesig
   const fontHref = tweaksFontLinkHref(tweaks);
 
   // Base theme vars at :root so first paint is correct (no flash); the template
-  // stylesheet derives the rest via color-mix from these.
+  // stylesheet derives the rest via color-mix from these. These MUST come AFTER
+  // sharedCss in the cascade: the imported styles.css ships its own `:root`
+  // defaults (--azur/--cream/…), so emitting our vars first would let those
+  // defaults win and the operator's tweaks (colours/angles/fonts) would no-op.
   const rootVars = `:root{${Object.entries(cssVars)
     .map(([k, v]) => `${k}:${v}`)
     .join(";")}}`;
@@ -54,7 +57,7 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesig
       {fontLinks.map((href, i) => (
         <link key={i} rel="stylesheet" href={href} />
       ))}
-      <style data-cd-theme dangerouslySetInnerHTML={{ __html: `${rootVars}\n${sharedCss}` }} />
+      <style data-cd-theme dangerouslySetInnerHTML={{ __html: `${sharedCss}\n${rootVars}` }} />
       <script dangerouslySetInnerHTML={{ __html: `${setAttrsJs}\n${CLAUDE_DESIGN_RUNTIME}\n${extrasJs}` }} />
     </>
   );
