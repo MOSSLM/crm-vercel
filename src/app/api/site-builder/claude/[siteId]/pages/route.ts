@@ -18,8 +18,8 @@ interface LibraryRef { theme_slug: string; section_id: string }
 export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
 
-  const [{ data: site }, { data: instances, error: iErr }] = await Promise.all([
-    supabase.from("sites").select("sitemap, shared_assets, tweaks, tweaks_schema, name").eq("id", params.siteId).single(),
+  const [{ data: site, error: sErr }, { data: instances, error: iErr }] = await Promise.all([
+    supabase.from("sites").select("sitemap, shared_assets, tweaks, name").eq("id", params.siteId).single(),
     supabase
       .from("site_section_instances")
       .select("id, page_slug, content")
@@ -27,7 +27,11 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
       .order("page_slug"),
   ]);
   if (iErr) return jsonError(iErr.message, 500);
+  // Surface the site-query error instead of silently degrading (a missing
+  // column used to blank shared_assets → no CSS in the editor).
+  if (sErr || !site) return jsonError(sErr?.message ?? "Site introuvable", sErr ? 500 : 404);
 
+  const sharedAssets = (site as { shared_assets?: Record<string, unknown> }).shared_assets ?? {};
   const sitemap = ((site as { sitemap?: SitemapPage[] } | null)?.sitemap ?? []) as SitemapPage[];
   const tagBySlug = new Map(sitemap.map((p) => [p.slug, p.service_tag ?? null]));
   const titleBySlug = new Map(sitemap.map((p) => [p.slug, p.title]));
@@ -72,9 +76,10 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
 
   return json({
     name: (site as { name?: string } | null)?.name ?? "",
-    sharedAssets: (site as { shared_assets?: unknown } | null)?.shared_assets ?? {},
+    sharedAssets: sharedAssets,
     tweaks: (site as { tweaks?: unknown } | null)?.tweaks ?? {},
-    tweaksSchema: (site as { tweaks_schema?: unknown } | null)?.tweaks_schema ?? {},
+    // The Tweaks schema now lives inside shared_assets (no dedicated column).
+    tweaksSchema: (sharedAssets as { tweaksSchema?: unknown })?.tweaksSchema ?? {},
     sitemap,
     pages,
   });

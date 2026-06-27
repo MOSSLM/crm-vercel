@@ -18,7 +18,6 @@ export interface TemplateSlice {
   content_overrides: unknown;
   shared_assets: unknown;
   tweaks: unknown;
-  tweaks_schema: unknown;
   is_claude_design: boolean | null;
 }
 
@@ -33,7 +32,7 @@ export interface TemplateInstance {
 }
 
 const TEMPLATE_COLUMNS =
-  "style_guide, sitemap, site_config, content_overrides, shared_assets, tweaks, tweaks_schema, is_claude_design";
+  "style_guide, sitemap, site_config, content_overrides, shared_assets, tweaks, is_claude_design";
 const INSTANCE_COLUMNS =
   "section_id, page_slug, sort_order, content, blocks, custom_style, is_hidden";
 
@@ -90,7 +89,6 @@ export async function cloneTemplateSite(
       content_overrides: template.content_overrides ?? null,
       shared_assets: template.shared_assets ?? {},
       tweaks: template.tweaks ?? {},
-      tweaks_schema: template.tweaks_schema ?? {},
     })
     .select("id")
     .single();
