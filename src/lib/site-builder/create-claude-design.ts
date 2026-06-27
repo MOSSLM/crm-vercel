@@ -196,9 +196,10 @@ export async function createClaudeDesignMultiPage(
     is_claude_design: true,
     style_guide: DEFAULT_STYLE_GUIDE,
     sitemap,
-    shared_assets: { css: input.sharedCss, fonts: input.fontLinks },
+    // tweaksSchema rides inside shared_assets (existing JSONB) so no extra column
+    // / migration is required.
+    shared_assets: { css: input.sharedCss, fonts: input.fontLinks, tweaksSchema: input.tweaksSchema ?? {} },
     tweaks: input.tweaks ?? {},
-    tweaks_schema: input.tweaksSchema ?? {},
   });
   if (siteErr) {
     await cleanup();

@@ -28,6 +28,8 @@ interface Props {
   /** Real company variables (Entreprises tab). When set, the preview uses them
    *  instead of sample values and filters service-tag regions accordingly. */
   variables?: Record<string, string> | null;
+  /** Internal link clicked in the preview → switch the active page (no navigation). */
+  onNavigate?: (slug: string) => void;
 }
 
 function resolveVars(html: string, vars: Record<string, string>): string {
@@ -47,6 +49,17 @@ const EDIT_SCRIPT = `
 (function(){
   var root = document.getElementById('cd-root');
   if(!root) return;
+  // ISOLATION: the editor preview must never navigate (especially not to the CRM
+  // origin via href="/"). Swallow every link/form navigation; for an internal
+  // link, tell the parent to switch the active page instead.
+  document.addEventListener('click', function(ev){
+    var a = ev.target && ev.target.closest ? ev.target.closest('a') : null;
+    if(!a) return;
+    ev.preventDefault();
+    var href = a.getAttribute('href') || '';
+    if(href && href.charAt(0) === '/'){ parent.postMessage({source:'cd',kind:'nav',slug:(href.split('#')[0]||'/')},'*'); }
+  }, true);
+  document.addEventListener('submit', function(ev){ ev.preventDefault(); }, true);
   var OV = window.__cdOverrides || {};
   function nodeAt(path){ var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n; }
   Object.keys(OV).forEach(function(key){ var e=OV[key]; var p=key.split(':')[0].split('.').map(Number); var el=nodeAt(p); if(!el) return; if(e.kind==='text') el.textContent=e.value; else if(e.kind==='image') el.setAttribute('src', e.value); else if(e.kind==='bg_image'){ el.style.backgroundImage='url("'+e.value+'")'; } });
@@ -66,14 +79,18 @@ const EDIT_SCRIPT = `
 `;
 
 /** Faithful per-page preview with inline text/image editing. */
-export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit, variables }: Props) {
+export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit, variables, onNavigate }: Props) {
   const onEditRef = React.useRef(onEdit);
   onEditRef.current = onEdit;
+  const onNavRef = React.useRef(onNavigate);
+  onNavRef.current = onNavigate;
 
   React.useEffect(() => {
     const handler = (ev: MessageEvent) => {
       const d = ev.data;
-      if (!d || d.source !== "cd" || !Array.isArray(d.path)) return;
+      if (!d || d.source !== "cd") return;
+      if (d.kind === "nav") { if (typeof d.slug === "string") onNavRef.current?.(d.slug); return; }
+      if (!Array.isArray(d.path)) return;
       const key = `${d.path.join(".")}:${d.kind}`;
       onEditRef.current(key, { kind: d.kind === "image" ? "image" : "text", value: String(d.value ?? "") });
     };

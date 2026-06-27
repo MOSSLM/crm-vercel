@@ -183,6 +183,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               overrides={active.overrides}
               onEdit={handleEdit}
               variables={previewVars}
+              onNavigate={(slug) => { if (data.pages.some((p) => p.slug === slug)) setActiveSlug(slug); }}
             />
           )}
         </div>
