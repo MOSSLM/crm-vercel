@@ -11,6 +11,7 @@ import {
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
+import { buildVhRewriteRuntime } from "@/lib/site-builder/preview-viewport";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 
 export interface OverrideEntry {
@@ -36,6 +37,10 @@ interface Props {
   onHeight?: (height: number) => void;
   /** Extra className merged onto the iframe (defaults to a bordered card). */
   className?: string;
+  /** Simulated device viewport height (px). When set, every `Nvh` literal in
+   *  the page (incl. `min-h-screen`/`h-screen`) is rewritten to px so a full-
+   *  height hero can't feed the iframe height-reporter loop into infinity. */
+  simViewportHeight?: number;
 }
 
 function resolveVars(html: string, vars: Record<string, string>): string {
@@ -91,7 +96,7 @@ const EDIT_SCRIPT = `
 `;
 
 /** Faithful per-page preview with inline text/image editing. */
-export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit, variables, onNavigate, onHeight, className }: Props) {
+export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, onEdit, variables, onNavigate, onHeight, className, simViewportHeight }: Props) {
   const onEditRef = React.useRef(onEdit);
   onEditRef.current = onEdit;
   const onNavRef = React.useRef(onNavigate);
@@ -130,10 +135,14 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, overrides, o
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     const extras = tweaksExtrasScript(tweaks);
+    // Preview-only vh→px rewriter: a `100vh`/`min-h-screen` hero otherwise
+    // resolves against the (growing) iframe height the canvas reports back,
+    // looping to infinity. Converting to a fixed device height breaks the loop.
+    const vhBlock = typeof simViewportHeight === "number" ? buildVhRewriteRuntime(simViewportHeight) : "";
     // sharedCss first, then rootVars — so even the stylesheet fallback wins over
     // the design's own :root defaults (the inline html style wins over both).
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8">${fonts}<style>${sharedCss}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style></head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CLAUDE_DESIGN_RUNTIME}</script>${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
-  }, [html, sharedCss, fontLinks, tweaks, overrides, variables]);
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8">${fonts}<style>${sharedCss}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CLAUDE_DESIGN_RUNTIME}</script>${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
+  }, [html, sharedCss, fontLinks, tweaks, overrides, variables, simViewportHeight]);
 
   return (
     <iframe

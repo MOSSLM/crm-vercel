@@ -6,12 +6,13 @@ import { toast } from "sonner";
 import {
   ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
   Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
-  Wand2, AlertTriangle, Eye, EyeOff,
+  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe,
 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
 import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
+import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
 import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
@@ -31,8 +32,13 @@ interface BoardData {
   tweaksSchema: TweaksSchema;
   sitemap: SitemapPage[];
   pages: PageData[];
+  isTemplate: boolean;
+  enterpriseId: number | null;
+  publishedSubdomain: string | null;
 }
 interface Company { id: number; nom: string; pret_pour_lm?: boolean }
+
+const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr";
 
 type LeftTab = "theme" | "tags";
 type Viewport = "desktop" | "mobile";
@@ -140,6 +146,26 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
     }
   };
 
+  // "Publier" deploys a demo/project site on an auto-derived subdomain (same
+  // path as the kanban "Déployer"); re-publishing keeps the existing subdomain.
+  const [publishing, setPublishing] = React.useState(false);
+  const handlePublish = async () => {
+    setPublishing(true);
+    const already = !!data?.publishedSubdomain;
+    const t = toast.loading(already ? "Republication…" : "Publication…");
+    try {
+      const res = await authedFetch(`/api/site-builder/sites/${siteId}/deploy`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Échec");
+      setData((prev) => (prev ? { ...prev, publishedSubdomain: body.subdomain ?? prev.publishedSubdomain } : prev));
+      toast.success(`En ligne : ${body.url}`, { id: t });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Publication impossible", { id: t });
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   if (!data) {
     return (
       <div className="cd-scope" style={{ height: "100%", background: "var(--bg)" }}>
@@ -179,8 +205,24 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           <button className={"cd-vp" + (viewport === "desktop" ? " on" : "")} onClick={() => setViewport("desktop")} title="Bureau"><Monitor className="ico-sm" /></button>
           <button className={"cd-vp" + (viewport === "mobile" ? " on" : "")} onClick={() => setViewport("mobile")} title="Mobile"><Smartphone className="ico-sm" /></button>
         </div>
-        <div className="cd-save-group">
-          <button className="cd-btn accent" onClick={handleCreateTemplate}><CopyPlus className="ico-sm" />Créer un template</button>
+        <div className="cd-save-group" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          {!data.isTemplate && data.publishedSubdomain ? (
+            <a
+              href={`https://${data.publishedSubdomain}.${SITE_DOMAIN}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "var(--info)" }}
+            >
+              <Globe className="ico-xs" />{data.publishedSubdomain}.{SITE_DOMAIN}
+            </a>
+          ) : null}
+          {data.isTemplate ? (
+            <button className="cd-btn accent" onClick={handleCreateTemplate}><CopyPlus className="ico-sm" />Créer un template</button>
+          ) : (
+            <button className="cd-btn accent" onClick={handlePublish} disabled={publishing}>
+              <Rocket className="ico-sm" />{data.publishedSubdomain ? "Republier" : "Publier"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -228,6 +270,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               overrides={active.overrides}
               onEdit={handleEdit}
               variables={previewVars}
+              simViewportHeight={getSimulatedViewportHeight(viewport)}
               onNavigate={(slug) => { if (data.pages.some((p) => p.slug === slug)) setActiveSlug(slug); }}
             />
           </CanvasStage>
