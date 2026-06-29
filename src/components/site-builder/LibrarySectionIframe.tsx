@@ -5,6 +5,7 @@ import type { StyleGuide } from "@/types";
 import { generateColorShades } from "@/lib/color-utils";
 import { buildCtaCSSVars, CTA_CSS_RULES } from "@/lib/button-style";
 import { buildGoogleFontsLinks } from "@/lib/site-builder/google-fonts";
+import { buildVhRewriteRuntime } from "@/lib/site-builder/preview-viewport";
 
 export type IframeElementKind = "text" | "image" | "button" | "link" | "input" | "form" | "container";
 
@@ -530,87 +531,10 @@ function buildHTML(
   ` : "";
 
   // Preview-only: expose --sim-vh and install a runtime rewriter that
-  // converts every `Nvh` literal into px. Done both in stylesheets (catches
-  // Tailwind JIT + `<style>` blocks + arbitrary `h-[100vh]` classes) and in
-  // inline style="" attributes. Published HTML never includes this block.
+  // converts every `Nvh` literal into px (stylesheets + inline styles).
+  // Shared with the Claude Design InlinePreview. Published HTML never includes it.
   const simVhBlock = typeof simulatedViewportHeight === "number"
-    ? `<style id="__sim_vh_var__">:root { --sim-vh: ${simulatedViewportHeight / 100}px; }<\/style>
-  <script>
-    (function(){
-      var VH_RE=/(-?\\d*\\.?\\d+)vh\\b/g;
-      var SIM=${simulatedViewportHeight};
-      function rewrite(s){
-        return s.replace(VH_RE, function(_, n){
-          var px = (parseFloat(n) / 100) * SIM;
-          return (isFinite(px) ? px : 0) + 'px';
-        });
-      }
-      function patchSheet(sheet){
-        try {
-          var rules = sheet.cssRules || sheet.rules;
-          if(!rules) return;
-          for(var i=rules.length-1;i>=0;i--){
-            var r = rules[i];
-            var t = r.cssText;
-            if(t && t.indexOf('vh')!==-1 && VH_RE.test(t)){
-              VH_RE.lastIndex = 0;
-              var rewritten = rewrite(t);
-              if(rewritten !== t){
-                try { sheet.deleteRule(i); sheet.insertRule(rewritten, i); } catch(e){}
-              }
-            }
-            VH_RE.lastIndex = 0;
-          }
-        } catch(e){ /* cross-origin sheet, skip */ }
-      }
-      function patchAllSheets(){
-        var sheets = document.styleSheets;
-        for(var i=0;i<sheets.length;i++) patchSheet(sheets[i]);
-      }
-      function patchInlineStyles(root){
-        var nodes = (root||document).querySelectorAll('[style*="vh"]');
-        for(var i=0;i<nodes.length;i++){
-          var el = nodes[i];
-          var s = el.getAttribute('style');
-          if(s && s.indexOf('vh')!==-1){
-            VH_RE.lastIndex = 0;
-            var rewritten = rewrite(s);
-            if(rewritten !== s) el.setAttribute('style', rewritten);
-          }
-        }
-      }
-      var pending = false;
-      function schedule(){
-        if(pending) return;
-        pending = true;
-        requestAnimationFrame(function(){
-          pending = false;
-          patchAllSheets();
-          patchInlineStyles();
-        });
-      }
-      function init(){
-        patchAllSheets();
-        patchInlineStyles();
-        // Watch for new <style> tags (Tailwind JIT) and inline-style mutations.
-        var mo = new MutationObserver(function(muts){
-          var dirty = false;
-          for(var i=0;i<muts.length;i++){
-            var m = muts[i];
-            if(m.type === 'attributes' && m.attributeName === 'style'){ dirty = true; break; }
-            if(m.addedNodes && m.addedNodes.length){ dirty = true; break; }
-            if(m.type === 'childList'){ dirty = true; break; }
-          }
-          if(dirty) schedule();
-        });
-        mo.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
-        // Re-run a few times to catch Babel/async render passes.
-        [50,200,500,1200].forEach(function(d){ setTimeout(schedule, d); });
-      }
-      if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-      else init();
-    })();
-  <\/script>`
+    ? buildVhRewriteRuntime(simulatedViewportHeight)
     : "";
 
   return `<!DOCTYPE html>

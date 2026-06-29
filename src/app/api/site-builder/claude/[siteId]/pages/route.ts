@@ -19,7 +19,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
 
   const [{ data: site, error: sErr }, { data: instances, error: iErr }] = await Promise.all([
-    supabase.from("sites").select("sitemap, shared_assets, tweaks, name").eq("id", params.siteId).single(),
+    supabase.from("sites").select("sitemap, shared_assets, tweaks, name, is_template, enterprise_id, published_subdomain").eq("id", params.siteId).single(),
     supabase
       .from("site_section_instances")
       .select("id, page_slug, content")
@@ -82,6 +82,11 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
     tweaksSchema: (sharedAssets as { tweaksSchema?: unknown })?.tweaksSchema ?? {},
     sitemap,
     pages,
+    // Discriminators for the editor's contextual action button:
+    // a template offers "Créer un template", a demo/project offers "Publier".
+    isTemplate: (site as { is_template?: boolean | null } | null)?.is_template ?? false,
+    enterpriseId: (site as { enterprise_id?: number | null } | null)?.enterprise_id ?? null,
+    publishedSubdomain: (site as { published_subdomain?: string | null } | null)?.published_subdomain ?? null,
   });
 });
 

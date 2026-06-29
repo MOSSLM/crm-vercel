@@ -9,7 +9,7 @@ export const GET = withAuth({}, async () => {
   const supabase = getServiceClient();
   const { data, error } = await supabase
     .from("sites")
-    .select("id, name, description, is_published, published_subdomain, published_domain, enterprise_id, site_config, created_at, updated_at")
+    .select("id, name, description, is_published, published_subdomain, published_domain, enterprise_id, site_config, is_claude_design, is_template, build_stage, created_at, updated_at")
     .order("created_at", { ascending: false });
 
   if (error) return jsonError(error.message, 500);
