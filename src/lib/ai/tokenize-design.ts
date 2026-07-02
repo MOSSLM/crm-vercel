@@ -26,6 +26,7 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 export const TOKENIZABLE_VARIABLES: Array<{ token: string; label: string }> = [
   { token: "{{ entreprise.nom }}", label: "Nom de l'entreprise" },
   { token: "{{ entreprise.telephone }}", label: "Téléphone" },
+  { token: "{{ entreprise.telephone_lien }}", label: "Téléphone (lien tel:)" },
   { token: "{{ entreprise.email }}", label: "Email" },
   { token: "{{ entreprise.adresse }}", label: "Adresse" },
   { token: "{{ entreprise.ville }}", label: "Ville" },
@@ -41,6 +42,7 @@ export const TOKENIZABLE_VARIABLES: Array<{ token: string; label: string }> = [
   { token: "{{ entreprise.clients_count }}", label: "Nombre de clients" },
   { token: "{{ entreprise.region }}", label: "Région" },
   { token: "{{ entreprise.departement }}", label: "Département" },
+  { token: "{{ entreprise.zones_desservies }}", label: "Zones desservies" },
 ];
 
 const ALLOWED_TOKENS = new Set(TOKENIZABLE_VARIABLES.map((v) => v.token));
@@ -81,11 +83,12 @@ Tu dois retourner les chaînes EXACTES à remplacer par une variable, et rien d'
 - Numéro SIRET → {{ entreprise.siret }}
 - Prénom du fondateur/gérant → {{ entreprise.fondateur }}
 - Numéro d'attestation fluides frigorigènes → {{ entreprise.attestation_fluides }}
+- Liste de villes/zones d'intervention → {{ entreprise.zones_desservies }}
 
 NE JAMAIS TOUCHER : titres marketing, slogans, descriptions de services, textes génériques, noms de menus, mentions légales génériques, libellés de boutons, icônes, classes CSS, URLs d'images décoratives/illustrations.
 
 RÈGLES :
-- "find" = la sous-chaîne EXACTE telle qu'elle apparaît dans le HTML (sans la reformater). Pour un téléphone affiché "01 23 45 67 89", find = "01 23 45 67 89" ; s'il est aussi dans href="tel:0123456789", ajoute une 2e entrée avec find = "0123456789".
+- "find" = la sous-chaîne EXACTE telle qu'elle apparaît dans le HTML (sans la reformater). Pour un téléphone affiché "01 23 45 67 89", find = "01 23 45 67 89" ; s'il est aussi dans href="tel:0123456789", ajoute une 2e entrée avec find = "0123456789" et token = {{ entreprise.telephone_lien }}.
 - Préfère des chaînes précises et non ambiguës. En cas de doute, n'inclus pas l'entrée.
 - N'invente jamais de valeur : "find" doit exister littéralement dans le HTML fourni.
 

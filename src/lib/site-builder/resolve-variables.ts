@@ -1,7 +1,8 @@
 /**
  * Server-side resolver: builds the enterpriseVariables map and reviews
  * array for a given site by joining `entreprises`, `lead_magnet_projects`,
- * `lead_magnet_reviews`, and `sites.content_overrides` (stats overrides only).
+ * `lead_magnet_reviews`, `automated_enrichment` (fill-only complements), and
+ * `sites.content_overrides` (stats overrides only).
  *
  * Shared by:
  *  - /api/site-builder/sites/[siteId]/publish — snapshots the result into
@@ -21,6 +22,11 @@
  */
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  applyDerivedVariables,
+  applyEnrichmentVariables,
+  fetchEnrichmentSlice,
+} from "./enrichment-variables";
 
 export interface ReviewItem {
   name: string;
@@ -201,13 +207,15 @@ export async function resolveEnterpriseVariables(
   const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
   vars["__stats"] = JSON.stringify(resolvedStats);
 
-  // Email domain (for templates that show "contact@<domain>"), derived from the
-  // resolved email (after any lead-magnet override). Only set when present so a
-  // missing value renders empty rather than the literal token.
-  const email = vars["entreprise.email"];
-  if (email && email.includes("@")) {
-    vars["entreprise.email_domain"] = email.slice(email.indexOf("@") + 1);
+  // Enrichment (automated_enrichment) + derived variables. Fill-only: runs
+  // after entreprises/overrides/manual variables so it never overrides them.
+  // Covers zones_desservies, annee_experience, horaires fallback, departement,
+  // region, telephone_lien and email_domain.
+  if (site.enterprise_id) {
+    const enrichment = await fetchEnrichmentSlice(supabase, site.enterprise_id);
+    applyEnrichmentVariables(vars, enrichment);
   }
+  applyDerivedVariables(vars);
 
   return { variables: vars, reviews, companyName, logoUrl, phone };
 }

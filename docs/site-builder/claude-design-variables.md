@@ -37,12 +37,13 @@ le token `{{ entreprise.xxx }}` du §3, qui fonctionne partout (texte et attribu
 | `[XXX XXX XXX XXXXX]` | Numéro SIRET |
 | `[Prénom]` | Prénom du fondateur / gérant |
 | `[ACO]` | N° d'attestation fluides frigorigènes |
+| `[Zones desservies]` | Liste des villes/zones d'intervention (ex. `Annecy, Seynod, Cran-Gevrier`) |
 
 Exemples d'usage en contexte :
 
 ```html
 <p>[Nom de l'entreprise], votre chauffagiste à [Ville] ([Code postal]) et dans tout le département [Département].</p>
-<p>Fondée par [Prénom], notre entreprise intervient à [Ville] et ses environs.</p>
+<p>Fondée par [Prénom], notre entreprise intervient à [Zones desservies].</p>
 <footer>
   <p>[Nom de l'entreprise] — [N° et rue], [Code postal] [Ville]</p>
   <p>SIRET : [XXX XXX XXX XXXXX] · Attestation fluides : [ACO]</p>
@@ -61,17 +62,26 @@ Pour l'**email affiché en texte**, pas de crochet : utilise directement le toke
 | Token | Contenu |
 |---|---|
 | `{{ entreprise.nom }}` | Nom de l'entreprise |
-| `{{ entreprise.telephone }}` | Téléphone |
+| `{{ entreprise.telephone }}` | Téléphone (format affiché) |
+| `{{ entreprise.telephone_lien }}` | Téléphone normalisé pour `href="tel:…"` (chiffres seuls) |
 | `{{ entreprise.email }}` | Email de contact |
 | `{{ entreprise.email_domain }}` | Domaine de l'email (partie après le `@`) |
 | `{{ entreprise.adresse }}` | Adresse (n° + rue) |
 | `{{ entreprise.ville }}` | Ville |
 | `{{ entreprise.code_postal }}` | Code postal |
+| `{{ entreprise.departement }}` | Département (déduit du code postal) |
+| `{{ entreprise.region }}` | Région (déduite du code postal) |
 | `{{ entreprise.logo_url }}` | URL du logo |
 | `{{ entreprise.horaires }}` | Horaires d'ouverture (texte) |
 | `{{ entreprise.note_moyenne }}` | Note Google moyenne (ex. `4,8`) |
 | `{{ entreprise.nombre_avis }}` | Nombre d'avis Google |
+| `{{ entreprise.zones_desservies }}` * | Liste des villes/zones d'intervention |
+| `{{ entreprise.annee_experience }}` * | Années d'expérience (nombre) |
 | `{{ entreprise.site_web_canonique }}` | URL du site web actuel |
+
+\* Remplies automatiquement par l'enrichissement — peuvent être vides si
+l'entreprise n'a pas encore été enrichie ; à placer dans des phrases qui
+restent correctes sans la valeur.
 
 ### Conditionnelles — peuvent être vides
 
@@ -85,9 +95,6 @@ du hero.
 | `{{ entreprise.siret }}` | SIRET |
 | `{{ entreprise.fondateur }}` | Prénom du fondateur |
 | `{{ entreprise.attestation_fluides }}` | Attestation fluides |
-| `{{ entreprise.region }}` | Région |
-| `{{ entreprise.departement }}` | Département |
-| `{{ entreprise.annee_experience }}` | Années d'expérience (nombre) |
 | `{{ entreprise.clients_count }}` | Nombre de clients servis |
 
 ---
@@ -101,7 +108,7 @@ le texte visible. Ne JAMAIS écrire un vrai numéro, ni dans le texte ni dans le
 `tel:` :
 
 ```html
-<a href="tel:{{ entreprise.telephone }}" class="btn btn-primary">
+<a href="tel:{{ entreprise.telephone_lien }}" class="btn btn-primary">
   Appelez-nous : [XX XX XX XX XX]
 </a>
 ```
@@ -109,8 +116,11 @@ le texte visible. Ne JAMAIS écrire un vrai numéro, ni dans le texte ni dans le
 Variante bouton sans numéro affiché (le `href` reste dynamique) :
 
 ```html
-<a href="tel:{{ entreprise.telephone }}" class="btn btn-primary">Appeler maintenant</a>
+<a href="tel:{{ entreprise.telephone_lien }}" class="btn btn-primary">Appeler maintenant</a>
 ```
+
+Dans le `href`, toujours `telephone_lien` (numéro sans espaces) ; dans le texte
+visible, toujours le crochet `[XX XX XX XX XX]` (numéro formaté).
 
 ### Bouton / lien email
 
@@ -237,7 +247,8 @@ d'**identité de l'entreprise** (§2 et §3) sont variables.
       placeholders des §2/§3.
 - [ ] Tous les crochets utilisés appartiennent à la liste fermée du §2
       (orthographe exacte).
-- [ ] Tous les `tel:` et `mailto:` utilisent les tokens `{{ … }}`.
+- [ ] Tous les `tel:` utilisent `{{ entreprise.telephone_lien }}` et les
+      `mailto:` utilisent `{{ entreprise.email }}`.
 - [ ] Logo = `src="{{ entreprise.logo_url }}"`, hauteur contrainte,
       `alt="{{ entreprise.nom }}"`.
 - [ ] Images du design en chemins relatifs `images/…`, incluses dans l'export.
