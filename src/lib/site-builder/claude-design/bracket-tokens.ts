@@ -39,6 +39,7 @@ const SUGGESTION_MAP: Record<string, BracketSuggestion> = {
   "region": { token: "{{ entreprise.region }}", label: "Région" },
   "département": { token: "{{ entreprise.departement }}", label: "Département" },
   "departement": { token: "{{ entreprise.departement }}", label: "Département" },
+  "zones desservies": { token: "{{ entreprise.zones_desservies }}", label: "Zones desservies" },
 };
 
 export interface BracketToken {

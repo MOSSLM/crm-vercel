@@ -1,6 +1,11 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import {
+  applyDerivedVariables,
+  applyEnrichmentVariables,
+  fetchEnrichmentSlice,
+} from "@/lib/site-builder/enrichment-variables";
 
 export const dynamic = "force-dynamic";
 
@@ -185,6 +190,12 @@ export const GET = withAuth({}, async ({ req }) => {
   const entStats = Array.isArray(ent.stats) ? ent.stats : [];
   const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
   variables["__stats"] = JSON.stringify(resolvedStats);
+
+  // Enrichment + derived variables (fill-only), same complements as the
+  // publish-time resolver so the editor preview matches the deployed site.
+  const enrichment = await fetchEnrichmentSlice(supabase, enterpriseId);
+  applyEnrichmentVariables(variables, enrichment);
+  applyDerivedVariables(variables);
 
   return json(variables);
 });
