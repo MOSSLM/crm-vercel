@@ -1,5 +1,8 @@
 # Règles Claude Design — Variables, boutons, images
 
+> À utiliser avec **`claude-design-copywriting.md`** (règles de rédaction :
+> services jamais en dur, ton neutre local, pas de faits inventés).
+>
 > **Fichier à fournir à Claude au moment de générer un design de site.**
 > Le site généré est un template HTML statique **multi-entreprises** : il sera importé
 > dans le CRM SAMA (Site Builder → Claude Design) puis déployé pour plusieurs
@@ -42,8 +45,11 @@ le token `{{ entreprise.xxx }}` du §3, qui fonctionne partout (texte et attribu
 Exemples d'usage en contexte :
 
 ```html
-<p>[Nom de l'entreprise], votre chauffagiste à [Ville] ([Code postal]) et dans tout le département [Département].</p>
+<p>[Nom de l'entreprise], votre expert local de l'habitat à [Ville] ([Code postal]) et dans tout le département [Département].</p>
 <p>Fondée par [Prénom], notre entreprise intervient à [Zones desservies].</p>
+
+<!-- ⚠️ Ne jamais nommer un métier/service dans une phrase générique
+     (« votre chauffagiste », « spécialiste clim »). Voir claude-design-copywriting.md. -->
 <footer>
   <p>[Nom de l'entreprise] — [N° et rue], [Code postal] [Ville]</p>
   <p>SIRET : [XXX XXX XXX XXXXX] · Attestation fluides : [ACO]</p>
