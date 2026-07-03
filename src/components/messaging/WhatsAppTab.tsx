@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
+import { createClient } from "@/utils/supabase/client";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,6 +35,8 @@ interface ContactRow {
   hasLeadMagnet: boolean;
   leadMagnetReady: boolean;
   leadMagnetUrl?: string;
+  auditUrl?: string;
+  demoUrl?: string;
   opportunityId?: string;
 }
 
@@ -48,6 +51,8 @@ interface CompanyRow {
   hasLeadMagnet: boolean;
   leadMagnetReady: boolean;
   leadMagnetUrl?: string;
+  auditUrl?: string;
+  demoUrl?: string;
   opportunityId?: string;
 }
 
@@ -65,8 +70,9 @@ interface WaTemplate {
 const AVAILABLE_VARS = [
   { key: "{{prénom}}", label: "Prénom" },
   { key: "{{entreprise}}", label: "Entreprise" },
-  { key: "{{lien_site}}", label: "Lien site" },
-  { key: "{{lien_audit}}", label: "Lien audit" },
+  { key: "{{lien_site}}", label: "Lien site démo" },
+  { key: "{{lien_audit}}", label: "Lien audit PDF" },
+  { key: "{{lien_lm}}", label: "Lien lead magnet" },
 ];
 
 const STORAGE_KEY = "crm-wa-templates";
@@ -79,7 +85,7 @@ const DEFAULT_TEMPLATES: WaTemplate[] = [
 
 Comme convenu, voici l'audit préparé pour {{entreprise}} :
 
-{{lien_site}}
+{{lien_lm}}
 
 Vous y trouverez des recommandations concrètes pour votre visibilité en ligne.
 
@@ -175,6 +181,11 @@ export function WhatsAppTab() {
 
   // Lead magnet data
   const [lmMap, setLmMap] = useState<Map<string, { ready: boolean; url?: string }>>(new Map());
+  // Real audit PDFs (by opportunity) and demo sites (by company)
+  const [auditMap, setAuditMap] = useState<
+    Map<string, { url: string | null; ready: boolean; demoSiteUrl: string | null }>
+  >(new Map());
+  const [siteMap, setSiteMap] = useState<Map<number, string>>(new Map());
 
   // Custom templates
   const [templates, setTemplates] = useState<WaTemplate[]>(DEFAULT_TEMPLATES);
@@ -214,6 +225,57 @@ export function WhatsAppTab() {
     }).catch(() => {});
   }, []);
 
+  // Load the real audit PDFs and demo sites so {{lien_audit}} / {{lien_site}}
+  // resolve to the actual documents (not the lead-magnet link).
+  useEffect(() => {
+    const supabase = createClient();
+    void supabase
+      .from("audits")
+      .select("opportunite_id, pdf_url, statut, demo_site_url")
+      .then(({ data }) => {
+        const map = new Map<string, { url: string | null; ready: boolean; demoSiteUrl: string | null }>();
+        for (const a of data ?? []) {
+          map.set(a.opportunite_id as string, {
+            url: (a.pdf_url as string | null) ?? null,
+            ready: a.statut === "ready" && !!a.pdf_url,
+            demoSiteUrl: (a.demo_site_url as string | null) ?? null,
+          });
+        }
+        setAuditMap(map);
+      });
+    const siteDomain = process.env.NEXT_PUBLIC_SITE_DOMAIN || "samadigitalstudio.fr";
+    void supabase
+      .from("sites")
+      .select("enterprise_id, is_published, published_subdomain, published_domain, build_stage, is_template")
+      .not("enterprise_id", "is", null)
+      .then(({ data }) => {
+        type SiteRow = {
+          enterprise_id: number;
+          is_published: boolean | null;
+          published_subdomain: string | null;
+          published_domain: string | null;
+          build_stage: string | null;
+          is_template: boolean | null;
+        };
+        const best = new Map<number, SiteRow>();
+        const rank = (s: SiteRow) => (s.is_published ? 2 : s.build_stage === "pret" ? 1 : 0);
+        for (const s of (data ?? []) as SiteRow[]) {
+          if (s.is_template === true) continue;
+          const cur = best.get(s.enterprise_id);
+          if (!cur || rank(s) > rank(cur)) best.set(s.enterprise_id, s);
+        }
+        const map = new Map<number, string>();
+        for (const [entId, s] of best) {
+          if (s.published_domain) {
+            map.set(entId, s.published_domain.startsWith("http") ? s.published_domain : `https://${s.published_domain}`);
+          } else if (s.published_subdomain) {
+            map.set(entId, `https://${s.published_subdomain}.${siteDomain}`);
+          }
+        }
+        setSiteMap(map);
+      });
+  }, []);
+
   // Build rows
   const contactRows = useMemo<ContactRow[]>(() => {
     return contacts.map((contact) => {
@@ -225,6 +287,7 @@ export function WhatsAppTab() {
       const pipeline = opp?.pipeline_id ? pipelines.find((p) => p.id === opp.pipeline_id) : undefined;
       const stage = opp?.stage_id ? pipelineStages.find((s) => s.id === opp.stage_id) : undefined;
       const lmInfo = opp ? lmMap.get(opp.id) : undefined;
+      const auditInfo = opp ? auditMap.get(opp.id) : undefined;
       return {
         kind: "contact",
         id: `contact:${contact.id}`,
@@ -239,10 +302,12 @@ export function WhatsAppTab() {
         hasLeadMagnet: !!lmInfo || (opp?.lead_magnet ?? false),
         leadMagnetReady: lmInfo?.ready ?? false,
         leadMagnetUrl: lmInfo?.url,
+        auditUrl: auditInfo?.ready ? auditInfo.url ?? undefined : undefined,
+        demoUrl: siteMap.get(contact.entreprise_id) ?? auditInfo?.demoSiteUrl ?? undefined,
         opportunityId: opp?.id,
       };
     });
-  }, [contacts, opportunities, companies, pipelines, pipelineStages, lmMap]);
+  }, [contacts, opportunities, companies, pipelines, pipelineStages, lmMap, auditMap, siteMap]);
 
   const companyRows = useMemo<CompanyRow[]>(() => {
     return companies.map((company) => {
@@ -250,6 +315,7 @@ export function WhatsAppTab() {
       const pipeline = opp?.pipeline_id ? pipelines.find((p) => p.id === opp.pipeline_id) : undefined;
       const stage = opp?.stage_id ? pipelineStages.find((s) => s.id === opp.stage_id) : undefined;
       const lmInfo = opp ? lmMap.get(opp.id) : undefined;
+      const auditInfo = opp ? auditMap.get(opp.id) : undefined;
       return {
         kind: "company",
         id: `company:${company.id}`,
@@ -261,10 +327,12 @@ export function WhatsAppTab() {
         hasLeadMagnet: !!lmInfo || (opp?.lead_magnet ?? false),
         leadMagnetReady: lmInfo?.ready ?? false,
         leadMagnetUrl: lmInfo?.url,
+        auditUrl: auditInfo?.ready ? auditInfo.url ?? undefined : undefined,
+        demoUrl: siteMap.get(company.id) ?? auditInfo?.demoSiteUrl ?? undefined,
         opportunityId: opp?.id,
       };
     });
-  }, [companies, opportunities, pipelines, pipelineStages, lmMap]);
+  }, [companies, opportunities, pipelines, pipelineStages, lmMap, auditMap, siteMap]);
 
   const rows = mode === "contacts" ? contactRows : companyRows;
 
@@ -294,8 +362,9 @@ export function WhatsAppTab() {
   const buildVars = useCallback((row: WhatsAppRow) => ({
     "{{prénom}}": row.kind === "contact" ? (row.firstName || row.companyName) : row.companyName,
     "{{entreprise}}": row.companyName,
-    "{{lien_site}}": row.leadMagnetUrl ?? "(lien site)",
-    "{{lien_audit}}": row.leadMagnetUrl ?? "(lien audit)",
+    "{{lien_site}}": row.demoUrl ?? row.leadMagnetUrl ?? "(lien site)",
+    "{{lien_audit}}": row.auditUrl ?? "(lien audit)",
+    "{{lien_lm}}": row.leadMagnetUrl ?? "(lien lead magnet)",
   }), []);
 
   const buildMessage = useCallback((row: WhatsAppRow, tmplId: string) => {
@@ -692,6 +761,32 @@ export function WhatsAppTab() {
                               {selectedRow.leadMagnetUrl}
                             </p>
                           </div>
+                        )}
+                        {selectedRow.auditUrl && (
+                          <a
+                            href={selectedRow.auditUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 block rounded-lg border border-emerald-200 bg-emerald-50 p-2 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30"
+                          >
+                            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Audit PDF</p>
+                            <p className="mt-0.5 truncate text-xs text-emerald-600 dark:text-emerald-500">
+                              {selectedRow.auditUrl}
+                            </p>
+                          </a>
+                        )}
+                        {selectedRow.demoUrl && (
+                          <a
+                            href={selectedRow.demoUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-2 block rounded-lg border border-emerald-200 bg-emerald-50 p-2 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30"
+                          >
+                            <p className="text-xs font-medium text-emerald-700 dark:text-emerald-400">Site démo</p>
+                            <p className="mt-0.5 truncate text-xs text-emerald-600 dark:text-emerald-500">
+                              {selectedRow.demoUrl}
+                            </p>
+                          </a>
                         )}
                       </>
                     ) : (
