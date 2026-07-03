@@ -84,6 +84,13 @@ export const journalTouchpointSchema = z.object({
 
 export const journalLogSchema = z.object(journalCommonFields);
 
+export const agentSequenceEnrollSchema = z.object({
+  automation_id: z.string().uuid({ message: "automation_id must be a UUID" }),
+  entreprise_id: z.coerce.number().int().positive(),
+  contact_id: z.string().uuid({ message: "contact_id must be a UUID" }),
+});
+export type AgentSequenceEnrollPayload = z.infer<typeof agentSequenceEnrollSchema>;
+
 /**
  * Reads JSON from the request and validates it.
  *

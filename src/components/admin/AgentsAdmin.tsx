@@ -7,10 +7,12 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, MapPin, Phone, Check, X, Inbox, Users } from "lucide-react";
+import { Building2, MapPin, Phone, Check, X, Inbox, Users, Workflow } from "lucide-react";
 
 type Agent = { id: string; full_name: string | null; email: string | null };
 type Ent = { id: number; name: string | null; ville: string | null; telephone: string | null };
+type Sequence = { id: string; name: string | null; status: string; steps_count: number };
+type SeqAssignment = { automation_id: string; agent_id: string };
 type ClaimRequest = {
   id: string;
   created_at: string;
@@ -31,13 +33,15 @@ export default function AgentsAdmin() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [requests, setRequests] = useState<ClaimRequest[]>([]);
   const [pool, setPool] = useState<Ent[]>([]);
+  const [sequences, setSequences] = useState<Sequence[]>([]);
+  const [seqAssignments, setSeqAssignments] = useState<SeqAssignment[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [agentsRes, poolRes, reqJson] = await Promise.all([
+    const [agentsRes, poolRes, reqJson, seqJson] = await Promise.all([
       supabase
         .from("user_profiles")
         .select("id, full_name, email")
@@ -51,12 +55,17 @@ export default function AgentsAdmin() {
         .order("name")
         .limit(100),
       authedFetch("/api/admin/claim-requests").then((r) => (r.ok ? r.json() : [])),
+      authedFetch("/api/admin/agent-sequences").then((r) =>
+        r.ok ? r.json() : { sequences: [], assignments: [] },
+      ),
     ]);
     const ag = (agentsRes.data ?? []) as Agent[];
     setAgents(ag);
     setSelectedAgent((cur) => cur || ag[0]?.id || "");
     setPool((poolRes.data ?? []) as Ent[]);
     setRequests((reqJson ?? []) as ClaimRequest[]);
+    setSequences((seqJson?.sequences ?? []) as Sequence[]);
+    setSeqAssignments((seqJson?.assignments ?? []) as SeqAssignment[]);
     setLoading(false);
   }, []);
 
@@ -75,6 +84,36 @@ export default function AgentsAdmin() {
       if (!res.ok) throw new Error();
       toast.success(decision === "approve" ? "Demande approuvée." : "Demande refusée.");
       await load();
+    } catch {
+      toast.error("Action impossible.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const toggleSequence = async (automationId: string, assigned: boolean) => {
+    if (!selectedAgent) {
+      toast.error("Choisis d'abord un agent.");
+      return;
+    }
+    setBusy(`seq-${automationId}`);
+    try {
+      const res = await authedFetch("/api/admin/agent-sequences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          automation_id: automationId,
+          agent_id: selectedAgent,
+          assigned,
+        }),
+      });
+      if (!res.ok) throw new Error();
+      setSeqAssignments((cur) =>
+        assigned
+          ? [...cur, { automation_id: automationId, agent_id: selectedAgent }]
+          : cur.filter((a) => !(a.automation_id === automationId && a.agent_id === selectedAgent)),
+      );
+      toast.success(assigned ? "Séquence attribuée à l'agent." : "Séquence retirée.");
     } catch {
       toast.error("Action impossible.");
     } finally {
@@ -228,6 +267,69 @@ export default function AgentsAdmin() {
                       </div>
                       <Button size="sm" disabled={disabled} onClick={() => assign(e.id)}>
                         Attribuer
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Sequence assignment for the selected agent */}
+          <section className="space-y-3">
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <Workflow className="h-4 w-4" /> Séquences de l&apos;agent
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              L&apos;agent sélectionné ci-dessus pourra lancer les séquences attribuées sur ses
+              prospects et exécuter les étapes manuelles (WhatsApp, LinkedIn, appel).
+            </p>
+            {sequences.length === 0 ? (
+              <Card>
+                <CardContent className="py-6 text-center text-sm text-muted-foreground">
+                  Aucune séquence créée. Crée d&apos;abord une séquence dans Automatisations.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {sequences.map((s) => {
+                  const assigned = seqAssignments.some(
+                    (a) => a.automation_id === s.id && a.agent_id === selectedAgent,
+                  );
+                  const disabled = busy === `seq-${s.id}` || !selectedAgent;
+                  return (
+                    <div
+                      key={s.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 font-medium">
+                          <span className="truncate">{s.name || "Séquence sans nom"}</span>
+                          <Badge variant={s.status === "on" ? "default" : "secondary"}>
+                            {s.status === "on" ? "Active" : s.status === "paused" ? "En pause" : "Brouillon"}
+                          </Badge>
+                        </div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                          {s.steps_count} étape{s.steps_count > 1 ? "s" : ""}
+                          {s.status !== "on" &&
+                            " · visible côté agent seulement quand la séquence est activée"}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant={assigned ? "outline" : "default"}
+                        disabled={disabled}
+                        onClick={() => toggleSequence(s.id, !assigned)}
+                      >
+                        {assigned ? (
+                          <>
+                            <X className="mr-1 h-4 w-4" /> Retirer
+                          </>
+                        ) : (
+                          <>
+                            <Check className="mr-1 h-4 w-4" /> Attribuer
+                          </>
+                        )}
                       </Button>
                     </div>
                   );

@@ -456,10 +456,14 @@ function stepIsManual(step: SequenceStep): boolean {
   return step.kind === 'call' || step.kind === 'whatsapp' || step.kind === 'linkedin' || step.kind === 'task'
 }
 
-export async function enrollInSequence(automation: Automation, ctx: RunContext): Promise<boolean> {
+export async function enrollInSequence(
+  automation: Automation,
+  ctx: RunContext,
+  opts: { createdBy?: string | null } = {},
+): Promise<{ enrolled: boolean; enrollmentId: string | null }> {
   const sb = getServiceClient()
   const ent = await resolveEntities(sb, ctx)
-  if (!ent.contactId) return false
+  if (!ent.contactId) return { enrolled: false, enrollmentId: null }
   // éviter les doublons actifs
   const { data: existing } = await sb
     .from('sequence_enrollments')
@@ -468,19 +472,24 @@ export async function enrollInSequence(automation: Automation, ctx: RunContext):
     .eq('contact_id', ent.contactId)
     .in('status', ['active', 'paused'])
     .maybeSingle()
-  if (existing) return false
+  if (existing) return { enrolled: false, enrollmentId: existing.id }
 
-  await sb.from('sequence_enrollments').insert({
-    automation_id: automation.id,
-    contact_id: ent.contactId,
-    opportunite_id: ctx.opportunite_id ?? null,
-    entreprise_id: ent.entrepriseId,
-    current_step: 0,
-    status: 'active',
-    next_run_at: new Date().toISOString(),
-    vars: ent.vars,
-  })
-  return true
+  const { data: inserted } = await sb
+    .from('sequence_enrollments')
+    .insert({
+      automation_id: automation.id,
+      contact_id: ent.contactId,
+      opportunite_id: ctx.opportunite_id ?? null,
+      entreprise_id: ent.entrepriseId,
+      current_step: 0,
+      status: 'active',
+      next_run_at: new Date().toISOString(),
+      vars: ent.vars,
+      created_by: opts.createdBy ?? null,
+    })
+    .select('id')
+    .single()
+  return { enrolled: true, enrollmentId: inserted?.id ?? null }
 }
 
 export async function processSequenceEnrollment(
@@ -567,6 +576,8 @@ export async function processSequenceEnrollment(
       enrollment_id: enrollment.id,
       step_id: step.id,
       title: `${automation.name} — étape ${idx + 1}`,
+      // Une séquence lancée par un agent lui assigne ses tâches manuelles.
+      assignee_id: enrollment.created_by ?? null,
       payload: { message, script: message, scriptName, phone: ent.contactPhone, linkedin: ent.contactLinkedin },
     })
     // l'inscription se met en pause jusqu'à la complétion de la tâche

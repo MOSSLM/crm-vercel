@@ -57,7 +57,7 @@ const NAV: NavSection[] = [
     items: [
       { title: "Démarchage", href: "/espace-agent/demarchage", icon: Target },
       { title: "Messagerie", href: "/espace-agent/messagerie", icon: Inbox, soon: true },
-      { title: "Séquences", href: "/espace-agent/sequences", icon: Workflow, soon: true },
+      { title: "Séquences", href: "/espace-agent/sequences", icon: Workflow },
     ],
   },
   {
