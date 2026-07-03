@@ -9,15 +9,20 @@ import type { Automation, SequenceEnrollment } from "@/components/automations/ty
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-// Agent: launch an admin-assigned sequence on one of his own prospects.
-// The enrollment records created_by so the engine assigns the manual steps
+type ItemResult = {
+  entreprise_id: number;
+  status: "enrolled" | "deja_inscrit" | "prospect_non_attribue" | "contact_invalide" | "erreur";
+};
+
+// Agent: launch an admin-assigned sequence on a batch of his own prospects.
+// Each enrollment records created_by so the engine assigns the manual steps
 // (WhatsApp / LinkedIn / call) back to this agent.
 export const POST = withAuth(
   { role: "freelance", body: agentSequenceEnrollSchema },
   async ({ user, body, cors }) => {
     const sc = getServiceClient();
 
-    // 1. The sequence must be assigned to this agent by the admin.
+    // The sequence must be assigned to this agent by the admin, and be live.
     const { data: assignment } = await sc
       .from("sequence_agent_assignments")
       .select("id")
@@ -26,7 +31,6 @@ export const POST = withAuth(
       .maybeSingle();
     if (!assignment) return jsonError("sequence_non_assignee", 403, {}, cors);
 
-    // 2. The sequence must exist and be live.
     const { data: autoRow } = await sc
       .from("automations")
       .select("*")
@@ -38,63 +42,76 @@ export const POST = withAuth(
     }
     if (automation.status !== "on") return jsonError("sequence_inactive", 409, {}, cors);
 
-    // 3. The company must belong to this agent.
-    const { data: ent } = await sc
-      .from("entreprises")
-      .select("id, owner_id")
-      .eq("id", body.entreprise_id)
-      .maybeSingle();
-    if (!ent || ent.owner_id !== user.id) return jsonError("prospect_non_attribue", 403, {}, cors);
-
-    // 4. The contact must belong to that company.
-    const { data: contact } = await sc
-      .from("contacts")
-      .select("id, entreprise_id")
-      .eq("id", body.contact_id)
-      .maybeSingle();
-    if (!contact || contact.entreprise_id !== body.entreprise_id) {
-      return jsonError("contact_invalide", 400, {}, cors);
+    // Batch-load ownership + contact validity + the agent's opportunities.
+    const entIds = [...new Set(body.items.map((i) => i.entreprise_id))];
+    const contactIds = [...new Set(body.items.map((i) => i.contact_id))];
+    const [entsRes, contactsRes, oppsRes] = await Promise.all([
+      sc.from("entreprises").select("id").in("id", entIds).eq("owner_id", user.id),
+      sc.from("contacts").select("id, entreprise_id").in("id", contactIds),
+      sc
+        .from("opportunites")
+        .select("id, entreprise_id, created_at")
+        .in("entreprise_id", entIds)
+        .eq("owner_id", user.id)
+        .order("created_at", { ascending: false }),
+    ]);
+    const ownedIds = new Set((entsRes.data ?? []).map((e) => e.id as number));
+    const contactEntById = new Map(
+      (contactsRes.data ?? []).map((c) => [c.id as string, c.entreprise_id as number]),
+    );
+    const oppByEnt = new Map<number, string>();
+    for (const o of oppsRes.data ?? []) {
+      if (!oppByEnt.has(o.entreprise_id as number)) oppByEnt.set(o.entreprise_id as number, o.id as string);
     }
 
-    // 5. Optional: attach the agent's opportunity on this company.
-    const { data: opp } = await sc
-      .from("opportunites")
-      .select("id")
-      .eq("entreprise_id", body.entreprise_id)
-      .eq("owner_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const { enrolled, enrollmentId } = await enrollInSequence(
-      automation,
-      {
-        contact_id: body.contact_id,
-        entreprise_id: body.entreprise_id,
-        opportunite_id: opp?.id ?? null,
-        event: "agent_enroll",
-      },
-      { createdBy: user.id },
-    );
-    if (!enrolled) return jsonError("deja_inscrit", 409, {}, cors);
-
-    // Process the first step right away so a day-0 manual task shows up
-    // without waiting for the next cron tick.
-    if (enrollmentId) {
-      const { data: enr } = await sc
-        .from("sequence_enrollments")
-        .select("*")
-        .eq("id", enrollmentId)
-        .maybeSingle();
-      if (enr) {
-        try {
-          await processSequenceEnrollment(enr as SequenceEnrollment);
-        } catch {
-          // the cron ticker will pick it up
+    const results: ItemResult[] = [];
+    for (const item of body.items) {
+      if (!ownedIds.has(item.entreprise_id)) {
+        results.push({ entreprise_id: item.entreprise_id, status: "prospect_non_attribue" });
+        continue;
+      }
+      if (contactEntById.get(item.contact_id) !== item.entreprise_id) {
+        results.push({ entreprise_id: item.entreprise_id, status: "contact_invalide" });
+        continue;
+      }
+      try {
+        const { enrolled, enrollmentId } = await enrollInSequence(
+          automation,
+          {
+            contact_id: item.contact_id,
+            entreprise_id: item.entreprise_id,
+            opportunite_id: oppByEnt.get(item.entreprise_id) ?? null,
+            event: "agent_enroll",
+          },
+          { createdBy: user.id },
+        );
+        if (!enrolled) {
+          results.push({ entreprise_id: item.entreprise_id, status: "deja_inscrit" });
+          continue;
         }
+        // Process the first step right away so a day-0 manual task shows up
+        // without waiting for the next cron tick.
+        if (enrollmentId) {
+          const { data: enr } = await sc
+            .from("sequence_enrollments")
+            .select("*")
+            .eq("id", enrollmentId)
+            .maybeSingle();
+          if (enr) {
+            try {
+              await processSequenceEnrollment(enr as SequenceEnrollment);
+            } catch {
+              // the cron ticker will pick it up
+            }
+          }
+        }
+        results.push({ entreprise_id: item.entreprise_id, status: "enrolled" });
+      } catch {
+        results.push({ entreprise_id: item.entreprise_id, status: "erreur" });
       }
     }
 
-    return json({ ok: true, enrollment_id: enrollmentId }, { headers: cors });
+    const enrolledCount = results.filter((r) => r.status === "enrolled").length;
+    return json({ ok: true, enrolled: enrolledCount, results }, { headers: cors });
   },
 );

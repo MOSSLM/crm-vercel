@@ -19,6 +19,8 @@ const VARIABLES = [
   { v: '{{contact.role}}', desc: 'Poste' },
   { v: '{{owner.first_name}}', desc: 'Prénom du SDR' },
   { v: '{{calendar_link}}', desc: 'Lien de réservation' },
+  { v: '{{company.audit_url}}', desc: "Lien de l'audit (si prêt)" },
+  { v: '{{company.demo_url}}', desc: 'Lien du site démo' },
 ]
 
 export function SequenceBuilder({ id }: { id: string }) {
@@ -117,17 +119,16 @@ export function SequenceBuilder({ id }: { id: string }) {
 
   function toggleStatus() {
     if (status !== 'on') {
-      if (!settings.pipeline || settings.stage == null) {
-        toast.error('Configurez le pipeline et le stage d’entrée')
-        return
-      }
+      // Sans pipeline/stage d'entrée, la séquence ne s'auto-déclenche jamais :
+      // elle n'est utilisable qu'en lancement manuel (agents / test).
+      const manualOnly = !settings.pipeline || settings.stage == null
       if (steps.length === 0) {
         toast.error('Ajoutez au moins une étape')
         return
       }
       setStatus('on')
       touch()
-      toast.success('Séquence activée')
+      toast.success(manualOnly ? 'Séquence activée (lancement manuel uniquement)' : 'Séquence activée')
     } else {
       setStatus('paused')
       touch()
@@ -161,7 +162,7 @@ export function SequenceBuilder({ id }: { id: string }) {
         </div>
         <div className="pane-body">
           <Section label="Cible">
-            <Field label="Pipeline" required>
+            <Field label="Pipeline" hint="vide = lancement manuel">
               <SupaSelect
                 table="pipelines"
                 icon="pipeline"
@@ -172,7 +173,7 @@ export function SequenceBuilder({ id }: { id: string }) {
                 }}
               />
             </Field>
-            <Field label="Stage d'entrée" required>
+            <Field label="Stage d'entrée" hint="vide = lancement manuel">
               <SupaSelect
                 table="stages"
                 icon="kanban"
@@ -538,6 +539,12 @@ function SeqStepInspector({ step, onUpdate }: { step: SequenceStep | undefined; 
             </Field>
             <ToggleRow label="Tracker les ouvertures" checked={step.trackOpens !== false} onChange={(v) => onUpdate({ trackOpens: v })} accent />
             <ToggleRow label="Tracker les clics" checked={step.trackClicks !== false} onChange={(v) => onUpdate({ trackClicks: v })} accent />
+            <ToggleRow
+              label="Joindre l'audit PDF (si prêt)"
+              checked={step.attachAudit === true}
+              onChange={(v) => onUpdate({ attachAudit: v })}
+              accent
+            />
           </Section>
         )}
         {step.kind === 'call' && (

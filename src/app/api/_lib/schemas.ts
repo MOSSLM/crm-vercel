@@ -86,8 +86,15 @@ export const journalLogSchema = z.object(journalCommonFields);
 
 export const agentSequenceEnrollSchema = z.object({
   automation_id: z.string().uuid({ message: "automation_id must be a UUID" }),
-  entreprise_id: z.coerce.number().int().positive(),
-  contact_id: z.string().uuid({ message: "contact_id must be a UUID" }),
+  items: z
+    .array(
+      z.object({
+        entreprise_id: z.coerce.number().int().positive(),
+        contact_id: z.string().uuid({ message: "contact_id must be a UUID" }),
+      }),
+    )
+    .min(1)
+    .max(50),
 });
 export type AgentSequenceEnrollPayload = z.infer<typeof agentSequenceEnrollSchema>;
 

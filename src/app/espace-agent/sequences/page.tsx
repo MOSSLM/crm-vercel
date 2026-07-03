@@ -42,7 +42,14 @@ type SeqTask = {
   title: string | null;
   due_at: string | null;
   enrollment_id: string | null;
-  payload: { message?: string; script?: string; phone?: string; linkedin?: string } | null;
+  payload: {
+    message?: string;
+    script?: string;
+    phone?: string;
+    linkedin?: string;
+    audit_url?: string | null;
+    demo_url?: string | null;
+  } | null;
   contact: Contact | Contact[] | null;
   entreprise: Entreprise | Entreprise[] | null;
 };
@@ -51,6 +58,7 @@ type OwnedContact = {
   first_name: string | null;
   last_name: string | null;
   tel: string | null;
+  is_decision_maker: boolean | null;
   entreprise_id: number;
   entreprise_nom: string | null;
 };
@@ -98,10 +106,9 @@ export default function AgentSequencesPage() {
   const [contacts, setContacts] = useState<OwnedContact[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  // Launch picker state: which sequence is open + selected company/contact.
+  // Launch picker state: which sequence is open + checked companies.
   const [launching, setLaunching] = useState<string | null>(null);
-  const [pickedEnt, setPickedEnt] = useState<string>("");
-  const [pickedContact, setPickedContact] = useState<string>("");
+  const [picked, setPicked] = useState<Set<number>>(new Set());
   const [openScript, setOpenScript] = useState<string | null>(null);
 
   const load = async () => {
@@ -126,28 +133,58 @@ export default function AgentSequencesPage() {
     void load();
   }, []);
 
+  // Owned companies with their auto-picked contact (decision maker first,
+  // then a contact with a phone number, then the first one).
   const companies = useMemo(() => {
-    const map = new Map<number, string>();
+    const byEnt = new Map<number, OwnedContact[]>();
     for (const c of contacts) {
-      if (!map.has(c.entreprise_id)) map.set(c.entreprise_id, c.entreprise_nom ?? "Sans nom");
+      const list = byEnt.get(c.entreprise_id) ?? [];
+      list.push(c);
+      byEnt.set(c.entreprise_id, list);
     }
-    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    return [...byEnt.entries()]
+      .map(([id, list]) => ({
+        id,
+        name: list[0]?.entreprise_nom ?? "Sans nom",
+        contact: list.find((c) => c.is_decision_maker) ?? list.find((c) => c.tel) ?? list[0] ?? null,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [contacts]);
 
-  const entContacts = useMemo(
-    () => contacts.filter((c) => String(c.entreprise_id) === pickedEnt),
-    [contacts, pickedEnt],
-  );
+  // Companies already enrolled (active/paused) in a given sequence.
+  const enrolledEnts = useMemo(() => {
+    const map = new Map<string, Set<number>>();
+    for (const e of enrollments) {
+      if (e.status !== "active" && e.status !== "paused") continue;
+      const ent = one(e.entreprise);
+      if (!ent?.id) continue;
+      const set = map.get(e.automation_id) ?? new Set<number>();
+      set.add(ent.id);
+      map.set(e.automation_id, set);
+    }
+    return map;
+  }, [enrollments]);
 
   const openLauncher = (seqId: string) => {
     setLaunching((cur) => (cur === seqId ? null : seqId));
-    setPickedEnt("");
-    setPickedContact("");
+    setPicked(new Set());
+  };
+
+  const togglePicked = (entId: number) => {
+    setPicked((cur) => {
+      const next = new Set(cur);
+      if (next.has(entId)) next.delete(entId);
+      else next.add(entId);
+      return next;
+    });
   };
 
   const launch = async (seqId: string) => {
-    if (!pickedEnt || !pickedContact) {
-      toast.error("Choisis une entreprise et un contact.");
+    const items = companies
+      .filter((c) => picked.has(c.id) && c.contact)
+      .map((c) => ({ entreprise_id: c.id, contact_id: c.contact!.id }));
+    if (items.length === 0) {
+      toast.error("Coche au moins un prospect.");
       return;
     }
     setBusy(`launch-${seqId}`);
@@ -155,23 +192,28 @@ export default function AgentSequencesPage() {
       const res = await authedFetch("/api/agent/sequences/enroll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          automation_id: seqId,
-          entreprise_id: Number(pickedEnt),
-          contact_id: pickedContact,
-        }),
+        body: JSON.stringify({ automation_id: seqId, items }),
       });
       if (res.status === 409) {
-        const err = await res.json().catch(() => null);
-        toast.error(
-          err?.error === "sequence_inactive"
-            ? "Cette séquence n'est plus active."
-            : "Ce contact est déjà inscrit dans cette séquence.",
-        );
+        toast.error("Cette séquence n'est plus active.");
         return;
       }
       if (!res.ok) throw new Error();
-      toast.success("Séquence lancée sur le prospect !");
+      const data = (await res.json()) as {
+        enrolled: number;
+        results: { status: string }[];
+      };
+      const already = data.results.filter((r) => r.status === "deja_inscrit").length;
+      if (data.enrolled > 0) {
+        toast.success(
+          `${data.enrolled} prospect${data.enrolled > 1 ? "s" : ""} lancé${data.enrolled > 1 ? "s" : ""} dans la séquence !` +
+            (already > 0 ? ` (${already} déjà inscrit${already > 1 ? "s" : ""})` : ""),
+        );
+      } else if (already > 0) {
+        toast.error("Ces prospects sont déjà inscrits dans cette séquence.");
+      } else {
+        toast.error("Aucun prospect n'a pu être lancé.");
+      }
       setLaunching(null);
       await load();
     } catch {
@@ -314,6 +356,20 @@ export default function AgentSequencesPage() {
                               <Copy className="mr-1 h-4 w-4" /> Copier le message
                             </Button>
                           )}
+                          {task.payload?.audit_url && (
+                            <Button size="sm" variant="outline" asChild>
+                              <a href={task.payload.audit_url} target="_blank" rel="noreferrer">
+                                <ExternalLink className="mr-1 h-4 w-4" /> Audit
+                              </a>
+                            </Button>
+                          )}
+                          {task.payload?.demo_url && (
+                            <Button size="sm" variant="outline" asChild>
+                              <a href={task.payload.demo_url} target="_blank" rel="noreferrer">
+                                <ExternalLink className="mr-1 h-4 w-4" /> Site démo
+                              </a>
+                            </Button>
+                          )}
                           {task.kind === "call" && task.payload?.script && (
                             <Button
                               size="sm"
@@ -414,51 +470,78 @@ export default function AgentSequencesPage() {
                         </div>
 
                         {isLaunching && (
-                          <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-3 text-sm">
-                            <select
-                              value={pickedEnt}
-                              onChange={(e) => {
-                                setPickedEnt(e.target.value);
-                                setPickedContact("");
-                              }}
-                              className="h-9 rounded-md border bg-background px-3 text-sm"
-                            >
-                              <option value="">Entreprise…</option>
-                              {companies.map(([id, name]) => (
-                                <option key={id} value={String(id)}>
-                                  {name}
-                                </option>
-                              ))}
-                            </select>
-                            <select
-                              value={pickedContact}
-                              onChange={(e) => setPickedContact(e.target.value)}
-                              disabled={!pickedEnt}
-                              className="h-9 rounded-md border bg-background px-3 text-sm"
-                            >
-                              <option value="">
-                                {pickedEnt && entContacts.length === 0
-                                  ? "Aucun contact — ajoute d'abord un contact"
-                                  : "Contact…"}
-                              </option>
-                              {entContacts.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {`${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || "Contact"}
-                                  {c.tel ? ` · ${c.tel}` : ""}
-                                </option>
-                              ))}
-                            </select>
-                            <Button
-                              size="sm"
-                              disabled={disabled || !pickedEnt || !pickedContact}
-                              onClick={() => launch(seq.id)}
-                            >
-                              <Play className="mr-1 h-4 w-4" /> Lancer
-                            </Button>
-                            {companies.length === 0 && (
+                          <div className="space-y-2 rounded-md border bg-muted/40 p-3 text-sm">
+                            {companies.length === 0 ? (
                               <span className="text-xs text-muted-foreground">
                                 Aucun prospect attribué — demande une attribution dans Entreprises.
                               </span>
+                            ) : (
+                              <>
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    Choisis les prospects à mettre dans la séquence
+                                  </span>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-primary hover:underline"
+                                    onClick={() => {
+                                      const selectable = companies.filter(
+                                        (c) =>
+                                          c.contact && !enrolledEnts.get(seq.id)?.has(c.id),
+                                      );
+                                      setPicked((cur) =>
+                                        cur.size === selectable.length
+                                          ? new Set()
+                                          : new Set(selectable.map((c) => c.id)),
+                                      );
+                                    }}
+                                  >
+                                    Tout sélectionner
+                                  </button>
+                                </div>
+                                <div className="max-h-64 space-y-1 overflow-y-auto pr-1">
+                                  {companies.map((c) => {
+                                    const alreadyIn = enrolledEnts.get(seq.id)?.has(c.id) ?? false;
+                                    const noContact = !c.contact;
+                                    const blocked = alreadyIn || noContact;
+                                    return (
+                                      <label
+                                        key={c.id}
+                                        className={
+                                          "flex cursor-pointer items-center gap-2 rounded-md border bg-background px-3 py-2 " +
+                                          (blocked ? "cursor-not-allowed opacity-50" : "hover:bg-muted/60")
+                                        }
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          className="h-4 w-4 accent-primary"
+                                          checked={picked.has(c.id) && !blocked}
+                                          disabled={blocked}
+                                          onChange={() => togglePicked(c.id)}
+                                        />
+                                        <span className="min-w-0 flex-1">
+                                          <span className="block truncate font-medium">{c.name}</span>
+                                          <span className="block truncate text-xs text-muted-foreground">
+                                            {alreadyIn
+                                              ? "Déjà dans la séquence"
+                                              : noContact
+                                                ? "Aucun contact — ajoute d'abord un contact"
+                                                : `${`${c.contact!.first_name ?? ""} ${c.contact!.last_name ?? ""}`.trim() || "Contact"}${c.contact!.tel ? ` · ${c.contact!.tel}` : ""}${c.contact!.is_decision_maker ? " · décideur" : ""}`}
+                                          </span>
+                                        </span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                                <Button
+                                  size="sm"
+                                  disabled={disabled || picked.size === 0}
+                                  onClick={() => launch(seq.id)}
+                                >
+                                  <Play className="mr-1 h-4 w-4" />
+                                  Lancer sur {picked.size || ""} prospect{picked.size > 1 ? "s" : ""}
+                                </Button>
+                              </>
                             )}
                           </div>
                         )}

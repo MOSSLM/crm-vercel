@@ -7,12 +7,31 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Building2, MapPin, Phone, Check, X, Inbox, Users, Workflow } from "lucide-react";
+import {
+  Building2,
+  MapPin,
+  Phone,
+  Check,
+  X,
+  Inbox,
+  Users,
+  Workflow,
+  FileText,
+  Globe,
+  ExternalLink,
+} from "lucide-react";
 
 type Agent = { id: string; full_name: string | null; email: string | null };
 type Ent = { id: number; name: string | null; ville: string | null; telephone: string | null };
 type Sequence = { id: string; name: string | null; status: string; steps_count: number };
 type SeqAssignment = { automation_id: string; agent_id: string };
+type AgentProspect = {
+  id: number;
+  name: string | null;
+  ville: string | null;
+  audit: { statut: string; url: string | null; ready: boolean } | null;
+  demo: { url: string | null; is_published: boolean; build_stage: string | null; ready: boolean } | null;
+};
 type ClaimRequest = {
   id: string;
   created_at: string;
@@ -35,6 +54,8 @@ export default function AgentsAdmin() {
   const [pool, setPool] = useState<Ent[]>([]);
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [seqAssignments, setSeqAssignments] = useState<SeqAssignment[]>([]);
+  const [agentProspects, setAgentProspects] = useState<AgentProspect[]>([]);
+  const [prospectsLoading, setProspectsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -72,6 +93,30 @@ export default function AgentsAdmin() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Prospects (+ audit / site démo readiness) of the selected agent.
+  useEffect(() => {
+    if (!selectedAgent) {
+      setAgentProspects([]);
+      return;
+    }
+    let cancelled = false;
+    setProspectsLoading(true);
+    authedFetch(`/api/admin/agent-prospects?agent_id=${selectedAgent}`)
+      .then((r) => (r.ok ? r.json() : { prospects: [] }))
+      .then((data) => {
+        if (!cancelled) setAgentProspects((data?.prospects ?? []) as AgentProspect[]);
+      })
+      .catch(() => {
+        if (!cancelled) setAgentProspects([]);
+      })
+      .finally(() => {
+        if (!cancelled) setProspectsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedAgent]);
 
   const decide = async (requestId: string, decision: "approve" | "refuse") => {
     setBusy(requestId);
@@ -334,6 +379,78 @@ export default function AgentsAdmin() {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </section>
+
+          {/* Prospects of the selected agent + audit / demo readiness */}
+          <section className="space-y-3">
+            <h2 className="flex items-center gap-2 text-lg font-semibold">
+              <Building2 className="h-4 w-4" /> Prospects de l&apos;agent
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Les entreprises attribuées à l&apos;agent sélectionné, avec l&apos;état de leur audit
+              et de leur site démo — vérifie en un clic qu&apos;ils sont prêts à être envoyés.
+            </p>
+            {prospectsLoading ? (
+              <div className="text-sm text-muted-foreground">Chargement…</div>
+            ) : agentProspects.length === 0 ? (
+              <Card>
+                <CardContent className="py-6 text-center text-sm text-muted-foreground">
+                  Aucun prospect attribué à cet agent.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-2">
+                {agentProspects.map((p) => (
+                  <div
+                    key={p.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{p.name || "Sans nom"}</span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
+                        {p.ville && <span className="text-muted-foreground">{p.ville}</span>}
+                        <Badge variant={p.audit?.ready ? "default" : "secondary"}>
+                          {p.audit?.ready
+                            ? "Audit prêt"
+                            : p.audit
+                              ? "Audit en cours"
+                              : "Pas d'audit"}
+                        </Badge>
+                        <Badge variant={p.demo?.ready ? "default" : "secondary"}>
+                          {p.demo?.is_published
+                            ? "Site en ligne"
+                            : p.demo?.ready
+                              ? "Site prêt"
+                              : p.demo
+                                ? "Site en cours"
+                                : "Pas de site"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      {p.audit?.url && (
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={p.audit.url} target="_blank" rel="noreferrer">
+                            <FileText className="mr-1 h-4 w-4" /> Audit
+                          </a>
+                        </Button>
+                      )}
+                      {p.demo?.url && (
+                        <Button size="sm" variant="outline" asChild>
+                          <a href={p.demo.url} target="_blank" rel="noreferrer">
+                            <Globe className="mr-1 h-4 w-4" /> Site démo
+                            <ExternalLink className="ml-1 h-3 w-3" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </section>

@@ -45,6 +45,8 @@ export interface SequenceStep {
   trackOpens?: boolean
   trackClicks?: boolean
   skipIfReplied?: boolean
+  /** email : joindre le PDF d'audit de l'entreprise (si prêt) */
+  attachAudit?: boolean
 }
 
 export interface SequenceSettings {
