@@ -42,7 +42,7 @@ export const POST = withAuth({}, async ({ req, cors }) => {
       if (!ctx.contact_id) {
         return jsonError("Aucune opportunité d'échantillon pour tester cette séquence", 422, {}, cors)
       }
-      const enrolled = await enrollInSequence(auto, ctx)
+      const { enrolled } = await enrollInSequence(auto, ctx)
       return json(
         { ok: true, kind: 'sequence', enrolled, message: enrolled ? 'Contact inscrit à la séquence' : 'Déjà inscrit' },
         { headers: cors },

@@ -45,6 +45,8 @@ export interface SequenceStep {
   trackOpens?: boolean
   trackClicks?: boolean
   skipIfReplied?: boolean
+  /** email : joindre le PDF d'audit de l'entreprise (si prêt) */
+  attachAudit?: boolean
 }
 
 export interface SequenceSettings {
@@ -135,6 +137,7 @@ export interface SequenceEnrollment {
   status: EnrollmentStatus
   next_run_at: string | null
   vars: Record<string, unknown>
+  created_by: string | null
   entered_at: string
   updated_at: string
   finished_at: string | null

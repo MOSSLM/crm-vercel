@@ -33,6 +33,8 @@ type ResolvedEntities = {
   contactName: string | null
   contactPhone: string | null
   contactLinkedin: string | null
+  auditUrl: string | null
+  demoUrl: string | null
   vars: VarBag
 }
 
@@ -73,6 +75,8 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       contactLinkedin = c.linkedin_url ?? null
     }
   }
+  let auditUrl: string | null = null
+  let demoUrl: string | null = null
   if (entrepriseId) {
     const { data: e } = await sb
       .from('entreprises')
@@ -84,8 +88,53 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       vars['company.city'] = e.ville ?? ''
       vars['company.website'] = e.site_web_canonique ?? ''
     }
+
+    // Audit + site démo : liens interpolables dans les messages des séquences.
+    // L'audit est rattaché à l'opportunité ; on privilégie celle du contexte,
+    // sinon le premier audit prêt de l'entreprise.
+    const { data: opps } = await sb.from('opportunites').select('id').eq('entreprise_id', entrepriseId)
+    const oppIds = (opps ?? []).map((o) => o.id)
+    if (oppIds.length > 0) {
+      const { data: audits } = await sb
+        .from('audits')
+        .select('opportunite_id,pdf_url,statut,demo_site_url')
+        .in('opportunite_id', oppIds)
+      const list = audits ?? []
+      const audit =
+        (ctx.opportunite_id ? list.find((a) => a.opportunite_id === ctx.opportunite_id) : null) ??
+        list.find((a) => a.statut === 'ready' && a.pdf_url) ??
+        list[0] ??
+        null
+      if (audit) {
+        if (audit.statut === 'ready' && audit.pdf_url) auditUrl = audit.pdf_url
+        demoUrl = audit.demo_site_url ?? null
+      }
+    }
+
+    // Le site publié via le site-builder fait foi sur le lien démo de l'audit.
+    const { data: sites } = await sb
+      .from('sites')
+      .select('is_published,published_subdomain,published_domain,build_stage,is_template')
+      .eq('enterprise_id', entrepriseId)
+    const candidates = (sites ?? []).filter((s) => s.is_template !== true)
+    const site =
+      candidates.find((s) => s.is_published) ??
+      candidates.find((s) => s.build_stage === 'pret') ??
+      candidates[0] ??
+      null
+    if (site) {
+      const domain = process.env.NEXT_PUBLIC_SITE_DOMAIN || 'samadigitalstudio.fr'
+      if (site.published_domain) {
+        demoUrl = site.published_domain.startsWith('http') ? site.published_domain : `https://${site.published_domain}`
+      } else if (site.published_subdomain) {
+        demoUrl = `https://${site.published_subdomain}.${domain}`
+      }
+    }
+
+    vars['company.audit_url'] = auditUrl ?? ''
+    vars['company.demo_url'] = demoUrl ?? ''
   }
-  return { contactId, entrepriseId, contactEmail, contactName, contactPhone, contactLinkedin, vars }
+  return { contactId, entrepriseId, contactEmail, contactName, contactPhone, contactLinkedin, auditUrl, demoUrl, vars }
 }
 
 export function interpolate(text: string | null | undefined, vars: VarBag): string {
@@ -119,6 +168,8 @@ export async function sendEngineEmail(
     entrepriseId?: number | null
     opportuniteId?: string | null
     type?: string
+    /** Pièces jointes récupérées par URL (ex : PDF d'audit). */
+    attachmentUrls?: { filename: string; url: string }[]
   },
 ): Promise<{ ok: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY
@@ -139,6 +190,21 @@ export async function sendEngineEmail(
     /* utilise l'env */
   }
 
+  const attachments: { filename: string; content: string }[] = []
+  for (const att of opts.attachmentUrls ?? []) {
+    try {
+      const res = await fetch(att.url)
+      if (res.ok) {
+        const bytes = new Uint8Array(await res.arrayBuffer())
+        let binary = ''
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+        attachments.push({ filename: att.filename, content: btoa(binary) })
+      }
+    } catch {
+      // pièce jointe indisponible : l'email part sans elle
+    }
+  }
+
   const resend = new Resend(apiKey)
   let status: 'sent' | 'failed' = 'sent'
   let errorMessage: string | undefined
@@ -151,6 +217,7 @@ export async function sendEngineEmail(
       subject: opts.subject,
       html,
       text,
+      attachments: attachments.length > 0 ? attachments : undefined,
     })
     if (result.error) {
       status = 'failed'
@@ -456,10 +523,14 @@ function stepIsManual(step: SequenceStep): boolean {
   return step.kind === 'call' || step.kind === 'whatsapp' || step.kind === 'linkedin' || step.kind === 'task'
 }
 
-export async function enrollInSequence(automation: Automation, ctx: RunContext): Promise<boolean> {
+export async function enrollInSequence(
+  automation: Automation,
+  ctx: RunContext,
+  opts: { createdBy?: string | null } = {},
+): Promise<{ enrolled: boolean; enrollmentId: string | null }> {
   const sb = getServiceClient()
   const ent = await resolveEntities(sb, ctx)
-  if (!ent.contactId) return false
+  if (!ent.contactId) return { enrolled: false, enrollmentId: null }
   // éviter les doublons actifs
   const { data: existing } = await sb
     .from('sequence_enrollments')
@@ -468,19 +539,24 @@ export async function enrollInSequence(automation: Automation, ctx: RunContext):
     .eq('contact_id', ent.contactId)
     .in('status', ['active', 'paused'])
     .maybeSingle()
-  if (existing) return false
+  if (existing) return { enrolled: false, enrollmentId: existing.id }
 
-  await sb.from('sequence_enrollments').insert({
-    automation_id: automation.id,
-    contact_id: ent.contactId,
-    opportunite_id: ctx.opportunite_id ?? null,
-    entreprise_id: ent.entrepriseId,
-    current_step: 0,
-    status: 'active',
-    next_run_at: new Date().toISOString(),
-    vars: ent.vars,
-  })
-  return true
+  const { data: inserted } = await sb
+    .from('sequence_enrollments')
+    .insert({
+      automation_id: automation.id,
+      contact_id: ent.contactId,
+      opportunite_id: ctx.opportunite_id ?? null,
+      entreprise_id: ent.entrepriseId,
+      current_step: 0,
+      status: 'active',
+      next_run_at: new Date().toISOString(),
+      vars: ent.vars,
+      created_by: opts.createdBy ?? null,
+    })
+    .select('id')
+    .single()
+  return { enrolled: true, enrollmentId: inserted?.id ?? null }
 }
 
 export async function processSequenceEnrollment(
@@ -539,6 +615,8 @@ export async function processSequenceEnrollment(
           entrepriseId: ent.entrepriseId,
           opportuniteId: enrollment.opportunite_id,
           type: 'sequence',
+          attachmentUrls:
+            step.attachAudit && ent.auditUrl ? [{ filename: 'audit.pdf', url: ent.auditUrl }] : undefined,
         })
         if (throttle) throttle.nextSlot = Date.now() + randomSendGapMs()
       }
@@ -567,7 +645,17 @@ export async function processSequenceEnrollment(
       enrollment_id: enrollment.id,
       step_id: step.id,
       title: `${automation.name} — étape ${idx + 1}`,
-      payload: { message, script: message, scriptName, phone: ent.contactPhone, linkedin: ent.contactLinkedin },
+      // Une séquence lancée par un agent lui assigne ses tâches manuelles.
+      assignee_id: enrollment.created_by ?? null,
+      payload: {
+        message,
+        script: message,
+        scriptName,
+        phone: ent.contactPhone,
+        linkedin: ent.contactLinkedin,
+        audit_url: ent.auditUrl,
+        demo_url: ent.demoUrl,
+      },
     })
     // l'inscription se met en pause jusqu'à la complétion de la tâche
     await sb.from('sequence_enrollments').update({ next_run_at: null }).eq('id', enrollment.id)
