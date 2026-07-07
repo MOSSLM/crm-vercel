@@ -1,8 +1,14 @@
 import React from "react";
+import type { Viewport } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { resolveSite } from "@/lib/site-resolver";
 import ThemeLayout from "@/templates/theme-default/layout";
+
+// Imported Claude designs (and responsive templates generally) rely on their
+// own `<meta viewport>`, which is stripped on import. Re-emit it site-wide so
+// mobile `@media` fires on real devices.
+export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 interface SiteLayoutProps {
   children: React.ReactNode;

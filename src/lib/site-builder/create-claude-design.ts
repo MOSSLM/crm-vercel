@@ -114,6 +114,9 @@ export interface ClaudeDesignPageInput {
   html: string;
   /** Rewritten-but-still-bracketed source, kept so the mapping pass can re-run. */
   sourceHtml: string;
+  /** This page's OWN runtime JS (its non-shared local `.js` + inline scripts),
+   *  image paths rewritten. Injected after the shared JS at render time. */
+  js?: string;
 }
 
 export interface CreateClaudeDesignMultiPageInput {
@@ -121,8 +124,12 @@ export interface CreateClaudeDesignMultiPageInput {
   siteId: string;
   name: string;
   pages: ClaudeDesignPageInput[];
-  /** Concatenated theme-tokens.css + styles.css, image paths rewritten. */
+  /** Concatenated styles.css + theme-tokens.css, image paths rewritten. */
   sharedCss: string;
+  /** The design's shared runtime JS (site.js …), image paths rewritten. */
+  sharedJs?: string;
+  /** Remote runtime `<script src>` hrefs (leaflet/gsap/…) to inject on every page. */
+  scriptLinks?: string[];
   /** Remote font/CDN stylesheet hrefs to inject on every page. */
   fontLinks: string[];
   /** Resolved theme (cvc-theme shape) seeded from the EDITMODE defaults. */
@@ -164,7 +171,8 @@ export async function createClaudeDesignMultiPage(
       code: wrapRawHtml(page.html),
       // __source_html: rewritten-but-still-bracketed source (mapping re-runs).
       // __token_html: tokenised body the builder loads for preview + inline edit.
-      example_data: { __source_html: page.sourceHtml, __token_html: page.html },
+      // __page_js: this page's own runtime JS, injected after the shared site.js.
+      example_data: { __source_html: page.sourceHtml, __token_html: page.html, __page_js: page.js ?? "" },
       schema: null,
       is_tag_adaptive: false,
       render_mode: "raw",
@@ -196,9 +204,15 @@ export async function createClaudeDesignMultiPage(
     is_claude_design: true,
     style_guide: DEFAULT_STYLE_GUIDE,
     sitemap,
-    // tweaksSchema rides inside shared_assets (existing JSONB) so no extra column
-    // / migration is required.
-    shared_assets: { css: input.sharedCss, fonts: input.fontLinks, tweaksSchema: input.tweaksSchema ?? {} },
+    // tweaksSchema / js / scriptLinks ride inside shared_assets (existing JSONB)
+    // so no extra column / migration is required.
+    shared_assets: {
+      css: input.sharedCss,
+      js: input.sharedJs ?? "",
+      scriptLinks: input.scriptLinks ?? [],
+      fonts: input.fontLinks,
+      tweaksSchema: input.tweaksSchema ?? {},
+    },
     tweaks: input.tweaks ?? {},
   });
   if (siteErr) {
