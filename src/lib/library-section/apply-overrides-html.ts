@@ -29,7 +29,8 @@ export interface OverrideEntry {
     | "link_href"
     | "button_href"
     | "attr"
-    | "style";
+    | "style"
+    | "remove";
   value: string;
   meta?: { attrName?: string; style?: Record<string, string> };
 }
@@ -174,6 +175,12 @@ export function applyOverridesToHTML(
             mergeStyles(el, styleMap);
             break;
           }
+          case "remove":
+            // Editor "delete": hide the element rather than detach it, so the
+            // positional paths of other overrides don't shift. display:none
+            // takes it out of the layout (grids/flex reflow, no gap).
+            mergeStyles(el, { display: "none" });
+            break;
           default:
             failed++;
             continue;

@@ -26,7 +26,8 @@ interface OverrideEntry {
     | "link_href"
     | "button_href"
     | "attr"
-    | "style";
+    | "style"
+    | "remove";
   value: string;
   meta?: { attrName?: string; style?: Record<string, string> };
 }
@@ -179,6 +180,9 @@ function applyOverridesToContainer(
           }
           break;
         }
+        case "remove":
+          if (el instanceof HTMLElement) el.style.setProperty("display", "none", "important");
+          break;
       }
     } catch {
       // Swallow per-override errors so the page keeps rendering.

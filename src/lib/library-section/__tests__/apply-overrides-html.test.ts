@@ -80,6 +80,19 @@ describe("applyOverridesToHTML", () => {
     expect(out.html).toMatch(/class="ph-label"[^>]*style="[^"]*display:\s*none/);
   });
 
+  it("remove override hides the element via display:none !important (no detach)", () => {
+    const html = wrapHtml(`<div class="grid"><article>A</article><article>B</article></div>`);
+    // path 0 = .grid, 0.1 = second <article>
+    const overrides: Record<string, OverrideEntry> = {
+      "0.1:remove": { kind: "remove", value: "" },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    expect(out.applied).toBe(1);
+    // element stays in the DOM (paths of siblings don't shift) but is hidden
+    expect(out.html).toContain("B");
+    expect(out.html).toMatch(/<article[^>]*style="[^"]*display:\s*none\s*!important/);
+  });
+
   it("bg_image on a non-placeholder sets cover/center without has-img", () => {
     const html = wrapHtml(`<section class="hero"></section>`);
     const overrides: Record<string, OverrideEntry> = {
