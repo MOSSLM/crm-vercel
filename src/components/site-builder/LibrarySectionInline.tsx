@@ -12,6 +12,7 @@ import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
 import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
+import { filterServiceLinks } from "@/lib/site-builder/claude-design/filter-service-links";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
@@ -28,6 +29,12 @@ interface Props {
    * keeping the imported design faithful.
    */
   unmanaged?: boolean;
+  /**
+   * Claude Design only: slug → service_tag for the site's service pages. Links
+   * to a service the enterprise lacks (nav / footer / expertise cards) are
+   * removed so the deployed page only shows the company's services.
+   */
+  serviceTagBySlug?: Record<string, string>;
 }
 
 /** Safely embeds an arbitrary value as inline JSON without breaking the HTML parser. */
@@ -45,6 +52,7 @@ export async function LibrarySectionInline({
   styleGuide,
   variables = {},
   unmanaged = false,
+  serviceTagBySlug,
 }: Props) {
   let html = "";
   let compiledJs = "";
@@ -93,13 +101,14 @@ export async function LibrarySectionInline({
   // Section-level service-tag conditioning for raw Claude Design markup. Runs
   // AFTER overrides so positional override paths aren't shifted by stripping.
   // Only relevant when the design carries data-service-tag regions.
-  if (html.includes("data-service-tag")) {
+  if (html.includes("data-service-tag") || (serviceTagBySlug && Object.keys(serviceTagBySlug).length > 0)) {
     let tags: string[] = [];
     try {
       const parsed = JSON.parse(variables["__service_tags"] ?? "[]");
       if (Array.isArray(parsed)) tags = parsed.map((t) => String(t));
     } catch { /* no tags → strip all tagged regions */ }
-    html = stripTaggedRegions(html, tags);
+    if (html.includes("data-service-tag")) html = stripTaggedRegions(html, tags);
+    if (serviceTagBySlug) html = filterServiceLinks(html, serviceTagBySlug, tags);
   }
   if (typeof console !== "undefined") {
     console.info("[SB:ssr]", {

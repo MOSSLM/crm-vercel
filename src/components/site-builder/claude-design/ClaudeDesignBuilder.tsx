@@ -13,6 +13,7 @@ import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
 import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
+import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
 import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
@@ -99,6 +100,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   };
 
   const active = data?.pages.find((p) => p.slug === activeSlug) ?? null;
+  const serviceTagBySlug = React.useMemo(() => serviceTagMapFromSitemap(data?.sitemap ?? []), [data?.sitemap]);
 
   const handleEdit = (key: string, entry: OverrideEntry) => {
     if (!data || !active) return;
@@ -281,6 +283,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               pageJs={active.pageJs}
               scriptLinks={data.sharedAssets.scriptLinks ?? []}
               siteId={siteId}
+              serviceTagBySlug={serviceTagBySlug}
               tweaks={data.tweaks}
               overrides={active.overrides}
               onEdit={handleEdit}

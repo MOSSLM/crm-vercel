@@ -2,6 +2,7 @@ import React from "react";
 import { notFound } from "next/navigation";
 import { resolveSite } from "@/lib/site-resolver";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
+import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { DynamicPageRenderer } from "./DynamicPageRenderer";
 
 /** Parse the enterprise service tags from the resolved variables map. */
@@ -75,6 +76,7 @@ export async function SitePageView({ subdomain, host, pageSlug }: SitePageViewPr
       menus={visibleMenus}
       preloadedInstances={publishedInstances}
       claudeDesign={claudeDesign}
+      serviceTagBySlug={claudeDesign ? serviceTagMapFromSitemap(publishedSitemap) : undefined}
     />
   );
 }
