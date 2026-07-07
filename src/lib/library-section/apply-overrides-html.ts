@@ -64,15 +64,27 @@ function findSectionRoot(elements: HTMLElement[]): HTMLElement | null {
 function setBackgroundImage(el: HTMLElement, url: string): void {
   const current = el.getAttribute("style") ?? "";
   const bg = url ? `url("${url.replace(/"/g, '\\"')}")` : "none";
-  const declaration = `background-image: ${bg}`;
-  if (!current.trim()) {
-    el.setAttribute("style", declaration);
-    return;
+  // When a URL is set, also make it fill the box (cover/center) — the same
+  // defaults the editor applies, so a placeholder reads as a real image.
+  const declarations = url
+    ? [`background-image: ${bg}`, "background-size: cover", "background-position: center", "background-repeat: no-repeat"]
+    : [`background-image: ${bg}`];
+  const skip = /^background-(image|size|position|repeat)\s*:/i;
+  const parts = current.split(";").map((s) => s.trim()).filter(Boolean).filter((p) => !skip.test(p));
+  el.setAttribute("style", [...parts, ...declarations].join("; "));
+
+  // Claude `.ph` placeholder container → mark it filled: `has-img` hides its
+  // dashed border (see .ph.has-img::after{display:none}) and we hide the
+  // "en attendant" label so only the image shows.
+  const cls = el.getAttribute("class") ?? "";
+  if (url && /(^|\s)ph(\s|$)/.test(cls)) {
+    if (!/(^|\s)has-img(\s|$)/.test(cls)) el.setAttribute("class", `${cls} has-img`.trim());
+    const label = el.querySelector(".ph-label");
+    if (label) {
+      const ls = label.getAttribute("style") ?? "";
+      label.setAttribute("style", `${ls ? ls.replace(/;\s*$/, "") + "; " : ""}display: none`);
+    }
   }
-  const parts = current.split(";").map((s) => s.trim()).filter(Boolean);
-  const filtered = parts.filter((p) => !/^background-image\s*:/i.test(p));
-  filtered.push(declaration);
-  el.setAttribute("style", filtered.join("; "));
 }
 
 export interface ApplyResult {

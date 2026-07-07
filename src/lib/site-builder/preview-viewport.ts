@@ -21,12 +21,14 @@ export function getSimulatedViewportHeight(device: DeviceView): number {
 }
 
 /**
- * Replace every `Nvh` literal in a CSS value with its px equivalent on the
+ * Replace every viewport-height literal (`Nvh`, and the small/large/dynamic
+ * variants `Nsvh`/`Nlvh`/`Ndvh`) in a CSS value with its px equivalent on the
  * supplied viewport. Works inside `calc()` expressions too:
  *   convertVhToPx("calc(100vh - 64px)", 900) === "calc(900px - 64px)"
+ *   convertVhToPx("100dvh", 900) === "900px"
  */
 export function convertVhToPx(value: string, viewportPx: number): string {
-  return value.replace(/(-?\d*\.?\d+)vh\b/g, (_, n) => {
+  return value.replace(/(-?\d*\.?\d+)(?:s|l|d)?vh\b/g, (_, n) => {
     const px = (Number(n) / 100) * viewportPx;
     return `${Number.isFinite(px) ? px : 0}px`;
   });
@@ -48,7 +50,7 @@ export function buildVhRewriteRuntime(simulatedViewportHeight: number): string {
   return `<style id="__sim_vh_var__">:root { --sim-vh: ${simulatedViewportHeight / 100}px; }<\/style>
   <script>
     (function(){
-      var VH_RE=/(-?\\d*\\.?\\d+)vh\\b/g;
+      var VH_RE=/(-?\\d*\\.?\\d+)(?:s|l|d)?vh\\b/g;
       var SIM=${simulatedViewportHeight};
       function rewrite(s){
         return s.replace(VH_RE, function(_, n){
