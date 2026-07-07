@@ -147,10 +147,13 @@ interface DynamicPageRendererProps {
   preloadedInstances?: Array<unknown> | null;
   /** When set, the site is a Claude design: inject its shared CSS, fonts, theme + runtime. */
   claudeDesign?: ClaudeDesignAssetsData | null;
+  /** Claude design only: slug → service_tag. Links to a service the enterprise
+   *  lacks (nav / footer / expertise cards) are removed from raw sections. */
+  serviceTagBySlug?: Record<string, string>;
 }
 
 /** Server component: renders a dynamic-sections page for the public site */
-export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances, claudeDesign }: DynamicPageRendererProps) {
+export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances, claudeDesign, serviceTagBySlug }: DynamicPageRendererProps) {
   const supabase = getServiceClient();
 
   type RenderInstance = SiteSectionInstance & { section_def: SiteSectionDef | null };
@@ -370,6 +373,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
           const node = (
             <LibrarySectionInline
               key={instance.id}
+              serviceTagBySlug={claudeDesign ? serviceTagBySlug : undefined}
               instanceId={instance.id}
               code={ts.code}
               content={content}

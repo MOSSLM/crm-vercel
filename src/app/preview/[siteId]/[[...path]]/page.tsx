@@ -5,6 +5,7 @@ import { resolveDraftSite } from "@/lib/site-resolver";
 import { DynamicPageRenderer } from "@/components/site-builder/DynamicPageRenderer";
 import { parseEnterpriseTags } from "@/components/site-builder/SitePageView";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
+import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 
 interface PreviewProps {
   params: Promise<{ siteId: string; path?: string[] }>;
@@ -70,6 +71,7 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
       menus={visibleMenus}
       preloadedInstances={publishedInstances}
       claudeDesign={claudeDesign}
+      serviceTagBySlug={claudeDesign ? serviceTagMapFromSitemap(publishedSitemap) : undefined}
     />
   );
 }

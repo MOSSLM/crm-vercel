@@ -12,6 +12,7 @@ import {
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
+import { filterServiceLinks } from "@/lib/site-builder/claude-design/filter-service-links";
 import { buildVhRewriteRuntime, convertVhToPx } from "@/lib/site-builder/preview-viewport";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
@@ -35,6 +36,10 @@ interface Props {
   scriptLinks?: string[];
   /** Site id — enables the shared ImagePickerField (upload + library tabs). */
   siteId: string;
+  /** slug → service_tag for the site's service pages. When a company is being
+   *  tested, links to a service the company lacks (nav / footer / expertise
+   *  cards) are removed — mirroring how tagged pages are hidden. */
+  serviceTagBySlug?: Record<string, string>;
   overrides: Record<string, OverrideEntry>;
   /** Called when the user edits text/image inline. key is "path:kind". */
   onEdit: (key: string, entry: OverrideEntry) => void;
@@ -164,7 +169,7 @@ const EDIT_SCRIPT = `
 `;
 
 /** Faithful per-page preview with inline text/image editing. */
-export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, siteId, overrides, onEdit, variables, onNavigate, onHeight, className, simViewportHeight }: Props) {
+export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, siteId, serviceTagBySlug, overrides, onEdit, variables, onNavigate, onHeight, className, simViewportHeight }: Props) {
   const onEditRef = React.useRef(onEdit);
   onEditRef.current = onEdit;
   const onNavRef = React.useRef(onNavigate);
@@ -212,8 +217,10 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // Entreprises tab: resolve with the company's real variables + filter the
     // service-tag regions it doesn't have. Otherwise use sample values (all shown).
     let body = resolveVars(html, variables ?? SAMPLE_VARIABLES);
-    if (variables && body.includes("data-service-tag")) {
-      body = stripTaggedRegions(body, enterpriseTagsOf(variables));
+    if (variables) {
+      const tags = enterpriseTagsOf(variables);
+      if (body.includes("data-service-tag")) body = stripTaggedRegions(body, tags);
+      if (serviceTagBySlug) body = filterServiceLinks(body, serviceTagBySlug, tags);
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     const extras = tweaksExtrasScript(tweaks);
@@ -236,7 +243,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
     return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
-  }, [html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, overrides, variables, simViewportHeight]);
+  }, [html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (
     <>
