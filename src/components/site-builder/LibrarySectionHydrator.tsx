@@ -140,8 +140,19 @@ function applyOverridesToContainer(
         }
         case "bg_image": {
           const bg = value ? `url("${value.replace(/"/g, '\\"')}")` : "none";
-          if (el instanceof HTMLElement && el.style.backgroundImage !== bg) {
-            el.style.backgroundImage = bg;
+          if (el instanceof HTMLElement) {
+            if (el.style.backgroundImage !== bg) el.style.backgroundImage = bg;
+            if (value) {
+              el.style.backgroundSize = "cover";
+              el.style.backgroundPosition = "center";
+              el.style.backgroundRepeat = "no-repeat";
+              // Claude `.ph` placeholder → mark filled + hide the waiting label.
+              if (/(^|\s)ph(\s|$)/.test(el.className)) {
+                el.classList.add("has-img");
+                const label = el.querySelector<HTMLElement>(".ph-label");
+                if (label) label.style.display = "none";
+              }
+            }
           }
           break;
         }

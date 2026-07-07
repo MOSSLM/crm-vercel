@@ -67,6 +67,30 @@ describe("applyOverridesToHTML", () => {
     expect(out.html).toContain("Hi Sam");
   });
 
+  it("fills a Claude .ph placeholder: cover/center + has-img + hides the label", () => {
+    const html = wrapHtml(`<div class="ph about-photo"><span class="ph-label">Photo</span></div>`);
+    const overrides: Record<string, OverrideEntry> = {
+      "0:bg_image": { kind: "bg_image", value: "/hero.jpg" },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    expect(out.applied).toBe(1);
+    expect(out.html).toMatch(/background-image:\s*url\((&quot;|")?\/hero\.jpg/);
+    expect(out.html).toMatch(/background-size:\s*cover/);
+    expect(out.html).toContain("has-img");
+    expect(out.html).toMatch(/class="ph-label"[^>]*style="[^"]*display:\s*none/);
+  });
+
+  it("bg_image on a non-placeholder sets cover/center without has-img", () => {
+    const html = wrapHtml(`<section class="hero"></section>`);
+    const overrides: Record<string, OverrideEntry> = {
+      "0:bg_image": { kind: "bg_image", value: "/x.jpg" },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    expect(out.html).toMatch(/background-image:\s*url\((&quot;|")?\/x\.jpg/);
+    expect(out.html).toMatch(/background-position:\s*center/);
+    expect(out.html).not.toContain("has-img");
+  });
+
   it("skips React 19 resource hints (<link rel=preload>) when locating section root", () => {
     // react-dom/server@19 emits <link rel="preload"> ahead of the rendered tree
     // when the section contains <img> tags. The override walker must skip past
