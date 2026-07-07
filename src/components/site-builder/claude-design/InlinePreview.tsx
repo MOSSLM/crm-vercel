@@ -18,7 +18,7 @@ import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 
 export interface OverrideEntry {
-  kind: "text" | "image" | "bg_image";
+  kind: "text" | "image" | "bg_image" | "remove";
   value: string;
 }
 
@@ -106,7 +106,7 @@ const OVERRIDES_APPLY = `
   if(!root) return;
   var OV = window.__cdOverrides || {};
   function nodeAt(path){ var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n; }
-  Object.keys(OV).forEach(function(key){ var e=OV[key]; var p=key.split(':')[0].split('.').map(Number); var el=nodeAt(p); if(!el) return; if(e.kind==='text') el.textContent=e.value; else if(e.kind==='image') window.__cdApplyImg(el, e.value); else if(e.kind==='bg_image') window.__cdApplyBg(el, e.value); });
+  Object.keys(OV).forEach(function(key){ var e=OV[key]; var p=key.split(':')[0].split('.').map(Number); var el=nodeAt(p); if(!el) return; if(e.kind==='text') el.textContent=e.value; else if(e.kind==='image') window.__cdApplyImg(el, e.value); else if(e.kind==='bg_image') window.__cdApplyBg(el, e.value); else if(e.kind==='remove') el.style.setProperty('display','none','important'); });
 })();
 `;
 
@@ -165,6 +165,69 @@ const EDIT_SCRIPT = `
     var d = ev.data; if(!d || d.source!=='cd-parent') return;
     if(d.kind==='set-image' && Array.isArray(d.path)){ var el=nodeAt(d.path); if(el){ if(d.imgKind==='bg_image') window.__cdApplyBg(el, d.value); else window.__cdApplyImg(el, d.value); } }
   });
+
+  // ---- Delete affordance for REPEATED items (cards, list entries, steps) ----
+  // Hovering an element that is one of several same-tag siblings (a card in a
+  // grid, an <li>, a solution step) shows a red × handle; clicking it hides the
+  // element (persisted as a 'remove' override). We pick the innermost repeated
+  // block big enough to be a real item, so inline repeats (icons, tags) and the
+  // section itself are never offered.
+  var delStyle = document.createElement('style');
+  delStyle.textContent = '.cd-del-outline{outline:2px dashed rgba(220,45,45,.95)!important;outline-offset:-2px;}';
+  document.head.appendChild(delStyle);
+  var delBtn = document.createElement('button');
+  delBtn.type = 'button';
+  delBtn.setAttribute('aria-label', 'Supprimer cet élément');
+  delBtn.title = 'Supprimer cet élément';
+  delBtn.textContent = '×';
+  delBtn.style.cssText = 'position:fixed;z-index:2147483647;display:none;width:22px;height:22px;line-height:20px;padding:0;margin:0;border:none;border-radius:50%;background:#dc2d2d;color:#fff;font-size:16px;font-weight:700;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.35);';
+  document.body.appendChild(delBtn);
+  var delTarget = null, lastNode = null;
+  function boundary(tag){ return tag==='SECTION'||tag==='HEADER'||tag==='FOOTER'||tag==='NAV'||tag==='MAIN'||tag==='HTML'||tag==='BODY'||tag==='FORM'; }
+  function deletableItem(node){
+    var el = node;
+    while(el && el!==root){
+      var tag = el.tagName; if(boundary(tag)) break;
+      var par = el.parentElement;
+      if(par && el.offsetHeight>=48 && el.offsetWidth>=64){
+        var same=0, ch=par.children;
+        for(var i=0;i<ch.length;i++){ if(ch[i].tagName===tag){ same++; if(same>=2) break; } }
+        if(same>=2) return el;
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+  function clearTarget(){ if(delTarget){ delTarget.classList.remove('cd-del-outline'); delTarget=null; } delBtn.style.display='none'; lastNode=null; }
+  function setTarget(el){
+    if(el===delTarget) return;
+    if(delTarget) delTarget.classList.remove('cd-del-outline');
+    delTarget = el;
+    if(!el){ delBtn.style.display='none'; return; }
+    el.classList.add('cd-del-outline');
+    var r = el.getBoundingClientRect();
+    delBtn.style.left = Math.max(2, r.right-24) + 'px';
+    delBtn.style.top = Math.max(2, r.top+4) + 'px';
+    delBtn.style.display = 'block';
+  }
+  document.addEventListener('mousemove', function(ev){
+    if(ev.target===delBtn) return;
+    if(ev.target===lastNode) return; lastNode=ev.target;
+    if(ev.target && ev.target.getAttribute && ev.target.getAttribute('contenteditable')==='true'){ clearTarget(); return; }
+    setTarget(deletableItem(ev.target));
+  }, true);
+  document.addEventListener('scroll', clearTarget, true);
+  if(document.documentElement) document.documentElement.addEventListener('mouseleave', clearTarget);
+  delBtn.addEventListener('click', function(ev){
+    ev.preventDefault(); ev.stopPropagation();
+    var el = delTarget; if(!el) return;
+    if(!window.confirm('Supprimer cet élément ? (réversible en rechargeant depuis Claude, sinon il reste masqué)')) return;
+    var p = pathOf(el);
+    lastNode = null;
+    clearTarget();
+    el.style.setProperty('display','none','important');
+    parent.postMessage({source:'cd',kind:'remove',path:p},'*');
+  });
 })();
 `;
 
@@ -188,6 +251,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
       if (d.kind === "nav") { if (typeof d.slug === "string") onNavRef.current?.(d.slug); return; }
       if (d.kind === "height") { if (typeof d.value === "number") onHeightRef.current?.(d.value); return; }
       if (d.kind === "image-request") { if (Array.isArray(d.path)) setPicker({ path: d.path, current: String(d.current ?? ""), kind: d.imgKind === "bg_image" ? "bg_image" : "image" }); return; }
+      if (d.kind === "remove") { if (Array.isArray(d.path)) onEditRef.current(`${d.path.join(".")}:remove`, { kind: "remove", value: "" }); return; }
       if (!Array.isArray(d.path)) return;
       const key = `${d.path.join(".")}:${d.kind}`;
       onEditRef.current(key, { kind: d.kind === "image" ? "image" : "text", value: String(d.value ?? "") });
