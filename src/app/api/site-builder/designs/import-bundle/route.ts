@@ -30,6 +30,8 @@ export const POST = withAuth({}, async ({ req, cors }) => {
     name?: string;
     pages?: ClaudeDesignPageInput[];
     sharedCss?: string;
+    sharedJs?: string;
+    scriptLinks?: string[];
     fontLinks?: string[];
     tweaks?: Record<string, unknown>;
     tweaksSchema?: Record<string, unknown>;
@@ -62,6 +64,8 @@ export const POST = withAuth({}, async ({ req, cors }) => {
       name,
       pages,
       sharedCss: body.sharedCss ?? "",
+      sharedJs: body.sharedJs ?? "",
+      scriptLinks: Array.isArray(body.scriptLinks) ? body.scriptLinks : [],
       fontLinks: Array.isArray(body.fontLinks) ? body.fontLinks : [],
       tweaks: body.tweaks ?? {},
       tweaksSchema: body.tweaksSchema ?? {},

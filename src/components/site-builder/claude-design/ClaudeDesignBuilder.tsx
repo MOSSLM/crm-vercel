@@ -23,11 +23,13 @@ interface PageData {
   title: string;
   serviceTag: string | null;
   html: string;
+  /** This page's own runtime JS (non-shared scripts). */
+  pageJs: string;
   overrides: Record<string, OverrideEntry>;
 }
 interface BoardData {
   name: string;
-  sharedAssets: { css?: string; fonts?: string[] };
+  sharedAssets: { css?: string; fonts?: string[]; js?: string; scriptLinks?: string[] };
   tweaks: Tweaks;
   tweaksSchema: TweaksSchema;
   sitemap: SitemapPage[];
@@ -206,6 +208,15 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           <button className={"cd-vp" + (viewport === "mobile" ? " on" : "")} onClick={() => setViewport("mobile")} title="Mobile"><Smartphone className="ico-sm" /></button>
         </div>
         <div className="cd-save-group" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <a
+            href={`/preview/${siteId}${activeSlug === "/" ? "" : activeSlug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="cd-btn outline"
+            title="Ouvrir un aperçu live du site (hors éditeur)"
+          >
+            <Eye className="ico-sm" />Aperçu
+          </a>
           {!data.isTemplate && data.publishedSubdomain ? (
             <a
               href={`https://${data.publishedSubdomain}.${SITE_DOMAIN}`}
@@ -266,6 +277,10 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               html={active.html}
               sharedCss={data.sharedAssets.css ?? ""}
               fontLinks={data.sharedAssets.fonts ?? []}
+              js={data.sharedAssets.js ?? ""}
+              pageJs={active.pageJs}
+              scriptLinks={data.sharedAssets.scriptLinks ?? []}
+              siteId={siteId}
               tweaks={data.tweaks}
               overrides={active.overrides}
               onEdit={handleEdit}

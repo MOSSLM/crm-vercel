@@ -16,12 +16,16 @@ import {
   tweaksExtrasScript,
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
-import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 
 export interface ClaudeDesignAssetsData {
   sharedCss: string;
   fontLinks: string[];
   tweaks: Tweaks;
+  /** The design's own runtime JS (site.js …). Injected at the BOTTOM of the page
+   *  by DynamicPageRenderer — NOT here — so it runs after the section DOM exists. */
+  js: string;
+  /** Remote runtime `<script src>` libs (leaflet/gsap/…). Also bottom-injected. */
+  scriptLinks: string[];
 }
 
 export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesignAssetsData) {
@@ -40,12 +44,15 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesig
 
   // The template's `html[data-font]` / `html[data-weight]` rules need those
   // attributes on <html>; set them client-side (mirrors theme-apply.js), then
-  // seed cvc-theme for panel parity, then boot the interactions.
+  // seed cvc-theme for panel parity. Runs at the top of <body> before the DOM,
+  // so it must NOT touch section elements — the interactions (site.js / runtime)
+  // are injected at the BOTTOM by DynamicPageRenderer.
   const setAttrsJs = `try{var d=document.documentElement;${Object.entries(dataAttrs)
     .map(([k, v]) => `d.setAttribute(${JSON.stringify(k)},${JSON.stringify(v)});`)
     .join("")}${seedThemeScript(tweaks)}}catch(e){}`;
 
-  // Per-page section tweaks (stepper/pro) — run once the DOM is parsed.
+  // Per-page section tweaks (stepper/pro) — DOMContentLoaded-guarded, so it is
+  // safe to emit here at the top.
   const extras = tweaksExtrasScript(tweaks);
   const extrasJs = extras
     ? `(function(){function r(){${extras}}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',r);else r();})();`
@@ -58,7 +65,7 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesig
         <link key={i} rel="stylesheet" href={href} />
       ))}
       <style data-cd-theme dangerouslySetInnerHTML={{ __html: `${sharedCss}\n${rootVars}` }} />
-      <script dangerouslySetInnerHTML={{ __html: `${setAttrsJs}\n${CLAUDE_DESIGN_RUNTIME}\n${extrasJs}` }} />
+      <script dangerouslySetInnerHTML={{ __html: `${setAttrsJs}\n${extrasJs}` }} />
     </>
   );
 }

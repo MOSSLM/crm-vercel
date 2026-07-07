@@ -2,10 +2,29 @@ import { createClient } from "@supabase/supabase-js";
 import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus, SitemapPage, SeoMeta } from "@/types";
 import {
   deriveLayoutFieldsFromVariables,
+  resolveEnterpriseVariables,
   type ReviewItem,
 } from "@/lib/site-builder/resolve-variables";
+import { SAMPLE_VARIABLES } from "@/lib/site-builder/claude-design/sample-variables";
 
 export type { ReviewItem };
+
+/** shared_assets JSONB shape for a Claude design site. */
+type ClaudeSharedAssets = { css?: string; js?: string; scriptLinks?: string[]; fonts?: string[] };
+
+/** Builds the `claudeDesign` render payload from a site's shared_assets + tweaks. */
+function buildClaudeDesign(
+  assets: ClaudeSharedAssets | null | undefined,
+  tweaks: Record<string, unknown> | null | undefined,
+): NonNullable<ResolvedSite["claudeDesign"]> {
+  return {
+    sharedCss: assets?.css ?? "",
+    js: assets?.js ?? "",
+    scriptLinks: Array.isArray(assets?.scriptLinks) ? assets.scriptLinks : [],
+    fontLinks: Array.isArray(assets?.fonts) ? assets.fonts : [],
+    tweaks: tweaks ?? {},
+  };
+}
 
 function getServiceClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -39,8 +58,16 @@ export interface ResolvedSite {
   publishedSitemap?: SitemapPage[] | null;
   /** Site-level SEO/social defaults from the published site_config snapshot. */
   seo?: SeoMeta | null;
-  /** Claude Design render data (shared CSS, fonts, theme) when this is one. */
-  claudeDesign?: { sharedCss: string; fontLinks: string[]; tweaks: Record<string, unknown> } | null;
+  /** Claude Design render data (shared CSS/JS, fonts, remote script libs, theme)
+   *  when this is one. `js`/`scriptLinks` carry the design's own runtime so its
+   *  animations run on the deployed site; injected at the bottom of the page. */
+  claudeDesign?: {
+    sharedCss: string;
+    js: string;
+    scriptLinks: string[];
+    fontLinks: string[];
+    tweaks: Record<string, unknown>;
+  } | null;
 }
 
 // Resolve a site by subdomain or custom domain
@@ -146,22 +173,16 @@ export async function resolveSite(
 
   // Claude Design render data: prefer the published snapshot, fall back to live
   // (consistent with the rest of the resolver). Only set for is_claude_design.
-  type SharedAssets = { css?: string; fonts?: string[] } | null;
   const cd = siteRow as {
     is_claude_design?: boolean | null;
-    shared_assets?: SharedAssets;
+    shared_assets?: ClaudeSharedAssets | null;
     tweaks?: Record<string, unknown> | null;
-    published_shared_assets?: SharedAssets;
+    published_shared_assets?: ClaudeSharedAssets | null;
     published_tweaks?: Record<string, unknown> | null;
   };
   let claudeDesign: ResolvedSite["claudeDesign"] = null;
   if (cd.is_claude_design) {
-    const assets = cd.published_shared_assets ?? cd.shared_assets ?? {};
-    claudeDesign = {
-      sharedCss: assets?.css ?? "",
-      fontLinks: Array.isArray(assets?.fonts) ? assets.fonts : [],
-      tweaks: cd.published_tweaks ?? cd.tweaks ?? {},
-    };
+    claudeDesign = buildClaudeDesign(cd.published_shared_assets ?? cd.shared_assets ?? {}, cd.published_tweaks ?? cd.tweaks ?? {});
   }
 
   return {
@@ -181,6 +202,99 @@ export async function resolveSite(
     reviews,
     publishedSitemap: (siteRow as { published_sitemap?: SitemapPage[] | null }).published_sitemap ?? null,
     seo,
+    claudeDesign,
+  };
+}
+
+/**
+ * Resolve a site's LIVE (unpublished) state by id, for the draft-preview URL.
+ * Unlike resolveSite this has NO snapshot lock and no `is_published` filter, so
+ * templates and never-published designs render too — with the enterprise's real
+ * variables when one is linked, else sample values. Renders exactly like the
+ * public site (same DynamicPageRenderer), so animations / JS / breakpoints are
+ * exercised for real outside the editor iframe. Sample-data only ⇒ no leak.
+ */
+export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | null> {
+  const supabase = getServiceClient();
+
+  const { data: siteRow, error } = await supabase
+    .from("sites")
+    .select(
+      "id, name, enterprise_id, lead_magnet_project_id, site_config, style_guide, sitemap, is_claude_design, shared_assets, tweaks",
+    )
+    .eq("id", siteId)
+    .single();
+  if (error || !siteRow) return null;
+
+  // Live section instances (no published snapshot) + their defs for native sections.
+  const { data: instanceRows } = await supabase
+    .from("site_section_instances")
+    .select("*, section_def:site_sections(*)")
+    .eq("site_id", siteId)
+    .order("sort_order");
+  const instances = (instanceRows ?? []) as Array<unknown>;
+
+  const sitemap = ((siteRow.sitemap as SitemapPage[] | null) ?? []) as SitemapPage[];
+
+  // Variables: real enterprise data when linked, else sample values. Always
+  // provide __service_tags so service-tagged pages render in the preview.
+  let vars: Record<string, string>;
+  let reviews: ReviewItem[] = [];
+  let companyName: string | undefined;
+  let logoUrl: string | undefined;
+  let phone: string | undefined;
+  if (siteRow.enterprise_id) {
+    const resolved = await resolveEnterpriseVariables(supabase, {
+      enterprise_id: siteRow.enterprise_id,
+      lead_magnet_project_id: (siteRow.lead_magnet_project_id as string | null) ?? null,
+      id: siteRow.id,
+    });
+    vars = resolved.variables;
+    reviews = resolved.reviews;
+    companyName = resolved.companyName;
+    logoUrl = resolved.logoUrl;
+    phone = resolved.phone;
+  } else {
+    const allTags = [...new Set(sitemap.map((p) => p.service_tag).filter((t): t is string => !!t))];
+    vars = { ...SAMPLE_VARIABLES, __service_tags: JSON.stringify(allTags) };
+  }
+
+  const styleGuide = (siteRow.style_guide as StyleGuide) ?? null;
+  const siteConfig = (siteRow.site_config as (Partial<SiteConfig> & { menus?: SiteMenus }) | null) ?? null;
+  const config: SiteConfig =
+    (siteRow.site_config as SiteConfig) ?? {
+      theme: "theme-default",
+      settings: {
+        colors: { primary: "#1a56db", secondary: "#6b7280", accent: "#f59e0b", background: "#ffffff", text: "#111827" },
+        fonts: { heading: "Inter", body: "Inter" },
+      },
+      sections: [],
+    };
+
+  const cd = siteRow as {
+    is_claude_design?: boolean | null;
+    shared_assets?: ClaudeSharedAssets | null;
+    tweaks?: Record<string, unknown> | null;
+  };
+  const claudeDesign = cd.is_claude_design ? buildClaudeDesign(cd.shared_assets, cd.tweaks) : null;
+
+  return {
+    siteId: siteRow.id,
+    config,
+    enterpriseVariables: vars,
+    companyName,
+    logoUrl,
+    phone,
+    isPublished: false,
+    styleGuide,
+    publishedStyleGuide: styleGuide,
+    publishedInstances: instances,
+    publishedSiteConfig: siteConfig,
+    menus: siteConfig?.menus ?? null,
+    faviconUrl: null,
+    reviews,
+    publishedSitemap: sitemap,
+    seo: null,
     claudeDesign,
   };
 }

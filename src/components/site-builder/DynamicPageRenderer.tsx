@@ -28,6 +28,7 @@ import { generateTailwindCSS } from "@/lib/library-section/tailwind-jit";
 import { LibrarySectionInline } from "./LibrarySectionInline";
 import { LibrarySectionHydrator } from "./LibrarySectionHydrator";
 import { ClaudeDesignAssets, type ClaudeDesignAssetsData } from "./claude-design/ClaudeDesignAssets";
+import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 
 const SHADOW_MAP: Record<string, string> = {
   none: "none",
@@ -180,7 +181,10 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
   );
 
   const guide = styleGuide ?? DEFAULT_STYLE_GUIDE;
-  const cssVars = styleGuideToCSSVars(guide);
+  // Claude designs bring their own theme (via ClaudeDesignAssets :root vars +
+  // their stylesheet). Emitting the default style-guide vars here leaks blue
+  // (#1a56db) / orange (#f59e0b) that the design never asked for — so skip them.
+  const cssVars = claudeDesign ? ({} as React.CSSProperties) : styleGuideToCSSVars(guide);
 
   // Home navbar / footer are inherited by every other page so the chrome is
   // defined once (on the home page) and stays consistent everywhere.
@@ -264,13 +268,17 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
   }
 
   return (
-    <div style={{ ...cssVars, fontFamily: "var(--font-body)", color: "var(--color-text)" } as React.CSSProperties}>
-      {/* Claude Design site: shared CSS + fonts + theme (CSS vars) + trusted runtime */}
+    <div style={claudeDesign ? ({ width: "100%" } as React.CSSProperties) : ({ ...cssVars, fontFamily: "var(--font-body)", color: "var(--color-text)" } as React.CSSProperties)}>
+      {/* Claude Design site: shared CSS + fonts + theme (CSS vars). The design's
+          own runtime JS is injected at the BOTTOM of the page (below), after the
+          section DOM exists. */}
       {claudeDesign && (
         <ClaudeDesignAssets
           sharedCss={claudeDesign.sharedCss}
           fontLinks={claudeDesign.fontLinks}
           tweaks={claudeDesign.tweaks}
+          js={claudeDesign.js}
+          scriptLinks={claudeDesign.scriptLinks}
         />
       )}
 
@@ -433,6 +441,30 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
 
       {/* Mount interactive React on each library section after hydration */}
       {hasLibrarySections && <LibrarySectionHydrator />}
+
+      {/* Claude Design runtime — at the BOTTOM so the section DOM exists when the
+          design's own synchronous site.js runs. Remote libs (leaflet/gsap) first,
+          then the design's shared JS + this page's own JS. Falls back to the
+          trusted CLAUDE_DESIGN_RUNTIME only when the design shipped no JS. */}
+      {claudeDesign && (() => {
+        const pageJs = instances
+          .map(refOf)
+          .filter((r): r is { theme_slug: string; section_id: string } => Boolean(r))
+          .map((r) => (themeSectionMap.get(`${r.theme_slug}:${r.section_id}`)?.example_data?.__page_js as string) || "")
+          .filter(Boolean)
+          .join("\n;\n");
+        const designJs = [claudeDesign.js, pageJs].filter(Boolean).join("\n;\n");
+        const boot = designJs || CLAUDE_DESIGN_RUNTIME;
+        return (
+          <>
+            {claudeDesign.scriptLinks.map((src, i) => (
+              // eslint-disable-next-line @next/next/no-sync-scripts
+              <script key={`cd-lib-${i}`} src={src} />
+            ))}
+            {boot.trim() ? <script dangerouslySetInnerHTML={{ __html: boot }} /> : null}
+          </>
+        );
+      })()}
     </div>
   );
 }

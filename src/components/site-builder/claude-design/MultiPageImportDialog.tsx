@@ -86,7 +86,22 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       }
 
       setProgress("Préparation des pages…");
-      const sharedCss = rewriteAssets(bundle.sharedCss, urlByPath);
+      const rw = (js: string) => rewriteAssets(js, urlByPath);
+      const sharedCss = rw(bundle.sharedCss);
+
+      // Split the design's runtime JS: a script the index page loads, or that ≥2
+      // pages load, is SHARED (site.js); a script only one non-index page loads is
+      // that PAGE's (service-clim.js). Contents get the same image-path rewrite.
+      const refCount = new Map<string, number>();
+      for (const p of bundle.pages) for (const n of p.localScriptRefs) refCount.set(n, (refCount.get(n) ?? 0) + 1);
+      const indexRefs = new Set(bundle.pages.find((p) => p.slug === "/")?.localScriptRefs ?? []);
+      const isShared = (n: string) => indexRefs.has(n) || (refCount.get(n) ?? 0) >= 2;
+      const sharedJs = [...new Set(bundle.pages.flatMap((p) => p.localScriptRefs).filter(isShared))]
+        .map((n) => bundle.jsByName[n])
+        .filter(Boolean)
+        .map(rw)
+        .join("\n;\n");
+      const scriptLinks = bundle.scriptLinks;
 
       // Per-page: rewrite assets + cross-links + drop local refs → sourceHtml.
       const sources = bundle.pages.map((p) => ({
@@ -97,13 +112,19 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       // Default bracket mapping across all pages, then tokenise each.
       const allTokens = detectBracketTokens(sources.map((s) => s.sourceHtml).join("\n"));
       const mapping = defaultMappingFromTokens(allTokens);
-      const pages = sources.map(({ page, sourceHtml }) => ({
-        slug: page.slug,
-        title: page.title,
-        serviceTag: page.serviceTag,
-        sourceHtml,
-        html: applyBracketTokens(sourceHtml, mapping).html,
-      }));
+      const pages = sources.map(({ page, sourceHtml }) => {
+        // This page's own JS: its non-shared local .js + inline scripts.
+        const ownJs = page.localScriptRefs.filter((n) => !isShared(n)).map((n) => bundle.jsByName[n]).filter(Boolean);
+        const js = [...ownJs, ...page.inlineScripts].map(rw).join("\n;\n");
+        return {
+          slug: page.slug,
+          title: page.title,
+          serviceTag: page.serviceTag,
+          sourceHtml,
+          html: applyBracketTokens(sourceHtml, mapping).html,
+          js,
+        };
+      });
 
       // Tweaks schema (preset palettes + per-page extras) from the *-tweaks.jsx.
       const pageTweaksBySlug: Record<string, string> = {};
@@ -123,6 +144,8 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
           name: name.trim() || undefined,
           pages,
           sharedCss,
+          sharedJs,
+          scriptLinks,
           fontLinks: bundle.fontLinks,
           tweaks: bundle.tweaksDefaults,
           tweaksSchema,

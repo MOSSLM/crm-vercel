@@ -51,6 +51,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
 
   const sectionIds = [...refBySlug.values()].map((v) => v.ref.section_id);
   const htmlBySection = new Map<string, string>();
+  const jsBySection = new Map<string, string>();
   if (sectionIds.length > 0) {
     const { data: sections } = await supabase
       .from("theme_sections")
@@ -60,6 +61,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
     for (const s of sections ?? []) {
       const ed = (s.example_data as Record<string, unknown> | null) ?? {};
       htmlBySection.set(s.section_id as string, (ed.__token_html as string) ?? "");
+      jsBySection.set(s.section_id as string, (ed.__page_js as string) ?? "");
     }
   }
 
@@ -69,6 +71,9 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
     title: titleBySlug.get(slug) ?? slug,
     serviceTag: tagBySlug.get(slug) ?? null,
     html: htmlBySection.get(v.ref.section_id) ?? "",
+    // The page's own runtime JS (its non-shared scripts); shared JS lives in
+    // shared_assets.js. Both are injected into the editor preview iframe.
+    pageJs: jsBySection.get(v.ref.section_id) ?? "",
     overrides: v.overrides,
   }));
   // index first.
