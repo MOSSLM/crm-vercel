@@ -12,6 +12,7 @@ const OPPORTUNITY_LIMIT = 1000;
 type OppRow = {
   id: string;
   entreprise_id: number | null;
+  pipeline_id: string | null;
   name: string | null;
   montant: number | null;
   priorite: string | null;
@@ -96,7 +97,7 @@ export const GET = withAuth({}, async () => {
   const { data: oppsData, error: oppErr } = await supabase
     .from("opportunites")
     .select(
-      "id, entreprise_id, name, montant, priorite, type, mrr, recurrence_months, tags, updated_at, created_at",
+      "id, entreprise_id, pipeline_id, name, montant, priorite, type, mrr, recurrence_months, tags, updated_at, created_at",
     )
     .not("entreprise_id", "is", null)
     .order("updated_at", { ascending: false })
@@ -108,7 +109,7 @@ export const GET = withAuth({}, async () => {
   const entIds = [...new Set(opps.map((o) => o.entreprise_id).filter((v): v is number => v != null))];
 
   if (opps.length === 0) {
-    return json({ items: [], templates: [], agents: [] });
+    return json({ items: [], templates: [], agents: [], pipelines: [], has_validated_column: true });
   }
 
   // The explicit human-validation flag lives in a column added by a later
@@ -133,7 +134,7 @@ export const GET = withAuth({}, async () => {
     }
   }
 
-  const [entsRes, enrichRes, sitesRes, auditsRes, agentsRes] = await Promise.all([
+  const [entsRes, enrichRes, sitesRes, auditsRes, agentsRes, pipelinesRes] = await Promise.all([
     supabase
       .from("entreprises")
       .select("id, name, canonical_url, site_web_canonique, logo_url, ville, owner_id")
@@ -153,6 +154,7 @@ export const GET = withAuth({}, async () => {
       ? supabase.from("audits").select("id, opportunite_id, statut, pdf_url").in("opportunite_id", oppIds)
       : Promise.resolve({ data: [] as AuditRow[], error: null }),
     supabase.from("user_profiles").select("id, full_name, email").eq("role", "freelance"),
+    supabase.from("pipelines").select("id, nom, ordre, is_default").order("ordre", { ascending: true }),
   ]);
 
   if (entsRes.error) return jsonError(entsRes.error.message, 500);
@@ -235,6 +237,7 @@ export const GET = withAuth({}, async () => {
       id: o.id,
       name: o.name ?? ent?.name ?? "Opportunité",
       entreprise_id: o.entreprise_id,
+      pipeline_id: o.pipeline_id,
       company_name: ent?.name ?? o.name ?? null,
       company_url: ent?.canonical_url ?? ent?.site_web_canonique ?? null,
       logo_url: ent?.logo_url ?? null,
@@ -273,5 +276,9 @@ export const GET = withAuth({}, async () => {
     };
   });
 
-  return json({ items, templates, agents, has_validated_column: hasValidatedColumn });
+  const pipelines = ((pipelinesRes.data ?? []) as Array<{ id: string; nom: string | null; ordre: number | null; is_default: boolean | null }>).map(
+    (p) => ({ id: p.id, nom: p.nom ?? "Pipeline", is_default: p.is_default === true }),
+  );
+
+  return json({ items, templates, agents, pipelines, has_validated_column: hasValidatedColumn });
 });

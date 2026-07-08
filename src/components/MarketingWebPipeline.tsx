@@ -18,13 +18,22 @@ import {
   Target,
   CheckSquare,
   Square,
+  LayoutGrid,
+  Rows3,
+  Maximize2,
+  Minimize2,
+  SlidersHorizontal,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { createAudit } from "@/utils/auditApi";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/EnrichmentProgressModal";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
@@ -33,6 +42,7 @@ interface BoardItem {
   id: string;
   name: string;
   entreprise_id: number | null;
+  pipeline_id: string | null;
   company_name: string | null;
   company_url: string | null;
   logo_url: string | null;
@@ -68,13 +78,22 @@ interface AgentRef {
   id: string;
   name: string;
 }
+interface PipelineRef {
+  id: string;
+  nom: string;
+  is_default: boolean;
+}
 
 interface BoardData {
   items: BoardItem[];
   templates: TemplateRef[];
   agents: AgentRef[];
+  pipelines: PipelineRef[];
   has_validated_column: boolean;
 }
+
+type TopView = "compact" | "cards";
+type BottomView = "cards" | "rows";
 
 /* ── Column model ─────────────────────────────────────────────────────────── */
 
@@ -85,6 +104,13 @@ const COLUMNS: Array<{ key: number; label: string; color: string; hint: string }
   { key: 4, label: "Audit", color: "#f97316", hint: "Créer & valider l'audit" },
   { key: 5, label: "Attribution", color: "#22c55e", hint: "Attribuer un agent" },
 ];
+
+const STAGE_LABELS: Record<string, string> = {
+  a_faire: "À faire",
+  en_cours: "En cours",
+  a_verifier: "À vérifier",
+  pret: "Prêt",
+};
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
 
@@ -109,12 +135,18 @@ function siteEditHref(site: NonNullable<BoardItem["site"]>): string {
   return site.is_claude_design ? `/site-builder/claude/${site.id}` : `/site-builder/${site.id}`;
 }
 
-const STAGE_LABELS: Record<string, string> = {
-  a_faire: "À faire",
-  en_cours: "En cours",
-  a_verifier: "À vérifier",
-  pret: "Prêt",
-};
+function statusText(column: number, item: BoardItem): { label: string; cls: string } {
+  if (column === 1) return { label: item.enriched ? "Enrichi" : "Non enrichi", cls: item.enriched ? "ok" : "" };
+  if (column === 2) return { label: "Prêt pour LM", cls: "info" };
+  if (column === 3 && item.site)
+    return { label: STAGE_LABELS[item.site.build_stage] ?? item.site.build_stage, cls: "warn" };
+  if (column === 4)
+    return item.audit
+      ? { label: item.audit.statut === "ready" ? "Audit prêt" : "Brouillon", cls: item.audit.statut === "ready" ? "ok" : "warn" }
+      : { label: "Aucun audit", cls: "" };
+  if (column === 5) return item.agent ? { label: item.agent.name, cls: "ok" } : { label: "Non attribué", cls: "" };
+  return { label: "", cls: "" };
+}
 
 /* ── Component ────────────────────────────────────────────────────────────── */
 
@@ -127,7 +159,11 @@ export const MarketingWebPipeline: React.FC = () => {
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [templateId, setTemplateId] = React.useState<string>("");
   const [agentId, setAgentId] = React.useState<string>("");
+  const [pipelineFilter, setPipelineFilter] = React.useState<string>("all");
+  const [topView, setTopView] = React.useState<TopView>("compact");
+  const [bottomView, setBottomView] = React.useState<BottomView>("cards");
   const [working, setWorking] = React.useState<string | null>(null);
+  const [editingItem, setEditingItem] = React.useState<BoardItem | null>(null);
 
   // Enrichment progress modal state.
   const [enrichLogs, setEnrichLogs] = React.useState<EnrichmentLogEntry[]>([]);
@@ -152,12 +188,18 @@ export const MarketingWebPipeline: React.FC = () => {
     load();
   }, [load]);
 
+  const filteredItems = React.useMemo(() => {
+    const items = board?.items ?? [];
+    if (pipelineFilter === "all") return items;
+    return items.filter((it) => it.pipeline_id === pipelineFilter);
+  }, [board, pipelineFilter]);
+
   const itemsByColumn = React.useMemo(() => {
     const map = new Map<number, BoardItem[]>();
     for (const c of COLUMNS) map.set(c.key, []);
-    for (const it of board?.items ?? []) map.get(it.column)?.push(it);
+    for (const it of filteredItems) map.get(it.column)?.push(it);
     return map;
-  }, [board]);
+  }, [filteredItems]);
 
   const columnItems = itemsByColumn.get(selectedColumn) ?? [];
 
@@ -438,11 +480,38 @@ export const MarketingWebPipeline: React.FC = () => {
     }
   };
 
+  /* ── Per-item bound render helpers (shared by top cards + bottom) ──────── */
+
+  const busy = working !== null;
+
+  const cardHandlers = (item: BoardItem) => ({
+    onEnrich: () => runEnrich([item]),
+    onValidateEnrich: () => validateEnrichment([item]),
+    onCreateSite: () => createSites([item]),
+    onValidateSite: () => validateSites([item]),
+    onCreateAudit: () => createAudits([item]),
+    onValidateAudit: () => validateAudits([item]),
+    onAssign: () => assignAgent([item]),
+    onDetails: () => setEditingItem(item),
+  });
+
+  const renderCard = (item: BoardItem, column: number) => (
+    <OppCard
+      key={item.id}
+      item={item}
+      column={column}
+      selected={selectedIds.has(item.id)}
+      onToggleSelect={() => toggleSelect(item.id)}
+      disabled={busy}
+      {...cardHandlers(item)}
+    />
+  );
+
   /* ── Render ───────────────────────────────────────────────────────────── */
 
-  const totalItems = board?.items.length ?? 0;
+  const totalItems = filteredItems.length;
   const selectedCount = selectedIds.size;
-  const busy = working !== null;
+  const activeColumn = COLUMNS.find((c) => c.key === selectedColumn);
 
   return (
     <div className="studio-surface flex min-h-full flex-col">
@@ -453,7 +522,39 @@ export const MarketingWebPipeline: React.FC = () => {
           <span style={{ fontWeight: 600, fontSize: 13 }}>Pipeline Marketing &amp; Web</span>
           <span className="ct">{totalItems} opp.</span>
         </div>
+
+        <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span className="lb" style={{ fontSize: 11.5, color: "var(--text-3)" }}>
+            Pipeline :
+          </span>
+          <Select value={pipelineFilter} onValueChange={setPipelineFilter}>
+            <SelectTrigger className="h-7 min-w-[150px] text-[11.5px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toutes les pipelines</SelectItem>
+              {(board?.pipelines ?? []).map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.nom}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <span className="grow" style={{ flex: 1 }} />
+
+        <div className="seg" aria-label="Affichage du pipeline">
+          <button type="button" className="s" aria-pressed={topView === "compact"} onClick={() => setTopView("compact")} title="Pipeline compact">
+            <Minimize2 className="ico-sm" />
+            Compact
+          </button>
+          <button type="button" className="s" aria-pressed={topView === "cards"} onClick={() => setTopView("cards")} title="Grandes cartes">
+            <Maximize2 className="ico-sm" />
+            Cartes
+          </button>
+        </div>
+
         <button type="button" className="btn ghost sm" onClick={load} disabled={loading}>
           <RefreshCw className={`ico-sm ${loading ? "animate-spin" : ""}`} />
           Rafraîchir
@@ -474,69 +575,68 @@ export const MarketingWebPipeline: React.FC = () => {
             const isActive = selectedColumn === col.key;
             const sum = items.reduce((s, it) => s + (it.montant ?? 0), 0);
             return (
-              <button
+              <div
                 key={col.key}
-                type="button"
-                onClick={() => selectColumn(col.key)}
                 className="kp-col"
                 style={{
-                  textAlign: "left",
-                  cursor: "pointer",
                   boxShadow: isActive ? "0 0 0 2px var(--accent)" : undefined,
                   background: isActive ? "var(--surface)" : "var(--surface-2)",
                 }}
               >
-                <div className="kp-col-hd">
+                <button
+                  type="button"
+                  onClick={() => selectColumn(col.key)}
+                  className="kp-col-hd"
+                  style={{ width: "100%", cursor: "pointer", background: "transparent", textAlign: "left" }}
+                >
                   <span className="dot" style={{ background: col.color }} />
                   <span className="nm">{col.label}</span>
                   <span className="ct">{items.length}</span>
-                </div>
-                <div className="kp-col-bd" style={{ maxHeight: "30vh", overflowY: "auto", gap: 5 }}>
-                  {items.slice(0, 12).map((it) => (
-                    <div
-                      key={it.id}
-                      className="kp-card"
-                      style={{
-                        padding: "6px 8px",
-                        gap: 3,
-                        borderLeft:
-                          col.key === 1 && it.enriched ? "3px solid var(--ok)" : undefined,
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div className="top" style={{ gap: 4 }}>
-                        <span className="nm" style={{ fontSize: 11 }}>
-                          {displayName(it)}
-                        </span>
-                      </div>
-                      <div className="meta-line" style={{ fontSize: 9.5 }}>
-                        {col.key === 1 && (
-                          <span style={{ color: it.enriched ? "var(--ok)" : "var(--text-4)" }}>
-                            {it.enriched ? "enrichi" : "à enrichir"}
-                          </span>
-                        )}
-                        {col.key === 3 && it.site && <span>{STAGE_LABELS[it.site.build_stage] ?? it.site.build_stage}</span>}
-                        {col.key === 4 && <span>{it.audit ? (it.audit.statut === "ready" ? "prêt" : "brouillon") : "à créer"}</span>}
-                        {col.key === 5 && <span>{it.agent ? it.agent.name : "non attribué"}</span>}
-                        {col.key === 2 && <span>{it.ville ?? "—"}</span>}
-                      </div>
-                    </div>
-                  ))}
+                </button>
+                <div
+                  className="kp-col-bd"
+                  style={{
+                    maxHeight: topView === "cards" ? "58vh" : "34vh",
+                    overflowY: "auto",
+                    gap: topView === "cards" ? 8 : 5,
+                  }}
+                >
+                  {topView === "cards"
+                    ? items.map((it) => renderCard(it, col.key))
+                    : items.map((it) => (
+                        <div
+                          key={it.id}
+                          className="kp-card"
+                          onClick={() => selectColumn(col.key)}
+                          style={{
+                            padding: "6px 8px",
+                            gap: 3,
+                            borderLeft: col.key === 1 && it.enriched ? "3px solid var(--ok)" : undefined,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <div className="top" style={{ gap: 4 }}>
+                            <span className="nm" style={{ fontSize: 11 }}>
+                              {displayName(it)}
+                            </span>
+                          </div>
+                          <div className="meta-line" style={{ fontSize: 9.5 }}>
+                            <span style={{ color: statusText(col.key, it).cls === "ok" ? "var(--ok)" : "var(--text-4)" }}>
+                              {statusText(col.key, it).label}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                   {items.length === 0 && (
                     <div style={{ textAlign: "center", padding: "16px 6px", color: "var(--text-4)", fontSize: 11 }}>
                       Vide
-                    </div>
-                  )}
-                  {items.length > 12 && (
-                    <div style={{ textAlign: "center", color: "var(--text-4)", fontSize: 10, padding: "2px 0" }}>
-                      +{items.length - 12} autres
                     </div>
                   )}
                 </div>
                 <div style={{ padding: "6px 10px", borderTop: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)" }}>
                   {sum > 0 ? `${sum.toLocaleString()}€` : col.hint}
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -550,15 +650,9 @@ export const MarketingWebPipeline: React.FC = () => {
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span
             className="dot"
-            style={{
-              width: 9,
-              height: 9,
-              borderRadius: "50%",
-              background: COLUMNS.find((c) => c.key === selectedColumn)?.color,
-              display: "inline-block",
-            }}
+            style={{ width: 9, height: 9, borderRadius: "50%", background: activeColumn?.color, display: "inline-block" }}
           />
-          <span style={{ fontWeight: 600, fontSize: 13 }}>{COLUMNS.find((c) => c.key === selectedColumn)?.label}</span>
+          <span style={{ fontWeight: 600, fontSize: 13 }}>{activeColumn?.label}</span>
           <span className="ct" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-3)" }}>
             {columnItems.length} · {selectedCount} sélectionnée(s)
           </span>
@@ -590,6 +684,15 @@ export const MarketingWebPipeline: React.FC = () => {
           onValidateAudits={() => validateAudits(selectedItems())}
           onAssign={() => assignAgent(selectedItems())}
         />
+
+        <div className="seg" aria-label="Affichage de la liste">
+          <button type="button" className="s icon" aria-pressed={bottomView === "cards"} onClick={() => setBottomView("cards")} title="Cartes">
+            <LayoutGrid className="ico-sm" />
+          </button>
+          <button type="button" className="s icon" aria-pressed={bottomView === "rows"} onClick={() => setBottomView("rows")} title="Tableau">
+            <Rows3 className="ico-sm" />
+          </button>
+        </div>
       </div>
 
       {/* ── BOTTOM: list for the selected column ───────────────────────── */}
@@ -605,26 +708,19 @@ export const MarketingWebPipeline: React.FC = () => {
             <Building2 className="ico-xl" style={{ margin: "0 auto 10px", opacity: 0.5 }} />
             <p style={{ fontSize: 13 }}>Aucune opportunité dans cette étape.</p>
           </div>
+        ) : bottomView === "cards" ? (
+          <div className="opp-grid">{columnItems.map((item) => renderCard(item, selectedColumn))}</div>
         ) : (
-          <div className="opp-grid">
-            {columnItems.map((item) => (
-              <OppCard
-                key={item.id}
-                item={item}
-                column={selectedColumn}
-                selected={selectedIds.has(item.id)}
-                onToggleSelect={() => toggleSelect(item.id)}
-                disabled={busy}
-                onEnrich={() => runEnrich([item])}
-                onValidateEnrich={() => validateEnrichment([item])}
-                onCreateSite={() => createSites([item])}
-                onValidateSite={() => validateSites([item])}
-                onCreateAudit={() => createAudits([item])}
-                onValidateAudit={() => validateAudits([item])}
-                onAssign={() => assignAgent([item])}
-              />
-            ))}
-          </div>
+          <OppTable
+            items={columnItems}
+            column={selectedColumn}
+            selectedIds={selectedIds}
+            onToggleSelect={toggleSelect}
+            allSelected={allSelectedInColumn}
+            onToggleAll={toggleSelectAll}
+            disabled={busy}
+            handlersFor={cardHandlers}
+          />
         )}
       </div>
 
@@ -637,6 +733,15 @@ export const MarketingWebPipeline: React.FC = () => {
         onClose={async () => {
           setShowEnrichModal(false);
           await afterAction();
+        }}
+      />
+
+      <OpportunityEditModal
+        item={editingItem}
+        onClose={() => setEditingItem(null)}
+        onSaved={async () => {
+          setEditingItem(null);
+          await load();
         }}
       />
     </div>
@@ -786,14 +891,9 @@ const ColumnActionBar: React.FC<ActionBarProps> = ({
   );
 };
 
-/* ── Opportunity card (per column) ────────────────────────────────────────── */
+/* ── Card action handlers shape ───────────────────────────────────────────── */
 
-interface OppCardProps {
-  item: BoardItem;
-  column: number;
-  selected: boolean;
-  disabled: boolean;
-  onToggleSelect: () => void;
+interface ItemHandlers {
   onEnrich: () => void;
   onValidateEnrich: () => void;
   onCreateSite: () => void;
@@ -801,6 +901,17 @@ interface OppCardProps {
   onCreateAudit: () => void;
   onValidateAudit: () => void;
   onAssign: () => void;
+  onDetails: () => void;
+}
+
+/* ── Opportunity card (per column) ────────────────────────────────────────── */
+
+interface OppCardProps extends ItemHandlers {
+  item: BoardItem;
+  column: number;
+  selected: boolean;
+  disabled: boolean;
+  onToggleSelect: () => void;
 }
 
 const OppCard: React.FC<OppCardProps> = ({
@@ -809,13 +920,7 @@ const OppCard: React.FC<OppCardProps> = ({
   selected,
   disabled,
   onToggleSelect,
-  onEnrich,
-  onValidateEnrich,
-  onCreateSite,
-  onValidateSite,
-  onCreateAudit,
-  onValidateAudit,
-  onAssign,
+  ...handlers
 }) => {
   const website = normalizeUrl(item.company_url);
   const vLabel = valueLabel(item);
@@ -824,10 +929,7 @@ const OppCard: React.FC<OppCardProps> = ({
     <div
       className="opp-card"
       data-priority={item.priorite ?? undefined}
-      style={{
-        outline: selected ? "2px solid var(--accent)" : undefined,
-        outlineOffset: selected ? "-1px" : undefined,
-      }}
+      style={{ outline: selected ? "2px solid var(--accent)" : undefined, outlineOffset: selected ? "-1px" : undefined }}
     >
       <div className="hd">
         <div className="top-line">
@@ -853,19 +955,10 @@ const OppCard: React.FC<OppCardProps> = ({
       </div>
 
       <div className="ft">
-        <CardFooter
-          column={column}
-          item={item}
-          website={website}
-          disabled={disabled}
-          onEnrich={onEnrich}
-          onValidateEnrich={onValidateEnrich}
-          onCreateSite={onCreateSite}
-          onValidateSite={onValidateSite}
-          onCreateAudit={onCreateAudit}
-          onValidateAudit={onValidateAudit}
-          onAssign={onAssign}
-        />
+        <button type="button" className="btn ghost sm icon" onClick={handlers.onDetails} disabled={disabled} title="Voir / modifier les infos">
+          <SlidersHorizontal className="ico-sm" />
+        </button>
+        <CardFooter column={column} item={item} disabled={disabled} {...handlers} />
       </div>
     </div>
   );
@@ -879,12 +972,7 @@ const CardBody: React.FC<{ column: number; item: BoardItem; website?: string }> 
           {item.enriched ? "Enrichi" : "Non enrichi"}
         </span>
         {item.enrichment?.website_url ? (
-          <a
-            href={normalizeUrl(item.enrichment.website_url)}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ fontSize: 11, color: "var(--info)" }}
-          >
+          <a href={normalizeUrl(item.enrichment.website_url)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--info)" }}>
             {item.enrichment.website_url}
           </a>
         ) : website ? (
@@ -957,18 +1045,10 @@ const CardBody: React.FC<{ column: number; item: BoardItem; website?: string }> 
   return null;
 };
 
-interface FooterProps {
+interface FooterProps extends ItemHandlers {
   column: number;
   item: BoardItem;
-  website?: string;
   disabled: boolean;
-  onEnrich: () => void;
-  onValidateEnrich: () => void;
-  onCreateSite: () => void;
-  onValidateSite: () => void;
-  onCreateAudit: () => void;
-  onValidateAudit: () => void;
-  onAssign: () => void;
 }
 
 const CardFooter: React.FC<FooterProps> = ({
@@ -1077,5 +1157,324 @@ const CardFooter: React.FC<FooterProps> = ({
   }
   return null;
 };
+
+/* ── Table (rows) view ────────────────────────────────────────────────────── */
+
+interface OppTableProps {
+  items: BoardItem[];
+  column: number;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+  allSelected: boolean;
+  onToggleAll: () => void;
+  disabled: boolean;
+  handlersFor: (item: BoardItem) => ItemHandlers;
+}
+
+const OppTable: React.FC<OppTableProps> = ({
+  items,
+  column,
+  selectedIds,
+  onToggleSelect,
+  allSelected,
+  onToggleAll,
+  disabled,
+  handlersFor,
+}) => {
+  return (
+    <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--surface)" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "var(--surface-2)", color: "var(--text-3)", textAlign: "left" }}>
+              <th style={{ padding: "8px 10px", width: 34 }}>
+                <Checkbox checked={allSelected} onCheckedChange={onToggleAll} className="h-4 w-4" />
+              </th>
+              <th style={{ padding: "8px 10px" }}>Opportunité</th>
+              <th style={{ padding: "8px 10px" }}>Ville</th>
+              <th style={{ padding: "8px 10px" }}>Priorité</th>
+              <th style={{ padding: "8px 10px" }}>Statut</th>
+              <th style={{ padding: "8px 10px", textAlign: "right" }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => {
+              const selected = selectedIds.has(item.id);
+              const st = statusText(column, item);
+              const handlers = handlersFor(item);
+              return (
+                <tr key={item.id} style={{ borderTop: "1px solid var(--border)", background: selected ? "var(--accent-tint)" : undefined }}>
+                  <td style={{ padding: "8px 10px" }}>
+                    <Checkbox checked={selected} onCheckedChange={() => onToggleSelect(item.id)} className="h-4 w-4" />
+                  </td>
+                  <td style={{ padding: "8px 10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {item.logo_url ? <img src={item.logo_url} alt="" className="h-5 w-5 rounded object-cover" /> : null}
+                      <span style={{ fontWeight: 500 }}>{displayName(item)}</span>
+                    </div>
+                  </td>
+                  <td style={{ padding: "8px 10px", color: "var(--text-3)" }}>{item.ville ?? "—"}</td>
+                  <td style={{ padding: "8px 10px" }}>
+                    {item.priorite ? (
+                      <span className={`pill ${item.priorite === "haute" ? "danger" : item.priorite === "moyenne" ? "warn" : ""}`} style={{ fontSize: 10 }}>
+                        {item.priorite}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td style={{ padding: "8px 10px" }}>
+                    <span className={`pill ${st.cls}`} style={{ fontSize: 10 }}>
+                      {st.label}
+                    </span>
+                  </td>
+                  <td style={{ padding: "6px 10px" }}>
+                    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                      <button type="button" className="btn ghost sm icon" onClick={handlers.onDetails} disabled={disabled} title="Voir / modifier les infos">
+                        <SlidersHorizontal className="ico-sm" />
+                      </button>
+                      <CardFooter column={column} item={item} disabled={disabled} {...handlers} />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+/* ── Manual edit modal (company + enrichment) ─────────────────────────────── */
+
+interface EditForm {
+  // entreprises
+  name: string;
+  ville: string;
+  code_postal: string;
+  adresse: string;
+  telephone: string;
+  email: string;
+  site_web: string;
+  linkedin_url: string;
+  service_tags: string;
+  // automated_enrichment
+  enr_website_url: string;
+  enr_emails: string;
+  enr_phones: string;
+  enr_services: string;
+  enr_contact_page: string;
+  enr_summary: string;
+}
+
+const EMPTY_FORM: EditForm = {
+  name: "",
+  ville: "",
+  code_postal: "",
+  adresse: "",
+  telephone: "",
+  email: "",
+  site_web: "",
+  linkedin_url: "",
+  service_tags: "",
+  enr_website_url: "",
+  enr_emails: "",
+  enr_phones: "",
+  enr_services: "",
+  enr_contact_page: "",
+  enr_summary: "",
+};
+
+const toArr = (s: string): string[] => s.split(",").map((x) => x.trim()).filter(Boolean);
+const fromArr = (a?: unknown): string => (Array.isArray(a) ? a.filter((x) => typeof x === "string").join(", ") : "");
+
+const OpportunityEditModal: React.FC<{
+  item: BoardItem | null;
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ item, onClose, onSaved }) => {
+  const supabase = React.useMemo(() => createClient(), []);
+  const [form, setForm] = React.useState<EditForm>(EMPTY_FORM);
+  const [loading, setLoading] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [enrichmentId, setEnrichmentId] = React.useState<string | null>(null);
+
+  const entrepriseId = item?.entreprise_id ?? null;
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!item || entrepriseId == null) return;
+    setLoading(true);
+    setForm(EMPTY_FORM);
+    setEnrichmentId(null);
+    (async () => {
+      const [compRes, enrRes] = await Promise.all([
+        supabase
+          .from("entreprises")
+          .select("id, name, ville, code_postal, adresse, telephone, email, site_web_canonique, canonical_url, linkedin_url, service_tags")
+          .eq("id", entrepriseId)
+          .maybeSingle(),
+        supabase
+          .from("automated_enrichment")
+          .select("id, website_url, emails, phones, services_list, contact_page_url, site_summary")
+          .eq("entreprise_id", entrepriseId)
+          .order("updated_at", { ascending: false })
+          .limit(1),
+      ]);
+      if (cancelled) return;
+      const c = (compRes.data ?? {}) as Record<string, unknown>;
+      const enrRows = (enrRes.data ?? []) as Array<Record<string, unknown>>;
+      const e = enrRows[0] ?? {};
+      setEnrichmentId((e.id as string) ?? null);
+      setForm({
+        name: (c.name as string) ?? "",
+        ville: (c.ville as string) ?? "",
+        code_postal: (c.code_postal as string) ?? "",
+        adresse: (c.adresse as string) ?? "",
+        telephone: (c.telephone as string) ?? "",
+        email: (c.email as string) ?? "",
+        site_web: ((c.site_web_canonique as string) || (c.canonical_url as string)) ?? "",
+        linkedin_url: (c.linkedin_url as string) ?? "",
+        service_tags: fromArr(c.service_tags),
+        enr_website_url: (e.website_url as string) ?? "",
+        enr_emails: fromArr(e.emails),
+        enr_phones: fromArr(e.phones),
+        enr_services: fromArr(e.services_list),
+        enr_contact_page: (e.contact_page_url as string) ?? "",
+        enr_summary: (e.site_summary as string) ?? "",
+      });
+      setLoading(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [item, entrepriseId, supabase]);
+
+  const set = (k: keyof EditForm) => (ev: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+    setForm((f) => ({ ...f, [k]: ev.target.value }));
+
+  const handleSave = async () => {
+    if (entrepriseId == null) return;
+    setSaving(true);
+    try {
+      const { error: compErr } = await supabase
+        .from("entreprises")
+        .update({
+          name: form.name || null,
+          ville: form.ville || null,
+          code_postal: form.code_postal || null,
+          adresse: form.adresse || null,
+          telephone: form.telephone || null,
+          email: form.email || null,
+          site_web_canonique: form.site_web || null,
+          linkedin_url: form.linkedin_url || null,
+          service_tags: toArr(form.service_tags),
+          manually_enriched: true,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", entrepriseId);
+      if (compErr) throw compErr;
+
+      const enrPayload = {
+        website_url: form.enr_website_url || null,
+        emails: toArr(form.enr_emails),
+        phones: toArr(form.enr_phones),
+        services_list: toArr(form.enr_services),
+        contact_page_url: form.enr_contact_page || null,
+        site_summary: form.enr_summary || null,
+        updated_at: new Date().toISOString(),
+      };
+      const hasEnrData =
+        form.enr_website_url || form.enr_emails || form.enr_phones || form.enr_services || form.enr_contact_page || form.enr_summary;
+      if (enrichmentId) {
+        const { error } = await supabase.from("automated_enrichment").update(enrPayload).eq("id", enrichmentId);
+        if (error) throw error;
+      } else if (hasEnrData) {
+        const { error } = await supabase.from("automated_enrichment").insert({ entreprise_id: entrepriseId, ...enrPayload });
+        if (error) throw error;
+      }
+
+      toast.success("Informations mises à jour");
+      onSaved();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de l'enregistrement");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!item} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{item ? displayName(item) : ""} — Informations</DialogTitle>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <Loader2 className="h-5 w-5 animate-spin" />
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 py-1">
+            <div>
+              <h4 className="text-sm font-semibold mb-2">Entreprise</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Nom"><Input value={form.name} onChange={set("name")} /></Field>
+                <Field label="Ville"><Input value={form.ville} onChange={set("ville")} /></Field>
+                <Field label="Code postal"><Input value={form.code_postal} onChange={set("code_postal")} /></Field>
+                <Field label="Téléphone"><Input value={form.telephone} onChange={set("telephone")} /></Field>
+                <Field label="Email"><Input value={form.email} onChange={set("email")} /></Field>
+                <Field label="Site web"><Input value={form.site_web} onChange={set("site_web")} /></Field>
+                <Field label="LinkedIn"><Input value={form.linkedin_url} onChange={set("linkedin_url")} /></Field>
+                <Field label="Adresse"><Input value={form.adresse} onChange={set("adresse")} /></Field>
+                <div className="sm:col-span-2">
+                  <Field label="Service tags (séparés par des virgules)">
+                    <Input value={form.service_tags} onChange={set("service_tags")} placeholder="plomberie, chauffage, dépannage" />
+                  </Field>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-semibold mb-2">Enrichissement</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Field label="Site web (enrichi)"><Input value={form.enr_website_url} onChange={set("enr_website_url")} /></Field>
+                <Field label="Page contact"><Input value={form.enr_contact_page} onChange={set("enr_contact_page")} /></Field>
+                <Field label="Emails (virgules)"><Input value={form.enr_emails} onChange={set("enr_emails")} /></Field>
+                <Field label="Téléphones (virgules)"><Input value={form.enr_phones} onChange={set("enr_phones")} /></Field>
+                <div className="sm:col-span-2">
+                  <Field label="Services (virgules)"><Input value={form.enr_services} onChange={set("enr_services")} /></Field>
+                </div>
+                <div className="sm:col-span-2">
+                  <Field label="Résumé du site">
+                    <Textarea value={form.enr_summary} onChange={set("enr_summary")} rows={3} />
+                  </Field>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <button type="button" className="btn ghost sm" onClick={onClose} disabled={saving}>
+            Annuler
+          </button>
+          <button type="button" className="btn accent sm" onClick={handleSave} disabled={saving || loading}>
+            {saving ? <Loader2 className="ico-sm animate-spin" /> : <Check className="ico-sm" />}
+            Enregistrer
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
+  <div className="space-y-1">
+    <Label className="text-xs text-muted-foreground">{label}</Label>
+    {children}
+  </div>
+);
 
 export default MarketingWebPipeline;
