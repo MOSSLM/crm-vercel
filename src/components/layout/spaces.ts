@@ -125,6 +125,7 @@ export const SPACES: Space[] = [
     icon: Globe,
     href: "/site-builder",
     tools: [
+      { title: "Pipeline", href: "/marketing-pipeline", icon: GitBranch },
       { title: "Site builder", href: "/site-builder", icon: Globe },
       { title: "Thèmes", href: "/themes", icon: Palette },
       { title: "Section builder", href: "/sections-library", icon: BookOpen },
@@ -193,6 +194,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/production", "production"],
   ["/planches", "production"],
 
+  ["/marketing-pipeline", "web"],
   ["/site-builder", "web"],
   ["/site-templates", "web"],
   ["/themes", "web"],
