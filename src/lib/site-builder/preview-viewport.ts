@@ -35,6 +35,46 @@ export function convertVhToPx(value: string, viewportPx: number): string {
 }
 
 /**
+ * Build the preview-only `<script>` that *locks the JS-visible viewport height*
+ * of the editor iframe to a fixed simulated device height.
+ *
+ * The CSS `vh` rewriter (below) only handles CSS. But the imported design also
+ * runs its OWN JS in the editor iframe, and Claude/Tailwind designs routinely
+ * implement the "`--vh` fix": they read `window.innerHeight` and write it into a
+ * CSS custom property (`--vh`), or feed it to GSAP/ScrollTrigger, on load and on
+ * every `resize`. Inside the editor the iframe's height is driven by the canvas
+ * height-reporter, so `window.innerHeight` is the *growing* frame height — the
+ * design's JS keeps re-inflating the hero, feeding the loop into infinity. No
+ * amount of CSS rewriting can catch a height that JS computes at runtime.
+ *
+ * This forces `window.innerHeight`, `visualViewport.height` and
+ * `document.documentElement.clientHeight` to report the fixed simulated height,
+ * so the design's JS sees a stable "screen" and can never drive the loop. Must
+ * run BEFORE the design JS. Published/preview pages never include this — they get
+ * a real viewport.
+ */
+export function buildViewportLockScript(simulatedViewportHeight: number): string {
+  return `<script>
+    (function(){
+      var H = ${simulatedViewportHeight};
+      function lock(obj, prop, value){
+        try {
+          Object.defineProperty(obj, prop, { configurable: true, get: function(){ return value; } });
+          return;
+        } catch(e){}
+        // Fallback: innerHeight is a [Replaceable] attribute, so a plain
+        // assignment still installs a shadowing own property.
+        try { obj[prop] = value; } catch(e){}
+      }
+      lock(window, 'innerHeight', H);
+      try { if (window.visualViewport) lock(window.visualViewport, 'height', H); } catch(e){}
+      // Some designs read documentElement.clientHeight for their --vh fallback.
+      try { if (document.documentElement) lock(document.documentElement, 'clientHeight', H); } catch(e){}
+    })();
+  <\/script>`;
+}
+
+/**
  * Build the preview-only `<style>` + `<script>` block that exposes `--sim-vh`
  * and installs a runtime rewriter converting every `Nvh` literal into px on the
  * supplied simulated viewport. It patches stylesheets (catching Tailwind's

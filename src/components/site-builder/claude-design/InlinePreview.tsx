@@ -13,7 +13,7 @@ import {
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
 import { filterServiceLinks } from "@/lib/site-builder/claude-design/filter-service-links";
-import { buildVhRewriteRuntime, convertVhToPx } from "@/lib/site-builder/preview-viewport";
+import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 
@@ -291,10 +291,15 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // Preview-only vh→px rewriter: a `100vh`/`100dvh`/`min-h-screen` hero
     // otherwise resolves against the (growing) iframe height the canvas reports
     // back, looping to infinity (runaway scroll + visible shake). We do it in
-    // TWO layers: (1) statically rewrite the injected stylesheet here so no `vh`
-    // literal ever reaches the iframe, and (2) the runtime below catches inline
-    // styles + dynamically-added rules.
+    // THREE layers: (1) statically rewrite the injected stylesheet here so no `vh`
+    // literal ever reaches the iframe, (2) the runtime below catches inline
+    // styles + dynamically-added rules, and (3) the viewport-lock script pins the
+    // iframe's JS-visible height (window.innerHeight/visualViewport) so the
+    // design's OWN JS (the `--vh` fix, GSAP, …) can't re-inflate a full-height
+    // hero from the growing frame height. Layers 1-2 are CSS-only and can't see a
+    // height JS computes at runtime; layer 3 covers exactly that. Editor-only.
     const vhBlock = typeof simViewportHeight === "number" ? buildVhRewriteRuntime(simViewportHeight) : "";
+    const viewportLock = typeof simViewportHeight === "number" ? buildViewportLockScript(simViewportHeight) : "";
     const cssForIframe = typeof simViewportHeight === "number" ? convertVhToPx(sharedCss, simViewportHeight) : sharedCss;
     // The design's own runtime JS (site.js + this page's JS). Run it so animations
     // match the deployed site; fall back to the trusted runtime when absent.
@@ -306,7 +311,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // extras, then the editor's own interaction script.
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (
