@@ -13,6 +13,7 @@ import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
 import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
+import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
@@ -211,11 +212,14 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
         </div>
         <div className="cd-save-group" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <a
-            href={`/preview/${siteId}${activeSlug === "/" ? "" : activeSlug}`}
+            href={buildPreviewUrl(siteId, activeSlug, {
+              siteDomain: SITE_DOMAIN,
+              currentHost: typeof window !== "undefined" ? window.location.host : undefined,
+            })}
             target="_blank"
             rel="noopener noreferrer"
             className="cd-btn outline"
-            title="Ouvrir un aperçu live du site (hors éditeur)"
+            title="Ouvrir un aperçu live sur un sous-domaine privé (hors éditeur)"
           >
             <Eye className="ico-sm" />Aperçu
           </a>

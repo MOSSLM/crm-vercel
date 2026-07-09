@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { isPreviewSubdomain } from "@/lib/site-builder/preview-url";
 
 // Subdomains that map to the CRM app (never treated as client sites)
 const CRM_SUBDOMAINS = new Set(["app", "www", "admin", "crm", "api"]);
@@ -26,9 +27,13 @@ export function middleware(request: NextRequest) {
   const subdomain = extractSubdomain(hostname, APP_DOMAIN);
 
   if (subdomain && !CRM_SUBDOMAINS.has(subdomain)) {
-    // Rewrite to (site) route group
     const url = request.nextUrl.clone();
-    url.pathname = `/site/${subdomain}${pathname === "/" ? "" : pathname}`;
+    const suffix = pathname === "/" ? "" : pathname;
+    // A UUID-shaped subdomain is an unguessable draft/template preview → render
+    // the live (unpublished) draft. Everything else is a published site.
+    url.pathname = isPreviewSubdomain(subdomain)
+      ? `/preview/${subdomain}${suffix}`
+      : `/site/${subdomain}${suffix}`;
     return NextResponse.rewrite(url);
   }
 
