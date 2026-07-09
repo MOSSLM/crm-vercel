@@ -66,6 +66,7 @@ interface BoardItem {
   } | null;
   audit: { id: string; statut: string; pdf_url: string | null } | null;
   agent: { id: string; name: string } | null;
+  missing_for_site: string[];
   column: number;
 }
 
@@ -164,6 +165,9 @@ export const MarketingWebPipeline: React.FC = () => {
   const [bottomView, setBottomView] = React.useState<BottomView>("cards");
   const [working, setWorking] = React.useState<string | null>(null);
   const [editingItem, setEditingItem] = React.useState<BoardItem | null>(null);
+  // When the edit modal is opened because a site can't be created yet, it shows
+  // the missing required variables in red and gates the "create site" button.
+  const [siteRequirement, setSiteRequirement] = React.useState(false);
 
   // Enrichment progress modal state.
   const [enrichLogs, setEnrichLogs] = React.useState<EnrichmentLogEntry[]>([]);
@@ -336,7 +340,8 @@ export const MarketingWebPipeline: React.FC = () => {
     }
   };
 
-  const createSites = async (items: BoardItem[]) => {
+  // Actually clone the template into a demo, assuming requirements are met.
+  const createSiteDirect = async (items: BoardItem[]) => {
     if (!templateId) {
       toast.error("Choisis d'abord un template");
       return;
@@ -366,6 +371,33 @@ export const MarketingWebPipeline: React.FC = () => {
     } finally {
       setWorking(null);
     }
+  };
+
+  // Gate: before creating, every target must have its required variables filled.
+  // Otherwise open the edit modal on the first incomplete company (requirement
+  // mode) instead of creating anything.
+  const createSites = async (items: BoardItem[]) => {
+    if (!templateId) {
+      toast.error("Choisis d'abord un template");
+      return;
+    }
+    const targets = items.filter((it) => it.entreprise_id != null && !it.site);
+    if (targets.length === 0) {
+      toast.error("Aucune entreprise éligible (déjà un site ou entreprise manquante)");
+      return;
+    }
+    const incomplete = targets.filter((it) => (it.missing_for_site?.length ?? 0) > 0);
+    if (incomplete.length > 0) {
+      setEditingItem(incomplete[0]);
+      setSiteRequirement(true);
+      toast.error(
+        incomplete.length === 1
+          ? `Variables requises manquantes : ${incomplete[0].missing_for_site.join(", ")}`
+          : `${incomplete.length} entreprise(s) incomplète(s) — complète les variables requises avant de créer le site`,
+      );
+      return;
+    }
+    await createSiteDirect(targets);
   };
 
   const validateSites = async (items: BoardItem[]) => {
@@ -738,10 +770,21 @@ export const MarketingWebPipeline: React.FC = () => {
 
       <OpportunityEditModal
         item={editingItem}
-        onClose={() => setEditingItem(null)}
+        siteRequirement={siteRequirement}
+        onClose={() => {
+          setEditingItem(null);
+          setSiteRequirement(false);
+        }}
         onSaved={async () => {
           setEditingItem(null);
+          setSiteRequirement(false);
           await load();
+        }}
+        onSaveAndCreate={async (it) => {
+          setEditingItem(null);
+          setSiteRequirement(false);
+          await load();
+          await createSiteDirect([it]);
         }}
       />
     </div>
@@ -986,11 +1029,21 @@ const CardBody: React.FC<{ column: number; item: BoardItem; website?: string }> 
     );
   }
   if (column === 2) {
+    const missing = item.missing_for_site ?? [];
     return (
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span className="pill info" style={{ fontSize: 10 }}>
           Prêt pour LM
         </span>
+        {missing.length > 0 ? (
+          <span className="pill danger" style={{ fontSize: 10 }} title={`Manquant : ${missing.join(", ")}`}>
+            Incomplet · {missing.length}
+          </span>
+        ) : (
+          <span className="pill ok" style={{ fontSize: 10 }}>
+            Variables OK
+          </span>
+        )}
         {item.tags && <span style={{ fontSize: 11, color: "var(--text-3)" }}>{item.tags.split(",")[0]}</span>}
       </div>
     );
@@ -1259,6 +1312,8 @@ interface EditForm {
   site_web: string;
   linkedin_url: string;
   service_tags: string;
+  note_moyenne: string;
+  nombre_avis: string;
   // automated_enrichment
   enr_website_url: string;
   enr_emails: string;
@@ -1278,6 +1333,8 @@ const EMPTY_FORM: EditForm = {
   site_web: "",
   linkedin_url: "",
   service_tags: "",
+  note_moyenne: "",
+  nombre_avis: "",
   enr_website_url: "",
   enr_emails: "",
   enr_phones: "",
@@ -1288,12 +1345,27 @@ const EMPTY_FORM: EditForm = {
 
 const toArr = (s: string): string[] => s.split(",").map((x) => x.trim()).filter(Boolean);
 const fromArr = (a?: unknown): string => (Array.isArray(a) ? a.filter((x) => typeof x === "string").join(", ") : "");
+const numStr = (v: unknown): string => (v == null || v === "" ? "" : String(v));
+
+// Variables required before a demo site can be created (must match the board's
+// missingForSite). Keyed by form field so the modal can outline them in red.
+const SITE_REQUIRED: Array<{ field: keyof EditForm; label: string; ok: (f: EditForm) => boolean }> = [
+  { field: "name", label: "Nom", ok: (f) => f.name.trim().length > 0 },
+  { field: "ville", label: "Ville", ok: (f) => f.ville.trim().length > 0 },
+  { field: "code_postal", label: "Code postal", ok: (f) => f.code_postal.trim().length > 0 },
+  { field: "telephone", label: "Téléphone", ok: (f) => f.telephone.trim().length > 0 },
+  { field: "service_tags", label: "Service tags", ok: (f) => toArr(f.service_tags).length > 0 },
+  { field: "note_moyenne", label: "Note moyenne", ok: (f) => Number(f.note_moyenne) > 0 },
+  { field: "nombre_avis", label: "Nombre d'avis", ok: (f) => Number(f.nombre_avis) > 0 },
+];
 
 const OpportunityEditModal: React.FC<{
   item: BoardItem | null;
+  siteRequirement: boolean;
   onClose: () => void;
   onSaved: () => void;
-}> = ({ item, onClose, onSaved }) => {
+  onSaveAndCreate: (item: BoardItem) => void;
+}> = ({ item, siteRequirement, onClose, onSaved, onSaveAndCreate }) => {
   const supabase = React.useMemo(() => createClient(), []);
   const [form, setForm] = React.useState<EditForm>(EMPTY_FORM);
   const [loading, setLoading] = React.useState(false);
@@ -1312,7 +1384,9 @@ const OpportunityEditModal: React.FC<{
       const [compRes, enrRes] = await Promise.all([
         supabase
           .from("entreprises")
-          .select("id, name, ville, code_postal, adresse, telephone, email, site_web_canonique, canonical_url, linkedin_url, service_tags")
+          .select(
+            "id, name, ville, code_postal, adresse, telephone, email, site_web_canonique, canonical_url, linkedin_url, service_tags, note_moyenne, nombre_avis",
+          )
           .eq("id", entrepriseId)
           .maybeSingle(),
         supabase
@@ -1337,6 +1411,8 @@ const OpportunityEditModal: React.FC<{
         site_web: ((c.site_web_canonique as string) || (c.canonical_url as string)) ?? "",
         linkedin_url: (c.linkedin_url as string) ?? "",
         service_tags: fromArr(c.service_tags),
+        note_moyenne: numStr(c.note_moyenne),
+        nombre_avis: numStr(c.nombre_avis),
         enr_website_url: (e.website_url as string) ?? "",
         enr_emails: fromArr(e.emails),
         enr_phones: fromArr(e.phones),
@@ -1354,49 +1430,64 @@ const OpportunityEditModal: React.FC<{
   const set = (k: keyof EditForm) => (ev: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: ev.target.value }));
 
+  const missingRequired = SITE_REQUIRED.filter((r) => !r.ok(form)).map((r) => r.label);
+  const invalidFields = new Set(SITE_REQUIRED.filter((r) => !r.ok(form)).map((r) => r.field));
+  const showInvalid = (field: keyof EditForm) => siteRequirement && invalidFields.has(field);
+
+  const persist = async (): Promise<boolean> => {
+    if (entrepriseId == null) return false;
+    const { error: compErr } = await supabase
+      .from("entreprises")
+      .update({
+        name: form.name || null,
+        ville: form.ville || null,
+        code_postal: form.code_postal || null,
+        adresse: form.adresse || null,
+        telephone: form.telephone || null,
+        email: form.email || null,
+        site_web_canonique: form.site_web || null,
+        linkedin_url: form.linkedin_url || null,
+        service_tags: toArr(form.service_tags),
+        note_moyenne: form.note_moyenne === "" ? null : Number(form.note_moyenne),
+        nombre_avis: form.nombre_avis === "" ? null : Number(form.nombre_avis),
+        manually_enriched: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", entrepriseId);
+    if (compErr) throw compErr;
+
+    const enrPayload = {
+      website_url: form.enr_website_url || null,
+      emails: toArr(form.enr_emails),
+      phones: toArr(form.enr_phones),
+      services_list: toArr(form.enr_services),
+      contact_page_url: form.enr_contact_page || null,
+      site_summary: form.enr_summary || null,
+      updated_at: new Date().toISOString(),
+    };
+    const hasEnrData =
+      form.enr_website_url || form.enr_emails || form.enr_phones || form.enr_services || form.enr_contact_page || form.enr_summary;
+    if (enrichmentId) {
+      const { error } = await supabase.from("automated_enrichment").update(enrPayload).eq("id", enrichmentId);
+      if (error) throw error;
+    } else if (hasEnrData) {
+      const { error } = await supabase.from("automated_enrichment").insert({ entreprise_id: entrepriseId, ...enrPayload });
+      if (error) throw error;
+    }
+    return true;
+  };
+
   const handleSave = async () => {
-    if (entrepriseId == null) return;
     setSaving(true);
     try {
-      const { error: compErr } = await supabase
-        .from("entreprises")
-        .update({
-          name: form.name || null,
-          ville: form.ville || null,
-          code_postal: form.code_postal || null,
-          adresse: form.adresse || null,
-          telephone: form.telephone || null,
-          email: form.email || null,
-          site_web_canonique: form.site_web || null,
-          linkedin_url: form.linkedin_url || null,
-          service_tags: toArr(form.service_tags),
-          manually_enriched: true,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", entrepriseId);
-      if (compErr) throw compErr;
-
-      const enrPayload = {
-        website_url: form.enr_website_url || null,
-        emails: toArr(form.enr_emails),
-        phones: toArr(form.enr_phones),
-        services_list: toArr(form.enr_services),
-        contact_page_url: form.enr_contact_page || null,
-        site_summary: form.enr_summary || null,
-        updated_at: new Date().toISOString(),
-      };
-      const hasEnrData =
-        form.enr_website_url || form.enr_emails || form.enr_phones || form.enr_services || form.enr_contact_page || form.enr_summary;
-      if (enrichmentId) {
-        const { error } = await supabase.from("automated_enrichment").update(enrPayload).eq("id", enrichmentId);
-        if (error) throw error;
-      } else if (hasEnrData) {
-        const { error } = await supabase.from("automated_enrichment").insert({ entreprise_id: entrepriseId, ...enrPayload });
-        if (error) throw error;
-      }
-
+      const ok = await persist();
+      if (!ok) return;
       toast.success("Informations mises à jour");
-      onSaved();
+      if (siteRequirement && missingRequired.length === 0 && item) {
+        onSaveAndCreate(item);
+      } else {
+        onSaved();
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de l'enregistrement");
     } finally {
@@ -1417,19 +1508,55 @@ const OpportunityEditModal: React.FC<{
           </div>
         ) : (
           <div className="flex flex-col gap-4 py-1">
+            {siteRequirement && missingRequired.length > 0 && (
+              <div
+                style={{
+                  border: "1px solid var(--danger)",
+                  background: "var(--danger-tint)",
+                  color: "var(--danger)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  fontSize: 12.5,
+                }}
+              >
+                <strong>Variables requises manquantes pour créer le site :</strong>
+                <div style={{ marginTop: 4 }}>{missingRequired.join(" · ")}</div>
+              </div>
+            )}
+            {siteRequirement && missingRequired.length === 0 && (
+              <div
+                style={{
+                  border: "1px solid var(--ok)",
+                  background: "var(--ok-tint)",
+                  color: "var(--ok)",
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  fontSize: 12.5,
+                }}
+              >
+                Toutes les variables requises sont renseignées — tu peux créer le site.
+              </div>
+            )}
+
             <div>
               <h4 className="text-sm font-semibold mb-2">Entreprise</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Nom"><Input value={form.name} onChange={set("name")} /></Field>
-                <Field label="Ville"><Input value={form.ville} onChange={set("ville")} /></Field>
-                <Field label="Code postal"><Input value={form.code_postal} onChange={set("code_postal")} /></Field>
-                <Field label="Téléphone"><Input value={form.telephone} onChange={set("telephone")} /></Field>
+                <Field label="Nom" required invalid={showInvalid("name")}><Input value={form.name} onChange={set("name")} /></Field>
+                <Field label="Ville" required invalid={showInvalid("ville")}><Input value={form.ville} onChange={set("ville")} /></Field>
+                <Field label="Code postal" required invalid={showInvalid("code_postal")}><Input value={form.code_postal} onChange={set("code_postal")} /></Field>
+                <Field label="Téléphone" required invalid={showInvalid("telephone")}><Input value={form.telephone} onChange={set("telephone")} /></Field>
+                <Field label="Note moyenne" required invalid={showInvalid("note_moyenne")}>
+                  <Input type="number" step="0.1" value={form.note_moyenne} onChange={set("note_moyenne")} placeholder="4.8" />
+                </Field>
+                <Field label="Nombre d'avis" required invalid={showInvalid("nombre_avis")}>
+                  <Input type="number" value={form.nombre_avis} onChange={set("nombre_avis")} placeholder="120" />
+                </Field>
                 <Field label="Email"><Input value={form.email} onChange={set("email")} /></Field>
                 <Field label="Site web"><Input value={form.site_web} onChange={set("site_web")} /></Field>
                 <Field label="LinkedIn"><Input value={form.linkedin_url} onChange={set("linkedin_url")} /></Field>
                 <Field label="Adresse"><Input value={form.adresse} onChange={set("adresse")} /></Field>
                 <div className="sm:col-span-2">
-                  <Field label="Service tags (séparés par des virgules)">
+                  <Field label="Service tags (séparés par des virgules)" required invalid={showInvalid("service_tags")}>
                     <Input value={form.service_tags} onChange={set("service_tags")} placeholder="plomberie, chauffage, dépannage" />
                   </Field>
                 </div>
@@ -1460,20 +1587,49 @@ const OpportunityEditModal: React.FC<{
           <button type="button" className="btn ghost sm" onClick={onClose} disabled={saving}>
             Annuler
           </button>
-          <button type="button" className="btn accent sm" onClick={handleSave} disabled={saving || loading}>
-            {saving ? <Loader2 className="ico-sm animate-spin" /> : <Check className="ico-sm" />}
-            Enregistrer
-          </button>
+          {siteRequirement ? (
+            <button
+              type="button"
+              className="btn accent sm"
+              onClick={handleSave}
+              disabled={saving || loading || missingRequired.length > 0}
+              title={missingRequired.length > 0 ? `Manquant : ${missingRequired.join(", ")}` : undefined}
+            >
+              {saving ? <Loader2 className="ico-sm animate-spin" /> : <Globe className="ico-sm" />}
+              Enregistrer et créer le site
+            </button>
+          ) : (
+            <button type="button" className="btn accent sm" onClick={handleSave} disabled={saving || loading}>
+              {saving ? <Loader2 className="ico-sm animate-spin" /> : <Check className="ico-sm" />}
+              Enregistrer
+            </button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 };
 
-const Field: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
-  <div className="space-y-1">
-    <Label className="text-xs text-muted-foreground">{label}</Label>
-    {children}
+const Field: React.FC<{ label: string; required?: boolean; invalid?: boolean; children: React.ReactNode }> = ({
+  label,
+  required,
+  invalid,
+  children,
+}) => (
+  <div className="space-y-1" data-invalid={invalid ? "true" : undefined}>
+    <Label className="text-xs" style={{ color: invalid ? "var(--danger)" : "var(--text-3)" }}>
+      {label}
+      {required && <span style={{ color: "var(--danger)", marginLeft: 3 }}>*</span>}
+    </Label>
+    <div
+      style={
+        invalid
+          ? { borderRadius: 8, boxShadow: "0 0 0 1.5px var(--danger)", outline: "none" }
+          : undefined
+      }
+    >
+      {children}
+    </div>
   </div>
 );
 
