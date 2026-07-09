@@ -31,8 +31,37 @@ type EntRow = {
   site_web_canonique: string | null;
   logo_url: string | null;
   ville: string | null;
+  code_postal: string | null;
+  telephone: string | null;
+  service_tags: string[] | string | null;
+  note_moyenne: number | string | null;
+  nombre_avis: number | string | null;
   owner_id: string | null;
 };
+
+/**
+ * Variables that must be present on the company before a demo site can be
+ * generated cleanly (the site templates render city, postal code, phone,
+ * service tags and review stats). Returns the human-readable labels missing.
+ */
+function missingForSite(ent: EntRow | undefined): string[] {
+  const miss: string[] = [];
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : v != null ? String(v).trim() : "");
+  if (!ent) return ["Entreprise"];
+  if (!str(ent.name)) miss.push("Nom");
+  if (!str(ent.ville)) miss.push("Ville");
+  if (!str(ent.code_postal)) miss.push("Code postal");
+  if (!str(ent.telephone)) miss.push("Téléphone");
+  const tags = Array.isArray(ent.service_tags)
+    ? ent.service_tags.filter((t) => typeof t === "string" && t.trim().length > 0)
+    : str(ent.service_tags)
+      ? [str(ent.service_tags)]
+      : [];
+  if (tags.length === 0) miss.push("Service tags");
+  if (!(Number(ent.note_moyenne) > 0)) miss.push("Note moyenne");
+  if (!(Number(ent.nombre_avis) > 0)) miss.push("Nombre d'avis");
+  return miss;
+}
 
 type ProjectRow = {
   id: string;
@@ -137,7 +166,9 @@ export const GET = withAuth({}, async () => {
   const [entsRes, enrichRes, sitesRes, auditsRes, agentsRes, pipelinesRes] = await Promise.all([
     supabase
       .from("entreprises")
-      .select("id, name, canonical_url, site_web_canonique, logo_url, ville, owner_id")
+      .select(
+        "id, name, canonical_url, site_web_canonique, logo_url, ville, code_postal, telephone, service_tags, note_moyenne, nombre_avis, owner_id",
+      )
       .in("id", entIds),
     entIds.length > 0
       ? supabase
@@ -272,6 +303,7 @@ export const GET = withAuth({}, async () => {
         : null,
       audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
       agent: owner ? { id: owner.id, name: owner.name } : null,
+      missing_for_site: missingForSite(ent),
       column,
     };
   });
