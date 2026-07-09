@@ -1,5 +1,5 @@
 import React from "react";
-import type { Viewport } from "next";
+import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 import { resolveDraftSite } from "@/lib/site-resolver";
 import { DynamicPageRenderer } from "@/components/site-builder/DynamicPageRenderer";
@@ -21,6 +21,10 @@ function slugFromPath(path: string[] | undefined): string {
 // never cache: the preview reflects the LIVE draft the operator is editing.
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 export const dynamic = "force-dynamic";
+
+// The draft preview is reachable on an unguessable {siteId}.<domain> subdomain;
+// keep it out of every search index so it stays truly private ("introuvable").
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 /**
  * Live draft preview of a site by id, OUTSIDE the editor iframe. Renders the
