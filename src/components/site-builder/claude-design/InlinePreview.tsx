@@ -11,8 +11,7 @@ import {
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
-import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
-import { filterServiceLinks } from "@/lib/site-builder/claude-design/filter-service-links";
+import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
@@ -282,9 +281,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // service-tag regions it doesn't have. Otherwise use sample values (all shown).
     let body = resolveVars(html, variables ?? SAMPLE_VARIABLES);
     if (variables) {
-      const tags = enterpriseTagsOf(variables);
-      if (body.includes("data-service-tag")) body = stripTaggedRegions(body, tags);
-      if (serviceTagBySlug) body = filterServiceLinks(body, serviceTagBySlug, tags);
+      body = conditionServiceMarkup(body, serviceTagBySlug, enterpriseTagsOf(variables));
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     const extras = tweaksExtrasScript(tweaks);

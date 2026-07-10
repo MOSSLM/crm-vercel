@@ -11,8 +11,7 @@ import React from "react";
 import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
-import { stripTaggedRegions } from "@/lib/site-builder/claude-design/strip-tagged-regions";
-import { filterServiceLinks } from "@/lib/site-builder/claude-design/filter-service-links";
+import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
@@ -107,8 +106,7 @@ export async function LibrarySectionInline({
       const parsed = JSON.parse(variables["__service_tags"] ?? "[]");
       if (Array.isArray(parsed)) tags = parsed.map((t) => String(t));
     } catch { /* no tags → strip all tagged regions */ }
-    if (html.includes("data-service-tag")) html = stripTaggedRegions(html, tags);
-    if (serviceTagBySlug) html = filterServiceLinks(html, serviceTagBySlug, tags);
+    html = conditionServiceMarkup(html, serviceTagBySlug, tags);
   }
   if (typeof console !== "undefined") {
     console.info("[SB:ssr]", {
