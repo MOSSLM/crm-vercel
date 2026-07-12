@@ -6,6 +6,8 @@ import {
   applyEnrichmentVariables,
   fetchEnrichmentSlice,
 } from "@/lib/site-builder/enrichment-variables";
+import { applyProjectEnrichment } from "@/lib/site-builder/project-enrichment";
+import type { StatItem } from "@/lib/site-builder/menu-overrides";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,12 @@ type ProjectRow = {
   override_email: string | null;
   override_address: string | null;
   variables: Record<string, unknown> | null;
+  logo_url: string | null;
+  service_tags_snapshot: string[] | string | null;
+  stat_years_experience: string | null;
+  stat_satisfied_clients: string | null;
+  stat_installations_completed: string | null;
+  stat_rge_count: string | null;
 };
 
 type ReviewRow = {
@@ -91,7 +99,9 @@ export const GET = withAuth({}, async ({ req }) => {
           .from("lead_magnet_projects")
           .select(
             "override_entreprise_name, override_city, override_location, " +
-            "override_phone, override_email, override_address, variables"
+            "override_phone, override_email, override_address, variables, " +
+            "logo_url, service_tags_snapshot, stat_years_experience, " +
+            "stat_satisfied_clients, stat_installations_completed, stat_rge_count"
           )
           .eq("id", effectiveProjectId)
           .single()
@@ -150,6 +160,7 @@ export const GET = withAuth({}, async ({ req }) => {
     "entreprise.nombre_avis": String(ent.nombre_avis ?? ""),
     "entreprise.logo_url":    ent.logo_url ?? "",
     "entreprise.site_web":    ent.site_web_canonique ?? ent.canonical_url ?? "",
+    "entreprise.site_web_canonique": ent.site_web_canonique ?? ent.canonical_url ?? "",
     "company.name":    nom,
     "company.city":    ville,
     "company.phone":   telephone,
@@ -173,6 +184,16 @@ export const GET = withAuth({}, async ({ req }) => {
     }
   }
 
+  // Enrichissement du projet (edge function) : logo, stats, zones desservies.
+  let projectServiceTags: string[] | null = null;
+  let projectStats: StatItem[] | null = null;
+  if (proj) {
+    const projEnrichment = applyProjectEnrichment(variables, proj);
+    projectServiceTags = projEnrichment.serviceTags;
+    projectStats = projEnrichment.stats;
+    variables["company.logo"] = variables["entreprise.logo_url"] ?? "";
+  }
+
   if (reviews.length > 0) {
     const reviewsArray = reviews.map((r) => ({
       name: r.author_name ?? "",
@@ -184,11 +205,20 @@ export const GET = withAuth({}, async ({ req }) => {
     variables["__reviews"] = JSON.stringify(reviewsArray);
   }
 
-  variables["__service_tags"] = JSON.stringify(serviceTags);
+  // Service tags : priorité au snapshot du projet (enrichissement), sinon
+  // entreprises.service_tags.
+  const effectiveServiceTags = projectServiceTags ?? serviceTags;
+  const effectiveServicesList = effectiveServiceTags.join(", ");
+  variables["entreprise.services"] = effectiveServicesList;
+  variables["company.services"] = effectiveServicesList;
+  variables["__service_tags"] = JSON.stringify(effectiveServiceTags);
 
+  // Stats : priorité aux stats du projet (enrichissement), puis overrides du
+  // site, puis stats de l'entreprise.
   const siteStats = siteOverrides?.stats;
   const entStats = Array.isArray(ent.stats) ? ent.stats : [];
-  const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
+  const resolvedStats = projectStats
+    ?? (Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats);
   variables["__stats"] = JSON.stringify(resolvedStats);
 
   // Enrichment + derived variables (fill-only), same complements as the

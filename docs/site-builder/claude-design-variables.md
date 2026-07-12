@@ -5,7 +5,7 @@
 > dans le CRM SAMA (Site Builder → Claude Design) puis déployé pour plusieurs
 > entreprises. Claude ne connaît AUCUNE donnée réelle — il écrit des placeholders,
 > et tout s'hydrate automatiquement à l'import avec les données Supabase de
-> chaque entreprise.
+> chaque entreprise (base `entreprises` + enrichissement automatique).
 
 ---
 
@@ -14,7 +14,7 @@
 | Où | Syntaxe | Exemple |
 |---|---|---|
 | **Texte visible** (paragraphes, titres, footer…) | Crochets `[…]` — **uniquement** ceux de la liste du §2, à la lettre près | `Bienvenue chez [Nom de l'entreprise]` |
-| **Attributs HTML** (`href`, `src`, `alt`, …) et cas non couverts par un crochet | Token `{{ entreprise.xxx }}` (avec les espaces) | `<a href="tel:{{ entreprise.telephone }}">` |
+| **Attributs HTML** (`href`, `src`, `alt`, …) et cas non couverts par un crochet | Token `{{ entreprise.xxx }}` (avec les espaces) | `<a href="tel:{{ entreprise.telephone_lien }}">` |
 
 ⚠️ **Un crochet qui n'est pas dans la liste du §2 ne sera PAS reconnu : il restera
 affiché tel quel sur le site publié.** N'invente jamais de placeholder
@@ -34,19 +34,15 @@ le token `{{ entreprise.xxx }}` du §3, qui fonctionne partout (texte et attribu
 | `[Code postal]` | Code postal |
 | `[Région]` | Région |
 | `[Département]` | Département |
-| `[XXX XXX XXX XXXXX]` | Numéro SIRET |
-| `[Prénom]` | Prénom du fondateur / gérant |
-| `[ACO]` | N° d'attestation fluides frigorigènes |
 | `[Zones desservies]` | Liste des villes/zones d'intervention (ex. `Annecy, Seynod, Cran-Gevrier`) |
 
 Exemples d'usage en contexte :
 
 ```html
 <p>[Nom de l'entreprise], votre chauffagiste à [Ville] ([Code postal]) et dans tout le département [Département].</p>
-<p>Fondée par [Prénom], notre entreprise intervient à [Zones desservies].</p>
+<p>Nous intervenons à [Ville] et dans les environs : [Zones desservies].</p>
 <footer>
   <p>[Nom de l'entreprise] — [N° et rue], [Code postal] [Ville]</p>
-  <p>SIRET : [XXX XXX XXX XXXXX] · Attestation fluides : [ACO]</p>
 </footer>
 ```
 
@@ -57,7 +53,7 @@ Pour l'**email affiché en texte**, pas de crochet : utilise directement le toke
 
 ## 3. Variables `{{ … }}` disponibles
 
-### Toujours remplies (utilisables librement)
+### Base entreprise — toujours remplies (utilisables librement)
 
 | Token | Contenu |
 |---|---|
@@ -72,30 +68,26 @@ Pour l'**email affiché en texte**, pas de crochet : utilise directement le toke
 | `{{ entreprise.departement }}` | Département (déduit du code postal) |
 | `{{ entreprise.region }}` | Région (déduite du code postal) |
 | `{{ entreprise.logo_url }}` | URL du logo |
-| `{{ entreprise.horaires }}` | Horaires d'ouverture (texte) |
+| `{{ entreprise.services }}` | Liste des services (ex. `Climatisation, Chauffage`) |
 | `{{ entreprise.note_moyenne }}` | Note Google moyenne (ex. `4,8`) |
 | `{{ entreprise.nombre_avis }}` | Nombre d'avis Google |
-| `{{ entreprise.zones_desservies }}` * | Liste des villes/zones d'intervention |
-| `{{ entreprise.annee_experience }}` * | Années d'expérience (nombre) |
 | `{{ entreprise.site_web_canonique }}` | URL du site web actuel |
 
-\* Remplies automatiquement par l'enrichissement — peuvent être vides si
-l'entreprise n'a pas encore été enrichie ; à placer dans des phrases qui
-restent correctes sans la valeur.
+### Enrichissement — peuvent être vides
 
-### Conditionnelles — peuvent être vides
-
-Ces variables ne sont remplies que si la donnée a été saisie côté CRM. Ne les
-utilise que dans des endroits qui restent corrects si la valeur est vide
-(footer, mentions légales, ligne isolée) — jamais au milieu d'une phrase clé
-du hero.
+Remplies automatiquement par l'enrichissement (edge function). Peuvent être vides
+si l'entreprise n'a pas encore été enrichie : à placer dans des phrases qui
+restent correctes sans la valeur (jamais au cœur d'un hero).
 
 | Token | Contenu |
 |---|---|
-| `{{ entreprise.siret }}` | SIRET |
-| `{{ entreprise.fondateur }}` | Prénom du fondateur |
-| `{{ entreprise.attestation_fluides }}` | Attestation fluides |
+| `{{ entreprise.location }}` | Grande ville / zone d'intervention principale |
+| `{{ entreprise.zones_desservies }}` | Villes desservies autour (liste) |
+| `{{ entreprise.horaires }}` | Horaires d'ouverture (texte) |
+| `{{ entreprise.annee_experience }}` | Années d'expérience (nombre) |
 | `{{ entreprise.clients_count }}` | Nombre de clients servis |
+| `{{ entreprise.installations }}` | Nombre d'installations / chantiers réalisés |
+| `{{ entreprise.qualifications }}` | Nombre de qualifications (RGE, Qualibat…) |
 
 ---
 
@@ -203,16 +195,19 @@ affiché que si l'entreprise propose ce service, et retiré proprement sinon.
 
 ---
 
-## 8. Avis clients et chiffres clés (statique pour l'instant)
+## 8. Avis clients et chiffres clés
 
-L'injection automatique des avis Google et des statistiques n'est pas encore
-active pour les designs Claude. En attendant :
-
-- Écrire **3 avis d'exemple réalistes** (prénom + initiale, texte crédible,
-  5 étoiles) en contenu statique — **sans crochets** (ils resteraient affichés
-  tels quels).
-- Envelopper la grille d'avis dans un conteneur marqué, pour permettre
-  l'hydratation automatique future sans retoucher le design :
+- **Chiffres clés** : utilise les tokens d'enrichissement du §3
+  (`{{ entreprise.annee_experience }}`, `{{ entreprise.clients_count }}`,
+  `{{ entreprise.installations }}`, `{{ entreprise.qualifications }}`). Ils sont
+  alimentés par l'enrichissement automatique mais peuvent être vides : garde une
+  formulation qui tient sans le chiffre.
+- **Note globale** : les variables existent déjà —
+  `Note {{ entreprise.note_moyenne }}/5 — {{ entreprise.nombre_avis }} avis Google`.
+- **Avis** : écrire **3 avis d'exemple réalistes** (prénom + initiale, texte
+  crédible, 5 étoiles) en contenu statique — **sans crochets** (ils resteraient
+  affichés tels quels) — et envelopper la grille dans un conteneur marqué, pour
+  permettre l'hydratation automatique des avis Google :
 
 ```html
 <div class="reviews-grid" data-reviews>
@@ -224,11 +219,6 @@ active pour les designs Claude. En attendant :
   <!-- 2 autres cartes identiques -->
 </div>
 ```
-
-- Pour la note globale, en revanche, les variables existent déjà :
-  `Note {{ entreprise.note_moyenne }}/5 — {{ entreprise.nombre_avis }} avis Google`.
-- Pour les chiffres clés (années d'expérience, clients servis), utiliser les
-  variables conditionnelles du §3 si le bloc s'y prête, sinon du statique.
 
 ---
 
@@ -243,8 +233,8 @@ d'**identité de l'entreprise** (§2 et §3) sont variables.
 
 ## 10. Checklist avant export
 
-- [ ] Aucun nom, téléphone, email, adresse ou SIRET réels — que des
-      placeholders des §2/§3.
+- [ ] Aucun nom, téléphone, email ou adresse réels — que des placeholders
+      des §2/§3.
 - [ ] Tous les crochets utilisés appartiennent à la liste fermée du §2
       (orthographe exacte).
 - [ ] Tous les `tel:` utilisent `{{ entreprise.telephone_lien }}` et les

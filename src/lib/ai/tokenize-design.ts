@@ -28,21 +28,21 @@ export const TOKENIZABLE_VARIABLES: Array<{ token: string; label: string }> = [
   { token: "{{ entreprise.telephone }}", label: "Téléphone" },
   { token: "{{ entreprise.telephone_lien }}", label: "Téléphone (lien tel:)" },
   { token: "{{ entreprise.email }}", label: "Email" },
+  { token: "{{ entreprise.email_domain }}", label: "Domaine email" },
   { token: "{{ entreprise.adresse }}", label: "Adresse" },
   { token: "{{ entreprise.ville }}", label: "Ville" },
   { token: "{{ entreprise.code_postal }}", label: "Code postal" },
-  { token: "{{ entreprise.logo_url }}", label: "Logo (URL)" },
-  { token: "{{ entreprise.site_web_canonique }}", label: "Site web" },
-  { token: "{{ entreprise.horaires }}", label: "Horaires" },
-  { token: "{{ entreprise.siret }}", label: "SIRET" },
-  { token: "{{ entreprise.fondateur }}", label: "Prénom du fondateur" },
-  { token: "{{ entreprise.attestation_fluides }}", label: "Attestation fluides" },
-  { token: "{{ entreprise.email_domain }}", label: "Domaine email" },
-  { token: "{{ entreprise.annee_experience }}", label: "Années d'expérience" },
-  { token: "{{ entreprise.clients_count }}", label: "Nombre de clients" },
   { token: "{{ entreprise.region }}", label: "Région" },
   { token: "{{ entreprise.departement }}", label: "Département" },
+  { token: "{{ entreprise.location }}", label: "Zone principale" },
   { token: "{{ entreprise.zones_desservies }}", label: "Zones desservies" },
+  { token: "{{ entreprise.horaires }}", label: "Horaires" },
+  { token: "{{ entreprise.logo_url }}", label: "Logo (URL)" },
+  { token: "{{ entreprise.site_web_canonique }}", label: "Site web" },
+  { token: "{{ entreprise.annee_experience }}", label: "Années d'expérience" },
+  { token: "{{ entreprise.clients_count }}", label: "Nombre de clients" },
+  { token: "{{ entreprise.installations }}", label: "Installations réalisées" },
+  { token: "{{ entreprise.qualifications }}", label: "Qualifications (RGE…)" },
 ];
 
 const ALLOWED_TOKENS = new Set(TOKENIZABLE_VARIABLES.map((v) => v.token));
@@ -80,9 +80,6 @@ Tu dois retourner les chaînes EXACTES à remplacer par une variable, et rien d'
 - URL du logo (valeur d'un src d'image de logo) → {{ entreprise.logo_url }}
 - URL du site web de l'entreprise → {{ entreprise.site_web_canonique }}
 - Horaires d'ouverture → {{ entreprise.horaires }}
-- Numéro SIRET → {{ entreprise.siret }}
-- Prénom du fondateur/gérant → {{ entreprise.fondateur }}
-- Numéro d'attestation fluides frigorigènes → {{ entreprise.attestation_fluides }}
 - Liste de villes/zones d'intervention → {{ entreprise.zones_desservies }}
 
 NE JAMAIS TOUCHER : titres marketing, slogans, descriptions de services, textes génériques, noms de menus, mentions légales génériques, libellés de boutons, icônes, classes CSS, URLs d'images décoratives/illustrations.
