@@ -27,6 +27,8 @@ import {
   applyEnrichmentVariables,
   fetchEnrichmentSlice,
 } from "./enrichment-variables";
+import { applyProjectEnrichment } from "./project-enrichment";
+import type { StatItem } from "./menu-overrides";
 
 export interface ReviewItem {
   name: string;
@@ -133,13 +135,19 @@ export async function resolveEnterpriseVariables(
   }
 
   let reviews: ReviewItem[] = [];
+  // Enrichissement issu du projet (sortie edge function). Null tant qu'aucun
+  // projet n'est résolu — on retombe alors sur les données `entreprises`.
+  let projectServiceTags: string[] | null = null;
+  let projectStats: StatItem[] | null = null;
   if (projectId) {
     const [projResult, reviewsResult] = await Promise.all([
       supabase
         .from("lead_magnet_projects")
         .select(
           "override_entreprise_name, override_city, override_location, " +
-            "override_phone, override_email, override_address, variables"
+            "override_phone, override_email, override_address, variables, " +
+            "logo_url, service_tags_snapshot, stat_years_experience, " +
+            "stat_satisfied_clients, stat_installations_completed, stat_rge_count"
         )
         .eq("id", projectId)
         .single(),
@@ -159,6 +167,12 @@ export async function resolveEnterpriseVariables(
       override_email: string | null;
       override_address: string | null;
       variables: Record<string, unknown> | null;
+      logo_url: string | null;
+      service_tags_snapshot: string[] | string | null;
+      stat_years_experience: string | null;
+      stat_satisfied_clients: string | null;
+      stat_installations_completed: string | null;
+      stat_rge_count: string | null;
     } | null;
     if (proj) {
       if (proj.override_entreprise_name) {
@@ -183,6 +197,11 @@ export async function resolveEnterpriseVariables(
           }
         }
       }
+      // Enrichissement du projet (edge function) : logo, stats, zones desservies.
+      const projEnrichment = applyProjectEnrichment(vars, proj);
+      projectServiceTags = projEnrichment.serviceTags;
+      projectStats = projEnrichment.stats;
+      if (vars["entreprise.logo_url"]) logoUrl = vars["entreprise.logo_url"];
     }
 
     reviews = ((reviewsResult.data ?? []) as Array<{ author_name: string | null; review_text: string | null; rating: number | null }>).map((r) => ({
@@ -200,11 +219,16 @@ export async function resolveEnterpriseVariables(
 
   // Service tags of the active enterprise. Consumed by the renderers to
   // filter blocks/pages whose `service_tag` doesn't match the enterprise.
-  vars["__service_tags"] = JSON.stringify(serviceTags);
+  // Priorité au snapshot du projet (enrichissement), sinon entreprises.
+  const effectiveServiceTags = projectServiceTags ?? serviceTags;
+  vars["entreprise.services"] = effectiveServiceTags.join(", ");
+  vars["__service_tags"] = JSON.stringify(effectiveServiceTags);
 
-  // Stats: prefer site-level overrides, fall back to enterprise stats.
+  // Stats: priorité aux stats du projet (enrichissement), puis aux overrides
+  // du site, puis aux stats de l'entreprise.
   const siteStats = site.content_overrides?.stats;
-  const resolvedStats = Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats;
+  const resolvedStats = projectStats
+    ?? (Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats);
   vars["__stats"] = JSON.stringify(resolvedStats);
 
   // Enrichment (automated_enrichment) + derived variables. Fill-only: runs

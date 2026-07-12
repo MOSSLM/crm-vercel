@@ -26,7 +26,8 @@ describe("detectBracketTokens", () => {
     const byFind = Object.fromEntries(detectBracketTokens(html).map((t) => [t.find, t]));
     expect(byFind["[Nom de l'entreprise]"].suggestedToken).toBe("{{ entreprise.nom }}");
     expect(byFind["[XX XX XX XX XX]"].suggestedToken).toBe("{{ entreprise.telephone }}");
-    expect(byFind["[XXX XXX XXX XXXXX]"].suggestedToken).toBe("{{ entreprise.siret }}");
+    // SIRET n'est plus une variable Claude Design : le placeholder reste non mappé.
+    expect(byFind["[XXX XXX XXX XXXXX]"].suggestedToken).toBeNull();
     expect(byFind["[XX]"].suggestedToken).toBeNull();
   });
 });
