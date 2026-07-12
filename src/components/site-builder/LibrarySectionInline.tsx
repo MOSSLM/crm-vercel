@@ -12,6 +12,7 @@ import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
+import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
@@ -107,6 +108,13 @@ export async function LibrarySectionInline({
       if (Array.isArray(parsed)) tags = parsed.map((t) => String(t));
     } catch { /* no tags → strip all tagged regions */ }
     html = conditionServiceMarkup(html, serviceTagBySlug, tags);
+  }
+
+  // Hydrate review cards ([data-reviews]) from lead_magnet_reviews. Runs after
+  // service-tag conditioning; no-op when the design has no data-reviews grid or
+  // the company has no reviews (static example cards are kept as a fallback).
+  if (html.includes("data-reviews")) {
+    html = hydrateReviews(html, variables?.["__reviews"]);
   }
   if (typeof console !== "undefined") {
     console.info("[SB:ssr]", {
