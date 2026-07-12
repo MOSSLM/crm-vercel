@@ -204,21 +204,47 @@ affiché que si l'entreprise propose ce service, et retiré proprement sinon.
   formulation qui tient sans le chiffre.
 - **Note globale** : les variables existent déjà —
   `Note {{ entreprise.note_moyenne }}/5 — {{ entreprise.nombre_avis }} avis Google`.
-- **Avis** : écrire **3 avis d'exemple réalistes** (prénom + initiale, texte
-  crédible, 5 étoiles) en contenu statique — **sans crochets** (ils resteraient
-  affichés tels quels) — et envelopper la grille dans un conteneur marqué, pour
-  permettre l'hydratation automatique des avis Google :
+
+### Avis clients — hydratation automatique (marqueurs `data-*`)
+
+Les avis réels sont injectés automatiquement depuis la table
+`lead_magnet_reviews` de chaque entreprise. Tu n'écris **pas** de vrais avis : tu
+construis **une carte-modèle** que le CRM duplique et remplit (un exemplaire par
+avis). Marque la grille et les emplacements avec des attributs `data-*` :
+
+| Attribut | Emplacement | Rempli avec |
+|---|---|---|
+| `data-reviews` | conteneur de la grille d'avis | — |
+| `data-review-item` | **une** carte-modèle (la 1re sert de modèle) | dupliquée par avis |
+| `data-review-author` | élément du **nom** | nom de l'auteur (ex. `Marie L.`) |
+| `data-review-text` | élément du **texte** de l'avis | texte de l'avis |
+| `data-review-initials` | pastille avatar (à la place de la photo) | **initiales** = 1re lettre des 2 premiers mots du nom (`Marie Lefèvre` → `ML`) |
+| `data-review-stars` | conteneur des étoiles *(optionnel)* | `★` × la note |
 
 ```html
 <div class="reviews-grid" data-reviews>
   <article class="review-card" data-review-item>
-    <p class="review-text">« Intervention rapide et soignée, je recommande. »</p>
-    <p class="review-author">Marie L.</p>
-    <div class="review-rating">★★★★★</div>
+    <!-- Avatar = initiales, pas de photo -->
+    <div class="review-avatar" data-review-initials>ML</div>
+    <p class="review-text" data-review-text>Intervention rapide et soignée, je recommande.</p>
+    <p class="review-author" data-review-author>Marie L.</p>
+    <div class="review-rating" data-review-stars>★★★★★</div>
   </article>
-  <!-- 2 autres cartes identiques -->
+  <!-- Une seule carte suffit : le CRM la duplique par avis.
+       Tu peux en mettre 2-3 identiques pour visualiser la grille. -->
 </div>
 ```
+
+Règles importantes :
+- Le **contenu** des éléments marqués est **remplacé** : mets-y un texte
+  d'exemple (il ne s'affichera pas). N'entoure pas le texte de guillemets `«  »`
+  en dur dans `data-review-text` — ajoute-les en CSS (`::before`/`::after`) si tu
+  en veux.
+- L'**avatar** doit être une pastille de texte (les initiales), pas une balise
+  `<img>` : c'est voulu, il n'y a pas de photo de profil.
+- Prévois que la pastille reste lisible avec 1 ou 2 lettres.
+- S'il n'y a aucun avis en base, tes cartes d'exemple restent affichées telles
+  quelles (repli) — garde-les réalistes.
 
 ---
 
@@ -246,4 +272,6 @@ d'**identité de l'entreprise** (§2 et §3) sont variables.
       porteurs de `data-service-tag`.
 - [ ] Liens internes relatifs en `*.html` ; `<title>` génériques sans
       placeholder.
-- [ ] Avis en statique réaliste, grille marquée `data-reviews`.
+- [ ] Grille d'avis marquée `data-reviews` avec une carte `data-review-item`
+      portant `data-review-author`, `data-review-text` et
+      `data-review-initials` (avatar = initiales, pas de `<img>`).

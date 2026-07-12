@@ -12,6 +12,7 @@ import {
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
+import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
@@ -282,6 +283,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     let body = resolveVars(html, variables ?? SAMPLE_VARIABLES);
     if (variables) {
       body = conditionServiceMarkup(body, serviceTagBySlug, enterpriseTagsOf(variables));
+      body = hydrateReviews(body, variables["__reviews"]);
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     const extras = tweaksExtrasScript(tweaks);
