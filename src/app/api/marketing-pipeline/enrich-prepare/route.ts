@@ -36,7 +36,6 @@ type ProjectRow = {
   opportunite_id: string | null;
   statut: string | null;
   variables: Record<string, unknown> | null;
-  created_at: string | null;
 };
 
 type Prepared = { opportunity_id: string; project_id: string; created: boolean; reset: boolean };
@@ -73,20 +72,20 @@ export const POST = withAuth({ body: marketingEnrichPrepareSchema }, async ({ bo
 
   const [oppsRes, projectsRes] = await Promise.all([
     supabase.from("opportunites").select("id, entreprise_id").in("id", ids),
-    supabase
-      .from("lead_magnet_projects")
-      .select("id, opportunite_id, statut, variables, created_at")
-      .in("opportunite_id", ids)
-      .order("created_at", { ascending: false }),
+    // `opportunite_id` is UNIQUE on lead_magnet_projects (a DB trigger creates one
+    // per opportunity with `on conflict (opportunite_id)`), so there is at most one
+    // row per opportunity — no ordering/dedup needed. We intentionally avoid
+    // ordering by an optional column so a schema quirk can't blank this whole map
+    // and push every opportunity down the insert path into a unique-violation.
+    supabase.from("lead_magnet_projects").select("id, opportunite_id, statut, variables").in("opportunite_id", ids),
   ]);
 
   const oppById = new Map<string, OppRow>();
   for (const o of (oppsRes.data ?? []) as OppRow[]) oppById.set(o.id, o);
 
-  // Keep the most recent project per opportunity (rows are ordered desc above).
   const projectByOpp = new Map<string, ProjectRow>();
   for (const p of (projectsRes.data ?? []) as ProjectRow[]) {
-    if (p.opportunite_id && !projectByOpp.has(p.opportunite_id)) projectByOpp.set(p.opportunite_id, p);
+    if (p.opportunite_id) projectByOpp.set(p.opportunite_id, p);
   }
 
   const prepared: Prepared[] = [];
@@ -107,15 +106,21 @@ export const POST = withAuth({ body: marketingEnrichPrepareSchema }, async ({ bo
     const existing = projectByOpp.get(oppId);
 
     if (!existing) {
+      // Upsert on the unique `opportunite_id`: if the trigger already created a
+      // row we didn't see (e.g. the select above failed), this updates it instead
+      // of blowing up on a duplicate-key violation.
       const { data, error } = await supabase
         .from("lead_magnet_projects")
-        .insert({
-          opportunite_id: oppId,
-          entreprise_id: opp.entreprise_id,
-          pret_pour_lm: true,
-          statut: "draft",
-          ...(overwrite ? OVERWRITE_CLEARED_COLUMNS : {}),
-        })
+        .upsert(
+          {
+            opportunite_id: oppId,
+            entreprise_id: opp.entreprise_id,
+            pret_pour_lm: true,
+            statut: "draft",
+            ...(overwrite ? OVERWRITE_CLEARED_COLUMNS : {}),
+          },
+          { onConflict: "opportunite_id" },
+        )
         .select("id")
         .single();
       if (error || !data) {
