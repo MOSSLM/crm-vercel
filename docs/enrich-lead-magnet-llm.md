@@ -40,6 +40,13 @@ L'edge function lit ses secrets via `Deno.env` :
 - `OPENAI_API_KEY` — requis si le provider sélectionné est OpenAI.
 - `DEEPSEEK_API_KEY` — requis si le provider sélectionné est DeepSeek.
 - `GOOGLE_PLACES_API_KEY` — optionnel (avis/adresse Google, best-effort).
+- `JINA_API_KEY` — optionnel mais **fortement recommandé**. Le scraper
+  (`scraper.ts`) lit les sites via Jina Reader ; sans clé, la version gratuite
+  est rate-limitée et renvoie souvent du vide (échecs `home_unreachable_or_empty`
+  sur des sites pourtant en ligne). Avec la clé, quotas bien plus élevés. En
+  dernier recours, le scraper récupère aussi le HTML **en direct** (fallback sans
+  Jina), donc l'enrichissement fonctionne même sans cette clé, mais de façon
+  moins fiable sur les sites protégés (Cloudflare…).
 
 ## Déploiement
 
