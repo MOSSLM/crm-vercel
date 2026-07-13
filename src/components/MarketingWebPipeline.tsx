@@ -23,10 +23,18 @@ import {
   Maximize2,
   Minimize2,
   SlidersHorizontal,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { createAudit } from "@/utils/auditApi";
+import {
+  updateLeadMagnetProject,
+  createLeadMagnetReview,
+  updateLeadMagnetReview,
+  deleteLeadMagnetReview,
+} from "@/utils/leadMagnetV2Api";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -1314,6 +1322,21 @@ interface EditForm {
   service_tags: string;
   note_moyenne: string;
   nombre_avis: string;
+  horaires: string;
+  // lead_magnet_projects — overrides & enrichissement (sortie de l'edge function)
+  lm_override_name: string;
+  lm_override_city: string;
+  lm_override_location: string;
+  lm_override_phone: string;
+  lm_override_email: string;
+  lm_override_address: string;
+  lm_logo_url: string;
+  lm_service_tags_snapshot: string;
+  lm_zones: string;
+  lm_stat_years: string;
+  lm_stat_clients: string;
+  lm_stat_installations: string;
+  lm_stat_rge: string;
   // automated_enrichment
   enr_website_url: string;
   enr_emails: string;
@@ -1335,6 +1358,20 @@ const EMPTY_FORM: EditForm = {
   service_tags: "",
   note_moyenne: "",
   nombre_avis: "",
+  horaires: "",
+  lm_override_name: "",
+  lm_override_city: "",
+  lm_override_location: "",
+  lm_override_phone: "",
+  lm_override_email: "",
+  lm_override_address: "",
+  lm_logo_url: "",
+  lm_service_tags_snapshot: "",
+  lm_zones: "",
+  lm_stat_years: "",
+  lm_stat_clients: "",
+  lm_stat_installations: "",
+  lm_stat_rge: "",
   enr_website_url: "",
   enr_emails: "",
   enr_phones: "",
@@ -1342,6 +1379,27 @@ const EMPTY_FORM: EditForm = {
   enr_contact_page: "",
   enr_summary: "",
 };
+
+interface ReviewRow {
+  id?: string;
+  author_name: string;
+  review_text: string;
+  rating: string;
+  is_active: boolean;
+}
+
+/** "villes autour" jsonb → texte éditable (", ") : gère l'array ou le texte "; ". */
+function zonesFromVariables(variables: unknown): string {
+  if (!variables || typeof variables !== "object") return "";
+  const v = variables as Record<string, unknown>;
+  if (Array.isArray(v.surrounding_cities)) {
+    return v.surrounding_cities.filter((x): x is string => typeof x === "string").join(", ");
+  }
+  if (typeof v.surrounding_cities_text === "string") {
+    return v.surrounding_cities_text.split(/\s*;\s*/).filter(Boolean).join(", ");
+  }
+  return "";
+}
 
 const toArr = (s: string): string[] => s.split(",").map((x) => x.trim()).filter(Boolean);
 const fromArr = (a?: unknown): string => (Array.isArray(a) ? a.filter((x) => typeof x === "string").join(", ") : "");
@@ -1371,8 +1429,12 @@ const OpportunityEditModal: React.FC<{
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [enrichmentId, setEnrichmentId] = React.useState<string | null>(null);
+  const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
+  const deletedReviewIds = React.useRef<string[]>([]);
+  const variablesRef = React.useRef<Record<string, unknown>>({});
 
   const entrepriseId = item?.entreprise_id ?? null;
+  const projectId = item?.project?.id ?? null;
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1380,12 +1442,15 @@ const OpportunityEditModal: React.FC<{
     setLoading(true);
     setForm(EMPTY_FORM);
     setEnrichmentId(null);
+    setReviews([]);
+    deletedReviewIds.current = [];
+    variablesRef.current = {};
     (async () => {
-      const [compRes, enrRes] = await Promise.all([
+      const [compRes, enrRes, projRes, revRes] = await Promise.all([
         supabase
           .from("entreprises")
           .select(
-            "id, name, ville, code_postal, adresse, telephone, email, site_web_canonique, canonical_url, linkedin_url, service_tags, note_moyenne, nombre_avis",
+            "id, name, ville, code_postal, adresse, telephone, email, site_web_canonique, canonical_url, linkedin_url, service_tags, note_moyenne, nombre_avis, horaires, logo_url",
           )
           .eq("id", entrepriseId)
           .maybeSingle(),
@@ -1395,12 +1460,40 @@ const OpportunityEditModal: React.FC<{
           .eq("entreprise_id", entrepriseId)
           .order("updated_at", { ascending: false })
           .limit(1),
+        projectId
+          ? supabase
+              .from("lead_magnet_projects")
+              .select(
+                "override_entreprise_name, override_city, override_location, override_phone, override_email, override_address, logo_url, service_tags_snapshot, stat_years_experience, stat_satisfied_clients, stat_installations_completed, stat_rge_count, variables",
+              )
+              .eq("id", projectId)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        projectId
+          ? supabase
+              .from("lead_magnet_reviews")
+              .select("id, author_name, review_text, rating, is_active, display_order")
+              .eq("lead_magnet_project_id", projectId)
+              .order("display_order", { ascending: true })
+          : Promise.resolve({ data: [] }),
       ]);
       if (cancelled) return;
       const c = (compRes.data ?? {}) as Record<string, unknown>;
       const enrRows = (enrRes.data ?? []) as Array<Record<string, unknown>>;
       const e = enrRows[0] ?? {};
+      const p = (projRes.data ?? {}) as Record<string, unknown>;
+      variablesRef.current = (p.variables as Record<string, unknown>) ?? {};
+      const revRows = (revRes.data ?? []) as Array<Record<string, unknown>>;
       setEnrichmentId((e.id as string) ?? null);
+      setReviews(
+        revRows.map((r) => ({
+          id: r.id as string,
+          author_name: (r.author_name as string) ?? "",
+          review_text: (r.review_text as string) ?? "",
+          rating: numStr(r.rating) || "5",
+          is_active: r.is_active !== false,
+        })),
+      );
       setForm({
         name: (c.name as string) ?? "",
         ville: (c.ville as string) ?? "",
@@ -1413,6 +1506,20 @@ const OpportunityEditModal: React.FC<{
         service_tags: fromArr(c.service_tags),
         note_moyenne: numStr(c.note_moyenne),
         nombre_avis: numStr(c.nombre_avis),
+        horaires: (c.horaires as string) ?? "",
+        lm_override_name: (p.override_entreprise_name as string) ?? "",
+        lm_override_city: (p.override_city as string) ?? "",
+        lm_override_location: (p.override_location as string) ?? "",
+        lm_override_phone: (p.override_phone as string) ?? "",
+        lm_override_email: (p.override_email as string) ?? "",
+        lm_override_address: (p.override_address as string) ?? "",
+        lm_logo_url: ((p.logo_url as string) || (c.logo_url as string)) ?? "",
+        lm_service_tags_snapshot: fromArr(p.service_tags_snapshot),
+        lm_zones: zonesFromVariables(p.variables),
+        lm_stat_years: numStr(p.stat_years_experience),
+        lm_stat_clients: numStr(p.stat_satisfied_clients),
+        lm_stat_installations: numStr(p.stat_installations_completed),
+        lm_stat_rge: numStr(p.stat_rge_count),
         enr_website_url: (e.website_url as string) ?? "",
         enr_emails: fromArr(e.emails),
         enr_phones: fromArr(e.phones),
@@ -1425,10 +1532,21 @@ const OpportunityEditModal: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [item, entrepriseId, supabase]);
+  }, [item, entrepriseId, projectId, supabase]);
 
   const set = (k: keyof EditForm) => (ev: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
     setForm((f) => ({ ...f, [k]: ev.target.value }));
+
+  const setReview = (idx: number, patch: Partial<ReviewRow>) =>
+    setReviews((rs) => rs.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const addReview = () =>
+    setReviews((rs) => [...rs, { author_name: "", review_text: "", rating: "5", is_active: true }]);
+  const removeReview = (idx: number) =>
+    setReviews((rs) => {
+      const r = rs[idx];
+      if (r?.id) deletedReviewIds.current.push(r.id);
+      return rs.filter((_, i) => i !== idx);
+    });
 
   const missingRequired = SITE_REQUIRED.filter((r) => !r.ok(form)).map((r) => r.label);
   const invalidFields = new Set(SITE_REQUIRED.filter((r) => !r.ok(form)).map((r) => r.field));
@@ -1450,6 +1568,7 @@ const OpportunityEditModal: React.FC<{
         service_tags: toArr(form.service_tags),
         note_moyenne: form.note_moyenne === "" ? null : Number(form.note_moyenne),
         nombre_avis: form.nombre_avis === "" ? null : Number(form.nombre_avis),
+        horaires: form.horaires || null,
         manually_enriched: true,
         updated_at: new Date().toISOString(),
       })
@@ -1473,6 +1592,68 @@ const OpportunityEditModal: React.FC<{
     } else if (hasEnrData) {
       const { error } = await supabase.from("automated_enrichment").insert({ entreprise_id: entrepriseId, ...enrPayload });
       if (error) throw error;
+    }
+
+    // lead_magnet_projects : overrides, logo, stats, zones (sortie edge function)
+    if (projectId) {
+      const vars: Record<string, unknown> = { ...variablesRef.current };
+      const zones = toArr(form.lm_zones);
+      if (zones.length > 0) {
+        vars.surrounding_cities = zones;
+        vars.surrounding_cities_text = zones.join("; ");
+      } else {
+        delete vars.surrounding_cities;
+        delete vars.surrounding_cities_text;
+      }
+      await updateLeadMagnetProject(projectId, {
+        override_entreprise_name: form.lm_override_name || null,
+        override_city: form.lm_override_city || null,
+        override_location: form.lm_override_location || null,
+        override_phone: form.lm_override_phone || null,
+        override_email: form.lm_override_email || null,
+        override_address: form.lm_override_address || null,
+        logo_url: form.lm_logo_url || null,
+        service_tags_snapshot: toArr(form.lm_service_tags_snapshot),
+        stat_years_experience: form.lm_stat_years || null,
+        stat_satisfied_clients: form.lm_stat_clients || null,
+        stat_installations_completed: form.lm_stat_installations || null,
+        stat_rge_count: form.lm_stat_rge || null,
+        variables: vars,
+      });
+
+      // Avis : suppressions, puis créations / mises à jour
+      for (const id of deletedReviewIds.current) {
+        await deleteLeadMagnetReview(id);
+      }
+      deletedReviewIds.current = [];
+      for (let i = 0; i < reviews.length; i++) {
+        const r = reviews[i];
+        const author = r.author_name.trim();
+        const text = r.review_text.trim();
+        if (!author && !text) continue; // ligne vide ignorée
+        const rating = r.rating === "" ? 5 : Number(r.rating);
+        const display_order = i * 10 + 100;
+        if (r.id) {
+          await updateLeadMagnetReview(r.id, {
+            author_name: author,
+            review_text: text,
+            rating,
+            is_active: r.is_active,
+            display_order,
+          });
+        } else {
+          await createLeadMagnetReview({
+            lead_magnet_project_id: projectId,
+            author_name: author,
+            review_text: text,
+            rating,
+            is_active: r.is_active,
+            is_manual: true,
+            source: "manual",
+            display_order,
+          });
+        }
+      }
     }
     return true;
   };
@@ -1580,6 +1761,85 @@ const OpportunityEditModal: React.FC<{
                 </div>
               </div>
             </div>
+
+            {projectId ? (
+              <>
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Lead magnet — overrides &amp; logo</h4>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Ce que l&apos;enrichissement a produit et ce que le site utilise. Vide = la
+                    valeur entreprise ci-dessus est utilisée.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <Field label="Nom affiché (override)"><Input value={form.lm_override_name} onChange={set("lm_override_name")} placeholder={form.name} /></Field>
+                    <Field label="Logo (URL)"><Input value={form.lm_logo_url} onChange={set("lm_logo_url")} /></Field>
+                    <Field label="Téléphone (override)"><Input value={form.lm_override_phone} onChange={set("lm_override_phone")} placeholder={form.telephone} /></Field>
+                    <Field label="Email (override)"><Input value={form.lm_override_email} onChange={set("lm_override_email")} placeholder={form.email} /></Field>
+                    <Field label="Ville SEO (override)"><Input value={form.lm_override_city} onChange={set("lm_override_city")} placeholder={form.ville} /></Field>
+                    <Field label="Zone principale (grande ville proche)"><Input value={form.lm_override_location} onChange={set("lm_override_location")} /></Field>
+                    <Field label="Horaires"><Input value={form.horaires} onChange={set("horaires")} placeholder="Lun–Ven 8h–18h" /></Field>
+                    <div className="sm:col-span-2">
+                      <Field label="Adresse (override)"><Input value={form.lm_override_address} onChange={set("lm_override_address")} placeholder={form.adresse} /></Field>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Field label="Zones desservies (villes autour, séparées par des virgules)"><Input value={form.lm_zones} onChange={set("lm_zones")} placeholder="Annecy, Seynod, Cran-Gevrier" /></Field>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Field label="Service tags du lead magnet (virgules)"><Input value={form.lm_service_tags_snapshot} onChange={set("lm_service_tags_snapshot")} placeholder="climatisation, chauffage" /></Field>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Chiffres clés (stats)</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <Field label="Années d'expérience"><Input type="number" value={form.lm_stat_years} onChange={set("lm_stat_years")} /></Field>
+                    <Field label="Clients satisfaits"><Input type="number" value={form.lm_stat_clients} onChange={set("lm_stat_clients")} /></Field>
+                    <Field label="Installations"><Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} /></Field>
+                    <Field label="Qualifications (RGE)"><Input type="number" value={form.lm_stat_rge} onChange={set("lm_stat_rge")} /></Field>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold">Avis clients ({reviews.length})</h4>
+                    <button type="button" className="btn ghost sm" onClick={addReview}>
+                      <Plus className="ico-sm" /> Ajouter un avis
+                    </button>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    {reviews.length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Aucun avis. Ils sont créés par l&apos;enrichissement (table lead_magnet_reviews), ou ajoute-les à la main.
+                      </p>
+                    )}
+                    {reviews.map((r, i) => (
+                      <div key={r.id ?? `new-${i}`} className="rounded-lg border p-3 flex flex-col gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-end">
+                          <Field label="Nom"><Input value={r.author_name} onChange={(e) => setReview(i, { author_name: e.target.value })} placeholder="Marie L." /></Field>
+                          <Field label="Note"><Input type="number" min="1" max="5" step="0.5" className="w-20" value={r.rating} onChange={(e) => setReview(i, { rating: e.target.value })} /></Field>
+                          <label className="flex items-center gap-2 text-xs pb-2 whitespace-nowrap">
+                            <Checkbox checked={r.is_active} onCheckedChange={(v) => setReview(i, { is_active: v === true })} />
+                            Actif
+                          </label>
+                        </div>
+                        <Field label="Avis"><Textarea value={r.review_text} onChange={(e) => setReview(i, { review_text: e.target.value })} rows={2} /></Field>
+                        <div className="flex justify-end">
+                          <button type="button" className="btn ghost sm" onClick={() => removeReview(i)}>
+                            <Trash2 className="ico-sm" /> Supprimer
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Projet lead magnet non encore créé pour cette entreprise : les overrides,
+                stats et avis apparaîtront une fois l&apos;enrichissement lancé.
+              </p>
+            )}
           </div>
         )}
 
