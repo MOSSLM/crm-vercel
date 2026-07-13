@@ -27,6 +27,7 @@ import {
   Trash2,
   ArrowUpDown,
   AlertTriangle,
+  ArrowRightLeft,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
@@ -248,6 +249,7 @@ export const MarketingWebPipeline: React.FC = () => {
   const [topView, setTopView] = React.useState<TopView>("compact");
   const [bottomView, setBottomView] = React.useState<BottomView>("cards");
   const [sortBy, setSortBy] = React.useState<SortKey>("default");
+  const [moveTarget, setMoveTarget] = React.useState<string>("");
   // When enabled, re-enriching clears the previous enrichment output first so
   // the new run repopulates it from scratch (see /enrich-prepare `overwrite`).
   const [overwriteEnrich, setOverwriteEnrich] = React.useState(false);
@@ -642,6 +644,36 @@ export const MarketingWebPipeline: React.FC = () => {
     }
   };
 
+  // Reassign the selected opportunities to another CRM pipeline (e.g. move dead
+  // sites into "Entreprises sans site web"), landing them on its first stage.
+  const movePipeline = async (items: BoardItem[]) => {
+    if (!moveTarget) {
+      toast.error("Choisis d'abord un pipeline de destination");
+      return;
+    }
+    if (items.length === 0) {
+      toast.error("Aucune opportunité sélectionnée");
+      return;
+    }
+    setWorking("move-pipeline");
+    try {
+      const res = await authedFetch("/api/marketing-pipeline/move-pipeline", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunity_ids: items.map((it) => it.id), pipeline_id: moveTarget }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { moved?: number; pipeline_nom?: string; error?: string };
+      if (!res.ok) throw new Error(data.error || "Échec du déplacement");
+      toast.success(`${data.moved ?? items.length} opportunité(s) déplacée(s) vers ${data.pipeline_nom ?? "le pipeline"}`);
+      setMoveTarget("");
+      await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors du déplacement");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   /* ── Per-item bound render helpers (shared by top cards + bottom) ──────── */
 
   const busy = working !== null;
@@ -827,6 +859,33 @@ export const MarketingWebPipeline: React.FC = () => {
             {allSelectedInColumn ? <CheckSquare className="ico-sm" /> : <Square className="ico-sm" />}
             {allSelectedInColumn ? "Tout désélectionner" : "Tout sélectionner"}
           </button>
+        )}
+
+        {selectedCount > 0 && (board?.pipelines?.length ?? 0) > 0 && (
+          <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <Select value={moveTarget} onValueChange={setMoveTarget}>
+              <SelectTrigger className="h-7 min-w-[150px] text-[11.5px]" title="Déplacer vers un pipeline">
+                <SelectValue placeholder="Déplacer vers…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(board?.pipelines ?? []).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.nom}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <button
+              type="button"
+              className="btn ghost sm"
+              onClick={() => movePipeline(selectedItems())}
+              disabled={!moveTarget || busy}
+              title="Déplacer les opportunités sélectionnées vers ce pipeline"
+            >
+              {working === "move-pipeline" ? <Loader2 className="ico-sm animate-spin" /> : <ArrowRightLeft className="ico-sm" />}
+              Déplacer ({selectedCount})
+            </button>
+          </div>
         )}
 
         <ColumnActionBar
