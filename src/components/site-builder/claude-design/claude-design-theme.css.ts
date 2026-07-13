@@ -373,4 +373,16 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-design-actions>*{flex:1;}
 .cd-design-actions .cd-btn{width:100%;justify-content:center;height:28px;font-size:11.5px;}
 
+/* missing-images export (top of right inspector) */
+.cd-missimg{flex-shrink:0;padding:14px;border-bottom:1px solid var(--cd-border);}
+.cd-missimg-hd{display:flex;align-items:center;gap:9px;margin-bottom:11px;}
+.cd-missimg-ic{width:30px;height:30px;flex-shrink:0;border-radius:8px;background:var(--bg-2);color:var(--cd-accent);display:flex;align-items:center;justify-content:center;}
+.cd-missimg-hd b{font-size:12.5px;font-weight:600;display:block;line-height:1.3;}
+.cd-missimg-hd>.cd-grow>span{font-size:11px;color:var(--text-3);}
+.cd-missimg-count{flex-shrink:0;font-family:var(--font-mono);font-size:11px;font-weight:600;color:#fff;background:var(--cd-accent);padding:1px 8px;border-radius:99px;}
+.cd-missimg-pick{position:relative;}
+.cd-missimg-pick>.cd-btn{width:100%;justify-content:flex-start;}
+.cd-missimg-pop{top:36px;left:0;right:0;padding:6px;}
+.cd-missimg-hint{margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--text-3);}
+
 `;

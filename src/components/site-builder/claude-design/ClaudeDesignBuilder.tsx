@@ -18,6 +18,7 @@ import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filte
 import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
 import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
+import { MissingImagesPanel } from "./MissingImagesPanel";
 
 interface PageData {
   slug: string;
@@ -300,6 +301,10 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
 
         {/* RIGHT */}
         <aside className="cd-pane cd-inspector">
+          <MissingImagesPanel
+            designName={data.name}
+            pages={data.pages.map((p) => ({ slug: p.slug, title: p.title, html: p.html, overrides: p.overrides }))}
+          />
           <VariableBrowser siteId={siteId} company={company} companyVars={companyVars} onRetokenised={load} />
         </aside>
       </div>
