@@ -62,6 +62,16 @@ export const marketingEnrichPrepareSchema = z.object({
 });
 export type MarketingEnrichPreparePayload = z.infer<typeof marketingEnrichPrepareSchema>;
 
+/**
+ * Moves a batch of opportunities to another CRM pipeline from the Marketing &
+ * Web board (e.g. "Entreprises sans site web", "Streak mars/avril", "Général").
+ */
+export const marketingMovePipelineSchema = z.object({
+  opportunity_ids: z.array(z.string().uuid()).min(1).max(200),
+  pipeline_id: z.string().uuid(),
+});
+export type MarketingMovePipelinePayload = z.infer<typeof marketingMovePipelineSchema>;
+
 const channelEnum = z.enum(["email", "sms", "whatsapp", "linkedin", "telephone", "pas_defini"]);
 const directionEnum = z.enum(["entrant", "sortant"]);
 const outcomeEnum = z.enum(["positif", "neutre", "negatif", "inconnu"]);
