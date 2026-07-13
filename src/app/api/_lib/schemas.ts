@@ -50,6 +50,18 @@ export const enrichLeadMagnetSchema = z.object({
 });
 export type EnrichLeadMagnetPayload = z.infer<typeof enrichLeadMagnetSchema>;
 
+/**
+ * Prepares one or more opportunities for (re)enrichment on the Marketing & Web
+ * pipeline: ensures each has a `lead_magnet_projects` row and resets it to a
+ * re-runnable state. `overwrite` additionally clears the enrichment-derived
+ * columns so the next run repopulates them from scratch.
+ */
+export const marketingEnrichPrepareSchema = z.object({
+  opportunity_ids: z.array(z.string().uuid()).min(1).max(50),
+  overwrite: z.boolean().optional().default(false),
+});
+export type MarketingEnrichPreparePayload = z.infer<typeof marketingEnrichPrepareSchema>;
+
 const channelEnum = z.enum(["email", "sms", "whatsapp", "linkedin", "telephone", "pas_defini"]);
 const directionEnum = z.enum(["entrant", "sortant"]);
 const outcomeEnum = z.enum(["positif", "neutre", "negatif", "inconnu"]);
