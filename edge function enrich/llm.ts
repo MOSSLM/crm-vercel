@@ -242,12 +242,26 @@ function buildRequestBody(
   };
   if (isOpenAIReasoningModel(config.model)) {
     // GPT-5 / o-series : temperature non modifiable, jeton de sortie dédié.
-    body.max_completion_tokens = 2000;
+    // ATTENTION : ces modèles consomment leur budget en RAISONNEMENT interne
+    // AVANT de produire la sortie visible. Avec un budget trop bas (2000), tout
+    // part dans le raisonnement et la réponse revient VIDE ("contenu vide").
+    // On donne donc une marge large, et pour gpt-5 on plafonne l'effort de
+    // raisonnement à "minimal" (extraction structurée = pas besoin de raisonner
+    // longuement) → sortie fiable, plus rapide et moins chère.
+    body.max_completion_tokens = 16000;
+    if (/^gpt-5/i.test(config.model)) {
+      body.reasoning_effort = "minimal";
+    }
   } else {
     body.temperature = 0.1;
     body.max_tokens = 2000;
   }
   return body;
+}
+
+/** Budget temps par appel : les modèles de raisonnement sont plus lents. */
+function timeoutForModel(config: LlmConfig): number {
+  return config.provider === "openai" && isOpenAIReasoningModel(config.model) ? 90000 : 45000;
 }
 
 // ---------------------------------------------------------------------
@@ -261,7 +275,7 @@ async function callOnce(
 ): Promise<LLMExtraction | null> {
   const body = buildRequestBody(config, systemPrompt, userPrompt);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 45000);
+  const timeout = setTimeout(() => controller.abort(), timeoutForModel(config));
 
   try {
     const res = await fetch(endpointFor(config.provider), {
@@ -281,9 +295,20 @@ async function callOnce(
     }
 
     const data = await res.json();
-    const content = data?.choices?.[0]?.message?.content;
+    const choice = data?.choices?.[0];
+    const content = choice?.message?.content;
     if (typeof content !== "string" || content.trim().length === 0) {
-      console.warn(`${config.provider}: contenu vide dans la réponse`);
+      // Diagnostic : finish_reason="length" + reasoning_tokens élevés ⇒ le budget
+      // est parti dans le raisonnement (voir max_completion_tokens / reasoning_effort).
+      const finish = choice?.finish_reason ?? "?";
+      const refusal = choice?.message?.refusal;
+      const usage = data?.usage ?? {};
+      const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens ?? "?";
+      console.warn(
+        `${config.provider}/${config.model}: contenu vide ` +
+          `(finish_reason=${finish}, completion_tokens=${usage?.completion_tokens ?? "?"}, ` +
+          `reasoning_tokens=${reasoningTokens}${refusal ? `, refusal=${String(refusal).slice(0, 120)}` : ""})`,
+      );
       return null;
     }
     const parsed = parseJsonLoose(content);
