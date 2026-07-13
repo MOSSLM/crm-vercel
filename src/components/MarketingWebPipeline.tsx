@@ -343,6 +343,7 @@ export const MarketingWebPipeline: React.FC = () => {
     // removes the old "aucune opportunité … n'a de projet lead magnet" dead-end
     // and, when `overwrite`, wipes the previous enrichment first.
     let projectByOpp = new Map<string, string>();
+    let prepErrors: Array<{ opportunity_id: string; error: string }> = [];
     try {
       const prepRes = await authedFetch("/api/marketing-pipeline/enrich-prepare", {
         method: "POST",
@@ -352,21 +353,35 @@ export const MarketingWebPipeline: React.FC = () => {
       const prep = (await prepRes.json().catch(() => ({}))) as {
         prepared?: Array<{ opportunity_id: string; project_id: string }>;
         errors?: Array<{ opportunity_id: string; error: string }>;
+        error?: string;
       };
-      if (!prepRes.ok) throw new Error("Préparation de l'enrichissement échouée");
+      if (!prepRes.ok) throw new Error(prep.error || "Préparation de l'enrichissement échouée");
       projectByOpp = new Map((prep.prepared ?? []).map((p) => [p.opportunity_id, p.project_id]));
-      if ((prep.errors?.length ?? 0) > 0) {
-        toast.warning(`${prep.errors!.length} opportunité(s) ignorée(s) — pas d'entreprise liée`);
-      }
+      prepErrors = prep.errors ?? [];
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la préparation de l'enrichissement");
       setWorking(null);
       return;
     }
 
+    // Repli défensif : une opportunité qui a déjà un projet reste enrichissable
+    // même si la préparation n'a pas pu la (ré)initialiser côté serveur.
+    for (const it of items) {
+      if (!projectByOpp.has(it.id) && it.project?.id) projectByOpp.set(it.id, it.project.id);
+    }
+
+    // On remonte la VRAIE raison pour les opportunités réellement bloquées.
+    const blocked = prepErrors.filter((e) => !projectByOpp.has(e.opportunity_id));
+    if (blocked.length > 0) {
+      console.error("enrich-prepare a rejeté des opportunités :", blocked);
+      const sample = blocked[0]?.error ? ` — ${blocked[0].error}` : "";
+      toast.warning(`${blocked.length} opportunité(s) ignorée(s)${sample}`);
+    }
+
     const withProject = items.filter((it) => projectByOpp.has(it.id));
     if (withProject.length === 0) {
-      toast.error("Aucune opportunité enrichissable (entreprise liée manquante)");
+      const reason = blocked[0]?.error ? ` : ${blocked[0].error}` : "";
+      toast.error(`Aucune opportunité enrichissable${reason}`);
       setWorking(null);
       return;
     }
