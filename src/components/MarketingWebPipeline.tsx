@@ -25,6 +25,8 @@ import {
   SlidersHorizontal,
   Plus,
   Trash2,
+  ArrowUpDown,
+  AlertTriangle,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
@@ -63,7 +65,14 @@ interface BoardItem {
   tags: string | null;
   enriched: boolean;
   enrichment: { status: string | null; website_url: string | null } | null;
-  project: { id: string; pret_pour_lm: boolean; enrichment_validated: boolean; statut: string | null } | null;
+  project: {
+    id: string;
+    pret_pour_lm: boolean;
+    enrichment_validated: boolean;
+    statut: string | null;
+    enrichment_error: string | null;
+    enrichment_attempts: number | null;
+  } | null;
   site: {
     id: string;
     name: string | null;
@@ -103,6 +112,14 @@ interface BoardData {
 
 type TopView = "compact" | "cards";
 type BottomView = "cards" | "rows";
+type SortKey = "default" | "priority" | "enrichment" | "variables";
+
+const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
+  { value: "default", label: "Par défaut (récents)" },
+  { value: "priority", label: "Priorité (haute d'abord)" },
+  { value: "enrichment", label: "Enrichissement (à traiter d'abord)" },
+  { value: "variables", label: "Variables (incomplètes d'abord)" },
+];
 
 /* ── Column model ─────────────────────────────────────────────────────────── */
 
@@ -145,7 +162,7 @@ function siteEditHref(site: NonNullable<BoardItem["site"]>): string {
 }
 
 function statusText(column: number, item: BoardItem): { label: string; cls: string } {
-  if (column === 1) return { label: item.enriched ? "Enrichi" : "Non enrichi", cls: item.enriched ? "ok" : "" };
+  if (column === 1) return ENRICH_BADGE[enrichState(item)];
   if (column === 2) return { label: "Prêt pour LM", cls: "info" };
   if (column === 3 && item.site)
     return { label: STAGE_LABELS[item.site.build_stage] ?? item.site.build_stage, cls: "warn" };
@@ -155,6 +172,65 @@ function statusText(column: number, item: BoardItem): { label: string; cls: stri
       : { label: "Aucun audit", cls: "" };
   if (column === 5) return item.agent ? { label: item.agent.name, cls: "ok" } : { label: "Non attribué", cls: "" };
   return { label: "", cls: "" };
+}
+
+/**
+ * Enrichment state of an opportunity, derived first from its lead-magnet
+ * project run status (`framer`/`failed`/`processing` written by the edge
+ * function) and falling back to the `automated_enrichment` flag. Drives the
+ * column-1 badge, the "à traiter d'abord" sort and the relaunch affordance.
+ */
+type EnrichState = "success" | "failed" | "running" | "enriched" | "none";
+
+function enrichState(item: BoardItem): EnrichState {
+  const st = item.project?.statut;
+  if (st === "failed") return "failed";
+  if (st === "processing") return "running";
+  if (st === "framer" || st === "ready" || st === "published") return "success";
+  if (item.enriched) return "enriched";
+  return "none";
+}
+
+const ENRICH_BADGE: Record<EnrichState, { label: string; cls: string }> = {
+  success: { label: "Enrichi", cls: "ok" },
+  enriched: { label: "Enrichi", cls: "ok" },
+  running: { label: "En cours…", cls: "info" },
+  failed: { label: "Échec enrichissement", cls: "danger" },
+  none: { label: "Non enrichi", cls: "" },
+};
+
+/** Priority order for sorting: haute → moyenne → basse → none. */
+const PRIORITY_RANK: Record<string, number> = { haute: 0, moyenne: 1, basse: 2 };
+function priorityRank(p: string | null): number {
+  return p != null && p in PRIORITY_RANK ? PRIORITY_RANK[p] : 3;
+}
+
+/** Rank for "à traiter d'abord": failures then not-enriched, enriched last. */
+function enrichRank(item: BoardItem): number {
+  switch (enrichState(item)) {
+    case "failed":
+      return 0;
+    case "none":
+      return 1;
+    case "running":
+      return 2;
+    default:
+      return 3; // success / enriched
+  }
+}
+
+/** Returns a sorted copy of `items` for the chosen key (stable for "default"). */
+function sortItems(items: BoardItem[], key: SortKey): BoardItem[] {
+  if (key === "default") return items;
+  const withIndex = items.map((item, index) => ({ item, index }));
+  const cmp: Record<Exclude<SortKey, "default">, (a: BoardItem, b: BoardItem) => number> = {
+    priority: (a, b) => priorityRank(a.priorite) - priorityRank(b.priorite),
+    enrichment: (a, b) => enrichRank(a) - enrichRank(b),
+    variables: (a, b) => (b.missing_for_site?.length ?? 0) - (a.missing_for_site?.length ?? 0),
+  };
+  const fn = cmp[key];
+  withIndex.sort((a, b) => fn(a.item, b.item) || a.index - b.index);
+  return withIndex.map((w) => w.item);
 }
 
 /* ── Component ────────────────────────────────────────────────────────────── */
@@ -171,6 +247,10 @@ export const MarketingWebPipeline: React.FC = () => {
   const [pipelineFilter, setPipelineFilter] = React.useState<string>("all");
   const [topView, setTopView] = React.useState<TopView>("compact");
   const [bottomView, setBottomView] = React.useState<BottomView>("cards");
+  const [sortBy, setSortBy] = React.useState<SortKey>("default");
+  // When enabled, re-enriching clears the previous enrichment output first so
+  // the new run repopulates it from scratch (see /enrich-prepare `overwrite`).
+  const [overwriteEnrich, setOverwriteEnrich] = React.useState(false);
   const [working, setWorking] = React.useState<string | null>(null);
   const [editingItem, setEditingItem] = React.useState<BoardItem | null>(null);
   // When the edit modal is opened because a site can't be created yet, it shows
@@ -210,8 +290,11 @@ export const MarketingWebPipeline: React.FC = () => {
     const map = new Map<number, BoardItem[]>();
     for (const c of COLUMNS) map.set(c.key, []);
     for (const it of filteredItems) map.get(it.column)?.push(it);
+    if (sortBy !== "default") {
+      for (const c of COLUMNS) map.set(c.key, sortItems(map.get(c.key) ?? [], sortBy));
+    }
     return map;
-  }, [filteredItems]);
+  }, [filteredItems, sortBy]);
 
   const columnItems = itemsByColumn.get(selectedColumn) ?? [];
 
@@ -247,36 +330,60 @@ export const MarketingWebPipeline: React.FC = () => {
 
   /* ── Actions ──────────────────────────────────────────────────────────── */
 
-  const runEnrich = async (items: BoardItem[]) => {
-    const withProject = items.filter((it) => it.project?.id);
-    if (withProject.length === 0) {
-      toast.error("Aucune opportunité sélectionnée n'a de projet lead magnet à enrichir");
+  const runEnrich = async (items: BoardItem[], overwrite: boolean) => {
+    if (items.length === 0) {
+      toast.error("Aucune opportunité sélectionnée");
       return;
     }
-    const skipped = items.length - withProject.length;
-    if (skipped > 0) toast.warning(`${skipped} opportunité(s) ignorée(s) — pas de projet lead magnet`);
 
-    const projectIds = withProject.map((it) => it.project!.id);
+    setWorking("enrich");
+
+    // Server-side prep: ensure every opportunity has a lead-magnet project and
+    // reset already-enriched ones so the edge function actually re-runs. This
+    // removes the old "aucune opportunité … n'a de projet lead magnet" dead-end
+    // and, when `overwrite`, wipes the previous enrichment first.
+    let projectByOpp = new Map<string, string>();
+    try {
+      const prepRes = await authedFetch("/api/marketing-pipeline/enrich-prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunity_ids: items.map((it) => it.id), overwrite }),
+      });
+      const prep = (await prepRes.json().catch(() => ({}))) as {
+        prepared?: Array<{ opportunity_id: string; project_id: string }>;
+        errors?: Array<{ opportunity_id: string; error: string }>;
+      };
+      if (!prepRes.ok) throw new Error("Préparation de l'enrichissement échouée");
+      projectByOpp = new Map((prep.prepared ?? []).map((p) => [p.opportunity_id, p.project_id]));
+      if ((prep.errors?.length ?? 0) > 0) {
+        toast.warning(`${prep.errors!.length} opportunité(s) ignorée(s) — pas d'entreprise liée`);
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la préparation de l'enrichissement");
+      setWorking(null);
+      return;
+    }
+
+    const withProject = items.filter((it) => projectByOpp.has(it.id));
+    if (withProject.length === 0) {
+      toast.error("Aucune opportunité enrichissable (entreprise liée manquante)");
+      setWorking(null);
+      return;
+    }
+
+    const projectIds = withProject.map((it) => projectByOpp.get(it.id)!);
     const initialLogs: EnrichmentLogEntry[] = withProject.map((it) => ({
       opportunite_id: it.id,
       company_name: displayName(it),
-      project_id: it.project!.id,
+      project_id: projectByOpp.get(it.id)!,
       status: "pending",
     }));
 
     setEnrichLogs(initialLogs);
     setEnrichProgress({ current: 0, total: withProject.length, isComplete: false });
     setShowEnrichModal(true);
-    setWorking("enrich");
 
     try {
-      // The enrichment edge function only runs when pret_pour_lm is true.
-      const { error: flagErr } = await supabase
-        .from("lead_magnet_projects")
-        .update({ pret_pour_lm: true })
-        .in("id", projectIds);
-      if (flagErr) throw flagErr;
-
       let done = 0;
       const results = await Promise.allSettled(
         projectIds.map(async (id) => {
@@ -525,7 +632,7 @@ export const MarketingWebPipeline: React.FC = () => {
   const busy = working !== null;
 
   const cardHandlers = (item: BoardItem) => ({
-    onEnrich: () => runEnrich([item]),
+    onEnrich: () => runEnrich([item], overwriteEnrich),
     onValidateEnrich: () => validateEnrichment([item]),
     onCreateSite: () => createSites([item]),
     onValidateSite: () => validateSites([item]),
@@ -716,7 +823,9 @@ export const MarketingWebPipeline: React.FC = () => {
           setTemplateId={setTemplateId}
           agentId={agentId}
           setAgentId={setAgentId}
-          onEnrich={() => runEnrich(selectedItems())}
+          overwriteEnrich={overwriteEnrich}
+          setOverwriteEnrich={setOverwriteEnrich}
+          onEnrich={() => runEnrich(selectedItems(), overwriteEnrich)}
           onValidateEnrich={() => validateEnrichment(selectedItems())}
           onCreateSites={() => createSites(selectedItems())}
           onValidateSites={() => validateSites(selectedItems())}
@@ -724,6 +833,22 @@ export const MarketingWebPipeline: React.FC = () => {
           onValidateAudits={() => validateAudits(selectedItems())}
           onAssign={() => assignAgent(selectedItems())}
         />
+
+        <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <ArrowUpDown className="ico-sm ic" style={{ color: "var(--text-3)" }} />
+          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
+            <SelectTrigger className="h-7 min-w-[170px] text-[11.5px]" title="Trier l'affichage">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {SORT_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
         <div className="seg" aria-label="Affichage de la liste">
           <button type="button" className="s icon" aria-pressed={bottomView === "cards"} onClick={() => setBottomView("cards")} title="Cartes">
@@ -810,6 +935,8 @@ interface ActionBarProps {
   setTemplateId: (v: string) => void;
   agentId: string;
   setAgentId: (v: string) => void;
+  overwriteEnrich: boolean;
+  setOverwriteEnrich: (v: boolean) => void;
   onEnrich: () => void;
   onValidateEnrich: () => void;
   onCreateSites: () => void;
@@ -828,6 +955,8 @@ const ColumnActionBar: React.FC<ActionBarProps> = ({
   setTemplateId,
   agentId,
   setAgentId,
+  overwriteEnrich,
+  setOverwriteEnrich,
   onEnrich,
   onValidateEnrich,
   onCreateSites,
@@ -842,9 +971,21 @@ const ColumnActionBar: React.FC<ActionBarProps> = ({
   if (column === 1) {
     return (
       <>
+        <label
+          className="flex items-center gap-1.5 text-[11.5px] whitespace-nowrap"
+          style={{ color: "var(--text-3)", cursor: "pointer" }}
+          title="Vide l'enrichissement précédent avant de relancer, pour repartir de zéro (les corrections manuelles seront perdues)."
+        >
+          <Checkbox
+            checked={overwriteEnrich}
+            onCheckedChange={(v) => setOverwriteEnrich(v === true)}
+            className="h-3.5 w-3.5"
+          />
+          Écraser
+        </label>
         <button type="button" className="btn ghost sm" onClick={onEnrich} disabled={none || working !== null}>
           {spin("enrich") ? <Loader2 className="ico-sm animate-spin" /> : <Sparkles className="ico-sm" />}
-          Enrichir ({selectedCount})
+          {overwriteEnrich ? "Ré-enrichir" : "Enrichir"} ({selectedCount})
         </button>
         <button type="button" className="btn accent sm" onClick={onValidateEnrich} disabled={none || working !== null}>
           {spin("validate-enrich") ? <Loader2 className="ico-sm animate-spin" /> : <Check className="ico-sm" />}
@@ -1017,21 +1158,53 @@ const OppCard: React.FC<OppCardProps> = ({
 
 const CardBody: React.FC<{ column: number; item: BoardItem; website?: string }> = ({ column, item, website }) => {
   if (column === 1) {
+    const state = enrichState(item);
+    const badge = ENRICH_BADGE[state];
+    const err = item.project?.enrichment_error;
+    const attempts = item.project?.enrichment_attempts ?? 0;
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span className={`pill ${item.enriched ? "ok" : ""}`} style={{ fontSize: 10 }}>
-          {item.enriched ? "Enrichi" : "Non enrichi"}
-        </span>
-        {item.enrichment?.website_url ? (
-          <a href={normalizeUrl(item.enrichment.website_url)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--info)" }}>
-            {item.enrichment.website_url}
-          </a>
-        ) : website ? (
-          <a href={website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-3)" }}>
-            {item.company_url}
-          </a>
-        ) : (
-          <span style={{ fontSize: 11, color: "var(--text-4)" }}>Aucun site connu</span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <span className={`pill ${badge.cls}`} style={{ fontSize: 10 }}>
+            {badge.label}
+          </span>
+          {state === "failed" && attempts > 0 && (
+            <span style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>
+              {attempts} essai{attempts > 1 ? "s" : ""}
+            </span>
+          )}
+          {item.enrichment?.website_url ? (
+            <a href={normalizeUrl(item.enrichment.website_url)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--info)" }}>
+              {item.enrichment.website_url}
+            </a>
+          ) : website ? (
+            <a href={website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-3)" }}>
+              {item.company_url}
+            </a>
+          ) : (
+            <span style={{ fontSize: 11, color: "var(--text-4)" }}>Aucun site connu</span>
+          )}
+        </div>
+        {state === "failed" && err && (
+          <div
+            title={err}
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 5,
+              fontSize: 10.5,
+              lineHeight: 1.35,
+              color: "var(--danger)",
+              background: "var(--danger-tint)",
+              borderRadius: 6,
+              padding: "4px 7px",
+            }}
+          >
+            <AlertTriangle className="ico-sm" style={{ flexShrink: 0, marginTop: 1 }} />
+            <span style={{ overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+              {err}
+            </span>
+          </div>
         )}
       </div>
     );
@@ -1125,11 +1298,12 @@ const CardFooter: React.FC<FooterProps> = ({
   onAssign,
 }) => {
   if (column === 1) {
+    const failed = enrichState(item) === "failed";
     return (
       <>
-        <button type="button" className="btn ghost sm" onClick={onEnrich} disabled={disabled || !item.project}>
-          <Sparkles className="ico-sm" />
-          Enrichir
+        <button type="button" className="btn ghost sm" onClick={onEnrich} disabled={disabled}>
+          {failed ? <RefreshCw className="ico-sm" /> : <Sparkles className="ico-sm" />}
+          {failed ? "Relancer" : "Enrichir"}
         </button>
         <button type="button" className="btn subtle sm" onClick={onValidateEnrich} disabled={disabled || !item.project}>
           <Check className="ico-sm" />

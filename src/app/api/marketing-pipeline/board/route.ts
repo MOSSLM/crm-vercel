@@ -72,6 +72,12 @@ type ProjectRow = {
   enrichment_validated?: boolean | null;
 };
 
+type EnrichMetaRow = {
+  id: string;
+  enrichment_error: string | null;
+  enrichment_attempts: number | null;
+};
+
 type EnrichRow = {
   entreprise_id: number | null;
   status: string | null;
@@ -191,6 +197,23 @@ export const GET = withAuth({}, async () => {
   if (entsRes.error) return jsonError(entsRes.error.message, 500);
   if (sitesRes.error) return jsonError(sitesRes.error.message, 500);
 
+  // Enrichment run metadata (statut/error/attempts written by the edge function).
+  // These columns are optional: the board degrades gracefully if a DB predates
+  // them, exactly like `enrichment_validated` above.
+  const enrichMetaById = new Map<string, EnrichMetaRow>();
+  {
+    const projectIds = projectRows.map((p) => p.id);
+    if (projectIds.length > 0) {
+      const metaRes = await supabase
+        .from("lead_magnet_projects")
+        .select("id, enrichment_error, enrichment_attempts")
+        .in("id", projectIds);
+      if (!metaRes.error) {
+        for (const row of (metaRes.data ?? []) as EnrichMetaRow[]) enrichMetaById.set(row.id, row);
+      }
+    }
+  }
+
   const isValidated = (p: ProjectRow) =>
     hasValidatedColumn ? p.enrichment_validated === true : p.pret_pour_lm === true;
 
@@ -289,6 +312,8 @@ export const GET = withAuth({}, async () => {
             pret_pour_lm: project.pret_pour_lm === true,
             enrichment_validated: isValidated(project),
             statut: project.statut,
+            enrichment_error: enrichMetaById.get(project.id)?.enrichment_error ?? null,
+            enrichment_attempts: enrichMetaById.get(project.id)?.enrichment_attempts ?? null,
           }
         : null,
       site: site
