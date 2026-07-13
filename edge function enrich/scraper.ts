@@ -8,18 +8,26 @@
 // pourtant bien en ligne.
 //
 // Pour fiabiliser :
-//   1. On envoie la clé `JINA_API_KEY` si elle est présente (quotas bien plus
-//      élevés) et on retente sur 429 / 5xx.
-//   2. Si Jina échoue quand même, on récupère le HTML EN DIRECT et on le
-//      convertit en texte nous-mêmes (fallback sans dépendance externe).
-//   3. On tente plusieurs variantes d'URL pour la home (chemin d'origine,
+//   1. Stratégie adaptative selon la présence de `JINA_API_KEY` :
+//        - avec clé  → Jina d'abord (rendu JS, contourne les protections),
+//          fetch direct en secours, retries sur 429/5xx ;
+//        - sans clé  → fetch direct d'abord (Jina gratuit est quasi toujours
+//          en 429), Jina en tout dernier recours, sans retry.
+//   2. Coupe-circuit : dès que Jina renvoie 429 sur un site, on cesse de le
+//      solliciter pour les autres pages du même site (évite d'attendre pour rien).
+//   3. Fetch direct avec un User-Agent de navigateur (réduit les 403).
+//   4. On tente plusieurs variantes d'URL pour la home (chemin d'origine,
 //      origine, http, bascule www) avant d'abandonner.
 // =====================================================================
 
 const JINA_BASE = "https://r.jina.ai/";
 const JINA_API_KEY = Deno.env.get("JINA_API_KEY") ?? "";
+// Sans clé, Jina gratuit est presque toujours en 429 : inutile de le tenter en
+// premier ni de le retenter. On l'utilise alors seulement en dernier recours.
+const HAS_JINA_KEY = JINA_API_KEY.length > 0;
+// UA d'un vrai navigateur : beaucoup de sites renvoient 403 aux UA "bot".
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; SamaDigitalEnrichBot/1.0; +https://samadigitalstudio.fr)";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
 
 // Longueur minimale de contenu pour considérer une page utile.
 const MIN_HOME_CHARS = 100;
@@ -169,16 +177,26 @@ function htmlToText(html: string): string {
   return header ? `${header}\n\n${s}` : s;
 }
 
+/** État de scraping partagé sur toute la durée d'un site (1 project). */
+interface ScrapeState {
+  // Une fois Jina rate-limité, inutile de le re-solliciter pour les autres pages.
+  jinaRateLimited: boolean;
+}
+
+type JinaResult = { text: string | null; rateLimited: boolean };
+
 // ---------------------------------------------------------------------
 // Récupération via Jina Reader (avec clé + retries sur 429/5xx).
+// Sans clé, aucun retry (le 429 gratuit ne se résout pas en 1-2 s).
 // ---------------------------------------------------------------------
-async function fetchJina(targetUrl: string, timeoutMs = 20000, retries = 2): Promise<string | null> {
+async function fetchJina(targetUrl: string, timeoutMs = 20000): Promise<JinaResult> {
   const jinaUrl = `${JINA_BASE}${targetUrl}`;
   const headers: Record<string, string> = {
     "X-Return-Format": "markdown",
     Accept: "text/plain",
   };
   if (JINA_API_KEY) headers.Authorization = `Bearer ${JINA_API_KEY}`;
+  const retries = HAS_JINA_KEY ? 2 : 0;
 
   for (let attempt = 0; attempt <= retries; attempt++) {
     const controller = new AbortController();
@@ -187,17 +205,23 @@ async function fetchJina(targetUrl: string, timeoutMs = 20000, retries = 2): Pro
       const res = await fetch(jinaUrl, { method: "GET", headers, signal: controller.signal });
       if (res.ok) {
         const text = await res.text();
-        if (text && text.trim().length > 0) return text;
-        return null;
+        return { text: text && text.trim().length > 0 ? text : null, rateLimited: false };
       }
-      // Rate-limit / erreur serveur transitoire → on retente avec un backoff.
-      if ((res.status === 429 || res.status >= 500) && attempt < retries) {
-        console.warn(`Jina ${res.status} for ${targetUrl} — retry ${attempt + 1}/${retries}`);
+      if (res.status === 429) {
+        if (attempt < retries) {
+          console.warn(`Jina 429 for ${targetUrl} — retry ${attempt + 1}/${retries}`);
+          await sleep(1200 * (attempt + 1));
+          continue;
+        }
+        console.warn(`Jina 429 (rate limited) for ${targetUrl}`);
+        return { text: null, rateLimited: true };
+      }
+      if (res.status >= 500 && attempt < retries) {
         await sleep(1200 * (attempt + 1));
         continue;
       }
       console.warn(`Jina fetch non-OK ${res.status} for ${targetUrl}`);
-      return null;
+      return { text: null, rateLimited: false };
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.warn(`Jina fetch error for ${targetUrl}: ${msg}`);
@@ -205,12 +229,12 @@ async function fetchJina(targetUrl: string, timeoutMs = 20000, retries = 2): Pro
         await sleep(1000 * (attempt + 1));
         continue;
       }
-      return null;
+      return { text: null, rateLimited: false };
     } finally {
       clearTimeout(timeout);
     }
   }
-  return null;
+  return { text: null, rateLimited: false };
 }
 
 // ---------------------------------------------------------------------
@@ -250,17 +274,38 @@ async function fetchDirect(targetUrl: string, timeoutMs = 15000): Promise<string
   }
 }
 
-/** Récupère une page via Jina, puis fallback direct si besoin. */
-async function fetchPage(targetUrl: string, minChars: number, timeoutMs = 15000): Promise<string | null> {
-  const viaJina = await fetchJina(targetUrl, timeoutMs);
-  if (viaJina && viaJina.trim().length >= minChars) return viaJina;
-  const direct = await fetchDirect(targetUrl, timeoutMs);
-  if (direct && direct.trim().length >= minChars) return direct;
-  // On garde le meilleur contenu partiel disponible (mieux que rien pour le LLM).
-  const best = [viaJina, direct]
-    .filter((v): v is string => !!v && v.trim().length > 0)
-    .sort((a, b) => b.length - a.length)[0];
-  return best ?? null;
+/** Tente Jina en tenant compte du coupe-circuit de rate-limit du run. */
+async function tryJina(targetUrl: string, state: ScrapeState, timeoutMs: number): Promise<string | null> {
+  if (state.jinaRateLimited) return null; // déjà rate-limité sur ce site → on n'insiste pas
+  const res = await fetchJina(targetUrl, timeoutMs);
+  if (res.rateLimited) state.jinaRateLimited = true;
+  return res.text;
+}
+
+/**
+ * Récupère une page. Stratégie :
+ *   - avec clé Jina → Jina d'abord (rendu JS, contourne les protections), direct en secours ;
+ *   - sans clé → direct d'abord (Jina gratuit est quasi toujours en 429), Jina en dernier recours.
+ * Garde le meilleur contenu partiel si aucune source n'atteint `minChars`.
+ */
+async function fetchPage(
+  targetUrl: string,
+  minChars: number,
+  state: ScrapeState,
+  timeoutMs = 15000,
+): Promise<string | null> {
+  const jina = () => tryJina(targetUrl, state, timeoutMs);
+  const direct = () => fetchDirect(targetUrl, timeoutMs);
+  const order = HAS_JINA_KEY ? [jina, direct] : [direct, jina];
+
+  const gathered: string[] = [];
+  for (const source of order) {
+    const out = await source();
+    if (out && out.trim().length >= minChars) return out;
+    if (out && out.trim().length > 0) gathered.push(out);
+  }
+  // Aucune source complète → on renvoie le meilleur contenu partiel disponible.
+  return gathered.sort((a, b) => b.length - a.length)[0] ?? null;
 }
 
 /**
@@ -274,12 +319,13 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
     return { base_url: "", pages: [], total_chars: 0, accessible: false, error: "invalid_url" };
   }
   const { origin, candidates } = built;
+  const state: ScrapeState = { jinaRateLimited: false };
 
   // On tente la home sur chaque variante jusqu'à obtenir du contenu utile.
   let homeMarkdown: string | null = null;
   let homeUrl = origin;
   for (const candidate of candidates) {
-    const md = await fetchPage(candidate, MIN_HOME_CHARS);
+    const md = await fetchPage(candidate, MIN_HOME_CHARS, state);
     if (md && md.trim().length >= MIN_HOME_CHARS) {
       homeMarkdown = md;
       homeUrl = candidate;
@@ -302,7 +348,7 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
   // Pages secondaires en parallèle (relatives à l'origine).
   const secondaryFetches = SECONDARY_PATHS.map(async (path) => {
     const u = `${origin}/${path}`;
-    const md = await fetchPage(u, MIN_SECONDARY_CHARS, 10000);
+    const md = await fetchPage(u, MIN_SECONDARY_CHARS, state, 10000);
     if (md && md.trim().length >= MIN_SECONDARY_CHARS) {
       return { url: u, path: `/${path}`, markdown: md };
     }

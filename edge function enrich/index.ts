@@ -19,7 +19,7 @@
 
 import type { EnrichRequest, EnrichResponse, EnrichResult } from "./types.ts";
 import { scrapeWebsite, buildSiteContext } from "./scraper.ts";
-import { fetchGooglePlace, resolvePlaceId } from "./google.ts";
+import { fetchGooglePlace, resolvePlaceId, isV1PlaceId, searchPlaceId, extractLatLngFromUrl } from "./google.ts";
 import { extractWithLLM } from "./llm.ts";
 import {
   makeSupabaseClient,
@@ -102,24 +102,38 @@ async function processOne(projectId: string): Promise<EnrichResult> {
     }
 
     // 5. Google Places (best-effort)
-    const placeId = resolvePlaceId(
-      ctx.entreprise.google_place_id,
-      ctx.entreprise.google_url,
-      ctx.entreprise.google_maps_url,
-    );
     let googleData = null;
-    if (placeId && GOOGLE_PLACES_API_KEY) {
-      console.log(`[${projectId}] fetching google place: ${placeId}`);
-      googleData = await fetchGooglePlace(placeId, GOOGLE_PLACES_API_KEY);
-      if (!googleData) {
-        console.warn(`[${projectId}] google place fetch returned null (api error or no data)`);
-      }
-    } else if (!placeId) {
-      const hasFallbackReviews = Array.isArray(ctx.entreprise.google_reviews_5star) && ctx.entreprise.google_reviews_5star.length > 0;
-      const hasFallbackCount = ctx.entreprise.nombre_avis != null && ctx.entreprise.nombre_avis > 0;
-      console.log(`[${projectId}] no google_place_id → skip API (fallback: nombre_avis=${ctx.entreprise.nombre_avis}, reviews_stored=${hasFallbackReviews})`);
-    } else {
+    if (!GOOGLE_PLACES_API_KEY) {
       console.warn(`[${projectId}] GOOGLE_PLACES_API_KEY missing in secrets`);
+    } else {
+      const rawPlaceId = resolvePlaceId(
+        ctx.entreprise.google_place_id,
+        ctx.entreprise.google_url,
+        ctx.entreprise.google_maps_url,
+      );
+      // L'ancien format "ftid" (0x...:0x...) est rejeté par l'API v1 : on le
+      // re-résout par une recherche texte nom + ville (match vérifié).
+      let placeId = rawPlaceId && isV1PlaceId(rawPlaceId) ? rawPlaceId : null;
+      if (!placeId) {
+        if (rawPlaceId) {
+          console.log(`[${projectId}] place_id hérité (${rawPlaceId}) non exploitable par l'API v1 → recherche par nom`);
+        }
+        // On biaise la recherche avec les coordonnées de l'URL Google si dispo.
+        const latLng =
+          extractLatLngFromUrl(ctx.entreprise.google_url) ??
+          extractLatLngFromUrl(ctx.entreprise.google_maps_url);
+        placeId = await searchPlaceId(ctx.entreprise.name, ctx.entreprise.ville, GOOGLE_PLACES_API_KEY, latLng);
+      }
+      if (placeId) {
+        console.log(`[${projectId}] fetching google place: ${placeId}`);
+        googleData = await fetchGooglePlace(placeId, GOOGLE_PLACES_API_KEY);
+        if (!googleData) {
+          console.warn(`[${projectId}] google place fetch returned null (api error or no data)`);
+        }
+      } else {
+        const hasFallbackReviews = Array.isArray(ctx.entreprise.google_reviews_5star) && ctx.entreprise.google_reviews_5star.length > 0;
+        console.log(`[${projectId}] pas de place_id exploitable → skip Google (fallback: nombre_avis=${ctx.entreprise.nombre_avis}, reviews_stored=${hasFallbackReviews})`);
+      }
     }
 
     // 6. LLM extraction (provider/modèle configurables via enrichment_llm_settings)
