@@ -125,8 +125,13 @@ export async function LibrarySectionInline({
 
   // Section-level service-tag conditioning for raw Claude Design markup. Runs
   // AFTER overrides so positional override paths aren't shifted by stripping.
-  // Only relevant when the design carries data-service-tag regions.
-  if (html.includes("data-service-tag") || (serviceTagBySlug && Object.keys(serviceTagBySlug).length > 0)) {
+  // Relevant when the design carries data-service-tag regions, service-page
+  // links, or a lead/"devis" form with [data-svc] service tiles.
+  if (
+    html.includes("data-service-tag") ||
+    html.includes("data-svc") ||
+    (serviceTagBySlug && Object.keys(serviceTagBySlug).length > 0)
+  ) {
     html = conditionServiceMarkup(html, serviceTagBySlug, enterpriseTags);
   }
 

@@ -84,4 +84,18 @@ describe("conditionServiceMarkup", () => {
     const plain = `<div><h3>Hello</h3></div>`;
     expect(conditionServiceMarkup(plain, undefined, [])).toBe(plain);
   });
+
+  it("also filters the lead-form [data-svc] service tiles by enterprise tags", () => {
+    const form = `<div class="dv-tiles">
+      <button data-svc="climatisation">Climatisation</button>
+      <button data-svc="chauffage">Chauffage</button>
+      <button data-svc="photovoltaique">Photovoltaïque</button>
+    </div>`;
+    // No sitemap link map, no data-service-tag — the form tiles must still be
+    // conditioned off the company's own service tags.
+    const out = conditionServiceMarkup(form, undefined, ["climatisation"]);
+    expect(out).toContain('data-svc="climatisation"');
+    expect(out).not.toContain('data-svc="chauffage"');
+    expect(out).not.toContain('data-svc="photovoltaique"');
+  });
 });
