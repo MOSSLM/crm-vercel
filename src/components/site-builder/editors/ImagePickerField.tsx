@@ -20,11 +20,16 @@ interface ImagePickerFieldProps {
   siteId?: string;
   /** Light theme — for the inline trigger on light surfaces (Contenu workspace). */
   light?: boolean;
+  /** Fired when a library image is picked, with the FULL ranked item (carries
+   *  its `service_tags`). Used by the home-page image-set builder to inherit the
+   *  tags a candidate represents. When set, picking a library image calls this
+   *  instead of closing the picker. */
+  onPickItem?: (item: MediaLibraryItemRanked) => void;
 }
 
 type Tab = "url" | "upload" | "library" | "site";
 
-export function ImagePickerField({ setting, value, onChange, siteId, light }: ImagePickerFieldProps) {
+export function ImagePickerField({ setting, value, onChange, siteId, light, onPickItem }: ImagePickerFieldProps) {
   const [tab, setTab] = useState<Tab>("url");
   const [open, setOpen] = useState(false);
   const [urlInput, setUrlInput] = useState(value ?? "");
@@ -286,7 +291,11 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
                       <LibraryGrid
                         items={suggested}
                         currentValue={value}
-                        onPick={(url) => { onChange(url); setOpen(false); }}
+                        onPick={(item) => {
+                          if (onPickItem) { onPickItem(item); return; }
+                          onChange(item.public_url);
+                          setOpen(false);
+                        }}
                       />
                     </div>
                   )}
@@ -306,7 +315,11 @@ export function ImagePickerField({ setting, value, onChange, siteId, light }: Im
                         <LibraryGrid
                           items={others}
                           currentValue={value}
-                          onPick={(url) => { onChange(url); setOpen(false); }}
+                          onPick={(item) => {
+                            if (onPickItem) { onPickItem(item); return; }
+                            onChange(item.public_url);
+                            setOpen(false);
+                          }}
                         />
                       )}
                     </div>
@@ -374,14 +387,14 @@ function LibraryGrid({
 }: {
   items: MediaLibraryItemRanked[];
   currentValue: string;
-  onPick: (url: string) => void;
+  onPick: (item: MediaLibraryItemRanked) => void;
 }) {
   return (
     <div className="grid grid-cols-3 gap-1.5">
       {items.map((item) => (
         <button
           key={item.id}
-          onClick={() => onPick(item.public_url)}
+          onClick={() => onPick(item)}
           className={`relative group rounded overflow-hidden border-2 transition-all ${
             currentValue === item.public_url
               ? "border-blue-400"

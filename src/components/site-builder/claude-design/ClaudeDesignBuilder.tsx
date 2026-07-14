@@ -104,9 +104,16 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const active = data?.pages.find((p) => p.slug === activeSlug) ?? null;
   const serviceTagBySlug = React.useMemo(() => serviceTagMapFromSitemap(data?.sitemap ?? []), [data?.sitemap]);
 
-  const handleEdit = (key: string, entry: OverrideEntry) => {
+  // Apply one or more override changes atomically. `null` deletes a key. A
+  // single object avoids the React stale-closure bug when several keys change
+  // together (e.g. saving an image set clears the slot's single-image keys).
+  const applyOverrideUpdates = (updates: Record<string, OverrideEntry | null>) => {
     if (!data || !active) return;
-    const overrides = { ...active.overrides, [key]: entry };
+    const overrides = { ...active.overrides };
+    for (const [k, v] of Object.entries(updates)) {
+      if (v === null) delete overrides[k];
+      else overrides[k] = v;
+    }
     setData({ ...data, pages: data.pages.map((p) => p.slug === active.slug ? { ...p, overrides } : p) });
     debounce(`ov-${active.instanceId}`, async () => {
       await authedFetch(`/api/site-builder/claude/${siteId}/pages`, {
@@ -115,6 +122,8 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
       });
     });
   };
+
+  const handleEdit = (key: string, entry: OverrideEntry | null) => applyOverrideUpdates({ [key]: entry });
 
   const handleTweak = (k: string, v: string) => {
     if (!data) return;
@@ -292,6 +301,8 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               tweaks={data.tweaks}
               overrides={active.overrides}
               onEdit={handleEdit}
+              onEditBatch={applyOverrideUpdates}
+              isHome={active.slug === "/"}
               variables={previewVars}
               simViewportHeight={getSimulatedViewportHeight(viewport)}
               onNavigate={(slug) => { if (data.pages.some((p) => p.slug === slug)) setActiveSlug(slug); }}

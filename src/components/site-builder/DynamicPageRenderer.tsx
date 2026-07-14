@@ -26,6 +26,7 @@ import type { ReviewItem } from "@/lib/site-resolver";
 import { extractClassTokens } from "@/lib/library-section/preprocess";
 import { generateTailwindCSS } from "@/lib/library-section/tailwind-jit";
 import { LibrarySectionInline } from "./LibrarySectionInline";
+import type { CompanyImage } from "@/lib/site-builder/claude-design/fill-empty-placeholders";
 import { LibrarySectionHydrator } from "./LibrarySectionHydrator";
 import { ClaudeDesignAssets, type ClaudeDesignAssetsData } from "./claude-design/ClaudeDesignAssets";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
@@ -150,11 +151,33 @@ interface DynamicPageRendererProps {
   /** Claude design only: slug → service_tag. Links to a service the enterprise
    *  lacks (nav / footer / expertise cards) are removed from raw sections. */
   serviceTagBySlug?: Record<string, string>;
+  /** Linked company id — enables auto-filling empty image placeholders from its
+   *  library (Claude designs only). */
+  enterpriseId?: number | null;
 }
 
 /** Server component: renders a dynamic-sections page for the public site */
-export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances, claudeDesign, serviceTagBySlug }: DynamicPageRendererProps) {
+export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variables = {}, reviews = [], menus, preloadedInstances, claudeDesign, serviceTagBySlug, enterpriseId }: DynamicPageRendererProps) {
   const supabase = getServiceClient();
+
+  // Claude designs: pre-load the company's ranked library images ONCE, so empty
+  // image placeholders can be auto-filled at render time (a safety net — the
+  // template normally fills every slot ahead of time). Only for a linked company.
+  let companyImages: CompanyImage[] | undefined;
+  if (claudeDesign && enterpriseId) {
+    const { data: ranked } = await supabase.rpc("media_library_by_company", { p_entreprise_id: enterpriseId });
+    if (Array.isArray(ranked)) {
+      companyImages = (ranked as Array<Record<string, unknown>>)
+        .filter((r) => Number(r.match_count) > 0 || r.is_universal === true)
+        .slice(0, 40)
+        .map((r) => ({
+          url: String(r.public_url ?? ""),
+          tags: Array.isArray(r.service_tags) ? (r.service_tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
+          alt: typeof r.alt_text === "string" ? r.alt_text : null,
+        }))
+        .filter((img) => img.url);
+    }
+  }
 
   type RenderInstance = SiteSectionInstance & { section_def: SiteSectionDef | null };
   const allInstances = (preloadedInstances ?? []) as RenderInstance[];
@@ -374,6 +397,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
             <LibrarySectionInline
               key={instance.id}
               serviceTagBySlug={claudeDesign ? serviceTagBySlug : undefined}
+              companyImages={claudeDesign ? companyImages : undefined}
               instanceId={instance.id}
               code={ts.code}
               content={content}

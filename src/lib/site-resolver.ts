@@ -35,6 +35,8 @@ function getServiceClient() {
 
 export interface ResolvedSite {
   siteId: string;
+  /** Linked company id (null on a template). Enables per-company image fill. */
+  enterpriseId?: number | null;
   config: SiteConfig;
   enterpriseVariables: Record<string, string>;
   companyName?: string;
@@ -187,6 +189,7 @@ export async function resolveSite(
 
   return {
     siteId: siteRow.id,
+    enterpriseId: (siteRow as { enterprise_id?: number | null }).enterprise_id ?? null,
     config,
     enterpriseVariables: vars,
     companyName,
@@ -280,6 +283,7 @@ export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | n
 
   return {
     siteId: siteRow.id,
+    enterpriseId: (siteRow as { enterprise_id?: number | null }).enterprise_id ?? null,
     config,
     enterpriseVariables: vars,
     companyName,

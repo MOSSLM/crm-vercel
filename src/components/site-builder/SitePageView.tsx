@@ -36,6 +36,7 @@ export async function SitePageView({ subdomain, host, pageSlug }: SitePageViewPr
   const {
     enterpriseVariables,
     siteId,
+    enterpriseId,
     reviews,
     publishedInstances,
     publishedStyleGuide,
@@ -77,6 +78,7 @@ export async function SitePageView({ subdomain, host, pageSlug }: SitePageViewPr
       preloadedInstances={publishedInstances}
       claudeDesign={claudeDesign}
       serviceTagBySlug={claudeDesign ? serviceTagMapFromSitemap(publishedSitemap) : undefined}
+      enterpriseId={enterpriseId}
     />
   );
 }

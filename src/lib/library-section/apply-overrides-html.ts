@@ -26,6 +26,7 @@ export interface OverrideEntry {
     | "image"
     | "image_mobile"
     | "bg_image"
+    | "image_set"
     | "link_href"
     | "button_href"
     | "attr"
@@ -153,6 +154,11 @@ export function applyOverridesToHTML(
             break;
           case "bg_image":
             setBackgroundImage(el, value);
+            break;
+          case "image_set":
+            // Multi-candidate image slot. Resolved per company by
+            // resolveImageSets() right after this pass — skip it here (not a
+            // failure) so its positional path isn't shifted before resolution.
             break;
           case "link_href":
           case "button_href":
