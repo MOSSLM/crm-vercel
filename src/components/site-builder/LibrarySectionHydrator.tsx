@@ -14,6 +14,7 @@ import React, { useEffect } from "react";
 import { hydrateRoot, createRoot, type Root } from "react-dom/client";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
+import { parseImageSet, pickCandidate } from "@/lib/site-builder/claude-design/image-set";
 import { FormBlockSection } from "./FormBlockSection";
 
 interface OverrideEntry {
@@ -23,6 +24,7 @@ interface OverrideEntry {
     | "image"
     | "image_mobile"
     | "bg_image"
+    | "image_set"
     | "link_href"
     | "button_href"
     | "attr"
@@ -30,6 +32,16 @@ interface OverrideEntry {
     | "remove";
   value: string;
   meta?: { attrName?: string; style?: Record<string, string> };
+}
+
+/** Enterprise service tags parsed from the section payload variables. */
+function enterpriseTagsFromVars(variables: Record<string, string>): string[] {
+  try {
+    const parsed = JSON.parse(variables["__service_tags"] ?? "[]");
+    return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === "string") : [];
+  } catch {
+    return [];
+  }
 }
 
 interface SectionPayload {
@@ -84,6 +96,7 @@ function applyOverridesToContainer(
   // matching the DOM path numbering used at edit time.
   const root = findSectionRoot(container);
   if (!root) return;
+  const enterpriseTags = enterpriseTagsFromVars(variables);
   for (const key of Object.keys(overrides)) {
     const entry = overrides[key];
     if (!entry || typeof entry.value !== "string") continue;
@@ -148,6 +161,29 @@ function applyOverridesToContainer(
               el.style.backgroundPosition = "center";
               el.style.backgroundRepeat = "no-repeat";
               // Claude `.ph` placeholder → mark filled + hide the waiting label.
+              if (/(^|\s)ph(\s|$)/.test(el.className)) {
+                el.classList.add("has-img");
+                const label = el.querySelector<HTMLElement>(".ph-label");
+                if (label) label.style.display = "none";
+              }
+            }
+          }
+          break;
+        }
+        case "image_set": {
+          // Multi-candidate slot: pick the image matching this company's tags
+          // (same ranking as the SSR resolver) and apply it as img/background.
+          const chosen = pickCandidate(parseImageSet(entry.value).candidates, enterpriseTags);
+          const url = chosen?.url;
+          if (url) {
+            if (el instanceof HTMLImageElement) {
+              if (el.getAttribute("src") !== url) el.setAttribute("src", url);
+            } else if (el instanceof HTMLElement) {
+              const bg = `url("${url.replace(/"/g, '\\"')}")`;
+              if (el.style.backgroundImage !== bg) el.style.backgroundImage = bg;
+              el.style.backgroundSize = "cover";
+              el.style.backgroundPosition = "center";
+              el.style.backgroundRepeat = "no-repeat";
               if (/(^|\s)ph(\s|$)/.test(el.className)) {
                 el.classList.add("has-img");
                 const label = el.querySelector<HTMLElement>(".ph-label");

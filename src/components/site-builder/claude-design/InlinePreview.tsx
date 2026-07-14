@@ -16,9 +16,12 @@ import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
+import { parseImageSet, serializeImageSet, type ImageSetCandidate } from "@/lib/site-builder/claude-design/image-set";
+import type { MediaLibraryItemRanked } from "@/types";
+import { X as XIcon, ArrowUp, ArrowDown, Sparkles } from "lucide-react";
 
 export interface OverrideEntry {
-  kind: "text" | "image" | "bg_image" | "remove";
+  kind: "text" | "image" | "bg_image" | "image_set" | "remove";
   value: string;
 }
 
@@ -41,8 +44,17 @@ interface Props {
    *  cards) are removed — mirroring how tagged pages are hidden. */
   serviceTagBySlug?: Record<string, string>;
   overrides: Record<string, OverrideEntry>;
-  /** Called when the user edits text/image inline. key is "path:kind". */
-  onEdit: (key: string, entry: OverrideEntry) => void;
+  /** Called when the user edits text/image inline. key is "path:kind".
+   *  Passing `null` as the entry deletes that override key. */
+  onEdit: (key: string, entry: OverrideEntry | null) => void;
+  /** Atomic multi-key override update (avoids React stale-closure when several
+   *  keys change together, e.g. saving an image set clears the single-image
+   *  keys on the same slot). `null` deletes a key. */
+  onEditBatch?: (updates: Record<string, OverrideEntry | null>) => void;
+  /** True on the site's home page — enables the multi-image "set" builder
+   *  (fallbacks by service) in the image picker. Service pages don't need it
+   *  (they are already hidden when the company lacks the service). */
+  isHome?: boolean;
   /** Real company variables (Entreprises tab). When set, the preview uses them
    *  instead of sample values and filters service-tag regions accordingly. */
   variables?: Record<string, string> | null;
@@ -93,6 +105,30 @@ const CD_HELPERS = `
     if(!el) return;
     if(el.tagName==='IMG') el.setAttribute('src', url); else window.__cdApplyBg(el, url);
   };
+  // Normalise a tag the same way formatServiceTag does (strip accents, lower).
+  function fmt(t){ return String(t||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim(); }
+  // Pick the candidate best matching window.__enterpriseTags (mirrors pickCandidate):
+  // most shared service tags win; else a universal ('all'/untagged) one; else the first.
+  window.__cdPickCandidate = function(cands){
+    if(!cands || !cands.length) return null;
+    var tags = Array.isArray(window.__enterpriseTags) ? window.__enterpriseTags.map(fmt) : [];
+    var comp = {}; tags.forEach(function(t){ if(t) comp[t]=1; });
+    var best=null, bestScore=0;
+    for(var i=0;i<cands.length;i++){
+      var ct=(cands[i].tags||[]).map(fmt);
+      var score=0; for(var j=0;j<ct.length;j++){ if(ct[j]!=='all' && comp[ct[j]]) score++; }
+      if(score>bestScore){ bestScore=score; best=cands[i]; }
+    }
+    if(best && bestScore>0) return best;
+    for(var k=0;k<cands.length;k++){ var t2=(cands[k].tags||[]).map(fmt); if(t2.length===0 || t2.indexOf('all')!==-1) return cands[k]; }
+    return cands[0];
+  };
+  window.__cdApplyImageSet = function(el, value){
+    if(!el) return;
+    var cands=[]; try{ var p=JSON.parse(value); if(p && Array.isArray(p.candidates)) cands=p.candidates; }catch(e){}
+    var chosen=window.__cdPickCandidate(cands);
+    if(chosen && chosen.url) window.__cdApplyImg(el, chosen.url);
+  };
 })();
 `;
 
@@ -106,7 +142,10 @@ const OVERRIDES_APPLY = `
   if(!root) return;
   var OV = window.__cdOverrides || {};
   function nodeAt(path){ var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n; }
-  Object.keys(OV).forEach(function(key){ var e=OV[key]; var p=key.split(':')[0].split('.').map(Number); var el=nodeAt(p); if(!el) return; if(e.kind==='text') el.textContent=e.value; else if(e.kind==='image') window.__cdApplyImg(el, e.value); else if(e.kind==='bg_image') window.__cdApplyBg(el, e.value); else if(e.kind==='remove') el.style.setProperty('display','none','important'); });
+  // Apply image_set overrides LAST so a resolved set wins over any stale
+  // single-image override left on the same slot.
+  var keys = Object.keys(OV).sort(function(a,b){ var ai=OV[a].kind==='image_set'?1:0, bi=OV[b].kind==='image_set'?1:0; return ai-bi; });
+  keys.forEach(function(key){ var e=OV[key]; var p=key.split(':')[0].split('.').map(Number); var el=nodeAt(p); if(!el) return; if(e.kind==='text') el.textContent=e.value; else if(e.kind==='image') window.__cdApplyImg(el, e.value); else if(e.kind==='bg_image') window.__cdApplyBg(el, e.value); else if(e.kind==='image_set') window.__cdApplyImageSet(el, e.value); else if(e.kind==='remove') el.style.setProperty('display','none','important'); });
 })();
 `;
 
@@ -164,6 +203,7 @@ const EDIT_SCRIPT = `
   window.addEventListener('message', function(ev){
     var d = ev.data; if(!d || d.source!=='cd-parent') return;
     if(d.kind==='set-image' && Array.isArray(d.path)){ var el=nodeAt(d.path); if(el){ if(d.imgKind==='bg_image') window.__cdApplyBg(el, d.value); else window.__cdApplyImg(el, d.value); } }
+    if(d.kind==='set-image-set' && Array.isArray(d.path)){ var el2=nodeAt(d.path); if(el2){ window.__cdApplyImageSet(el2, d.value); } }
   });
 
   // ---- Delete affordance for REPEATED items (cards, list entries, steps) ----
@@ -232,9 +272,20 @@ const EDIT_SCRIPT = `
 `;
 
 /** Faithful per-page preview with inline text/image editing. */
-export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, siteId, serviceTagBySlug, overrides, onEdit, variables, onNavigate, onHeight, className, simViewportHeight }: Props) {
+export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, siteId, serviceTagBySlug, overrides, onEdit, onEditBatch, isHome, variables, onNavigate, onHeight, className, simViewportHeight }: Props) {
   const onEditRef = React.useRef(onEdit);
   onEditRef.current = onEdit;
+  const onEditBatchRef = React.useRef(onEditBatch);
+  onEditBatchRef.current = onEditBatch;
+  const overridesRef = React.useRef(overrides);
+  overridesRef.current = overrides;
+  const isHomeRef = React.useRef(isHome);
+  isHomeRef.current = isHome;
+  // Apply a set of override changes atomically (falls back to per-key onEdit).
+  const applyUpdates = React.useCallback((updates: Record<string, OverrideEntry | null>) => {
+    if (onEditBatchRef.current) { onEditBatchRef.current(updates); return; }
+    for (const [k, v] of Object.entries(updates)) onEditRef.current(k, v);
+  }, []);
   const onNavRef = React.useRef(onNavigate);
   onNavRef.current = onNavigate;
   const onHeightRef = React.useRef(onHeight);
@@ -242,7 +293,15 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   // Open when an image/placeholder zone in the preview is clicked → the shared
   // ImagePickerField. `kind` is "image" for <img>, "bg_image" for placeholders.
-  const [picker, setPicker] = React.useState<{ path: number[]; current: string; kind: "image" | "bg_image" } | null>(null);
+  // On the home page the picker can switch to "set" mode to build a list of
+  // fallback candidates tagged by service.
+  const [picker, setPicker] = React.useState<{
+    path: number[];
+    current: string;
+    kind: "image" | "bg_image";
+    mode: "single" | "set";
+    candidates: ImageSetCandidate[];
+  } | null>(null);
 
   React.useEffect(() => {
     const handler = (ev: MessageEvent) => {
@@ -250,7 +309,23 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
       if (!d || d.source !== "cd") return;
       if (d.kind === "nav") { if (typeof d.slug === "string") onNavRef.current?.(d.slug); return; }
       if (d.kind === "height") { if (typeof d.value === "number") onHeightRef.current?.(d.value); return; }
-      if (d.kind === "image-request") { if (Array.isArray(d.path)) setPicker({ path: d.path, current: String(d.current ?? ""), kind: d.imgKind === "bg_image" ? "bg_image" : "image" }); return; }
+      if (d.kind === "image-request") {
+        if (!Array.isArray(d.path)) return;
+        const pathKey = d.path.join(".");
+        const existingSet = overridesRef.current[`${pathKey}:image_set`];
+        const candidates = existingSet?.value ? parseImageSet(existingSet.value).candidates : [];
+        // Open in set mode when the slot already holds a set (any page), or on
+        // the home page as soon as the operator wants multiple fallbacks.
+        const mode: "single" | "set" = candidates.length > 0 ? "set" : "single";
+        setPicker({
+          path: d.path,
+          current: String(d.current ?? ""),
+          kind: d.imgKind === "bg_image" ? "bg_image" : "image",
+          mode,
+          candidates,
+        });
+        return;
+      }
       if (d.kind === "remove") { if (Array.isArray(d.path)) onEditRef.current(`${d.path.join(".")}:remove`, { kind: "remove", value: "" }); return; }
       if (!Array.isArray(d.path)) return;
       const key = `${d.path.join(".")}:${d.kind}`;
@@ -260,12 +335,62 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     return () => window.removeEventListener("message", handler);
   }, []);
 
+  // Single image: set the slot's :image/:bg_image override and clear any set.
   const handlePick = (url: string) => {
     if (!picker) return;
-    const key = `${picker.path.join(".")}:${picker.kind}`;
-    onEditRef.current(key, { kind: picker.kind, value: url });
+    const pathKey = picker.path.join(".");
+    applyUpdates({
+      [`${pathKey}:${picker.kind}`]: { kind: picker.kind, value: url },
+      [`${pathKey}:image_set`]: null,
+    });
     // Live-update the node in the iframe without re-rendering the whole srcDoc.
     iframeRef.current?.contentWindow?.postMessage({ source: "cd-parent", kind: "set-image", path: picker.path, imgKind: picker.kind, value: url }, "*");
+    setPicker(null);
+  };
+
+  // Add a picked library image (with its service tags) to the current set.
+  const addCandidate = (item: MediaLibraryItemRanked) => {
+    setPicker((p) => {
+      if (!p) return p;
+      if (p.candidates.some((c) => c.url === item.public_url)) return p; // no dupes
+      const cand: ImageSetCandidate = {
+        url: item.public_url,
+        tags: Array.isArray(item.service_tags) ? item.service_tags : [],
+        alt: item.alt_text ?? undefined,
+      };
+      return { ...p, candidates: [...p.candidates, cand] };
+    });
+  };
+
+  const removeCandidate = (i: number) =>
+    setPicker((p) => (p ? { ...p, candidates: p.candidates.filter((_, idx) => idx !== i) } : p));
+
+  const moveCandidate = (i: number, dir: -1 | 1) =>
+    setPicker((p) => {
+      if (!p) return p;
+      const j = i + dir;
+      if (j < 0 || j >= p.candidates.length) return p;
+      const next = [...p.candidates];
+      [next[i], next[j]] = [next[j], next[i]];
+      return { ...p, candidates: next };
+    });
+
+  // Save the set: write the :image_set override, clear the single-image keys.
+  const saveSet = () => {
+    if (!picker) return;
+    const pathKey = picker.path.join(".");
+    if (picker.candidates.length === 0) {
+      // Empty set → drop it entirely (revert to placeholder).
+      applyUpdates({ [`${pathKey}:image_set`]: null });
+    } else {
+      const value = serializeImageSet(picker.candidates);
+      applyUpdates({
+        [`${pathKey}:image_set`]: { kind: "image_set", value },
+        [`${pathKey}:image`]: null,
+        [`${pathKey}:bg_image`]: null,
+      });
+      iframeRef.current?.contentWindow?.postMessage({ source: "cd-parent", kind: "set-image-set", path: picker.path, value }, "*");
+    }
     setPicker(null);
   };
 
@@ -286,6 +411,9 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
       body = hydrateReviews(body, variables["__reviews"]);
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
+    // Enterprise tags drive image-set resolution in the iframe. Empty when
+    // previewing with sample data → a set falls back to its first candidate.
+    const enterpriseTagsJson = JSON.stringify(variables ? enterpriseTagsOf(variables) : []).replace(/</g, "\\u003c");
     const extras = tweaksExtrasScript(tweaks);
     // Preview-only vh→px rewriter: a `100vh`/`100dvh`/`min-h-screen` hero
     // otherwise resolves against the (growing) iframe height the canvas reports
@@ -310,7 +438,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // extras, then the editor's own interaction script.
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (
@@ -329,18 +457,112 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
           className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4"
           onClick={() => setPicker(null)}
         >
-          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-2 text-sm font-medium text-gray-900">Changer l’image</div>
-            <ImagePickerField
-              setting={{ type: "image_picker", id: "cd-img", label: "" }}
-              value={picker.current}
-              onChange={handlePick}
-              siteId={siteId}
-              light
-            />
-            <div className="mt-3 text-right">
-              <button className="text-xs text-gray-500 hover:text-gray-800" onClick={() => setPicker(null)}>Fermer</button>
+          <div
+            className={`w-full ${picker.mode === "set" ? "max-w-lg" : "max-w-md"} rounded-xl bg-white p-4 shadow-2xl`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-medium text-gray-900">
+                {picker.mode === "set" ? "Set d’images (fallback par service)" : "Changer l’image"}
+              </div>
+              {isHome && (
+                <div className="flex rounded-md border border-gray-200 p-0.5 text-[11px]">
+                  <button
+                    className={`rounded px-2 py-0.5 ${picker.mode === "single" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-800"}`}
+                    onClick={() => setPicker((p) => (p ? { ...p, mode: "single" } : p))}
+                  >
+                    Une image
+                  </button>
+                  <button
+                    className={`rounded px-2 py-0.5 ${picker.mode === "set" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-800"}`}
+                    onClick={() => setPicker((p) => (p ? { ...p, mode: "set" } : p))}
+                  >
+                    Plusieurs
+                  </button>
+                </div>
+              )}
             </div>
+
+            {picker.mode === "single" ? (
+              <ImagePickerField
+                setting={{ type: "image_picker", id: "cd-img", label: "" }}
+                value={picker.current}
+                onChange={handlePick}
+                siteId={siteId}
+                light
+              />
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[11px] leading-snug text-gray-500">
+                  Ajoute plusieurs images. Au déploiement, seule celle qui correspond aux
+                  services de l’entreprise s’affiche (à défaut : une image universelle, sinon la première).
+                </p>
+
+                {picker.candidates.length > 0 && (
+                  <div className="space-y-1.5">
+                    {picker.candidates.map((c, i) => (
+                      <div key={`${c.url}-${i}`} className="flex items-center gap-2 rounded-lg border border-gray-200 p-1.5">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={c.url} alt="" className="h-10 w-14 flex-none rounded object-cover" />
+                        <div className="min-w-0 flex-1">
+                          {c.tags.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {c.tags.map((t) => (
+                                <span key={t} className="inline-flex items-center gap-0.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-600">
+                                  {t === "all" && <Sparkles size={8} className="text-amber-500" />}
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] italic text-gray-400">Sans tag (universelle)</span>
+                          )}
+                        </div>
+                        <div className="flex flex-none items-center gap-0.5 text-gray-400">
+                          <button title="Monter" className="rounded p-1 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30" disabled={i === 0} onClick={() => moveCandidate(i, -1)}>
+                            <ArrowUp size={12} />
+                          </button>
+                          <button title="Descendre" className="rounded p-1 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-30" disabled={i === picker.candidates.length - 1} onClick={() => moveCandidate(i, 1)}>
+                            <ArrowDown size={12} />
+                          </button>
+                          <button title="Retirer" className="rounded p-1 text-red-400 hover:bg-red-50 hover:text-red-600" onClick={() => removeCandidate(i)}>
+                            <XIcon size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div>
+                  <div className="mb-1 text-[11px] font-medium text-gray-600">Ajouter une image</div>
+                  <ImagePickerField
+                    setting={{ type: "image_picker", id: "cd-img-set", label: "" }}
+                    value=""
+                    onChange={() => {}}
+                    onPickItem={addCandidate}
+                    siteId={siteId}
+                    light
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <button className="text-xs text-gray-500 hover:text-gray-800" onClick={() => setPicker(null)}>Annuler</button>
+                  <button
+                    className="rounded-md bg-gray-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-gray-700"
+                    onClick={saveSet}
+                  >
+                    {picker.candidates.length === 0 ? "Retirer le set" : `Enregistrer le set (${picker.candidates.length})`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {picker.mode === "single" && (
+              <div className="mt-3 text-right">
+                <button className="text-xs text-gray-500 hover:text-gray-800" onClick={() => setPicker(null)}>Fermer</button>
+              </div>
+            )}
           </div>
         </div>,
         document.body,

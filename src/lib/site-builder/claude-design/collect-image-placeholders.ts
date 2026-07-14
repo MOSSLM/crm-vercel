@@ -70,12 +70,14 @@ function collapse(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** True when an override already gives this slot an image, or removes it. */
+/** True when an override already gives this slot an image (single or a set), or
+ *  removes it. */
 function isResolved(pathStr: string, overrides: Record<string, OverrideEntry>): boolean {
   const bg = overrides[`${pathStr}:bg_image`];
   const img = overrides[`${pathStr}:image`];
+  const set = overrides[`${pathStr}:image_set`];
   const removed = overrides[`${pathStr}:remove`];
-  return !!removed || !!bg?.value || !!img?.value;
+  return !!removed || !!bg?.value || !!img?.value || !!set?.value;
 }
 
 /**

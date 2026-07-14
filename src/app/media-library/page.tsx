@@ -115,6 +115,9 @@ export default function MediaLibraryPage() {
   const [deleteConfirmIds, setDeleteConfirmIds] = React.useState<string[] | null>(null);
   const [bulkTagOpen, setBulkTagOpen] = React.useState(false);
 
+  // AI auto-tag
+  const [autoTagging, setAutoTagging] = React.useState(false);
+
   const fetchItems = React.useCallback(async () => {
     setLoading(true);
     try {
@@ -183,6 +186,52 @@ export default function MediaLibraryPage() {
     }
   }
 
+  // Auto-tag + describe images with the vision AI. With `ids`, analyses those
+  // (chunked); without, sweeps the untagged images until none remain.
+  const runAutoTag = React.useCallback(
+    async (ids?: string[]) => {
+      setAutoTagging(true);
+      const t = toast.loading("Analyse IA en cours…");
+      let updated = 0;
+      const post = async (payload: Record<string, unknown>) => {
+        const res = await authedFetch("/api/media/auto-tag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Échec");
+        return data as { updated: number; done: boolean; processed: number };
+      };
+      try {
+        if (ids && ids.length > 0) {
+          for (let i = 0; i < ids.length; i += 24) {
+            const data = await post({ ids: ids.slice(i, i + 24) });
+            updated += data.updated ?? 0;
+            toast.loading(`Analyse IA… ${Math.min(i + 24, ids.length)}/${ids.length}`, { id: t });
+          }
+        } else {
+          let guard = 0;
+          let done = false;
+          do {
+            const data = await post({ only_untagged: true });
+            updated += data.updated ?? 0;
+            done = data.done !== false || data.processed === 0;
+            toast.loading(`Analyse IA… ${updated} traitée(s)`, { id: t });
+          } while (!done && ++guard < 100);
+        }
+        toast.success(`${updated} image(s) taguée(s) par l'IA`, { id: t });
+        setSelectedIds(new Set());
+        await fetchItems();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Analyse IA échouée", { id: t });
+      } finally {
+        setAutoTagging(false);
+      }
+    },
+    [fetchItems],
+  );
+
   return (
     <AppLayout>
       <div className="px-6 py-6 space-y-5">
@@ -198,9 +247,24 @@ export default function MediaLibraryPage() {
               apparaissent automatiquement dans les sites des entreprises concernées.
             </p>
           </div>
-          <Button onClick={() => setUploadOpen(true)}>
-            <Upload className="h-4 w-4 mr-2" /> Ajouter des images
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => runAutoTag()}
+              disabled={autoTagging}
+              title="Analyser les images sans tag avec l'IA vision"
+            >
+              {autoTagging ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4 mr-2" />
+              )}
+              Auto-taguer les non-taguées
+            </Button>
+            <Button onClick={() => setUploadOpen(true)}>
+              <Upload className="h-4 w-4 mr-2" /> Ajouter des images
+            </Button>
+          </div>
         </div>
 
         {/* Filters bar */}
@@ -277,6 +341,19 @@ export default function MediaLibraryPage() {
             <span className="font-medium">{selectedIds.size} sélectionnée(s)</span>
             <Button variant="outline" size="sm" onClick={() => setBulkTagOpen(true)}>
               Ajouter des tags
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAutoTag(Array.from(selectedIds))}
+              disabled={autoTagging}
+            >
+              {autoTagging ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Sparkles className="h-3 w-3 mr-1" />
+              )}
+              Auto-tag IA
             </Button>
             <Button
               variant="outline"
@@ -389,6 +466,7 @@ export default function MediaLibraryPage() {
           companies={companies}
           allServiceTags={allServiceTags}
           onUploaded={fetchItems}
+          onAnalyze={runAutoTag}
         />
 
         {/* Detail Dialog */}
@@ -461,15 +539,18 @@ function UploadDialog({
   companies,
   allServiceTags,
   onUploaded,
+  onAnalyze,
 }: {
   open: boolean;
   onClose: () => void;
   companies: ReturnType<typeof useAppData>["companies"];
   allServiceTags: string[];
   onUploaded: () => void | Promise<void>;
+  onAnalyze?: (ids: string[]) => void | Promise<void>;
 }) {
   const [draft, setDraft] = React.useState<UploadDraft>(DEFAULT_DRAFT);
   const [uploading, setUploading] = React.useState(false);
+  const [analyze, setAnalyze] = React.useState(true);
 
   React.useEffect(() => {
     if (open) setDraft(DEFAULT_DRAFT);
@@ -515,8 +596,11 @@ function UploadDialog({
       if (json.failures.length > 0) {
         toast.warning(`${json.failures.length} échec(s)`);
       }
+      const insertedIds = json.inserted.map((i) => i.id);
       await onUploaded();
       onClose();
+      // Kick the vision AI on the freshly-uploaded images (unless unticked).
+      if (analyze && onAnalyze && insertedIds.length > 0) void onAnalyze(insertedIds);
     } catch (err) {
       console.error(err);
       toast.error("Upload échoué");
@@ -669,6 +753,23 @@ function UploadDialog({
             </div>
           )}
         </div>
+
+        {/* AI analysis toggle */}
+        <label className="flex items-start gap-2 rounded-lg border border-muted bg-muted/30 p-3 cursor-pointer">
+          <Checkbox
+            checked={analyze}
+            onCheckedChange={(v) => setAnalyze(v === true)}
+            className="mt-0.5"
+          />
+          <span className="text-sm">
+            <span className="font-medium flex items-center gap-1">
+              <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Analyser avec l&apos;IA après upload
+            </span>
+            <span className="text-muted-foreground text-xs">
+              Devine les service tags et rédige la description automatiquement (modèle configuré dans les Paramètres).
+            </span>
+          </span>
+        </label>
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={uploading}>

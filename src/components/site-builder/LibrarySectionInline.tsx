@@ -12,6 +12,8 @@ import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
+import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
+import { fillEmptyPlaceholders, type CompanyImage } from "@/lib/site-builder/claude-design/fill-empty-placeholders";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
@@ -35,6 +37,13 @@ interface Props {
    * removed so the deployed page only shows the company's services.
    */
   serviceTagBySlug?: Record<string, string>;
+  /**
+   * Claude Design only: the linked company's ranked library images. When
+   * provided (a real deployed/previewed company), any image placeholder still
+   * empty after overrides + set resolution is auto-filled with the best-matching
+   * one — a safety net so a deployed demo never shows an empty "Photo — …" box.
+   */
+  companyImages?: CompanyImage[];
 }
 
 /** Safely embeds an arbitrary value as inline JSON without breaking the HTML parser. */
@@ -53,6 +62,7 @@ export async function LibrarySectionInline({
   variables = {},
   unmanaged = false,
   serviceTagBySlug,
+  companyImages,
 }: Props) {
   let html = "";
   let compiledJs = "";
@@ -98,16 +108,33 @@ export async function LibrarySectionInline({
     failed = result.failed;
   }
 
+  // The linked company's service tags — drive image-set resolution, service
+  // conditioning and placeholder auto-fill below.
+  let enterpriseTags: string[] = [];
+  try {
+    const parsed = JSON.parse(variables["__service_tags"] ?? "[]");
+    if (Array.isArray(parsed)) enterpriseTags = parsed.map((t) => String(t));
+  } catch { /* no tags */ }
+
+  // Resolve multi-candidate image sets to a SINGLE image for this company.
+  // Runs AFTER overrides (applyOverridesToHTML skips :image_set) and BEFORE
+  // conditioning, so it only touches attributes/inline style, never the tree.
+  if (Object.keys(overrides).some((k) => k.endsWith(":image_set"))) {
+    html = resolveImageSets(html, overrides, enterpriseTags);
+  }
+
   // Section-level service-tag conditioning for raw Claude Design markup. Runs
   // AFTER overrides so positional override paths aren't shifted by stripping.
   // Only relevant when the design carries data-service-tag regions.
   if (html.includes("data-service-tag") || (serviceTagBySlug && Object.keys(serviceTagBySlug).length > 0)) {
-    let tags: string[] = [];
-    try {
-      const parsed = JSON.parse(variables["__service_tags"] ?? "[]");
-      if (Array.isArray(parsed)) tags = parsed.map((t) => String(t));
-    } catch { /* no tags → strip all tagged regions */ }
-    html = conditionServiceMarkup(html, serviceTagBySlug, tags);
+    html = conditionServiceMarkup(html, serviceTagBySlug, enterpriseTags);
+  }
+
+  // Safety net: fill any placeholder still empty with the best-matching library
+  // image for this company, so a deployed demo never ships an empty framed
+  // "Photo — …" box. Only runs when companyImages was provided (a real company).
+  if (companyImages && companyImages.length > 0 && html.includes("ph-label")) {
+    html = fillEmptyPlaceholders(html, companyImages, enterpriseTags);
   }
 
   // Hydrate review cards ([data-reviews]) from lead_magnet_reviews. Runs after

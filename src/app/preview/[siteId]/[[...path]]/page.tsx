@@ -40,6 +40,7 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
 
   const {
     enterpriseVariables,
+    enterpriseId,
     reviews,
     publishedInstances,
     publishedStyleGuide,
@@ -76,6 +77,7 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
       preloadedInstances={publishedInstances}
       claudeDesign={claudeDesign}
       serviceTagBySlug={claudeDesign ? serviceTagMapFromSitemap(publishedSitemap) : undefined}
+      enterpriseId={enterpriseId}
     />
   );
 }
