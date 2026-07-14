@@ -1,10 +1,10 @@
 /**
- * Applies BOTH per-company service conditioners to raw Claude Design markup, in
- * the one correct order. Use this instead of calling the two functions
- * separately — the order is subtle and getting it wrong silently breaks the
- * "Nos services" section (see below).
+ * Applies ALL per-company service conditioners to raw Claude Design markup, in
+ * the one correct order. Use this instead of calling the functions separately —
+ * the order is subtle and getting it wrong silently breaks the "Nos services"
+ * section (see below).
  *
- * The two conditioners:
+ * The conditioners:
  *   1. `filterServiceLinks` — removes a service-page link AND its smallest
  *      single-service wrapper: a whole "En savoir plus" expertise card, a footer
  *      `<li>`, a header sub-menu entry. Keyed off the link's href → sitemap
@@ -12,6 +12,9 @@
  *      author added a `data-service-tag`.
  *   2. `stripTaggedRegions` — removes remaining `[data-service-tag]` regions
  *      that carry no service link (a hero badge, a testimonials block…).
+ *   3. `filterServiceForm` — removes lead/"devis" form service tiles
+ *      (`[data-svc]`) the company doesn't offer, so the quote form's step 1 only
+ *      lets visitors pick services the company actually provides.
  *
  * WHY ORDER MATTERS: designs routinely put `data-service-tag` on the card's
  * inner `<a>` itself (that is what Claude Design's own export does). If
@@ -27,6 +30,7 @@
  */
 import { filterServiceLinks } from "./filter-service-links";
 import { stripTaggedRegions } from "./strip-tagged-regions";
+import { filterServiceForm } from "./filter-service-form";
 
 export function conditionServiceMarkup(
   html: string,
@@ -41,6 +45,10 @@ export function conditionServiceMarkup(
   // (2) Then explicit `data-service-tag` regions that survived.
   if (out.includes("data-service-tag")) {
     out = stripTaggedRegions(out, enterpriseTags);
+  }
+  // (3) Finally, lead/"devis" form service tiles the company doesn't offer.
+  if (out.includes("data-svc")) {
+    out = filterServiceForm(out, enterpriseTags);
   }
   return out;
 }
