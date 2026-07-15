@@ -47,6 +47,18 @@ function nodeAtPath(root: HTMLElement, path: number[]): HTMLElement | null {
   return node;
 }
 
+/** Reach through the synthesized mobile `<picture>` wrapper. An image_mobile
+ *  override wraps the `<img>` in a `<picture>` at the img's original position,
+ *  so a path that used to resolve to the `<img>` now lands on that wrapper.
+ *  Every edit except image_mobile itself still targets the inner `<img>`. */
+function unwrapMobilePicture(el: HTMLElement): HTMLElement {
+  if (el.tagName?.toLowerCase() === "picture" && el.getAttribute("data-mobile-src-wrap") === "1") {
+    const img = el.querySelector("img");
+    if (img) return img as HTMLElement;
+  }
+  return el;
+}
+
 // React 19's react-dom/server emits resource hints (e.g. <link rel="preload">
 // for images detected in the render tree) BEFORE the component output. Editor
 // overrides reference DOM paths relative to the section's component root, so
@@ -147,7 +159,7 @@ export function applyOverridesToHTML(
             break;
           }
           case "image":
-            el.setAttribute("src", value);
+            unwrapMobilePicture(el).setAttribute("src", value);
             break;
           case "image_mobile":
             wrapImgWithMobileSource(el, value);
@@ -178,7 +190,7 @@ export function applyOverridesToHTML(
               failed++;
               continue;
             }
-            mergeStyles(el, styleMap);
+            mergeStyles(unwrapMobilePicture(el), styleMap);
             break;
           }
           case "remove":
@@ -204,34 +216,45 @@ export function applyOverridesToHTML(
 }
 
 /** Wraps the given `<img>` in a `<picture>` with a mobile-only `<source>`.
- *  If the img is already inside a `<picture>` we synthesised, refresh the
- *  source instead of nesting. Idempotent — safe to apply twice. */
+ *  `el` may be the `<img>` itself or the `<picture>` wrapper we synthesised on
+ *  an earlier pass (the override path resolves to the wrapper once it exists),
+ *  so we resolve both. If the img is already wrapped, refresh the source
+ *  instead of nesting. Idempotent — safe to apply twice. */
 function wrapImgWithMobileSource(el: HTMLElement, mobileUrl: string): void {
-  if (el.tagName?.toLowerCase() !== "img") return;
-  const parent = el.parentNode as HTMLElement | null;
-  const isAlreadyPicture =
-    parent && parent.tagName?.toLowerCase() === "picture" && parent.getAttribute("data-mobile-src-wrap") === "1";
+  let img: HTMLElement | null = null;
+  let picture: HTMLElement | null = null;
+  if (el.tagName?.toLowerCase() === "picture" && el.getAttribute("data-mobile-src-wrap") === "1") {
+    picture = el;
+    img = el.querySelector("img");
+  } else if (el.tagName?.toLowerCase() === "img") {
+    img = el;
+    const parent = el.parentNode as HTMLElement | null;
+    if (parent && parent.tagName?.toLowerCase() === "picture" && parent.getAttribute("data-mobile-src-wrap") === "1") {
+      picture = parent;
+    }
+  }
+  if (!img) return;
 
-  if (isAlreadyPicture && parent) {
+  if (picture) {
     // Update existing source element
-    const sources = parent.childNodes.filter((c) => c.nodeType === 1 && (c as HTMLElement).tagName?.toLowerCase() === "source") as HTMLElement[];
+    const sources = picture.childNodes.filter((c) => c.nodeType === 1 && (c as HTMLElement).tagName?.toLowerCase() === "source") as HTMLElement[];
     const existing = sources.find((s) => s.getAttribute("data-mobile-source") === "1");
     if (existing) {
       if (mobileUrl) existing.setAttribute("srcset", mobileUrl);
       else existing.remove();
     } else if (mobileUrl) {
       const src = `<source media="(max-width: 767px)" srcset="${escapeAttr(mobileUrl)}" data-mobile-source="1">`;
-      parent.insertAdjacentHTML?.("afterbegin", src);
+      picture.insertAdjacentHTML?.("afterbegin", src);
     }
     return;
   }
 
   if (!mobileUrl) return; // nothing to wrap when clearing without an existing wrapper
 
-  const imgHtml = el.outerHTML;
+  const imgHtml = img.outerHTML;
   const source = `<source media="(max-width: 767px)" srcset="${escapeAttr(mobileUrl)}" data-mobile-source="1">`;
   const wrapped = `<picture data-mobile-src-wrap="1">${source}${imgHtml}</picture>`;
-  el.replaceWith(wrapped);
+  img.replaceWith(wrapped);
 }
 
 function escapeAttr(text: string): string {

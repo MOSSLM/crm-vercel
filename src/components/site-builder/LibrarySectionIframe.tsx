@@ -662,6 +662,17 @@ function buildHTML(
         }
         return node;
       }
+      // An image_mobile override wraps the <img> in a <picture> at the img's
+      // original position, so a path that used to reach the <img> now resolves
+      // to that wrapper. For every edit except image_mobile itself the logical
+      // target stays the inner <img>, so reach through the wrapper.
+      function unwrapMobilePic(el) {
+        if (el && el.tagName && el.tagName.toLowerCase() === 'picture' && el.getAttribute && el.getAttribute('data-mobile-src-wrap') === '1') {
+          var inner = el.querySelector ? el.querySelector('img') : null;
+          if (inner) return inner;
+        }
+        return el;
+      }
       function applyOne(key, entry) {
         // Keys may carry a kind suffix: "<dotPath>:<kind>" or
         // "<dotPath>:attr:<attrName>". Strip the suffix to recover the path.
@@ -683,16 +694,25 @@ function buildHTML(
              sanitizeRichText on SSR and on the public hydrator. */
           if (el.innerHTML !== value) el.innerHTML = value;
         } else if (kind === 'image') {
-          if (el.getAttribute('src') !== value) el.setAttribute('src', value);
+          var imgEl = unwrapMobilePic(el);
+          if (imgEl.getAttribute('src') !== value) imgEl.setAttribute('src', value);
         } else if (kind === 'image_mobile') {
-          // Wrap the img in a <picture> with a (max-width: 767px) source so
-          // the mobile variant kicks in below 768 px without JS. Idempotent:
-          // we re-use an existing wrapper / source element when present.
-          if (el.tagName && el.tagName.toLowerCase() === 'img') {
-            var parent = el.parentNode;
-            var isWrap = parent && parent.tagName && parent.tagName.toLowerCase() === 'picture' && parent.getAttribute && parent.getAttribute('data-mobile-src-wrap') === '1';
-            if (isWrap) {
-              var existing = parent.querySelector('source[data-mobile-source="1"]');
+          // Serve the mobile variant by wrapping the img in a picture that
+          // carries a (max-width: 767px) source. el may be the bare img (first
+          // apply) or the wrapper a previous apply created — in which case the
+          // path now points at the picture. Resolve both, so re-applying
+          // (MutationObserver) and later edits keep working.
+          var mImg = null, mPic = null;
+          if (el.tagName && el.tagName.toLowerCase() === 'picture' && el.getAttribute && el.getAttribute('data-mobile-src-wrap') === '1') {
+            mPic = el; mImg = el.querySelector ? el.querySelector('img') : null;
+          } else if (el.tagName && el.tagName.toLowerCase() === 'img') {
+            mImg = el;
+            var mp = el.parentNode;
+            if (mp && mp.tagName && mp.tagName.toLowerCase() === 'picture' && mp.getAttribute && mp.getAttribute('data-mobile-src-wrap') === '1') mPic = mp;
+          }
+          if (mImg) {
+            if (mPic) {
+              var existing = mPic.querySelector('source[data-mobile-source="1"]');
               if (value) {
                 if (existing) { if (existing.getAttribute('srcset') !== value) existing.setAttribute('srcset', value); }
                 else {
@@ -700,7 +720,7 @@ function buildHTML(
                   s.setAttribute('media', '(max-width: 767px)');
                   s.setAttribute('srcset', value);
                   s.setAttribute('data-mobile-source', '1');
-                  parent.insertBefore(s, parent.firstChild);
+                  mPic.insertBefore(s, mPic.firstChild);
                 }
               } else if (existing) {
                 existing.parentNode.removeChild(existing);
@@ -713,8 +733,8 @@ function buildHTML(
               src2.setAttribute('srcset', value);
               src2.setAttribute('data-mobile-source', '1');
               pic.appendChild(src2);
-              el.parentNode.insertBefore(pic, el);
-              pic.appendChild(el);
+              mImg.parentNode.insertBefore(pic, mImg);
+              pic.appendChild(mImg);
             }
           }
         } else if (kind === 'bg_image') {
@@ -725,13 +745,14 @@ function buildHTML(
         } else if (kind === 'attr' && entry.meta && entry.meta.attrName) {
           el.setAttribute(entry.meta.attrName, value);
         } else if (kind === 'style' && entry.meta && entry.meta.style && typeof entry.meta.style === 'object') {
+          var styleEl = unwrapMobilePic(el);
           var styleMap = entry.meta.style;
           for (var sk in styleMap) {
             if (Object.prototype.hasOwnProperty.call(styleMap, sk)) {
               var sv = styleMap[sk];
               var prop = sk.replace(/[A-Z]/g, function (m) { return '-' + m.toLowerCase(); });
-              if (typeof sv === 'string' && sv) el.style.setProperty(prop, sv, 'important');
-              else el.style.removeProperty(prop);
+              if (typeof sv === 'string' && sv) styleEl.style.setProperty(prop, sv, 'important');
+              else styleEl.style.removeProperty(prop);
             }
           }
         }
@@ -828,6 +849,12 @@ function buildHTML(
         var rootHost = document.getElementById('root');
         if (!rootHost) return path;
         var node = el;
+        // The mobile-variant <picture> we synthesise is transparent to the path
+        // model: an <img> wrapped in it keeps the slot the bare <img> had, so its
+        // overrides stay valid. Index the <img> at the wrapper's position.
+        if (node && node.tagName && node.tagName.toLowerCase() === 'img' && node.parentElement && node.parentElement.getAttribute && node.parentElement.getAttribute('data-mobile-src-wrap') === '1') {
+          node = node.parentElement;
+        }
         while (node && node.parentElement && node.parentElement !== rootHost) {
           var parent = node.parentElement;
           var idx = Array.prototype.indexOf.call(parent.children, node);
@@ -939,8 +966,14 @@ function buildHTML(
           cs = window.getComputedStyle(el);
           if (cs && cs.display === 'none') return null;
         } catch (_) {}
-        var kind = nodeKind(el);
-        var attrs = nodeAttrs(kind, el);
+        // The synthesized mobile-variant <picture> is transparent in the layers
+        // tree too: present it as its inner <img> (a single image node) and
+        // don't expose the <source>/<img> plumbing as children.
+        var isMobileWrap = tag === 'picture' && el.getAttribute && el.getAttribute('data-mobile-src-wrap') === '1';
+        var subject = el;
+        if (isMobileWrap) { var innerImg = el.querySelector ? el.querySelector('img') : null; if (innerImg) subject = innerImg; }
+        var kind = nodeKind(subject);
+        var attrs = nodeAttrs(kind, subject);
         // Capture layout metadata on EVERY node so the layers panel and the
         // element panel can show display-aware labels/controls (not just for
         // the 'container' kind).
@@ -950,15 +983,17 @@ function buildHTML(
         var node = {
           tag: tag,
           kind: kind,
-          text: shortText(el),
+          text: shortText(subject),
           attrs: attrs,
           path: path,
           children: []
         };
-        var kids = el.children || [];
-        for (var i = 0; i < kids.length; i++) {
-          var child = buildDomTree(kids[i], path.concat([i]), depth + 1);
-          if (child) node.children.push(child);
+        if (!isMobileWrap) {
+          var kids = el.children || [];
+          for (var i = 0; i < kids.length; i++) {
+            var child = buildDomTree(kids[i], path.concat([i]), depth + 1);
+            if (child) node.children.push(child);
+          }
         }
         return node;
       }

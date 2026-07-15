@@ -37,6 +37,52 @@ describe("applyOverridesToHTML", () => {
     expect(out.html).toContain('src="/desk.png"');
   });
 
+  it("image override still reaches the <img> after image_mobile wraps it (any order)", () => {
+    // Regression: enabling a mobile image wraps the <img> in a <picture> at the
+    // img's slot. A desktop `image` override keyed on that slot then resolves to
+    // the <picture>, so setting src on it did nothing — the placeholder stayed.
+    // Object order here puts image_mobile first, so the single SSR pass wraps
+    // before the desktop override runs.
+    const html = wrapHtml(`<img src="/placeholder.png" alt="x"/>`);
+    const overrides: Record<string, OverrideEntry> = {
+      "0:image_mobile": { kind: "image_mobile", value: "/mob.png" },
+      "0:image": { kind: "image", value: "/new-desktop.png" },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    expect(out.html).toContain("<picture");
+    expect(out.html).toContain('srcset="/mob.png"');
+    // The desktop src must land on the inner <img>, not be lost on the wrapper.
+    expect(out.html).toContain('src="/new-desktop.png"');
+    expect(out.html).not.toContain('src="/placeholder.png"');
+  });
+
+  it("re-applying image + image_mobile on already-wrapped HTML stays correct (idempotent)", () => {
+    const html = wrapHtml(`<img src="/placeholder.png" alt="x"/>`);
+    const overrides: Record<string, OverrideEntry> = {
+      "0:image": { kind: "image", value: "/desktop.png" },
+      "0:image_mobile": { kind: "image_mobile", value: "/mob.png" },
+    };
+    const first = applyOverridesToHTML(html, overrides, {});
+    // Second pass: path "0" now resolves to the <picture> wrapper, not the img.
+    const second = applyOverridesToHTML(first.html, overrides, {});
+    expect(second.html).toContain('src="/desktop.png"');
+    expect(second.html).toContain('srcset="/mob.png"');
+    // No double-nesting of the wrapper.
+    expect((second.html.match(/<picture/g) ?? []).length).toBe(1);
+  });
+
+  it("style override (ratio/dimensions) applies to the inner <img>, not the wrapper", () => {
+    const html = wrapHtml(`<img src="/desk.png" alt="x"/>`);
+    const overrides: Record<string, OverrideEntry> = {
+      "0:image_mobile": { kind: "image_mobile", value: "/mob.png" },
+      "0:style": { kind: "style", value: "", meta: { style: { aspectRatio: "16 / 9", objectFit: "cover" } } },
+    };
+    const out = applyOverridesToHTML(html, overrides, {});
+    // The style must sit on the <img>, so it actually resizes the picture.
+    expect(out.html).toMatch(/<img[^>]*style="[^"]*aspect-ratio:\s*16 \/ 9/);
+    expect(out.html).toMatch(/<img[^>]*style="[^"]*object-fit:\s*cover/);
+  });
+
   it("merges style override (display:none hides element) with !important", () => {
     const html = wrapHtml(`<p>hello</p>`);
     const overrides: Record<string, OverrideEntry> = {
