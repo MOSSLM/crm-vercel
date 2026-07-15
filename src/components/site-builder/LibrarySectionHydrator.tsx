@@ -70,6 +70,18 @@ function nodeAtPath(root: Element, path: number[]): Element | null {
   return node;
 }
 
+/** Reach through the synthesized mobile `<picture>` wrapper. An image_mobile
+ *  override wraps the `<img>` in a `<picture>` at the img's original position,
+ *  so a path that used to resolve to the `<img>` now lands on that wrapper.
+ *  Every edit except image_mobile itself still targets the inner `<img>`. */
+function unwrapMobilePicture(el: Element): Element {
+  if (el.tagName.toLowerCase() === "picture" && el.getAttribute("data-mobile-src-wrap") === "1") {
+    const img = el.querySelector("img");
+    if (img) return img;
+  }
+  return el;
+}
+
 function camelToKebab(name: string): string {
   return name.replace(/[A-Z]/g, (m) => "-" + m.toLowerCase());
 }
@@ -117,15 +129,29 @@ function applyOverridesToContainer(
           if (el.innerHTML !== safe) el.innerHTML = safe;
           break;
         }
-        case "image":
-          if (el.getAttribute("src") !== value) el.setAttribute("src", value);
+        case "image": {
+          const target = unwrapMobilePicture(el);
+          if (target.getAttribute("src") !== value) target.setAttribute("src", value);
           break;
+        }
         case "image_mobile": {
-          if (!(el instanceof HTMLImageElement)) break;
-          const parent = el.parentElement;
-          const isWrap = parent && parent.tagName.toLowerCase() === "picture" && parent.getAttribute("data-mobile-src-wrap") === "1";
-          if (isWrap && parent) {
-            const existing = parent.querySelector<HTMLSourceElement>('source[data-mobile-source="1"]');
+          // `el` may be the bare <img> (first apply) or the <picture> wrapper a
+          // previous apply created — once wrapped, the path resolves to the
+          // wrapper. Resolve both so re-application and later edits keep
+          // updating the mobile source.
+          let img: HTMLImageElement | null = null;
+          let pic: Element | null = null;
+          if (el.tagName.toLowerCase() === "picture" && el.getAttribute("data-mobile-src-wrap") === "1") {
+            pic = el;
+            img = el.querySelector("img");
+          } else if (el instanceof HTMLImageElement) {
+            img = el;
+            const parent = el.parentElement;
+            if (parent && parent.tagName.toLowerCase() === "picture" && parent.getAttribute("data-mobile-src-wrap") === "1") pic = parent;
+          }
+          if (!img) break;
+          if (pic) {
+            const existing = pic.querySelector<HTMLSourceElement>('source[data-mobile-source="1"]');
             if (value) {
               if (existing) {
                 if (existing.getAttribute("srcset") !== value) existing.setAttribute("srcset", value);
@@ -134,21 +160,21 @@ function applyOverridesToContainer(
                 s.setAttribute("media", "(max-width: 767px)");
                 s.setAttribute("srcset", value);
                 s.setAttribute("data-mobile-source", "1");
-                parent.insertBefore(s, parent.firstChild);
+                pic.insertBefore(s, pic.firstChild);
               }
             } else if (existing) {
               existing.remove();
             }
-          } else if (value && el.parentNode) {
-            const pic = document.createElement("picture");
-            pic.setAttribute("data-mobile-src-wrap", "1");
+          } else if (value && img.parentNode) {
+            const newPic = document.createElement("picture");
+            newPic.setAttribute("data-mobile-src-wrap", "1");
             const s = document.createElement("source");
             s.setAttribute("media", "(max-width: 767px)");
             s.setAttribute("srcset", value);
             s.setAttribute("data-mobile-source", "1");
-            pic.appendChild(s);
-            el.parentNode.insertBefore(pic, el);
-            pic.appendChild(el);
+            newPic.appendChild(s);
+            img.parentNode.insertBefore(newPic, img);
+            newPic.appendChild(img);
           }
           break;
         }
@@ -203,16 +229,17 @@ function applyOverridesToContainer(
         case "style": {
           const styleMap = entry.meta?.style;
           if (!styleMap || typeof styleMap !== "object") break;
-          if (!(el instanceof HTMLElement)) break;
+          const target = unwrapMobilePicture(el);
+          if (!(target instanceof HTMLElement)) break;
           for (const [k, v] of Object.entries(styleMap)) {
             if (typeof v !== "string" || !v) {
-              el.style.removeProperty(camelToKebab(k));
+              target.style.removeProperty(camelToKebab(k));
               continue;
             }
             // "important" so per-element overrides win over the style-guide
             // CTA rules (.cta-primary/.cta-secondary use !important) and
             // hardcoded Tailwind utilities.
-            el.style.setProperty(camelToKebab(k), v, "important");
+            target.style.setProperty(camelToKebab(k), v, "important");
           }
           break;
         }
