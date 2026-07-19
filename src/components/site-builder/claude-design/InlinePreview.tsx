@@ -185,13 +185,55 @@ const EDIT_SCRIPT = `
     if(st.indexOf('--img')!==-1 || st.indexOf('--bg')!==-1) return { el:t, kind:'bg_image', current:'' };
     return null;
   }
+  // A scrolling logo strip (marque-partenaire marquee) ships each logo TWICE:
+  // the CSS loop translates the track by -50%, so a duplicate set is needed for a
+  // seamless scroll. That means ONE visible logo maps to 2+ img slots, and the
+  // operator otherwise has to upload the same file for each copy. linkedSlots
+  // returns the sibling slots that mirror el so a single edit updates them all.
+  // A twin is a sibling sharing el's exact class list -- but only when that class
+  // carries a PER-ITEM token (e.g. b1) that is NOT on every sibling, so a plain
+  // grid of identically-classed img is never synced by accident. Falls back to
+  // positional halves inside a container that reads as a marquee track. Mirrors
+  // findLinkedSlots in link-image-slots.ts (tested) -- keep the two in sync.
+  function linkedSlots(el){
+    var out=[];
+    var par = el && el.parentElement; if(!par) return out;
+    var kids = Array.prototype.filter.call(par.children, function(c){ return c.nodeType===1; });
+    if(kids.length < 4) return out;
+    var myTokens = (el.getAttribute('class')||'').split(/\\s+/).filter(Boolean);
+    if(myTokens.length){
+      var counts = {};
+      kids.forEach(function(k){
+        var seen = {};
+        (k.getAttribute('class')||'').split(/\\s+/).forEach(function(tok){ if(tok && !seen[tok]){ seen[tok]=1; counts[tok]=(counts[tok]||0)+1; } });
+      });
+      var distinguishing = myTokens.some(function(tok){ return counts[tok] && counts[tok] < kids.length; });
+      if(distinguishing){
+        var myKey = myTokens.slice().sort().join(' ');
+        kids.forEach(function(k){
+          if(k===el) return;
+          var kk = (k.getAttribute('class')||'').split(/\\s+/).filter(Boolean).sort().join(' ');
+          if(kk===myKey) out.push(k);
+        });
+        if(out.length) return out;
+      }
+    }
+    // Fallback: an even, doubled track (index i mirrors i + half) when the track
+    // or its wrapper is clearly a marquee. Keeps us from touching normal grids.
+    var ctx = (par.getAttribute('class')||'') + ' ' + ((par.parentElement && par.parentElement.getAttribute('class')) || '');
+    if(/marquee|ticker|defil|scroll|track/i.test(ctx) && kids.length%2===0){
+      var idx = Array.prototype.indexOf.call(kids, el);
+      if(idx>=0){ var tw = kids[(idx + kids.length/2) % kids.length]; if(tw && tw!==el && tw.tagName===el.tagName) out.push(tw); }
+    }
+    return out;
+  }
   root.addEventListener('click', function(ev){
     var t = ev.target;
     if(!t || t===root) return;
     // Image / placeholder zone → hand off to the parent's shared ImagePickerField
     // (URL / upload / library) instead of a bare prompt.
     var zone = imageZone(t);
-    if(zone){ ev.preventDefault(); ev.stopPropagation(); parent.postMessage({source:'cd',kind:'image-request',path:pathOf(zone.el),imgKind:zone.kind,current:zone.current},'*'); return; }
+    if(zone){ ev.preventDefault(); ev.stopPropagation(); var linkPaths = linkedSlots(zone.el).map(pathOf); parent.postMessage({source:'cd',kind:'image-request',path:pathOf(zone.el),imgKind:zone.kind,current:zone.current,linkPaths:linkPaths},'*'); return; }
     var hasEl = Array.prototype.some.call(t.childNodes,function(c){return c.nodeType===1;});
     if(!hasEl && (t.textContent||'').trim()){ ev.preventDefault(); ev.stopPropagation(); t.setAttribute('contenteditable','true'); t.style.outline='2px solid #5B9BD5'; t.focus(); }
   }, true);
@@ -297,6 +339,10 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
   // fallback candidates tagged by service.
   const [picker, setPicker] = React.useState<{
     path: number[];
+    /** Sibling slots that mirror `path` — the duplicate copies a scrolling logo
+     *  strip needs. An edit is written to `path` and every one of these so the
+     *  operator uploads a logo once, not once per copy. */
+    linkPaths: number[][];
     current: string;
     kind: "image" | "bg_image";
     mode: "single" | "set";
@@ -317,8 +363,12 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
         // Open in set mode when the slot already holds a set (any page), or on
         // the home page as soon as the operator wants multiple fallbacks.
         const mode: "single" | "set" = candidates.length > 0 ? "set" : "single";
+        const linkPaths: number[][] = Array.isArray(d.linkPaths)
+          ? d.linkPaths.filter((p: unknown): p is number[] => Array.isArray(p) && p.every((n) => typeof n === "number"))
+          : [];
         setPicker({
           path: d.path,
+          linkPaths,
           current: String(d.current ?? ""),
           kind: d.imgKind === "bg_image" ? "bg_image" : "image",
           mode,
@@ -336,15 +386,22 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
   }, []);
 
   // Single image: set the slot's :image/:bg_image override and clear any set.
+  // The edit is mirrored to every linked (duplicate) slot so a logo picked once
+  // in a scrolling strip fills all of its copies.
   const handlePick = (url: string) => {
     if (!picker) return;
-    const pathKey = picker.path.join(".");
-    applyUpdates({
-      [`${pathKey}:${picker.kind}`]: { kind: picker.kind, value: url },
-      [`${pathKey}:image_set`]: null,
-    });
-    // Live-update the node in the iframe without re-rendering the whole srcDoc.
-    iframeRef.current?.contentWindow?.postMessage({ source: "cd-parent", kind: "set-image", path: picker.path, imgKind: picker.kind, value: url }, "*");
+    const paths = [picker.path, ...picker.linkPaths];
+    const updates: Record<string, OverrideEntry | null> = {};
+    for (const p of paths) {
+      const pathKey = p.join(".");
+      updates[`${pathKey}:${picker.kind}`] = { kind: picker.kind, value: url };
+      updates[`${pathKey}:image_set`] = null;
+    }
+    applyUpdates(updates);
+    // Live-update the node(s) in the iframe without re-rendering the whole srcDoc.
+    for (const p of paths) {
+      iframeRef.current?.contentWindow?.postMessage({ source: "cd-parent", kind: "set-image", path: p, imgKind: picker.kind, value: url }, "*");
+    }
     setPicker(null);
   };
 
@@ -376,20 +433,27 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     });
 
   // Save the set: write the :image_set override, clear the single-image keys.
+  // Mirrored to every linked (duplicate) slot, exactly like a single image.
   const saveSet = () => {
     if (!picker) return;
-    const pathKey = picker.path.join(".");
+    const paths = [picker.path, ...picker.linkPaths];
+    const updates: Record<string, OverrideEntry | null> = {};
     if (picker.candidates.length === 0) {
       // Empty set → drop it entirely (revert to placeholder).
-      applyUpdates({ [`${pathKey}:image_set`]: null });
+      for (const p of paths) updates[`${p.join(".")}:image_set`] = null;
+      applyUpdates(updates);
     } else {
       const value = serializeImageSet(picker.candidates);
-      applyUpdates({
-        [`${pathKey}:image_set`]: { kind: "image_set", value },
-        [`${pathKey}:image`]: null,
-        [`${pathKey}:bg_image`]: null,
-      });
-      iframeRef.current?.contentWindow?.postMessage({ source: "cd-parent", kind: "set-image-set", path: picker.path, value }, "*");
+      for (const p of paths) {
+        const pathKey = p.join(".");
+        updates[`${pathKey}:image_set`] = { kind: "image_set", value };
+        updates[`${pathKey}:image`] = null;
+        updates[`${pathKey}:bg_image`] = null;
+      }
+      applyUpdates(updates);
+      for (const p of paths) {
+        iframeRef.current?.contentWindow?.postMessage({ source: "cd-parent", kind: "set-image-set", path: p, value }, "*");
+      }
     }
     setPicker(null);
   };
