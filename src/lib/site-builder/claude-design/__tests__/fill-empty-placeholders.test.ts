@@ -31,4 +31,21 @@ describe("fillEmptyPlaceholders", () => {
     expect(fillEmptyPlaceholders(html, [], ["climatisation"])).toBe(html);
     expect(fillEmptyPlaceholders("<div>no ph here</div>", images, [])).toBe("<div>no ph here</div>");
   });
+
+  it("never fills a fallback placeholder that belongs to a real <img> slot (stepper)", () => {
+    // The service stepper slot: a real <img> plus a CSS-hidden `.stepper-ph`
+    // fallback. The fallback must stay empty (no mismatched company photo).
+    const stepper = `<div class="stepper-img"><img src="https://x/real.png" alt="Schéma"><div class="ph stepper-ph"><span class="ph-label">Schéma — secours</span></div></div>`;
+    const out = fillEmptyPlaceholders(stepper, images, ["climatisation"]);
+    expect(out).toBe(stepper); // untouched — no fill, no has-img
+    expect(out).not.toContain("background-image");
+  });
+
+  it("still fills a genuine empty slot next to the stepper fallback", () => {
+    const mixed = `<div class="stepper-img"><img src="https://x/real.png"><div class="ph stepper-ph"><span class="ph-label">secours</span></div></div><div class="pro-media"><div class="ph"><span class="ph-label">Photo pro</span></div></div>`;
+    const out = fillEmptyPlaceholders(mixed, images, ["climatisation"]);
+    // The independent pro placeholder is filled; the stepper fallback is not.
+    expect(out).toContain("https://x/clim.jpg");
+    expect(out.match(/has-img/g) ?? []).toHaveLength(1);
+  });
 });

@@ -24,6 +24,24 @@ function hasClass(el: HTMLElement, cls: string): boolean {
   return (el.getAttribute("class") ?? "").split(/\s+/).includes(cls);
 }
 
+/**
+ * True when a `.ph` is a FALLBACK for a real image in the same slot rather than
+ * an independent empty slot — the design's own "show this only if the image is
+ * missing" placeholder. The service stepper ships each slot as
+ * `<div class="stepper-img"><img …><div class="ph stepper-ph">…</div></div>`:
+ * the `<img>` is the real image and the `.ph` is CSS-hidden unless the image
+ * fails. Auto-filling such a placeholder bleeds a mismatched company photo into
+ * a slot that already has (or will have) its own image, so we skip it.
+ */
+function isFallbackPlaceholder(ph: HTMLElement): boolean {
+  if (hasClass(ph, "stepper-ph")) return true;
+  const parent = ph.parentNode as HTMLElement | null;
+  if (!parent || parent.nodeType !== 1) return false;
+  return parent.childNodes.some(
+    (c) => c.nodeType === 1 && (c as HTMLElement).tagName?.toLowerCase() === "img",
+  );
+}
+
 function fillNode(el: HTMLElement, url: string, alt?: string | null): void {
   const current = el.getAttribute("style") ?? "";
   const declarations = [
@@ -77,7 +95,9 @@ export function fillEmptyPlaceholders(
   if (!html || images.length === 0) return html;
   try {
     const doc = parse(html);
-    const placeholders = doc.querySelectorAll(".ph").filter((ph) => !hasClass(ph, "has-img"));
+    const placeholders = doc
+      .querySelectorAll(".ph")
+      .filter((ph) => !hasClass(ph, "has-img") && !isFallbackPlaceholder(ph));
     if (placeholders.length === 0) return html;
 
     const ranked = rankImages(images, enterpriseTags);
