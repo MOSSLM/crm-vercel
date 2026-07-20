@@ -16,9 +16,10 @@ export function TweaksPanel({
 }: {
   controls: TweakControl[];
   tweaks: Record<string, unknown>;
-  onChange: (key: string, value: string) => void;
+  onChange: (key: string, value: string | boolean) => void;
 }) {
   const val = (k: string, d = "") => (typeof tweaks[k] === "string" ? (tweaks[k] as string) : d);
+  const boolVal = (k: string) => tweaks[k] === true || tweaks[k] === "true" || tweaks[k] === "1" || tweaks[k] === "on";
 
   if (controls.length === 0) {
     return <p className="text-xs text-muted-foreground">Aucun réglage de thème pour ce template.</p>;
@@ -40,7 +41,12 @@ export function TweaksPanel({
             <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{g.group}</div>
           )}
           {g.items.map((c) => (
-            <Control key={c.key} control={c} value={val(c.key, c.options[0] ?? "")} onChange={(v) => onChange(c.key, v)} />
+            <Control
+              key={c.key}
+              control={c}
+              value={c.type === "toggle" ? boolVal(c.key) : val(c.key, c.options[0] ?? "")}
+              onChange={(v) => onChange(c.key, v)}
+            />
           ))}
         </div>
       ))}
@@ -48,14 +54,34 @@ export function TweaksPanel({
   );
 }
 
-function Control({ control, value, onChange }: { control: TweakControl; value: string; onChange: (v: string) => void }) {
+function Control({ control, value, onChange }: { control: TweakControl; value: string | boolean; onChange: (v: string | boolean) => void }) {
+  if (control.type === "toggle") {
+    const on = value === true;
+    return (
+      <label className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground">{control.label}</span>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={on}
+          aria-label={control.label}
+          onClick={() => onChange(!on)}
+          className={`relative h-5 w-9 rounded-full transition-colors ${on ? "bg-primary" : "bg-muted-foreground/30"}`}
+        >
+          <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+        </button>
+      </label>
+    );
+  }
+
+  const strValue = typeof value === "string" ? value : "";
   if (control.type === "color") {
     return (
       <div>
         <div className="mb-1.5 text-xs text-muted-foreground">{control.label}</div>
         <div className="flex flex-wrap gap-1.5">
           {control.options.map((hex) => {
-            const selected = value.toLowerCase() === hex.toLowerCase();
+            const selected = strValue.toLowerCase() === hex.toLowerCase();
             return (
               <button
                 key={hex}
@@ -82,7 +108,7 @@ function Control({ control, value, onChange }: { control: TweakControl; value: s
             <button
               key={o}
               onClick={() => onChange(o)}
-              className={`rounded px-2.5 py-1 text-xs ${value === o ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              className={`rounded px-2.5 py-1 text-xs ${strValue === o ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
             >
               {o}
             </button>
@@ -96,7 +122,7 @@ function Control({ control, value, onChange }: { control: TweakControl; value: s
   return (
     <label className="flex items-center justify-between gap-2">
       <span className="text-xs text-muted-foreground">{control.label}</span>
-      <select className="rounded-md border bg-background px-2 py-1 text-sm" value={value} onChange={(e) => onChange(e.target.value)}>
+      <select className="rounded-md border bg-background px-2 py-1 text-sm" value={strValue} onChange={(e) => onChange(e.target.value)}>
         {control.options.map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     </label>

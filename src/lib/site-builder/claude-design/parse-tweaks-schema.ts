@@ -12,7 +12,7 @@
  * Pure + side-effect free; regex-based (the files follow a regular shape).
  */
 
-export type TweakControlType = "color" | "select" | "radio";
+export type TweakControlType = "color" | "select" | "radio" | "toggle";
 
 export interface TweakControl {
   key: string;
@@ -55,7 +55,9 @@ export function parseTweakControls(src: string): TweakControl[] {
   const controls: TweakControl[] = [];
   let group: string | undefined;
 
-  const re = /<Tweak(Section|Color|Select|Radio)\b([\s\S]*?)\/>/g;
+  // TweakToggle is a boolean control (a switch, no options) — e.g. the CVC
+  // "Masquer les certifications" / "Masquer les marques partenaires" toggles.
+  const re = /<Tweak(Section|Color|Select|Radio|Toggle)\b([\s\S]*?)\/>/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
     const tag = m[1];

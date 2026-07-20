@@ -38,7 +38,35 @@ function TweaksApp() {
 }
 `;
 
+// Mirrors the real index-tweaks.jsx: a "Sections" group with two TweakToggle
+// switches, then the shared <ThemeControls/> reference.
+const INDEX_JSX = `
+function TweaksApp() {
+  return (
+    <TweaksPanel>
+      <TweakSection label="Sections" />
+      <TweakToggle label="Masquer les certifications" value={!!t.masquerCertifications}
+                   onChange={(v) => setTweak("masquerCertifications", v)} />
+      <TweakToggle label="Masquer les marques partenaires" value={!!t.masquerMarques}
+                   onChange={(v) => setTweak("masquerMarques", v)} />
+      <ThemeControls t={t} setTweak={setTweak} />
+    </TweaksPanel>
+  );
+}
+`;
+
 describe("parseTweakControls", () => {
+  it("extracts boolean TweakToggle controls (no options)", () => {
+    const controls = parseTweakControls(INDEX_JSX);
+    expect(controls.map((c) => c.key)).toEqual(["masquerCertifications", "masquerMarques"]);
+    const certifs = controls.find((c) => c.key === "masquerCertifications")!;
+    expect(certifs.type).toBe("toggle");
+    expect(certifs.label).toBe("Masquer les certifications");
+    expect(certifs.options).toEqual([]);
+    expect(certifs.group).toBe("Sections");
+    expect(controls.find((c) => c.key === "masquerMarques")!.type).toBe("toggle");
+  });
+
   it("extracts colors (resolving named palettes), selects, and groups", () => {
     const controls = parseTweakControls(THEME_JSX);
     const fond = controls.find((c) => c.key === "fond")!;
@@ -69,5 +97,11 @@ describe("buildTweaksSchema", () => {
     expect(schema.pageExtras["/service-clim"].map((c) => c.key)).toEqual(["stepperStyle", "proStyle"]);
     // index ("/") with no extras is absent
     expect(schema.pageExtras["/"]).toBeUndefined();
+  });
+
+  it("keeps the home page's section toggles as per-page extras", () => {
+    const schema = buildTweaksSchema(THEME_JSX, { "/": INDEX_JSX });
+    expect(schema.pageExtras["/"].map((c) => c.key)).toEqual(["masquerCertifications", "masquerMarques"]);
+    expect(schema.pageExtras["/"].every((c) => c.type === "toggle")).toBe(true);
   });
 });
