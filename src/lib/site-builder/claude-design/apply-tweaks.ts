@@ -148,20 +148,31 @@ const STEPPER_STYLE_MAP: Record<string, string> = {
   "Encadré": "framed", "Flottant": "float", "Pile": "deck", "Roue": "wheel", "Roue 2": "wheel2",
 };
 const PRO_STYLE_MAP: Record<string, string> = { "Deck": "deck", "Slider": "slider" };
+// Mobile "Affichage" of the solution stepper: a foldable card deck vs the
+// default slides. Unlike stepperStyle/proStyle, the deck is BUILT by site.js
+// (mdBuild) rather than toggled by a class, so we drive it through the runtime's
+// __cvcStepperMobile hook (and seed the key it reads at init).
+const STEPPER_MOBILE_MAP: Record<string, string> = { "Deck": "deck", "Slides": "slides" };
 
 /**
  * Trusted inline-script body that applies the per-page section tweaks
- * (stepperStyle / proStyle): seeds the localStorage keys the template reads and
- * toggles the CSS classes on `.solution-stepper` / `.pro-stage`. No-op when the
- * elements or values are absent. Returns JS (no tags).
+ * (stepperStyle / stepperMobile / proStyle): seeds the localStorage keys the
+ * template reads and toggles the CSS classes on `.solution-stepper` /
+ * `.pro-stage` (or calls the runtime hook for the mobile deck, which JS builds).
+ * No-op when the elements or values are absent. Returns JS (no tags).
  */
 export function tweaksExtrasScript(tweaks: Tweaks): string {
   const stepper = STEPPER_STYLE_MAP[tweaks?.stepperStyle as string];
+  const stepperMobile = STEPPER_MOBILE_MAP[tweaks?.stepperMobile as string];
   const pro = PRO_STYLE_MAP[tweaks?.proStyle as string];
   const parts: string[] = [];
   if (stepper) {
     parts.push(`try{localStorage.setItem('cvc-stepper-style', ${JSON.stringify(stepper)});}catch(e){}`);
     parts.push(`(function(){var s=document.querySelector('.solution-stepper');if(s){['framed','float','deck','wheel','wheel2'].forEach(function(k){s.classList.toggle('is-'+k, k===${JSON.stringify(stepper)});});}})();`);
+  }
+  if (stepperMobile) {
+    parts.push(`try{localStorage.setItem('cvc-stepper-mobile', ${JSON.stringify(stepperMobile)});}catch(e){}`);
+    parts.push(`(function(){if(window.__cvcStepperMobile)window.__cvcStepperMobile(${JSON.stringify(stepperMobile)});})();`);
   }
   if (pro) {
     parts.push(`try{localStorage.setItem('cvc-pro-style', ${JSON.stringify(pro)});}catch(e){}`);

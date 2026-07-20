@@ -11,6 +11,7 @@ import {
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
+import { STAMP_PATHS } from "@/lib/site-builder/claude-design/stamp-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
@@ -170,8 +171,20 @@ const EDIT_SCRIPT = `
   reportH(); setTimeout(reportH, 60); setTimeout(reportH, 350);
   window.addEventListener('load', reportH);
   if(window.ResizeObserver){ try{ new ResizeObserver(reportH).observe(document.body); }catch(e){} }
-  function nodeAt(path){ var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n; }
-  function pathOf(el){ var p=[]; while(el && el!==root){ var par=el.parentNode; if(!par) break; var ch=Array.prototype.filter.call(par.childNodes,function(c){return c.nodeType===1;}); p.unshift(Array.prototype.indexOf.call(ch, el)); el=par; } return p; }
+  // Resolve/produce paths via the stable data-cdp stamp (see STAMP_PATHS) so a
+  // node the design JS moved is still found at its ORIGINAL static path — the
+  // same key OVERRIDES_APPLY and the server-side apply use. Fall back to a live
+  // positional walk for anything the design JS created after stamping.
+  function nodeAt(path){
+    if(!path) return null;
+    var key = path.join('.');
+    try{ var stamped = root.querySelector('[data-cdp="' + key + '"]'); if(stamped) return stamped; }catch(e){}
+    var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n;
+  }
+  function pathOf(el){
+    if(el && el.getAttribute){ var st=el.getAttribute('data-cdp'); if(st!==null && st!=='') return st.split('.').map(Number); }
+    var p=[]; while(el && el!==root){ var par=el.parentNode; if(!par) break; var ch=Array.prototype.filter.call(par.childNodes,function(c){return c.nodeType===1;}); p.unshift(Array.prototype.indexOf.call(ch, el)); el=par; } return p;
+  }
   // An "image zone" is an img, a Claude .ph placeholder, or an element whose
   // own inline style carries a design image variable (--img / --bg). We match the
   // element's OWN style (not an ancestor's) so clicking text inside a bg section
@@ -502,7 +515,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // extras, then the editor's own interaction script.
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script><script>${STAMP_PATHS}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (

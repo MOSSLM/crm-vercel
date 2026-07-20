@@ -1,4 +1,4 @@
-import { tweaksToCssVars, tweaksDataAttrs, tweaksFontLinkHref, tweakEnabled } from "../apply-tweaks";
+import { tweaksToCssVars, tweaksDataAttrs, tweaksFontLinkHref, tweakEnabled, tweaksExtrasScript } from "../apply-tweaks";
 
 describe("tweaksToCssVars", () => {
   it("maps base colors when present", () => {
@@ -58,6 +58,31 @@ describe("tweaksDataAttrs", () => {
     const attrs = tweaksDataAttrs({ masquerCertifications: true });
     expect(attrs["data-hide-certifs"]).toBe("");
     expect(attrs).not.toHaveProperty("data-hide-marques");
+  });
+});
+
+describe("tweaksExtrasScript — stepperMobile (mobile deck)", () => {
+  it("drives the runtime hook + seeds the key when set to Deck", () => {
+    const js = tweaksExtrasScript({ stepperMobile: "Deck" });
+    expect(js).toContain("cvc-stepper-mobile");
+    expect(js).toContain('"deck"');
+    expect(js).toContain("__cvcStepperMobile");
+  });
+
+  it("emits slides (default) so switching back off deactivates the deck", () => {
+    const js = tweaksExtrasScript({ stepperMobile: "Slides" });
+    expect(js).toContain('window.__cvcStepperMobile("slides")');
+  });
+
+  it("no-ops for an unknown value", () => {
+    expect(tweaksExtrasScript({ stepperMobile: "???" })).not.toContain("cvc-stepper-mobile");
+  });
+
+  it("still applies stepperStyle and proStyle alongside", () => {
+    const js = tweaksExtrasScript({ stepperStyle: "Pile", stepperMobile: "Deck", proStyle: "Deck" });
+    expect(js).toContain("cvc-stepper-style");
+    expect(js).toContain("cvc-stepper-mobile");
+    expect(js).toContain("cvc-pro-style");
   });
 });
 
