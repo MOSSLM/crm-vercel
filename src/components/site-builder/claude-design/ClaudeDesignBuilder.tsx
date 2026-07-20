@@ -11,6 +11,7 @@ import {
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
+import { tweakEnabled } from "@/lib/site-builder/claude-design/apply-tweaks";
 import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
@@ -125,7 +126,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
 
   const handleEdit = (key: string, entry: OverrideEntry | null) => applyOverrideUpdates({ [key]: entry });
 
-  const handleTweak = (k: string, v: string) => {
+  const handleTweak = (k: string, v: string | boolean) => {
     if (!data) return;
     const tweaks = { ...data.tweaks, [k]: v };
     setData({ ...data, tweaks });
@@ -431,7 +432,7 @@ function CanvasStage({ viewport, company, children }: {
 function DesignTweaks({ controls, tweaks, onChange }: {
   controls: TweakControl[];
   tweaks: Record<string, unknown>;
-  onChange: (key: string, value: string) => void;
+  onChange: (key: string, value: string | boolean) => void;
 }) {
   const val = (k: string, d = "") => (typeof tweaks[k] === "string" ? (tweaks[k] as string) : d);
   if (controls.length === 0) {
@@ -444,6 +445,24 @@ function DesignTweaks({ controls, tweaks, onChange }: {
         Tweaks détectés dans le design Claude — réglables ici, figés au déploiement.
       </div>
       {controls.map((c) => {
+        // Boolean toggle (a TweakToggle, e.g. "Masquer les certifications"):
+        // label + switch on one row, no options.
+        if (c.type === "toggle") {
+          const on = tweakEnabled(tweaks[c.key]);
+          return (
+            <div className="cd-dtweak" key={c.key} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+              <div className="cd-dtweak-lab" style={{ marginBottom: 0 }}>{c.label}</div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={on}
+                aria-label={c.label}
+                className={"cd-switch" + (on ? " on" : "")}
+                onClick={() => onChange(c.key, !on)}
+              />
+            </div>
+          );
+        }
         const current = val(c.key, c.options[0] ?? "");
         return (
           <div className="cd-dtweak" key={c.key}>

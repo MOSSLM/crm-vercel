@@ -91,16 +91,32 @@ export function tweaksToCssVars(tweaks: Tweaks): Record<string, string> {
   return vars;
 }
 
-/** The `data-*` attributes theme-apply.js sets on <html> (font/weight keys). */
+/** Normalises a boolean-ish tweak value (a TweakToggle). The panel stores real
+ *  booleans, but tolerate the string forms in case a value round-trips as text
+ *  ("false" must read as OFF, not as a truthy non-empty string). */
+export function tweakEnabled(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") { const s = value.trim().toLowerCase(); return s === "true" || s === "1" || s === "on"; }
+  return false;
+}
+
+/** The `data-*` attributes theme-apply.js sets on <html>: the font/weight keys,
+ *  plus the section-visibility flags the template's persistSections() toggles
+ *  (`data-hide-certifs` / `data-hide-marques`, keyed by masquerCertifications /
+ *  masquerMarques). Present-only: a flag is emitted only when ON, so the
+ *  `html[data-hide-*]` CSS never matches while the section is shown. */
 export function tweaksDataAttrs(tweaks: Tweaks): Record<string, string> {
   const v = tweaks || {};
   const w = WEIGHT_SETS[v.epaisseur as string] || WEIGHT_SETS["Normal"];
   const f = FONT_SETS[v.police as string] || FONT_SETS["Éditorial"];
-  return {
+  const attrs: Record<string, string> = {
     "data-weight": w.key,
     "data-font": f.key,
     "data-font-serif": f.serif ? "1" : "0",
   };
+  if (tweakEnabled(v.masquerCertifications)) attrs["data-hide-certifs"] = "";
+  if (tweakEnabled(v.masquerMarques)) attrs["data-hide-marques"] = "";
+  return attrs;
 }
 
 /** The Google Fonts stylesheet href for the tweaks' chosen typeface. */
