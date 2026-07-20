@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
   Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
-  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe,
+  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff,
 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
@@ -16,6 +16,11 @@ import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-desig
 import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
+import {
+  initHistory, pushSnapshot, undo as undoHistory, redo as redoHistory,
+  canUndo as histCanUndo, canRedo as histCanRedo, currentSnapshot,
+  type History, type DesignSnapshot,
+} from "@/lib/site-builder/claude-design/override-history";
 import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
 import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
@@ -57,6 +62,19 @@ function companyInitials(nom: string) {
   return nom.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
 }
 
+/** The editable slice of the board (per-page overrides + tweaks) as an undo snapshot. */
+function snapshotOf(d: BoardData): DesignSnapshot {
+  return {
+    overrides: Object.fromEntries(d.pages.map((p) => [p.instanceId, p.overrides])),
+    tweaks: d.tweaks,
+  };
+}
+
+/** Image-type override keys cleared by "Réinitialiser les images". */
+function isImageOverrideKey(key: string): boolean {
+  return /:(image|bg_image|image_set|image_mobile)$/.test(key);
+}
+
 export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [data, setData] = React.useState<BoardData | null>(null);
   const [activeSlug, setActiveSlug] = React.useState("/");
@@ -67,14 +85,25 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [company, setCompany] = React.useState<Company | null>(null);
   const [companyVars, setCompanyVars] = React.useState<Record<string, string> | null>(null);
   const saveTimers = React.useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Latest pending save fn per key — lets an explicit "Enregistrer" (and undo/redo)
+  // flush or supersede the debounced writes instead of waiting out the timer.
+  const pendingFns = React.useRef<Map<string, () => Promise<void>>>(new Map());
+  // Undo/redo history over the editable state (all pages' overrides + tweaks).
+  const historyRef = React.useRef<History>({ stack: [], cursor: 0 });
+  const [histFlags, setHistFlags] = React.useState({ canUndo: false, canRedo: false });
+  const syncHistFlags = React.useCallback(() => {
+    setHistFlags({ canUndo: histCanUndo(historyRef.current), canRedo: histCanRedo(historyRef.current) });
+  }, []);
 
   const load = React.useCallback(async () => {
     const res = await authedFetch(`/api/site-builder/claude/${siteId}/pages`);
     if (!res.ok) { toast.error("Chargement impossible"); return; }
     const d = (await res.json()) as BoardData;
     setData(d);
+    historyRef.current = initHistory(snapshotOf(d));
+    syncHistFlags();
     setActiveSlug((prev) => (d.pages.some((p) => p.slug === prev) ? prev : d.pages[0]?.slug ?? "/"));
-  }, [siteId]);
+  }, [siteId, syncHistFlags]);
 
   React.useEffect(() => { load(); }, [load]);
 
@@ -96,11 +125,36 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
     } catch { setCompanyVars(null); }
   };
 
+  const runPending = React.useCallback(async (key: string) => {
+    const fn = pendingFns.current.get(key);
+    if (!fn) return;
+    pendingFns.current.delete(key);
+    try { await fn(); } finally { if (pendingFns.current.size === 0) setSave("saved"); }
+  }, []);
+
   const debounce = (key: string, fn: () => Promise<void>, ms = 600) => {
     setSave("pending");
+    pendingFns.current.set(key, fn);
     clearTimeout(saveTimers.current[key]);
-    saveTimers.current[key] = setTimeout(async () => { await fn(); setSave("saved"); }, ms);
+    saveTimers.current[key] = setTimeout(() => { void runPending(key); }, ms);
   };
+
+  // Run every pending debounced save immediately and wait for them — used by the
+  // explicit "Enregistrer" button so the next "Aperçu" reflects the latest edits.
+  const flushSaves = React.useCallback(async () => {
+    const entries = [...pendingFns.current.entries()];
+    entries.forEach(([key]) => clearTimeout(saveTimers.current[key]));
+    pendingFns.current.clear();
+    if (entries.length === 0) { setSave("saved"); return; }
+    try { await Promise.all(entries.map(([, fn]) => fn())); } finally { setSave("saved"); }
+  }, []);
+
+  // Record the post-edit state as an undo step. `tag` coalesces consecutive edits
+  // of the same control into one step (undefined = discrete step).
+  const recordHistory = React.useCallback((nextData: BoardData, tag?: string) => {
+    historyRef.current = pushSnapshot(historyRef.current, snapshotOf(nextData), tag);
+    syncHistFlags();
+  }, [syncHistFlags]);
 
   const active = data?.pages.find((p) => p.slug === activeSlug) ?? null;
   const serviceTagBySlug = React.useMemo(() => serviceTagMapFromSitemap(data?.sitemap ?? []), [data?.sitemap]);
@@ -115,7 +169,9 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
       if (v === null) delete overrides[k];
       else overrides[k] = v;
     }
-    setData({ ...data, pages: data.pages.map((p) => p.slug === active.slug ? { ...p, overrides } : p) });
+    const nextData = { ...data, pages: data.pages.map((p) => p.slug === active.slug ? { ...p, overrides } : p) };
+    setData(nextData);
+    recordHistory(nextData); // discrete step (image pick / text commit / delete)
     debounce(`ov-${active.instanceId}`, async () => {
       await authedFetch(`/api/site-builder/claude/${siteId}/pages`, {
         method: "PATCH", headers: { "Content-Type": "application/json" },
@@ -129,7 +185,9 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const handleTweak = (k: string, v: string | boolean) => {
     if (!data) return;
     const tweaks = { ...data.tweaks, [k]: v };
-    setData({ ...data, tweaks });
+    const nextData = { ...data, tweaks };
+    setData(nextData);
+    recordHistory(nextData, `tweak:${k}`); // coalesce repeated changes of one control
     debounce("tweaks", async () => {
       await authedFetch(`/api/site-builder/sites/${siteId}`, {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tweaks }),
@@ -148,6 +206,92 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
       });
     });
   };
+
+  // Restore a history snapshot: swap every page's overrides + the tweaks, cancel
+  // the debounced writes it supersedes, and persist only the instances/tweaks that
+  // actually differ from where we were.
+  const applySnapshot = React.useCallback(async (to: DesignSnapshot, from: DesignSnapshot) => {
+    Object.values(saveTimers.current).forEach((t) => clearTimeout(t));
+    saveTimers.current = {};
+    pendingFns.current.clear();
+
+    setData((prev) => prev ? {
+      ...prev,
+      pages: prev.pages.map((p) => ({ ...p, overrides: (to.overrides[p.instanceId] as Record<string, OverrideEntry> | undefined) ?? {} })),
+      tweaks: to.tweaks as Tweaks,
+    } : prev);
+
+    const jobs: Promise<unknown>[] = [];
+    const ids = new Set([...Object.keys(from.overrides), ...Object.keys(to.overrides)]);
+    for (const instanceId of ids) {
+      if (JSON.stringify(from.overrides[instanceId]) !== JSON.stringify(to.overrides[instanceId])) {
+        jobs.push(authedFetch(`/api/site-builder/claude/${siteId}/pages`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ instanceId, overrides: to.overrides[instanceId] ?? {} }),
+        }));
+      }
+    }
+    if (JSON.stringify(from.tweaks) !== JSON.stringify(to.tweaks)) {
+      jobs.push(authedFetch(`/api/site-builder/sites/${siteId}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tweaks: to.tweaks }),
+      }));
+    }
+    if (jobs.length === 0) return;
+    setSave("pending");
+    try { await Promise.all(jobs); } finally { setSave("saved"); }
+  }, [siteId]);
+
+  const undo = React.useCallback(() => {
+    const h = historyRef.current;
+    if (!histCanUndo(h)) return;
+    const from = currentSnapshot(h)!;
+    historyRef.current = undoHistory(h);
+    syncHistFlags();
+    void applySnapshot(currentSnapshot(historyRef.current)!, from);
+  }, [applySnapshot, syncHistFlags]);
+
+  const redo = React.useCallback(() => {
+    const h = historyRef.current;
+    if (!histCanRedo(h)) return;
+    const from = currentSnapshot(h)!;
+    historyRef.current = redoHistory(h);
+    syncHistFlags();
+    void applySnapshot(currentSnapshot(historyRef.current)!, from);
+  }, [applySnapshot, syncHistFlags]);
+
+  // Clear every image override on the active page (keeps text edits). Goes through
+  // applyOverrideUpdates so it's a single undoable step and auto-saves.
+  const resetPageImages = () => {
+    if (!active) return;
+    const imageKeys = Object.keys(active.overrides).filter(isImageOverrideKey);
+    if (imageKeys.length === 0) { toast.info("Aucune image personnalisée sur cette page"); return; }
+    if (!window.confirm(`Réinitialiser ${imageKeys.length} image(s) de « ${active.title || active.slug} » ? Les textes sont conservés.`)) return;
+    applyOverrideUpdates(Object.fromEntries(imageKeys.map((k) => [k, null])));
+    toast.success("Images réinitialisées");
+  };
+
+  // Undo/redo keyboard shortcuts (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z or Ctrl+Y). A key
+  // pressed while typing inside the preview iframe never reaches here, so native
+  // contenteditable undo handles in-progress typing; ours acts on committed edits.
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === "z" && !e.shiftKey) { e.preventDefault(); undo(); }
+      else if ((k === "z" && e.shiftKey) || k === "y") { e.preventDefault(); redo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
+  // Warn before leaving with unsaved (still-debounced) edits.
+  React.useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (pendingFns.current.size > 0) { e.preventDefault(); e.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   // "Créer template" snapshots the current tweaks/edits into a new reusable variation.
   const handleCreateTemplate = async () => {
@@ -207,6 +351,14 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           <button className="cd-back"><ChevronLeft className="ico-sm" />Designs</button>
         </Link>
         <div className="cd-crumbs"><span className="cur">{data.name}</span></div>
+        <div className="cd-vp-pick" title="Annuler / Rétablir">
+          <button className="cd-vp" onClick={undo} disabled={!histFlags.canUndo} title="Annuler (Ctrl+Z)" style={{ opacity: histFlags.canUndo ? 1 : 0.35 }}>
+            <Undo2 className="ico-sm" />
+          </button>
+          <button className="cd-vp" onClick={redo} disabled={!histFlags.canRedo} title="Rétablir (Ctrl+Maj+Z)" style={{ opacity: histFlags.canRedo ? 1 : 0.35 }}>
+            <Redo2 className="ico-sm" />
+          </button>
+        </div>
         <span className={"cd-saved" + (save === "pending" ? " dirty" : "")}>
           <i />{save === "pending" ? "Enregistrement…" : "Enregistré"}
         </span>
@@ -222,6 +374,14 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           <button className={"cd-vp" + (viewport === "mobile" ? " on" : "")} onClick={() => setViewport("mobile")} title="Mobile"><Smartphone className="ico-sm" /></button>
         </div>
         <div className="cd-save-group" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            className="cd-btn outline"
+            onClick={async () => { await flushSaves(); toast.success("Enregistré"); }}
+            disabled={save === "saved"}
+            title="Enregistrer tout de suite (à faire avant d’ouvrir l’Aperçu)"
+          >
+            <Save className="ico-sm" />{save === "pending" ? "Enregistrer" : "Enregistré"}
+          </button>
           <a
             href={buildPreviewUrl(siteId, activeSlug, {
               siteDomain: SITE_DOMAIN,
@@ -317,6 +477,18 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
             designName={data.name}
             pages={data.pages.map((p) => ({ slug: p.slug, title: p.title, html: p.html, overrides: p.overrides }))}
           />
+          {active && (
+            <div style={{ padding: "10px 14px", borderTop: "1px solid var(--cd-border)" }}>
+              <button
+                className="cd-btn outline"
+                onClick={resetPageImages}
+                style={{ width: "100%", justifyContent: "center" }}
+                title="Efface les images posées sur cette page (les textes sont conservés). Utile pour repartir propre."
+              >
+                <ImageOff className="ico-sm" />Réinitialiser les images de cette page
+              </button>
+            </div>
+          )}
           <VariableBrowser siteId={siteId} company={company} companyVars={companyVars} onRetokenised={load} />
         </aside>
       </div>
