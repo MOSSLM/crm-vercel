@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { optimizeImageUpload } from "@/lib/images/optimize-image";
 
 export const dynamic = "force-dynamic";
 
@@ -40,18 +41,23 @@ export const POST = withAuth({}, async ({ req }) => {
   // import can map the original reference → public URL deterministically.
   const originalPath = (formData.get("original_path") as string | null)?.trim() || null;
 
-  const ext = file.name.split(".").pop() ?? "bin";
-  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  // Optimise before storing: JPEG/opaque-PNG → WebP, transparent PNG stays PNG,
+  // oversized images downscaled, quality reduced. Falls back to the original
+  // bytes when nothing can be gained (see optimizeImageUpload).
+  const opt = await optimizeImageUpload(await file.arrayBuffer(), file.type, file.name);
+
+  const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${opt.ext}`;
   const storagePath = `${siteId}/${unique}`;
 
   const supabase = getServiceClient();
 
-  const bytes = await file.arrayBuffer();
   const { error: uploadError } = await supabase.storage
     .from("site-builder-assets")
-    .upload(storagePath, bytes, {
-      contentType: file.type || "application/octet-stream",
+    .upload(storagePath, opt.bytes, {
+      contentType: opt.contentType,
       upsert: false,
+      // Storage paths are unique per upload, so the bytes are immutable.
+      cacheControl: "31536000, immutable",
     });
 
   if (uploadError) return jsonError(uploadError.message, 500);
@@ -67,8 +73,8 @@ export const POST = withAuth({}, async ({ req }) => {
       path: storagePath,
       public_url: urlData.publicUrl,
       filename: file.name,
-      size: file.size,
-      mime_type: file.type,
+      size: opt.bytes.length,
+      mime_type: opt.contentType,
       original_path: originalPath,
     })
     .select("id, public_url, filename, size, mime_type, created_at")

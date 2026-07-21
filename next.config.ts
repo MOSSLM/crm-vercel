@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     "@tailwindcss/node",
     "lightningcss",
     "postcss",
+    // Native binaries — used server-side to optimise uploaded images
+    // (src/lib/images/optimize-image.ts). Must not be bundled by webpack.
+    "sharp",
   ],
 };
 

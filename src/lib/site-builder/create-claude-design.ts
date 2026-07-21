@@ -21,6 +21,7 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { DEFAULT_STYLE_GUIDE } from "@/types";
 import { wrapRawHtml } from "@/lib/site-builder/wrap-raw-html";
+import { addImageLoadingHints } from "@/lib/site-builder/claude-design/add-image-loading-hints";
 
 /** Shared theme bucket for imported Claude designs (no themes-table FK). */
 export const CLAUDE_DESIGN_THEME_SLUG = "claude-designs";
@@ -52,7 +53,7 @@ export async function createClaudeDesignSite(
     section_id: sectionId,
     category: "misc",
     name: input.name,
-    code: wrapRawHtml(input.html),
+    code: wrapRawHtml(addImageLoadingHints(input.html)),
     example_data: { __source_html: input.html },
     schema: null,
     is_tag_adaptive: false,
@@ -163,16 +164,19 @@ export async function createClaudeDesignMultiPage(
   const sectionRows = pages.map((page) => {
     const sectionId = `d-${randomUUID()}`;
     sectionIdBySlug.set(page.slug, sectionId);
+    // Add lazy-load / async-decode hints to the page's <img> tags (lighter,
+    // faster demo sites). __source_html stays pristine for the tokenize re-run.
+    const html = addImageLoadingHints(page.html);
     return {
       theme_slug: themeSlug,
       section_id: sectionId,
       category: "misc",
       name: `${input.name} — ${page.title}`,
-      code: wrapRawHtml(page.html),
+      code: wrapRawHtml(html),
       // __source_html: rewritten-but-still-bracketed source (mapping re-runs).
       // __token_html: tokenised body the builder loads for preview + inline edit.
       // __page_js: this page's own runtime JS, injected after the shared site.js.
-      example_data: { __source_html: page.sourceHtml, __token_html: page.html, __page_js: page.js ?? "" },
+      example_data: { __source_html: page.sourceHtml, __token_html: html, __page_js: page.js ?? "" },
       schema: null,
       is_tag_adaptive: false,
       render_mode: "raw",
