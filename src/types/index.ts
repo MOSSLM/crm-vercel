@@ -366,6 +366,18 @@ export interface AuditPricingService {
   amount: number;
   is_mrr: boolean;
   enabled: boolean;
+  /** Render the amount as "À partir de X €" (starting-from pricing). */
+  from?: boolean;
+}
+
+/** Second, alternative pricing card (e.g. the fully-custom "site sur mesure"). */
+export interface AuditSecondaryCard {
+  title: string;
+  subtitle?: string;
+  description?: string;
+  amount: number;
+  /** Render the amount as "À partir de X €". */
+  from?: boolean;
 }
 
 export interface AuditGlobalStyle {
@@ -428,6 +440,10 @@ export interface AuditPage5 {
   pricing_subtitle?: string;
   show_grain?: boolean;
   flatten_grain_for_pdf?: boolean;
+  /** Hide the "Investissement total" row (e.g. starting-from pricing). */
+  hide_total?: boolean;
+  /** Second pricing card rendered under the main one (e.g. custom site). */
+  secondary_card?: AuditSecondaryCard;
   price_note: string;
   // Additional optional services (mini cards)
   additional_services?: AuditAdditionalService[];

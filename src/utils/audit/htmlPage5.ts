@@ -33,15 +33,27 @@ export function page5Html(content: AuditContent, opts?: { forPdf?: boolean }) {
               <div class="invest-label">${esc(svc.label)}</div>
               ${svc.sub_label ? `<div class="invest-sublabel">${esc(svc.sub_label)}</div>` : ''}
             </div>
-            <div class="invest-amount">${fmtEur(svc.amount)}${svc.is_mrr ? '/mois' : ''}</div>
+            <div class="invest-amount">${svc.from ? 'À partir de ' : ''}${fmtEur(svc.amount)}${svc.is_mrr ? '/mois' : ''}</div>
           </div>`).join('')}
-          <div class="invest-row-total">
+          ${!p.hide_total ? `<div class="invest-row-total">
             <div class="invest-total-label">${hasMrr ? 'Investissement total (an 1)' : 'Investissement total'}</div>
             <div class="invest-total-amount">${fmtEur(total)}</div>
-          </div>
+          </div>` : ''}
           <div class="invest-note">${esc(p.price_note)}</div>
         </div>
       </div>
+      ${p.secondary_card ? `
+      <div style="margin-top:16px;background:white;border:1px solid rgba(58,123,213,0.18);border-radius:6px;padding:22px 28px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px">
+        <div>
+          ${p.secondary_card.subtitle ? `<div style="font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:#3A7BD5;font-weight:500;margin-bottom:6px">${esc(p.secondary_card.subtitle)}</div>` : ''}
+          <div style="font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:300;color:#0B1D3A;font-style:italic">${esc(p.secondary_card.title)}</div>
+          ${p.secondary_card.description ? `<div style="font-size:11px;color:rgba(11,29,58,0.55);margin-top:6px;line-height:1.6;max-width:380px">${esc(p.secondary_card.description)}</div>` : ''}
+        </div>
+        <div style="text-align:right;white-space:nowrap">
+          ${p.secondary_card.from ? `<div style="font-size:10px;color:rgba(11,29,58,0.5)">À partir de</div>` : ''}
+          <div style="font-family:'Cormorant Garamond',serif;font-weight:300;font-size:30px;color:#0B1D3A">${fmtEur(p.secondary_card.amount)}</div>
+        </div>
+      </div>` : ''}
     </div>
     ${addlServices.length > 0 ? `
     <div style="margin-top:32px">
