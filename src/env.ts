@@ -38,6 +38,21 @@ const envSchema = z
     // The cross-field check below enforces "at least one" in prod.
     CRON_SECRET: z.string().min(1).optional(),
     PG_CRON_SECRET: z.string().min(1).optional(),
+    // Twilio (téléphonie / SMS) — tout est optionnel : quand les clés sont
+    // absentes, les routes /api/twilio/* répondent 503 et le softphone bascule
+    // en mode simulation (voir TWILIO_MOCK). `ACCOUNT_SID` + `AUTH_TOKEN`
+    // servent au REST et à la vérification de signature des webhooks ; la paire
+    // `API_KEY_SID` / `API_KEY_SECRET` sert à signer les AccessToken du Voice
+    // SDK ; `TWIML_APP_SID` est la TwiML App dont la Voice URL pointe sur
+    // /api/twilio/voice.
+    TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
+    TWILIO_AUTH_TOKEN: z.string().min(1).optional(),
+    TWILIO_API_KEY_SID: z.string().min(1).optional(),
+    TWILIO_API_KEY_SECRET: z.string().min(1).optional(),
+    TWILIO_TWIML_APP_SID: z.string().min(1).optional(),
+    // Force le mode simulation même si des clés sont présentes ("true"/"1").
+    // Absent + clés absentes ⇒ mock implicite. Voir src/lib/twilio/config.ts.
+    TWILIO_MOCK: z.string().optional(),
   })
   .refine(
     (env) => !isProd || !!env.CRON_SECRET || !!env.PG_CRON_SECRET,
@@ -65,6 +80,12 @@ const envResult = envSchema.safeParse({
   RENDER_API_URL: process.env.RENDER_API_URL,
   CRON_SECRET: process.env.CRON_SECRET,
   PG_CRON_SECRET: process.env.PG_CRON_SECRET,
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
+  TWILIO_API_KEY_SID: process.env.TWILIO_API_KEY_SID,
+  TWILIO_API_KEY_SECRET: process.env.TWILIO_API_KEY_SECRET,
+  TWILIO_TWIML_APP_SID: process.env.TWILIO_TWIML_APP_SID,
+  TWILIO_MOCK: process.env.TWILIO_MOCK,
 });
 
 if (!envResult.success) {
@@ -93,4 +114,10 @@ export const {
   RENDER_API_URL,
   CRON_SECRET,
   PG_CRON_SECRET,
+  TWILIO_ACCOUNT_SID,
+  TWILIO_AUTH_TOKEN,
+  TWILIO_API_KEY_SID,
+  TWILIO_API_KEY_SECRET,
+  TWILIO_TWIML_APP_SID,
+  TWILIO_MOCK,
 } = envResult.data;

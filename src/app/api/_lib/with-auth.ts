@@ -14,7 +14,8 @@ export type AuthedContext<TBody, TParams> = {
 };
 
 export type WithAuthOptions<TBody> = {
-  role?: UserRole;
+  /** Single role, or a list the caller must be one of (e.g. staff = admin|freelance). */
+  role?: UserRole | UserRole[];
   body?: ZodSchema<TBody>;
   cors?: CorsOptions;
 };

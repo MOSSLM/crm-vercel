@@ -28,6 +28,7 @@ import {
   Package,
   Euro,
   Flag,
+  Phone,
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
@@ -56,6 +57,7 @@ const NAV: NavSection[] = [
     label: "Démarchage",
     items: [
       { title: "Démarchage", href: "/espace-agent/demarchage", icon: Target },
+      { title: "Téléphone", href: "/espace-agent/telephone", icon: Phone },
       { title: "Messagerie", href: "/espace-agent/messagerie", icon: Inbox, soon: true },
       { title: "Séquences", href: "/espace-agent/sequences", icon: Workflow },
     ],
