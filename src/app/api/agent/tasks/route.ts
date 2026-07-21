@@ -3,6 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { advanceEnrollmentAfterTask } from "@/lib/automations/engine";
+import { advanceToContacted } from "@/app/api/agent/_lib";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -49,7 +50,7 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
   // his companies.
   const { data: task, error: taskErr } = await sc
     .from("prospection_tasks")
-    .select("id, enrollment_id, assignee_id, entreprise:entreprises(owner_id)")
+    .select("id, kind, opportunite_id, enrollment_id, assignee_id, entreprise:entreprises(owner_id)")
     .eq("id", id)
     .maybeSingle();
   if (taskErr) return jsonError(taskErr.message, 500, {}, cors);
@@ -88,6 +89,11 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
       .update({ stage_id: Number(stageId), updated_at: new Date().toISOString() })
       .eq("id", opportuniteId)
       .eq("owner_id", user.id);
+  } else if (status === "done" && task.kind === "call") {
+    // Completing a cold-call task → mark the deal "Contacté (appelé)" (unless the
+    // caller already set an explicit stage above). Forward-only, best effort.
+    const oppId = (task.opportunite_id as string | null) ?? opportuniteId ?? null;
+    if (oppId) await advanceToContacted(sc, oppId).catch(() => {});
   }
 
   return json(data, { headers: cors });

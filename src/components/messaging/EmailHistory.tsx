@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Inbox, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { Inbox, RefreshCw, CheckCircle2, AlertCircle, Mail, MessageCircle } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import { formatDate, type EmailLog } from "./emailTypes";
 
@@ -57,24 +57,38 @@ export function EmailHistory({ contactId, entrepriseId, refreshKey }: Props) {
           </div>
         ) : logs.length === 0 ? (
           <div className="p-6 text-center text-xs text-muted-foreground">
-            Aucun email envoyé{(contactId || entrepriseId) ? " pour cette sélection" : ""}
+            Aucun échange{(contactId || entrepriseId) ? " pour cette sélection" : ""}
           </div>
         ) : (
           <div className="divide-y">
-            {logs.map((log) => (
-              <div key={log.id} className="p-3">
-                <div className="flex items-start justify-between gap-1">
-                  <span className="line-clamp-2 text-xs font-medium leading-tight">{log.subject}</span>
-                  {log.status === "sent" ? (
-                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-                  )}
+            {logs.map((log) => {
+              const isWhatsApp = log.channel === "whatsapp";
+              return (
+                <div key={log.id} className="p-3">
+                  <div className="flex items-start justify-between gap-1">
+                    <div className="flex min-w-0 items-start gap-1.5">
+                      {isWhatsApp ? (
+                        <MessageCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#25D366]" />
+                      ) : (
+                        <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="line-clamp-2 text-xs font-medium leading-tight">
+                        {isWhatsApp ? log.body_text?.slice(0, 120) || log.subject : log.subject}
+                      </span>
+                    </div>
+                    {log.status === "sent" ? (
+                      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    ) : (
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                    )}
+                  </div>
+                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                    {isWhatsApp ? `WhatsApp · ${log.to_email || ""}` : log.to_email}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">{formatDate(log.sent_at)}</p>
                 </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">{log.to_email}</p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">{formatDate(log.sent_at)}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </ScrollArea>

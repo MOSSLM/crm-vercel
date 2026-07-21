@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Package } from "lucide-react";
 import { SubscriptionCard, type SubscriptionRow } from "@/components/client-portal/SubscriptionCard";
 import { SiteCard, type SiteRow } from "@/components/client-portal/SiteCard";
+import { SiteAdaptationCard } from "@/components/client-portal/SiteAdaptationCard";
 
 export default function ClientDashboardPage() {
   const { user } = useAuth();
@@ -60,6 +61,8 @@ export default function ClientDashboardPage() {
       </div>
 
       <SiteCard site={site} />
+
+      <SiteAdaptationCard />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">

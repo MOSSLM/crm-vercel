@@ -21,7 +21,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
 export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const supabase = getServiceClient();
   const body = await req.json();
-  const { name, description, site_config, enterprise_id, lead_magnet_project_id, style_guide, sitemap, is_template, build_stage, tweaks } = body as {
+  const { name, description, site_config, enterprise_id, lead_magnet_project_id, style_guide, sitemap, is_template, build_stage, tweaks, paywall_enabled, booking_url, client_brief } = body as {
     name?: string;
     description?: string;
     site_config?: SiteConfig;
@@ -32,6 +32,9 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
     is_template?: boolean;
     build_stage?: string;
     tweaks?: Record<string, unknown>;
+    paywall_enabled?: boolean;
+    booking_url?: string | null;
+    client_brief?: string | null;
   };
 
   const BUILD_STAGES = ["a_faire", "en_cours", "a_verifier", "pret"];
@@ -46,6 +49,9 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
   if (sitemap !== undefined) patch.sitemap = sitemap;
   if (is_template !== undefined) patch.is_template = is_template;
   if (tweaks !== undefined) patch.tweaks = tweaks;
+  if (paywall_enabled !== undefined) patch.paywall_enabled = paywall_enabled;
+  if (booking_url !== undefined) patch.booking_url = booking_url;
+  if (client_brief !== undefined) patch.client_brief = client_brief;
   if (build_stage !== undefined) {
     if (!BUILD_STAGES.includes(build_stage)) return jsonError("build_stage invalide", 400);
     patch.build_stage = build_stage;

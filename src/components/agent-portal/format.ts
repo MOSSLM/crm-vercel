@@ -20,6 +20,8 @@ export function one<T>(v: T | T[] | null | undefined): T | null {
 /** Semantic tint per Agent SAMA pipeline stage (uses globals.css tokens). */
 export const STAGE_TINT: Record<string, string> = {
   "Nouveau lead": "var(--info)",
+  "Première approche": "var(--info)",
+  "Contacté (appelé)": "var(--text-3)",
   Contacté: "var(--text-3)",
   "En échange": "var(--warn)",
   Intéressé: "var(--accent)",

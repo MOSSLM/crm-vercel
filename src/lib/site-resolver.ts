@@ -37,6 +37,10 @@ export interface ResolvedSite {
   siteId: string;
   /** Linked company id (null on a template). Enables per-company image fill. */
   enterpriseId?: number | null;
+  /** When true, the demo-site purchase paywall bar is shown to visitors. */
+  paywallEnabled?: boolean;
+  /** Optional booking link for the paywall "Réserver un appel" CTA. */
+  bookingUrl?: string | null;
   config: SiteConfig;
   enterpriseVariables: Record<string, string>;
   companyName?: string;
@@ -83,7 +87,7 @@ export async function resolveSite(
   let query = supabase
     .from("sites")
     .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_sitemap, published_instances, published_variables, published_reviews, is_claude_design, shared_assets, tweaks, published_shared_assets, published_tweaks"
+      "id, name, is_published, published_subdomain, published_domain, enterprise_id, paywall_enabled, booking_url, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_sitemap, published_instances, published_variables, published_reviews, is_claude_design, shared_assets, tweaks, published_shared_assets, published_tweaks"
     )
     .eq("is_published", true);
 
@@ -190,6 +194,8 @@ export async function resolveSite(
   return {
     siteId: siteRow.id,
     enterpriseId: (siteRow as { enterprise_id?: number | null }).enterprise_id ?? null,
+    paywallEnabled: (siteRow as { paywall_enabled?: boolean | null }).paywall_enabled ?? false,
+    bookingUrl: (siteRow as { booking_url?: string | null }).booking_url ?? null,
     config,
     enterpriseVariables: vars,
     companyName,
@@ -223,7 +229,7 @@ export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | n
   const { data: siteRow, error } = await supabase
     .from("sites")
     .select(
-      "id, name, enterprise_id, lead_magnet_project_id, site_config, style_guide, sitemap, is_claude_design, shared_assets, tweaks",
+      "id, name, enterprise_id, paywall_enabled, booking_url, lead_magnet_project_id, site_config, style_guide, sitemap, is_claude_design, shared_assets, tweaks",
     )
     .eq("id", siteId)
     .single();
@@ -284,6 +290,8 @@ export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | n
   return {
     siteId: siteRow.id,
     enterpriseId: (siteRow as { enterprise_id?: number | null }).enterprise_id ?? null,
+    paywallEnabled: (siteRow as { paywall_enabled?: boolean | null }).paywall_enabled ?? false,
+    bookingUrl: (siteRow as { booking_url?: string | null }).booking_url ?? null,
     config,
     enterpriseVariables: vars,
     companyName,

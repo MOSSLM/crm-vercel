@@ -52,20 +52,45 @@ export function AuditPage5({ content, activeField, onFieldClick }: Props) {
                       {svc.sub_label && <div style={{ fontSize: 10, color: 'rgba(181,208,240,0.35)', marginTop: 2 }}>{svc.sub_label}</div>}
                     </div>
                     <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 22, color: C.blanc, whiteSpace: 'nowrap' }}>
-                      {fmtEur(svc.amount)}{svc.is_mrr ? '/mois' : ''}
+                      {svc.from ? 'À partir de ' : ''}{fmtEur(svc.amount)}{svc.is_mrr ? '/mois' : ''}
                     </div>
                   </div>
                 ))}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'baseline', gap: 24, borderTop: `1px solid rgba(181,208,240,0.2)`, marginTop: 8, paddingTop: 20 }}>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: C.blanc }}>{hasMrr ? 'Investissement total (an 1)' : 'Investissement total'}</div>
-                  <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 40, color: C.blanc }}>{fmtEur(total)}</div>
-                </div>
+                {!p.hide_total && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'baseline', gap: 24, borderTop: `1px solid rgba(181,208,240,0.2)`, marginTop: 8, paddingTop: 20 }}>
+                    <div style={{ fontSize: 14, fontWeight: 500, color: C.blanc }}>{hasMrr ? 'Investissement total (an 1)' : 'Investissement total'}</div>
+                    <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 40, color: C.blanc }}>{fmtEur(total)}</div>
+                  </div>
+                )}
                 <Zone field="page5.price_note" activeField={activeField} onFieldClick={onFieldClick}>
                   <div style={{ marginTop: 20, fontSize: 10, color: 'rgba(181,208,240,0.4)', lineHeight: 1.7, borderTop: `1px solid rgba(181,208,240,0.08)`, paddingTop: 16 }}>{p.price_note}</div>
                 </Zone>
               </div>
             </div>
           </Zone>
+
+          {/* Secondary card — alternative offer (e.g. fully-custom site) */}
+          {p.secondary_card && (
+            <Zone field="page5.secondary_card" activeField={activeField} onFieldClick={onFieldClick} style={{ marginTop: 16 }}>
+              <div style={{ background: 'white', border: `1px solid rgba(58,123,213,0.18)`, borderRadius: 6, padding: '22px 28px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 24 }}>
+                <div>
+                  {p.secondary_card.subtitle && (
+                    <div style={{ fontSize: 9, letterSpacing: '0.2em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 6 }}>{p.secondary_card.subtitle}</div>
+                  )}
+                  <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 22, fontWeight: 300, color: C.nuit, fontStyle: 'italic' }}>{p.secondary_card.title}</div>
+                  {p.secondary_card.description && (
+                    <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.55)', marginTop: 6, lineHeight: 1.6, maxWidth: 380 }}>{p.secondary_card.description}</div>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  {p.secondary_card.from && (
+                    <div style={{ fontSize: 10, color: 'rgba(11,29,58,0.5)' }}>À partir de</div>
+                  )}
+                  <div style={{ fontFamily: "'Cormorant Garamond', serif", fontWeight: 300, fontSize: 30, color: C.nuit }}>{fmtEur(p.secondary_card.amount)}</div>
+                </div>
+              </div>
+            </Zone>
+          )}
         </div>
 
         {/* Additional optional services */}

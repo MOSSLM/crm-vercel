@@ -3,7 +3,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Plus, Trash2 } from 'lucide-react';
-import type { AuditPage5, AuditPricingService, AuditAdditionalService } from '@/types';
+import type { AuditPage5, AuditPricingService, AuditAdditionalService, AuditSecondaryCard } from '@/types';
 import { getServices, calcTotal, fmtEur } from '@/components/audit/AuditShared';
 import { FieldGroup, labelStyle } from './shared';
 
@@ -30,6 +30,11 @@ export function Page5Editor({ data, onChange }: Props) {
   };
   const addAddl = () => onChange({ ...data, additional_services: [...addlServices, { label: '', description: '', amount: 0, is_mrr: false, badge: '' }] });
   const removeAddl = (i: number) => onChange({ ...data, additional_services: addlServices.filter((_, idx) => idx !== i) });
+
+  const setSecondary = (patch: Partial<AuditSecondaryCard>) => {
+    const base: AuditSecondaryCard = data.secondary_card ?? { title: '', amount: 0 };
+    onChange({ ...data, secondary_card: { ...base, ...patch } });
+  };
 
   return (
     <div className="space-y-1">
@@ -67,6 +72,10 @@ export function Page5Editor({ data, onChange }: Props) {
                   /mois
                 </label>
                 <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+                  <input type="checkbox" checked={!!svc.from} onChange={e => setSvc(i, { from: e.target.checked })} className="w-3 h-3" />
+                  À partir de
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
                   <input type="checkbox" checked={svc.enabled} onChange={e => setSvc(i, { enabled: e.target.checked })} className="w-3 h-3" />
                   Actif
                 </label>
@@ -98,7 +107,12 @@ export function Page5Editor({ data, onChange }: Props) {
 
         <div className="bg-muted/40 rounded-md p-3 mb-3 text-xs text-muted-foreground">
           Total — {hasMrr ? 'an 1' : 'one-shot'} : <span className="font-semibold text-foreground">{fmtEur(total)}</span>
+          {data.hide_total && <span className="ml-1 italic">(masqué)</span>}
         </div>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer mb-3">
+          <input type="checkbox" checked={data.hide_total === true} onChange={e => onChange({ ...data, hide_total: e.target.checked })} className="w-3.5 h-3.5" />
+          Masquer la ligne « Investissement total »
+        </label>
 
         <FieldGroup label="Note tarifaire">
           <Textarea value={data.price_note} onChange={e => onChange({ ...data, price_note: e.target.value })} rows={3} />
@@ -115,6 +129,46 @@ export function Page5Editor({ data, onChange }: Props) {
             Supprimer le grain à l&apos;export PDF
           </label>
         </div>
+      </div>
+
+      {/* Secondary card — alternative offer (custom site) */}
+      <div className="border-b border-border pb-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className={labelStyle}>Carte secondaire (site sur mesure)</p>
+          {data.secondary_card ? (
+            <Button size="sm" variant="ghost" onClick={() => onChange({ ...data, secondary_card: undefined })} className="h-6 text-xs px-2">
+              <Trash2 className="h-3 w-3 mr-1" /> Retirer
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => onChange({ ...data, secondary_card: { title: 'Site sur mesure', subtitle: 'Autre formule', description: '', amount: 1990, from: true } })} className="h-6 text-xs px-2">
+              <Plus className="h-3 w-3 mr-1" /> Ajouter
+            </Button>
+          )}
+        </div>
+
+        {data.secondary_card && (
+          <div className="space-y-2">
+            <FieldGroup label="Sur-titre (petites caps)">
+              <Input value={data.secondary_card.subtitle || ''} onChange={e => setSecondary({ subtitle: e.target.value })} placeholder="Autre formule" />
+            </FieldGroup>
+            <FieldGroup label="Titre">
+              <Input value={data.secondary_card.title} onChange={e => setSecondary({ title: e.target.value })} placeholder="Site sur mesure" />
+            </FieldGroup>
+            <FieldGroup label="Description">
+              <Textarea value={data.secondary_card.description || ''} onChange={e => setSecondary({ description: e.target.value })} rows={2} placeholder="Vous choisissez votre direction artistique..." />
+            </FieldGroup>
+            <FieldGroup label="Montant (€)">
+              <div className="relative">
+                <Input type="number" value={data.secondary_card.amount || ''} onChange={e => setSecondary({ amount: parseFloat(e.target.value) || 0 })} className="pr-8" placeholder="0" />
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">€</span>
+              </div>
+            </FieldGroup>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <input type="checkbox" checked={!!data.secondary_card.from} onChange={e => setSecondary({ from: e.target.checked })} className="w-3.5 h-3.5" />
+              Afficher « À partir de »
+            </label>
+          </div>
+        )}
       </div>
 
       {/* Additional optional services */}

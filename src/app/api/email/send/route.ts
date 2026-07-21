@@ -4,6 +4,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { sendEmailSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { advanceToFirstApproach } from "@/app/api/agent/_lib";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -75,6 +76,12 @@ export const POST = withAuth({ body: sendEmailSchema }, async ({ body: payload, 
     });
   } catch (logErr) {
     console.error("[email/send] log error:", logErr);
+  }
+
+  // First email touch on a deal → nudge it to "Première approche" (best effort,
+  // no-op unless the deal is still at its pipeline's first stage).
+  if (status === "sent" && payload.opportunite_id) {
+    await advanceToFirstApproach(getServiceClient(), payload.opportunite_id).catch(() => {});
   }
 
   if (status === "failed") return jsonError(errorMessage ?? "Échec envoi", 502, {}, cors);

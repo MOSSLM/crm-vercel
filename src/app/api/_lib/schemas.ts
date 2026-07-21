@@ -14,6 +14,12 @@ export const stripeCheckoutSchema = z.object({
 });
 export type StripeCheckoutPayload = z.infer<typeof stripeCheckoutSchema>;
 
+/** Public demo-site purchase: an anonymous visitor buys the demo they're viewing. */
+export const stripeCheckoutDemoSchema = z.object({
+  site_id: z.string().uuid({ message: "site_id must be a UUID" }),
+});
+export type StripeCheckoutDemoPayload = z.infer<typeof stripeCheckoutDemoSchema>;
+
 export const sendEmailSchema = z.object({
   to_email: z.string().email({ message: "to_email must be a valid email" }),
   to_name: z.string().min(1).max(200).optional(),
@@ -44,6 +50,23 @@ export const emailLogsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 export type EmailLogsQuery = z.infer<typeof emailLogsQuerySchema>;
+
+/**
+ * Records an outreach message in email_logs. Used to log WhatsApp sends (wa.me
+ * has no send API) so they appear in the contact exchange history next to emails.
+ * `to_email` is repurposed to hold the phone number for whatsapp rows.
+ */
+export const messageLogSchema = z.object({
+  channel: z.enum(["email", "whatsapp"]).default("whatsapp"),
+  contact_id: z.string().optional().nullable(),
+  entreprise_id: z.coerce.number().int().positive().optional().nullable(),
+  opportunite_id: z.string().uuid().optional().nullable(),
+  to_name: z.string().max(200).optional().nullable(),
+  to_email: z.string().max(320).optional().nullable(),
+  subject: z.string().max(998).optional().nullable(),
+  body_text: z.string().max(8000).optional().nullable(),
+});
+export type MessageLogPayload = z.infer<typeof messageLogSchema>;
 
 export const enrichLeadMagnetSchema = z.object({
   project_id: z.string().uuid(),

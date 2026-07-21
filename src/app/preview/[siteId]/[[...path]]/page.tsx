@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from "next";
 import { notFound } from "next/navigation";
 import { resolveDraftSite } from "@/lib/site-resolver";
 import { DynamicPageRenderer } from "@/components/site-builder/DynamicPageRenderer";
+import { DemoPaywallBar } from "@/components/site-builder/DemoPaywallBar";
 import { parseEnterpriseTags } from "@/components/site-builder/SitePageView";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
@@ -48,6 +49,9 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
     menus,
     publishedSitemap,
     claudeDesign,
+    paywallEnabled,
+    bookingUrl,
+    companyName,
   } = site;
 
   if (!publishedInstances || publishedInstances.length === 0) notFound();
@@ -67,17 +71,22 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
   const visibleMenus = buildPublicMenus(menus, publishedSitemap, instances, enterpriseTags);
 
   return (
-    <DynamicPageRenderer
-      siteId={siteId}
-      pageSlug={pageSlug}
-      styleGuide={publishedStyleGuide ?? styleGuide}
-      variables={enterpriseVariables}
-      reviews={reviews}
-      menus={visibleMenus}
-      preloadedInstances={publishedInstances}
-      claudeDesign={claudeDesign}
-      serviceTagBySlug={claudeDesign ? serviceTagMapFromSitemap(publishedSitemap) : undefined}
-      enterpriseId={enterpriseId}
-    />
+    <>
+      <DynamicPageRenderer
+        siteId={siteId}
+        pageSlug={pageSlug}
+        styleGuide={publishedStyleGuide ?? styleGuide}
+        variables={enterpriseVariables}
+        reviews={reviews}
+        menus={visibleMenus}
+        preloadedInstances={publishedInstances}
+        claudeDesign={claudeDesign}
+        serviceTagBySlug={claudeDesign ? serviceTagMapFromSitemap(publishedSitemap) : undefined}
+        enterpriseId={enterpriseId}
+      />
+      {paywallEnabled && (
+        <DemoPaywallBar siteId={siteId} bookingUrl={bookingUrl} companyName={companyName} />
+      )}
+    </>
   );
 }

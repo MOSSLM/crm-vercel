@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { createClient } from "@/utils/supabase/client";
+import { authedFetch } from "@/utils/authedFetch";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -443,6 +444,38 @@ export function WhatsAppTab() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // wa.me has no send API, so we record the send (channel=whatsapp) at click time
+  // so it appears in the contact exchange history alongside emails. Best-effort.
+  const logWhatsApp = async () => {
+    if (!selectedRow) return;
+    try {
+      await authedFetch("/api/messages/log", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: "whatsapp",
+          contact_id: selectedRow.kind === "contact" ? selectedRow.contactId : null,
+          entreprise_id: selectedRow.companyId,
+          opportunite_id: selectedRow.opportunityId ?? null,
+          to_name:
+            selectedRow.kind === "contact"
+              ? `${selectedRow.firstName} ${selectedRow.lastName}`.trim() || selectedRow.companyName
+              : selectedRow.companyName,
+          to_email: phone || null,
+          body_text: messageBody,
+        }),
+      });
+    } catch {
+      /* logging is best-effort — never block opening WhatsApp */
+    }
+  };
+
+  const openWhatsApp = () => {
+    if (!whatsappUrl) return;
+    void logWhatsApp();
+    window.open(whatsappUrl, "_blank");
+  };
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* ── LEFT: contact list ── */}
@@ -714,7 +747,7 @@ export function WhatsAppTab() {
                   <div className="flex-1" />
 
                   <Button
-                    onClick={() => whatsappUrl && window.open(whatsappUrl, "_blank")}
+                    onClick={openWhatsApp}
                     disabled={!whatsappUrl}
                     className="gap-2 bg-[#25D366] text-white hover:bg-[#20bc5a]"
                   >
