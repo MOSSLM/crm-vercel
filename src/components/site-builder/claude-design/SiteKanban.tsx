@@ -5,7 +5,7 @@ import Link from "next/link";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { toast } from "sonner";
-import { Pencil, Globe, Rocket, GripVertical } from "lucide-react";
+import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 
@@ -16,6 +16,7 @@ interface Demo {
   published_subdomain: string | null;
   enterprise_id: number | null;
   company_name: string | null;
+  paywall_enabled: boolean;
 }
 interface ReadyCompany { id: number; name: string }
 interface TemplateRef { id: string; name: string }
@@ -34,6 +35,13 @@ const STAGES: Array<{ key: string; label: string; hint: string }> = [
 ];
 
 const SITE_DOMAIN = "samadigitalstudio.fr";
+
+/** Shareable URL for a demo: its deployed subdomain, else the id-based preview. */
+function demoShareUrl(demo: Demo): string {
+  return demo.published_subdomain
+    ? `https://${demo.published_subdomain}.${SITE_DOMAIN}`
+    : `https://${demo.id}.${SITE_DOMAIN}`;
+}
 
 type DragItem = { kind: "demo"; id: string } | { kind: "company"; id: number };
 
@@ -54,18 +62,49 @@ function CompanyCard({ company }: { company: ReadyCompany }) {
   );
 }
 
-function DemoCard({ demo, onDeploy }: { demo: Demo; onDeploy: (id: string) => void }) {
+function DemoCard({
+  demo, onDeploy, onTogglePaywall, selected, onToggleSelect,
+}: {
+  demo: Demo;
+  onDeploy: (id: string) => void;
+  onTogglePaywall: (id: string, value: boolean) => void;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
+}) {
   const [{ isDragging }, drag] = useDrag(() => ({
     type: "CARD",
     item: { kind: "demo", id: demo.id } as DragItem,
     collect: (m) => ({ isDragging: m.isDragging() }),
   }), [demo.id]);
+  const [copied, setCopied] = React.useState(false);
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(demoShareUrl(demo));
+      setCopied(true);
+      toast.success("Lien du site copié.");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Copie impossible.");
+    }
+  };
+
   return (
     <div
       ref={drag as unknown as React.Ref<HTMLDivElement>}
-      className={`rounded-lg border bg-card p-3 text-sm shadow-sm cursor-grab ${isDragging ? "opacity-40" : ""}`}
+      className={`rounded-lg border bg-card p-3 text-sm shadow-sm cursor-grab ${isDragging ? "opacity-40" : ""} ${selected ? "ring-2 ring-primary" : ""}`}
     >
-      <div className="font-medium truncate">{demo.company_name || demo.name}</div>
+      <div className="flex items-start justify-between gap-2">
+        <div className="font-medium truncate">{demo.company_name || demo.name}</div>
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(demo.id)}
+          onClick={(e) => e.stopPropagation()}
+          title="Sélectionner pour une action groupée"
+          className="mt-0.5 shrink-0 cursor-pointer"
+        />
+      </div>
       {demo.published_subdomain ? (
         <a
           href={`https://${demo.published_subdomain}.${SITE_DOMAIN}`}
@@ -79,12 +118,30 @@ function DemoCard({ demo, onDeploy }: { demo: Demo; onDeploy: (id: string) => vo
       ) : (
         <div className="text-xs text-muted-foreground">Non déployé</div>
       )}
+
+      <button
+        type="button"
+        onClick={() => onTogglePaywall(demo.id, !demo.paywall_enabled)}
+        className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium transition-colors ${
+          demo.paywall_enabled
+            ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
+            : "bg-muted text-muted-foreground hover:bg-muted/70"
+        }`}
+        title={demo.paywall_enabled ? "Paywall actif — cliquer pour désactiver" : "Paywall inactif — cliquer pour activer"}
+      >
+        {demo.paywall_enabled ? <Lock className="h-3 w-3" /> : <LockOpen className="h-3 w-3" />}
+        Paywall {demo.paywall_enabled ? "ON" : "OFF"}
+      </button>
+
       <div className="mt-2 flex gap-1.5">
         <Link href={`/site-builder/claude/${demo.id}`} className="flex-1">
           <Button variant="outline" size="sm" className="w-full gap-1 text-xs h-7">
             <Pencil className="h-3 w-3" /> Éditer
           </Button>
         </Link>
+        <Button variant="ghost" size="sm" className="text-xs h-7 gap-1" onClick={copyLink} title="Copier le lien à envoyer au client">
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} Lien
+        </Button>
         <Button variant="ghost" size="sm" className="text-xs h-7 gap-1" onClick={() => onDeploy(demo.id)}>
           <Rocket className="h-3 w-3" /> Déployer
         </Button>
@@ -94,12 +151,15 @@ function DemoCard({ demo, onDeploy }: { demo: Demo; onDeploy: (id: string) => vo
 }
 
 function KanbanColumn({
-  stage, demos, onDropCard, onDeploy,
+  stage, demos, onDropCard, onDeploy, onTogglePaywall, selectedIds, onToggleSelect,
 }: {
   stage: { key: string; label: string; hint: string };
   demos: Demo[];
   onDropCard: (item: DragItem, stage: string) => void;
   onDeploy: (id: string) => void;
+  onTogglePaywall: (id: string, value: boolean) => void;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
 }) {
   const [{ isOver, canDrop }, drop] = useDrop(() => ({
     accept: "CARD",
@@ -119,7 +179,16 @@ function KanbanColumn({
       </div>
       <p className="text-[11px] text-muted-foreground mb-3">{stage.hint}</p>
       <div className="flex flex-col gap-2">
-        {demos.map((d) => <DemoCard key={d.id} demo={d} onDeploy={onDeploy} />)}
+        {demos.map((d) => (
+          <DemoCard
+            key={d.id}
+            demo={d}
+            onDeploy={onDeploy}
+            onTogglePaywall={onTogglePaywall}
+            selected={selectedIds.has(d.id)}
+            onToggleSelect={onToggleSelect}
+          />
+        ))}
       </div>
     </div>
   );
@@ -129,6 +198,39 @@ function Board() {
   const [data, setData] = React.useState<BoardData>({ templates: [], demos: [], readyCompanies: [] });
   const [templateId, setTemplateId] = React.useState<string>("");
   const [loading, setLoading] = React.useState(true);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+
+  const toggleSelect = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const setPaywall = async (ids: string[], value: boolean) => {
+    if (ids.length === 0) return;
+    // Optimistic.
+    setData((prev) => ({
+      ...prev,
+      demos: prev.demos.map((d) => (ids.includes(d.id) ? { ...d, paywall_enabled: value } : d)),
+    }));
+    const results = await Promise.all(
+      ids.map((id) =>
+        authedFetch(`/api/site-builder/sites/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paywall_enabled: value }),
+        }).catch(() => null),
+      ),
+    );
+    if (results.some((r) => !r || !r.ok)) {
+      toast.error("Certaines mises à jour du paywall ont échoué.");
+      load();
+    } else {
+      toast.success(value ? "Paywall activé." : "Paywall désactivé.");
+    }
+  };
 
   const load = React.useCallback(async () => {
     try {
@@ -213,6 +315,21 @@ function Board() {
         <span className="text-xs text-muted-foreground">Glisse une société « Prêt pour LM » dans « À faire » pour générer son site.</span>
       </div>
 
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-primary/5 px-3 py-2 text-sm">
+          <span className="font-medium">{selected.size} site{selected.size > 1 ? "s" : ""} sélectionné{selected.size > 1 ? "s" : ""}</span>
+          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setPaywall([...selected], true)}>
+            <Lock className="h-3 w-3" /> Activer le paywall
+          </Button>
+          <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" onClick={() => setPaywall([...selected], false)}>
+            <LockOpen className="h-3 w-3" /> Désactiver
+          </Button>
+          <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setSelected(new Set())}>
+            Effacer la sélection
+          </Button>
+        </div>
+      )}
+
       <div className="grid grid-cols-[220px_1fr] gap-4">
         {/* Pool of ready companies */}
         <div className="rounded-xl border bg-muted/30 p-3">
@@ -236,6 +353,9 @@ function Board() {
               demos={data.demos.filter((d) => d.build_stage === stage.key)}
               onDropCard={handleDrop}
               onDeploy={handleDeploy}
+              onTogglePaywall={(id, value) => setPaywall([id], value)}
+              selectedIds={selected}
+              onToggleSelect={toggleSelect}
             />
           ))}
         </div>

@@ -29,6 +29,9 @@ export interface EmailLog {
   contact_id?: string;
   entreprise_id?: number;
   opportunite_id?: string;
+  /** "email" (default) or "whatsapp" — email_logs is now a multi-channel log. */
+  channel?: "email" | "whatsapp";
+  body_text?: string;
 }
 
 export interface ContactRow {

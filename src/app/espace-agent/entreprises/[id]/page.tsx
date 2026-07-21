@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   ArrowLeft,
   Building2,
@@ -19,8 +20,28 @@ import {
   Globe,
   User,
   Plus,
+  Copy,
+  Check,
+  Monitor,
+  History,
 } from "lucide-react";
 import { formatPrice } from "@/components/agent-portal/format";
+import { AgentExchangeHistory } from "@/components/agent-portal/AgentExchangeHistory";
+
+const SITE_DOMAIN = "samadigitalstudio.fr";
+
+type SiteRow = {
+  id: string;
+  name: string | null;
+  published_subdomain: string | null;
+  paywall_enabled: boolean | null;
+};
+
+function demoShareUrl(site: SiteRow): string {
+  return site.published_subdomain
+    ? `https://${site.published_subdomain}.${SITE_DOMAIN}`
+    : `https://${site.id}.${SITE_DOMAIN}`;
+}
 
 type Entreprise = {
   id: number;
@@ -53,13 +74,16 @@ export default function AgentEntrepriseDetailPage() {
   const [ent, setEnt] = useState<Entreprise | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [opps, setOpps] = useState<Opp[]>([]);
+  const [site, setSite] = useState<SiteRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [savingPaywall, setSavingPaywall] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
     const supabase = createClient();
-    const [entRes, contactsRes, oppsRes] = await Promise.all([
+    const [entRes, contactsRes, oppsRes, siteRes] = await Promise.all([
       supabase
         .from("entreprises")
         .select(
@@ -77,12 +101,52 @@ export default function AgentEntrepriseDetailPage() {
         .select("id, name, montant, stage_id")
         .eq("entreprise_id", id)
         .eq("owner_id", user?.id ?? ""),
+      supabase
+        .from("sites")
+        .select("id, name, published_subdomain, paywall_enabled")
+        .eq("enterprise_id", id)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
     if (entRes.data) setEnt(entRes.data as Entreprise);
     if (contactsRes.data) setContacts(contactsRes.data as Contact[]);
     if (oppsRes.data) setOpps(oppsRes.data as Opp[]);
+    setSite((siteRes.data as SiteRow | null) ?? null);
     setLoading(false);
   }, [id, user?.id]);
+
+  const copyDemoLink = async () => {
+    if (!site) return;
+    try {
+      await navigator.clipboard.writeText(demoShareUrl(site));
+      setCopied(true);
+      toast.success("Lien du site démo copié.");
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      toast.error("Copie impossible.");
+    }
+  };
+
+  const togglePaywall = async (value: boolean) => {
+    if (!site) return;
+    setSavingPaywall(true);
+    setSite({ ...site, paywall_enabled: value });
+    try {
+      const res = await authedFetch(`/api/site-builder/sites/${site.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paywall_enabled: value }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(value ? "Paywall activé pour ce client." : "Paywall désactivé.");
+    } catch {
+      setSite({ ...site, paywall_enabled: !value });
+      toast.error("Impossible de mettre à jour le paywall.");
+    } finally {
+      setSavingPaywall(false);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -177,6 +241,45 @@ export default function AgentEntrepriseDetailPage() {
         </CardContent>
       </Card>
 
+      {site && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Monitor className="h-4 w-4 text-muted-foreground" /> Site démo
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center gap-2">
+              <a
+                href={demoShareUrl(site)}
+                target="_blank"
+                rel="noreferrer"
+                className="min-w-0 flex-1 truncate text-sm text-primary hover:underline"
+              >
+                {demoShareUrl(site)}
+              </a>
+              <Button size="sm" variant="outline" className="gap-1" onClick={copyDemoLink}>
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                Copier le lien
+              </Button>
+            </div>
+            <div className="flex items-center justify-between rounded-md border px-3 py-2">
+              <div>
+                <div className="text-sm font-medium">Paywall d’achat</div>
+                <div className="text-xs text-muted-foreground">
+                  Affiche la barre « Acheter ce site » sur le site démo de ce client.
+                </div>
+              </div>
+              <Switch
+                checked={!!site.paywall_enabled}
+                disabled={savingPaywall}
+                onCheckedChange={togglePaywall}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Contacts</CardTitle>
@@ -222,6 +325,17 @@ export default function AgentEntrepriseDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <History className="h-4 w-4 text-muted-foreground" /> Historique des échanges
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AgentExchangeHistory entrepriseId={ent.id} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

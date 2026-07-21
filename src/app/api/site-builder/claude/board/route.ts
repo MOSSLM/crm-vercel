@@ -19,7 +19,7 @@ export const GET = withAuth({}, async () => {
   const [{ data: sites, error: sErr }, { data: readyProjects, error: pErr }] = await Promise.all([
     supabase
       .from("sites")
-      .select("id, name, is_template, build_stage, published_subdomain, enterprise_id, updated_at")
+      .select("id, name, is_template, build_stage, published_subdomain, enterprise_id, paywall_enabled, updated_at")
       .eq("is_claude_design", true)
       .order("updated_at", { ascending: false }),
     supabase
@@ -32,7 +32,7 @@ export const GET = withAuth({}, async () => {
 
   const allSites = (sites ?? []) as Array<{
     id: string; name: string; is_template: boolean | null; build_stage: string | null;
-    published_subdomain: string | null; enterprise_id: number | null;
+    published_subdomain: string | null; enterprise_id: number | null; paywall_enabled: boolean | null;
   }>;
 
   const templates = allSites.filter((s) => s.is_template).map((s) => ({ id: s.id, name: s.name }));
@@ -66,6 +66,7 @@ export const GET = withAuth({}, async () => {
       build_stage: d.build_stage ?? "a_faire",
       published_subdomain: d.published_subdomain,
       enterprise_id: d.enterprise_id,
+      paywall_enabled: d.paywall_enabled ?? false,
       company_name: d.enterprise_id != null ? nameById.get(d.enterprise_id) ?? null : null,
     })),
     readyCompanies,

@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { resolveSite } from "@/lib/site-resolver";
 import ThemeLayout from "@/templates/theme-default/layout";
+import { DemoPaywallBar } from "@/components/site-builder/DemoPaywallBar";
 
 // Imported Claude designs (and responsive templates generally) rely on their
 // own `<meta viewport>`, which is stripped on import. Re-emit it site-wide so
@@ -34,6 +35,9 @@ export default async function SiteLayout({ children, params }: SiteLayoutProps) 
       phone={phone}
     >
       {children}
+      {site.paywallEnabled && (
+        <DemoPaywallBar siteId={site.siteId} bookingUrl={site.bookingUrl} companyName={companyName} />
+      )}
     </ThemeLayout>
   );
 }
