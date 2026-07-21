@@ -5,7 +5,7 @@
  * current user (or, for an admin, a target user via `userId`).
  */
 import { useCallback, useEffect, useState } from "react";
-import { Power, PhoneForwarded, Mic, Loader2 } from "lucide-react";
+import { Power, PhoneForwarded, Mic, Loader2, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import {
   Card,
@@ -26,13 +26,34 @@ import {
 } from "@/components/ui/select";
 import { authedFetch } from "@/utils/authedFetch";
 
+interface ScheduleWindow {
+  days: number[];
+  start: string;
+  end: string;
+}
+interface PhoneSchedule {
+  autoMode?: boolean;
+  tz?: string;
+  windows?: ScheduleWindow[];
+}
 interface Settings {
   user_id: string;
   mode: "on" | "off";
   default_number_id: string | null;
   forward_to_e164: string | null;
   recording_enabled: boolean;
+  schedule?: PhoneSchedule | null;
 }
+
+const DAYS = [
+  { n: 1, label: "L" },
+  { n: 2, label: "M" },
+  { n: 3, label: "M" },
+  { n: 4, label: "J" },
+  { n: 5, label: "V" },
+  { n: 6, label: "S" },
+  { n: 7, label: "D" },
+];
 
 interface NumberOpt {
   id: string;
@@ -45,6 +66,10 @@ export function PhoneSettings({ userId }: { userId?: string }) {
   const [numbers, setNumbers] = useState<NumberOpt[]>([]);
   const [loading, setLoading] = useState(true);
   const [forward, setForward] = useState("");
+  const [autoMode, setAutoMode] = useState(false);
+  const [days, setDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("18:00");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,6 +81,14 @@ export function PhoneSettings({ userId }: { userId?: string }) {
         setSettings(data.settings);
         setNumbers(data.numbers);
         setForward(data.settings.forward_to_e164 ?? "");
+        const sched = data.settings.schedule ?? {};
+        setAutoMode(!!sched.autoMode);
+        const w = sched.windows?.[0];
+        if (w) {
+          setDays(w.days);
+          setStart(w.start);
+          setEnd(w.end);
+        }
       }
     } finally {
       setLoading(false);
@@ -188,6 +221,100 @@ export function PhoneSettings({ userId }: { userId?: string }) {
               save({ recordingEnabled: v }, v ? "Enregistrement activé." : "Enregistrement désactivé.")
             }
           />
+        </div>
+
+        {/* On/Off schedule */}
+        <div className="rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <div className="text-sm font-medium">Programmation On / Off</div>
+                <div className="text-xs text-muted-foreground">
+                  Bascule automatique selon vos horaires (fuseau Europe/Paris).
+                </div>
+              </div>
+            </div>
+            <Switch
+              checked={autoMode}
+              onCheckedChange={(v) => {
+                setAutoMode(v);
+                save(
+                  {
+                    schedule: {
+                      autoMode: v,
+                      tz: "Europe/Paris",
+                      windows: [{ days, start, end }],
+                    },
+                  },
+                  v ? "Programmation activée." : "Programmation désactivée.",
+                );
+              }}
+            />
+          </div>
+
+          {autoMode && (
+            <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap gap-1">
+                {DAYS.map((d) => {
+                  const on = days.includes(d.n);
+                  return (
+                    <button
+                      key={d.n}
+                      type="button"
+                      onClick={() =>
+                        setDays((prev) =>
+                          prev.includes(d.n)
+                            ? prev.filter((x) => x !== d.n)
+                            : [...prev, d.n].sort(),
+                        )
+                      }
+                      className={`h-8 w-8 rounded-full text-xs font-medium transition ${
+                        on
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-border text-muted-foreground"
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="time"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  className="w-32"
+                />
+                <span className="text-sm text-muted-foreground">à</span>
+                <Input
+                  type="time"
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                  className="w-32"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    save(
+                      {
+                        schedule: {
+                          autoMode: true,
+                          tz: "Europe/Paris",
+                          windows: [{ days, start, end }],
+                        },
+                      },
+                      "Programmation enregistrée.",
+                    )
+                  }
+                >
+                  Enregistrer
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

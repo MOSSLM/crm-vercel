@@ -45,6 +45,7 @@ export interface ActiveCall {
   contactId?: string;
   entrepriseId?: number;
   opportuniteId?: string;
+  callSid?: string;
   startedAt: number | null; // epoch ms when answered
 }
 
@@ -56,17 +57,25 @@ export interface DialTarget {
   opportuniteId?: string;
 }
 
+export interface IncomingInfo {
+  from: string;
+}
+
 interface DialerContextValue {
   available: boolean; // staff + widget mounted
   status: DialerStatus;
   mode: DialerMode;
   muted: boolean;
   activeCall: ActiveCall | null;
+  incoming: IncomingInfo | null;
   widgetOpen: boolean;
   openWidget: () => void;
   closeWidget: () => void;
   dial: (target: DialTarget) => Promise<void>;
   hangup: () => void;
+  acceptIncoming: () => void;
+  rejectIncoming: () => void;
+  transfer: (to: string) => Promise<void>;
   toggleMute: () => void;
   sendDigit: (digit: string) => void;
 }
@@ -84,6 +93,7 @@ export const useDialer = (): DialerContextValue => {
       mode: "mock",
       muted: false,
       activeCall: null,
+      incoming: null,
       widgetOpen: false,
       openWidget: () => {},
       closeWidget: () => {},
@@ -91,6 +101,9 @@ export const useDialer = (): DialerContextValue => {
         toast.error("Le téléphone n'est pas disponible ici.");
       },
       hangup: () => {},
+      acceptIncoming: () => {},
+      rejectIncoming: () => {},
+      transfer: async () => {},
       toggleMute: () => {},
       sendDigit: () => {},
     };
@@ -108,10 +121,12 @@ export function DialerProvider({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<DialerMode>("mock");
   const [muted, setMuted] = useState(false);
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
+  const [incoming, setIncoming] = useState<IncomingInfo | null>(null);
   const [widgetOpen, setWidgetOpen] = useState(false);
 
   const deviceRef = useRef<Device | null>(null);
   const callRef = useRef<Call | null>(null);
+  const incomingRef = useRef<Call | null>(null);
   const mockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeCallRef = useRef<ActiveCall | null>(null);
   activeCallRef.current = activeCall;
@@ -169,8 +184,19 @@ export function DialerProvider({ children }: { children: ReactNode }) {
           }
         });
         device.on("incoming", (call: Call) => {
-          // Inbound handling lands in Phase 3; for now let it time out.
-          call.on("cancel", () => {});
+          incomingRef.current = call;
+          const fromParam = (call.parameters?.From as string | undefined) ?? "Appel entrant";
+          setIncoming({ from: fromParam });
+          setWidgetOpen(true);
+          const clearIncoming = () => {
+            if (incomingRef.current === call) {
+              incomingRef.current = null;
+              setIncoming(null);
+            }
+          };
+          call.on("cancel", clearIncoming);
+          call.on("disconnect", clearIncoming);
+          call.on("reject", clearIncoming);
         });
         await device.register();
         deviceRef.current = device;
@@ -209,6 +235,23 @@ export function DialerProvider({ children }: { children: ReactNode }) {
     setMuted(false);
     setStatus(deviceRef.current || mode === "mock" ? "ready" : "offline");
   }, [mode]);
+
+  const wireCallEnd = useCallback(
+    (call: Call) => {
+      const onEnd = () => {
+        callRef.current = null;
+        endLocalState();
+      };
+      call.on("disconnect", onEnd);
+      call.on("cancel", onEnd);
+      call.on("reject", onEnd);
+      call.on("error", (err: { message?: string }) => {
+        toast.error(`Erreur d'appel: ${err?.message ?? "inconnue"}`);
+        onEnd();
+      });
+    },
+    [endLocalState],
+  );
 
   const logMockCall = useCallback(
     async (call: ActiveCall, durationSeconds: number) => {
@@ -285,27 +328,18 @@ export function DialerProvider({ children }: { children: ReactNode }) {
         });
         callRef.current = twilioCall;
         twilioCall.on("accept", () => {
-          setActiveCall((prev) => (prev ? { ...prev, startedAt: Date.now() } : prev));
+          const sid = twilioCall.parameters?.CallSid;
+          setActiveCall((prev) => (prev ? { ...prev, startedAt: Date.now(), callSid: sid } : prev));
           setStatus("incall");
         });
-        const onEnd = () => {
-          callRef.current = null;
-          endLocalState();
-        };
-        twilioCall.on("disconnect", onEnd);
-        twilioCall.on("cancel", onEnd);
-        twilioCall.on("reject", onEnd);
-        twilioCall.on("error", (err: { message?: string }) => {
-          toast.error(`Erreur d'appel: ${err?.message ?? "inconnue"}`);
-          onEnd();
-        });
+        wireCallEnd(twilioCall);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "inconnue";
         toast.error(`Impossible de passer l'appel: ${msg}`);
         endLocalState();
       }
     },
-    [staff, status, mode, endLocalState],
+    [staff, status, mode, endLocalState, wireCallEnd],
   );
 
   // --- hangup -------------------------------------------------------------
@@ -349,6 +383,68 @@ export function DialerProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // --- incoming call ------------------------------------------------------
+  const acceptIncoming = useCallback(() => {
+    const call = incomingRef.current;
+    if (!call) return;
+    const from = incoming?.from ?? "Appel entrant";
+    try {
+      call.accept();
+    } catch {
+      /* ignore */
+    }
+    callRef.current = call;
+    incomingRef.current = null;
+    setIncoming(null);
+    setActiveCall({
+      to: from,
+      direction: "inbound",
+      label: from,
+      callSid: call.parameters?.CallSid,
+      startedAt: Date.now(),
+    });
+    setStatus("incall");
+    wireCallEnd(call);
+  }, [incoming, wireCallEnd]);
+
+  // --- transfer (cold) ----------------------------------------------------
+  const transfer = useCallback(
+    async (to: string) => {
+      const sid = activeCallRef.current?.callSid;
+      if (!sid || mode === "mock") {
+        toast.info("Transfert indisponible en simulation.");
+        return;
+      }
+      const target = to.replace(/[^\d+]/g, "");
+      if (!target) {
+        toast.error("Numéro de transfert invalide.");
+        return;
+      }
+      try {
+        const res = await authedFetch("/api/twilio/transfer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ callSid: sid, to: target }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+        toast.success(`Appel transféré vers ${target}.`);
+      } catch {
+        toast.error("Transfert impossible.");
+      }
+    },
+    [mode],
+  );
+
+  const rejectIncoming = useCallback(() => {
+    try {
+      incomingRef.current?.reject();
+    } catch {
+      /* ignore */
+    }
+    incomingRef.current = null;
+    setIncoming(null);
+  }, []);
+
   const value = useMemo<DialerContextValue>(
     () => ({
       available: !!staff,
@@ -356,15 +452,34 @@ export function DialerProvider({ children }: { children: ReactNode }) {
       mode,
       muted,
       activeCall,
+      incoming,
       widgetOpen,
       openWidget: () => setWidgetOpen(true),
       closeWidget: () => setWidgetOpen(false),
       dial,
       hangup,
+      acceptIncoming,
+      rejectIncoming,
+      transfer,
       toggleMute,
       sendDigit,
     }),
-    [staff, status, mode, muted, activeCall, widgetOpen, dial, hangup, toggleMute, sendDigit],
+    [
+      staff,
+      status,
+      mode,
+      muted,
+      activeCall,
+      incoming,
+      widgetOpen,
+      dial,
+      hangup,
+      acceptIncoming,
+      rejectIncoming,
+      transfer,
+      toggleMute,
+      sendDigit,
+    ],
   );
 
   return (

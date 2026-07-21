@@ -17,6 +17,7 @@ import {
   FlaskConical,
   Radio,
   Loader2,
+  PhoneForwarded,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,11 +36,14 @@ export function SoftphoneWidget() {
   const dialer = useDialer();
   const [manual, setManual] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferTo, setTransferTo] = useState("");
 
-  const { status, mode, muted, activeCall, widgetOpen } = dialer;
+  const { status, mode, muted, activeCall, incoming, widgetOpen } = dialer;
   const inCall = status === "incall";
   const connecting = status === "connecting";
   const busy = inCall || connecting;
+  const ringingIn = !!incoming && !busy;
 
   // Tick the in-call timer.
   useEffect(() => {
@@ -77,7 +81,11 @@ export function SoftphoneWidget() {
           className="fixed bottom-5 right-5 z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition hover:scale-105 hover:shadow-xl"
           aria-label="Ouvrir le téléphone"
         >
-          {busy ? <PhoneCall className="h-6 w-6 animate-pulse" /> : <Phone className="h-6 w-6" />}
+          {busy || ringingIn ? (
+            <PhoneCall className="h-6 w-6 animate-pulse" />
+          ) : (
+            <Phone className="h-6 w-6" />
+          )}
         </button>
       )}
 
@@ -109,6 +117,28 @@ export function SoftphoneWidget() {
           </div>
 
           <div className="p-4">
+            {/* Incoming call banner */}
+            {ringingIn && incoming && (
+              <div className="mb-3 rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-center dark:border-emerald-900/50 dark:bg-emerald-950/40">
+                <div className="text-xs font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                  Appel entrant
+                </div>
+                <div className="mb-2 truncate text-sm font-semibold">{incoming.from}</div>
+                <div className="flex justify-center gap-2">
+                  <Button
+                    size="sm"
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                    onClick={dialer.acceptIncoming}
+                  >
+                    <Phone className="mr-1 h-4 w-4" /> Répondre
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={dialer.rejectIncoming}>
+                    <PhoneOff className="mr-1 h-4 w-4" /> Refuser
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {/* Call state */}
             <div className="mb-3 min-h-[52px] rounded-lg bg-muted/40 px-3 py-2 text-center">
               {busy && activeCall ? (
@@ -165,6 +195,17 @@ export function SoftphoneWidget() {
                   >
                     {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   </Button>
+                  {inCall && dialer.mode === "live" && (
+                    <Button
+                      type="button"
+                      variant={transferOpen ? "default" : "outline"}
+                      size="icon"
+                      onClick={() => setTransferOpen((v) => !v)}
+                      aria-label="Transférer"
+                    >
+                      <PhoneForwarded className="h-4 w-4" />
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     variant="destructive"
@@ -200,6 +241,30 @@ export function SoftphoneWidget() {
                 </>
               )}
             </div>
+
+            {/* Transfer input */}
+            {inCall && transferOpen && (
+              <div className="mt-3 flex gap-2">
+                <Input
+                  value={transferTo}
+                  onChange={(e) => setTransferTo(e.target.value)}
+                  placeholder="Transférer vers +33…"
+                  inputMode="tel"
+                  className="h-9"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    void dialer.transfer(transferTo);
+                    setTransferTo("");
+                    setTransferOpen(false);
+                  }}
+                  disabled={!transferTo.trim()}
+                >
+                  OK
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       )}

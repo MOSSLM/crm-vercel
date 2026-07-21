@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Phone, Radio, FlaskConical, Loader2, Hash, ArrowRightLeft } from "lucide-react";
+import { Phone, Radio, FlaskConical, Loader2, Hash, ArrowRightLeft, Network } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -24,6 +24,7 @@ import { authedFetch } from "@/utils/authedFetch";
 import { useDialer } from "@/components/telephone/DialerProvider";
 import { CallHistory } from "@/components/telephone/CallHistory";
 import { PhoneSettings } from "@/components/telephone/PhoneSettings";
+import { VoicemailInbox } from "@/components/telephone/VoicemailInbox";
 
 type Health = {
   mock: boolean;
@@ -122,7 +123,7 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
       </Card>
 
       {scope === "admin" && (
-        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        <div className="mt-6 grid gap-3 sm:grid-cols-3">
           <Link href="/telephone/numeros">
             <Card className="h-full transition hover:border-primary/50 hover:shadow-sm">
               <CardContent className="flex items-center gap-3 py-4">
@@ -149,12 +150,35 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
               </CardContent>
             </Card>
           </Link>
+          <Link href="/telephone/svi">
+            <Card className="h-full transition hover:border-primary/50 hover:shadow-sm">
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Network className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">Standard (SVI)</div>
+                  <div className="text-xs text-muted-foreground">Accueil &amp; menu à touches</div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       )}
 
       <div className="mt-6">
         <PhoneSettings />
       </div>
+
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Messagerie vocale</CardTitle>
+          <CardDescription>Messages laissés en votre absence.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <VoicemailInbox />
+        </CardContent>
+      </Card>
 
       <Card className="mt-6">
         <CardHeader>
