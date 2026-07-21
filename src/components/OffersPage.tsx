@@ -267,7 +267,7 @@ export const OffersPage: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <Switch checked={form.visible_in_qualification} onCheckedChange={(v) => setForm((p) => ({ ...p, visible_in_qualification: Boolean(v) }))} />
-                <Label>Visible en qualification</Label>
+                <Label>Visible / en ligne (agents &amp; qualification)</Label>
               </div>
               <div className="flex items-center gap-2">
                 <Switch checked={form.actif} onCheckedChange={(v) => setForm((p) => ({ ...p, actif: Boolean(v) }))} />
@@ -295,7 +295,7 @@ export const OffersPage: React.FC = () => {
                 <TableHead>Description</TableHead>
                 <TableHead>Prix</TableHead>
                 <TableHead>Facturation</TableHead>
-                <TableHead>Qualification</TableHead>
+                <TableHead>Visible / en ligne</TableHead>
                 <TableHead>Statut</TableHead>
               </TableRow>
             </TableHeader>

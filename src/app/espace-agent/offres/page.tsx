@@ -88,6 +88,7 @@ export default function AgentOffresPage() {
         .from("offres")
         .select("id, nom, description, prix_ht, devise, billing_period, type, tags")
         .eq("actif", true)
+        .eq("visible_in_qualification", true)
         .gt("prix_ht", 0)
         .order("prix_ht", { ascending: false });
       if (data) setOffers(data as Offer[]);
