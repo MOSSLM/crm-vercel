@@ -68,6 +68,7 @@ Ajoutez dans votre environnement Vercel (Production + Preview) :
 | `TWILIO_TWIML_APP_SID` | `AP…` | TwiML App utilisée pour les appels sortants |
 | `NEXT_PUBLIC_APP_URL` | `https://app.votredomaine.fr` | Base publique des webhooks |
 | `TWILIO_MOCK` | *(absent)* | Mettre `true` pour forcer la simulation malgré des clés présentes |
+| `ANTHROPIC_API_KEY` | clé Anthropic | *(optionnel)* Évaluation d'appel par IA (Claude). Sans clé, l'analyse renvoie 503 |
 
 > Toutes ces variables sont **optionnelles** côté code : si `TWILIO_ACCOUNT_SID`
 > ou `TWILIO_AUTH_TOKEN` manquent, l'app reste en mode simulation et les routes
@@ -91,7 +92,20 @@ depuis le CRM) :
 | `POST /api/twilio/voice` | TwiML des appels **sortants** (softphone) |
 | `POST /api/twilio/status` | Status callbacks des appels |
 | `POST /api/twilio/incoming` | Appels **entrants** (routage On/Off, SVI, voicemail) |
+| `POST /api/twilio/voicemail` | Capture des messages vocaux |
+| `POST /api/twilio/recording` | Enregistrements prêts |
+| `POST /api/twilio/transcription` | Transcriptions (voicemail / appels) |
 | `POST /api/twilio/sms/incoming` | SMS/MMS entrants |
+| `POST /api/twilio/sms/status` | Statuts de livraison SMS |
+
+Ces URL (voice/sms/status) sont câblées automatiquement à l'achat d'un numéro
+depuis le CRM. La `Voice Request URL` de la TwiML App doit pointer sur
+`/api/twilio/voice` ; la `Status Callback URL` sur `/api/twilio/status`.
+
+Un job **pg_cron** `twilio-tick` (chaque minute) appelle `/api/twilio/cron`
+pour la bascule On/Off programmée et l'envoi des SMS programmés — voir
+`sql/20260726_twilio_cron.sql` (même mécanisme que `process-scheduled-actions`,
+en-tête `x-pg-cron-secret`).
 
 Tous les webhooks vérifient la signature `X-Twilio-Signature` avec l'Auth Token
 (fail-closed en production, fail-open en dev quand aucun token n'est configuré).
@@ -112,3 +126,29 @@ Facturation à l'usage Twilio : location de numéro (~1 €/mois pour un fixe FR
 appels et SMS au compteur, plus les options (enregistrement, transcription,
 Voice Intelligence). Consultez la grille officielle Twilio pour la France.
 Le mode simulation n'engendre **aucun** de ces coûts.
+
+## 9. Migrations SQL à appliquer
+
+Le schéma vit dans `sql/` (appliqué manuellement à Supabase, via l'outil MCP).
+Appliquez dans l'ordre :
+
+1. `20260723_twilio_core.sql` — numéros, réglages agent, appels, événements
+2. `20260724_twilio_porting.sql` — demandes de portabilité
+3. `20260725_twilio_inbound.sql` — messagerie vocale, SVI
+4. `20260726_twilio_cron.sql` — job pg_cron (remplacer `<PG_CRON_SECRET>`)
+5. `20260727_twilio_sms.sql` — SMS/MMS, SMS programmés
+6. `20260728_twilio_ai.sql` — transcriptions, évaluations IA, tags d'appel
+
+## 10. Où retrouver la centrale dans le CRM
+
+- **Téléphone** (espace Relation) — softphone, appels récents, messagerie
+  vocale, réglages (mode On/Off, programmation, numéro par défaut, renvoi,
+  enregistrement).
+- **Téléphone → Numéros** — rechercher, acheter, attribuer, libérer.
+- **Téléphone → Portabilité** — porter un numéro existant.
+- **Téléphone → Standard (SVI)** — message d'accueil et menu à touches.
+- **Téléphone → Messages** — inbox SMS/MMS (aussi dans l'espace agent).
+- **Téléphone → Statistiques** — analytics, heatmap, appels en cours.
+
+Le **softphone flottant** est disponible sur toutes les pages pour le personnel
+(admin + agents), avec click-to-call depuis les fiches contact et le démarchage.
