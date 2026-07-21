@@ -1579,6 +1579,8 @@ export interface MediaLibraryItem {
   image_type: MediaImageType;
   entreprise_id: number | null;
   uploaded_by: string | null;
+  /** When set, the site_builder_assets row this image was imported from. */
+  source_asset_id?: string | null;
   created_at: string;
   updated_at: string;
 }

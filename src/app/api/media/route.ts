@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { optimizeImageUpload } from "@/lib/images/optimize-image";
 import type { MediaImageType } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -115,16 +116,20 @@ export const POST = withAuth({}, async ({ req }) => {
       continue;
     }
 
-    const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
-    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    // Optimise before storing: JPEG/opaque-PNG → WebP, transparent PNG stays
+    // PNG, oversized images downscaled, quality reduced (see optimizeImageUpload).
+    const opt = await optimizeImageUpload(await file.arrayBuffer(), file.type, file.name);
+
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${opt.ext}`;
     const storagePath = `${imageType}/${unique}`;
 
-    const bytes = await file.arrayBuffer();
     const { error: uploadError } = await supabase.storage
       .from("media-library")
-      .upload(storagePath, bytes, {
-        contentType: file.type || "application/octet-stream",
+      .upload(storagePath, opt.bytes, {
+        contentType: opt.contentType,
         upsert: false,
+        // Storage paths are unique per upload, so the bytes are immutable.
+        cacheControl: "31536000, immutable",
       });
     if (uploadError) {
       failures.push({ file_name: file.name, error: uploadError.message });
@@ -139,8 +144,10 @@ export const POST = withAuth({}, async ({ req }) => {
         file_name: file.name,
         storage_path: storagePath,
         public_url: urlData.publicUrl,
-        mime_type: file.type || null,
-        size_bytes: file.size,
+        mime_type: opt.contentType,
+        size_bytes: opt.bytes.length,
+        width: opt.width,
+        height: opt.height,
         alt_text: altText,
         description,
         service_tags: tags,

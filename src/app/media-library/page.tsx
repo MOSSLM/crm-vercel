@@ -12,6 +12,7 @@ import {
   X,
   Filter,
   Sparkles,
+  FolderInput,
 } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
 import { useAppData } from "@/components/AppDataContext";
@@ -117,6 +118,8 @@ export default function MediaLibraryPage() {
 
   // AI auto-tag
   const [autoTagging, setAutoTagging] = React.useState(false);
+  // Import of builder-uploaded images into the library
+  const [importingAssets, setImportingAssets] = React.useState(false);
 
   const fetchItems = React.useCallback(async () => {
     setLoading(true);
@@ -232,6 +235,42 @@ export default function MediaLibraryPage() {
     [fetchItems],
   );
 
+  // Import images uploaded through the site builder into the library. Each
+  // imported item gets an AI alt text + description but NO tags. Loops the
+  // endpoint (batched server-side) until every builder asset is imported.
+  const runImportSiteAssets = React.useCallback(async () => {
+    setImportingAssets(true);
+    const t = toast.loading("Import des images du site builder…");
+    let inserted = 0;
+    try {
+      let guard = 0;
+      let done = false;
+      do {
+        const res = await authedFetch("/api/media/import-from-site-assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Échec");
+        inserted += data.inserted ?? 0;
+        done = data.done !== false || data.processed === 0;
+        toast.loading(`Import en cours… ${inserted} image(s) ajoutée(s)`, { id: t });
+      } while (!done && ++guard < 200);
+      toast.success(
+        inserted > 0
+          ? `${inserted} image(s) ajoutée(s) à la bibliothèque`
+          : "Aucune nouvelle image à importer",
+        { id: t },
+      );
+      await fetchItems();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import échoué", { id: t });
+    } finally {
+      setImportingAssets(false);
+    }
+  }, [fetchItems]);
+
   return (
     <AppLayout>
       <div className="px-6 py-6 space-y-5">
@@ -248,6 +287,19 @@ export default function MediaLibraryPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              onClick={() => runImportSiteAssets()}
+              disabled={importingAssets}
+              title="Verser dans la bibliothèque les images uploadées via le site builder (alt + description auto, sans tags)"
+            >
+              {importingAssets ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FolderInput className="h-4 w-4 mr-2" />
+              )}
+              Importer du site builder
+            </Button>
             <Button
               variant="outline"
               onClick={() => runAutoTag()}
