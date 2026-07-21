@@ -9,7 +9,8 @@
  * the softphone, call history, numbers admin, and SMS inbox inside this shell.
  */
 import { useEffect, useState } from "react";
-import { Phone, Radio, FlaskConical, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { Phone, Radio, FlaskConical, Loader2, Hash, ArrowRightLeft } from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -22,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import { useDialer } from "@/components/telephone/DialerProvider";
 import { CallHistory } from "@/components/telephone/CallHistory";
+import { PhoneSettings } from "@/components/telephone/PhoneSettings";
 
 type Health = {
   mock: boolean;
@@ -119,6 +121,41 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
         </CardContent>
       </Card>
 
+      {scope === "admin" && (
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <Link href="/telephone/numeros">
+            <Card className="h-full transition hover:border-primary/50 hover:shadow-sm">
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Hash className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">Numéros</div>
+                  <div className="text-xs text-muted-foreground">Acheter, attribuer, libérer</div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/telephone/portabilite">
+            <Card className="h-full transition hover:border-primary/50 hover:shadow-sm">
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <ArrowRightLeft className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">Portabilité</div>
+                  <div className="text-xs text-muted-foreground">Porter un numéro existant</div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      )}
+
+      <div className="mt-6">
+        <PhoneSettings />
+      </div>
+
       <Card className="mt-6">
         <CardHeader>
           <CardTitle className="text-base">Appels récents</CardTitle>
@@ -130,11 +167,6 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
           <CallHistory limit={25} />
         </CardContent>
       </Card>
-
-      <p className="mt-6 text-center text-xs text-muted-foreground">
-        Gestion des numéros, portabilité et inbox SMS s&apos;ajoutent ici dans les prochaines
-        étapes.
-      </p>
     </div>
   );
 }
