@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import { PhoneIncoming, PhoneOutgoing, PhoneMissed } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
+import { CallDetailDialog } from "@/components/telephone/CallDetailDialog";
 
 export interface CallRow {
   id: string;
@@ -43,6 +44,8 @@ export function CallHistory({
 }) {
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedCallId, setSelectedCallId] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +78,7 @@ export function CallHistory({
   }
 
   return (
+    <>
     <ul className="divide-y divide-border">
       {calls.map((c) => {
         const missed = MISSED.has(c.status) || MISSED.has(c.disposition ?? "");
@@ -85,7 +89,14 @@ export function CallHistory({
             : PhoneOutgoing;
         const counterpart = c.direction === "inbound" ? c.from_e164 : c.to_e164;
         return (
-          <li key={c.id} className="flex items-center gap-3 py-2.5">
+          <li
+            key={c.id}
+            className="flex cursor-pointer items-center gap-3 py-2.5 transition hover:bg-muted/40"
+            onClick={() => {
+              setSelectedCallId(c.id);
+              setDialogOpen(true);
+            }}
+          >
             <span
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
                 missed ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"
@@ -110,6 +121,12 @@ export function CallHistory({
         );
       })}
     </ul>
+    <CallDetailDialog
+      callId={selectedCallId}
+      open={dialogOpen}
+      onOpenChange={setDialogOpen}
+    />
+    </>
   );
 }
 

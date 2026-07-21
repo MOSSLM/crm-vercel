@@ -9,6 +9,7 @@ import { parseTwilioForm, validateTwilioSignature } from "@/lib/twilio/signature
 import { outboundDialTwiml, sayErrorTwiml } from "@/lib/twilio/twiml";
 import { parseClientIdentity, resolveAgentCallerNumber } from "@/lib/twilio/call-routing";
 import { upsertCall } from "@/lib/twilio/call-logging";
+import { twilioWebhookUrl } from "@/lib/twilio/config";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,5 +64,21 @@ export async function POST(req: Request) {
     status: "initiated",
   });
 
-  return xml(outboundDialTwiml({ callerId: caller.e164, to }));
+  // Record the call when the agent has recording enabled.
+  const { data: settings } = await db
+    .from("agent_phone_settings")
+    .select("recording_enabled")
+    .eq("user_id", agentId)
+    .maybeSingle();
+  const record = (settings as { recording_enabled?: boolean } | null)?.recording_enabled ?? false;
+
+  return xml(
+    outboundDialTwiml({
+      callerId: caller.e164,
+      to,
+      record,
+      consent: record,
+      recordingStatusCallback: record ? twilioWebhookUrl("/api/twilio/recording") : undefined,
+    }),
+  );
 }

@@ -86,6 +86,7 @@ export const forwardTwiml = (opts: ForwardOptions): string => {
 export interface VoicemailOptions {
   greeting?: string;
   actionUrl: string; // receives RecordingUrl when the message is left
+  transcribeCallback?: string; // when set, Twilio transcribes and posts here
   maxLength?: number;
 }
 
@@ -97,13 +98,18 @@ export const voicemailTwiml = (opts: VoicemailOptions): string => {
     opts.greeting ??
       "Vous êtes bien sur notre messagerie. Laissez votre message après le bip, puis raccrochez.",
   );
-  response.record({
+  const recordOptions: Record<string, unknown> = {
     action: opts.actionUrl,
     method: "POST",
     maxLength: opts.maxLength ?? 120,
     playBeep: true,
     trim: "trim-silence",
-  });
+  };
+  if (opts.transcribeCallback) {
+    recordOptions.transcribe = true;
+    recordOptions.transcribeCallback = opts.transcribeCallback;
+  }
+  response.record(recordOptions);
   response.hangup();
   return response.toString();
 };

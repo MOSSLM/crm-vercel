@@ -7,11 +7,18 @@ import twilio from "twilio";
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
+const CONSENT_FR =
+  "Cet appel est susceptible d'être enregistré à des fins de qualité et de suivi.";
+
 export interface OutboundDialOptions {
   callerId: string;
   to: string;
   /** When true, record the call from answer (dual channel). */
   record?: boolean;
+  /** Recording status callback URL (fires when the recording is ready). */
+  recordingStatusCallback?: string;
+  /** Play a recording-consent announcement before dialing. */
+  consent?: boolean;
   /** Status-callback URL for the dialed (child) leg. */
   statusCallback?: string;
   /** Ring timeout in seconds before giving up. */
@@ -31,12 +38,23 @@ export const outboundDialTwiml = (opts: OutboundDialOptions): string => {
     return response.toString();
   }
 
-  const dial = response.dial({
+  if (opts.record && opts.consent) {
+    response.say({ language: "fr-FR", voice: "Polly.Lea" }, CONSENT_FR);
+  }
+
+  const dialOptions: Record<string, unknown> = {
     callerId: opts.callerId,
     answerOnBridge: true,
-    record: opts.record ? "record-from-answer-dual" : undefined,
     timeout: opts.timeout ?? 30,
-  });
+  };
+  if (opts.record) {
+    dialOptions.record = "record-from-answer-dual";
+    if (opts.recordingStatusCallback) {
+      dialOptions.recordingStatusCallback = opts.recordingStatusCallback;
+      dialOptions.recordingStatusCallbackEvent = "completed";
+    }
+  }
+  const dial = response.dial(dialOptions);
 
   if (opts.to.startsWith("client:")) {
     dial.client(

@@ -47,16 +47,20 @@ interface AgentSettings {
   mode: "on" | "off";
   forward_to_e164: string | null;
   voicemail_greeting_tts: string | null;
+  recording_enabled: boolean;
 }
 
 const getSettings = async (db: Db, agentId: string): Promise<AgentSettings | null> => {
   const { data } = await db
     .from("agent_phone_settings")
-    .select("mode, forward_to_e164, voicemail_greeting_tts")
+    .select("mode, forward_to_e164, voicemail_greeting_tts, recording_enabled")
     .eq("user_id", agentId)
     .maybeSingle();
   return (data as AgentSettings | null) ?? null;
 };
+
+const RECORDING_CB = () => twilioWebhookUrl("/api/twilio/recording");
+const TRANSCRIBE_CB = () => twilioWebhookUrl("/api/twilio/transcription");
 
 /** Identities of agents currently On (fallback ring when no assigned agent). */
 const onlineAgentIdentities = async (db: Db): Promise<string[]> => {
@@ -102,6 +106,7 @@ export async function POST(req: Request) {
       voicemailTwiml({
         greeting: settings?.voicemail_greeting_tts ?? undefined,
         actionUrl: vmUrl(numberId, assignedAgentId, callSid),
+        transcribeCallback: TRANSCRIBE_CB(),
       }),
     );
   }
@@ -137,7 +142,12 @@ export async function POST(req: Request) {
       );
     }
     // Default / "voicemail" choice.
-    return xml(voicemailTwiml({ actionUrl: vmUrl(numberId, assignedAgentId, callSid) }));
+    return xml(
+      voicemailTwiml({
+        actionUrl: vmUrl(numberId, assignedAgentId, callSid),
+        transcribeCallback: TRANSCRIBE_CB(),
+      }),
+    );
   }
 
   // --- Initial: log the inbound call, then route --------------------------
@@ -181,6 +191,7 @@ export async function POST(req: Request) {
   if (assignedAgentId) {
     const settings = await getSettings(db, assignedAgentId);
     const mode = settings?.mode ?? "on";
+    const record = settings?.recording_enabled ?? false;
     if (mode === "on") {
       return xml(
         dialClientsTwiml({
@@ -189,6 +200,9 @@ export async function POST(req: Request) {
           actionUrl: twilioWebhookUrl(
             `/api/twilio/incoming?stage=after-dial&agentId=${assignedAgentId}`,
           ),
+          record,
+          consent: record,
+          recordingStatusCallback: record ? RECORDING_CB() : undefined,
         }),
       );
     }
@@ -199,6 +213,9 @@ export async function POST(req: Request) {
           to: settings.forward_to_e164,
           callerId: to,
           actionUrl: twilioWebhookUrl("/api/twilio/incoming?stage=after-dial"),
+          record,
+          consent: record,
+          recordingStatusCallback: record ? RECORDING_CB() : undefined,
         }),
       );
     }
@@ -206,6 +223,7 @@ export async function POST(req: Request) {
       voicemailTwiml({
         greeting: settings?.voicemail_greeting_tts ?? undefined,
         actionUrl: vmUrl(numberId, assignedAgentId, callSid),
+        transcribeCallback: TRANSCRIBE_CB(),
       }),
     );
   }
@@ -222,5 +240,7 @@ export async function POST(req: Request) {
     );
   }
 
-  return xml(voicemailTwiml({ actionUrl: vmUrl(numberId, null, callSid) }));
+  return xml(
+    voicemailTwiml({ actionUrl: vmUrl(numberId, null, callSid), transcribeCallback: TRANSCRIBE_CB() }),
+  );
 }
