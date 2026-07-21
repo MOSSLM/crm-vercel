@@ -18,11 +18,19 @@ import {
   Radio,
   Loader2,
   PhoneForwarded,
+  BookOpen,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { authedFetch } from "@/utils/authedFetch";
 import { useDialer } from "./DialerProvider";
+
+interface CallScript {
+  id: string;
+  name: string;
+  body: string | null;
+}
 
 const DIGITS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"];
 
@@ -38,6 +46,9 @@ export function SoftphoneWidget() {
   const [elapsed, setElapsed] = useState(0);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferTo, setTransferTo] = useState("");
+  const [scriptsOpen, setScriptsOpen] = useState(false);
+  const [scripts, setScripts] = useState<CallScript[]>([]);
+  const [scriptIdx, setScriptIdx] = useState(0);
 
   const { status, mode, muted, activeCall, incoming, widgetOpen } = dialer;
   const inCall = status === "incall";
@@ -55,6 +66,26 @@ export function SoftphoneWidget() {
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
     return () => clearInterval(id);
   }, [inCall, activeCall?.startedAt]);
+
+  // Load call scripts / playbooks once (shown during a call).
+  useEffect(() => {
+    if (!dialer.available) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await authedFetch("/api/twilio/scripts");
+        if (res.ok && !cancelled) {
+          const data = (await res.json()) as { scripts: CallScript[] };
+          setScripts(data.scripts.filter((s) => s.body));
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dialer.available]);
 
   if (!dialer.available) return null;
 
@@ -195,6 +226,17 @@ export function SoftphoneWidget() {
                   >
                     {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                   </Button>
+                  {inCall && scripts.length > 0 && (
+                    <Button
+                      type="button"
+                      variant={scriptsOpen ? "default" : "outline"}
+                      size="icon"
+                      onClick={() => setScriptsOpen((v) => !v)}
+                      aria-label="Script d'appel"
+                    >
+                      <BookOpen className="h-4 w-4" />
+                    </Button>
+                  )}
                   {inCall && dialer.mode === "live" && (
                     <Button
                       type="button"
@@ -263,6 +305,28 @@ export function SoftphoneWidget() {
                 >
                   OK
                 </Button>
+              </div>
+            )}
+
+            {/* Call script / playbook */}
+            {inCall && scriptsOpen && scripts.length > 0 && (
+              <div className="mt-3 rounded-lg border border-border p-2">
+                {scripts.length > 1 && (
+                  <select
+                    value={scriptIdx}
+                    onChange={(e) => setScriptIdx(Number(e.target.value))}
+                    className="mb-2 w-full rounded border border-border bg-background px-2 py-1 text-xs"
+                  >
+                    {scripts.map((s, i) => (
+                      <option key={s.id} value={i}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <div className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-muted-foreground">
+                  {scripts[scriptIdx]?.body}
+                </div>
               </div>
             )}
           </div>

@@ -19,6 +19,7 @@ import {
   ArrowRightLeft,
   Network,
   MessageSquare,
+  BarChart3,
 } from "lucide-react";
 import {
   Card,
@@ -181,6 +182,19 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
                 <div>
                   <div className="text-sm font-semibold">Messages</div>
                   <div className="text-xs text-muted-foreground">Inbox SMS/MMS</div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/telephone/stats">
+            <Card className="h-full transition hover:border-primary/50 hover:shadow-sm">
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <BarChart3 className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">Statistiques</div>
+                  <div className="text-xs text-muted-foreground">Analytics &amp; supervision</div>
                 </div>
               </CardContent>
             </Card>
