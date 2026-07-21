@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { authedFetch } from "@/utils/authedFetch";
+import { useDialer } from "@/components/telephone/DialerProvider";
 import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -41,6 +42,7 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 export default function AgentDemarchagePage() {
+  const dialer = useDialer();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [stages, setStages] = useState<Stage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +133,7 @@ export default function AgentDemarchagePage() {
             ? `${contact.first_name ?? ""} ${contact.last_name ?? ""}`.trim()
             : "";
           const disabled = busy === task.id;
+          const phone = contact?.tel || ent?.telephone || null;
           return (
             <Card key={task.id}>
               <CardContent className="space-y-3 py-4">
@@ -166,6 +169,21 @@ export default function AgentDemarchagePage() {
                 </div>
 
                 <div className="flex flex-wrap gap-2">
+                  {phone && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        dialer.dial({
+                          to: phone,
+                          label: contactName || ent?.name || phone,
+                          entrepriseId: ent?.id,
+                        })
+                      }
+                    >
+                      <Phone className="mr-1 h-4 w-4" /> Appeler
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     disabled={disabled}

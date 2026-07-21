@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from './ui/textarea';
 import { getCompanyDisplayName } from '../utils/displayHelpers';
 import { EmployeesList } from './EmployeesList';
+import { useDialer } from '@/components/telephone/DialerProvider';
 import { toast } from "sonner";
 import { 
   ArrowLeft, 
@@ -61,8 +62,10 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
     opportunities, 
     pipelineStages, 
     updateContact,
-    addOpportunity 
+    addOpportunity
   } = useAppData();
+
+  const dialer = useDialer();
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [associatedCompany, setAssociatedCompany] = useState<Company | null>(null);
@@ -612,11 +615,24 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
               )}
               
               {currentData.tel && (
-                <Button variant="outline" size="sm" className="w-full justify-start" asChild>
-                  <a href={`tel:${currentData.tel}`}>
-                    <Phone className="h-4 w-4 mr-2" />
-                    Appeler
-                  </a>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full justify-start"
+                  onClick={() =>
+                    dialer.dial({
+                      to: currentData.tel as string,
+                      label:
+                        [contact.first_name, contact.last_name].filter(Boolean).join(" ") ||
+                        (currentData.tel as string),
+                      contactId: contact.id,
+                      entrepriseId:
+                        typeof contact.entreprise_id === "number" ? contact.entreprise_id : undefined,
+                    })
+                  }
+                >
+                  <Phone className="h-4 w-4 mr-2" />
+                  Appeler
                 </Button>
               )}
               

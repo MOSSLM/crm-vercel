@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { parseTwilioForm } from "../signature";
+import { parseTwilioForm, validateTwilioSignature } from "../signature";
 
 jest.mock("@/env", () => ({
   TWILIO_ACCOUNT_SID: "ACtest",
@@ -35,9 +35,6 @@ describe("parseTwilioForm", () => {
 });
 
 describe("validateTwilioSignature (token configured)", () => {
-  // Re-require after the env mock is in place so twilioConfig picks up the token.
-  const { validateTwilioSignature } = require("../signature");
-
   beforeEach(() => mockValidateRequest.mockReset());
 
   it("rejects when the signature header is missing", () => {

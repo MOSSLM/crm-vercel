@@ -18,7 +18,10 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
+import { useDialer } from "@/components/telephone/DialerProvider";
+import { CallHistory } from "@/components/telephone/CallHistory";
 
 type Health = {
   mock: boolean;
@@ -27,6 +30,7 @@ type Health = {
 };
 
 export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) {
+  const dialer = useDialer();
   const [health, setHealth] = useState<Health | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -51,16 +55,22 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
 
   return (
     <div className="mx-auto w-full max-w-4xl p-6">
-      <header className="mb-6 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <Phone className="h-5 w-5" />
+      <header className="mb-6 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Phone className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold leading-tight">Centrale d&apos;appels</h1>
+            <p className="text-sm text-muted-foreground">
+              Téléphonie &amp; SMS intégrés — propulsé par Twilio
+            </p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-semibold leading-tight">Centrale d&apos;appels</h1>
-          <p className="text-sm text-muted-foreground">
-            Téléphonie &amp; SMS intégrés — propulsé par Twilio
-          </p>
-        </div>
+        <Button onClick={dialer.openWidget} className="gap-2">
+          <Phone className="h-4 w-4" />
+          Passer un appel
+        </Button>
       </header>
 
       <Card>
@@ -109,10 +119,21 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
         </CardContent>
       </Card>
 
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="text-base">Appels récents</CardTitle>
+          <CardDescription>
+            {scope === "agent" ? "Vos derniers appels." : "Les derniers appels de l'équipe."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CallHistory limit={25} />
+        </CardContent>
+      </Card>
+
       <p className="mt-6 text-center text-xs text-muted-foreground">
-        {scope === "agent"
-          ? "Le softphone et l'historique d'appels arrivent dans cette section."
-          : "Softphone, gestion des numéros, portabilité et inbox SMS s'ajoutent ici."}
+        Gestion des numéros, portabilité et inbox SMS s&apos;ajoutent ici dans les prochaines
+        étapes.
       </p>
     </div>
   );
