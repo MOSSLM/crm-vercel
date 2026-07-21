@@ -10,7 +10,16 @@
  */
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Phone, Radio, FlaskConical, Loader2, Hash, ArrowRightLeft, Network } from "lucide-react";
+import {
+  Phone,
+  Radio,
+  FlaskConical,
+  Loader2,
+  Hash,
+  ArrowRightLeft,
+  Network,
+  MessageSquare,
+} from "lucide-react";
 import {
   Card,
   CardHeader,
@@ -123,7 +132,7 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
       </Card>
 
       {scope === "admin" && (
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Link href="/telephone/numeros">
             <Card className="h-full transition hover:border-primary/50 hover:shadow-sm">
               <CardContent className="flex items-center gap-3 py-4">
@@ -159,6 +168,19 @@ export function PhoneCenter({ scope = "admin" }: { scope?: "admin" | "agent" }) 
                 <div>
                   <div className="text-sm font-semibold">Standard (SVI)</div>
                   <div className="text-xs text-muted-foreground">Accueil &amp; menu à touches</div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+          <Link href="/telephone/messages">
+            <Card className="h-full transition hover:border-primary/50 hover:shadow-sm">
+              <CardContent className="flex items-center gap-3 py-4">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <MessageSquare className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold">Messages</div>
+                  <div className="text-xs text-muted-foreground">Inbox SMS/MMS</div>
                 </div>
               </CardContent>
             </Card>
