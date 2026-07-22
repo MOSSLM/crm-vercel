@@ -157,7 +157,7 @@ export function SmsInbox() {
     );
 
   return (
-    <div className="tel-skin" style={{ height: "100%" }}>
+    <div className="tel-skin" style={{ height: "min(78vh, 860px)", minHeight: 480 }}>
       <div className="msg-page" style={{ height: "100%", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
         {/* Thread list */}
         <aside className="msg-list">

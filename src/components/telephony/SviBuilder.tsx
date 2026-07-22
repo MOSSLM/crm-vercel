@@ -160,8 +160,8 @@ export function SviBuilder() {
   const activeScenario = scenarios.find((s) => s.id === active) ?? null;
 
   return (
-    <div className="tel-skin" style={{ height: "100%" }}>
-      <div className="svi-page">
+    <div className="tel-skin" style={{ height: "min(78vh, 860px)", minHeight: 480 }}>
+      <div className="svi-page" style={{ border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
         {/* FLOW */}
         <div className="svi-flow-wrap">
           <div className="svi-hd">

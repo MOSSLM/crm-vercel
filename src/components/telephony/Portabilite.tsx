@@ -88,8 +88,8 @@ export function Portabilite() {
   const curIdx = current ? (blocked ? 2 : Math.max(0, STEPS.findIndex((s) => s.id === current.status))) : 0;
 
   return (
-    <div className="tel-skin" style={{ height: "100%" }}>
-      <div className="po-page">
+    <div className="tel-skin" style={{ height: "min(78vh, 860px)", minHeight: 480 }}>
+      <div className="po-page" style={{ border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
         {/* LIST */}
         <aside className="po-list">
           <div className="po-list-hd">
