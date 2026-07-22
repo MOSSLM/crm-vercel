@@ -77,6 +77,29 @@ export async function placeCallback(payload: CallbackPayload): Promise<CallbackR
   return { ok: true, providerCallId: json.providerCallId };
 }
 
+export interface VoicemailRow {
+  id: string;
+  from_e164: string | null;
+  to_e164: string | null;
+  agent_id: string | null;
+  contact_id: string | null;
+  entreprise_id: number | null;
+  started_at: string | null;
+  created_at: string;
+  duration_sec: number | null;
+  disposition: string | null;
+  recording_status: "none" | "pending" | "stored" | "failed";
+  transcript_status: string;
+  entreprise?: { id: number; name: string | null } | null;
+  contact?: { id: string; first_name: string | null; last_name: string | null } | null;
+}
+
+export async function fetchVoicemails(): Promise<VoicemailRow[]> {
+  const res = await authedFetch(`/api/telephony/voicemails`);
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? (json.voicemails ?? []) : [];
+}
+
 /** Resolve a short-lived playback URL for a call recording, or null. */
 export async function fetchRecordingUrl(callId: string): Promise<string | null> {
   const res = await authedFetch(`/api/telephony/recordings/${callId}`);

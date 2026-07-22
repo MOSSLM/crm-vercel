@@ -28,7 +28,10 @@ import {
   Package,
   Euro,
   Flag,
-  PhoneCall,
+  Headset,
+  Phone,
+  MessageSquare,
+  Voicemail,
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
@@ -70,7 +73,12 @@ const NAV: NavSection[] = [
   },
   {
     label: "Téléphonie",
-    items: [{ title: "Journal d'appels", href: "/espace-agent/telephonie", icon: PhoneCall }],
+    items: [
+      { title: "Cockpit d'appel", href: "/espace-agent/telephonie/cockpit", icon: Headset },
+      { title: "Mes appels", href: "/espace-agent/telephonie/appels", icon: Phone },
+      { title: "Messages SMS", href: "/espace-agent/telephonie/sms", icon: MessageSquare },
+      { title: "Messagerie vocale", href: "/espace-agent/telephonie/messagerie", icon: Voicemail },
+    ],
   },
   {
     label: "SAMA",

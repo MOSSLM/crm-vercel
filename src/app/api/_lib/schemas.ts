@@ -107,6 +107,14 @@ export const telephonySmsQuerySchema = z.object({
 });
 export type TelephonySmsQuery = z.infer<typeof telephonySmsQuerySchema>;
 
+/** Telephony — log a cockpit call outcome (disposition + note) on a deal. */
+export const cockpitOutcomeSchema = z.object({
+  opportunite_id: z.string().min(1),
+  disposition: z.string().min(1).max(40),
+  note: z.string().max(4000).optional().nullable(),
+});
+export type CockpitOutcomePayload = z.infer<typeof cockpitOutcomeSchema>;
+
 /** Telephony — book an appointment, assignable to the agent or to admin. */
 export const telephonyAppointmentSchema = z.object({
   title: z.string().min(1).max(200),
