@@ -146,7 +146,10 @@ export const SPACES: Space[] = [
     label: "Téléphonie",
     icon: PhoneCall,
     href: "/telephonie",
-    tools: [{ title: "Journal d'appels", href: "/telephonie", icon: PhoneCall }],
+    tools: [
+      { title: "Journal d'appels", href: "/telephonie", icon: PhoneCall },
+      { title: "Numéros & agents", href: "/telephonie/numeros", icon: Users },
+    ],
   },
   {
     id: "pilotage",
