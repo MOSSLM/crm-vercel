@@ -3,7 +3,7 @@
 -- Compatible Supabase / PostgreSQL.
 -- À exécuter manuellement dans l'éditeur SQL Supabase.
 --
--- FK types (vérifiés) : contacts.id = text, entreprises.id = integer,
+-- FK types (vérifiés en base) : contacts.id = uuid, entreprises.id = integer,
 -- opportunites.id = uuid, user_profiles.id = uuid.
 --
 -- RLS : admin voit tout ; un agent (freelance) voit/écrit ses propres appels
@@ -63,7 +63,7 @@ create table if not exists public.calls (
   to_e164 text,
   extension text,
   agent_id uuid references public.user_profiles(id) on delete set null,   -- null = entrant non attribué
-  contact_id text references public.contacts(id) on delete set null,
+  contact_id uuid references public.contacts(id) on delete set null,
   entreprise_id integer references public.entreprises(id) on delete set null,
   opportunite_id uuid references public.opportunites(id) on delete set null,
   number_id uuid references public.phone_numbers(id) on delete set null,
