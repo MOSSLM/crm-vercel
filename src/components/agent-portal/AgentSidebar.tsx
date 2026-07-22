@@ -50,7 +50,7 @@ const NAV: NavSection[] = [
     items: [
       { title: "Dashboard", href: "/espace-agent/dashboard", icon: LayoutDashboard },
       { title: "Pipeline", href: "/espace-agent/pipeline", icon: KanbanSquare },
-      { title: "Calendrier", href: "/espace-agent/calendrier", icon: CalendarDays, soon: true },
+      { title: "Calendrier", href: "/espace-agent/calendrier", icon: CalendarDays },
     ],
   },
   {

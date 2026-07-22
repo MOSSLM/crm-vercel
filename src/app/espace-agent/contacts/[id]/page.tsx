@@ -12,6 +12,7 @@ import { one } from "@/components/agent-portal/format";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { CallJournal } from "@/components/telephony/CallJournal";
 import { SmsThread } from "@/components/telephony/SmsThread";
+import { AppointmentDialog } from "@/components/telephony/AppointmentDialog";
 import { MessageSquare } from "lucide-react";
 
 type Entreprise = { id: number; name: string | null; ville: string | null };
@@ -133,6 +134,13 @@ export default function AgentContactDetailPage() {
               {contact.notes}
             </div>
           )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <AppointmentDialog
+              contactId={contact.id}
+              entrepriseId={contact.entreprise_id}
+              defaultTitle={`RDV — ${fullName}`}
+            />
+          </div>
         </CardContent>
       </Card>
 

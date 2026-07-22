@@ -107,6 +107,19 @@ export const telephonySmsQuerySchema = z.object({
 });
 export type TelephonySmsQuery = z.infer<typeof telephonySmsQuerySchema>;
 
+/** Telephony — book an appointment, assignable to the agent or to admin. */
+export const telephonyAppointmentSchema = z.object({
+  title: z.string().min(1).max(200),
+  start_at: z.string().min(10),
+  duration_min: z.coerce.number().int().min(5).max(600).default(30),
+  for_admin: z.boolean().optional().default(false),
+  contact_id: z.string().optional().nullable(),
+  entreprise_id: z.coerce.number().int().positive().optional().nullable(),
+  opportunite_id: z.string().uuid().optional().nullable(),
+  call_id: z.string().uuid().optional().nullable(),
+});
+export type TelephonyAppointmentPayload = z.infer<typeof telephonyAppointmentSchema>;
+
 /** Telephony — call journal / history listing filters. */
 export const telephonyCallsQuerySchema = z.object({
   contact_id: z.string().optional(),

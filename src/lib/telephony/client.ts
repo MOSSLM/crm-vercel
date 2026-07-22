@@ -185,3 +185,40 @@ export async function triggerEvaluation(
   if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
   return { ok: true, evaluation: json.evaluation };
 }
+
+export interface Appointment {
+  id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  assigned_to: string | null;
+  created_for_role: string;
+  contact_id: string | null;
+  entreprise_id: number | null;
+}
+
+export async function fetchAppointments(): Promise<Appointment[]> {
+  const res = await authedFetch(`/api/telephony/appointments`);
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? (json.appointments ?? []) : [];
+}
+
+export async function bookAppointment(payload: {
+  title: string;
+  start_at: string;
+  duration_min?: number;
+  for_admin?: boolean;
+  contact_id?: string | null;
+  entreprise_id?: number | null;
+  opportunite_id?: string | null;
+  call_id?: string | null;
+}): Promise<{ ok: boolean; error?: string; id?: string }> {
+  const res = await authedFetch(`/api/telephony/appointments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
+  return { ok: true, id: json.id };
+}
