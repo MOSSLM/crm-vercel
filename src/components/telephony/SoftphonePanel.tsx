@@ -36,6 +36,16 @@ const KEYS: Array<[string, string]> = [
   ["#", ""],
 ];
 
+const AV_COLORS = ["#E2552B", "#2A6FDB", "#1F8A5B", "#7A5AE0", "#C8881F", "#B5322F"];
+function avatarFor(name: string): { initials: string; color: string } {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const initials =
+    (parts[0]?.[0] ?? "?").toUpperCase() + (parts[1]?.[0]?.toUpperCase() ?? "");
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return { initials, color: AV_COLORS[h % AV_COLORS.length] };
+}
+
 type Tab = "contacts" | "historique" | "equipe";
 
 interface ContactRow {
@@ -58,7 +68,6 @@ function callCounterpart(c: CallRow): { name: string; number: string } {
   const number = (c.direction === "outbound" ? c.to_e164 : c.from_e164) ?? "";
   return { name: name || number || "—", number };
 }
-
 function timeShort(iso: string | null): string {
   if (!iso) return "";
   return new Date(iso).toLocaleString("fr-FR", {
@@ -69,10 +78,19 @@ function timeShort(iso: string | null): string {
   });
 }
 
+function Avatar({ name }: { name: string }) {
+  const { initials, color } = avatarFor(name);
+  return (
+    <span className="av" style={{ background: color }}>
+      {initials}
+    </span>
+  );
+}
+
 /**
- * CRM-native softphone: dial pad + Contacts / Historique / Équipe tabs populated
- * with OUR data. The actual call is placed through the Zadarma widget (or the
- * server callback) via the shared `dial()`. Replaces Zadarma's own launcher.
+ * CRM-native softphone (prototype "sp-*" skin): dial pad + Contacts / Historique
+ * / Équipe tabs populated with OUR data. Places the real call through the
+ * Zadarma widget (or callback) via the shared dial(). Wrapped in `.tel-skin`.
  */
 export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void> }) {
   const [open, setOpen] = useState(false);
@@ -132,7 +150,6 @@ export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void>
     await dial({ to: target, ...links });
     setInCall(target);
   };
-
   const hangup = () => {
     hangupViaWidget();
     setInCall(null);
@@ -154,13 +171,13 @@ export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void>
 
   const filteredContacts = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return contacts.slice(0, 60);
-    return contacts
-      .filter((c) => {
-        const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.toLowerCase();
-        return name.includes(q) || (c.tel ?? "").includes(q);
-      })
-      .slice(0, 60);
+    const base = q
+      ? contacts.filter((c) => {
+          const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.toLowerCase();
+          return name.includes(q) || (c.tel ?? "").includes(q);
+        })
+      : contacts;
+    return base.slice(0, 60);
   }, [contacts, search]);
 
   const filteredHistory = useMemo(() => {
@@ -180,246 +197,219 @@ export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void>
     );
   }, [team, search]);
 
+  const TABS: Array<[Tab, string, typeof UserIcon]> = [
+    ["contacts", "Contacts", UserIcon],
+    ["historique", "Historique", Clock],
+    ["equipe", "Équipe", Users],
+  ];
+
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[300] flex flex-col items-end gap-3">
-      {open && (
-        <div className="pointer-events-auto flex max-h-[80vh] w-80 flex-col overflow-hidden rounded-2xl border bg-card shadow-2xl">
-          {/* Header / dialer */}
-          <div className="border-b p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold">Téléphone</span>
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="rounded p-1 text-muted-foreground hover:bg-muted"
-                aria-label="Fermer"
-              >
-                <X className="h-4 w-4" />
+    <div className="tel-skin">
+      <div className="sp-root">
+        {!open ? (
+          <button type="button" className="sp-launch" onClick={() => setOpen(true)}>
+            <Phone className="ico-sm" style={{ width: 18, height: 18 }} />
+            <span className="sp-launch-lb">Téléphone</span>
+          </button>
+        ) : (
+          <div className="sp-panel">
+            {/* Header */}
+            <div className="sp-hd">
+              <div className="sp-hd-l">
+                <Phone style={{ width: 15, height: 15 }} /> Téléphone
+              </div>
+              <button type="button" className="sp-x" onClick={() => setOpen(false)} aria-label="Fermer">
+                <X style={{ width: 15, height: 15 }} />
               </button>
             </div>
 
             {inCall ? (
-              <div className="flex items-center justify-between rounded-lg bg-[var(--surface-2)] px-3 py-2">
-                <div className="min-w-0">
-                  <div className="text-xs text-muted-foreground">En communication</div>
-                  <div className="truncate text-sm font-medium">{inCall}</div>
+              <>
+                <div className="sp-call-hd" style={{ gridTemplateColumns: "1fr auto" }}>
+                  <div className="sp-call-id">
+                    <div className="nm">{inCall}</div>
+                    <div className="sb">En communication…</div>
+                  </div>
+                  <div className="sp-call-tm">
+                    <span className="run">
+                      <span className="rec-dot" /> live
+                    </span>
+                  </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={hangup}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white"
-                  aria-label="Raccrocher"
-                >
-                  <PhoneOff className="h-4 w-4" />
+                <button type="button" className="sp-hangup" onClick={hangup}>
+                  <PhoneOff style={{ width: 16, height: 16 }} /> Raccrocher
                 </button>
-              </div>
+              </>
             ) : (
               <>
-                <div className="mb-2 flex items-center gap-1 rounded-md border px-2 py-1.5">
+                <div className="sp-dialdisplay">
                   <input
                     value={number}
                     onChange={(e) => setNumber(e.target.value.replace(/[^\d+*#]/g, ""))}
-                    placeholder="Saisissez le numéro"
+                    placeholder="Numéro"
                     inputMode="tel"
-                    className="min-w-0 flex-1 bg-transparent text-sm outline-none"
                   />
                   {number && (
-                    <button
-                      type="button"
-                      onClick={backspace}
-                      className="rounded p-1 text-muted-foreground hover:bg-muted"
-                      aria-label="Effacer"
-                    >
-                      <Delete className="h-4 w-4" />
+                    <button type="button" className="sp-x" onClick={backspace} aria-label="Effacer">
+                      <Delete style={{ width: 16, height: 16 }} />
                     </button>
                   )}
                 </div>
-                <div className="grid grid-cols-3 gap-1.5">
+                <div className="dialpad">
                   {KEYS.map(([k, sub]) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onClick={() => press(k)}
-                      className="flex flex-col items-center rounded-md border py-1.5 hover:bg-muted"
-                    >
-                      <span className="text-sm font-medium leading-none">{k}</span>
-                      {sub && <span className="text-[9px] text-muted-foreground">{sub}</span>}
+                    <button key={k} type="button" className="dialkey" onClick={() => press(k)}>
+                      <span className="d">{k}</span>
+                      {sub && <span className="l">{sub}</span>}
                     </button>
                   ))}
                 </div>
-                <div className="mt-2 flex gap-2">
+                <div style={{ display: "flex", gap: 6, padding: "0 14px 4px" }}>
                   <button
                     type="button"
+                    className="sp-callbtn"
+                    style={{ margin: 0, width: "auto", flex: 1 }}
                     onClick={() => placeCall(number)}
                     disabled={!number.trim()}
-                    className="flex flex-1 items-center justify-center gap-1 rounded-md bg-emerald-600 py-2 text-sm text-white disabled:opacity-50"
                   >
-                    <Phone className="h-4 w-4" /> Appeler
+                    <Phone style={{ width: 18, height: 18 }} /> Appeler
                   </button>
                   <button
                     type="button"
+                    className="btn subtle"
                     onClick={() => setSmsOpen((v) => !v)}
                     disabled={!number.trim()}
-                    className="flex items-center justify-center gap-1 rounded-md border px-3 py-2 text-sm disabled:opacity-50"
                   >
-                    <MessageSquare className="h-4 w-4" /> SMS
+                    <MessageSquare style={{ width: 16, height: 16 }} /> SMS
                   </button>
                 </div>
                 {smsOpen && (
-                  <div className="mt-2 flex items-end gap-2">
+                  <div style={{ display: "flex", gap: 6, padding: "0 14px 10px", alignItems: "flex-end" }}>
                     <textarea
                       value={smsText}
                       onChange={(e) => setSmsText(e.target.value)}
                       rows={2}
                       placeholder="Message…"
-                      className="min-h-[2.25rem] flex-1 resize-none rounded-md border bg-background px-2 py-1 text-sm outline-none"
+                      className="composer-input"
+                      style={{ flex: 1, resize: "none" }}
                     />
                     <button
                       type="button"
+                      className="composer-send"
                       onClick={submitSms}
                       disabled={sendingSms || !smsText.trim()}
-                      className="flex h-8 items-center gap-1 rounded-md bg-primary px-2 text-xs text-primary-foreground disabled:opacity-60"
                     >
                       {sendingSms ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <Loader2 style={{ width: 15, height: 15 }} className="animate-spin" />
                       ) : (
-                        <Send className="h-3.5 w-3.5" />
+                        <Send style={{ width: 15, height: 15 }} />
                       )}
                     </button>
                   </div>
                 )}
               </>
             )}
-          </div>
 
-          {/* Tabs */}
-          <div className="flex border-b text-sm">
-            {(
-              [
-                ["contacts", "Contacts", UserIcon],
-                ["historique", "Historique", Clock],
-                ["equipe", "Équipe", Users],
-              ] as const
-            ).map(([id, label, Icon]) => (
-              <button
-                key={id}
-                type="button"
-                onClick={() => setTab(id)}
-                className={`flex flex-1 items-center justify-center gap-1 py-2 ${
-                  tab === id
-                    ? "border-b-2 border-primary font-medium text-primary"
-                    : "text-muted-foreground hover:bg-muted/50"
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" /> {label}
-              </button>
-            ))}
-          </div>
+            {/* Tabs */}
+            <div className="pros-tabs-bar" style={{ display: "flex", gap: 4, padding: "6px 10px 0" }}>
+              {TABS.map(([id, label, Icon]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className="pros-tab"
+                  aria-selected={tab === id}
+                  onClick={() => setTab(id)}
+                >
+                  <Icon style={{ width: 14, height: 14 }} /> {label}
+                </button>
+              ))}
+            </div>
 
-          {/* Search + list */}
-          <div className="border-b p-2">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Rechercher…"
-              className="w-full rounded-md border bg-background px-2 py-1 text-sm outline-none"
-            />
-          </div>
-          <div className="min-h-[120px] flex-1 overflow-y-auto">
-            {!loaded ? (
-              <p className="p-3 text-sm text-muted-foreground">Chargement…</p>
-            ) : tab === "contacts" ? (
-              filteredContacts.length === 0 ? (
-                <p className="p-3 text-sm text-muted-foreground">Aucun contact.</p>
+            {/* Search */}
+            <div style={{ padding: "8px 10px 4px" }}>
+              <input
+                className="composer-input"
+                style={{ width: "100%" }}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Rechercher…"
+              />
+            </div>
+
+            {/* List */}
+            <div className="sp-quick" style={{ maxHeight: "40vh", overflowY: "auto" }}>
+              {!loaded ? (
+                <div className="sp-quick-lb">Chargement…</div>
+              ) : tab === "contacts" ? (
+                filteredContacts.length === 0 ? (
+                  <div className="sp-quick-lb">Aucun contact</div>
+                ) : (
+                  filteredContacts.map((c) => {
+                    const nm = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || (c.tel ?? "");
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="sp-quick-row"
+                        onClick={() =>
+                          placeCall(c.tel ?? "", { contactId: c.id, entrepriseId: c.entreprise_id })
+                        }
+                      >
+                        <Avatar name={nm} />
+                        <span className="nm">{nm}</span>
+                        <span className="ph">{c.tel}</span>
+                        <Phone style={{ width: 15, height: 15 }} />
+                      </button>
+                    );
+                  })
+                )
+              ) : tab === "historique" ? (
+                filteredHistory.length === 0 ? (
+                  <div className="sp-quick-lb">Aucun appel</div>
+                ) : (
+                  filteredHistory.map((c) => {
+                    const { name, number: num } = callCounterpart(c);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className="sp-quick-row"
+                        onClick={() =>
+                          placeCall(num, { contactId: c.contact_id, entrepriseId: c.entreprise_id })
+                        }
+                      >
+                        {c.direction === "outbound" ? (
+                          <PhoneOutgoing style={{ width: 15, height: 15, color: "var(--info)" }} />
+                        ) : (
+                          <PhoneIncoming style={{ width: 15, height: 15, color: "var(--ok)" }} />
+                        )}
+                        <span className="nm">{name}</span>
+                        <span className="ph">{timeShort(c.started_at ?? c.created_at)}</span>
+                        <Phone style={{ width: 15, height: 15 }} />
+                      </button>
+                    );
+                  })
+                )
+              ) : filteredTeam.length === 0 ? (
+                <div className="sp-quick-lb">Aucune extension</div>
               ) : (
-                filteredContacts.map((c) => (
+                filteredTeam.map((t) => (
                   <button
-                    key={c.id}
+                    key={t.extension}
                     type="button"
-                    onClick={() =>
-                      placeCall(c.tel ?? "", { contactId: c.id, entrepriseId: c.entreprise_id })
-                    }
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50"
+                    className="sp-quick-row"
+                    onClick={() => placeCall(t.extension)}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <UserIcon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">
-                        {`${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.tel}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">{c.tel}</span>
-                    </span>
-                    <Phone className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <Avatar name={t.name ?? t.extension} />
+                    <span className="nm">{t.name ?? `Extension ${t.extension}`}</span>
+                    <span className="ph">{t.extension}</span>
+                    <Phone style={{ width: 15, height: 15 }} />
                   </button>
                 ))
-              )
-            ) : tab === "historique" ? (
-              filteredHistory.length === 0 ? (
-                <p className="p-3 text-sm text-muted-foreground">Aucun appel.</p>
-              ) : (
-                filteredHistory.map((c) => {
-                  const { name, number: num } = callCounterpart(c);
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => placeCall(num, { contactId: c.contact_id, entrepriseId: c.entreprise_id })}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50"
-                    >
-                      {c.direction === "outbound" ? (
-                        <PhoneOutgoing className="h-4 w-4 shrink-0 text-info" />
-                      ) : (
-                        <PhoneIncoming className="h-4 w-4 shrink-0 text-success" />
-                      )}
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{name}</span>
-                        <span className="block truncate text-xs text-muted-foreground">
-                          {timeShort(c.started_at ?? c.created_at)}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })
-              )
-            ) : filteredTeam.length === 0 ? (
-              <p className="p-3 text-sm text-muted-foreground">Aucune extension.</p>
-            ) : (
-              filteredTeam.map((t) => (
-                <button
-                  key={t.extension}
-                  type="button"
-                  onClick={() => placeCall(t.extension)}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/50"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                    <UserIcon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">
-                      {t.name ?? `Extension ${t.extension}`}
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {t.extension} · numéro interne
-                    </span>
-                  </span>
-                  <Phone className="h-4 w-4 shrink-0 text-emerald-600" />
-                </button>
-              ))
-            )}
+              )}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Launcher */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg transition hover:opacity-90"
-        aria-label="Téléphone"
-      >
-        <Phone className="h-5 w-5" />
-      </button>
+        )}
+      </div>
     </div>
   );
 }
