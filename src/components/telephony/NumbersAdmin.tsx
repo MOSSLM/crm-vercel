@@ -36,6 +36,7 @@ export function NumbersAdmin() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [newExt, setNewExt] = useState({ agent_id: "", extension: "", sip: "", record_mode: "all" });
+  const [newNum, setNewNum] = useState({ e164: "", label: "", number_type: "unknown" });
 
   const load = useCallback(async () => {
     const [ag, nums, exts] = await Promise.all([
@@ -129,6 +130,23 @@ export function NumbersAdmin() {
     }
   };
 
+  const addNumber = async () => {
+    if (!newNum.e164.trim()) return;
+    const { error } = await supabase.from("phone_numbers").insert({
+      provider: "zadarma",
+      e164: newNum.e164.trim(),
+      label: newNum.label.trim() || null,
+      number_type: newNum.number_type,
+      status: "active",
+    });
+    if (error) {
+      toast.error("Ajout impossible", { description: error.message });
+      return;
+    }
+    setNewNum({ e164: "", label: "", number_type: "unknown" });
+    await load();
+  };
+
   if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
   return (
@@ -147,6 +165,48 @@ export function NumbersAdmin() {
             Synchroniser
           </button>
         </div>
+
+        {/* Manual add (useful before/without a synced number) */}
+        <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3">
+          <div>
+            <label className="block text-xs text-muted-foreground">Numéro (E.164)</label>
+            <input
+              value={newNum.e164}
+              onChange={(e) => setNewNum((s) => ({ ...s, e164: e.target.value }))}
+              placeholder="+33…"
+              className="rounded-md border bg-background px-2 py-1 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground">Libellé</label>
+            <input
+              value={newNum.label}
+              onChange={(e) => setNewNum((s) => ({ ...s, label: e.target.value }))}
+              className="rounded-md border bg-background px-2 py-1 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground">Type</label>
+            <select
+              value={newNum.number_type}
+              onChange={(e) => setNewNum((s) => ({ ...s, number_type: e.target.value }))}
+              className="rounded-md border bg-background px-2 py-1 text-sm"
+            >
+              <option value="unknown">—</option>
+              <option value="landline">Fixe</option>
+              <option value="mobile">Mobile</option>
+              <option value="tollfree">Numéro vert</option>
+            </select>
+          </div>
+          <button
+            type="button"
+            onClick={addNumber}
+            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
+          >
+            <Plus className="h-4 w-4" /> Ajouter un numéro
+          </button>
+        </div>
+
         {numbers.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             Aucun numéro. Cliquez sur « Synchroniser » pour importer depuis le fournisseur.
