@@ -71,6 +71,7 @@ export interface MatrixHandlers {
   onEnrich: (item: BoardItem) => void;
   onValidateEnrich: (item: BoardItem) => void;
   onCreateSite: (item: BoardItem) => void;
+  onRegenerateSite: (item: BoardItem) => void;
   onValidateSite: (item: BoardItem) => void;
   onCreateAudit: (item: BoardItem) => void;
   onValidateAudit: (item: BoardItem) => void;
