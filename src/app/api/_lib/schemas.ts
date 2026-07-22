@@ -107,6 +107,20 @@ export const telephonySmsQuerySchema = z.object({
 });
 export type TelephonySmsQuery = z.infer<typeof telephonySmsQuerySchema>;
 
+/** Telephony — the caller sets their own softphone extension (self-service). */
+export const telephonyMyExtensionSchema = z.object({
+  sip: z.string().min(2).max(64),
+  extension: z.string().max(32).optional(),
+  call_mode: z.enum(["browser", "callback"]).optional(),
+});
+export type TelephonyMyExtensionPayload = z.infer<typeof telephonyMyExtensionSchema>;
+
+/** Telephony — register a domain for the in-browser WebRTC widget. */
+export const telephonyWebrtcDomainSchema = z.object({
+  domain: z.string().min(3).max(255),
+});
+export type TelephonyWebrtcDomainPayload = z.infer<typeof telephonyWebrtcDomainSchema>;
+
 /** Telephony — log a cockpit call outcome (disposition + note) on a deal. */
 export const cockpitOutcomeSchema = z.object({
   opportunite_id: z.string().min(1),

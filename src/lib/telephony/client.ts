@@ -77,6 +77,62 @@ export async function placeCallback(payload: CallbackPayload): Promise<CallbackR
   return { ok: true, providerCallId: json.providerCallId };
 }
 
+export interface TelephonyProfile {
+  configured: boolean;
+  hasExtension: boolean;
+  extension: string | null;
+  sip: string | null;
+  call_mode: "browser" | "callback";
+}
+
+export async function fetchTelephonyProfile(): Promise<TelephonyProfile | null> {
+  const res = await authedFetch(`/api/telephony/me`);
+  const json = await res.json().catch(() => null);
+  return res.ok ? json : null;
+}
+
+export async function saveMyExtension(payload: {
+  sip: string;
+  extension?: string;
+  call_mode?: "browser" | "callback";
+}): Promise<{ ok: boolean; error?: string }> {
+  const res = await authedFetch(`/api/telephony/me`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
+  return { ok: true };
+}
+
+export async function fetchWebrtcDomains(): Promise<string[]> {
+  const res = await authedFetch(`/api/telephony/webrtc-domain`);
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? (json.domains ?? []) : [];
+}
+
+export async function registerWebrtcDomain(
+  domain: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await authedFetch(`/api/telephony/webrtc-domain`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ domain }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
+  return { ok: true };
+}
+
+/** Test-mint a WebRTC key (diagnostic). Returns ok + optional error detail. */
+export async function testWebrtcKey(): Promise<{ ok: boolean; error?: string }> {
+  const res = await authedFetch(`/api/telephony/webrtc-key`);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
+  return { ok: Boolean(json.key), error: json.key ? undefined : "no_key" };
+}
+
 export interface VoicemailRow {
   id: string;
   from_e164: string | null;

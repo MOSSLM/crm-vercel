@@ -62,6 +62,12 @@ export interface TelephonyProvider {
   // --- Numbers ---------------------------------------------------------------
   listNumbers(): Promise<PhoneNumberInfo[]>;
 
+  // --- Browser widget domains ------------------------------------------------
+  /** Allow the in-browser widget to run on a domain (origin allow-listing). */
+  registerWebrtcDomain(domain: string): Promise<{ ok: boolean; detail?: string }>;
+  /** List domains currently allowed to run the in-browser widget. */
+  listWebrtcDomains(): Promise<string[]>;
+
   // --- Webhooks --------------------------------------------------------------
   /** Verify an inbound webhook's authenticity (HMAC signature, etc.). */
   verifyWebhook(req: WebhookRequest): Promise<boolean>;

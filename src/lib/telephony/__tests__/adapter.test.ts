@@ -54,6 +54,20 @@ describe("ZadarmaAdapter", () => {
     const a = new ZadarmaAdapter({ ...opts, fetchImpl: impl });
     await expect(a.listNumbers()).rejects.toThrow(/bad_request/);
   });
+
+  it("registers a webrtc domain", async () => {
+    const { impl, calls } = fakeFetch({ status: "success" });
+    const a = new ZadarmaAdapter({ ...opts, fetchImpl: impl });
+    const res = await a.registerWebrtcDomain("crm.example.com");
+    expect(res.ok).toBe(true);
+    expect(calls[0].url).toContain("/v1/webrtc/create/");
+  });
+
+  it("lists webrtc domains", async () => {
+    const { impl } = fakeFetch({ status: "success", domains: ["crm.example.com"] });
+    const a = new ZadarmaAdapter({ ...opts, fetchImpl: impl });
+    expect(await a.listWebrtcDomains()).toContain("crm.example.com");
+  });
 });
 
 describe("TwilioAdapter (stub) proves the abstraction seam", () => {
