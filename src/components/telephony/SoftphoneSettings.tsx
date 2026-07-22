@@ -14,26 +14,35 @@ import {
 
 function Check({ ok, label, hint }: { ok: boolean | null; label: string; hint?: string }) {
   return (
-    <div className="flex items-start gap-2 py-1.5">
+    <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "9px 0" }}>
       {ok === null ? (
-        <span className="mt-0.5 h-4 w-4 shrink-0 rounded-full border" />
+        <span
+          style={{
+            marginTop: 2,
+            width: 16,
+            height: 16,
+            flexShrink: 0,
+            borderRadius: "50%",
+            border: "1px solid var(--border-2)",
+          }}
+        />
       ) : ok ? (
-        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" />
+        <CheckCircle2 className="ico-sm" style={{ marginTop: 2, flexShrink: 0, color: "var(--ok)" }} />
       ) : (
-        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+        <XCircle className="ico-sm" style={{ marginTop: 2, flexShrink: 0, color: "var(--danger)" }} />
       )}
-      <div className="min-w-0">
-        <div className="text-sm">{label}</div>
-        {hint && <div className="text-xs text-muted-foreground">{hint}</div>}
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, color: "var(--text)" }}>{label}</div>
+        {hint && <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 1 }}>{hint}</div>}
       </div>
     </div>
   );
 }
 
 /**
- * Self-service softphone setup + live diagnostic. The signed-in user sets their
- * own SIP login (so the widget mounts for them), registers the CRM domain for
- * the WebRTC widget, and sees exactly what still blocks calls.
+ * Self-service softphone setup + live diagnostic (skin prototype cards). The
+ * signed-in user sets their own SIP login, registers the CRM domain for the
+ * WebRTC widget, and sees exactly what still blocks calls.
  */
 export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
   const [profile, setProfile] = useState<TelephonyProfile | null>(null);
@@ -57,7 +66,6 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
   useEffect(() => {
     setHost(window.location.hostname);
     void load();
-    // detect widget scripts already present
     const w = window as unknown as { zadarmaWidgetFn?: unknown; __zadarmaWidgetInited?: boolean };
     setScriptsLoaded(typeof w.zadarmaWidgetFn === "function" || Boolean(w.__zadarmaWidgetInited));
   }, [load]);
@@ -78,8 +86,6 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
   const register = async () => {
     if (!host) return;
     setRegistering(true);
-    // Register both the exact host and its www/apex variant to avoid the
-    // www-vs-apex mismatch that silently blocks calls.
     const variants = host.startsWith("www.") ? [host, host.slice(4)] : [host, `www.${host}`];
     let anyOk = false;
     let lastErr: string | undefined;
@@ -107,106 +113,134 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
   const domainRegistered = host ? domains.includes(host) : null;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      {/* Self-service setup */}
-      <div className="space-y-4 rounded-lg border p-4">
-        <h2 className="text-lg font-semibold">Mon softphone</h2>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Login SIP / extension</label>
-          <input
-            value={sip}
-            onChange={(e) => setSip(e.target.value)}
-            placeholder="ex. 420031"
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-          />
-          <p className="text-xs text-muted-foreground">
-            Le login SIP <strong>exactement</strong> comme il fonctionne sur le web-phone de Zadarma.
-            Pour un <strong>numéro SIP direct</strong>, c’est le numéro seul (ex. <code>420031</code>) ;
-            pour une <strong>extension PBX</strong>, c’est <code>PBXID-EXT</code>. Le message
-            « integrationDisabled / wrong sip » signifie que ce login n’est pas valide pour le widget.
-          </p>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-muted-foreground">Mode d’appel (click-to-call)</label>
-          <select
-            value={callMode}
-            onChange={(e) => setCallMode(e.target.value as "browser" | "callback")}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            <option value="browser">Navigateur (widget WebRTC)</option>
-            <option value="callback">Callback (fait sonner mon téléphone)</option>
-          </select>
-        </div>
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving || !sip.trim()}
-          className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground disabled:opacity-60"
-        >
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Enregistrer
-        </button>
-      </div>
-
-      {/* Diagnostic */}
-      <div className="space-y-3 rounded-lg border p-4">
-        <h2 className="text-lg font-semibold">Diagnostic</h2>
-        <div className="divide-y">
-          <Check ok={profile?.configured ?? null} label="Téléphonie configurée (clés Zadarma)" />
-          <Check
-            ok={profile?.hasExtension ?? null}
-            label="Mon extension est reliée à mon compte"
-            hint={profile?.sip ? `SIP : ${profile.sip}` : "Renseigne ton login SIP ci-contre"}
-          />
-          <div className="flex items-center justify-between gap-2 py-1.5">
-            <Check ok={keyState} label="Clé WebRTC mintée par le serveur" />
-            <button
-              type="button"
-              onClick={testKey}
-              className="rounded-md border px-2 py-1 text-xs hover:bg-muted"
-            >
-              Tester
-            </button>
+    <div className="tel-skin">
+      <div className="po-grid">
+        {/* Self-service setup */}
+        <div className="card">
+          <div className="card-hd">
+            <h3>Mon softphone</h3>
           </div>
-          <div className="flex items-center justify-between gap-2 py-1.5">
-            <Check
-              ok={domainRegistered}
-              label="Domaine autorisé pour le widget"
-              hint={host || undefined}
-            />
-            {isAdmin && (
+          <div className="card-bd" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div className="fld">
+              <span className="fld-lb">Login SIP / extension</span>
+              <input value={sip} onChange={(e) => setSip(e.target.value)} placeholder="ex. 420031" />
+              <p style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.5, margin: 0 }}>
+                Le login SIP <strong>exactement</strong> comme il fonctionne sur le web-phone Zadarma.
+                Numéro SIP direct → le numéro seul (ex. <code>420031</code>) ; extension PBX →{" "}
+                <code>PBXID-EXT</code>. « integrationDisabled / wrong sip » = login non valide pour le
+                widget.
+              </p>
+            </div>
+            <div className="fld">
+              <span className="fld-lb">Mode d&apos;appel (click-to-call)</span>
+              <select
+                value={callMode}
+                onChange={(e) => setCallMode(e.target.value as "browser" | "callback")}
+              >
+                <option value="browser">Navigateur (widget WebRTC)</option>
+                <option value="callback">Callback (fait sonner mon téléphone)</option>
+              </select>
+            </div>
+            <div>
               <button
                 type="button"
-                onClick={register}
-                disabled={registering || !host}
-                className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
+                className="btn accent sm"
+                onClick={save}
+                disabled={saving || !sip.trim()}
               >
-                {registering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Globe className="h-3.5 w-3.5" />}
-                Activer
+                {saving ? (
+                  <Loader2 className="ico-sm" style={{ animation: "spin 1s linear infinite" }} />
+                ) : (
+                  <Save className="ico-sm" />
+                )}
+                Enregistrer
               </button>
-            )}
+            </div>
           </div>
-          <Check
-            ok={scriptsLoaded}
-            label="Scripts du widget chargés"
-            hint="Recharge la page après avoir configuré l’extension"
-          />
         </div>
-        <div className="space-y-2 rounded-md border bg-[var(--surface-2)] p-3 text-xs text-muted-foreground">
-          <p>
-            <strong>« Connecté » mais l’appel ne part pas ?</strong> C’est que le domaine du site
-            n’est pas autorisé côté Zadarma. Clique « Activer » ci-dessus, ou ajoute-le à la main :
-            Zadarma → <em>Paramètres → Intégrations et API → widget WebRTC</em> → active l’intégration
-            et ajoute <code>{host || "ton domaine"}</code> (avec et sans <code>www.</code>).
-          </p>
-          <p>
-            Les appels <strong>externes</strong> présentent un numéro (CallerID) connecté au compte —
-            si aucun numéro n’est encore actif, teste avec un appel <strong>interne / echo-test</strong>.
-            Pense aussi à <strong>autoriser le micro</strong> du navigateur sur ce domaine.
-          </p>
-          {domainRegistered === false && !isAdmin && (
-            <p>Demande à un admin d’activer le domaine {host}.</p>
-          )}
+
+        {/* Diagnostic */}
+        <div className="card">
+          <div className="card-hd">
+            <h3>Diagnostic</h3>
+          </div>
+          <div className="card-bd">
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <Check ok={profile?.configured ?? null} label="Téléphonie configurée (clés Zadarma)" />
+              <div style={{ borderTop: "1px solid var(--border)" }}>
+                <Check
+                  ok={profile?.hasExtension ?? null}
+                  label="Mon extension est reliée à mon compte"
+                  hint={profile?.sip ? `SIP : ${profile.sip}` : "Renseigne ton login SIP ci-contre"}
+                />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <Check ok={keyState} label="Clé WebRTC mintée par le serveur" />
+                <button type="button" className="btn outline sm" onClick={testKey}>
+                  Tester
+                </button>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                  borderTop: "1px solid var(--border)",
+                }}
+              >
+                <Check ok={domainRegistered} label="Domaine autorisé pour le widget" hint={host || undefined} />
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="btn outline sm"
+                    onClick={register}
+                    disabled={registering || !host}
+                  >
+                    {registering ? (
+                      <Loader2 className="ico-sm" style={{ animation: "spin 1s linear infinite" }} />
+                    ) : (
+                      <Globe className="ico-sm" />
+                    )}
+                    Activer
+                  </button>
+                )}
+              </div>
+              <div style={{ borderTop: "1px solid var(--border)" }}>
+                <Check
+                  ok={scriptsLoaded}
+                  label="Scripts du widget chargés"
+                  hint="Recharge la page après avoir configuré l'extension"
+                />
+              </div>
+            </div>
+
+            <div className="po-note-box" style={{ flexDirection: "column", gap: 8, marginLeft: 0, marginRight: 0 }}>
+              <p style={{ margin: 0 }}>
+                <strong>« Connecté » mais l&apos;appel ne part pas ?</strong> Le domaine du site
+                n&apos;est pas autorisé côté Zadarma. Clique « Activer », ou ajoute-le à la main :
+                Zadarma → <em>Paramètres → Intégrations et API → widget WebRTC</em> → active
+                l&apos;intégration et ajoute <code>{host || "ton domaine"}</code> (avec et sans{" "}
+                <code>www.</code>).
+              </p>
+              <p style={{ margin: 0 }}>
+                Les appels <strong>externes</strong> présentent un numéro (CallerID) connecté au compte —
+                si aucun numéro n&apos;est actif, teste avec un appel <strong>interne</strong>. Pense
+                aussi à <strong>autoriser le micro</strong> du navigateur sur ce domaine.
+              </p>
+              {domainRegistered === false && !isAdmin && (
+                <p style={{ margin: 0 }}>Demande à un admin d&apos;activer le domaine {host}.</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
