@@ -26,6 +26,16 @@ const envSchema = z
     // Stripe — optional; routes return 503 when keys are absent.
     STRIPE_SECRET_KEY: z.string().min(1).optional(),
     STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+    // Telephony / call-center provider — optional; routes return 503 when the
+    // provider keys are absent (same pattern as Stripe). The provider stays
+    // behind the abstraction in `src/lib/telephony/`, so swapping to another
+    // carrier later means adding an adapter + its own keys here.
+    TELEPHONY_PROVIDER: z.string().min(1).optional(),
+    ZADARMA_KEY: z.string().min(1).optional(),
+    ZADARMA_SECRET: z.string().min(1).optional(),
+    // Optional distinct secret for verifying inbound webhooks; when absent we
+    // fall back to ZADARMA_SECRET (Zadarma signs callbacks with the API secret).
+    ZADARMA_WEBHOOK_SECRET: z.string().min(1).optional(),
     // External page-rendering provider for the visual site import (screenshots /
     // rendered HTML). All optional: when RENDER_API_KEY is absent the "auto"
     // capture is disabled and the import falls back to manual upload.
@@ -60,6 +70,10 @@ const envResult = envSchema.safeParse({
   RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL,
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+  TELEPHONY_PROVIDER: process.env.TELEPHONY_PROVIDER,
+  ZADARMA_KEY: process.env.ZADARMA_KEY,
+  ZADARMA_SECRET: process.env.ZADARMA_SECRET,
+  ZADARMA_WEBHOOK_SECRET: process.env.ZADARMA_WEBHOOK_SECRET,
   RENDER_PROVIDER: process.env.RENDER_PROVIDER,
   RENDER_API_KEY: process.env.RENDER_API_KEY,
   RENDER_API_URL: process.env.RENDER_API_URL,
@@ -88,6 +102,10 @@ export const {
   RESEND_FROM_EMAIL,
   STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET,
+  TELEPHONY_PROVIDER,
+  ZADARMA_KEY,
+  ZADARMA_SECRET,
+  ZADARMA_WEBHOOK_SECRET,
   RENDER_PROVIDER,
   RENDER_API_KEY,
   RENDER_API_URL,
