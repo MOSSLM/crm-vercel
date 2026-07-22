@@ -32,12 +32,6 @@ import {
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { createAudit } from "@/utils/auditApi";
-import {
-  updateLeadMagnetProject,
-  createLeadMagnetReview,
-  updateLeadMagnetReview,
-  deleteLeadMagnetReview,
-} from "@/utils/leadMagnetV2Api";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -1802,47 +1796,9 @@ const OpportunityEditModal: React.FC<{
 
   const persist = async (): Promise<boolean> => {
     if (entrepriseId == null) return false;
-    const { error: compErr } = await supabase
-      .from("entreprises")
-      .update({
-        name: form.name || null,
-        ville: form.ville || null,
-        code_postal: form.code_postal || null,
-        adresse: form.adresse || null,
-        telephone: form.telephone || null,
-        email: form.email || null,
-        site_web_canonique: form.site_web || null,
-        linkedin_url: form.linkedin_url || null,
-        service_tags: toArr(form.service_tags),
-        note_moyenne: form.note_moyenne === "" ? null : Number(form.note_moyenne),
-        nombre_avis: form.nombre_avis === "" ? null : Number(form.nombre_avis),
-        horaires: form.horaires || null,
-        manually_enriched: true,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", entrepriseId);
-    if (compErr) throw compErr;
-
-    const enrPayload = {
-      website_url: form.enr_website_url || null,
-      emails: toArr(form.enr_emails),
-      phones: toArr(form.enr_phones),
-      services_list: toArr(form.enr_services),
-      contact_page_url: form.enr_contact_page || null,
-      site_summary: form.enr_summary || null,
-      updated_at: new Date().toISOString(),
-    };
-    const hasEnrData =
-      form.enr_website_url || form.enr_emails || form.enr_phones || form.enr_services || form.enr_contact_page || form.enr_summary;
-    if (enrichmentId) {
-      const { error } = await supabase.from("automated_enrichment").update(enrPayload).eq("id", enrichmentId);
-      if (error) throw error;
-    } else if (hasEnrData) {
-      const { error } = await supabase.from("automated_enrichment").insert({ entreprise_id: entrepriseId, ...enrPayload });
-      if (error) throw error;
-    }
 
     // lead_magnet_projects : overrides, logo, stats, zones (sortie edge function)
+    let project: Record<string, unknown> | null = null;
     if (projectId) {
       const vars: Record<string, unknown> = { ...variablesRef.current };
       const zones = toArr(form.lm_zones);
@@ -1853,7 +1809,7 @@ const OpportunityEditModal: React.FC<{
         delete vars.surrounding_cities;
         delete vars.surrounding_cities_text;
       }
-      await updateLeadMagnetProject(projectId, {
+      project = {
         override_entreprise_name: form.lm_override_name || null,
         override_city: form.lm_override_city || null,
         override_location: form.lm_override_location || null,
@@ -1867,42 +1823,70 @@ const OpportunityEditModal: React.FC<{
         stat_installations_completed: form.lm_stat_installations || null,
         stat_rge_count: form.lm_stat_rge || null,
         variables: vars,
-      });
-
-      // Avis : suppressions, puis créations / mises à jour
-      for (const id of deletedReviewIds.current) {
-        await deleteLeadMagnetReview(id);
-      }
-      deletedReviewIds.current = [];
-      for (let i = 0; i < reviews.length; i++) {
-        const r = reviews[i];
-        const author = r.author_name.trim();
-        const text = r.review_text.trim();
-        if (!author && !text) continue; // ligne vide ignorée
-        const rating = r.rating === "" ? 5 : Number(r.rating);
-        const display_order = i * 10 + 100;
-        if (r.id) {
-          await updateLeadMagnetReview(r.id, {
-            author_name: author,
-            review_text: text,
-            rating,
-            is_active: r.is_active,
-            display_order,
-          });
-        } else {
-          await createLeadMagnetReview({
-            lead_magnet_project_id: projectId,
-            author_name: author,
-            review_text: text,
-            rating,
-            is_active: r.is_active,
-            is_manual: true,
-            source: "manual",
-            display_order,
-          });
-        }
-      }
+      };
     }
+
+    // Avis : on conserve l'index d'origine pour display_order (lignes vides ignorées).
+    const reviewRows = projectId
+      ? reviews
+          .map((r, i) => ({ r, i }))
+          .filter(({ r }) => r.author_name.trim() || r.review_text.trim())
+          .map(({ r, i }) => ({
+            id: r.id ?? null,
+            author_name: r.author_name.trim(),
+            review_text: r.review_text.trim(),
+            rating: r.rating === "" ? 5 : Number(r.rating),
+            is_active: r.is_active,
+            display_order: i * 10 + 100,
+          }))
+      : [];
+
+    const hasEnrData =
+      form.enr_website_url || form.enr_emails || form.enr_phones || form.enr_services || form.enr_contact_page || form.enr_summary;
+
+    // Écriture côté serveur (service client) : contourne le RLS du client
+    // navigateur qui rejetait l'enregistrement des entreprises « pool ».
+    const res = await authedFetch("/api/marketing-pipeline/company-details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        entreprise_id: entrepriseId,
+        project_id: projectId,
+        enrichment_id: enrichmentId,
+        company: {
+          name: form.name || null,
+          ville: form.ville || null,
+          code_postal: form.code_postal || null,
+          adresse: form.adresse || null,
+          telephone: form.telephone || null,
+          email: form.email || null,
+          site_web_canonique: form.site_web || null,
+          linkedin_url: form.linkedin_url || null,
+          service_tags: toArr(form.service_tags),
+          note_moyenne: form.note_moyenne === "" ? null : Number(form.note_moyenne),
+          nombre_avis: form.nombre_avis === "" ? null : Number(form.nombre_avis),
+          horaires: form.horaires || null,
+        },
+        enrichment: hasEnrData || enrichmentId
+          ? {
+              website_url: form.enr_website_url || null,
+              emails: toArr(form.enr_emails),
+              phones: toArr(form.enr_phones),
+              services_list: toArr(form.enr_services),
+              contact_page_url: form.enr_contact_page || null,
+              site_summary: form.enr_summary || null,
+            }
+          : null,
+        project,
+        reviews: projectId ? { deleted_ids: deletedReviewIds.current, rows: reviewRows } : null,
+      }),
+    });
+
+    if (!res.ok) {
+      const msg = (await res.json().catch(() => ({}))).error;
+      throw new Error(typeof msg === "string" && msg ? msg : "Erreur lors de l'enregistrement");
+    }
+    deletedReviewIds.current = [];
     return true;
   };
 
