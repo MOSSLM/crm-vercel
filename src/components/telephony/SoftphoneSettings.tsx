@@ -78,13 +78,22 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
   const register = async () => {
     if (!host) return;
     setRegistering(true);
-    const res = await registerWebrtcDomain(host);
+    // Register both the exact host and its www/apex variant to avoid the
+    // www-vs-apex mismatch that silently blocks calls.
+    const variants = host.startsWith("www.") ? [host, host.slice(4)] : [host, `www.${host}`];
+    let anyOk = false;
+    let lastErr: string | undefined;
+    for (const d of variants) {
+      const res = await registerWebrtcDomain(d);
+      if (res.ok) anyOk = true;
+      else lastErr = res.error;
+    }
     setRegistering(false);
-    if (res.ok) {
-      toast.success(`Domaine ${host} enregistré pour le widget.`);
+    if (anyOk) {
+      toast.success(`Domaine(s) enregistré(s) : ${variants.join(", ")}`);
       await load();
     } else {
-      toast.error("Enregistrement du domaine impossible", { description: res.error });
+      toast.error("Enregistrement du domaine impossible", { description: lastErr });
     }
   };
 
@@ -107,12 +116,14 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
           <input
             value={sip}
             onChange={(e) => setSip(e.target.value)}
-            placeholder="ex. 420031-101"
+            placeholder="ex. 420031"
             className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
           <p className="text-xs text-muted-foreground">
-            Le login complet de ton extension PBX (<code>PBXID-EXT</code>, ex. <code>420031-101</code>)
-            — le même que celui qui fonctionne sur le web-phone de Zadarma. Pas le numéro de compte seul.
+            Le login SIP <strong>exactement</strong> comme il fonctionne sur le web-phone de Zadarma.
+            Pour un <strong>numéro SIP direct</strong>, c’est le numéro seul (ex. <code>420031</code>) ;
+            pour une <strong>extension PBX</strong>, c’est <code>PBXID-EXT</code>. Le message
+            « integrationDisabled / wrong sip » signifie que ce login n’est pas valide pour le widget.
           </p>
         </div>
         <div className="space-y-1">
@@ -181,11 +192,20 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
             hint="Recharge la page après avoir configuré l’extension"
           />
         </div>
-        <div className="rounded-md border bg-[var(--surface-2)] p-3 text-xs text-muted-foreground">
-          Les appels <strong>externes</strong> nécessitent un numéro vérifié (CallerID). En attendant,
-          teste avec un appel <strong>interne</strong> ou l’echo-test pour valider l’audio.
+        <div className="space-y-2 rounded-md border bg-[var(--surface-2)] p-3 text-xs text-muted-foreground">
+          <p>
+            <strong>« Connecté » mais l’appel ne part pas ?</strong> C’est que le domaine du site
+            n’est pas autorisé côté Zadarma. Clique « Activer » ci-dessus, ou ajoute-le à la main :
+            Zadarma → <em>Paramètres → Intégrations et API → widget WebRTC</em> → active l’intégration
+            et ajoute <code>{host || "ton domaine"}</code> (avec et sans <code>www.</code>).
+          </p>
+          <p>
+            Les appels <strong>externes</strong> présentent un numéro (CallerID) connecté au compte —
+            si aucun numéro n’est encore actif, teste avec un appel <strong>interne / echo-test</strong>.
+            Pense aussi à <strong>autoriser le micro</strong> du navigateur sur ce domaine.
+          </p>
           {domainRegistered === false && !isAdmin && (
-            <> Demande à un admin d’activer le domaine {host} (ou ajoute-le au panneau Zadarma).</>
+            <p>Demande à un admin d’activer le domaine {host}.</p>
           )}
         </div>
       </div>
