@@ -304,6 +304,32 @@ export const MarketingWebPipeline: React.FC = () => {
     }
   };
 
+  // Regenerate a demo site from the company's (possibly updated) info — creates
+  // a fresh demo via create-demo even when a site already exists. Unlike
+  // createSites it doesn't skip companies that already have a site.
+  const regenerateSite = async (item: BoardItem) => {
+    if (!templateId) {
+      toast.error("Choisis d'abord un template");
+      return;
+    }
+    if (item.entreprise_id == null) return;
+    setWorking("create-site");
+    try {
+      const res = await authedFetch(`/api/site-builder/claude/${templateId}/create-demo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companyId: item.entreprise_id }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+      toast.success("Site régénéré — nouvelle démo créée");
+      await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la régénération du site");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   // Gate: before creating, every target must have its required variables filled.
   // Otherwise open the edit modal on the first incomplete company (requirement
   // mode) instead of creating anything.
@@ -469,6 +495,7 @@ export const MarketingWebPipeline: React.FC = () => {
     onEnrich: (item) => runEnrich([item], false),
     onValidateEnrich: (item) => validateEnrichment([item]),
     onCreateSite: (item) => createSites([item]),
+    onRegenerateSite: (item) => regenerateSite(item),
     onValidateSite: (item) => validateSites([item]),
     onCreateAudit: (item) => createAudits([item]),
     onValidateAudit: (item) => validateAudits([item]),

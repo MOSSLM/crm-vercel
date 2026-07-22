@@ -283,87 +283,183 @@ interface CellProps {
   handlers: MatrixHandlers;
 }
 
-function DoneCell({ item, stage, handlers }: { item: BoardItem; stage: StageDef; handlers: MatrixHandlers }) {
-  let summary = "Fait";
-  let voir: React.ReactNode = null;
+/* Body content for a reached (done or active) stage cell — identical in both
+ * states so the card keeps its size and elements. */
+function StageBody({ item, stage }: { item: BoardItem; stage: StageDef }) {
+  const missing = item.missing_for_site ?? [];
+  const website = normalizeUrl(item.enrichment?.website_url) ?? normalizeUrl(item.company_url);
   switch (stage.id) {
-    case "enrich":
-      summary = "Enrichi";
-      voir = (
-        <button className="link-btn" onClick={() => handlers.onDetails(item)}>
-          <Sparkles className="ico-sm" />
-          Voir
-        </button>
-      );
-      break;
-    case "validation":
-      summary = "Données validées";
-      voir = (
-        <button className="link-btn" onClick={() => handlers.onDetails(item)}>
-          <ClipboardCheck className="ico-sm" />
-          Fiche
-        </button>
-      );
-      break;
-    case "site":
-      summary = "Maquette livrée";
-      voir = item.site ? (
-        <Link className="link-btn" href={siteEditHref(item.site)}>
-          <Globe className="ico-sm" />
-          Voir
-        </Link>
-      ) : null;
-      break;
-    case "audit":
-      summary = "Audit prêt";
-      voir = (
-        <Link className="link-btn" href={`/audits/${item.id}`}>
-          <Search className="ico-sm" />
-          Voir
-        </Link>
-      );
-      break;
-    case "attribution": {
-      summary = item.agent ? `Attribué à ${item.agent.name.split(" ")[0]}` : "Attribué";
-      voir = (
-        <span className="link-btn" style={{ color: "var(--ok)" }}>
-          <ArrowRight className="ico-sm" />
-          Vente
-        </span>
-      );
-      break;
-    }
-  }
-  return (
-    <div className="mx-cell done">
-      <div className="card is-done">
-        <div className="c-hd">
-          <span className="done-check">
-            <Check className="ico-sm" strokeWidth={3} />
-          </span>
-          <span className="c-ttl">{stage.short}</span>
+    case "enrich": {
+      const failed = item.project?.statut === "failed";
+      return (
+        <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {failed && item.project?.enrichment_error ? (
+            <div className="alert" title={item.project.enrichment_error}>
+              <AlertTriangle className="ico-sm" />
+              <span className="clamp2">{item.project.enrichment_error}</span>
+            </div>
+          ) : null}
+          <ResearchLinks item={item} compact />
         </div>
-        {stage.id === "attribution" && item.agent ? (
-          <div className="done-line">
-            <Avatar initials={initialsOf(item.agent.name)} color={colorForId(item.agent.id)} size={20} />
-            {item.agent.name.split(" ")[0]}
-          </div>
-        ) : (
-          <div className="done-line">{summary}</div>
-        )}
-        <div className="done-foot">{voir}</div>
-      </div>
-    </div>
-  );
+      );
+    }
+    case "validation":
+      return (
+        <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {item.ville ? (
+            <div className="kv"><MapPin className="ico-sm" />{item.ville}</div>
+          ) : null}
+          {website ? (
+            <a className="kv" href={website} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+              <Globe className="ico-sm" />
+              {(item.enrichment?.website_url || item.company_url || "").replace(/^https?:\/\//, "")}
+            </a>
+          ) : null}
+          {missing.length > 0 ? (
+            <span className="pill danger" title={`Manquant : ${missing.join(", ")}`} style={{ alignSelf: "flex-start" }}>
+              Incomplet · {missing.length}
+            </span>
+          ) : (
+            <span className="pill ok" style={{ alignSelf: "flex-start" }}>Variables OK</span>
+          )}
+        </div>
+      );
+    case "site":
+      return (
+        <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className="prev"><span>{item.site ? "maquette" : "à créer"}</span></div>
+          {item.site?.url ? (
+            <a className="kv" href={item.site.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+              <Globe className="ico-sm" />
+              {item.site.url.replace(/^https?:\/\//, "")}
+            </a>
+          ) : item.site ? (
+            <div className="kv"><Globe className="ico-sm" />Non déployé</div>
+          ) : missing.length > 0 ? (
+            <span className="pill danger" title={`Manquant : ${missing.join(", ")}`} style={{ alignSelf: "flex-start" }}>
+              Incomplet · {missing.length}
+            </span>
+          ) : null}
+        </div>
+      );
+    case "audit":
+      return (
+        <div className="c-body">
+          {item.audit ? (
+            <span className={"pill " + (item.audit.statut === "ready" ? "ok" : "warn")}>
+              {item.audit.statut === "ready" ? "Audit prêt" : "Audit brouillon"}
+            </span>
+          ) : (
+            <span className="pill">Aucun audit</span>
+          )}
+        </div>
+      );
+    default:
+      return null;
+  }
 }
 
-function Cell({ item, stage, status, working, templateId, handlers }: CellProps) {
+/* Actions for a reached cell. "Valider" appears only while the stage is active;
+ * everything else (Éditer, Régénérer, Voir, Fiche) stays available once done so
+ * earlier stages remain fully actionable (e.g. regenerate the site from Audit). */
+function StageActions({ item, stage, done, busy, templateId, handlers }: { item: BoardItem; stage: StageDef; done: boolean; busy: boolean; templateId: string; handlers: MatrixHandlers }) {
+  switch (stage.id) {
+    case "enrich": {
+      const failed = item.project?.statut === "failed";
+      return (
+        <div className="c-foot">
+          <button className="btn sm" disabled={busy} title={failed ? "Relancer l'enrichissement" : "Enrichir"} onClick={() => handlers.onEnrich(item)}>
+            {failed ? <RefreshCw className="ico-sm" /> : <Sparkles className="ico-sm" />}
+            {failed ? "Relancer" : "Enrichir"}
+          </button>
+          <button className="btn ghost sm icon" disabled={busy} title="Voir / modifier la fiche" onClick={() => handlers.onDetails(item)}>
+            <Pencil className="ico-sm" />
+          </button>
+        </div>
+      );
+    }
+    case "validation":
+      return (
+        <div className="c-foot">
+          <button className="btn ghost sm" disabled={busy} title="Vérifier / modifier la fiche" onClick={() => handlers.onDetails(item)}>
+            <ClipboardCheck className="ico-sm" />
+            Fiche
+          </button>
+          {!done && (
+            <button className="btn ok sm icon" disabled={busy || !item.project} title="Valider les données" onClick={() => handlers.onValidateEnrich(item)}>
+              <Check className="ico-sm" />
+            </button>
+          )}
+        </div>
+      );
+    case "site":
+      if (item.site) {
+        return (
+          <div className="c-foot">
+            <Link className="btn ghost sm icon" href={siteEditHref(item.site)} title="Éditer le site">
+              <Pencil className="ico-sm" />
+            </Link>
+            <button className="btn ghost sm icon" disabled={busy || item.entreprise_id == null || !templateId} title="Régénérer le site (nouvelle démo depuis les infos à jour)" onClick={() => handlers.onRegenerateSite(item)}>
+              <RefreshCw className="ico-sm" />
+            </button>
+            {!done && (
+              <button className="btn ok sm icon" disabled={busy} title="Valider le site" onClick={() => handlers.onValidateSite(item)}>
+                <Check className="ico-sm" />
+              </button>
+            )}
+          </div>
+        );
+      }
+      return (
+        <div className="c-foot">
+          <button className="btn sm" disabled={busy || item.entreprise_id == null || !templateId} title={templateId ? "Créer le site démo" : "Choisis un template"} onClick={() => handlers.onCreateSite(item)}>
+            <Globe className="ico-sm" />
+            Créer
+          </button>
+          <button className="btn ghost sm icon" disabled={busy} title="Voir / modifier la fiche" onClick={() => handlers.onDetails(item)}>
+            <Pencil className="ico-sm" />
+          </button>
+        </div>
+      );
+    case "audit":
+      if (item.audit) {
+        return (
+          <div className="c-foot">
+            <Link className="btn ghost sm icon" href={`/audits/${item.id}`} title="Éditer l'audit">
+              <Pencil className="ico-sm" />
+            </Link>
+            {item.audit.pdf_url ? (
+              <a className="btn ghost sm icon" href={item.audit.pdf_url} target="_blank" rel="noopener noreferrer" title="Voir le PDF">
+                <Eye className="ico-sm" />
+              </a>
+            ) : null}
+            {!done && (
+              <button className="btn ok sm icon" disabled={busy} title="Valider l'audit" onClick={() => handlers.onValidateAudit(item)}>
+                <Check className="ico-sm" />
+              </button>
+            )}
+          </div>
+        );
+      }
+      return (
+        <div className="c-foot">
+          <button className="btn sm" disabled={busy} title="Créer l'audit" onClick={() => handlers.onCreateAudit(item)}>
+            <FileText className="ico-sm" />
+            Créer l&apos;audit
+          </button>
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+function StageCell({ item, stage, status, working, templateId, handlers }: CellProps) {
   const seg = {
     "--seg": stage.color,
     "--seg-soft": rgba(stage.color, 0.22),
     "--seg-wash": rgba(stage.color, 0.05),
   } as React.CSSProperties;
-  const busy = working !== null;
 
   if (status === "locked") {
     return (
@@ -376,226 +472,82 @@ function Cell({ item, stage, status, working, templateId, handlers }: CellProps)
     );
   }
 
-  if (status === "done") {
-    return (
-      <div className="mx-cell done" style={seg}>
-        <DoneCell item={item} stage={stage} handlers={handlers} />
-      </div>
-    );
-  }
-
-  // active
-  const missing = item.missing_for_site ?? [];
-  const website = normalizeUrl(item.enrichment?.website_url) ?? normalizeUrl(item.company_url);
-  const enrichFailed = item.project?.statut === "failed";
-
+  const done = status === "done";
+  const busy = working !== null;
   return (
-    <div className="mx-cell active-cell" style={seg}>
-      <div className="card active">
+    <div className={"mx-cell " + (done ? "done" : "active-cell")} style={seg}>
+      <div className={"card " + (done ? "is-done" : "active")}>
         <div className="c-hd">
-          <span className="live-dot" />
-          <span className="c-ttl">{stage.name}</span>
+          {done ? (
+            <span className="done-check"><Check className="ico-sm" strokeWidth={3} /></span>
+          ) : (
+            <span className="live-dot" />
+          )}
+          <span className="c-ttl">{stage.short}</span>
           <span className="c-tag">
-            <span className="pill accent">En cours</span>
+            {done ? <span className="pill ok">Validé</span> : <span className="pill accent">En cours</span>}
           </span>
         </div>
-
-        {/* ── body per stage ── */}
-        {stage.id === "enrich" && (
-          <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {enrichFailed && item.project?.enrichment_error ? (
-              <div className="alert" title={item.project.enrichment_error}>
-                <AlertTriangle className="ico-sm" />
-                <span style={{ overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                  {item.project.enrichment_error}
-                </span>
-              </div>
-            ) : (
-              <div className="muted" style={{ fontSize: 11 }}>Sources à recouper avant l&apos;enrichissement auto :</div>
-            )}
-            <ResearchLinks item={item} />
-          </div>
-        )}
-
-        {stage.id === "validation" && (
-          <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            <div className="muted" style={{ fontSize: 11 }}>Fiche enrichie — à vérifier avant la démo.</div>
-            <div className="fields">
-              {item.tags ? (
-                <div className="fld"><span>Secteur</span><b>{item.tags.split(",")[0]}</b></div>
-              ) : null}
-              {item.ville ? <div className="fld"><span>Ville</span><b>{item.ville}</b></div> : null}
-              {website ? (
-                <div className="fld">
-                  <span>Site</span>
-                  <a className="fld-link" href={website} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                    {(item.enrichment?.website_url || item.company_url || "").replace(/^https?:\/\//, "")}
-                  </a>
-                </div>
-              ) : null}
-            </div>
-            {missing.length > 0 ? (
-              <span className="pill danger" title={`Manquant : ${missing.join(", ")}`} style={{ alignSelf: "flex-start" }}>
-                Incomplet · {missing.length}
-              </span>
-            ) : (
-              <span className="pill ok" style={{ alignSelf: "flex-start" }}>Variables OK</span>
-            )}
-          </div>
-        )}
-
-        {stage.id === "site" && (
-          <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {item.site ? (
-              <>
-                <div className="prev"><span>aperçu maquette</span></div>
-                {item.site.url ? (
-                  <a className="kv" href={item.site.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                    <Globe className="ico-sm" />
-                    {item.site.url.replace(/^https?:\/\//, "")}
-                  </a>
-                ) : (
-                  <div className="kv"><Globe className="ico-sm" />Non déployé</div>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="prev"><span>site à créer</span></div>
-                {missing.length > 0 ? (
-                  <span className="pill danger" title={`Manquant : ${missing.join(", ")}`} style={{ alignSelf: "flex-start" }}>
-                    Incomplet · {missing.length}
-                  </span>
-                ) : null}
-              </>
-            )}
-          </div>
-        )}
-
-        {stage.id === "audit" && (
-          <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {item.audit ? (
-              <div className="kv"><FileText className="ico-sm" />Audit en brouillon — à finaliser.</div>
-            ) : (
-              <div>Audit SEO + fiche Google à produire.</div>
-            )}
-          </div>
-        )}
-
-        {stage.id === "attribution" && (
-          <div className="c-body">Fiche prête. Choisir l&apos;agent qui reprend la vente :</div>
-        )}
-
-        {/* ── CTA + footer per stage ── */}
-        {stage.id === "enrich" && (
-          <>
-            <button className="cta" disabled={busy} onClick={() => handlers.onEnrich(item)}>
-              {enrichFailed ? <RefreshCw className="ico-sm" /> : <Sparkles className="ico-sm" />}
-              {enrichFailed ? "Relancer l'enrichissement" : "Enrichir auto"}
-            </button>
-            <div className="c-foot">
-              <button className="btn ghost sm" disabled={busy} onClick={() => handlers.onDetails(item)}>
-                <Pencil className="ico-sm" />
-                Fiche
-              </button>
-            </div>
-          </>
-        )}
-
-        {stage.id === "validation" && (
-          <>
-            <button className="cta" disabled={busy} onClick={() => handlers.onDetails(item)}>
-              <ClipboardCheck className="ico-sm" />
-              Vérifier / modifier la fiche
-            </button>
-            <div className="c-foot">
-              <button className="btn ok sm" disabled={busy || !item.project} title="Valider les données" onClick={() => handlers.onValidateEnrich(item)}>
-                <Check className="ico-sm" />
-                Valider
-              </button>
-            </div>
-          </>
-        )}
-
-        {stage.id === "site" && (
-          <>
-            {item.site ? (
-              <div className="c-foot">
-                <Link className="btn ghost sm" href={siteEditHref(item.site)}>
-                  <Pencil className="ico-sm" />
-                  Éditer
-                </Link>
-                <button className="btn ok sm" disabled={busy} title="Valider le site" onClick={() => handlers.onValidateSite(item)}>
-                  <Check className="ico-sm" />
-                  Valider
-                </button>
-              </div>
-            ) : (
-              <>
-                <button className="cta" disabled={busy || item.entreprise_id == null || !templateId} onClick={() => handlers.onCreateSite(item)}>
-                  <Globe className="ico-sm" />
-                  {templateId ? "Créer le site démo" : "Choisis un template"}
-                </button>
-                <div className="c-foot">
-                  <button className="btn ghost sm" disabled={busy} onClick={() => handlers.onDetails(item)}>
-                    <Pencil className="ico-sm" />
-                    Fiche
-                  </button>
-                </div>
-              </>
-            )}
-          </>
-        )}
-
-        {stage.id === "audit" && (
-          <>
-            {item.audit ? (
-              <div className="c-foot">
-                <Link className="btn ghost sm" href={`/audits/${item.id}`}>
-                  <Pencil className="ico-sm" />
-                  Éditer
-                </Link>
-                <button className="btn ok sm" disabled={busy} title="Valider l'audit" onClick={() => handlers.onValidateAudit(item)}>
-                  <Check className="ico-sm" />
-                  Valider
-                </button>
-              </div>
-            ) : (
-              <button className="cta" disabled={busy} onClick={() => handlers.onCreateAudit(item)}>
-                <FileText className="ico-sm" />
-                Créer l&apos;audit
-              </button>
-            )}
-          </>
-        )}
+        <StageBody item={item} stage={stage} />
+        <StageActions item={item} stage={stage} done={done} busy={busy} templateId={templateId} handlers={handlers} />
       </div>
     </div>
   );
 }
 
-/* ── Attribution agent picker (inline in the attribution active cell) ──── */
-function AttributionCell({ item, stage, agents, working, handlers }: { item: BoardItem; stage: StageDef; agents: AgentRef[]; working: string | null; handlers: MatrixHandlers }) {
+/* Attribution cell — keeps the agent picker in every state (also lets you
+ * reassign once done). */
+function AttributionCell({ item, stage, status, agents, working, handlers }: { item: BoardItem; stage: StageDef; status: CellStatus; agents: AgentRef[]; working: string | null; handlers: MatrixHandlers }) {
   const seg = {
     "--seg": stage.color,
     "--seg-soft": rgba(stage.color, 0.22),
     "--seg-wash": rgba(stage.color, 0.05),
   } as React.CSSProperties;
+
+  if (status === "locked") {
+    return (
+      <div className="mx-cell locked">
+        <div className="locked-ph">
+          <Lock className="ico-sm" />
+          <span className="t">À débloquer</span>
+        </div>
+      </div>
+    );
+  }
+
+  const done = status === "done";
   const busy = working !== null;
   return (
-    <div className="mx-cell active-cell" style={seg}>
-      <div className="card active">
+    <div className={"mx-cell " + (done ? "done" : "active-cell")} style={seg}>
+      <div className={"card " + (done ? "is-done" : "active")}>
         <div className="c-hd">
-          <span className="live-dot" />
-          <span className="c-ttl">{stage.name}</span>
-          <span className="c-tag"><span className="pill accent">À attribuer</span></span>
+          {done ? (
+            <span className="done-check"><Check className="ico-sm" strokeWidth={3} /></span>
+          ) : (
+            <span className="live-dot" />
+          )}
+          <span className="c-ttl">{stage.short}</span>
+          <span className="c-tag">
+            {done ? <span className="pill ok">Attribué</span> : <span className="pill accent">À attribuer</span>}
+          </span>
         </div>
-        <div className="c-body">Fiche prête. Choisir l&apos;agent qui reprend la vente :</div>
+        {done && item.agent ? (
+          <div className="c-body">
+            <div className="done-line">
+              <Avatar initials={initialsOf(item.agent.name)} color={colorForId(item.agent.id)} size={20} />
+              {item.agent.name.split(" ")[0]}
+            </div>
+          </div>
+        ) : (
+          <div className="c-body muted" style={{ fontSize: 11 }}>Choisir l&apos;agent :</div>
+        )}
         {agents.length === 0 ? (
-          <div className="muted" style={{ fontSize: 11 }}>Aucun agent freelance disponible.</div>
+          <div className="muted" style={{ fontSize: 11 }}>Aucun agent</div>
         ) : (
           <div className="agents">
             {agents.map((a) => (
               <button key={a.id} className="agent-pick" title={"Attribuer à " + a.name} disabled={busy} onClick={() => handlers.onAssign(item, a.id)}>
-                <Avatar initials={initialsOf(a.name)} color={colorForId(a.id)} size={20} />
+                <Avatar initials={initialsOf(a.name)} color={colorForId(a.id)} size={18} />
                 {a.name.split(" ")[0]}
               </button>
             ))}
@@ -853,10 +805,10 @@ export function PipelineMatrix({
                 <RowHead item={r} onMenu={(e, it) => openMenu(e, it, "row")} onAssignClick={(e, it) => openMenu(e, it, "assign")} />
                 {STAGES.map((s, i) => {
                   const status = cellStatus(r, i);
-                  if (s.id === "attribution" && status === "active") {
-                    return <AttributionCell key={s.id} item={r} stage={s} agents={agents} working={working} handlers={handlers} />;
+                  if (s.id === "attribution") {
+                    return <AttributionCell key={s.id} item={r} stage={s} status={status} agents={agents} working={working} handlers={handlers} />;
                   }
-                  return <Cell key={s.id} item={r} stage={s} status={status} working={working} templateId={templateId} handlers={handlers} />;
+                  return <StageCell key={s.id} item={r} stage={s} status={status} working={working} templateId={templateId} handlers={handlers} />;
                 })}
               </React.Fragment>
             ))
