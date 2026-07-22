@@ -87,6 +87,17 @@ export const telephonyCallbackSchema = z.object({
 });
 export type TelephonyCallbackPayload = z.infer<typeof telephonyCallbackSchema>;
 
+/** Telephony — call journal / history listing filters. */
+export const telephonyCallsQuerySchema = z.object({
+  contact_id: z.string().optional(),
+  entreprise_id: z.coerce.number().int().positive().optional(),
+  opportunite_id: z.string().uuid().optional(),
+  direction: z.enum(["inbound", "outbound", "internal"]).optional(),
+  agent_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type TelephonyCallsQuery = z.infer<typeof telephonyCallsQuerySchema>;
+
 /**
  * Prepares one or more opportunities for (re)enrichment on the Marketing & Web
  * pipeline: ensures each has a `lead_magnet_projects` row and resets it to a
