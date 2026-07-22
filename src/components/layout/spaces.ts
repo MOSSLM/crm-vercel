@@ -148,6 +148,7 @@ export const SPACES: Space[] = [
     href: "/telephonie",
     tools: [
       { title: "Journal d'appels", href: "/telephonie", icon: PhoneCall },
+      { title: "Statistiques", href: "/telephonie/stats", icon: TrendingUp },
       { title: "Numéros & agents", href: "/telephonie/numeros", icon: Users },
     ],
   },
