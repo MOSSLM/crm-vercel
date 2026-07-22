@@ -1,7 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Plus, Trash2, Info, Power } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Info,
+  PhoneIncoming,
+  Megaphone,
+  Music,
+  Menu as MenuIcon,
+  Hash,
+  PhoneForwarded,
+  Voicemail as VoicemailIcon,
+  PhoneOff,
+} from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/utils/supabase/client";
 
@@ -26,6 +38,38 @@ const KINDS: Array<{ id: string; label: string }> = [
   { id: "voicemail", label: "Messagerie" },
   { id: "hangup", label: "Raccrocher" },
 ];
+
+function NodeIcon({ kind }: { kind: string }) {
+  switch (kind) {
+    case "say":
+      return <Megaphone className="ico-sm" />;
+    case "play":
+      return <Music className="ico-sm" />;
+    case "menu":
+      return <MenuIcon className="ico-sm" />;
+    case "wait_dtmf":
+      return <Hash className="ico-sm" />;
+    case "redirect":
+      return <PhoneForwarded className="ico-sm" />;
+    case "voicemail":
+      return <VoicemailIcon className="ico-sm" />;
+    default:
+      return <PhoneOff className="ico-sm" />;
+  }
+}
+function iconTone(kind: string): string {
+  if (kind === "say" || kind === "play") return "magic";
+  if (kind === "menu") return "accent";
+  if (kind === "wait_dtmf" || kind === "redirect" || kind === "voicemail") return "info";
+  return "";
+}
+function nodeSummary(n: Node): string {
+  return (
+    n.config.text ??
+    n.config.target ??
+    (n.config.dtmf ? `touche ${n.config.dtmf}` : "—")
+  );
+}
 
 export function SviBuilder() {
   const supabase = createClient();
@@ -106,88 +150,82 @@ export function SviBuilder() {
     await loadNodes(active);
   };
 
-  if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (loading)
+    return (
+      <div className="tel-skin">
+        <p style={{ fontSize: 13, color: "var(--text-3)" }}>Chargement…</p>
+      </div>
+    );
+
+  const activeScenario = scenarios.find((s) => s.id === active) ?? null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start gap-2 rounded-md border bg-[var(--surface-2)] p-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>
-          Le scénario est exploité par le routage dynamique (réponse au webhook Zadarma). Le SVI
-          statique reste configurable au panneau ; cet éditeur pilote la voie dynamique.
-        </span>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-[260px_1fr]">
-        {/* Scenarios */}
-        <div className="space-y-2 rounded-lg border p-3">
-          <div className="flex gap-1">
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              placeholder="Nouveau scénario"
-              className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-sm"
-            />
-            <button
-              type="button"
-              onClick={createScenario}
-              className="rounded-md bg-primary px-2 text-primary-foreground"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
-          {scenarios.map((s) => (
-            <div
-              key={s.id}
-              className={`flex items-center justify-between rounded-md px-2 py-1.5 ${
-                active === s.id ? "bg-muted" : "hover:bg-muted/50"
-              }`}
-            >
-              <button type="button" onClick={() => setActive(s.id)} className="min-w-0 flex-1 truncate text-left text-sm">
-                {s.name}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleActive(s)}
-                title={s.active ? "Actif" : "Inactif"}
-                className={s.active ? "text-emerald-600" : "text-muted-foreground"}
-              >
-                <Power className="h-4 w-4" />
-              </button>
-            </div>
-          ))}
-          {scenarios.length === 0 && <p className="text-sm text-muted-foreground">Aucun scénario.</p>}
-        </div>
-
-        {/* Flow */}
-        <div className="space-y-2 rounded-lg border p-3">
-          {!active ? (
-            <p className="text-sm text-muted-foreground">Sélectionnez un scénario.</p>
-          ) : (
-            <>
-              <div className="rounded-md border-2 border-dashed px-3 py-2 text-center text-xs text-muted-foreground">
-                Appel entrant
+    <div className="tel-skin" style={{ height: "100%" }}>
+      <div className="svi-page">
+        {/* FLOW */}
+        <div className="svi-flow-wrap">
+          <div className="svi-hd">
+            <div>
+              <h1>Serveur vocal (SVI)</h1>
+              <div className="sub">
+                {activeScenario ? activeScenario.name : "Voie dynamique · webhook Zadarma"}
               </div>
+            </div>
+          </div>
+
+          {!active ? (
+            <p style={{ fontSize: 13, color: "var(--text-3)" }}>
+              Créez ou sélectionnez un scénario à droite.
+            </p>
+          ) : (
+            <div className="svi-flow">
+              <div className="svi-node entry">
+                <span className="ic">
+                  <PhoneIncoming className="ico-sm" />
+                </span>
+                <div>
+                  <div className="t">Appel entrant</div>
+                  <div className="s">Routage dynamique</div>
+                </div>
+              </div>
+
               {nodes.map((n) => (
-                <div key={n.id} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <span className="rounded bg-muted px-2 py-0.5 text-xs">
-                    {KINDS.find((k) => k.id === n.kind)?.label ?? n.kind}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-                    {n.config.text ?? n.config.target ?? (n.config.dtmf ? `touche ${n.config.dtmf}` : "")}
-                  </span>
-                  <button type="button" onClick={() => deleteNode(n.id)} className="text-muted-foreground hover:text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                <div key={n.id} style={{ display: "contents" }}>
+                  <div className="svi-conn" />
+                  <div className="svi-node">
+                    <span className={`ic ${iconTone(n.kind)}`}>
+                      <NodeIcon kind={n.kind} />
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="t">{KINDS.find((k) => k.id === n.kind)?.label ?? n.kind}</div>
+                      <div className="s" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {nodeSummary(n)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn ghost sm icon"
+                      onClick={() => deleteNode(n.id)}
+                      aria-label="Supprimer l'étape"
+                    >
+                      <Trash2 className="ico-sm" />
+                    </button>
+                  </div>
                 </div>
               ))}
 
               {/* Add node */}
-              <div className="mt-2 flex flex-wrap items-end gap-2 border-t pt-3">
+              <div className="svi-conn" />
+              <div className="svi-node col fallback">
+                <div className="svi-node-top">
+                  <span className="ic accent">
+                    <Plus className="ico-sm" />
+                  </span>
+                  <div className="t">Ajouter une étape</div>
+                </div>
                 <select
                   value={draft.kind}
                   onChange={(e) => setDraft((s) => ({ ...s, kind: e.target.value }))}
-                  className="rounded-md border bg-background px-2 py-1 text-sm"
                 >
                   {KINDS.map((k) => (
                     <option key={k.id} value={k.id}>
@@ -199,31 +237,94 @@ export function SviBuilder() {
                   value={draft.text}
                   onChange={(e) => setDraft((s) => ({ ...s, text: e.target.value }))}
                   placeholder="Texte / annonce"
-                  className="min-w-[140px] flex-1 rounded-md border bg-background px-2 py-1 text-sm"
                 />
-                <input
-                  value={draft.dtmf}
-                  onChange={(e) => setDraft((s) => ({ ...s, dtmf: e.target.value }))}
-                  placeholder="Touche"
-                  className="w-16 rounded-md border bg-background px-2 py-1 text-sm"
-                />
-                <input
-                  value={draft.target}
-                  onChange={(e) => setDraft((s) => ({ ...s, target: e.target.value }))}
-                  placeholder="Cible (ext/num)"
-                  className="w-28 rounded-md border bg-background px-2 py-1 text-sm"
-                />
-                <button
-                  type="button"
-                  onClick={addNode}
-                  className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-sm text-primary-foreground"
-                >
-                  <Plus className="h-4 w-4" /> Ajouter
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={draft.dtmf}
+                    onChange={(e) => setDraft((s) => ({ ...s, dtmf: e.target.value }))}
+                    placeholder="Touche"
+                    style={{ width: 90 }}
+                  />
+                  <input
+                    value={draft.target}
+                    onChange={(e) => setDraft((s) => ({ ...s, target: e.target.value }))}
+                    placeholder="Cible (ext/num)"
+                    style={{ flex: 1 }}
+                  />
+                </div>
+                <button type="button" className="btn accent sm" onClick={addNode}>
+                  <Plus className="ico-sm" /> Ajouter l&apos;étape
                 </button>
               </div>
-            </>
+            </div>
           )}
         </div>
+
+        {/* SIDE */}
+        <aside className="svi-side">
+          <div className="blk">
+            <h4>Scénarios</h4>
+            <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <input
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                placeholder="Nouveau scénario"
+                style={{ minWidth: 0, flex: 1 }}
+              />
+              <button type="button" className="btn accent sm icon" onClick={createScenario} aria-label="Créer">
+                <Plus className="ico-sm" />
+              </button>
+            </div>
+            {scenarios.length === 0 && (
+              <p style={{ fontSize: 12.5, color: "var(--text-3)" }}>Aucun scénario.</p>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {scenarios.map((s) => (
+                <div key={s.id} className="svi-set" style={{ marginBottom: 0 }}>
+                  <button
+                    type="button"
+                    onClick={() => setActive(s.id)}
+                    style={{
+                      appearance: "none",
+                      border: 0,
+                      background: "transparent",
+                      textAlign: "left",
+                      flex: 1,
+                      minWidth: 0,
+                      cursor: "pointer",
+                      font: "inherit",
+                      fontSize: 12.5,
+                      fontWeight: active === s.id ? 600 : 400,
+                      color: active === s.id ? "var(--accent-2)" : "var(--text)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {s.name}
+                  </button>
+                  <label className="svi-toggle">
+                    <input type="checkbox" checked={s.active} onChange={() => toggleActive(s)} />
+                    <span className="tk" />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="blk">
+            <h4>À propos</h4>
+            <div className="svi-callback">
+              <Info className="ico-sm" />
+              <div>
+                <div className="s" style={{ marginTop: 0 }}>
+                  Le scénario est exploité par le routage dynamique (réponse au webhook Zadarma). Le SVI
+                  statique reste configurable au panneau ; cet éditeur pilote la voie dynamique.
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
