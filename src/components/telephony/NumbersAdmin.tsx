@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { RefreshCw, Plus, Loader2 } from "lucide-react";
+import { RefreshCw, Plus, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
@@ -101,7 +101,33 @@ export function NumbersAdmin() {
     await load();
   };
 
-  const agentName = (id: string | null) => (id ? agents.find((a) => a.id === id)?.label ?? "—" : "—");
+  const editExtLocal = (id: string, patch: Partial<Extension>) =>
+    setExtensions((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
+
+  const persistExt = async (id: string, patch: Partial<Extension>) => {
+    const { error } = await supabase.from("phone_extensions").update(patch).eq("id", id);
+    if (error) toast.error("Mise à jour impossible.");
+  };
+
+  const deleteExt = async (id: string) => {
+    if (!window.confirm("Supprimer cette extension ?")) return;
+    setExtensions((es) => es.filter((e) => e.id !== id));
+    const { error } = await supabase.from("phone_extensions").delete().eq("id", id);
+    if (error) {
+      toast.error("Suppression impossible.");
+      await load();
+    }
+  };
+
+  const deleteNumber = async (id: string) => {
+    if (!window.confirm("Supprimer ce numéro ?")) return;
+    setNumbers((ns) => ns.filter((n) => n.id !== id));
+    const { error } = await supabase.from("phone_numbers").delete().eq("id", id);
+    if (error) {
+      toast.error("Suppression impossible.");
+      await load();
+    }
+  };
 
   if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
 
@@ -134,6 +160,7 @@ export function NumbersAdmin() {
                   <th className="px-3 py-2 font-medium">Type</th>
                   <th className="px-3 py-2 font-medium">Statut</th>
                   <th className="px-3 py-2 font-medium">Agent attribué</th>
+                  <th className="px-3 py-2 font-medium" />
                 </tr>
               </thead>
               <tbody>
@@ -155,6 +182,16 @@ export function NumbersAdmin() {
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => deleteNumber(n.id)}
+                        className="text-muted-foreground hover:text-destructive"
+                        aria-label="Supprimer le numéro"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -179,6 +216,7 @@ export function NumbersAdmin() {
                 <th className="px-3 py-2 font-medium">SIP</th>
                 <th className="px-3 py-2 font-medium">Enregistrement</th>
                 <th className="px-3 py-2 font-medium">Actif</th>
+                <th className="px-3 py-2 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -198,8 +236,23 @@ export function NumbersAdmin() {
                       ))}
                     </select>
                   </td>
-                  <td className="px-3 py-2 font-medium">{x.extension}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{x.sip ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      value={x.extension}
+                      onChange={(e) => editExtLocal(x.id, { extension: e.target.value })}
+                      onBlur={(e) => persistExt(x.id, { extension: e.target.value })}
+                      className="w-24 rounded-md border bg-background px-2 py-1 text-sm"
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      value={x.sip ?? ""}
+                      onChange={(e) => editExtLocal(x.id, { sip: e.target.value })}
+                      onBlur={(e) => persistExt(x.id, { sip: e.target.value.trim() || null })}
+                      placeholder="ex. 420031"
+                      className="w-28 rounded-md border bg-background px-2 py-1 text-sm"
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     <select
                       value={x.record_mode}
@@ -219,6 +272,16 @@ export function NumbersAdmin() {
                       checked={x.active}
                       onChange={(e) => updateExt(x.id, { active: e.target.checked })}
                     />
+                  </td>
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => deleteExt(x.id)}
+                      className="text-muted-foreground hover:text-destructive"
+                      aria-label="Supprimer l'extension"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
                   </td>
                 </tr>
               ))}
