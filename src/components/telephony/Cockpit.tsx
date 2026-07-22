@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Phone, Flame, CheckCircle2, ChevronRight } from "lucide-react";
+import { Phone, CheckCircle2, FileText, StickyNote } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthContext";
 import { createClient } from "@/utils/supabase/client";
@@ -18,13 +18,13 @@ interface QueueItem {
   phone: string | null;
 }
 
-const DISPOSITIONS: Array<{ id: string; label: string; tone: string }> = [
-  { id: "rdv", label: "RDV pris", tone: "bg-violet-600 text-white" },
-  { id: "interesse", label: "Intéressé", tone: "bg-emerald-600 text-white" },
-  { id: "rappel", label: "À rappeler", tone: "bg-amber-500 text-white" },
-  { id: "repondeur", label: "Répondeur", tone: "bg-sky-600 text-white" },
-  { id: "absent", label: "Pas de réponse", tone: "bg-muted text-foreground" },
-  { id: "refus", label: "Pas intéressé", tone: "bg-red-600 text-white" },
+const DISPOSITIONS: Array<{ id: string; label: string; kind: string }> = [
+  { id: "rdv", label: "RDV pris", kind: "magic" },
+  { id: "interesse", label: "Intéressé", kind: "ok" },
+  { id: "rappel", label: "À rappeler", kind: "warn" },
+  { id: "repondeur", label: "Répondeur", kind: "info" },
+  { id: "absent", label: "Pas de réponse", kind: "muted" },
+  { id: "refus", label: "Pas intéressé", kind: "danger" },
 ];
 
 const SCRIPT_STEPS = [
@@ -34,7 +34,18 @@ const SCRIPT_STEPS = [
   { title: "Closing RDV", body: "Je vous propose un point de 15 min cette semaine — plutôt mardi ou jeudi ?" },
 ];
 
-/** Cockpit d'appel : file de prospection, surface d'appel, contexte. */
+const AV_COLORS = ["#E2552B", "#3B7DD8", "#7A5AF0", "#2E9E6B", "#D8912E", "#C64B8C"];
+function colorOf(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AV_COLORS[h % AV_COLORS.length];
+}
+function initials(name: string): string {
+  const p = name.trim().split(/\s+/);
+  return ((p[0]?.[0] ?? "?") + (p[1]?.[0] ?? "")).toUpperCase();
+}
+
+/** Cockpit d'appel (skin prototype ck-*) : file de prospection, surface d'appel, contexte. */
 export function Cockpit() {
   const { user } = useAuth();
   const tel = useTelephonyOptional();
@@ -100,134 +111,205 @@ export function Cockpit() {
     setSelected(next?.oppId ?? null);
   };
 
-  if (loading) return <p className="p-6 text-sm text-muted-foreground">Chargement…</p>;
+  if (loading)
+    return (
+      <div className="tel-skin">
+        <p style={{ padding: 24, color: "var(--text-3)", fontSize: 13 }}>Chargement…</p>
+      </div>
+    );
+
+  const pct = queue.length ? (done.size / queue.length) * 100 : 0;
 
   return (
-    <div className="grid h-full gap-4 p-4 md:p-6 lg:grid-cols-[300px_1fr_320px]">
-      {/* Queue */}
-      <div className="space-y-2 rounded-lg border p-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            File du jour
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {done.size}/{queue.length}
-          </span>
-        </div>
-        <div className="max-h-[70vh] space-y-1 overflow-y-auto">
-          {queue.length === 0 && (
-            <p className="p-2 text-sm text-muted-foreground">Aucun prospect à appeler.</p>
-          )}
-          {queue.map((q) => (
-            <button
-              key={q.oppId}
-              type="button"
-              onClick={() => setSelected(q.oppId)}
-              className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left ${
-                selected === q.oppId ? "bg-muted" : "hover:bg-muted/50"
-              } ${done.has(q.oppId) ? "opacity-50" : ""}`}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium">{q.name}</span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {[q.org, q.ville].filter(Boolean).join(" · ")}
-                </span>
-              </span>
-              {done.has(q.oppId) && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Call surface */}
-      <div className="space-y-4">
-        {!current ? (
-          <div className="flex h-40 items-center justify-center rounded-lg border text-sm text-muted-foreground">
-            File terminée 🎉
+    <div className="tel-skin" style={{ height: "100%" }}>
+      <div className="pros-3col cockpit" style={{ height: "100%" }}>
+        {/* LEFT — file power dialer */}
+        <aside className="pros-left">
+          <div className="ck-session">
+            <div className="ck-session-top">
+              <div>
+                <div className="lb">Session démarchage</div>
+                <div className="vl">
+                  {done.size}
+                  <span>/{queue.length}</span> traités
+                </div>
+              </div>
+            </div>
+            <div className="ck-progress">
+              <i style={{ width: `${pct}%` }} />
+            </div>
           </div>
-        ) : (
-          <>
-            <div className="rounded-lg border p-4">
-              <div className="flex items-center gap-2">
-                <Flame className="h-4 w-4 text-primary" />
-                <h2 className="text-lg font-semibold">{current.name}</h2>
+
+          <div className="pros-tabs-bar">
+            <button type="button" className="pros-tab" aria-selected>
+              File du jour<span className="nb">{queue.length}</span>
+            </button>
+          </div>
+
+          <div style={{ flex: 1, overflow: "auto" }}>
+            {queue.length === 0 && (
+              <div className="ck-empty" style={{ padding: 14 }}>
+                Aucun prospect à appeler.
               </div>
-              <p className="text-sm text-muted-foreground">
-                {[current.org, current.ville].filter(Boolean).join(" · ")} · {current.phone}
-              </p>
-              <button
-                type="button"
-                onClick={call}
-                className="mt-4 inline-flex items-center gap-2 rounded-full bg-emerald-600 px-6 py-3 text-white shadow hover:bg-emerald-700"
-              >
-                <Phone className="h-5 w-5" /> Appeler {current.name.split(" ")[0]}
-              </button>
-              {!tel && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Softphone non disponible — l'appel utilisera le callback serveur.
-                </p>
-              )}
-            </div>
-
-            {/* Script */}
-            <div className="rounded-lg border p-4">
-              <div className="mb-2 flex flex-wrap gap-1.5">
-                {SCRIPT_STEPS.map((s, i) => (
-                  <button
-                    key={s.title}
-                    type="button"
-                    onClick={() => setStep(i)}
-                    className={`rounded-full px-2.5 py-1 text-xs ${
-                      step === i ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-                    }`}
-                  >
-                    {i + 1}. {s.title}
-                  </button>
-                ))}
-              </div>
-              <p className="text-sm">
-                {SCRIPT_STEPS[step].body
-                  .replace("{org}", current.org ?? "votre entreprise")
-                  .replace("{ville}", current.ville ?? "votre région")}
-              </p>
-            </div>
-
-            {/* Notes */}
-            <textarea
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={3}
-              placeholder="Notes d'appel (enregistrées sur la fiche)…"
-              className="w-full resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-            />
-
-            {/* Dispositions */}
-            <div className="flex flex-wrap gap-2">
-              {DISPOSITIONS.map((d) => (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => logOutcome(d.id)}
-                  className={`inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm ${d.tone}`}
+            )}
+            {queue.map((q) => {
+              const isDone = done.has(q.oppId);
+              const isCur = q.oppId === selected;
+              return (
+                <div
+                  key={q.oppId}
+                  className={`ck-qrow ${isDone ? "done" : ""}`}
+                  aria-selected={isCur}
+                  onClick={() => setSelected(q.oppId)}
                 >
-                  {d.label} <ChevronRight className="h-3.5 w-3.5" />
-                </button>
-              ))}
-            </div>
-          </>
-        )}
-      </div>
+                  <div
+                    className="av"
+                    style={{ background: colorOf(q.name), color: "#fff", border: 0 }}
+                  >
+                    {initials(q.name)}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="nm">
+                      {q.name}
+                      {isDone && (
+                        <CheckCircle2
+                          className="ico-xs"
+                          style={{ color: "var(--ok)", marginLeft: 4 }}
+                        />
+                      )}
+                    </div>
+                    <div className="sb">{[q.org, q.ville].filter(Boolean).join(" · ")}</div>
+                  </div>
+                  <div className="ck-qmeta">
+                    {q.phone && <div className="best">{q.phone}</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </aside>
 
-      {/* Context: call history for the prospect */}
-      <div className="space-y-2 rounded-lg border p-3">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Historique d'appels
-        </span>
-        {current?.entrepriseId ? (
-          <CallJournal filters={{ entreprise_id: current.entrepriseId }} />
-        ) : (
-          <p className="text-sm text-muted-foreground">Sélectionnez un prospect.</p>
-        )}
+        {/* CENTER — surface d'appel */}
+        <main className="ck-center">
+          {!current ? (
+            <div className="ck-idle">
+              <div className="ck-idle-reason">
+                <CheckCircle2 className="ico-sm" />
+                File terminée — tous les prospects ont été traités.
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="ck-callhd">
+                <div className="ck-callhd-l">
+                  <div className="av" style={{ background: colorOf(current.name) }}>
+                    {initials(current.name)}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="nm">{current.name}</div>
+                    <div className="sb">
+                      {[current.org, current.ville].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                </div>
+                <div className="ck-callhd-r">
+                  <div className="ck-phone-line">
+                    <Phone className="ico-sm" />
+                    {current.phone}
+                  </div>
+                </div>
+              </div>
+
+              <div className="ck-idle">
+                <button type="button" className="ck-bigcall" onClick={call}>
+                  <span className="ring">
+                    <Phone className="ico-xl" />
+                  </span>
+                  <span className="t">
+                    Appeler {current.name.split(" ")[0]}
+                    <em>{current.phone}</em>
+                  </span>
+                </button>
+                {!tel && (
+                  <div className="ck-idle-reason">
+                    Softphone non disponible — l'appel utilisera le callback serveur.
+                  </div>
+                )}
+
+                {/* Script */}
+                <div className="ck-script">
+                  <div className="ck-script-hd">
+                    <FileText className="ico-sm" />
+                    <div className="ti">Argumentaire</div>
+                  </div>
+                  <div className="ck-steps">
+                    {SCRIPT_STEPS.map((s, i) => (
+                      <button
+                        key={s.title}
+                        type="button"
+                        className={`ck-step ${i === step ? "cur" : ""} ${i < step ? "past" : ""}`}
+                        onClick={() => setStep(i)}
+                      >
+                        <span className="n">{i + 1}</span>
+                        {s.title}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="ck-script-body">
+                    <p>
+                      {SCRIPT_STEPS[step].body
+                        .replace("{org}", current.org ?? "votre entreprise")
+                        .replace("{ville}", current.ville ?? "votre région")}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Notes */}
+                <div className="ck-notes">
+                  <div className="ck-notes-lb">
+                    <StickyNote className="ico-xs" />
+                    Notes d'appel
+                    <span className="auto">enregistrées sur la fiche</span>
+                  </div>
+                  <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    placeholder="Ce qu'il dit, ses besoins, prochaine étape…"
+                  />
+                </div>
+
+                {/* Dispositions */}
+                <div className="ck-dispo-bar">
+                  <div className="lb">Marquer l'issue</div>
+                  <div className="chips">
+                    {DISPOSITIONS.map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        className={`dchip ${d.kind}`}
+                        onClick={() => logOutcome(d.id)}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+
+        {/* RIGHT — contexte prospect */}
+        <aside className="pros-right">
+          <div className="blk">
+            <h4>Historique d'appels</h4>
+            {current?.entrepriseId ? (
+              <CallJournal filters={{ entreprise_id: current.entrepriseId }} />
+            ) : (
+              <div className="ck-empty">Sélectionnez un prospect.</div>
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   );

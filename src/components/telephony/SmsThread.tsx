@@ -1,26 +1,80 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2 } from "lucide-react";
+import { Send, Loader2, MessageSquare, Check } from "lucide-react";
 import { toast } from "sonner";
-import {
-  fetchSmsMessages,
-  sendSms,
-  type SmsMessage,
-} from "@/lib/telephony/client";
+import { fetchSmsMessages, sendSms, type SmsMessage } from "@/lib/telephony/client";
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString("fr-FR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+function hm(iso: string): string {
+  return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+function dayLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t = d.getTime();
+  if (t >= startToday) return "Aujourd'hui";
+  if (t >= startToday - 86400000) return "Hier";
+  return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long" });
+}
+
+/** Delivery ticks for an outbound message, driven by its status string. */
+function Ticks({ status }: { status: string }) {
+  const s = status.toLowerCase();
+  if (s.includes("read"))
+    return (
+      <span className="tick read" title="Lu">
+        <Check className="ico-xs" />
+        Lu
+      </span>
+    );
+  if (s.includes("deliver"))
+    return (
+      <span className="tick" title="Distribué">
+        <Check className="ico-xs" />
+      </span>
+    );
+  return (
+    <span className="tick" title="Envoyé">
+      <Check className="ico-xs" />
+    </span>
+  );
+}
+
+function Bubbles({ messages }: { messages: SmsMessage[] }) {
+  let lastDay: string | null = null;
+  return (
+    <>
+      {messages.map((m) => {
+        const day = dayLabel(m.sent_at);
+        const showDay = day !== lastDay;
+        lastDay = day;
+        const out = m.direction === "outbound";
+        return (
+          <div key={m.id} style={{ display: "contents" }}>
+            {showDay && <div className="conv-day">{day}</div>}
+            <div className={`bub-row ${out ? "out" : "in"}`}>
+              <div className="bubble">{m.body}</div>
+              <div className="bub-meta">
+                <span className="bub-channel sms">
+                  <MessageSquare className="ico-xs" />
+                  SMS
+                </span>
+                <span>· {hm(m.sent_at)}</span>
+                {out && <Ticks status={m.status} />}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
 }
 
 /**
- * SMS conversation for a record: message bubbles + composer. Sends via the SMS
- * route (links the message to the contact/company) and re-fetches on send.
+ * SMS conversation for a record (skin prototype conv/composer): message bubbles
+ * + composer. Sends via the SMS route and re-fetches on send.
  */
 export function SmsThread({
   to,
@@ -87,63 +141,65 @@ export function SmsThread({
     }
   };
 
-  if (!to) return <p className="text-sm text-muted-foreground">Aucun numéro pour ce contact.</p>;
+  if (!to)
+    return (
+      <div className="tel-skin">
+        <p style={{ fontSize: 13, color: "var(--text-3)" }}>Aucun numéro pour ce contact.</p>
+      </div>
+    );
 
   return (
-    <div className="space-y-3">
-      <div className="max-h-72 space-y-2 overflow-y-auto rounded-md border bg-[var(--surface-2)] p-3">
-        {loading ? (
-          <p className="text-sm text-muted-foreground">Chargement…</p>
-        ) : messages.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aucun SMS pour l’instant.</p>
-        ) : (
-          messages.map((m) => {
-            const out = m.direction === "outbound";
-            return (
-              <div key={m.id} className={`flex ${out ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-sm ${
-                    out ? "bg-primary text-primary-foreground" : "bg-card border"
-                  }`}
-                >
-                  <div className="whitespace-pre-wrap break-words">{m.body}</div>
-                  <div
-                    className={`mt-0.5 text-[10px] ${
-                      out ? "text-primary-foreground/70" : "text-muted-foreground"
-                    }`}
-                  >
-                    {formatTime(m.sent_at)}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-        <div ref={endRef} />
-      </div>
-      <div className="flex items-end gap-2">
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              void submit();
-            }
-          }}
-          placeholder="Votre message…"
-          rows={2}
-          className="min-h-[2.5rem] flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-        />
-        <button
-          type="button"
-          onClick={submit}
-          disabled={sending || !text.trim()}
-          className="inline-flex h-9 items-center gap-1 rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-60"
-        >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          Envoyer
-        </button>
+    <div className="tel-skin">
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          border: "1px solid var(--border)",
+          borderRadius: 14,
+          overflow: "hidden",
+          background: "var(--bg)",
+        }}
+      >
+        <div className="conv-thread" style={{ maxHeight: 340 }}>
+          {loading ? (
+            <p style={{ fontSize: 13, color: "var(--text-3)" }}>Chargement…</p>
+          ) : messages.length === 0 ? (
+            <p style={{ fontSize: 13, color: "var(--text-3)" }}>Aucun SMS pour l&apos;instant.</p>
+          ) : (
+            <Bubbles messages={messages} />
+          )}
+          <div ref={endRef} style={{ height: 1 }} />
+        </div>
+
+        <div className="msg-composer">
+          <div className="composer-input">
+            <textarea
+              rows={1}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void submit();
+                }
+              }}
+              placeholder="Écrire un SMS…"
+            />
+            <button
+              type="button"
+              className="composer-send"
+              onClick={submit}
+              disabled={sending || !text.trim()}
+              title="Envoyer"
+            >
+              {sending ? (
+                <Loader2 className="ico-sm" style={{ animation: "spin 1s linear infinite" }} />
+              ) : (
+                <Send className="ico-sm" />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
