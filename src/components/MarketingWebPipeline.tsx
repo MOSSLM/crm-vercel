@@ -3,32 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import {
-  Sparkles,
-  Check,
-  CheckCircle,
-  Eye,
-  Pencil,
-  FileText,
-  UserPlus,
-  RefreshCw,
-  Loader2,
-  Globe,
-  Building2,
-  Target,
-  CheckSquare,
-  Square,
-  LayoutGrid,
-  Rows3,
-  Maximize2,
-  Minimize2,
-  SlidersHorizontal,
-  Plus,
-  Trash2,
-  ArrowUpDown,
-  AlertTriangle,
-  ArrowRightLeft,
-} from "lucide-react";
+import { Check, Loader2, Globe, Plus, Trash2 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { createAudit } from "@/utils/auditApi";
@@ -40,6 +15,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/EnrichmentProgressModal";
+import { PipelineMatrix } from "./marketing-pipeline/PipelineMatrix";
+import type { MatrixHandlers } from "./marketing-pipeline/types";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
 
@@ -105,127 +82,10 @@ interface BoardData {
   has_validated_column: boolean;
 }
 
-type TopView = "compact" | "cards";
-type BottomView = "cards" | "rows";
-type SortKey = "default" | "priority" | "enrichment" | "variables";
-
-const SORT_OPTIONS: Array<{ value: SortKey; label: string }> = [
-  { value: "default", label: "Par défaut (récents)" },
-  { value: "priority", label: "Priorité (haute d'abord)" },
-  { value: "enrichment", label: "Enrichissement (à traiter d'abord)" },
-  { value: "variables", label: "Variables (incomplètes d'abord)" },
-];
-
-/* ── Column model ─────────────────────────────────────────────────────────── */
-
-const COLUMNS: Array<{ key: number; label: string; color: string; hint: string }> = [
-  { key: 1, label: "Opportunités", color: "#9ca3af", hint: "Enrichir puis valider" },
-  { key: 2, label: "Prêts pour LM", color: "#3b82f6", hint: "Créer le site démo" },
-  { key: 3, label: "Site créé", color: "#eab308", hint: "Vérifier & valider le site" },
-  { key: 4, label: "Audit", color: "#f97316", hint: "Créer & valider l'audit" },
-  { key: 5, label: "Attribution", color: "#22c55e", hint: "Attribuer un agent" },
-];
-
-const STAGE_LABELS: Record<string, string> = {
-  a_faire: "À faire",
-  en_cours: "En cours",
-  a_verifier: "À vérifier",
-  pret: "Prêt",
-};
-
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
-
-function valueLabel(item: BoardItem): string | null {
-  if (item.type === "mrr" && item.mrr) return `${item.mrr.toLocaleString()}€/mois`;
-  if (item.montant) return `${item.montant.toLocaleString()}€`;
-  return null;
-}
 
 function displayName(item: BoardItem): string {
   return getCompanyDisplayName(item.company_name || item.name, item.company_url) || item.name;
-}
-
-function normalizeUrl(url?: string | null): string | undefined {
-  if (!url) return undefined;
-  const t = url.trim();
-  if (!t) return undefined;
-  return /^https?:\/\//i.test(t) ? t : `https://${t.replace(/^\/+/, "")}`;
-}
-
-function siteEditHref(site: NonNullable<BoardItem["site"]>): string {
-  return site.is_claude_design ? `/site-builder/claude/${site.id}` : `/site-builder/${site.id}`;
-}
-
-function statusText(column: number, item: BoardItem): { label: string; cls: string } {
-  if (column === 1) return ENRICH_BADGE[enrichState(item)];
-  if (column === 2) return { label: "Prêt pour LM", cls: "info" };
-  if (column === 3 && item.site)
-    return { label: STAGE_LABELS[item.site.build_stage] ?? item.site.build_stage, cls: "warn" };
-  if (column === 4)
-    return item.audit
-      ? { label: item.audit.statut === "ready" ? "Audit prêt" : "Brouillon", cls: item.audit.statut === "ready" ? "ok" : "warn" }
-      : { label: "Aucun audit", cls: "" };
-  if (column === 5) return item.agent ? { label: item.agent.name, cls: "ok" } : { label: "Non attribué", cls: "" };
-  return { label: "", cls: "" };
-}
-
-/**
- * Enrichment state of an opportunity, derived first from its lead-magnet
- * project run status (`framer`/`failed`/`processing` written by the edge
- * function) and falling back to the `automated_enrichment` flag. Drives the
- * column-1 badge, the "à traiter d'abord" sort and the relaunch affordance.
- */
-type EnrichState = "success" | "failed" | "running" | "enriched" | "none";
-
-function enrichState(item: BoardItem): EnrichState {
-  const st = item.project?.statut;
-  if (st === "failed") return "failed";
-  if (st === "processing") return "running";
-  if (st === "framer" || st === "ready" || st === "published") return "success";
-  if (item.enriched) return "enriched";
-  return "none";
-}
-
-const ENRICH_BADGE: Record<EnrichState, { label: string; cls: string }> = {
-  success: { label: "Enrichi", cls: "ok" },
-  enriched: { label: "Enrichi", cls: "ok" },
-  running: { label: "En cours…", cls: "info" },
-  failed: { label: "Échec enrichissement", cls: "danger" },
-  none: { label: "Non enrichi", cls: "" },
-};
-
-/** Priority order for sorting: haute → moyenne → basse → none. */
-const PRIORITY_RANK: Record<string, number> = { haute: 0, moyenne: 1, basse: 2 };
-function priorityRank(p: string | null): number {
-  return p != null && p in PRIORITY_RANK ? PRIORITY_RANK[p] : 3;
-}
-
-/** Rank for "à traiter d'abord": failures then not-enriched, enriched last. */
-function enrichRank(item: BoardItem): number {
-  switch (enrichState(item)) {
-    case "failed":
-      return 0;
-    case "none":
-      return 1;
-    case "running":
-      return 2;
-    default:
-      return 3; // success / enriched
-  }
-}
-
-/** Returns a sorted copy of `items` for the chosen key (stable for "default"). */
-function sortItems(items: BoardItem[], key: SortKey): BoardItem[] {
-  if (key === "default") return items;
-  const withIndex = items.map((item, index) => ({ item, index }));
-  const cmp: Record<Exclude<SortKey, "default">, (a: BoardItem, b: BoardItem) => number> = {
-    priority: (a, b) => priorityRank(a.priorite) - priorityRank(b.priorite),
-    enrichment: (a, b) => enrichRank(a) - enrichRank(b),
-    variables: (a, b) => (b.missing_for_site?.length ?? 0) - (a.missing_for_site?.length ?? 0),
-  };
-  const fn = cmp[key];
-  withIndex.sort((a, b) => fn(a.item, b.item) || a.index - b.index);
-  return withIndex.map((w) => w.item);
 }
 
 /* ── Component ────────────────────────────────────────────────────────────── */
@@ -235,18 +95,7 @@ export const MarketingWebPipeline: React.FC = () => {
 
   const [board, setBoard] = React.useState<BoardData | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const [selectedColumn, setSelectedColumn] = React.useState(1);
-  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
   const [templateId, setTemplateId] = React.useState<string>("");
-  const [agentId, setAgentId] = React.useState<string>("");
-  const [pipelineFilter, setPipelineFilter] = React.useState<string>("all");
-  const [topView, setTopView] = React.useState<TopView>("compact");
-  const [bottomView, setBottomView] = React.useState<BottomView>("cards");
-  const [sortBy, setSortBy] = React.useState<SortKey>("default");
-  const [moveTarget, setMoveTarget] = React.useState<string>("");
-  // When enabled, re-enriching clears the previous enrichment output first so
-  // the new run repopulates it from scratch (see /enrich-prepare `overwrite`).
-  const [overwriteEnrich, setOverwriteEnrich] = React.useState(false);
   const [working, setWorking] = React.useState<string | null>(null);
   const [editingItem, setEditingItem] = React.useState<BoardItem | null>(null);
   // When the edit modal is opened because a site can't be created yet, it shows
@@ -276,51 +125,7 @@ export const MarketingWebPipeline: React.FC = () => {
     load();
   }, [load]);
 
-  const filteredItems = React.useMemo(() => {
-    const items = board?.items ?? [];
-    if (pipelineFilter === "all") return items;
-    return items.filter((it) => it.pipeline_id === pipelineFilter);
-  }, [board, pipelineFilter]);
-
-  const itemsByColumn = React.useMemo(() => {
-    const map = new Map<number, BoardItem[]>();
-    for (const c of COLUMNS) map.set(c.key, []);
-    for (const it of filteredItems) map.get(it.column)?.push(it);
-    if (sortBy !== "default") {
-      for (const c of COLUMNS) map.set(c.key, sortItems(map.get(c.key) ?? [], sortBy));
-    }
-    return map;
-  }, [filteredItems, sortBy]);
-
-  const columnItems = itemsByColumn.get(selectedColumn) ?? [];
-
-  const selectColumn = (key: number) => {
-    setSelectedColumn(key);
-    setSelectedIds(new Set());
-  };
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  const allSelectedInColumn = columnItems.length > 0 && columnItems.every((it) => selectedIds.has(it.id));
-  const toggleSelectAll = () => {
-    if (allSelectedInColumn) setSelectedIds(new Set());
-    else setSelectedIds(new Set(columnItems.map((it) => it.id)));
-  };
-
-  const selectedItems = React.useCallback(
-    () => columnItems.filter((it) => selectedIds.has(it.id)),
-    [columnItems, selectedIds],
-  );
-
   const afterAction = async () => {
-    setSelectedIds(new Set());
     await load();
   };
 
@@ -605,34 +410,28 @@ export const MarketingWebPipeline: React.FC = () => {
     }
   };
 
-  const assignAgent = async (items: BoardItem[]) => {
-    if (!agentId) {
-      toast.error("Choisis d'abord un agent");
+  const assignAgentTo = async (item: BoardItem, agentIdArg: string) => {
+    if (!agentIdArg) {
+      toast.error("Choisis un agent");
       return;
     }
-    const targets = items.filter((it) => it.entreprise_id != null);
-    if (targets.length === 0) {
+    if (item.entreprise_id == null) {
       toast.error("Aucune entreprise à attribuer");
       return;
     }
     setWorking("assign");
     try {
-      const results = await Promise.allSettled(
-        targets.map(async (it) => {
-          const res = await authedFetch("/api/admin/assign", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ entreprise_id: it.entreprise_id, agent_id: agentId }),
-          });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
-        }),
-      );
-      const ok = results.filter((r) => r.status === "fulfilled").length;
-      const ko = results.length - ok;
-      const agentName = board?.agents.find((a) => a.id === agentId)?.name ?? "agent";
-      if (ok > 0) toast.success(`${ok} opportunité(s) attribuée(s) à ${agentName}`);
-      if (ko > 0) toast.error(`${ko} attribution(s) en échec`);
+      const res = await authedFetch("/api/admin/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entreprise_id: item.entreprise_id, agent_id: agentIdArg }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+      const agentName = board?.agents.find((a) => a.id === agentIdArg)?.name ?? "agent";
+      toast.success(`Attribué à ${agentName}`);
       await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de l'attribution");
     } finally {
       setWorking(null);
     }
@@ -640,26 +439,22 @@ export const MarketingWebPipeline: React.FC = () => {
 
   // Reassign the selected opportunities to another CRM pipeline (e.g. move dead
   // sites into "Entreprises sans site web"), landing them on its first stage.
-  const movePipeline = async (items: BoardItem[]) => {
-    if (!moveTarget) {
-      toast.error("Choisis d'abord un pipeline de destination");
+  const movePipeline = async (items: BoardItem[], pipelineId: string) => {
+    if (!pipelineId) {
+      toast.error("Choisis un pipeline de destination");
       return;
     }
-    if (items.length === 0) {
-      toast.error("Aucune opportunité sélectionnée");
-      return;
-    }
+    if (items.length === 0) return;
     setWorking("move-pipeline");
     try {
       const res = await authedFetch("/api/marketing-pipeline/move-pipeline", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunity_ids: items.map((it) => it.id), pipeline_id: moveTarget }),
+        body: JSON.stringify({ opportunity_ids: items.map((it) => it.id), pipeline_id: pipelineId }),
       });
       const data = (await res.json().catch(() => ({}))) as { moved?: number; pipeline_nom?: string; error?: string };
       if (!res.ok) throw new Error(data.error || "Échec du déplacement");
       toast.success(`${data.moved ?? items.length} opportunité(s) déplacée(s) vers ${data.pipeline_nom ?? "le pipeline"}`);
-      setMoveTarget("");
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors du déplacement");
@@ -668,294 +463,37 @@ export const MarketingWebPipeline: React.FC = () => {
     }
   };
 
-  /* ── Per-item bound render helpers (shared by top cards + bottom) ──────── */
+  /* ── Per-item handlers bound to the matrix cells ──────────────────────── */
 
-  const busy = working !== null;
-
-  const cardHandlers = (item: BoardItem) => ({
-    onEnrich: () => runEnrich([item], overwriteEnrich),
-    onValidateEnrich: () => validateEnrichment([item]),
-    onCreateSite: () => createSites([item]),
-    onValidateSite: () => validateSites([item]),
-    onCreateAudit: () => createAudits([item]),
-    onValidateAudit: () => validateAudits([item]),
-    onAssign: () => assignAgent([item]),
-    onDetails: () => setEditingItem(item),
-  });
-
-  const renderCard = (item: BoardItem, column: number) => (
-    <OppCard
-      key={item.id}
-      item={item}
-      column={column}
-      selected={selectedIds.has(item.id)}
-      onToggleSelect={() => toggleSelect(item.id)}
-      disabled={busy}
-      {...cardHandlers(item)}
-    />
-  );
-
-  /* ── Render ───────────────────────────────────────────────────────────── */
-
-  const totalItems = filteredItems.length;
-  const selectedCount = selectedIds.size;
-  const activeColumn = COLUMNS.find((c) => c.key === selectedColumn);
+  const matrixHandlers: MatrixHandlers = {
+    onEnrich: (item) => runEnrich([item], false),
+    onValidateEnrich: (item) => validateEnrichment([item]),
+    onCreateSite: (item) => createSites([item]),
+    onValidateSite: (item) => validateSites([item]),
+    onCreateAudit: (item) => createAudits([item]),
+    onValidateAudit: (item) => validateAudits([item]),
+    onAssign: (item, aId) => assignAgentTo(item, aId),
+    onMove: (item, pId) => movePipeline([item], pId),
+    onDetails: (item) => {
+      setSiteRequirement(false);
+      setEditingItem(item);
+    },
+  };
 
   return (
-    <div className="studio-surface flex min-h-full flex-col">
-      {/* Toolbar */}
-      <div className="pipe-bar">
-        <div className="pipeline-pick" style={{ padding: 0, border: 0, background: "transparent" }}>
-          <Target className="ico-sm ic" />
-          <span style={{ fontWeight: 600, fontSize: 13 }}>Pipeline Marketing &amp; Web</span>
-          <span className="ct">{totalItems} opp.</span>
-        </div>
-
-        <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span className="lb" style={{ fontSize: 11.5, color: "var(--text-3)" }}>
-            Pipeline :
-          </span>
-          <Select value={pipelineFilter} onValueChange={setPipelineFilter}>
-            <SelectTrigger className="h-7 min-w-[150px] text-[11.5px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Toutes les pipelines</SelectItem>
-              {(board?.pipelines ?? []).map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.nom}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <span className="grow" style={{ flex: 1 }} />
-
-        <div className="seg" aria-label="Affichage du pipeline">
-          <button type="button" className="s" aria-pressed={topView === "compact"} onClick={() => setTopView("compact")} title="Pipeline compact">
-            <Minimize2 className="ico-sm" />
-            Compact
-          </button>
-          <button type="button" className="s" aria-pressed={topView === "cards"} onClick={() => setTopView("cards")} title="Grandes cartes">
-            <Maximize2 className="ico-sm" />
-            Cartes
-          </button>
-        </div>
-
-        <button type="button" className="btn ghost sm" onClick={load} disabled={loading}>
-          <RefreshCw className={`ico-sm ${loading ? "animate-spin" : ""}`} />
-          Rafraîchir
-        </button>
-      </div>
-
-      {/* ── TOP: pipeline overview ─────────────────────────────────────── */}
-      <div className="px-4 pb-2 pt-1">
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(0, 1fr))`,
-            gap: 10,
-          }}
-        >
-          {COLUMNS.map((col) => {
-            const items = itemsByColumn.get(col.key) ?? [];
-            const isActive = selectedColumn === col.key;
-            const sum = items.reduce((s, it) => s + (it.montant ?? 0), 0);
-            return (
-              <div
-                key={col.key}
-                className="kp-col"
-                style={{
-                  boxShadow: isActive ? "0 0 0 2px var(--accent)" : undefined,
-                  background: isActive ? "var(--surface)" : "var(--surface-2)",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => selectColumn(col.key)}
-                  className="kp-col-hd"
-                  style={{ width: "100%", cursor: "pointer", background: "transparent", textAlign: "left" }}
-                >
-                  <span className="dot" style={{ background: col.color }} />
-                  <span className="nm">{col.label}</span>
-                  <span className="ct">{items.length}</span>
-                </button>
-                <div
-                  className="kp-col-bd"
-                  style={{
-                    maxHeight: topView === "cards" ? "58vh" : "34vh",
-                    overflowY: "auto",
-                    gap: topView === "cards" ? 8 : 5,
-                  }}
-                >
-                  {topView === "cards"
-                    ? items.map((it) => renderCard(it, col.key))
-                    : items.map((it) => (
-                        <div
-                          key={it.id}
-                          className="kp-card"
-                          onClick={() => selectColumn(col.key)}
-                          style={{
-                            padding: "6px 8px",
-                            gap: 3,
-                            borderLeft: col.key === 1 && it.enriched ? "3px solid var(--ok)" : undefined,
-                            cursor: "pointer",
-                          }}
-                        >
-                          <div className="top" style={{ gap: 4 }}>
-                            <span className="nm" style={{ fontSize: 11 }}>
-                              {displayName(it)}
-                            </span>
-                          </div>
-                          <div className="meta-line" style={{ fontSize: 9.5 }}>
-                            <span style={{ color: statusText(col.key, it).cls === "ok" ? "var(--ok)" : "var(--text-4)" }}>
-                              {statusText(col.key, it).label}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                  {items.length === 0 && (
-                    <div style={{ textAlign: "center", padding: "16px 6px", color: "var(--text-4)", fontSize: 11 }}>
-                      Vide
-                    </div>
-                  )}
-                </div>
-                <div style={{ padding: "6px 10px", borderTop: "1px solid var(--border)", fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--text-3)" }}>
-                  {sum > 0 ? `${sum.toLocaleString()}€` : col.hint}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* ── Separator + action bar for selected column ─────────────────── */}
-      <div
-        className="pipe-bar"
-        style={{ borderTop: "1px solid var(--border)", borderBottom: "1px solid var(--border)", marginTop: 4, background: "var(--surface-2)" }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span
-            className="dot"
-            style={{ width: 9, height: 9, borderRadius: "50%", background: activeColumn?.color, display: "inline-block" }}
-          />
-          <span style={{ fontWeight: 600, fontSize: 13 }}>{activeColumn?.label}</span>
-          <span className="ct" style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-3)" }}>
-            {columnItems.length} · {selectedCount} sélectionnée(s)
-          </span>
-        </div>
-
-        <span className="grow" style={{ flex: 1 }} />
-
-        {columnItems.length > 0 && (
-          <button type="button" className="btn ghost sm" onClick={toggleSelectAll} disabled={busy}>
-            {allSelectedInColumn ? <CheckSquare className="ico-sm" /> : <Square className="ico-sm" />}
-            {allSelectedInColumn ? "Tout désélectionner" : "Tout sélectionner"}
-          </button>
-        )}
-
-        {selectedCount > 0 && (board?.pipelines?.length ?? 0) > 0 && (
-          <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Select value={moveTarget} onValueChange={setMoveTarget}>
-              <SelectTrigger className="h-7 min-w-[150px] text-[11.5px]" title="Déplacer vers un pipeline">
-                <SelectValue placeholder="Déplacer vers…" />
-              </SelectTrigger>
-              <SelectContent>
-                {(board?.pipelines ?? []).map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.nom}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <button
-              type="button"
-              className="btn ghost sm"
-              onClick={() => movePipeline(selectedItems())}
-              disabled={!moveTarget || busy}
-              title="Déplacer les opportunités sélectionnées vers ce pipeline"
-            >
-              {working === "move-pipeline" ? <Loader2 className="ico-sm animate-spin" /> : <ArrowRightLeft className="ico-sm" />}
-              Déplacer ({selectedCount})
-            </button>
-          </div>
-        )}
-
-        <ColumnActionBar
-          column={selectedColumn}
-          board={board}
-          selectedCount={selectedCount}
-          working={working}
-          templateId={templateId}
-          setTemplateId={setTemplateId}
-          agentId={agentId}
-          setAgentId={setAgentId}
-          overwriteEnrich={overwriteEnrich}
-          setOverwriteEnrich={setOverwriteEnrich}
-          onEnrich={() => runEnrich(selectedItems(), overwriteEnrich)}
-          onValidateEnrich={() => validateEnrichment(selectedItems())}
-          onCreateSites={() => createSites(selectedItems())}
-          onValidateSites={() => validateSites(selectedItems())}
-          onCreateAudits={() => createAudits(selectedItems())}
-          onValidateAudits={() => validateAudits(selectedItems())}
-          onAssign={() => assignAgent(selectedItems())}
-        />
-
-        <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <ArrowUpDown className="ico-sm ic" style={{ color: "var(--text-3)" }} />
-          <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortKey)}>
-            <SelectTrigger className="h-7 min-w-[170px] text-[11.5px]" title="Trier l'affichage">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="seg" aria-label="Affichage de la liste">
-          <button type="button" className="s icon" aria-pressed={bottomView === "cards"} onClick={() => setBottomView("cards")} title="Cartes">
-            <LayoutGrid className="ico-sm" />
-          </button>
-          <button type="button" className="s icon" aria-pressed={bottomView === "rows"} onClick={() => setBottomView("rows")} title="Tableau">
-            <Rows3 className="ico-sm" />
-          </button>
-        </div>
-      </div>
-
-      {/* ── BOTTOM: list for the selected column ───────────────────────── */}
-      <div className="px-4 py-4">
-        {loading ? (
-          <div className="opp-grid">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} style={{ height: 150, borderRadius: 12, background: "var(--surface-2)" }} className="animate-pulse" />
-            ))}
-          </div>
-        ) : columnItems.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "48px 12px", color: "var(--text-4)" }}>
-            <Building2 className="ico-xl" style={{ margin: "0 auto 10px", opacity: 0.5 }} />
-            <p style={{ fontSize: 13 }}>Aucune opportunité dans cette étape.</p>
-          </div>
-        ) : bottomView === "cards" ? (
-          <div className="opp-grid">{columnItems.map((item) => renderCard(item, selectedColumn))}</div>
-        ) : (
-          <OppTable
-            items={columnItems}
-            column={selectedColumn}
-            selectedIds={selectedIds}
-            onToggleSelect={toggleSelect}
-            allSelected={allSelectedInColumn}
-            onToggleAll={toggleSelectAll}
-            disabled={busy}
-            handlersFor={cardHandlers}
-          />
-        )}
-      </div>
+    <>
+      <PipelineMatrix
+        items={board?.items ?? []}
+        agents={board?.agents ?? []}
+        templates={board?.templates ?? []}
+        pipelines={board?.pipelines ?? []}
+        templateId={templateId}
+        onTemplateChange={setTemplateId}
+        loading={loading}
+        working={working}
+        onRefresh={load}
+        handlers={matrixHandlers}
+      />
 
       <EnrichmentProgressModal
         open={showEnrichModal}
@@ -988,564 +526,7 @@ export const MarketingWebPipeline: React.FC = () => {
           await createSiteDirect([it]);
         }}
       />
-    </div>
-  );
-};
-
-/* ── Action bar (per column) ──────────────────────────────────────────────── */
-
-interface ActionBarProps {
-  column: number;
-  board: BoardData | null;
-  selectedCount: number;
-  working: string | null;
-  templateId: string;
-  setTemplateId: (v: string) => void;
-  agentId: string;
-  setAgentId: (v: string) => void;
-  overwriteEnrich: boolean;
-  setOverwriteEnrich: (v: boolean) => void;
-  onEnrich: () => void;
-  onValidateEnrich: () => void;
-  onCreateSites: () => void;
-  onValidateSites: () => void;
-  onCreateAudits: () => void;
-  onValidateAudits: () => void;
-  onAssign: () => void;
-}
-
-const ColumnActionBar: React.FC<ActionBarProps> = ({
-  column,
-  board,
-  selectedCount,
-  working,
-  templateId,
-  setTemplateId,
-  agentId,
-  setAgentId,
-  overwriteEnrich,
-  setOverwriteEnrich,
-  onEnrich,
-  onValidateEnrich,
-  onCreateSites,
-  onValidateSites,
-  onCreateAudits,
-  onValidateAudits,
-  onAssign,
-}) => {
-  const none = selectedCount === 0;
-  const spin = (key: string) => working === key;
-
-  if (column === 1) {
-    return (
-      <>
-        <label
-          className="flex items-center gap-1.5 text-[11.5px] whitespace-nowrap"
-          style={{ color: "var(--text-3)", cursor: "pointer" }}
-          title="Vide l'enrichissement précédent avant de relancer, pour repartir de zéro (les corrections manuelles seront perdues)."
-        >
-          <Checkbox
-            checked={overwriteEnrich}
-            onCheckedChange={(v) => setOverwriteEnrich(v === true)}
-            className="h-3.5 w-3.5"
-          />
-          Écraser
-        </label>
-        <button type="button" className="btn ghost sm" onClick={onEnrich} disabled={none || working !== null}>
-          {spin("enrich") ? <Loader2 className="ico-sm animate-spin" /> : <Sparkles className="ico-sm" />}
-          {overwriteEnrich ? "Ré-enrichir" : "Enrichir"} ({selectedCount})
-        </button>
-        <button type="button" className="btn accent sm" onClick={onValidateEnrich} disabled={none || working !== null}>
-          {spin("validate-enrich") ? <Loader2 className="ico-sm animate-spin" /> : <Check className="ico-sm" />}
-          Valider ({selectedCount})
-        </button>
-      </>
-    );
-  }
-  if (column === 2) {
-    return (
-      <>
-        <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span className="lb" style={{ fontSize: 11.5, color: "var(--text-3)" }}>
-            Template :
-          </span>
-          <Select value={templateId} onValueChange={setTemplateId}>
-            <SelectTrigger className="h-7 min-w-[140px] text-[11.5px]">
-              <SelectValue placeholder="Choisir" />
-            </SelectTrigger>
-            <SelectContent>
-              {(board?.templates ?? []).length === 0 ? (
-                <SelectItem value="none" disabled>
-                  Aucun template
-                </SelectItem>
-              ) : (
-                board!.templates.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
-        </div>
-        <button type="button" className="btn accent sm" onClick={onCreateSites} disabled={none || working !== null}>
-          {spin("create-site") ? <Loader2 className="ico-sm animate-spin" /> : <Globe className="ico-sm" />}
-          Créer les sites ({selectedCount})
-        </button>
-      </>
-    );
-  }
-  if (column === 3) {
-    return (
-      <button type="button" className="btn accent sm" onClick={onValidateSites} disabled={none || working !== null}>
-        {spin("validate-site") ? <Loader2 className="ico-sm animate-spin" /> : <CheckCircle className="ico-sm" />}
-        Valider les sites ({selectedCount})
-      </button>
-    );
-  }
-  if (column === 4) {
-    return (
-      <>
-        <button type="button" className="btn ghost sm" onClick={onCreateAudits} disabled={none || working !== null}>
-          {spin("create-audit") ? <Loader2 className="ico-sm animate-spin" /> : <FileText className="ico-sm" />}
-          Créer les audits ({selectedCount})
-        </button>
-        <button type="button" className="btn accent sm" onClick={onValidateAudits} disabled={none || working !== null}>
-          {spin("validate-audit") ? <Loader2 className="ico-sm animate-spin" /> : <CheckCircle className="ico-sm" />}
-          Valider les audits ({selectedCount})
-        </button>
-      </>
-    );
-  }
-  // column === 5
-  return (
-    <>
-      <div className="select-w" style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-        <span className="lb" style={{ fontSize: 11.5, color: "var(--text-3)" }}>
-          Agent :
-        </span>
-        <Select value={agentId} onValueChange={setAgentId}>
-          <SelectTrigger className="h-7 min-w-[140px] text-[11.5px]">
-            <SelectValue placeholder="Choisir" />
-          </SelectTrigger>
-          <SelectContent>
-            {(board?.agents ?? []).length === 0 ? (
-              <SelectItem value="none" disabled>
-                Aucun agent
-              </SelectItem>
-            ) : (
-              board!.agents.map((a) => (
-                <SelectItem key={a.id} value={a.id}>
-                  {a.name}
-                </SelectItem>
-              ))
-            )}
-          </SelectContent>
-        </Select>
-      </div>
-      <button type="button" className="btn accent sm" onClick={onAssign} disabled={none || working !== null}>
-        {spin("assign") ? <Loader2 className="ico-sm animate-spin" /> : <UserPlus className="ico-sm" />}
-        Attribuer ({selectedCount})
-      </button>
     </>
-  );
-};
-
-/* ── Card action handlers shape ───────────────────────────────────────────── */
-
-interface ItemHandlers {
-  onEnrich: () => void;
-  onValidateEnrich: () => void;
-  onCreateSite: () => void;
-  onValidateSite: () => void;
-  onCreateAudit: () => void;
-  onValidateAudit: () => void;
-  onAssign: () => void;
-  onDetails: () => void;
-}
-
-/* ── Opportunity card (per column) ────────────────────────────────────────── */
-
-interface OppCardProps extends ItemHandlers {
-  item: BoardItem;
-  column: number;
-  selected: boolean;
-  disabled: boolean;
-  onToggleSelect: () => void;
-}
-
-const OppCard: React.FC<OppCardProps> = ({
-  item,
-  column,
-  selected,
-  disabled,
-  onToggleSelect,
-  ...handlers
-}) => {
-  const website = normalizeUrl(item.company_url);
-  const vLabel = valueLabel(item);
-
-  return (
-    <div
-      className="opp-card"
-      data-priority={item.priorite ?? undefined}
-      style={{ outline: selected ? "2px solid var(--accent)" : undefined, outlineOffset: selected ? "-1px" : undefined }}
-    >
-      <div className="hd">
-        <div className="top-line">
-          <Checkbox checked={selected} onCheckedChange={onToggleSelect} className="mt-0.5 h-4 w-4 flex-shrink-0" />
-          {item.logo_url ? (
-            <img src={item.logo_url} alt="" className="h-6 w-6 rounded object-cover flex-shrink-0" />
-          ) : null}
-          <span className="nm">{displayName(item)}</span>
-          {vLabel && <span className="vl">{vLabel}</span>}
-        </div>
-        <div className="meta">
-          {item.priorite && (
-            <span className={`pill ${item.priorite === "haute" ? "danger" : item.priorite === "moyenne" ? "warn" : ""}`}>
-              {item.priorite}
-            </span>
-          )}
-          {item.ville && <span>{item.ville}</span>}
-        </div>
-      </div>
-
-      <div className="bd">
-        <CardBody column={column} item={item} website={website} />
-      </div>
-
-      <div className="ft">
-        <button type="button" className="btn ghost sm icon" onClick={handlers.onDetails} disabled={disabled} title="Voir / modifier les infos">
-          <SlidersHorizontal className="ico-sm" />
-        </button>
-        <CardFooter column={column} item={item} disabled={disabled} {...handlers} />
-      </div>
-    </div>
-  );
-};
-
-const CardBody: React.FC<{ column: number; item: BoardItem; website?: string }> = ({ column, item, website }) => {
-  if (column === 1) {
-    const state = enrichState(item);
-    const badge = ENRICH_BADGE[state];
-    const err = item.project?.enrichment_error;
-    const attempts = item.project?.enrichment_attempts ?? 0;
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span className={`pill ${badge.cls}`} style={{ fontSize: 10 }}>
-            {badge.label}
-          </span>
-          {state === "failed" && attempts > 0 && (
-            <span style={{ fontSize: 10, color: "var(--text-4)", fontFamily: "var(--font-mono)" }}>
-              {attempts} essai{attempts > 1 ? "s" : ""}
-            </span>
-          )}
-          {item.enrichment?.website_url ? (
-            <a href={normalizeUrl(item.enrichment.website_url)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--info)" }}>
-              {item.enrichment.website_url}
-            </a>
-          ) : website ? (
-            <a href={website} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-3)" }}>
-              {item.company_url}
-            </a>
-          ) : (
-            <span style={{ fontSize: 11, color: "var(--text-4)" }}>Aucun site connu</span>
-          )}
-        </div>
-        {state === "failed" && err && (
-          <div
-            title={err}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 5,
-              fontSize: 10.5,
-              lineHeight: 1.35,
-              color: "var(--danger)",
-              background: "var(--danger-tint)",
-              borderRadius: 6,
-              padding: "4px 7px",
-            }}
-          >
-            <AlertTriangle className="ico-sm" style={{ flexShrink: 0, marginTop: 1 }} />
-            <span style={{ overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-              {err}
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  }
-  if (column === 2) {
-    const missing = item.missing_for_site ?? [];
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span className="pill info" style={{ fontSize: 10 }}>
-          Prêt pour LM
-        </span>
-        {missing.length > 0 ? (
-          <span className="pill danger" style={{ fontSize: 10 }} title={`Manquant : ${missing.join(", ")}`}>
-            Incomplet · {missing.length}
-          </span>
-        ) : (
-          <span className="pill ok" style={{ fontSize: 10 }}>
-            Variables OK
-          </span>
-        )}
-        {item.tags && <span style={{ fontSize: 11, color: "var(--text-3)" }}>{item.tags.split(",")[0]}</span>}
-      </div>
-    );
-  }
-  if (column === 3 && item.site) {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        <span className="pill warn" style={{ fontSize: 10, alignSelf: "flex-start" }}>
-          {STAGE_LABELS[item.site.build_stage] ?? item.site.build_stage}
-        </span>
-        {item.site.url ? (
-          <a href={item.site.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--info)" }}>
-            {item.site.url.replace(/^https?:\/\//, "")} ↗
-          </a>
-        ) : (
-          <span style={{ fontSize: 11, color: "var(--text-4)" }}>Non déployé</span>
-        )}
-      </div>
-    );
-  }
-  if (column === 4) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {item.audit ? (
-          <span className={`pill ${item.audit.statut === "ready" ? "ok" : "warn"}`} style={{ fontSize: 10 }}>
-            {item.audit.statut === "ready" ? "Audit prêt" : "Audit brouillon"}
-          </span>
-        ) : (
-          <span className="pill" style={{ fontSize: 10 }}>
-            Aucun audit
-          </span>
-        )}
-      </div>
-    );
-  }
-  if (column === 5) {
-    return (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        {item.agent ? (
-          <span className="pill ok" style={{ fontSize: 10 }}>
-            {item.agent.name}
-          </span>
-        ) : (
-          <span className="pill" style={{ fontSize: 10 }}>
-            Non attribué
-          </span>
-        )}
-        {item.audit?.statut === "ready" && <span style={{ fontSize: 11, color: "var(--text-3)" }}>Audit prêt</span>}
-      </div>
-    );
-  }
-  return null;
-};
-
-interface FooterProps extends ItemHandlers {
-  column: number;
-  item: BoardItem;
-  disabled: boolean;
-}
-
-const CardFooter: React.FC<FooterProps> = ({
-  column,
-  item,
-  disabled,
-  onEnrich,
-  onValidateEnrich,
-  onCreateSite,
-  onValidateSite,
-  onCreateAudit,
-  onValidateAudit,
-  onAssign,
-}) => {
-  if (column === 1) {
-    const failed = enrichState(item) === "failed";
-    return (
-      <>
-        <button type="button" className="btn ghost sm" onClick={onEnrich} disabled={disabled}>
-          {failed ? <RefreshCw className="ico-sm" /> : <Sparkles className="ico-sm" />}
-          {failed ? "Relancer" : "Enrichir"}
-        </button>
-        <button type="button" className="btn subtle sm" onClick={onValidateEnrich} disabled={disabled || !item.project}>
-          <Check className="ico-sm" />
-          Valider
-        </button>
-      </>
-    );
-  }
-  if (column === 2) {
-    return (
-      <button type="button" className="btn accent sm" onClick={onCreateSite} disabled={disabled || item.entreprise_id == null}>
-        <Globe className="ico-sm" />
-        Créer le site
-      </button>
-    );
-  }
-  if (column === 3 && item.site) {
-    return (
-      <>
-        {item.site.url ? (
-          <a className="btn ghost sm" href={item.site.url} target="_blank" rel="noopener noreferrer">
-            <Eye className="ico-sm" />
-            Afficher
-          </a>
-        ) : (
-          <Link className="btn ghost sm" href={siteEditHref(item.site)} target="_blank">
-            <Eye className="ico-sm" />
-            Afficher
-          </Link>
-        )}
-        <Link className="btn ghost sm" href={siteEditHref(item.site)}>
-          <Pencil className="ico-sm" />
-          Éditer
-        </Link>
-        <button type="button" className="btn accent sm icon" onClick={onValidateSite} disabled={disabled} title="Valider le site">
-          <Check className="ico-sm" />
-        </button>
-      </>
-    );
-  }
-  if (column === 4) {
-    if (!item.audit) {
-      return (
-        <button type="button" className="btn accent sm" onClick={onCreateAudit} disabled={disabled}>
-          <FileText className="ico-sm" />
-          Créer l'audit
-        </button>
-      );
-    }
-    return (
-      <>
-        {item.audit.pdf_url ? (
-          <a className="btn ghost sm" href={item.audit.pdf_url} target="_blank" rel="noopener noreferrer">
-            <Eye className="ico-sm" />
-            Afficher
-          </a>
-        ) : (
-          <Link className="btn ghost sm" href={`/audits/${item.id}`} target="_blank">
-            <Eye className="ico-sm" />
-            Afficher
-          </Link>
-        )}
-        <Link className="btn ghost sm" href={`/audits/${item.id}`}>
-          <Pencil className="ico-sm" />
-          Éditer
-        </Link>
-        <button
-          type="button"
-          className="btn accent sm icon"
-          onClick={onValidateAudit}
-          disabled={disabled || item.audit.statut === "ready"}
-          title="Valider l'audit"
-        >
-          <Check className="ico-sm" />
-        </button>
-      </>
-    );
-  }
-  if (column === 5) {
-    return (
-      <button type="button" className="btn accent sm" onClick={onAssign} disabled={disabled || item.entreprise_id == null}>
-        <UserPlus className="ico-sm" />
-        {item.agent ? "Réattribuer" : "Attribuer"}
-      </button>
-    );
-  }
-  return null;
-};
-
-/* ── Table (rows) view ────────────────────────────────────────────────────── */
-
-interface OppTableProps {
-  items: BoardItem[];
-  column: number;
-  selectedIds: Set<string>;
-  onToggleSelect: (id: string) => void;
-  allSelected: boolean;
-  onToggleAll: () => void;
-  disabled: boolean;
-  handlersFor: (item: BoardItem) => ItemHandlers;
-}
-
-const OppTable: React.FC<OppTableProps> = ({
-  items,
-  column,
-  selectedIds,
-  onToggleSelect,
-  allSelected,
-  onToggleAll,
-  disabled,
-  handlersFor,
-}) => {
-  return (
-    <div style={{ border: "1px solid var(--border)", borderRadius: 12, overflow: "hidden", background: "var(--surface)" }}>
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead>
-            <tr style={{ background: "var(--surface-2)", color: "var(--text-3)", textAlign: "left" }}>
-              <th style={{ padding: "8px 10px", width: 34 }}>
-                <Checkbox checked={allSelected} onCheckedChange={onToggleAll} className="h-4 w-4" />
-              </th>
-              <th style={{ padding: "8px 10px" }}>Opportunité</th>
-              <th style={{ padding: "8px 10px" }}>Ville</th>
-              <th style={{ padding: "8px 10px" }}>Priorité</th>
-              <th style={{ padding: "8px 10px" }}>Statut</th>
-              <th style={{ padding: "8px 10px", textAlign: "right" }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => {
-              const selected = selectedIds.has(item.id);
-              const st = statusText(column, item);
-              const handlers = handlersFor(item);
-              return (
-                <tr key={item.id} style={{ borderTop: "1px solid var(--border)", background: selected ? "var(--accent-tint)" : undefined }}>
-                  <td style={{ padding: "8px 10px" }}>
-                    <Checkbox checked={selected} onCheckedChange={() => onToggleSelect(item.id)} className="h-4 w-4" />
-                  </td>
-                  <td style={{ padding: "8px 10px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {item.logo_url ? <img src={item.logo_url} alt="" className="h-5 w-5 rounded object-cover" /> : null}
-                      <span style={{ fontWeight: 500 }}>{displayName(item)}</span>
-                    </div>
-                  </td>
-                  <td style={{ padding: "8px 10px", color: "var(--text-3)" }}>{item.ville ?? "—"}</td>
-                  <td style={{ padding: "8px 10px" }}>
-                    {item.priorite ? (
-                      <span className={`pill ${item.priorite === "haute" ? "danger" : item.priorite === "moyenne" ? "warn" : ""}`} style={{ fontSize: 10 }}>
-                        {item.priorite}
-                      </span>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td style={{ padding: "8px 10px" }}>
-                    <span className={`pill ${st.cls}`} style={{ fontSize: 10 }}>
-                      {st.label}
-                    </span>
-                  </td>
-                  <td style={{ padding: "6px 10px" }}>
-                    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                      <button type="button" className="btn ghost sm icon" onClick={handlers.onDetails} disabled={disabled} title="Voir / modifier les infos">
-                        <SlidersHorizontal className="ico-sm" />
-                      </button>
-                      <CardFooter column={column} item={item} disabled={disabled} {...handlers} />
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 };
 
