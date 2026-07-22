@@ -3,6 +3,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/s
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AgentSidebar } from "./AgentSidebar";
 import { CallProvider } from "@/components/telephony/CallProvider";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Props = { children: ReactNode };
 
@@ -25,6 +26,9 @@ export default function AgentPortalLayout({ children }: Props) {
               <header className="flex h-12 items-center gap-2 border-b px-4">
                 <SidebarTrigger />
                 <span className="text-sm font-medium">Espace agent</span>
+                <div className="ml-auto">
+                  <ThemeToggle />
+                </div>
               </header>
               <main className="flex flex-1 flex-col overflow-auto">{children}</main>
             </div>
