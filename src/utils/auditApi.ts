@@ -7,6 +7,8 @@ import {
   problemsFromKeys,
   solutionsFromKeys,
   ensureMinIssueKeys,
+  backfillProblemKeys,
+  backfillSolutionKeys,
 } from '@/data/auditIssues';
 
 const DEFAULT_CONTENT: AuditContent = {
@@ -107,12 +109,14 @@ function normalizeAuditContent(content: Partial<AuditContent> | null | undefined
     page2: {
       ...defaults.page2,
       ...(source.page2 ?? {}),
-      problems: source.page2?.problems?.length ? source.page2.problems : defaults.page2.problems,
+      // Rétro-lie les cartes anciennes (sans `key`) au catalogue pour que la
+      // checklist les affiche déjà cochées et ne les duplique pas.
+      problems: backfillProblemKeys(source.page2?.problems?.length ? source.page2.problems : defaults.page2.problems),
     },
     page3: {
       ...defaults.page3,
       ...(source.page3 ?? {}),
-      solutions: source.page3?.solutions?.length ? source.page3.solutions : defaults.page3.solutions,
+      solutions: backfillSolutionKeys(source.page3?.solutions?.length ? source.page3.solutions : defaults.page3.solutions),
     },
     page4: {
       ...defaults.page4,

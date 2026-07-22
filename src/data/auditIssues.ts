@@ -122,6 +122,53 @@ export function getIssueDef(key: string): AuditIssueDef | undefined {
   return ISSUE_BY_KEY.get(key);
 }
 
+// ── Rétro-liaison des cartes « legacy » (sans `key`) ──────────────────
+// Les audits créés avant que les cartes portent une `key` ont stocké leurs
+// problèmes/solutions par titre uniquement. On reconstruit la clé catalogue à
+// partir du titre du problème (ou de son libellé) et du nom de la solution.
+const norm = (s: string | null | undefined): string => (s ?? '').trim().toLowerCase();
+
+const KEY_BY_PROBLEM_TITLE = new Map<string, string>();
+const KEY_BY_SOLUTION_NAME = new Map<string, string>();
+for (const i of AUDIT_ISSUE_CATALOG) {
+  KEY_BY_PROBLEM_TITLE.set(norm(i.problem.title), i.key);
+  KEY_BY_PROBLEM_TITLE.set(norm(i.label), i.key); // repli : ancien libellé checklist
+  KEY_BY_SOLUTION_NAME.set(norm(i.solution.name), i.key);
+}
+
+/** Clé catalogue d'un problème d'après son titre (ou son libellé), sinon undefined. */
+export function issueKeyForProblemTitle(title: string | null | undefined): string | undefined {
+  return KEY_BY_PROBLEM_TITLE.get(norm(title));
+}
+
+/** Clé catalogue d'une solution d'après son nom, sinon undefined. */
+export function issueKeyForSolutionName(name: string | null | undefined): string | undefined {
+  return KEY_BY_SOLUTION_NAME.get(norm(name));
+}
+
+/**
+ * Rétro-remplit la `key` des cartes « problème » qui n'en ont pas (audits
+ * anciens). Sans clé, la checklist ne peut pas savoir qu'une carte est déjà
+ * présente → cases décochées → re-cocher duplique la carte. Ne mute pas
+ * l'entrée ; renvoie un nouveau tableau.
+ */
+export function backfillProblemKeys(problems: readonly AuditProblem[]): AuditProblem[] {
+  return problems.map((p) => {
+    if (p.key) return p;
+    const key = issueKeyForProblemTitle(p.title);
+    return key ? { ...p, key } : p;
+  });
+}
+
+/** Idem pour les cartes « solution » (match sur le nom). */
+export function backfillSolutionKeys(solutions: readonly AuditSolution[]): AuditSolution[] {
+  return solutions.map((s) => {
+    if (s.key) return s;
+    const key = issueKeyForSolutionName(s.name);
+    return key ? { ...s, key } : s;
+  });
+}
+
 /** Garde uniquement les clés connues, dans l'ordre du catalogue, sans doublon. */
 export function normalizeIssueKeys(keys: readonly string[] | null | undefined): string[] {
   if (!keys || keys.length === 0) return [];
