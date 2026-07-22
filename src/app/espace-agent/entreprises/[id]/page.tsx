@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { formatPrice } from "@/components/agent-portal/format";
 import { AgentExchangeHistory } from "@/components/agent-portal/AgentExchangeHistory";
+import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
+import { CallJournal } from "@/components/telephony/CallJournal";
 
 const SITE_DOMAIN = "samadigitalstudio.fr";
 
@@ -219,8 +221,11 @@ export default function AgentEntrepriseDetailPage() {
             </div>
           )}
           {ent.telephone && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="h-4 w-4" /> {ent.telephone}
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Phone className="h-4 w-4" /> {ent.telephone}
+              </span>
+              <ClickToCallButton to={ent.telephone} entrepriseId={ent.id} variant="outline" />
             </div>
           )}
           {ent.email && (
@@ -289,8 +294,8 @@ export default function AgentEntrepriseDetailPage() {
             <p className="text-sm text-muted-foreground">Aucun contact enregistré.</p>
           ) : (
             contacts.map((c) => (
-              <div key={c.id} className="flex items-center justify-between rounded-md border px-3 py-2">
-                <div>
+              <div key={c.id} className="flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+                <div className="min-w-0">
                   <div className="flex items-center gap-1.5 text-sm font-medium">
                     <User className="h-3.5 w-3.5 text-muted-foreground" />
                     {`${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || "Contact"}
@@ -300,10 +305,20 @@ export default function AgentEntrepriseDetailPage() {
                       </Badge>
                     )}
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="truncate text-xs text-muted-foreground">
                     {[c.role_title, c.tel, c.email].filter(Boolean).join(" · ")}
                   </div>
                 </div>
+                {c.tel && (
+                  <ClickToCallButton
+                    to={c.tel}
+                    contactId={c.id}
+                    entrepriseId={ent.id}
+                    size="icon"
+                    variant="ghost"
+                    label="Appeler"
+                  />
+                )}
               </div>
             ))
           )}
@@ -325,6 +340,17 @@ export default function AgentEntrepriseDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Phone className="h-4 w-4 text-muted-foreground" /> Historique d’appels
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CallJournal filters={{ entreprise_id: ent.id }} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">

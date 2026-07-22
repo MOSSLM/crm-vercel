@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, User, Mail, Phone, Building2, Linkedin } from "lucide-react";
 import { one } from "@/components/agent-portal/format";
+import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
+import { CallJournal } from "@/components/telephony/CallJournal";
 
 type Entreprise = { id: number; name: string | null; ville: string | null };
 type Contact = {
@@ -98,8 +100,15 @@ export default function AgentContactDetailPage() {
             </div>
           )}
           {contact.tel && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="h-4 w-4" /> {contact.tel}
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Phone className="h-4 w-4" /> {contact.tel}
+              </span>
+              <ClickToCallButton
+                to={contact.tel}
+                contactId={contact.id}
+                entrepriseId={contact.entreprise_id}
+              />
             </div>
           )}
           {contact.email && (
@@ -122,6 +131,17 @@ export default function AgentContactDetailPage() {
               {contact.notes}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Phone className="h-4 w-4 text-muted-foreground" /> Historique d’appels
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CallJournal filters={{ contact_id: contact.id }} />
         </CardContent>
       </Card>
     </div>
