@@ -74,6 +74,64 @@ export const enrichLeadMagnetSchema = z.object({
 export type EnrichLeadMagnetPayload = z.infer<typeof enrichLeadMagnetSchema>;
 
 /**
+ * Telephony — click-to-call via the provider callback (bridges two legs, no
+ * WebRTC). Optional CRM ids let us seed the resulting `calls` row so the record
+ * links are present before the provider's webhooks arrive.
+ */
+export const telephonyCallbackSchema = z.object({
+  to: z.string().min(3).max(32),
+  from: z.string().min(2).max(32).optional(),
+  contact_id: z.string().optional().nullable(),
+  entreprise_id: z.coerce.number().int().positive().optional().nullable(),
+  opportunite_id: z.string().uuid().optional().nullable(),
+});
+export type TelephonyCallbackPayload = z.infer<typeof telephonyCallbackSchema>;
+
+/** Telephony — send an SMS (optionally linked to a record). */
+export const telephonySmsSendSchema = z.object({
+  to: z.string().min(3).max(32),
+  text: z.string().min(1).max(1000),
+  from: z.string().min(2).max(32).optional(),
+  contact_id: z.string().optional().nullable(),
+  entreprise_id: z.coerce.number().int().positive().optional().nullable(),
+});
+export type TelephonySmsSendPayload = z.infer<typeof telephonySmsSendSchema>;
+
+/** Telephony — SMS messages/threads listing filters. */
+export const telephonySmsQuerySchema = z.object({
+  contact_id: z.string().optional(),
+  entreprise_id: z.coerce.number().int().positive().optional(),
+  counterpart: z.string().optional(),
+  thread_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+export type TelephonySmsQuery = z.infer<typeof telephonySmsQuerySchema>;
+
+/** Telephony — book an appointment, assignable to the agent or to admin. */
+export const telephonyAppointmentSchema = z.object({
+  title: z.string().min(1).max(200),
+  start_at: z.string().min(10),
+  duration_min: z.coerce.number().int().min(5).max(600).default(30),
+  for_admin: z.boolean().optional().default(false),
+  contact_id: z.string().optional().nullable(),
+  entreprise_id: z.coerce.number().int().positive().optional().nullable(),
+  opportunite_id: z.string().uuid().optional().nullable(),
+  call_id: z.string().uuid().optional().nullable(),
+});
+export type TelephonyAppointmentPayload = z.infer<typeof telephonyAppointmentSchema>;
+
+/** Telephony — call journal / history listing filters. */
+export const telephonyCallsQuerySchema = z.object({
+  contact_id: z.string().optional(),
+  entreprise_id: z.coerce.number().int().positive().optional(),
+  opportunite_id: z.string().uuid().optional(),
+  direction: z.enum(["inbound", "outbound", "internal"]).optional(),
+  agent_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+});
+export type TelephonyCallsQuery = z.infer<typeof telephonyCallsQuerySchema>;
+
+/**
  * Prepares one or more opportunities for (re)enrichment on the Marketing & Web
  * pipeline: ensures each has a `lead_magnet_projects` row and resets it to a
  * re-runnable state. `overwrite` additionally clears the enrichment-derived

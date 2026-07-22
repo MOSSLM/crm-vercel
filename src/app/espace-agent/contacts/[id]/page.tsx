@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, User, Mail, Phone, Building2, Linkedin } from "lucide-react";
 import { one } from "@/components/agent-portal/format";
+import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
+import { CallJournal } from "@/components/telephony/CallJournal";
+import { SmsThread } from "@/components/telephony/SmsThread";
+import { AppointmentDialog } from "@/components/telephony/AppointmentDialog";
+import { MessageSquare } from "lucide-react";
 
 type Entreprise = { id: number; name: string | null; ville: string | null };
 type Contact = {
@@ -98,8 +103,15 @@ export default function AgentContactDetailPage() {
             </div>
           )}
           {contact.tel && (
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Phone className="h-4 w-4" /> {contact.tel}
+            <div className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-muted-foreground">
+                <Phone className="h-4 w-4" /> {contact.tel}
+              </span>
+              <ClickToCallButton
+                to={contact.tel}
+                contactId={contact.id}
+                entrepriseId={contact.entreprise_id}
+              />
             </div>
           )}
           {contact.email && (
@@ -122,6 +134,37 @@ export default function AgentContactDetailPage() {
               {contact.notes}
             </div>
           )}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <AppointmentDialog
+              contactId={contact.id}
+              entrepriseId={contact.entreprise_id}
+              defaultTitle={`RDV — ${fullName}`}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {contact.tel && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageSquare className="h-4 w-4 text-muted-foreground" /> SMS
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SmsThread to={contact.tel} contactId={contact.id} entrepriseId={contact.entreprise_id} />
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Phone className="h-4 w-4 text-muted-foreground" /> Historique d’appels
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CallJournal filters={{ contact_id: contact.id }} />
         </CardContent>
       </Card>
     </div>

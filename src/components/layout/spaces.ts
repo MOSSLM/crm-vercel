@@ -32,6 +32,7 @@ import {
   LayoutDashboard,
   StickyNote,
   Phone,
+  PhoneCall,
   CalendarDays,
   Settings,
 } from "lucide-react";
@@ -45,7 +46,14 @@ import {
  * appear in more than one space (e.g. Site builder lives in Web).
  */
 
-export type SpaceId = "hub" | "acquisition" | "relation" | "production" | "web" | "pilotage";
+export type SpaceId =
+  | "hub"
+  | "acquisition"
+  | "relation"
+  | "production"
+  | "web"
+  | "telephonie"
+  | "pilotage";
 
 export type SpaceTool = {
   title: string;
@@ -134,6 +142,17 @@ export const SPACES: Space[] = [
     ],
   },
   {
+    id: "telephonie",
+    label: "Téléphonie",
+    icon: PhoneCall,
+    href: "/telephonie",
+    tools: [
+      { title: "Journal d'appels", href: "/telephonie", icon: PhoneCall },
+      { title: "Statistiques", href: "/telephonie/stats", icon: TrendingUp },
+      { title: "Numéros & agents", href: "/telephonie/numeros", icon: Users },
+    ],
+  },
+  {
     id: "pilotage",
     label: "Pilotage",
     icon: TrendingUp,
@@ -173,6 +192,8 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/objectifs", "pilotage"],
   ["/calendar", "pilotage"],
   ["/settings", "pilotage"],
+
+  ["/telephonie", "telephonie"],
 
   ["/qualification", "acquisition"],
   ["/qualified", "acquisition"],

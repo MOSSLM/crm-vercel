@@ -28,6 +28,7 @@ import {
   Package,
   Euro,
   Flag,
+  PhoneCall,
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
@@ -49,7 +50,7 @@ const NAV: NavSection[] = [
     items: [
       { title: "Dashboard", href: "/espace-agent/dashboard", icon: LayoutDashboard },
       { title: "Pipeline", href: "/espace-agent/pipeline", icon: KanbanSquare },
-      { title: "Calendrier", href: "/espace-agent/calendrier", icon: CalendarDays, soon: true },
+      { title: "Calendrier", href: "/espace-agent/calendrier", icon: CalendarDays },
     ],
   },
   {
@@ -66,6 +67,10 @@ const NAV: NavSection[] = [
       { title: "Contacts", href: "/espace-agent/contacts", icon: Users },
       { title: "Entreprises", href: "/espace-agent/entreprises", icon: Building2 },
     ],
+  },
+  {
+    label: "Téléphonie",
+    items: [{ title: "Journal d'appels", href: "/espace-agent/telephonie", icon: PhoneCall }],
   },
   {
     label: "SAMA",
