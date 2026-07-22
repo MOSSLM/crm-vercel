@@ -34,6 +34,7 @@ import {
   Phone,
   PhoneCall,
   CalendarDays,
+  Activity,
   Settings,
 } from "lucide-react";
 
@@ -147,9 +148,13 @@ export const SPACES: Space[] = [
     icon: PhoneCall,
     href: "/telephonie",
     tools: [
-      { title: "Journal d'appels", href: "/telephonie", icon: PhoneCall },
-      { title: "Statistiques", href: "/telephonie/stats", icon: TrendingUp },
+      { title: "Vue d'ensemble", href: "/telephonie", icon: LayoutDashboard },
+      { title: "Calendrier équipe", href: "/telephonie/calendrier", icon: CalendarDays },
+      { title: "Supervision live", href: "/telephonie/supervision", icon: Activity },
+      { title: "Journal d'appels", href: "/telephonie/journal", icon: PhoneCall },
       { title: "Numéros & agents", href: "/telephonie/numeros", icon: Users },
+      { title: "Portabilité", href: "/telephonie/portabilite", icon: Share2 },
+      { title: "SVI / Standard", href: "/telephonie/svi", icon: Workflow },
     ],
   },
   {

@@ -8,6 +8,7 @@ import { AppRail } from "./AppRail";
 import { SpaceSubNav } from "./SpaceSubNav";
 import { StudioTopbar } from "./StudioTopbar";
 import { StudioStatusBar } from "./StudioStatusBar";
+import { CallProvider } from "@/components/telephony/CallProvider";
 
 /** Fire this to open the Cmd+K palette from anywhere (e.g. the Hub hero). */
 export const STUDIO_OPEN_COMMAND_EVENT = "studio:open-command";
@@ -42,19 +43,21 @@ export function StudioShell({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <div className="flex h-screen w-full overflow-hidden bg-background">
-        <AppRail />
-        <SpaceSubNav />
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <StudioTopbar onOpenSearch={() => setCmdkOpen(true)} />
-          <main className="flex flex-1 flex-col overflow-auto pb-24 md:pb-0">{children}</main>
-          <StudioStatusBar />
+    <CallProvider>
+      <TooltipProvider delayDuration={300}>
+        <div className="flex h-screen w-full overflow-hidden bg-background">
+          <AppRail />
+          <SpaceSubNav />
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <StudioTopbar onOpenSearch={() => setCmdkOpen(true)} />
+            <main className="flex flex-1 flex-col overflow-auto pb-24 md:pb-0">{children}</main>
+            <StudioStatusBar />
+          </div>
         </div>
-      </div>
-      <MobileBottomNav />
-      <StudioCommandMenu open={cmdkOpen} onOpenChange={setCmdkOpen} />
-    </TooltipProvider>
+        <MobileBottomNav />
+        <StudioCommandMenu open={cmdkOpen} onOpenChange={setCmdkOpen} />
+      </TooltipProvider>
+    </CallProvider>
   );
 }
 
