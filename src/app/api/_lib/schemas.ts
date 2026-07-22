@@ -175,6 +175,84 @@ export const marketingMovePipelineSchema = z.object({
 });
 export type MarketingMovePipelinePayload = z.infer<typeof marketingMovePipelineSchema>;
 
+/**
+ * Full payload for the Marketing & Web edit modal's manual save. Persisted
+ * server-side with the service client (see company-details/route.ts) so RLS on
+ * the browser client can no longer reject saves for pool / other-owned
+ * companies — the cause of the intermittent "erreur d'enregistrement".
+ */
+const nullableStr = z.string().nullable().optional();
+const strArray = z.array(z.string()).optional().default([]);
+
+export const marketingCompanyDetailsSchema = z.object({
+  entreprise_id: z.coerce.number().int().positive(),
+  project_id: z.string().uuid().nullable().optional(),
+  enrichment_id: z.string().uuid().nullable().optional(),
+  company: z.object({
+    name: nullableStr,
+    ville: nullableStr,
+    code_postal: nullableStr,
+    adresse: nullableStr,
+    telephone: nullableStr,
+    email: nullableStr,
+    site_web_canonique: nullableStr,
+    linkedin_url: nullableStr,
+    service_tags: strArray,
+    note_moyenne: z.number().nullable().optional(),
+    nombre_avis: z.number().nullable().optional(),
+    horaires: nullableStr,
+  }),
+  enrichment: z
+    .object({
+      website_url: nullableStr,
+      emails: strArray,
+      phones: strArray,
+      services_list: strArray,
+      contact_page_url: nullableStr,
+      site_summary: nullableStr,
+    })
+    .nullable()
+    .optional(),
+  project: z
+    .object({
+      override_entreprise_name: nullableStr,
+      override_city: nullableStr,
+      override_location: nullableStr,
+      override_phone: nullableStr,
+      override_email: nullableStr,
+      override_address: nullableStr,
+      logo_url: nullableStr,
+      service_tags_snapshot: strArray,
+      stat_years_experience: nullableStr,
+      stat_satisfied_clients: nullableStr,
+      stat_installations_completed: nullableStr,
+      stat_rge_count: nullableStr,
+      variables: z.record(z.string(), z.unknown()).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
+  reviews: z
+    .object({
+      deleted_ids: z.array(z.string().uuid()).optional().default([]),
+      rows: z
+        .array(
+          z.object({
+            id: z.string().uuid().nullable().optional(),
+            author_name: z.string(),
+            review_text: z.string(),
+            rating: z.number(),
+            is_active: z.boolean(),
+            display_order: z.number(),
+          }),
+        )
+        .optional()
+        .default([]),
+    })
+    .nullable()
+    .optional(),
+});
+export type MarketingCompanyDetailsPayload = z.infer<typeof marketingCompanyDetailsSchema>;
+
 const channelEnum = z.enum(["email", "sms", "whatsapp", "linkedin", "telephone", "pas_defini"]);
 const directionEnum = z.enum(["entrant", "sortant"]);
 const outcomeEnum = z.enum(["positif", "neutre", "negatif", "inconnu"]);
