@@ -155,6 +155,7 @@ export const SPACES: Space[] = [
       { title: "Numéros & agents", href: "/telephonie/numeros", icon: Users },
       { title: "Portabilité", href: "/telephonie/portabilite", icon: Share2 },
       { title: "SVI / Standard", href: "/telephonie/svi", icon: Workflow },
+      { title: "Softphone & widget", href: "/telephonie/softphone", icon: Settings },
     ],
   },
   {

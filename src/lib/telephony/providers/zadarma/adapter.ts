@@ -180,6 +180,39 @@ export class ZadarmaAdapter implements TelephonyProvider {
     }));
   }
 
+  // --- Browser widget domains ------------------------------------------------
+
+  async registerWebrtcDomain(domain: string): Promise<{ ok: boolean; detail?: string }> {
+    // Create the widget integration for this domain; if it already exists,
+    // fall back to adding the domain to the existing integration.
+    try {
+      await this.client.request("/v1/webrtc/create/", { domain }, "POST");
+      return { ok: true };
+    } catch (createErr) {
+      try {
+        await this.client.request("/v1/webrtc/domain/", { domain }, "POST");
+        return { ok: true };
+      } catch (addErr) {
+        const detail =
+          addErr instanceof Error
+            ? addErr.message
+            : createErr instanceof Error
+              ? createErr.message
+              : "webrtc_domain_failed";
+        return { ok: false, detail };
+      }
+    }
+  }
+
+  async listWebrtcDomains(): Promise<string[]> {
+    try {
+      const res = await this.client.request<{ domains?: string[] }>("/v1/webrtc/", {}, "GET");
+      return res.domains ?? [];
+    } catch {
+      return [];
+    }
+  }
+
   // --- Webhooks --------------------------------------------------------------
 
   async verifyWebhook(req: WebhookRequest): Promise<boolean> {

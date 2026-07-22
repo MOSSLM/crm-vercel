@@ -71,6 +71,12 @@ export class TwilioAdapter implements TelephonyProvider {
   async listNumbers(): Promise<PhoneNumberInfo[]> {
     this.unsupported("listNumbers");
   }
+  async registerWebrtcDomain(_domain: string): Promise<{ ok: boolean; detail?: string }> {
+    this.unsupported("browserWebRTC");
+  }
+  async listWebrtcDomains(): Promise<string[]> {
+    this.unsupported("browserWebRTC");
+  }
   verifyWebhook(_req: WebhookRequest): Promise<boolean> {
     return Promise.resolve(false);
   }

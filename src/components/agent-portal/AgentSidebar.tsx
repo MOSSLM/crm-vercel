@@ -32,6 +32,7 @@ import {
   Phone,
   MessageSquare,
   Voicemail,
+  Settings,
   LogOut,
 } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
@@ -78,6 +79,7 @@ const NAV: NavSection[] = [
       { title: "Mes appels", href: "/espace-agent/telephonie/appels", icon: Phone },
       { title: "Messages SMS", href: "/espace-agent/telephonie/sms", icon: MessageSquare },
       { title: "Messagerie vocale", href: "/espace-agent/telephonie/messagerie", icon: Voicemail },
+      { title: "Mon softphone", href: "/espace-agent/telephonie/reglages", icon: Settings },
     ],
   },
   {
