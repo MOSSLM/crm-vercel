@@ -16,6 +16,7 @@ import { supabase } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { placeCallback } from "@/lib/telephony/client";
 import { ZadarmaWidget, dialViaWidget } from "./ZadarmaWidget";
+import { SoftphonePanel } from "./SoftphonePanel";
 
 export interface IncomingCall {
   id: string;
@@ -189,6 +190,7 @@ export function CallProvider({ children }: { children: ReactNode }) {
       {profile?.configured && profile?.hasExtension && profile?.sip && (
         <ZadarmaWidget sip={profile.sip} />
       )}
+      <SoftphonePanel dial={dial} />
       {incoming && <IncomingCallPop incoming={incoming} onDismiss={() => setIncoming(null)} />}
     </TelephonyContext.Provider>
   );

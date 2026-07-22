@@ -32,6 +32,9 @@ type ZadarmaGlobals = {
     setCallingNumber?: (n: string) => void;
     callNum?: () => void;
   };
+  zdrmWPhI?: {
+    finishCall?: () => void;
+  };
   __zadarmaWidgetInited?: boolean;
 };
 
@@ -57,6 +60,22 @@ export function dialViaWidget(number: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Hang up the current in-browser widget call, if any. */
+export function hangupViaWidget(): void {
+  if (typeof window === "undefined") return;
+  try {
+    zwin().zdrmWPhI?.finishCall?.();
+  } catch {
+    /* no-op */
+  }
+}
+
+/** True when the browser widget is loaded and ready to place a call. */
+export function isWidgetReady(): boolean {
+  if (typeof window === "undefined") return false;
+  return typeof zwin().zdrmWebrtcPhone?.callNum === "function";
 }
 
 function loadScript(src: string): Promise<void> {
@@ -116,6 +135,15 @@ export function ZadarmaWidget({ sip }: { sip: string }) {
 
       w.zadarmaWidgetFn(key, sip, "rounded", "fr", true, { right: "22px", bottom: "22px" });
       w.__zadarmaWidgetInited = true;
+
+      // We provide our own CRM launcher (SoftphonePanel), so hide Zadarma's
+      // collapsed button — the widget stays active for audio + in-call UI.
+      if (!document.getElementById("zadarma-hide-launcher")) {
+        const style = document.createElement("style");
+        style.id = "zadarma-hide-launcher";
+        style.textContent = ".webphone-button-container{display:none !important;}";
+        document.head.appendChild(style);
+      }
     })();
 
     return () => {
