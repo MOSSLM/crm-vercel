@@ -21,21 +21,26 @@ const CRITERIA_LABELS: Record<string, string> = {
   politesse: "Politesse",
 };
 
-function ScoreBar({ label, value }: { label: string; value: number }) {
+const SENT_CLASS: Record<string, string> = {
+  positif: "positif",
+  neutre: "neutre",
+  negatif: "négatif",
+};
+
+function Stars({ score }: { score: number }) {
+  const filled = Math.max(0, Math.min(5, Math.round(score / 20)));
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-28 shrink-0 text-xs text-muted-foreground">{label}</span>
-      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${value}%` }} />
-      </div>
-      <span className="w-8 shrink-0 text-right text-xs tabular-nums">{value}</span>
-    </div>
+    <span className="score">
+      {"★".repeat(filled)}
+      <span className="off">{"★".repeat(5 - filled)}</span>
+    </span>
   );
 }
 
 /**
- * Expanded call detail: recording, on-demand transcription, and AI evaluation.
- * Everything is lazy — nothing is requested until the row is expanded.
+ * Expanded call detail (skin prototype jr-card): recording, on-demand
+ * transcription, and AI evaluation. Everything is lazy — nothing is requested
+ * until the row is expanded.
  */
 export function CallDetailPanel({
   callId,
@@ -71,7 +76,6 @@ export function CallDetailPanel({
       setTxLoading(false);
       return;
     }
-    // Poll a few times for the result.
     for (let i = 0; i < 6; i++) {
       await new Promise((r) => setTimeout(r, 2500));
       const tx = await fetchTranscription(callId);
@@ -93,77 +97,124 @@ export function CallDetailPanel({
   };
 
   return (
-    <div className="space-y-4 rounded-md border bg-[var(--surface-2)] p-4">
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* Recording */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs font-medium text-muted-foreground">Enregistrement</span>
-        <RecordingPlayer callId={callId} status={recordingStatus} />
-      </div>
-
-      {/* Transcript */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <FileText className="h-3.5 w-3.5" /> Transcription
-          </span>
-          {transcript.status !== "done" && (
-            <button
-              type="button"
-              onClick={transcribe}
-              disabled={txLoading || recordingStatus === "none"}
-              className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
-            >
-              {txLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-              {txLoading ? "En cours…" : "Transcrire"}
-            </button>
-          )}
+      {recordingStatus === "none" ? (
+        <div className="jr-norec">
+          <FileText className="ico-lg" />
+          Aucun enregistrement pour cet appel.
         </div>
-        {transcript.status === "done" && transcript.full_text ? (
-          <p className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border bg-card p-3 text-sm">
-            {transcript.full_text}
-          </p>
-        ) : transcript.status === "pending" || txLoading ? (
-          <p className="text-xs text-muted-foreground">Transcription en cours…</p>
-        ) : (
-          <p className="text-xs text-muted-foreground">Pas encore transcrit.</p>
-        )}
-      </div>
+      ) : (
+        <RecordingPlayer callId={callId} status={recordingStatus} variant="jr" />
+      )}
 
       {/* AI evaluation */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5" /> Évaluation IA
+      <div className="jr-card ai">
+        <div className="jr-card-hd">
+          <span className="ai-badge">
+            <Sparkles className="ico-sm" />
           </span>
-          <button
-            type="button"
-            onClick={evaluate}
-            disabled={evLoading || transcript.status !== "done"}
-            className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-60"
-            title={transcript.status !== "done" ? "Transcris d'abord l'appel" : undefined}
-          >
-            {evLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            {evaluation ? "Réévaluer" : "Évaluer"}
-          </button>
+          <h3>Évaluation IA</h3>
+          {evaluation && (
+            <span className={`sent ${SENT_CLASS[evaluation.sentiment] ?? "neutre"}`}>
+              {evaluation.sentiment}
+            </span>
+          )}
+          {evaluation && <Stars score={evaluation.score} />}
         </div>
-        {evaluation ? (
-          <div className="space-y-2 rounded-md border bg-card p-3">
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-semibold">{evaluation.score}</span>
-              <span className="text-xs text-muted-foreground">/ 100 · {evaluation.sentiment}</span>
+        <div className="jr-ai-body">
+          {evaluation ? (
+            <>
+              {evaluation.summary && <p className="sum">{evaluation.summary}</p>}
+              <div className="jr-ai-cols">
+                {Object.entries(evaluation.criteria).map(([k, v]) => (
+                  <div key={k} className="jr-ai-col">
+                    <div className="l">{CRITERIA_LABELS[k] ?? k}</div>
+                    <div className="talk-bar">
+                      <i style={{ width: `${v}%` }} />
+                    </div>
+                    <div className="talk-lb">
+                      <span>{v}/100</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  className="btn outline sm"
+                  onClick={evaluate}
+                  disabled={evLoading || transcript.status !== "done"}
+                >
+                  {evLoading && <Loader2 className="ico-sm" style={{ animation: "spin 1s linear infinite" }} />}
+                  Réévaluer
+                </button>
+              </div>
+            </>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>
+                {transcript.status === "done"
+                  ? "Pas encore évalué."
+                  : "Transcris d'abord l'appel pour l'évaluer."}
+              </span>
+              <button
+                type="button"
+                className="btn outline sm"
+                onClick={evaluate}
+                disabled={evLoading || transcript.status !== "done"}
+              >
+                {evLoading && <Loader2 className="ico-sm" style={{ animation: "spin 1s linear infinite" }} />}
+                Évaluer
+              </button>
             </div>
-            <div className="space-y-1">
-              {Object.entries(evaluation.criteria).map(([k, v]) => (
-                <ScoreBar key={k} label={CRITERIA_LABELS[k] ?? k} value={v} />
-              ))}
+          )}
+        </div>
+      </div>
+
+      {/* Transcription */}
+      <div className="jr-card">
+        <div className="jr-card-hd">
+          <FileText className="ico-sm" />
+          <h3>Transcription</h3>
+          <span className="meta">à la demande · Voice Intelligence</span>
+        </div>
+        <div style={{ padding: "4px 16px 16px" }}>
+          {transcript.status === "done" && transcript.full_text ? (
+            <p
+              style={{
+                margin: 0,
+                maxHeight: 200,
+                overflowY: "auto",
+                whiteSpace: "pre-wrap",
+                fontSize: 13,
+                lineHeight: 1.55,
+                color: "var(--text)",
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: 10,
+                padding: "10px 12px",
+              }}
+            >
+              {transcript.full_text}
+            </p>
+          ) : transcript.status === "pending" || txLoading ? (
+            <p style={{ fontSize: 12.5, color: "var(--text-3)", margin: 0 }}>Transcription en cours…</p>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 12.5, color: "var(--text-3)" }}>Pas encore transcrit.</span>
+              <button
+                type="button"
+                className="btn outline sm"
+                onClick={transcribe}
+                disabled={txLoading || recordingStatus === "none"}
+              >
+                {txLoading && <Loader2 className="ico-sm" style={{ animation: "spin 1s linear infinite" }} />}
+                Transcrire
+              </button>
             </div>
-            {evaluation.summary && (
-              <p className="text-sm text-muted-foreground">{evaluation.summary}</p>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">Pas encore évalué.</p>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

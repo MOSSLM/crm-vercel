@@ -93,7 +93,7 @@ export function VoicemailList() {
                 </div>
 
                 <div className="vm-player">
-                  <RecordingPlayer callId={v.id} status={v.recording_status} />
+                  <RecordingPlayer callId={v.id} status={v.recording_status} variant="vm" />
                 </div>
 
                 {v.transcript_status === "done" && (
