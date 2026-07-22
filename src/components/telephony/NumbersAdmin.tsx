@@ -27,7 +27,13 @@ interface Extension {
 }
 
 const RECORD_MODES = ["all", "optional", "off"];
+const TYPE_CLASS: Record<string, string> = {
+  landline: "local",
+  mobile: "mobile",
+  tollfree: "tollfree",
+};
 
+/** Numbers & extensions admin (skin prototype nm-*). */
 export function NumbersAdmin() {
   const supabase = createClient();
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -147,211 +153,160 @@ export function NumbersAdmin() {
     await load();
   };
 
-  if (loading) return <p className="text-sm text-muted-foreground">Chargement…</p>;
+  if (loading)
+    return (
+      <div className="tel-skin">
+        <p style={{ fontSize: 13, color: "var(--text-3)" }}>Chargement…</p>
+      </div>
+    );
+
+  const NUM_COLS = "1.4fr 90px 90px 1.3fr 40px";
+  const EXT_COLS = "1.4fr 90px 130px 120px 60px 40px";
 
   return (
-    <div className="space-y-8">
-      {/* Numbers */}
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Numéros</h2>
-          <button
-            type="button"
-            onClick={sync}
-            disabled={syncing}
-            className="inline-flex items-center gap-1 rounded-md border px-3 py-1.5 text-sm hover:bg-muted disabled:opacity-60"
+    <div className="tel-skin">
+      <div className="nm-page">
+        {/* Numbers */}
+        <section className="adm-section">
+          <div className="page-hd">
+            <div>
+              <h1>Numéros</h1>
+              <div className="sub">Numéros du fournisseur, attribution aux agents.</div>
+            </div>
+            <div className="actions">
+              <button type="button" className="btn subtle sm" onClick={sync} disabled={syncing}>
+                {syncing ? (
+                  <RefreshCw className="ico-sm" style={{ animation: "spin 1s linear infinite" }} />
+                ) : (
+                  <RefreshCw className="ico-sm" />
+                )}
+                Synchroniser
+              </button>
+            </div>
+          </div>
+
+          {/* Manual add */}
+          <div
+            className="card"
+            style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: 12, padding: 14, marginBottom: 14 }}
           >
-            {syncing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Synchroniser
-          </button>
-        </div>
+            <div className="fld">
+              <span className="fld-lb">Numéro (E.164)</span>
+              <input
+                value={newNum.e164}
+                onChange={(e) => setNewNum((s) => ({ ...s, e164: e.target.value }))}
+                placeholder="+33…"
+              />
+            </div>
+            <div className="fld">
+              <span className="fld-lb">Libellé</span>
+              <input
+                value={newNum.label}
+                onChange={(e) => setNewNum((s) => ({ ...s, label: e.target.value }))}
+              />
+            </div>
+            <div className="fld">
+              <span className="fld-lb">Type</span>
+              <select
+                value={newNum.number_type}
+                onChange={(e) => setNewNum((s) => ({ ...s, number_type: e.target.value }))}
+              >
+                <option value="unknown">—</option>
+                <option value="landline">Fixe</option>
+                <option value="mobile">Mobile</option>
+                <option value="tollfree">Numéro vert</option>
+              </select>
+            </div>
+            <button type="button" className="btn accent sm" onClick={addNumber}>
+              <Plus className="ico-sm" /> Ajouter
+            </button>
+          </div>
 
-        {/* Manual add (useful before/without a synced number) */}
-        <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3">
-          <div>
-            <label className="block text-xs text-muted-foreground">Numéro (E.164)</label>
-            <input
-              value={newNum.e164}
-              onChange={(e) => setNewNum((s) => ({ ...s, e164: e.target.value }))}
-              placeholder="+33…"
-              className="rounded-md border bg-background px-2 py-1 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground">Libellé</label>
-            <input
-              value={newNum.label}
-              onChange={(e) => setNewNum((s) => ({ ...s, label: e.target.value }))}
-              className="rounded-md border bg-background px-2 py-1 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground">Type</label>
-            <select
-              value={newNum.number_type}
-              onChange={(e) => setNewNum((s) => ({ ...s, number_type: e.target.value }))}
-              className="rounded-md border bg-background px-2 py-1 text-sm"
-            >
-              <option value="unknown">—</option>
-              <option value="landline">Fixe</option>
-              <option value="mobile">Mobile</option>
-              <option value="tollfree">Numéro vert</option>
-            </select>
-          </div>
-          <button
-            type="button"
-            onClick={addNumber}
-            className="inline-flex items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
-          >
-            <Plus className="h-4 w-4" /> Ajouter un numéro
-          </button>
-        </div>
-
-        {numbers.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Aucun numéro. Cliquez sur « Synchroniser » pour importer depuis le fournisseur.
-          </p>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border">
-            <table className="w-full min-w-[560px] text-sm">
-              <thead>
-                <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                  <th className="px-3 py-2 font-medium">Numéro</th>
-                  <th className="px-3 py-2 font-medium">Type</th>
-                  <th className="px-3 py-2 font-medium">Statut</th>
-                  <th className="px-3 py-2 font-medium">Agent attribué</th>
-                  <th className="px-3 py-2 font-medium" />
-                </tr>
-              </thead>
-              <tbody>
-                {numbers.map((n) => (
-                  <tr key={n.id} className="border-b last:border-0">
-                    <td className="px-3 py-2 font-medium">{n.e164}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{n.number_type}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{n.status}</td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={n.assigned_agent_id ?? ""}
-                        onChange={(e) => assignNumber(n.id, e.target.value)}
-                        className="rounded-md border bg-background px-2 py-1 text-sm"
-                      >
-                        <option value="">Non attribué</option>
-                        {agents.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.label}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => deleteNumber(n.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                        aria-label="Supprimer le numéro"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/* Extensions */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Extensions / SIP par agent</h2>
-        <p className="text-sm text-muted-foreground">
-          L’extension pilote le softphone (clé WebRTC) et l’enregistrement de l’agent.
-        </p>
-        <div className="overflow-x-auto rounded-lg border">
-          <table className="w-full min-w-[640px] text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2 font-medium">Agent</th>
-                <th className="px-3 py-2 font-medium">Extension</th>
-                <th className="px-3 py-2 font-medium">SIP</th>
-                <th className="px-3 py-2 font-medium">Enregistrement</th>
-                <th className="px-3 py-2 font-medium">Actif</th>
-                <th className="px-3 py-2 font-medium" />
-              </tr>
-            </thead>
-            <tbody>
-              {extensions.map((x) => (
-                <tr key={x.id} className="border-b last:border-0">
-                  <td className="px-3 py-2">
+          {numbers.length === 0 ? (
+            <p className="adm-note">
+              Aucun numéro. Cliquez sur « Synchroniser » pour importer depuis le fournisseur.
+            </p>
+          ) : (
+            <div className="adm-tbl">
+              <div className="nm-th" style={{ gridTemplateColumns: NUM_COLS }}>
+                <span>Numéro</span>
+                <span>Type</span>
+                <span>Statut</span>
+                <span>Agent attribué</span>
+                <span />
+              </div>
+              {numbers.map((n) => (
+                <div key={n.id} className="nm-tr" style={{ gridTemplateColumns: NUM_COLS }}>
+                  <div className="nm-num">
+                    <span className="e">{n.e164}</span>
+                  </div>
+                  <div>
+                    {TYPE_CLASS[n.number_type] ? (
+                      <span className={`nm-type ${TYPE_CLASS[n.number_type]}`}>{n.number_type}</span>
+                    ) : (
+                      <span style={{ fontSize: 11, color: "var(--text-4)" }}>—</span>
+                    )}
+                  </div>
+                  <div>
+                    <span className={`pill ${n.status === "active" ? "ok" : ""}`}>{n.status}</span>
+                  </div>
+                  <div>
                     <select
-                      value={x.agent_id ?? ""}
-                      onChange={(e) => updateExt(x.id, { agent_id: e.target.value || null })}
-                      className="rounded-md border bg-background px-2 py-1 text-sm"
+                      value={n.assigned_agent_id ?? ""}
+                      onChange={(e) => assignNumber(n.id, e.target.value)}
+                      style={{ maxWidth: "100%" }}
                     >
-                      <option value="">—</option>
+                      <option value="">Non attribué</option>
                       {agents.map((a) => (
                         <option key={a.id} value={a.id}>
                           {a.label}
                         </option>
                       ))}
                     </select>
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={x.extension}
-                      onChange={(e) => editExtLocal(x.id, { extension: e.target.value })}
-                      onBlur={(e) => persistExt(x.id, { extension: e.target.value })}
-                      className="w-24 rounded-md border bg-background px-2 py-1 text-sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      value={x.sip ?? ""}
-                      onChange={(e) => editExtLocal(x.id, { sip: e.target.value })}
-                      onBlur={(e) => persistExt(x.id, { sip: e.target.value.trim() || null })}
-                      placeholder="ex. 420031"
-                      className="w-28 rounded-md border bg-background px-2 py-1 text-sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <select
-                      value={x.record_mode}
-                      onChange={(e) => updateExt(x.id, { record_mode: e.target.value })}
-                      className="rounded-md border bg-background px-2 py-1 text-sm"
-                    >
-                      {RECORD_MODES.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={x.active}
-                      onChange={(e) => updateExt(x.id, { active: e.target.checked })}
-                    />
-                  </td>
-                  <td className="px-3 py-2">
+                  </div>
+                  <div className="nm-actions">
                     <button
                       type="button"
-                      onClick={() => deleteExt(x.id)}
-                      className="text-muted-foreground hover:text-destructive"
-                      aria-label="Supprimer l'extension"
+                      className="btn ghost sm icon"
+                      onClick={() => deleteNumber(n.id)}
+                      aria-label="Supprimer le numéro"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="ico-sm" />
                     </button>
-                  </td>
-                </tr>
+                  </div>
+                </div>
               ))}
-              {/* Add row */}
-              <tr className="bg-muted/20">
-                <td className="px-3 py-2">
+            </div>
+          )}
+        </section>
+
+        {/* Extensions */}
+        <section className="adm-section">
+          <div className="page-hd">
+            <div>
+              <h1>Extensions / SIP par agent</h1>
+              <div className="sub">
+                L&apos;extension pilote le softphone (clé WebRTC) et l&apos;enregistrement de l&apos;agent.
+              </div>
+            </div>
+          </div>
+
+          <div className="adm-tbl">
+            <div className="nm-ag-th" style={{ gridTemplateColumns: EXT_COLS }}>
+              <span>Agent</span>
+              <span>Extension</span>
+              <span>SIP</span>
+              <span>Enregistrement</span>
+              <span>Actif</span>
+              <span />
+            </div>
+            {extensions.map((x) => (
+              <div key={x.id} className="nm-ag-row" style={{ gridTemplateColumns: EXT_COLS }}>
+                <div>
                   <select
-                    value={newExt.agent_id}
-                    onChange={(e) => setNewExt((s) => ({ ...s, agent_id: e.target.value }))}
-                    className="rounded-md border bg-background px-2 py-1 text-sm"
+                    value={x.agent_id ?? ""}
+                    onChange={(e) => updateExt(x.id, { agent_id: e.target.value || null })}
+                    style={{ maxWidth: "100%" }}
                   >
                     <option value="">—</option>
                     {agents.map((a) => (
@@ -360,28 +315,29 @@ export function NumbersAdmin() {
                       </option>
                     ))}
                   </select>
-                </td>
-                <td className="px-3 py-2">
+                </div>
+                <div>
                   <input
-                    value={newExt.extension}
-                    onChange={(e) => setNewExt((s) => ({ ...s, extension: e.target.value }))}
-                    placeholder="100"
-                    className="w-20 rounded-md border bg-background px-2 py-1 text-sm"
+                    value={x.extension}
+                    onChange={(e) => editExtLocal(x.id, { extension: e.target.value })}
+                    onBlur={(e) => persistExt(x.id, { extension: e.target.value })}
+                    style={{ width: "100%" }}
                   />
-                </td>
-                <td className="px-3 py-2">
+                </div>
+                <div>
                   <input
-                    value={newExt.sip}
-                    onChange={(e) => setNewExt((s) => ({ ...s, sip: e.target.value }))}
-                    placeholder="SIP login"
-                    className="w-28 rounded-md border bg-background px-2 py-1 text-sm"
+                    value={x.sip ?? ""}
+                    onChange={(e) => editExtLocal(x.id, { sip: e.target.value })}
+                    onBlur={(e) => persistExt(x.id, { sip: e.target.value.trim() || null })}
+                    placeholder="ex. 420031"
+                    style={{ width: "100%" }}
                   />
-                </td>
-                <td className="px-3 py-2">
+                </div>
+                <div>
                   <select
-                    value={newExt.record_mode}
-                    onChange={(e) => setNewExt((s) => ({ ...s, record_mode: e.target.value }))}
-                    className="rounded-md border bg-background px-2 py-1 text-sm"
+                    value={x.record_mode}
+                    onChange={(e) => updateExt(x.id, { record_mode: e.target.value })}
+                    style={{ maxWidth: "100%" }}
                   >
                     {RECORD_MODES.map((m) => (
                       <option key={m} value={m}>
@@ -389,21 +345,85 @@ export function NumbersAdmin() {
                       </option>
                     ))}
                   </select>
-                </td>
-                <td className="px-3 py-2">
+                </div>
+                <div>
+                  <input
+                    type="checkbox"
+                    checked={x.active}
+                    onChange={(e) => updateExt(x.id, { active: e.target.checked })}
+                  />
+                </div>
+                <div className="nm-actions">
                   <button
                     type="button"
-                    onClick={addExt}
-                    className="inline-flex items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs text-primary-foreground"
+                    className="btn ghost sm icon"
+                    onClick={() => deleteExt(x.id)}
+                    aria-label="Supprimer l'extension"
                   >
-                    <Plus className="h-3.5 w-3.5" /> Ajouter
+                    <Trash2 className="ico-sm" />
                   </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
+                </div>
+              </div>
+            ))}
+
+            {/* Add row */}
+            <div
+              className="nm-ag-row"
+              style={{ gridTemplateColumns: EXT_COLS, background: "var(--surface-2)" }}
+            >
+              <div>
+                <select
+                  value={newExt.agent_id}
+                  onChange={(e) => setNewExt((s) => ({ ...s, agent_id: e.target.value }))}
+                  style={{ maxWidth: "100%" }}
+                >
+                  <option value="">—</option>
+                  {agents.map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <input
+                  value={newExt.extension}
+                  onChange={(e) => setNewExt((s) => ({ ...s, extension: e.target.value }))}
+                  placeholder="100"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <input
+                  value={newExt.sip}
+                  onChange={(e) => setNewExt((s) => ({ ...s, sip: e.target.value }))}
+                  placeholder="SIP login"
+                  style={{ width: "100%" }}
+                />
+              </div>
+              <div>
+                <select
+                  value={newExt.record_mode}
+                  onChange={(e) => setNewExt((s) => ({ ...s, record_mode: e.target.value }))}
+                  style={{ maxWidth: "100%" }}
+                >
+                  {RECORD_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div />
+              <div className="nm-actions">
+                <button type="button" className="btn accent sm icon" onClick={addExt} aria-label="Ajouter">
+                  <Plus className="ico-sm" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

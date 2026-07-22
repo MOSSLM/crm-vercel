@@ -2848,3 +2848,21 @@
   background: var(--chrome-bg) !important; color: var(--chrome-fg) !important;
 }
 
+/* ==== Generic form controls (admin forms) ==== */
+/* Low-specificity so component rules (.composer-input textarea, .ck-notes
+   textarea, …) always win over these. */
+.tel-skin input:not([type="checkbox"]):not([type="radio"]),
+.tel-skin select{
+  height: 30px; padding: 0 9px; border: 1px solid var(--border-2);
+  background: var(--surface); color: var(--text); border-radius: 7px;
+  font: inherit; font-size: 12.5px; outline: none;
+}
+.tel-skin input:not([type="checkbox"]):not([type="radio"]):focus,
+.tel-skin select:focus{ border-color: var(--text); box-shadow: 0 0 0 3px var(--hover); }
+.tel-skin input::placeholder{ color: var(--text-4); }
+.tel-skin .fld{ display: flex; flex-direction: column; gap: 4px; }
+.tel-skin .fld-lb{ font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-4); }
+.tel-skin .adm-section{ margin-bottom: 26px; }
+.tel-skin .adm-tbl{ background: var(--surface); border: 1px solid var(--border-2); border-radius: 14px; overflow: hidden; }
+.tel-skin .adm-note{ font-size: 12px; color: var(--text-3); margin: 2px 0 10px; }
+
