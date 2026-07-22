@@ -169,6 +169,10 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-pop-backdrop{position:fixed;inset:0;z-index:90;}
 .cd-pop{position:absolute;z-index:100;background:var(--surface);border:1px solid var(--border-2);border-radius:11px;box-shadow:var(--shadow-pop);overflow:hidden;}
 .cd-company-pop{top:36px;right:0;width:300px;padding:6px;}
+.cd-company-search{width:100%;box-sizing:border-box;margin:0 0 6px;height:30px;padding:0 9px;border:1px solid var(--border-2);border-radius:8px;background:var(--surface-2);color:var(--text);font:inherit;font-size:12px;}
+.cd-company-search::placeholder{color:var(--text-4);}
+.cd-company-search:focus{outline:none;border-color:var(--accent-tint-2);}
+.cd-company-list{max-height:280px;overflow-y:auto;}
 .cd-pop-hd{font-size:10px;font-weight:600;color:var(--text-4);text-transform:uppercase;letter-spacing:.07em;padding:7px 8px 6px;}
 .cd-company-row{appearance:none;border:0;background:transparent;width:100%;padding:7px 8px;border-radius:7px;display:flex;align-items:center;gap:9px;text-align:left;}
 .cd-company-row:hover{background:var(--hover);}

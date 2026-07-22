@@ -31,6 +31,15 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
   // column used to blank shared_assets → no CSS in the editor).
   if (sErr || !site) return jsonError(sErr?.message ?? "Site introuvable", sErr ? 500 : 404);
 
+  // A company-linked demo auto-applies its company in the builder — surface the
+  // company name so the editor can select it without loading the full list.
+  const enterpriseId = (site as { enterprise_id?: number | null } | null)?.enterprise_id ?? null;
+  let enterpriseName: string | null = null;
+  if (enterpriseId != null) {
+    const { data: ent } = await supabase.from("entreprises").select("name").eq("id", enterpriseId).maybeSingle();
+    enterpriseName = (ent as { name?: string } | null)?.name ?? null;
+  }
+
   const sharedAssets = (site as { shared_assets?: Record<string, unknown> }).shared_assets ?? {};
   const sitemap = ((site as { sitemap?: SitemapPage[] } | null)?.sitemap ?? []) as SitemapPage[];
   const tagBySlug = new Map(sitemap.map((p) => [p.slug, p.service_tag ?? null]));
@@ -90,7 +99,8 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
     // Discriminators for the editor's contextual action button:
     // a template offers "Créer un template", a demo/project offers "Publier".
     isTemplate: (site as { is_template?: boolean | null } | null)?.is_template ?? false,
-    enterpriseId: (site as { enterprise_id?: number | null } | null)?.enterprise_id ?? null,
+    enterpriseId,
+    enterpriseName,
     publishedSubdomain: (site as { published_subdomain?: string | null } | null)?.published_subdomain ?? null,
   });
 });

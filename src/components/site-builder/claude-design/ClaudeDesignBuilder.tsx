@@ -45,6 +45,7 @@ interface BoardData {
   pages: PageData[];
   isTemplate: boolean;
   enterpriseId: number | null;
+  enterpriseName?: string | null;
   publishedSubdomain: string | null;
 }
 interface Company { id: number; nom: string; pret_pour_lm?: boolean }
@@ -116,14 +117,24 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
       .catch(() => toast.error("Liste des entreprises indisponible"));
   }, [companies.length]);
 
-  const selectCompany = async (c: Company | null) => {
+  const selectCompany = React.useCallback(async (c: Company | null) => {
     setCompany(c);
     if (!c) { setCompanyVars(null); return; }
     try {
       const res = await authedFetch(`/api/site-builder/variables?enterprise=${c.id}&site=${siteId}`);
       setCompanyVars(res.ok ? ((await res.json()) as Record<string, string>) : null);
     } catch { setCompanyVars(null); }
-  };
+  }, [siteId]);
+
+  // Company-linked demo (not a template): auto-apply its company so the preview
+  // shows that company's data from the start — no manual "Tester" pick, and no
+  // risk of previewing the wrong company. The picker is hidden in this mode.
+  const linkedEnterpriseId = data && !data.isTemplate ? data.enterpriseId : null;
+  const linkedEnterpriseName = data?.enterpriseName ?? data?.name ?? "";
+  React.useEffect(() => {
+    if (linkedEnterpriseId == null) return;
+    void selectCompany({ id: linkedEnterpriseId, nom: linkedEnterpriseName });
+  }, [linkedEnterpriseId, linkedEnterpriseName, selectCompany]);
 
   const runPending = React.useCallback(async (key: string) => {
     const fn = pendingFns.current.get(key);
@@ -363,12 +374,16 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           <i />{save === "pending" ? "Enregistrement…" : "Enregistré"}
         </span>
         <div className="cd-grow" />
-        <CompanyPicker
-          company={company}
-          companies={companies}
-          onOpen={ensureCompanies}
-          onPick={selectCompany}
-        />
+        {/* Company picker is a template-only "preview as company" tool. For a
+            real (company-linked) demo the company is fixed and auto-applied. */}
+        {data.isTemplate ? (
+          <CompanyPicker
+            company={company}
+            companies={companies}
+            onOpen={ensureCompanies}
+            onPick={selectCompany}
+          />
+        ) : null}
         <div className="cd-vp-pick">
           <button className={"cd-vp" + (viewport === "desktop" ? " on" : "")} onClick={() => setViewport("desktop")} title="Bureau"><Monitor className="ico-sm" /></button>
           <button className={"cd-vp" + (viewport === "mobile" ? " on" : "")} onClick={() => setViewport("mobile")} title="Mobile"><Smartphone className="ico-sm" /></button>
@@ -504,7 +519,10 @@ function CompanyPicker({ company, companies, onOpen, onPick }: {
   onPick: (c: Company | null) => void;
 }) {
   const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
   const toggle = () => { setOpen((o) => { const n = !o; if (n) onOpen(); return n; }); };
+  const q = query.trim().toLowerCase();
+  const filtered = q ? companies.filter((c) => c.nom.toLowerCase().includes(q)) : companies;
   return (
     <div className="cd-pick-wrap">
       <button className={"cd-company-btn" + (company ? " active" : "")} onClick={toggle}>
@@ -522,20 +540,31 @@ function CompanyPicker({ company, companies, onOpen, onPick }: {
           <div className="cd-pop-backdrop" onClick={() => setOpen(false)} />
           <div className="cd-pop cd-company-pop">
             <div className="cd-pop-hd">Entreprises qualifiées · CRM</div>
+            <input
+              className="cd-company-search"
+              autoFocus
+              placeholder="Rechercher une entreprise…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
             <button className={"cd-company-row" + (!company ? " sel" : "")} onClick={() => { onPick(null); setOpen(false); }}>
               <span className="cd-company-dot ghost" />
               <div className="cd-grow"><b>Données d’exemple</b><span>Affiche les contenus d’origine</span></div>
               {!company ? <Check className="ico-sm" /> : null}
             </button>
-            {companies.length === 0 ? (
-              <div style={{ padding: "10px 8px", fontSize: 11, color: "var(--text-3)" }}>Chargement…</div>
-            ) : companies.map((c) => (
-              <button key={c.id} className={"cd-company-row" + (company?.id === c.id ? " sel" : "")} onClick={() => { onPick(c); setOpen(false); }}>
-                <span className="cd-company-dot" style={{ background: companyColor(c.id) }}>{companyInitials(c.nom)}</span>
-                <div className="cd-grow"><b>{c.nom}</b><span>{c.pret_pour_lm ? "Prêt pour Lead Magnet" : "Qualifiée"}</span></div>
-                {company?.id === c.id ? <Check className="ico-sm" /> : null}
-              </button>
-            ))}
+            <div className="cd-company-list">
+              {companies.length === 0 ? (
+                <div style={{ padding: "10px 8px", fontSize: 11, color: "var(--text-3)" }}>Chargement…</div>
+              ) : filtered.length === 0 ? (
+                <div style={{ padding: "10px 8px", fontSize: 11, color: "var(--text-3)" }}>Aucune entreprise trouvée</div>
+              ) : filtered.map((c) => (
+                <button key={c.id} className={"cd-company-row" + (company?.id === c.id ? " sel" : "")} onClick={() => { onPick(c); setOpen(false); }}>
+                  <span className="cd-company-dot" style={{ background: companyColor(c.id) }}>{companyInitials(c.nom)}</span>
+                  <div className="cd-grow"><b>{c.nom}</b><span>{c.pret_pour_lm ? "Prêt pour Lead Magnet" : "Qualifiée"}</span></div>
+                  {company?.id === c.id ? <Check className="ico-sm" /> : null}
+                </button>
+              ))}
+            </div>
           </div>
         </>
       ) : null}
