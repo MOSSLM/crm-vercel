@@ -2,12 +2,14 @@ import React, { ReactNode } from "react";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AgentSidebar } from "./AgentSidebar";
+import { CallProvider } from "@/components/telephony/CallProvider";
 
 type Props = { children: ReactNode };
 
 export default function AgentPortalLayout({ children }: Props) {
   return (
-    <TooltipProvider>
+    <CallProvider>
+      <TooltipProvider>
       <SidebarProvider
         style={
           {
@@ -30,5 +32,6 @@ export default function AgentPortalLayout({ children }: Props) {
         </div>
       </SidebarProvider>
     </TooltipProvider>
+    </CallProvider>
   );
 }
