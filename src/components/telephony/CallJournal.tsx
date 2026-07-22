@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { Fragment } from "react";
 import {
   PhoneIncoming,
   PhoneOutgoing,
   PhoneMissed,
   ArrowLeftRight,
   RefreshCw,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { fetchCalls, type CallRow, type CallFilters } from "@/lib/telephony/client";
 import { RecordingPlayer } from "./RecordingPlayer";
+import { CallDetailPanel } from "./CallDetailPanel";
 
 function formatDuration(s: number | null): string {
   if (!s || s <= 0) return "—";
@@ -79,6 +83,7 @@ function DispositionBadge({ disposition }: { disposition: string | null }) {
 export function CallJournal({ filters = {} }: { filters?: CallFilters }) {
   const [calls, setCalls] = useState<CallRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const key = JSON.stringify(filters);
   const load = useCallback(async () => {
@@ -126,6 +131,7 @@ export function CallJournal({ filters = {} }: { filters?: CallFilters }) {
         <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
+              <th className="w-8 px-2 py-2" />
               <th className="px-3 py-2 font-medium">Sens</th>
               <th className="px-3 py-2 font-medium">Interlocuteur</th>
               <th className="px-3 py-2 font-medium">État</th>
@@ -135,24 +141,46 @@ export function CallJournal({ filters = {} }: { filters?: CallFilters }) {
             </tr>
           </thead>
           <tbody>
-            {calls.map((c) => (
-              <tr key={c.id} className="border-b last:border-0 hover:bg-muted/30">
-                <td className="px-3 py-2">
-                  <DirectionIcon call={c} />
-                </td>
-                <td className="px-3 py-2 font-medium">{counterpart(c)}</td>
-                <td className="px-3 py-2">
-                  <DispositionBadge disposition={c.disposition} />
-                </td>
-                <td className="px-3 py-2 tabular-nums">{formatDuration(c.duration_sec)}</td>
-                <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
-                  {formatDate(c.started_at ?? c.created_at)}
-                </td>
-                <td className="px-3 py-2">
-                  <RecordingPlayer callId={c.id} status={c.recording_status} />
-                </td>
-              </tr>
-            ))}
+            {calls.map((c) => {
+              const open = expanded === c.id;
+              return (
+                <Fragment key={c.id}>
+                  <tr
+                    className="cursor-pointer border-b last:border-0 hover:bg-muted/30"
+                    onClick={() => setExpanded(open ? null : c.id)}
+                  >
+                    <td className="px-2 py-2 text-muted-foreground">
+                      {open ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </td>
+                    <td className="px-3 py-2">
+                      <DirectionIcon call={c} />
+                    </td>
+                    <td className="px-3 py-2 font-medium">{counterpart(c)}</td>
+                    <td className="px-3 py-2">
+                      <DispositionBadge disposition={c.disposition} />
+                    </td>
+                    <td className="px-3 py-2 tabular-nums">{formatDuration(c.duration_sec)}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
+                      {formatDate(c.started_at ?? c.created_at)}
+                    </td>
+                    <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                      <RecordingPlayer callId={c.id} status={c.recording_status} />
+                    </td>
+                  </tr>
+                  {open && (
+                    <tr className="border-b last:border-0">
+                      <td colSpan={7} className="px-3 py-3">
+                        <CallDetailPanel callId={c.id} recordingStatus={c.recording_status} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -141,3 +141,47 @@ export async function sendSms(payload: {
   if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
   return { ok: true, threadId: json.thread_id };
 }
+
+export interface TranscriptResult {
+  status: "none" | "pending" | "done" | "failed";
+  full_text?: string;
+  lang?: string;
+}
+
+export async function fetchTranscription(callId: string): Promise<TranscriptResult> {
+  const res = await authedFetch(`/api/telephony/transcriptions/${callId}`);
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? json : { status: "none" };
+}
+
+export async function triggerTranscription(
+  callId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await authedFetch(`/api/telephony/transcriptions/${callId}`, { method: "POST" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
+  return { ok: true };
+}
+
+export interface Evaluation {
+  score: number;
+  criteria: Record<string, number>;
+  sentiment: "positif" | "neutre" | "negatif";
+  summary: string;
+  model?: string;
+}
+
+export async function fetchEvaluation(callId: string): Promise<Evaluation | null> {
+  const res = await authedFetch(`/api/telephony/evaluate/${callId}`);
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? (json.evaluation ?? null) : null;
+}
+
+export async function triggerEvaluation(
+  callId: string,
+): Promise<{ ok: boolean; error?: string; evaluation?: Evaluation }> {
+  const res = await authedFetch(`/api/telephony/evaluate/${callId}`, { method: "POST" });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
+  return { ok: true, evaluation: json.evaluation };
+}

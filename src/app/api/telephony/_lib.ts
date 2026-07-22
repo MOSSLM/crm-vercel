@@ -36,3 +36,22 @@ export async function isAdminUser(sc: ServiceClient, userId: string): Promise<bo
     .maybeSingle();
   return data?.role === "admin";
 }
+
+/**
+ * Load a call and decide whether the caller may act on it: admins may act on
+ * any call; an agent may act on their own calls or unassigned inbound ones.
+ */
+export async function loadAccessibleCall(
+  sc: ServiceClient,
+  userId: string,
+  callId: string,
+  columns = "id, agent_id",
+): Promise<{ call: Record<string, unknown> | null; allowed: boolean }> {
+  const { data } = await sc.from("calls").select(columns).eq("id", callId).maybeSingle();
+  const call = (data as unknown as Record<string, unknown> | null) ?? null;
+  if (!call) return { call: null, allowed: false };
+  const admin = await isAdminUser(sc, userId);
+  const agentId = (call.agent_id as string | null) ?? null;
+  const allowed = admin || agentId === userId || agentId === null;
+  return { call, allowed };
+}
