@@ -74,6 +74,20 @@ export const enrichLeadMagnetSchema = z.object({
 export type EnrichLeadMagnetPayload = z.infer<typeof enrichLeadMagnetSchema>;
 
 /**
+ * Telephony — click-to-call via the provider callback (bridges two legs, no
+ * WebRTC). Optional CRM ids let us seed the resulting `calls` row so the record
+ * links are present before the provider's webhooks arrive.
+ */
+export const telephonyCallbackSchema = z.object({
+  to: z.string().min(3).max(32),
+  from: z.string().min(2).max(32).optional(),
+  contact_id: z.string().optional().nullable(),
+  entreprise_id: z.coerce.number().int().positive().optional().nullable(),
+  opportunite_id: z.string().uuid().optional().nullable(),
+});
+export type TelephonyCallbackPayload = z.infer<typeof telephonyCallbackSchema>;
+
+/**
  * Prepares one or more opportunities for (re)enrichment on the Marketing & Web
  * pipeline: ensures each has a `lead_magnet_projects` row and resets it to a
  * re-runnable state. `overwrite` additionally clears the enrichment-derived
