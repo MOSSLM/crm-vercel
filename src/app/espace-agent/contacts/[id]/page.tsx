@@ -11,6 +11,8 @@ import { ArrowLeft, User, Mail, Phone, Building2, Linkedin } from "lucide-react"
 import { one } from "@/components/agent-portal/format";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { CallJournal } from "@/components/telephony/CallJournal";
+import { SmsThread } from "@/components/telephony/SmsThread";
+import { MessageSquare } from "lucide-react";
 
 type Entreprise = { id: number; name: string | null; ville: string | null };
 type Contact = {
@@ -133,6 +135,19 @@ export default function AgentContactDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {contact.tel && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageSquare className="h-4 w-4 text-muted-foreground" /> SMS
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SmsThread to={contact.tel} contactId={contact.id} entrepriseId={contact.entreprise_id} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

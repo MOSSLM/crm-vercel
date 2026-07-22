@@ -98,4 +98,24 @@ describe("zadarma event normalisation", () => {
   it("ignores unknown events", () => {
     expect(normalizeEvent({ event: "NOTIFY_BOGUS" })).toBeNull();
   });
+
+  it("normalises an inbound SMS payload", () => {
+    const ev = normalizeEvent(
+      parseWebhookBody(
+        new URLSearchParams({
+          caller_id: "+33600000000",
+          called_did: "+33100000000",
+          text: "Bonjour",
+          sms_id: "sms-1",
+        }).toString(),
+      ),
+    );
+    expect(ev).toMatchObject({
+      type: "sms_inbound",
+      direction: "inbound",
+      from: "+33600000000",
+      to: "+33100000000",
+      sms: { messageId: "sms-1", body: "Bonjour" },
+    });
+  });
 });

@@ -87,6 +87,26 @@ export const telephonyCallbackSchema = z.object({
 });
 export type TelephonyCallbackPayload = z.infer<typeof telephonyCallbackSchema>;
 
+/** Telephony — send an SMS (optionally linked to a record). */
+export const telephonySmsSendSchema = z.object({
+  to: z.string().min(3).max(32),
+  text: z.string().min(1).max(1000),
+  from: z.string().min(2).max(32).optional(),
+  contact_id: z.string().optional().nullable(),
+  entreprise_id: z.coerce.number().int().positive().optional().nullable(),
+});
+export type TelephonySmsSendPayload = z.infer<typeof telephonySmsSendSchema>;
+
+/** Telephony — SMS messages/threads listing filters. */
+export const telephonySmsQuerySchema = z.object({
+  contact_id: z.string().optional(),
+  entreprise_id: z.coerce.number().int().positive().optional(),
+  counterpart: z.string().optional(),
+  thread_id: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+export type TelephonySmsQuery = z.infer<typeof telephonySmsQuerySchema>;
+
 /** Telephony — call journal / history listing filters. */
 export const telephonyCallsQuerySchema = z.object({
   contact_id: z.string().optional(),

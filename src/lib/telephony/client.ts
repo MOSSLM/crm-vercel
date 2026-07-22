@@ -83,3 +83,61 @@ export async function fetchRecordingUrl(callId: string): Promise<string | null> 
   const json = await res.json().catch(() => ({}));
   return res.ok ? (json.url ?? null) : null;
 }
+
+export interface SmsMessage {
+  id: string;
+  direction: "inbound" | "outbound";
+  from_e164: string | null;
+  to_e164: string | null;
+  body: string;
+  status: string;
+  sent_at: string;
+}
+
+export interface SmsThreadRow {
+  id: string;
+  counterpart_e164: string;
+  contact_id: string | null;
+  entreprise_id: number | null;
+  agent_id: string | null;
+  last_message_at: string | null;
+  last_snippet: string | null;
+  unread: boolean;
+}
+
+export async function fetchSmsMessages(params: {
+  contact_id?: string;
+  entreprise_id?: number;
+  thread_id?: string;
+  counterpart?: string;
+}): Promise<{ threadId: string | null; messages: SmsMessage[] }> {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v != null) qs.set(k, String(v));
+  });
+  const res = await authedFetch(`/api/telephony/sms?${qs.toString()}`);
+  const json = await res.json().catch(() => ({}));
+  return { threadId: json.thread_id ?? null, messages: res.ok ? (json.messages ?? []) : [] };
+}
+
+export async function fetchSmsThreads(): Promise<SmsThreadRow[]> {
+  const res = await authedFetch(`/api/telephony/sms`);
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? (json.threads ?? []) : [];
+}
+
+export async function sendSms(payload: {
+  to: string;
+  text: string;
+  contact_id?: string | null;
+  entreprise_id?: number | null;
+}): Promise<{ ok: boolean; error?: string; threadId?: string }> {
+  const res = await authedFetch(`/api/telephony/sms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { ok: false, error: json.detail ?? json.error ?? `HTTP ${res.status}` };
+  return { ok: true, threadId: json.thread_id };
+}

@@ -18,6 +18,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { getTelephonyProvider, isTelephonyConfigured } from "@/lib/telephony/factory";
 import { ingestCallEvent } from "@/lib/telephony/ingest";
+import { ingestInboundSms } from "@/lib/telephony/sms";
 import type { WebhookRequest } from "@/lib/telephony/core/types";
 
 export const runtime = "nodejs";
@@ -64,6 +65,16 @@ export async function POST(req: Request) {
 
   try {
     const sc = getServiceClient();
+    if (event.type === "sms_inbound") {
+      const threadId = await ingestInboundSms(sc, {
+        from: event.from,
+        to: event.to,
+        body: event.sms?.body ?? "",
+        providerMessageId: event.sms?.messageId,
+        provider: provider.id,
+      });
+      return json({ received: true, threadId });
+    }
     const result = await ingestCallEvent(sc, event, provider.id);
     return json({ received: true, callId: result.callId });
   } catch (e) {

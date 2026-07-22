@@ -18,7 +18,7 @@ export interface IngestResult {
   created: boolean;
 }
 
-interface CustomerMatch {
+export interface CustomerMatch {
   contactId: string | null;
   entrepriseId: number | null;
   agentId: string | null;
@@ -26,7 +26,10 @@ interface CustomerMatch {
 }
 
 /** Fuzzy-match the far-end number to a contact → company → owning agent. */
-async function matchCustomer(sc: SupabaseClient, customerNumber: string): Promise<CustomerMatch> {
+export async function matchCustomer(
+  sc: SupabaseClient,
+  customerNumber: string,
+): Promise<CustomerMatch> {
   const empty: CustomerMatch = {
     contactId: null,
     entrepriseId: null,

@@ -28,10 +28,21 @@ export function parseWebhookBody(rawBody: string): ZadarmaWebhookPayload {
   return out;
 }
 
+/** True when the payload looks like an inbound SMS rather than a call event. */
+export function isInboundSms(payload: ZadarmaWebhookPayload): boolean {
+  return !isZadarmaEvent(payload.event) && (payload.text != null || payload.message != null);
+}
+
 /** The exact string Zadarma signs, keyed by event type. */
 export function signatureStringFor(payload: ZadarmaWebhookPayload): string | null {
   const event = payload.event;
-  if (!isZadarmaEvent(event)) return null;
+  if (!isZadarmaEvent(event)) {
+    // Inbound SMS — best-effort signature string; CONFIRM against the live spec.
+    if (isInboundSms(payload)) {
+      return `${payload.caller_id ?? ""}${payload.called_did ?? ""}${payload.text ?? payload.message ?? ""}`;
+    }
+    return null;
+  }
   const p = payload;
   switch (event as ZadarmaEvent) {
     case "NOTIFY_START":
@@ -89,6 +100,21 @@ const DIRECTION_BY_EVENT: Record<ZadarmaEvent, CallDirection> = {
 /** Translate a raw Zadarma payload into our normalised `CallEvent`. */
 export function normalizeEvent(payload: ZadarmaWebhookPayload): CallEvent | null {
   const event = payload.event;
+
+  // Inbound SMS arrives on the same notification URL; CONFIRM field names.
+  if (isInboundSms(payload)) {
+    const messageId = payload.sms_id ?? payload.id ?? "";
+    return {
+      type: "sms_inbound",
+      providerCallId: messageId,
+      direction: "inbound",
+      from: payload.caller_id ?? payload.from ?? "",
+      to: payload.called_did ?? payload.to ?? "",
+      sms: { messageId, body: payload.text ?? payload.message ?? "" },
+      raw: payload,
+    };
+  }
+
   if (!isZadarmaEvent(event)) return null;
   const ev = event as ZadarmaEvent;
 
