@@ -25,8 +25,9 @@
   --font-ui: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --font-serif: "Instrument Serif", "Times New Roman", serif;
-  /* Compact fixed columns — roughly half the demo width; height unchanged. */
-  --rowh: 190px; --colw: 158px;
+  /* Fixed columns, middle ground: narrower than the stretched original but
+     roomy enough for the cards; height unchanged. */
+  --rowh: 216px; --colw: 200px;
 
   display: flex;
   flex-direction: column;
