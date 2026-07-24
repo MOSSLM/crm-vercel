@@ -16,6 +16,7 @@ import { useAuth } from "@/components/AuthContext";
 import { supabase } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { placeCallback } from "@/lib/telephony/client";
+import { toDialDigits, toE164 } from "@/lib/telephony/phone";
 import { ZadarmaWidget, dialViaWidget } from "./ZadarmaWidget";
 import { SoftphonePanel } from "./SoftphonePanel";
 
@@ -101,19 +102,26 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const dial = useCallback(
     async (input: DialInput) => {
-      const number = input.to?.trim();
-      if (!number) return;
+      const raw = input.to?.trim();
+      if (!raw) return;
+
+      // Zadarma only routes fully-international numbers, so a French national
+      // number (06…) must become +33… before it leaves the browser. The widget
+      // wants the plain international form (33…), the callback API wants E.164.
+      const widgetNumber = toDialDigits(raw);
+      const e164 = toE164(raw);
+      if (!widgetNumber) return;
 
       // Browser mode: dial through the loaded Zadarma widget when available.
-      if (profile?.call_mode === "browser" && dialViaWidget(number)) {
-        toast.success("Appel en cours…", { description: number });
+      if (profile?.call_mode === "browser" && dialViaWidget(widgetNumber)) {
+        toast.success("Appel en cours…", { description: e164 });
         return;
       }
 
       // Callback mode (or fallback): server bridges the two legs.
       setCalling(true);
       const res = await placeCallback({
-        to: number,
+        to: e164,
         contact_id: input.contactId ?? null,
         entreprise_id: input.entrepriseId ?? null,
         opportunite_id: input.opportuniteId ?? null,
