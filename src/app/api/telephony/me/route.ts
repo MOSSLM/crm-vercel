@@ -9,7 +9,7 @@
  */
 
 import { withAuth } from "@/app/api/_lib/with-auth";
-import { json } from "@/app/api/_lib/respond";
+import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { telephonyMyExtensionSchema, type TelephonyMyExtensionPayload } from "@/app/api/_lib/schemas";
 import { isTelephonyConfigured } from "@/lib/telephony/factory";
@@ -64,10 +64,25 @@ export const POST = withAuth<TelephonyMyExtensionPayload>(
     };
     if (body.call_mode) patch.call_mode = body.call_mode;
 
-    if (existing?.id) {
-      await sc.from("phone_extensions").update(patch).eq("id", existing.id);
-    } else {
-      await sc.from("phone_extensions").insert(patch);
+    const { error } = existing?.id
+      ? await sc.from("phone_extensions").update(patch).eq("id", existing.id)
+      : await sc.from("phone_extensions").insert(patch);
+
+    if (error) {
+      // The most common failure is the unique (provider, extension) constraint:
+      // another agent already owns this SIP/extension. Surface it instead of
+      // reporting a phantom success — otherwise the widget never mints a key.
+      const conflict = error.code === "23505";
+      return jsonError(
+        conflict ? "extension_taken" : "save_failed",
+        conflict ? 409 : 500,
+        {
+          detail: conflict
+            ? `Le login SIP « ${extension} » est déjà attribué à un autre agent. Utilise une extension PBX distincte (ex. 580453-100).`
+            : error.message,
+        },
+        cors,
+      );
     }
 
     return json({ ok: true, sip, extension }, { headers: cors });

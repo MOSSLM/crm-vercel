@@ -89,7 +89,15 @@ export function NumbersAdmin() {
   const updateExt = async (id: string, patch: Partial<Extension>) => {
     setExtensions((es) => es.map((e) => (e.id === id ? { ...e, ...patch } : e)));
     const { error } = await supabase.from("phone_extensions").update(patch).eq("id", id);
-    if (error) toast.error("Mise à jour impossible.");
+    if (error) {
+      toast.error("Mise à jour impossible", {
+        description:
+          error.code === "23505"
+            ? "Cette extension / ce login SIP est déjà utilisé par une autre ligne."
+            : error.message,
+      });
+      await load();
+    }
   };
 
   const addExt = async () => {
@@ -113,7 +121,15 @@ export function NumbersAdmin() {
 
   const persistExt = async (id: string, patch: Partial<Extension>) => {
     const { error } = await supabase.from("phone_extensions").update(patch).eq("id", id);
-    if (error) toast.error("Mise à jour impossible.");
+    if (error) {
+      toast.error("Mise à jour impossible", {
+        description:
+          error.code === "23505"
+            ? "Cette extension / ce login SIP est déjà utilisé par une autre ligne."
+            : error.message,
+      });
+      await load();
+    }
   };
 
   const deleteExt = async (id: string) => {
