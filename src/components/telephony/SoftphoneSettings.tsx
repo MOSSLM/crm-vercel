@@ -236,6 +236,12 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
                 si aucun numéro n&apos;est actif, teste avec un appel <strong>interne</strong>. Pense
                 aussi à <strong>autoriser le micro</strong> du navigateur sur ce domaine.
               </p>
+              <p style={{ margin: 0 }}>
+                Zadarma ne route que les numéros au <strong>format international</strong>. Depuis le
+                CRM, les numéros nationaux (ex. <code>06&nbsp;46&nbsp;04&nbsp;28&nbsp;76</code>) sont
+                convertis automatiquement en <code>+33…</code>. Si tu composes directement dans le
+                widget, saisis le numéro en international (<code>+33…</code>) et non en <code>0…</code>.
+              </p>
               {domainRegistered === false && !isAdmin && (
                 <p style={{ margin: 0 }}>Demande à un admin d&apos;activer le domaine {host}.</p>
               )}
