@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
   Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
-  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff,
+  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff, FileArchive,
 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
@@ -25,6 +25,7 @@ import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
 import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
 import { MissingImagesPanel } from "./MissingImagesPanel";
+import { UpdateTemplatePagesDialog } from "./UpdateTemplatePagesDialog";
 
 interface PageData {
   slug: string;
@@ -82,6 +83,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [leftTab, setLeftTab] = React.useState<LeftTab>("theme");
   const [viewport, setViewport] = React.useState<Viewport>("desktop");
   const [save, setSave] = React.useState<SaveState>("saved");
+  const [importPagesOpen, setImportPagesOpen] = React.useState(false);
   const [companies, setCompanies] = React.useState<Company[]>([]);
   const [company, setCompany] = React.useState<Company | null>(null);
   const [companyVars, setCompanyVars] = React.useState<Record<string, string> | null>(null);
@@ -420,6 +422,15 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
             </a>
           ) : null}
           {data.isTemplate ? (
+            <button
+              className="cd-btn outline"
+              onClick={() => setImportPagesOpen(true)}
+              title="Importer certaines pages d’un .zip sans écraser les autres pages ni leurs photos"
+            >
+              <FileArchive className="ico-sm" />Importer des pages
+            </button>
+          ) : null}
+          {data.isTemplate ? (
             <button className="cd-btn accent" onClick={handleCreateTemplate}><CopyPlus className="ico-sm" />Créer un template</button>
           ) : (
             <button className="cd-btn accent" onClick={handlePublish} disabled={publishing}>
@@ -507,6 +518,12 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           <VariableBrowser siteId={siteId} company={company} companyVars={companyVars} onRetokenised={load} />
         </aside>
       </div>
+
+      <UpdateTemplatePagesDialog
+        template={importPagesOpen ? { id: siteId, name: data.name } : null}
+        onClose={() => setImportPagesOpen(false)}
+        onDone={load}
+      />
     </div>
   );
 }
