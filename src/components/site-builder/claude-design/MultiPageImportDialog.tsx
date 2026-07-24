@@ -11,24 +11,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authedFetch } from "@/utils/authedFetch";
 import { parseTemplateBundle, type BundleInputFile } from "@/lib/site-builder/claude-design/parse-template-bundle";
-import { rewriteAssets, rewriteCrossLinks, dropLocalAssetRefs } from "@/lib/site-builder/claude-design/rewrite-asset-paths";
-import {
-  detectBracketTokens,
-  defaultMappingFromTokens,
-  applyBracketTokens,
-} from "@/lib/site-builder/claude-design/bracket-tokens";
+import { rewriteAssets } from "@/lib/site-builder/claude-design/rewrite-asset-paths";
+import { buildProcessedPages, sharedJsFromBundle, refPath } from "@/lib/site-builder/claude-design/build-import-pages";
 import { buildTweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImported?: () => void;
-}
-
-/** template-relative ref path used in the HTML (e.g. "images/hero.jpg"). */
-function refPath(path: string): string {
-  const i = path.indexOf("images/");
-  return i >= 0 ? path.slice(i) : path.replace(/^.*\//, "");
 }
 
 /**
@@ -86,45 +76,13 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       }
 
       setProgress("Préparation des pages…");
-      const rw = (js: string) => rewriteAssets(js, urlByPath);
-      const sharedCss = rw(bundle.sharedCss);
-
-      // Split the design's runtime JS: a script the index page loads, or that ≥2
-      // pages load, is SHARED (site.js); a script only one non-index page loads is
-      // that PAGE's (service-clim.js). Contents get the same image-path rewrite.
-      const refCount = new Map<string, number>();
-      for (const p of bundle.pages) for (const n of p.localScriptRefs) refCount.set(n, (refCount.get(n) ?? 0) + 1);
-      const indexRefs = new Set(bundle.pages.find((p) => p.slug === "/")?.localScriptRefs ?? []);
-      const isShared = (n: string) => indexRefs.has(n) || (refCount.get(n) ?? 0) >= 2;
-      const sharedJs = [...new Set(bundle.pages.flatMap((p) => p.localScriptRefs).filter(isShared))]
-        .map((n) => bundle.jsByName[n])
-        .filter(Boolean)
-        .map(rw)
-        .join("\n;\n");
+      const sharedCss = rewriteAssets(bundle.sharedCss, urlByPath);
+      const sharedJs = sharedJsFromBundle(bundle, urlByPath);
       const scriptLinks = bundle.scriptLinks;
 
-      // Per-page: rewrite assets + cross-links + drop local refs → sourceHtml.
-      const sources = bundle.pages.map((p) => ({
-        page: p,
-        sourceHtml: dropLocalAssetRefs(rewriteCrossLinks(rewriteAssets(p.html, urlByPath))),
-      }));
-
-      // Default bracket mapping across all pages, then tokenise each.
-      const allTokens = detectBracketTokens(sources.map((s) => s.sourceHtml).join("\n"));
-      const mapping = defaultMappingFromTokens(allTokens);
-      const pages = sources.map(({ page, sourceHtml }) => {
-        // This page's own JS: its non-shared local .js + inline scripts.
-        const ownJs = page.localScriptRefs.filter((n) => !isShared(n)).map((n) => bundle.jsByName[n]).filter(Boolean);
-        const js = [...ownJs, ...page.inlineScripts].map(rw).join("\n;\n");
-        return {
-          slug: page.slug,
-          title: page.title,
-          serviceTag: page.serviceTag,
-          sourceHtml,
-          html: applyBracketTokens(sourceHtml, mapping).html,
-          js,
-        };
-      });
+      // Rewrite assets/cross-links, drop dead local refs and tokenise [Crochets]
+      // for every page (shared with the partial "update pages" importer).
+      const pages = buildProcessedPages(bundle, urlByPath);
 
       // Tweaks schema (preset palettes + per-page extras) from the *-tweaks.jsx.
       const pageTweaksBySlug: Record<string, string> = {};
@@ -153,7 +111,8 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec de l'import");
 
-      toast.success(`Template importé (${pages.length} pages, ${mapping.length} variables)`);
+      const varCount = new Set((pages.map((p) => p.html).join(" ").match(/\{\{\s*[\w.]+\s*\}\}/g) ?? [])).size;
+      toast.success(`Template importé (${pages.length} pages, ${varCount} variables)`);
       onImported?.();
       handleOpenChange(false);
       router.push(`/site-builder/claude/${siteId}`);

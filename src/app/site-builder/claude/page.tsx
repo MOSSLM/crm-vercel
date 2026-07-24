@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { authedFetch } from "@/utils/authedFetch";
 import { SiteKanban } from "@/components/site-builder/claude-design/SiteKanban";
 import { MultiPageImportDialog } from "@/components/site-builder/claude-design/MultiPageImportDialog";
+import { UpdateTemplatePagesDialog } from "@/components/site-builder/claude-design/UpdateTemplatePagesDialog";
 import { ClaudeDesignTheme } from "@/components/site-builder/claude-design/ClaudeDesignTheme";
 
 interface TemplateRef { id: string; name: string }
@@ -25,6 +26,7 @@ export default function ClaudeDesignHubPage() {
   const [loading, setLoading] = React.useState(true);
   const [importOpen, setImportOpen] = React.useState(false);
   const [createFor, setCreateFor] = React.useState<TemplateRef | null>(null);
+  const [updateFor, setUpdateFor] = React.useState<TemplateRef | null>(null);
 
   const loadTemplates = React.useCallback(async () => {
     try {
@@ -112,6 +114,11 @@ export default function ClaudeDesignHubPage() {
                           </Link>
                           <button className="cd-btn accent" onClick={() => setCreateFor(t)}><Plus className="ico-xs" />Créer un site</button>
                         </div>
+                        <button className="cd-btn ghost" style={{ width: "100%", marginTop: 8, justifyContent: "center" }}
+                          title="Importer certaines pages d'un .zip sans écraser les autres"
+                          onClick={() => setUpdateFor(t)}>
+                          <FileArchive className="ico-xs" />Importer des pages (ZIP)
+                        </button>
                       </div>
                     </div>
                   );
@@ -130,6 +137,11 @@ export default function ClaudeDesignHubPage() {
         template={createFor}
         onClose={() => setCreateFor(null)}
         onCreated={() => { setCreateFor(null); setTab("projets"); }}
+      />
+      <UpdateTemplatePagesDialog
+        template={updateFor}
+        onClose={() => setUpdateFor(null)}
+        onDone={loadTemplates}
       />
     </AppLayout>
   );
