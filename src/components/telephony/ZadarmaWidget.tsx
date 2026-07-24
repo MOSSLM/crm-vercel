@@ -70,28 +70,92 @@ function pickFn(obj: ZadarmaPhone | null, names: Array<keyof ZadarmaPhone>) {
 }
 
 /**
+ * Set a value on a framework-controlled input so the widget's Vue v-model picks
+ * it up: assign through the native setter, then fire the events Vue listens for.
+ */
+function setReactiveInputValue(input: HTMLInputElement, value: string): void {
+  const setter = Object.getOwnPropertyDescriptor(
+    Object.getPrototypeOf(input),
+    "value",
+  )?.set;
+  if (setter) setter.call(input, value);
+  else input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+/**
+ * Place a call by driving the loaded Zadarma web-phone's own DOM — the same
+ * dialer + call button a user clicks in the embed (which we've confirmed works).
+ * Sets the number, then clicks the call action once the widget enables it.
+ * Returns true if the widget UI was found and driven, false if it isn't mounted.
+ */
+function dialViaWidgetDom(number: string): boolean {
+  const root = document.querySelector<HTMLElement>(".webphone");
+  const input = root?.querySelector<HTMLInputElement>(".webphone-dialer-input");
+  if (!root || !input) return false;
+
+  setReactiveInputValue(input, number);
+
+  const clickCall = (): boolean => {
+    const btn = root.querySelector<HTMLElement>(
+      ".webphone-dialer-action .webphone-button-icon",
+    );
+    if (btn && !btn.classList.contains("is-disabled")) {
+      btn.click();
+      return true;
+    }
+    return false;
+  };
+
+  // Vue enables the call button on its next render (after validating/pricing the
+  // number), so click now if ready, else poll briefly until it enables.
+  if (clickCall()) return true;
+  let tries = 0;
+  const timer = window.setInterval(() => {
+    if (clickCall() || (tries += 1) > 40) window.clearInterval(timer);
+  }, 50);
+  return true;
+}
+
+/**
  * Programmatically place a call through the loaded widget (in-browser audio).
- * Uses the widget's runtime globals (undocumented, and renamed across builds).
- * Returns true if the call was initiated, false if the widget isn't ready
- * (caller should fall back to the server callback).
+ * Prefers a runtime global call method when the build exposes one, otherwise
+ * drives the widget's DOM. Returns true if the call was initiated, false if the
+ * widget isn't ready (caller should fall back to the server callback).
  */
 export function dialViaWidget(number: string): boolean {
+  if (typeof window === "undefined") return false;
   const phone = widgetPhone();
   const call = pickFn(phone, ["callNum", "call", "makeCall"]);
-  if (!call) return false;
-  try {
-    pickFn(phone, ["setCallingNumber", "setNumber"])?.(number);
-    call(number);
-    return true;
-  } catch {
-    return false;
+  if (call) {
+    try {
+      pickFn(phone, ["setCallingNumber", "setNumber"])?.(number);
+      call(number);
+      return true;
+    } catch {
+      /* fall through to the DOM path */
+    }
   }
+  return dialViaWidgetDom(number);
 }
 
 /** Hang up the current in-browser widget call, if any. */
 export function hangupViaWidget(): void {
+  if (typeof window === "undefined") return;
   try {
-    pickFn(widgetPhone(), ["finishCall", "hangup"])?.();
+    const hangup = pickFn(widgetPhone(), ["finishCall", "hangup"]);
+    if (hangup) {
+      hangup();
+      return;
+    }
+    // DOM fallback: click the widget's in-call hang-up / close control.
+    const root = document.querySelector<HTMLElement>(".webphone");
+    root
+      ?.querySelector<HTMLElement>(
+        ".webphone-call-hangup, .webphone-button-icon.is-active, .webphone-hangup",
+      )
+      ?.click();
   } catch {
     /* no-op */
   }
@@ -99,7 +163,9 @@ export function hangupViaWidget(): void {
 
 /** True when the browser widget is loaded and ready to place a call. */
 export function isWidgetReady(): boolean {
-  return pickFn(widgetPhone(), ["callNum", "call", "makeCall"]) !== null;
+  if (typeof window === "undefined") return false;
+  if (pickFn(widgetPhone(), ["callNum", "call", "makeCall"])) return true;
+  return Boolean(document.querySelector(".webphone .webphone-dialer-input"));
 }
 
 function loadScript(src: string): Promise<void> {

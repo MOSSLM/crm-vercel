@@ -16,7 +16,7 @@ import { useAuth } from "@/components/AuthContext";
 import { supabase } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { placeCallback } from "@/lib/telephony/client";
-import { toDialDigits, toE164 } from "@/lib/telephony/phone";
+import { toE164 } from "@/lib/telephony/phone";
 import { ZadarmaWidget, dialViaWidget } from "./ZadarmaWidget";
 import { SoftphonePanel } from "./SoftphonePanel";
 
@@ -106,14 +106,13 @@ export function CallProvider({ children }: { children: ReactNode }) {
       if (!raw) return;
 
       // Zadarma only routes fully-international numbers, so a French national
-      // number (06…) must become +33… before it leaves the browser. The widget
-      // wants the plain international form (33…), the callback API wants E.164.
-      const widgetNumber = toDialDigits(raw);
+      // number (06…) must become +33… before it leaves the browser. The widget's
+      // dialer accepts this E.164 form (matches its own contact cards).
       const e164 = toE164(raw);
-      if (!widgetNumber) return;
+      if (!e164) return;
 
       // Browser mode: dial through the loaded Zadarma widget when available.
-      if (profile?.call_mode === "browser" && dialViaWidget(widgetNumber)) {
+      if (profile?.call_mode === "browser" && dialViaWidget(e164)) {
         toast.success("Appel en cours…", { description: e164 });
         return;
       }
