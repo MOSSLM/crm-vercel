@@ -14,12 +14,14 @@ import {
   PhoneIncoming,
   PhoneOutgoing,
   Loader2,
+  Mic,
+  MicOff,
+  Grid3x3,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@/utils/supabase/client";
 import { fetchCalls, sendSms, type CallRow } from "@/lib/telephony/client";
-import { hangupViaWidget } from "./ZadarmaWidget";
-import type { DialInput } from "./CallProvider";
+import { useTelephony, type DialInput } from "./CallProvider";
 
 const KEYS: Array<[string, string]> = [
   ["1", ""],
@@ -77,6 +79,10 @@ function timeShort(iso: string | null): string {
     minute: "2-digit",
   });
 }
+function fmtDuration(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+}
 
 function Avatar({ name }: { name: string }) {
   const { initials, color } = avatarFor(name);
@@ -89,23 +95,43 @@ function Avatar({ name }: { name: string }) {
 
 /**
  * CRM-native softphone (prototype "sp-*" skin): dial pad + Contacts / Historique
- * / Équipe tabs populated with OUR data. Places the real call through the
- * Zadarma widget (or callback) via the shared dial(). Wrapped in `.tel-skin`.
+ * / Équipe tabs on our own data, and — driven entirely by our headless Zadarma
+ * controller — the live call surfaces: incoming (answer/reject), outgoing
+ * ringing, and in-call (timer, mute, DTMF keypad, hang-up). No Zadarma UI.
  */
-export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void> }) {
+export function SoftphonePanel() {
+  const { phone, dial, hangup, answer, reject, sendDtmf, toggleMute, match } = useTelephony();
+
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("contacts");
   const [number, setNumber] = useState("");
   const [search, setSearch] = useState("");
-  const [inCall, setInCall] = useState<string | null>(null);
   const [smsOpen, setSmsOpen] = useState(false);
   const [smsText, setSmsText] = useState("");
   const [sendingSms, setSendingSms] = useState(false);
+  const [dtmfOpen, setDtmfOpen] = useState(false);
 
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [history, setHistory] = useState<CallRow[]>([]);
   const [team, setTeam] = useState<TeamRow[]>([]);
   const [loaded, setLoaded] = useState(false);
+
+  const active =
+    phone.status === "incoming" || phone.status === "ringing" || phone.status === "in_call";
+
+  // Pop the panel open when a call arrives or starts.
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
+
+  // Live in-call timer.
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    if (phone.status !== "in_call") return;
+    const t = window.setInterval(() => setNowTs(Date.now()), 1000);
+    return () => window.clearInterval(t);
+  }, [phone.status]);
+  const durationStr = phone.startedAt ? fmtDuration((nowTs - phone.startedAt) / 1000) : "00:00";
 
   const loadData = useCallback(async () => {
     const supabase = createClient();
@@ -144,15 +170,10 @@ export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void>
   const press = (k: string) => setNumber((n) => (n + k).slice(0, 24));
   const backspace = () => setNumber((n) => n.slice(0, -1));
 
-  const placeCall = async (to: string, links?: Partial<DialInput>) => {
+  const placeCall = (to: string, links?: Partial<DialInput>) => {
     const target = to.trim();
     if (!target) return;
-    await dial({ to: target, ...links });
-    setInCall(target);
-  };
-  const hangup = () => {
-    hangupViaWidget();
-    setInCall(null);
+    void dial({ to: target, ...links });
   };
 
   const submitSms = async () => {
@@ -203,6 +224,10 @@ export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void>
     ["equipe", "Équipe", Users],
   ];
 
+  const peerName = match?.who || phone.peerName || phone.peerNumber || "Correspondant";
+  const peerSub = phone.peerNumber ?? "";
+  const av = avatarFor(peerName);
+
   return (
     <div className="tel-skin">
       <div className="sp-root">
@@ -218,29 +243,118 @@ export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void>
               <div className="sp-hd-l">
                 <Phone style={{ width: 15, height: 15 }} /> Téléphone
               </div>
-              <button type="button" className="sp-x" onClick={() => setOpen(false)} aria-label="Fermer">
-                <X style={{ width: 15, height: 15 }} />
-              </button>
+              {!active && (
+                <button type="button" className="sp-x" onClick={() => setOpen(false)} aria-label="Fermer">
+                  <X style={{ width: 15, height: 15 }} />
+                </button>
+              )}
             </div>
 
-            {inCall ? (
+            {phone.status === "incoming" ? (
+              /* ---- Incoming call ---- */
+              <div className="sp-incoming">
+                <div className="sp-inc-tag">
+                  <span className="pulse" /> Appel entrant
+                </div>
+                <div className="sp-inc-av" style={{ background: av.color }}>
+                  {av.initials}
+                </div>
+                <div className="sp-inc-nm">{peerName}</div>
+                <div className="sp-inc-sb">{peerSub}</div>
+                <div className="sp-inc-actions">
+                  <button
+                    type="button"
+                    className="sp-round reject"
+                    onClick={reject}
+                    aria-label="Refuser"
+                  >
+                    <PhoneOff style={{ width: 22, height: 22 }} />
+                  </button>
+                  <button
+                    type="button"
+                    className="sp-round accept"
+                    onClick={answer}
+                    aria-label="Répondre"
+                  >
+                    <Phone style={{ width: 22, height: 22 }} />
+                  </button>
+                </div>
+              </div>
+            ) : phone.status === "ringing" || phone.status === "in_call" ? (
+              /* ---- Outgoing ringing / in-call ---- */
               <>
-                <div className="sp-call-hd" style={{ gridTemplateColumns: "1fr auto" }}>
+                <div className="sp-call-hd" style={{ background: "var(--text)" }}>
+                  <span className="sp-call-av" style={{ background: av.color }}>
+                    {av.initials}
+                  </span>
                   <div className="sp-call-id">
-                    <div className="nm">{inCall}</div>
-                    <div className="sb">En communication…</div>
+                    <div className="nm">{peerName}</div>
+                    <div className="sb">
+                      {phone.status === "in_call"
+                        ? "En communication"
+                        : phone.direction === "incoming"
+                          ? "Connexion…"
+                          : "Appel en cours…"}
+                    </div>
                   </div>
                   <div className="sp-call-tm">
-                    <span className="run">
-                      <span className="rec-dot" /> live
-                    </span>
+                    {phone.status === "in_call" ? (
+                      <span className="run">
+                        <span className="rec-dot" /> {durationStr}
+                      </span>
+                    ) : (
+                      <span className="conn">…</span>
+                    )}
                   </div>
                 </div>
+
+                {phone.status === "in_call" && (
+                  <div style={{ display: "flex", gap: 6, padding: "6px 14px 2px" }}>
+                    <button
+                      type="button"
+                      className="btn subtle"
+                      style={{ flex: 1 }}
+                      onClick={toggleMute}
+                    >
+                      {phone.muted ? (
+                        <MicOff style={{ width: 16, height: 16 }} />
+                      ) : (
+                        <Mic style={{ width: 16, height: 16 }} />
+                      )}
+                      {phone.muted ? "Activer micro" : "Muet"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn subtle"
+                      style={{ flex: 1 }}
+                      onClick={() => setDtmfOpen((v) => !v)}
+                    >
+                      <Grid3x3 style={{ width: 16, height: 16 }} /> Clavier
+                    </button>
+                  </div>
+                )}
+
+                {phone.status === "in_call" && dtmfOpen && (
+                  <div className="dialpad" style={{ paddingTop: 4 }}>
+                    {KEYS.map(([k]) => (
+                      <button
+                        key={k}
+                        type="button"
+                        className="dialkey"
+                        onClick={() => sendDtmf(k)}
+                      >
+                        <span className="d">{k}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <button type="button" className="sp-hangup" onClick={hangup}>
                   <PhoneOff style={{ width: 16, height: 16 }} /> Raccrocher
                 </button>
               </>
             ) : (
+              /* ---- Idle: dial pad + SMS + tabs ---- */
               <>
                 <div className="sp-dialdisplay">
                   <input
@@ -309,104 +423,106 @@ export function SoftphonePanel({ dial }: { dial: (i: DialInput) => Promise<void>
               </>
             )}
 
-            {/* Tabs */}
-            <div className="pros-tabs-bar" style={{ display: "flex", gap: 4, padding: "6px 10px 0" }}>
-              {TABS.map(([id, label, Icon]) => (
-                <button
-                  key={id}
-                  type="button"
-                  className="pros-tab"
-                  aria-selected={tab === id}
-                  onClick={() => setTab(id)}
-                >
-                  <Icon style={{ width: 14, height: 14 }} /> {label}
-                </button>
-              ))}
-            </div>
+            {/* Tabs + list (hidden while a call is on screen) */}
+            {!active && (
+              <>
+                <div className="pros-tabs-bar" style={{ display: "flex", gap: 4, padding: "6px 10px 0" }}>
+                  {TABS.map(([id, label, Icon]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className="pros-tab"
+                      aria-selected={tab === id}
+                      onClick={() => setTab(id)}
+                    >
+                      <Icon style={{ width: 14, height: 14 }} /> {label}
+                    </button>
+                  ))}
+                </div>
 
-            {/* Search */}
-            <div style={{ padding: "8px 10px 4px" }}>
-              <input
-                className="composer-input"
-                style={{ width: "100%" }}
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Rechercher…"
-              />
-            </div>
+                <div style={{ padding: "8px 10px 4px" }}>
+                  <input
+                    className="composer-input"
+                    style={{ width: "100%" }}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Rechercher…"
+                  />
+                </div>
 
-            {/* List */}
-            <div className="sp-quick" style={{ maxHeight: "40vh", overflowY: "auto" }}>
-              {!loaded ? (
-                <div className="sp-quick-lb">Chargement…</div>
-              ) : tab === "contacts" ? (
-                filteredContacts.length === 0 ? (
-                  <div className="sp-quick-lb">Aucun contact</div>
-                ) : (
-                  filteredContacts.map((c) => {
-                    const nm = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || (c.tel ?? "");
-                    return (
+                <div className="sp-quick" style={{ maxHeight: "40vh", overflowY: "auto" }}>
+                  {!loaded ? (
+                    <div className="sp-quick-lb">Chargement…</div>
+                  ) : tab === "contacts" ? (
+                    filteredContacts.length === 0 ? (
+                      <div className="sp-quick-lb">Aucun contact</div>
+                    ) : (
+                      filteredContacts.map((c) => {
+                        const nm = `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || (c.tel ?? "");
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="sp-quick-row"
+                            onClick={() =>
+                              placeCall(c.tel ?? "", { contactId: c.id, entrepriseId: c.entreprise_id })
+                            }
+                          >
+                            <Avatar name={nm} />
+                            <span className="nm">{nm}</span>
+                            <span className="ph">{c.tel}</span>
+                            <Phone style={{ width: 15, height: 15 }} />
+                          </button>
+                        );
+                      })
+                    )
+                  ) : tab === "historique" ? (
+                    filteredHistory.length === 0 ? (
+                      <div className="sp-quick-lb">Aucun appel</div>
+                    ) : (
+                      filteredHistory.map((c) => {
+                        const { name, number: num } = callCounterpart(c);
+                        return (
+                          <button
+                            key={c.id}
+                            type="button"
+                            className="sp-quick-row"
+                            onClick={() =>
+                              placeCall(num, { contactId: c.contact_id, entrepriseId: c.entreprise_id })
+                            }
+                          >
+                            {c.direction === "outbound" ? (
+                              <PhoneOutgoing style={{ width: 15, height: 15, color: "var(--info)" }} />
+                            ) : (
+                              <PhoneIncoming style={{ width: 15, height: 15, color: "var(--ok)" }} />
+                            )}
+                            <span className="nm">{name}</span>
+                            <span className="ph">{timeShort(c.started_at ?? c.created_at)}</span>
+                            <Phone style={{ width: 15, height: 15 }} />
+                          </button>
+                        );
+                      })
+                    )
+                  ) : filteredTeam.length === 0 ? (
+                    <div className="sp-quick-lb">Aucune extension</div>
+                  ) : (
+                    filteredTeam.map((t) => (
                       <button
-                        key={c.id}
+                        key={t.extension}
                         type="button"
                         className="sp-quick-row"
-                        onClick={() =>
-                          placeCall(c.tel ?? "", { contactId: c.id, entrepriseId: c.entreprise_id })
-                        }
+                        onClick={() => placeCall(t.extension)}
                       >
-                        <Avatar name={nm} />
-                        <span className="nm">{nm}</span>
-                        <span className="ph">{c.tel}</span>
+                        <Avatar name={t.name ?? t.extension} />
+                        <span className="nm">{t.name ?? `Extension ${t.extension}`}</span>
+                        <span className="ph">{t.extension}</span>
                         <Phone style={{ width: 15, height: 15 }} />
                       </button>
-                    );
-                  })
-                )
-              ) : tab === "historique" ? (
-                filteredHistory.length === 0 ? (
-                  <div className="sp-quick-lb">Aucun appel</div>
-                ) : (
-                  filteredHistory.map((c) => {
-                    const { name, number: num } = callCounterpart(c);
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        className="sp-quick-row"
-                        onClick={() =>
-                          placeCall(num, { contactId: c.contact_id, entrepriseId: c.entreprise_id })
-                        }
-                      >
-                        {c.direction === "outbound" ? (
-                          <PhoneOutgoing style={{ width: 15, height: 15, color: "var(--info)" }} />
-                        ) : (
-                          <PhoneIncoming style={{ width: 15, height: 15, color: "var(--ok)" }} />
-                        )}
-                        <span className="nm">{name}</span>
-                        <span className="ph">{timeShort(c.started_at ?? c.created_at)}</span>
-                        <Phone style={{ width: 15, height: 15 }} />
-                      </button>
-                    );
-                  })
-                )
-              ) : filteredTeam.length === 0 ? (
-                <div className="sp-quick-lb">Aucune extension</div>
-              ) : (
-                filteredTeam.map((t) => (
-                  <button
-                    key={t.extension}
-                    type="button"
-                    className="sp-quick-row"
-                    onClick={() => placeCall(t.extension)}
-                  >
-                    <Avatar name={t.name ?? t.extension} />
-                    <span className="nm">{t.name ?? `Extension ${t.extension}`}</span>
-                    <span className="ph">{t.extension}</span>
-                    <Phone style={{ width: 15, height: 15 }} />
-                  </button>
-                ))
-              )}
-            </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

@@ -9,30 +9,28 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
-import { PhoneIncoming, UserPlus } from "lucide-react";
 import { useAuth } from "@/components/AuthContext";
 import { supabase } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { placeCallback } from "@/lib/telephony/client";
-import { toE164 } from "@/lib/telephony/phone";
-import { ZadarmaWidget, dialViaWidget } from "./ZadarmaWidget";
+import { toE164, phoneSuffix } from "@/lib/telephony/phone";
+import { ZadarmaWidget } from "./ZadarmaWidget";
 import { SoftphonePanel } from "./SoftphonePanel";
-
-export interface IncomingCall {
-  id: string;
-  from: string;
-  who: string | null;
-  contactId: string | null;
-  entrepriseId: number | null;
-}
+import { webphone, useWebphone, type WebphoneState } from "./zadarmaWebphone";
 
 export interface DialInput {
   to: string;
   contactId?: string | null;
   entrepriseId?: number | null;
   opportuniteId?: string | null;
+}
+
+/** Best-effort CRM match for a live call's counterpart number. */
+export interface CallMatch {
+  who: string | null;
+  contactId: string | null;
+  entrepriseId: number | null;
 }
 
 interface TelephonyProfile {
@@ -45,9 +43,16 @@ interface TelephonyProfile {
 interface TelephonyContextValue {
   profile: TelephonyProfile | null;
   calling: boolean;
-  incoming: IncomingCall | null;
+  /** Live softphone state (in-browser WebRTC), or the idle default. */
+  phone: WebphoneState;
+  /** CRM record matched to the current call's counterpart, if any. */
+  match: CallMatch | null;
   dial: (input: DialInput) => Promise<void>;
-  dismissIncoming: () => void;
+  hangup: () => void;
+  answer: () => void;
+  reject: () => void;
+  sendDtmf: (digit: string) => void;
+  toggleMute: () => void;
 }
 
 const TelephonyContext = createContext<TelephonyContextValue | null>(null);
@@ -64,15 +69,36 @@ export function useTelephonyOptional(): TelephonyContextValue | null {
   return useContext(TelephonyContext);
 }
 
+/** Best-effort lookup of a CRM contact/company by the last significant digits. */
+async function matchNumber(number: string): Promise<CallMatch> {
+  const empty: CallMatch = { who: null, contactId: null, entrepriseId: null };
+  const suffix = phoneSuffix(number);
+  if (suffix.length < 6) return empty;
+  const { data } = await supabase
+    .from("contacts")
+    .select("id, first_name, last_name, entreprise_id, tel")
+    .ilike("tel", `%${suffix}%`)
+    .limit(1);
+  const c = data?.[0] as
+    | { id: string; first_name: string | null; last_name: string | null; entreprise_id: number | null }
+    | undefined;
+  if (c) {
+    return {
+      who: [c.first_name, c.last_name].filter(Boolean).join(" ") || null,
+      contactId: c.id,
+      entrepriseId: c.entreprise_id,
+    };
+  }
+  return empty;
+}
+
 /**
  * Global telephony context, mounted inside the admin/agent shells (never on the
  * public site). It:
- *  - loads the official Zadarma WebRTC widget (real in-browser softphone) when
- *    the agent has an extension,
- *  - routes click-to-call to the widget or the server callback per the agent's
- *    chosen mode,
- *  - surfaces an incoming-call screen-pop (from Supabase Realtime) that opens
- *    the matched CRM record while the widget rings.
+ *  - loads the headless Zadarma WebRTC client (our own softphone UI, no Zadarma
+ *    widget) when the agent has an extension,
+ *  - routes click-to-call to the browser softphone or the server callback,
+ *  - surfaces in-browser incoming calls (answer/reject) with a CRM match.
  */
 export function CallProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
@@ -80,7 +106,8 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const [profile, setProfile] = useState<TelephonyProfile | null>(null);
   const [calling, setCalling] = useState(false);
-  const [incoming, setIncoming] = useState<IncomingCall | null>(null);
+  const [match, setMatch] = useState<CallMatch | null>(null);
+  const phone = useWebphone();
 
   // Load the agent's telephony profile (extension + preferred call mode).
   useEffect(() => {
@@ -102,22 +129,17 @@ export function CallProvider({ children }: { children: ReactNode }) {
 
   const dial = useCallback(
     async (input: DialInput) => {
-      const raw = input.to?.trim();
-      if (!raw) return;
-
-      // Zadarma only routes fully-international numbers, so a French national
-      // number (06…) must become +33… before it leaves the browser. The widget's
-      // dialer accepts this E.164 form (matches its own contact cards).
-      const e164 = toE164(raw);
+      const e164 = toE164(input.to);
       if (!e164) return;
 
-      // Browser mode: dial through the loaded Zadarma widget when available.
-      if (profile?.call_mode === "browser" && dialViaWidget(e164)) {
-        toast.success("Appel en cours…", { description: e164 });
+      // Browser mode: place the call through the in-browser softphone when it's
+      // registered. Our own UI (SoftphonePanel) shows the live call.
+      if (profile?.call_mode !== "callback" && webphone.isReady()) {
+        webphone.call(e164);
         return;
       }
 
-      // Callback mode (or fallback): server bridges the two legs.
+      // Callback mode (or softphone not ready): server bridges the two legs.
       setCalling(true);
       const res = await placeCallback({
         to: e164,
@@ -137,124 +159,52 @@ export function CallProvider({ children }: { children: ReactNode }) {
     [profile],
   );
 
-  // Realtime incoming-call pop for calls routed to this agent.
+  // Resolve who the live call is with (counterpart number → CRM record).
+  const activeNumber =
+    phone.status === "incoming" || phone.status === "ringing" || phone.status === "in_call"
+      ? phone.peerNumber
+      : null;
   useEffect(() => {
-    if (!isStaff || !user?.id) return;
-    const channel = supabase
-      .channel("telephony-incoming")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "calls", filter: `agent_id=eq.${user.id}` },
-        async (payload) => {
-          const row = payload.new as {
-            id: string;
-            direction: string;
-            from_e164: string | null;
-            contact_id: string | null;
-            entreprise_id: number | null;
-          };
-          if (row.direction !== "inbound") return;
-
-          let who: string | null = null;
-          if (row.contact_id) {
-            const { data } = await supabase
-              .from("contacts")
-              .select("first_name, last_name")
-              .eq("id", row.contact_id)
-              .maybeSingle();
-            if (data) who = [data.first_name, data.last_name].filter(Boolean).join(" ") || null;
-          } else if (row.entreprise_id) {
-            const { data } = await supabase
-              .from("entreprises")
-              .select("name")
-              .eq("id", row.entreprise_id)
-              .maybeSingle();
-            who = data?.name ?? null;
-          }
-
-          setIncoming({
-            id: row.id,
-            from: row.from_e164 ?? "Inconnu",
-            who,
-            contactId: row.contact_id,
-            entrepriseId: row.entreprise_id,
-          });
-        },
-      )
-      .subscribe();
-
+    if (!activeNumber) {
+      setMatch(null);
+      return;
+    }
+    let active = true;
+    void (async () => {
+      const m = await matchNumber(activeNumber);
+      if (active) setMatch(m);
+    })();
     return () => {
-      void supabase.removeChannel(channel);
+      active = false;
     };
-  }, [isStaff, user?.id]);
+  }, [activeNumber]);
+
+  // Flash a short toast when a call ends.
+  useEffect(() => {
+    if (!phone.lastEnded) return;
+    const { reason, durationSec } = phone.lastEnded;
+    if (reason) toast.info(`Appel terminé — ${reason}`);
+    else if (durationSec != null)
+      toast.success(`Appel terminé (${new Date(durationSec * 1000).toISOString().substr(14, 5)})`);
+  }, [phone.lastEnded]);
+
+  const controls = {
+    hangup: () => webphone.hangup(),
+    answer: () => webphone.answer(),
+    reject: () => webphone.reject(),
+    sendDtmf: (d: string) => webphone.sendDtmf(d),
+    toggleMute: () => webphone.toggleMute(),
+  };
 
   if (!isStaff) return <>{children}</>;
 
   return (
-    <TelephonyContext.Provider
-      value={{ profile, calling, incoming, dial, dismissIncoming: () => setIncoming(null) }}
-    >
+    <TelephonyContext.Provider value={{ profile, calling, phone, match, dial, ...controls }}>
       {children}
       {profile?.configured && profile?.hasExtension && profile?.sip && (
         <ZadarmaWidget sip={profile.sip} />
       )}
-      <SoftphonePanel dial={dial} />
-      {incoming && <IncomingCallPop incoming={incoming} onDismiss={() => setIncoming(null)} />}
+      <SoftphonePanel />
     </TelephonyContext.Provider>
-  );
-}
-
-/** Screen-pop shown when an inbound call is routed to this agent. */
-function IncomingCallPop({
-  incoming,
-  onDismiss,
-}: {
-  incoming: IncomingCall;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="pointer-events-none fixed bottom-24 right-4 z-[310] flex justify-end">
-      <div className="pointer-events-auto w-72 rounded-xl border bg-card p-4 shadow-lg">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-            <PhoneIncoming className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-semibold">{incoming.who ?? "Appel entrant"}</div>
-            <div className="truncate text-xs text-muted-foreground">{incoming.from}</div>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {incoming.contactId ? (
-            <Link
-              href={`/espace-agent/contacts/${incoming.contactId}`}
-              onClick={onDismiss}
-              className="flex-1 rounded-md border px-3 py-1.5 text-center text-sm hover:bg-muted"
-            >
-              Ouvrir la fiche
-            </Link>
-          ) : incoming.entrepriseId ? (
-            <Link
-              href={`/espace-agent/entreprises/${incoming.entrepriseId}`}
-              onClick={onDismiss}
-              className="flex-1 rounded-md border px-3 py-1.5 text-center text-sm hover:bg-muted"
-            >
-              Ouvrir la fiche
-            </Link>
-          ) : (
-            <span className="flex flex-1 items-center justify-center gap-1 rounded-md border px-3 py-1.5 text-sm text-muted-foreground">
-              <UserPlus className="h-4 w-4" /> Inconnu
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onDismiss}
-            className="rounded-md px-3 py-1.5 text-sm text-muted-foreground hover:bg-muted"
-          >
-            Ignorer
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
