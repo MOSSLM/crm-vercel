@@ -66,8 +66,14 @@ export function SoftphoneSettings({ isAdmin = false }: { isAdmin?: boolean }) {
   useEffect(() => {
     setHost(window.location.hostname);
     void load();
-    const w = window as unknown as { zadarmaWidgetFn?: unknown; __zadarmaWidgetInited?: boolean };
-    setScriptsLoaded(typeof w.zadarmaWidgetFn === "function" || Boolean(w.__zadarmaWidgetInited));
+    // The headless softphone attaches window.zdrmWebPhone once its scripts load.
+    const check = () => {
+      const w = window as unknown as { zdrmWebPhone?: unknown };
+      setScriptsLoaded(Boolean(w.zdrmWebPhone));
+    };
+    check();
+    const t = window.setInterval(check, 1500);
+    return () => window.clearInterval(t);
   }, [load]);
 
   const save = async () => {
