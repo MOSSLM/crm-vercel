@@ -19,6 +19,17 @@ import { authedFetch } from "@/utils/authedFetch";
 const LIB_SRC = "https://my.zadarma.com/webphoneWebRTCWidget/v9/js/loader-phone-lib.js?sub_v=1";
 const FN_SRC = "https://my.zadarma.com/webphoneWebRTCWidget/v9/js/loader-phone-fn.js?sub_v=1";
 
+/** A loaded web-phone controller — the shape varies across widget builds. */
+type ZadarmaPhone = {
+  setCallingNumber?: (n: string) => void;
+  setNumber?: (n: string) => void;
+  callNum?: () => void;
+  call?: (n?: string) => void;
+  makeCall?: (n?: string) => void;
+  finishCall?: () => void;
+  hangup?: () => void;
+};
+
 type ZadarmaGlobals = {
   zadarmaWidgetFn?: (
     hash: string,
@@ -28,13 +39,12 @@ type ZadarmaGlobals = {
     fixed: boolean,
     position: { right?: string; bottom?: string; left?: string; top?: string },
   ) => void;
-  zdrmWebrtcPhone?: {
-    setCallingNumber?: (n: string) => void;
-    callNum?: () => void;
-  };
-  zdrmWPhI?: {
-    finishCall?: () => void;
-  };
+  // The runtime object the loaded widget exposes. Its name has drifted between
+  // builds (`zdrmWebPhone` in the current v9 loader, `zdrmWebrtcPhone`/`zdrmWPhI`
+  // in earlier ones), so we probe every known alias rather than hard-code one.
+  zdrmWebPhone?: ZadarmaPhone;
+  zdrmWebrtcPhone?: ZadarmaPhone;
+  zdrmWPhI?: ZadarmaPhone;
   __zadarmaWidgetInited?: boolean;
 };
 
@@ -42,20 +52,36 @@ function zwin(): ZadarmaGlobals {
   return window as unknown as ZadarmaGlobals;
 }
 
+/** The loaded web-phone controller under whichever global the build exposes. */
+function widgetPhone(): ZadarmaPhone | null {
+  if (typeof window === "undefined") return null;
+  const w = zwin();
+  return w.zdrmWebPhone ?? w.zdrmWebrtcPhone ?? w.zdrmWPhI ?? null;
+}
+
+/** First callable method on `obj` from `names`, bound to `obj`. */
+function pickFn(obj: ZadarmaPhone | null, names: Array<keyof ZadarmaPhone>) {
+  if (!obj) return null;
+  for (const n of names) {
+    const fn = obj[n];
+    if (typeof fn === "function") return (fn as (...a: unknown[]) => unknown).bind(obj);
+  }
+  return null;
+}
+
 /**
  * Programmatically place a call through the loaded widget (in-browser audio).
- * Uses the widget's runtime globals (undocumented but used in production).
+ * Uses the widget's runtime globals (undocumented, and renamed across builds).
  * Returns true if the call was initiated, false if the widget isn't ready
  * (caller should fall back to the server callback).
  */
 export function dialViaWidget(number: string): boolean {
-  if (typeof window === "undefined") return false;
-  const w = zwin();
-  const phone = w.zdrmWebrtcPhone;
-  if (!phone || typeof phone.callNum !== "function") return false;
+  const phone = widgetPhone();
+  const call = pickFn(phone, ["callNum", "call", "makeCall"]);
+  if (!call) return false;
   try {
-    phone.setCallingNumber?.(number);
-    phone.callNum();
+    pickFn(phone, ["setCallingNumber", "setNumber"])?.(number);
+    call(number);
     return true;
   } catch {
     return false;
@@ -64,9 +90,8 @@ export function dialViaWidget(number: string): boolean {
 
 /** Hang up the current in-browser widget call, if any. */
 export function hangupViaWidget(): void {
-  if (typeof window === "undefined") return;
   try {
-    zwin().zdrmWPhI?.finishCall?.();
+    pickFn(widgetPhone(), ["finishCall", "hangup"])?.();
   } catch {
     /* no-op */
   }
@@ -74,8 +99,7 @@ export function hangupViaWidget(): void {
 
 /** True when the browser widget is loaded and ready to place a call. */
 export function isWidgetReady(): boolean {
-  if (typeof window === "undefined") return false;
-  return typeof zwin().zdrmWebrtcPhone?.callNum === "function";
+  return pickFn(widgetPhone(), ["callNum", "call", "makeCall"]) !== null;
 }
 
 function loadScript(src: string): Promise<void> {

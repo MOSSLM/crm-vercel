@@ -28,7 +28,8 @@ export const POST = withAuth<TelephonyCallbackPayload>(
     const from = body.from ?? ext?.extension ?? ext?.sip ?? undefined;
     if (!from) {
       return jsonError("no_agent_number", 409, {
-        detail: "Assign a phone extension to this agent, or pass 'from'.",
+        detail:
+          "Aucune extension SIP active n'est reliée à ton compte. Renseigne ton login SIP dans Réglages softphone (ex. 580453-100).",
       }, cors);
     }
 
