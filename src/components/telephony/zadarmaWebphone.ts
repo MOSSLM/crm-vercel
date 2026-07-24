@@ -27,6 +27,7 @@
  */
 
 import { useSyncExternalStore } from "react";
+import { authedFetch } from "@/utils/authedFetch";
 
 const V8_BASE = "https://my.zadarma.com/webphoneWebRTCWidget/v8/js";
 // Order matters: widget-api.min.js reads window.md5 at evaluation time, and uses
@@ -189,7 +190,6 @@ class ZadarmaWebphone {
   private listeners = new Set<() => void>();
   private loadPromise: Promise<void> | null = null;
   private api: ZdrmApi | null = null;
-  private regSip: string | null = null;
 
   subscribe = (cb: () => void): (() => void) => {
     this.listeners.add(cb);
@@ -209,18 +209,32 @@ class ZadarmaWebphone {
     for (const l of this.listeners) l();
   }
 
-  /** Idempotent: loads the headless client once and registers `sip`. */
-  load(opts: { key: string; sip: string; language?: string }): Promise<void> {
+  /**
+   * Idempotent: mints the WebRTC key, loads the headless client and registers
+   * `sip`. Safe to call repeatedly (React StrictMode double-mount, remounts) —
+   * only the first call does the work, via the shared loadPromise guard. A failed
+   * attempt clears the guard so a later call can retry.
+   */
+  start(sip: string): Promise<void> {
     if (typeof window === "undefined") return Promise.resolve();
     if (this.loadPromise) return this.loadPromise;
     this.set({ status: "loading", error: null });
-    this.loadPromise = this._load(opts).catch((e: unknown) => {
+    this.loadPromise = this._start(sip).catch((e: unknown) => {
       this.set({
         status: "error",
         error: e instanceof Error ? e.message : "webphone_load_failed",
       });
+      this.loadPromise = null; // allow a later retry
     });
     return this.loadPromise;
+  }
+
+  private async _start(sip: string): Promise<void> {
+    // Mint the short-lived key server-side (the API secret never reaches here).
+    const res = await authedFetch("/api/telephony/webrtc-key");
+    const data = (await res.json().catch(() => null)) as { key?: string; sip?: string } | null;
+    if (!res.ok || !data?.key) throw new Error("webrtc_key_unavailable");
+    await this._load({ key: data.key, sip: data.sip || sip, language: "fr" });
   }
 
   private async _load(opts: { key: string; sip: string; language?: string }): Promise<void> {
@@ -232,7 +246,6 @@ class ZadarmaWebphone {
     this.set({ status: "registering" });
     const api = new Ctor(); // constructor sets window.zdrmWebPhone = api
     this.api = api;
-    this.regSip = opts.sip;
 
     api.init({
       key: opts.key,
@@ -242,6 +255,9 @@ class ZadarmaWebphone {
       getStatusMessage: this.onStatus,
       getSipsCallback: this.onSips,
       callbackEndCall: this.onEndCall,
+      // Required: the API invokes this UNGUARDED on repeat provisional responses
+      // during a call — omitting it throws mid-call. We don't surface prices.
+      callbackGetPrice: this.onPrice,
     });
     // reg() is independent of the async label/sip fetches init() kicks off; it
     // sets the username used by call() and opens the inbound push socket.
@@ -286,6 +302,10 @@ class ZadarmaWebphone {
         });
         break;
       case "accepted":
+        // We answered an inbound call; media isn't up yet, so no timer until
+        // 'confirmed' — this keeps in/out call durations consistent.
+        this.set({ status: "in_call" });
+        break;
       case "confirmed":
         this.set({ status: "in_call", startedAt: this.state.startedAt ?? Date.now() });
         break;
@@ -306,6 +326,11 @@ class ZadarmaWebphone {
   private onSips = (): void => {
     // We register a fixed extension, so we don't need the SIP list; providing
     // the callback is still required (the API calls it unconditionally).
+  };
+
+  private onPrice = (): void => {
+    // We don't display call prices; this only exists so the API's unguarded
+    // callbackGetPrice(...) invocations during a call don't throw.
   };
 
   private onEndCall = (info: ZdrmEndCallInfo): void => {
@@ -358,10 +383,22 @@ class ZadarmaWebphone {
   }
 
   hangup(): void {
+    const { status, startedAt } = this.state;
     try {
       this.api?.finishCall();
     } catch {
       /* no-op */
+    }
+    // When no JsSIP session exists yet (early ringing, or an inbound call
+    // answered but not yet connected) the API emits no end event, so clear
+    // optimistically — the panel must never stick. Established calls still get
+    // their duration recorded here.
+    if (status === "ringing" || status === "incoming" || status === "in_call") {
+      const dur =
+        status === "in_call" && startedAt
+          ? Math.round((Date.now() - startedAt) / 1000)
+          : null;
+      this.endCall(null, dur);
     }
   }
 
@@ -374,12 +411,14 @@ class ZadarmaWebphone {
   }
 
   reject(): void {
-    // finishCall() cancels a ringing inbound call (callState === "incoming").
+    // finishCall() cancels a ringing inbound call. The API only emits "connected"
+    // on this path (no end event — no media session existed), so clear here.
     try {
       this.api?.finishCall();
     } catch {
       /* no-op */
     }
+    this.endCall(null);
   }
 
   sendDtmf(digit: string | number): void {

@@ -336,7 +336,8 @@ export function SoftphonePanel() {
 
                 {phone.status === "in_call" && dtmfOpen && (
                   <div className="dialpad" style={{ paddingTop: 4 }}>
-                    {KEYS.map(([k]) => (
+                    {/* Zadarma's sendDTMF only supports 0-9, so we omit * / #. */}
+                    {KEYS.filter(([k]) => /^[0-9]$/.test(k)).map(([k]) => (
                       <button
                         key={k}
                         type="button"
