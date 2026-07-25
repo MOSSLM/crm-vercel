@@ -1,35 +1,42 @@
 "use client";
 
 /**
- * Panneau « Proposer un RDV » — pensé pour la page d'appel d'un agent :
- * pendant l'appel, l'agent choisit un type d'évènement, copie son lien de
- * réservation prérempli, ou l'envoie directement par email au prospect
- * (via notre Resend, journalisé dans email_logs et rattaché au CRM).
+ * Panneau « Proposer un RDV » — pensé pour la page d'appel d'un agent.
+ * Deux modes, comme Cal/Calendly :
+ *   « Réserver » : mini-calendrier avec les vrais créneaux dispo — l'agent
+ *     cale le RDV pendant l'appel (confirmation email + .ics automatiques) ;
+ *   « Lien » : copie du lien prérempli ou envoi par email au prospect.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarClock, Copy, Loader2, Mail, Send } from "lucide-react";
+import { CalendarClock, CalendarPlus, Copy, Link2, Loader2, Mail, Send } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import { fetchEventTypes, fetchSchedulingPage } from "@/lib/scheduling/client";
 import type { EventType } from "@/lib/scheduling/types";
+import MiniBookingCalendar from "./MiniBookingCalendar";
 import { getAppUrlClient } from "./host/shared";
 
 export interface BookingLinkPanelProps {
   prospectName?: string | null;
   prospectEmail?: string | null;
+  prospectPhone?: string | null;
   entrepriseId?: number | null;
   opportuniteId?: string | null;
   contactId?: string | null;
+  callId?: string | null;
 }
 
 export default function BookingLinkPanel({
   prospectName,
   prospectEmail,
+  prospectPhone,
   entrepriseId,
   opportuniteId,
   contactId,
+  callId,
 }: BookingLinkPanelProps) {
+  const [mode, setMode] = useState<"book" | "link">("book");
   const [username, setUsername] = useState<string | null>(null);
   const [hostName, setHostName] = useState<string>("");
   const [eventTypes, setEventTypes] = useState<EventType[]>([]);
@@ -124,25 +131,17 @@ export default function BookingLinkPanel({
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement du module RDV…
-      </div>
-    );
-  }
-
-  if (!username || eventTypes.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground">
-        <CalendarClock className="mb-1 h-4 w-4" />
-        Configurez vos types d&apos;évènements dans « Rendez-vous » pour proposer un lien de
-        réservation pendant l&apos;appel.
-      </div>
-    );
-  }
-
-  return (
+  const linkContent = loading ? (
+    <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground">
+      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement du module RDV…
+    </div>
+  ) : !username || eventTypes.length === 0 ? (
+    <div className="rounded-lg border border-dashed px-3 py-3 text-xs text-muted-foreground">
+      <CalendarClock className="mb-1 h-4 w-4" />
+      Configurez vos types d&apos;évènements dans Cal.SAMA pour proposer un lien de réservation
+      pendant l&apos;appel.
+    </div>
+  ) : (
     <div className="space-y-2">
       <select
         value={selectedSlug}
@@ -187,6 +186,50 @@ export default function BookingLinkPanel({
       >
         <Copy className="h-3.5 w-3.5" /> Copier le lien prérempli
       </button>
+    </div>
+  );
+
+  return (
+    <div className="space-y-2.5">
+      {/* Onglets Réserver / Lien */}
+      <div className="grid grid-cols-2 gap-1 rounded-lg border bg-background p-0.5">
+        <button
+          type="button"
+          onClick={() => setMode("book")}
+          className={
+            "inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition " +
+            (mode === "book"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground")
+          }
+        >
+          <CalendarPlus className="h-3.5 w-3.5" /> Réserver
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("link")}
+          className={
+            "inline-flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition " +
+            (mode === "link"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground")
+          }
+        >
+          <Link2 className="h-3.5 w-3.5" /> Lien
+        </button>
+      </div>
+
+      {mode === "book" ? (
+        <MiniBookingCalendar
+          prospectName={prospectName}
+          prospectEmail={prospectEmail}
+          prospectPhone={prospectPhone}
+          callId={callId}
+          opportuniteId={opportuniteId}
+        />
+      ) : (
+        linkContent
+      )}
     </div>
   );
 }

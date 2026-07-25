@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
   CalendarCheck,
@@ -81,11 +82,38 @@ const fmtRange = (startIso: string, endIso: string): string => {
   return `${date} · ${t(start)} – ${t(end)}`;
 };
 
+const VALID_FILTERS: BookingFilter[] = ["upcoming", "pending", "past", "cancelled"];
+
 export default function BookingsDashboard() {
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [filter, setFilter] = useState<BookingFilter>("upcoming");
-  const [teamWide, setTeamWide] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname() ?? "";
+  const searchParams = useSearchParams();
+
+  // L'URL est la source de vérité (liens de la sidebar Cal.SAMA, vue Équipe).
+  const urlFilter = searchParams?.get("filter") as BookingFilter | null;
+  const filter: BookingFilter =
+    urlFilter && VALID_FILTERS.includes(urlFilter) ? urlFilter : "upcoming";
+  const hostId = isAdmin ? searchParams?.get("host") ?? null : null;
+  const teamWide = isAdmin && !hostId && searchParams?.get("all") === "1";
+
+  const setQuery = useCallback(
+    (patch: Record<string, string | null>) => {
+      const params = new URLSearchParams(searchParams?.toString() ?? "");
+      for (const [key, value] of Object.entries(patch)) {
+        if (value === null) params.delete(key);
+        else params.set(key, value);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
+  const setFilter = (f: BookingFilter) => setQuery({ filter: f === "upcoming" ? null : f });
+  const setTeamWide = (v: boolean) => setQuery({ all: v ? "1" : null, host: null });
+
   const [bookings, setBookings] = useState<BookingWithHost[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -102,10 +130,10 @@ export default function BookingsDashboard() {
     setLoading(true);
     try {
       const [main, pending] = await Promise.all([
-        fetchBookings(filter, teamWide),
+        fetchBookings(filter, teamWide, hostId),
         filter === "pending"
           ? Promise.resolve(null)
-          : fetchBookings("pending", teamWide).catch(() => null),
+          : fetchBookings("pending", teamWide, hostId).catch(() => null),
       ]);
       setBookings(main.bookings);
       setPendingCount(
@@ -118,7 +146,7 @@ export default function BookingsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [filter, teamWide]);
+  }, [filter, teamWide, hostId]);
 
   useEffect(() => {
     void load();
@@ -192,11 +220,24 @@ export default function BookingsDashboard() {
           ))}
         </div>
         <div className="flex items-center gap-2">
-          {isAdmin ? (
+          {hostId ? (
+            <Badge variant="outline" className="gap-1 py-1.5">
+              <User className="h-3.5 w-3.5" />
+              {bookings[0]?.host?.full_name ?? bookings[0]?.host?.email ?? "Hôte sélectionné"}
+              <button
+                type="button"
+                onClick={() => setQuery({ host: null })}
+                aria-label="Retirer le filtre hôte"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </Badge>
+          ) : null}
+          {isAdmin && !hostId ? (
             <Button
               variant={teamWide ? "default" : "outline"}
               size="sm"
-              onClick={() => setTeamWide((v) => !v)}
+              onClick={() => setTeamWide(!teamWide)}
             >
               <User className="mr-1 h-4 w-4" />
               {teamWide ? "Toute l'équipe" : "Mes RDV"}
@@ -245,7 +286,7 @@ export default function BookingsDashboard() {
                       {b.source !== "public" ? (
                         <Badge variant="outline">{SOURCE_LABELS[b.source] ?? b.source}</Badge>
                       ) : null}
-                      {teamWide && b.host ? (
+                      {(teamWide || hostId) && b.host ? (
                         <Badge variant="outline">{b.host.full_name ?? b.host.email}</Badge>
                       ) : null}
                     </div>

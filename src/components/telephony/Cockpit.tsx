@@ -307,6 +307,7 @@ export function Cockpit() {
             {current ? (
               <BookingLinkPanel
                 prospectName={current.name}
+                prospectPhone={current.phone}
                 entrepriseId={current.entrepriseId}
                 opportuniteId={current.oppId}
               />

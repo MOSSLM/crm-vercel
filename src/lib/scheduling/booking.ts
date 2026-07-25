@@ -105,6 +105,36 @@ const toEmailContext = (
   };
 };
 
+/**
+ * Notification in-app pour l'hôte (cloche du CRM) — best-effort.
+ * `status` suit la sémantique de la table notifications : success | info | error.
+ */
+async function notifyHost(
+  sc: SupabaseClient,
+  booking: Booking,
+  title: string,
+  status: "success" | "info" | "error" = "success",
+): Promise<void> {
+  try {
+    await sc.from("notifications").insert({
+      user_id: booking.user_id,
+      type: "scheduling",
+      title,
+      status,
+      summary: {
+        booking_id: booking.id,
+        invitee: booking.invitee_name,
+        invitee_email: booking.invitee_email,
+        start_at: booking.start_at,
+        event_title: booking.event_title,
+        href: "/rendez-vous/reservations",
+      },
+    });
+  } catch {
+    // La cloche est un bonus — jamais bloquant.
+  }
+}
+
 /** Retrouve un contact CRM par email (et son entreprise). Best-effort. */
 async function matchContactByEmail(
   sc: SupabaseClient,
@@ -387,6 +417,15 @@ export async function createBooking(
   let booking = inserted as unknown as Booking;
   const host = await getHostProfile(sc, eventType.user_id);
 
+  await notifyHost(
+    sc,
+    booking,
+    status === "pending"
+      ? `Demande de RDV à valider : ${booking.invitee_name} — ${booking.event_title}`
+      : `Nouveau RDV : ${booking.invitee_name} — ${booking.event_title}`,
+    status === "pending" ? "info" : "success",
+  );
+
   // 4) Effets de bord + emails (best-effort, jamais bloquants).
   if (status === "confirmed") {
     booking = await applyConfirmationSideEffects(sc, booking, eventType, host);
@@ -484,6 +523,15 @@ export async function cancelBooking(
 
   const fresh = updated as unknown as Booking;
   await removeExternalArtifacts(sc, fresh);
+
+  if (by === "invitee") {
+    await notifyHost(
+      sc,
+      fresh,
+      `RDV annulé par l'invité : ${fresh.invitee_name} — ${fresh.event_title}`,
+      "error",
+    );
+  }
 
   const host = await getHostProfile(sc, fresh.user_id);
   const hostTz = await hostTimezoneOf(sc, fresh.user_id);
@@ -637,6 +685,15 @@ export async function rescheduleBooking(
 
   if (fresh.status === "confirmed") {
     fresh = await applyConfirmationSideEffects(sc, fresh, eventType, host);
+  }
+
+  if (by === "invitee") {
+    await notifyHost(
+      sc,
+      fresh,
+      `RDV reprogrammé par l'invité : ${fresh.invitee_name} — ${fresh.event_title}`,
+      "info",
+    );
   }
 
   const ctx = {

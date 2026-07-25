@@ -95,10 +95,46 @@ export const deleteOverride = (date: string) =>
 
 export type BookingFilter = "upcoming" | "pending" | "past" | "cancelled";
 
-export const fetchBookings = (filter: BookingFilter, teamWide = false) =>
+export const fetchBookings = (filter: BookingFilter, teamWide = false, hostId?: string | null) =>
   authedFetch(
-    `/api/scheduling/bookings?filter=${filter}${teamWide ? "&all=1" : ""}`,
+    `/api/scheduling/bookings?filter=${filter}` +
+      (hostId ? `&host=${encodeURIComponent(hostId)}` : teamWide ? "&all=1" : ""),
   ).then((r) => jsonOrThrow<{ bookings: BookingWithHost[] }>(r));
+
+export type SchedulingStats = {
+  days: number;
+  team_wide: boolean;
+  totals: {
+    upcoming: number;
+    pending: number;
+    held_past: number;
+    cancelled_past: number;
+    cancellation_rate: number;
+    total_past: number;
+  };
+  by_week: { week: string; total: number; cancelled: number }[];
+  by_event_type: { label: string; count: number }[];
+  by_source: { label: string; count: number }[];
+};
+
+export const fetchStats = (days: number, teamWide = false) =>
+  authedFetch(`/api/scheduling/stats?days=${days}${teamWide ? "&all=1" : ""}`).then((r) =>
+    jsonOrThrow<SchedulingStats>(r),
+  );
+
+export type TeamMember = {
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  username: string | null;
+  page_active: boolean;
+  upcoming: number;
+  pending: number;
+};
+
+export const fetchTeam = () =>
+  authedFetch("/api/scheduling/team").then((r) => jsonOrThrow<{ members: TeamMember[] }>(r));
 
 export const bookingAction = (
   id: string,

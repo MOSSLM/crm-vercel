@@ -27,6 +27,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
+import { googleCalendarUrl, outlookCalendarUrl } from "./calendar-links";
 
 type PublicPage = {
   username: string;
@@ -953,6 +954,44 @@ function ConfirmationView({
           </a>
         ) : null}
       </div>
+
+      {!requiresConfirmation ? (
+        <div className="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+          <span className="text-[#8A877F]">Ajouter à mon agenda :</span>
+          <a
+            className="rounded-full border px-3 py-1 font-medium text-[#14120E] hover:bg-[#F4F2EC]"
+            target="_blank"
+            rel="noreferrer"
+            href={googleCalendarUrl({
+              title: `${eventType.title} avec ${page.display_name}`,
+              startIso: slotIso,
+              endIso: new Date(
+                Date.parse(slotIso) + eventType.duration_minutes * 60000,
+              ).toISOString(),
+              details: meetingUrl ? `Visio : ${meetingUrl}` : undefined,
+              location: meetingUrl ?? undefined,
+            })}
+          >
+            Google
+          </a>
+          <a
+            className="rounded-full border px-3 py-1 font-medium text-[#14120E] hover:bg-[#F4F2EC]"
+            target="_blank"
+            rel="noreferrer"
+            href={outlookCalendarUrl({
+              title: `${eventType.title} avec ${page.display_name}`,
+              startIso: slotIso,
+              endIso: new Date(
+                Date.parse(slotIso) + eventType.duration_minutes * 60000,
+              ).toISOString(),
+              details: meetingUrl ? `Visio : ${meetingUrl}` : undefined,
+              location: meetingUrl ?? undefined,
+            })}
+          >
+            Outlook
+          </a>
+        </div>
+      ) : null}
 
       {manageToken ? (
         <p className="mt-6 text-xs text-[#8A877F]">

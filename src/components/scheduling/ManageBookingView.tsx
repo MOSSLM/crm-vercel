@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, ArrowLeft, Calendar as CalendarIcon, Check, Loader2, MapPin, Video, X } from "lucide-react";
 import BookingWidget from "./BookingWidget";
+import { googleCalendarUrl, outlookCalendarUrl } from "./calendar-links";
 
 type ManagePayload = {
   booking: {
@@ -250,6 +251,40 @@ export default function ManageBookingView({ token }: { token: string }) {
               </p>
             ) : null}
           </div>
+
+          {b.status === "confirmed" ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-[#8A877F]">Ajouter à mon agenda :</span>
+              <a
+                className="rounded-full border px-3 py-1 font-medium hover:bg-[#F4F2EC]"
+                target="_blank"
+                rel="noreferrer"
+                href={googleCalendarUrl({
+                  title: b.event_title,
+                  startIso: b.start_at,
+                  endIso: b.end_at,
+                  details: b.meeting_url ? `Visio : ${b.meeting_url}` : undefined,
+                  location: b.meeting_url ?? b.location_text ?? undefined,
+                })}
+              >
+                Google
+              </a>
+              <a
+                className="rounded-full border px-3 py-1 font-medium hover:bg-[#F4F2EC]"
+                target="_blank"
+                rel="noreferrer"
+                href={outlookCalendarUrl({
+                  title: b.event_title,
+                  startIso: b.start_at,
+                  endIso: b.end_at,
+                  details: b.meeting_url ? `Visio : ${b.meeting_url}` : undefined,
+                  location: b.meeting_url ?? b.location_text ?? undefined,
+                })}
+              >
+                Outlook
+              </a>
+            </div>
+          ) : null}
 
           {mode === "cancel" && isActive ? (
             <div className="mt-6 rounded-xl border bg-[#FBFAF7] p-4">
