@@ -11,7 +11,7 @@ export const OPTIONS = (req: Request) => preflight(req);
 /**
  * Liste des bookings de l'hôte.
  *   ?filter=upcoming (défaut) | pending | past | cancelled
- * Un admin peut passer ?all=1 pour voir les bookings de toute l'équipe.
+ * Un admin peut passer ?all=1 (toute l'équipe) ou ?host=<uuid> (un hôte précis).
  */
 export const GET = withAuth({}, async ({ user, req, cors }) => {
   const sc = getServiceClient();
@@ -20,14 +20,16 @@ export const GET = withAuth({}, async ({ user, req, cors }) => {
 
   const url = new URL(req.url);
   const filter = url.searchParams.get("filter") ?? "upcoming";
-  const teamWide = staff.role === "admin" && url.searchParams.get("all") === "1";
+  const hostParam = staff.role === "admin" ? url.searchParams.get("host") : null;
+  const teamWide = staff.role === "admin" && !hostParam && url.searchParams.get("all") === "1";
   const nowIso = new Date().toISOString();
 
   let q = sc
     .from("scheduling_bookings")
     .select(`${BOOKING_COLUMNS}, host:user_profiles!scheduling_bookings_user_id_fkey(full_name, email)`)
     .limit(200);
-  if (!teamWide) q = q.eq("user_id", user.id);
+  if (hostParam) q = q.eq("user_id", hostParam);
+  else if (!teamWide) q = q.eq("user_id", user.id);
 
   switch (filter) {
     case "pending":

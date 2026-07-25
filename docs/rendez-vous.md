@@ -12,9 +12,17 @@ fichier `.ics`, lien visio et liens reprogrammer/annuler.
   `/rdv/{username}/{slug}` (calendrier + créneaux dans SON fuseau, détecté et
   changeable → formulaire avec questions custom → confirmation) →
   `/rdv/gerer/{token}` (reprogrammer / annuler).
-- **Hôte admin** : `/rendez-vous` (réservations), `/rendez-vous/types`,
-  `/rendez-vous/disponibilites`, `/rendez-vous/parametres` (nav « Relation »).
-- **Hôte agent** : mêmes écrans sous `/espace-agent/rendez-vous` (nav « Pilotage »).
+- **Hôte admin** : section **Cal.SAMA** sous `/rendez-vous` (nav « Relation »),
+  avec sa propre sidebar façon Cal.com à droite de la nav du Studio :
+  Aperçu (`/rendez-vous`), Réservations (`/reservations`, sous-filtres à
+  venir/en attente/passées/annulées + badge), Types d'évènements (`/types`),
+  Disponibilités (`/disponibilites`), Équipe (`/equipe`, admin : pages et
+  compteurs de tous les hôtes, filtre « ses résas »), Statistiques
+  (`/statistiques`, tuiles + réservations par semaine + répartitions),
+  Intégrations (`/integrations`, Google + embed + emails), Ma page
+  (`/parametres`).
+- **Hôte agent** : même section sous `/espace-agent/rendez-vous`
+  (nav « Pilotage »), sans l'onglet Équipe.
 - **Cockpit téléphonie** : panneau « Proposer un RDV » (copie du lien prérempli
   + envoi par email au prospect pendant l'appel).
 - **Landing** : le CTA « Réserver un échange » pointe sur `/rdv` (redirige vers

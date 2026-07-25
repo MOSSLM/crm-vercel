@@ -15,7 +15,7 @@ export const runtime = "nodejs";
  */
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const settingsUrl = `${getAppUrl()}/rendez-vous/parametres`;
+  const settingsUrl = `${getAppUrl()}/rendez-vous/integrations`;
   const redirect = (params: string) =>
     Response.redirect(`${settingsUrl}?${params}`, 302);
 

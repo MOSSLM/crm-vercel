@@ -1,13 +1,14 @@
-import AppLayout from "@/components/layout/AppLayout";
-import RequireAuth from "@/components/auth/RequireAuth";
-import SchedulingSection from "@/components/scheduling/host/SchedulingSection";
+import { SectionHeader } from "@/components/scheduling/host/CalShell";
+import EventTypesManager from "@/components/scheduling/host/EventTypesManager";
 
 export default function Page() {
   return (
-    <AppLayout>
-      <RequireAuth>
-        <SchedulingSection section="types" basePath="/rendez-vous" />
-      </RequireAuth>
-    </AppLayout>
+    <div className="space-y-4 p-4 md:p-6">
+      <SectionHeader
+        title="Types d'évènements"
+        subtitle="Les liens réservables que vous partagez (durée, lieu, règles, questions)."
+      />
+      <EventTypesManager />
+    </div>
   );
 }
