@@ -34,6 +34,7 @@ import {
   Phone,
   PhoneCall,
   CalendarDays,
+  CalendarClock,
   Activity,
   Settings,
 } from "lucide-react";
@@ -110,6 +111,7 @@ export const SPACES: Space[] = [
       { title: "Opportunités", href: "/opportunities", icon: Target },
       { title: "Offres", href: "/offres", icon: Tag },
       { title: "Messagerie", href: "/messagerie", icon: MessageSquare },
+      { title: "Rendez-vous", href: "/rendez-vous", icon: CalendarClock },
     ],
   },
   {
@@ -217,6 +219,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/opportunities", "relation"],
   ["/offres", "relation"],
   ["/messagerie", "relation"],
+  ["/rendez-vous", "relation"],
 
   ["/production", "production"],
   ["/planches", "production"],
