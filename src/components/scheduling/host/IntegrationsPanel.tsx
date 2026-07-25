@@ -13,7 +13,6 @@ import {
   CalendarX2,
   Check,
   Code2,
-  Copy,
   Link2,
   Loader2,
   Mail,
@@ -30,14 +29,16 @@ import {
   fetchSchedulingPage,
   type CalendarConnection,
 } from "@/lib/scheduling/client";
-import { getAppUrlClient } from "./shared";
+import type { EventType } from "@/lib/scheduling/types";
+import EmbedGenerator from "./EmbedGenerator";
 
 export default function IntegrationsPanel() {
   const searchParams = useSearchParams();
   const [connections, setConnections] = useState<CalendarConnection[]>([]);
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [publicUrl, setPublicUrl] = useState("");
-  const [firstSlug, setFirstSlug] = useState("appel-30min");
+  const [brandColor, setBrandColor] = useState("#E2552B");
+  const [eventTypes, setEventTypes] = useState<EventType[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
 
@@ -47,13 +48,13 @@ export default function IntegrationsPanel() {
       const [connData, pageData, typesData] = await Promise.all([
         fetchConnections(),
         fetchSchedulingPage(),
-        fetchEventTypes().catch(() => ({ event_types: [] })),
+        fetchEventTypes().catch(() => ({ event_types: [] as EventType[] })),
       ]);
       setConnections(connData.connections);
       setGoogleAvailable(connData.google_available);
       setPublicUrl(pageData.public_url);
-      const active = typesData.event_types.find((et) => et.is_active);
-      if (active) setFirstSlug(active.slug);
+      setBrandColor(pageData.page.brand_color || "#E2552B");
+      setEventTypes(typesData.event_types);
     } catch (err) {
       toast.error("Chargement impossible", {
         description: err instanceof Error ? err.message : undefined,
@@ -92,11 +93,6 @@ export default function IntegrationsPanel() {
     }
   };
 
-  const copy = (text: string, message: string) => {
-    void navigator.clipboard.writeText(text);
-    toast.success(message);
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
@@ -104,10 +100,6 @@ export default function IntegrationsPanel() {
       </div>
     );
   }
-
-  const embedSnippet =
-    `<div class="sama-rdv" data-url="${publicUrl}/${firstSlug}"></div>\n` +
-    `<script src="${getAppUrlClient()}/api/public/scheduling/embed.js" async></script>`;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -189,21 +181,15 @@ export default function IntegrationsPanel() {
             <Code2 className="h-4 w-4" /> Intégrer sur un site (embed)
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Deux lignes à coller sur n&apos;importe quel site — l&apos;iframe s&apos;adapte
-            automatiquement à la hauteur du contenu. Préremplissage possible via
-            <code className="mx-1 rounded bg-muted px-1">?name=&amp;email=</code>.
+            Choisissez le type d&apos;intégration — comme Calendly — et collez le snippet généré.
           </p>
-          <pre className="mt-3 overflow-x-auto rounded-lg bg-muted p-3 text-xs leading-relaxed">
-            {embedSnippet}
-          </pre>
-          <Button
-            size="sm"
-            variant="outline"
-            className="mt-2"
-            onClick={() => copy(embedSnippet, "Snippet d'intégration copié")}
-          >
-            <Copy className="mr-1 h-4 w-4" /> Copier le snippet
-          </Button>
+          <div className="mt-3">
+            <EmbedGenerator
+              publicUrl={publicUrl}
+              eventTypes={eventTypes}
+              brandColor={brandColor}
+            />
+          </div>
         </div>
 
         {/* Emails */}

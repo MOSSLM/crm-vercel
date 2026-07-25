@@ -23,8 +23,10 @@ fichier `.ics`, lien visio et liens reprogrammer/annuler.
   (`/parametres`).
 - **Hôte agent** : même section sous `/espace-agent/rendez-vous`
   (nav « Pilotage »), sans l'onglet Équipe.
-- **Cockpit téléphonie** : panneau « Proposer un RDV » (copie du lien prérempli
-  + envoi par email au prospect pendant l'appel).
+- **Cockpit téléphonie** : panneau « Proposer un RDV » à deux modes —
+  « Réserver » (mini-calendrier avec les vrais créneaux dispo : l'agent cale
+  le RDV pendant l'appel, lié à l'opportunité, avec confirmation email + .ics
+  automatiques) et « Lien » (copie du lien prérempli ou envoi par email).
 - **Landing** : le CTA « Réserver un échange » pointe sur `/rdv` (redirige vers
   la page du premier admin actif).
 
@@ -64,14 +66,29 @@ fichier `.ics`, lien visio et liens reprogrammer/annuler.
 
 ## Embed sur un site externe
 
+Trois types, générés depuis Cal.SAMA → Intégrations (choix de la cible, du
+texte, de la couleur et de la position) :
+
 ```html
+<!-- 1) Inline : le calendrier dans la page -->
 <div class="sama-rdv" data-url="https://app.samadigitalstudio.fr/rdv/jean/appel-30min"></div>
+<script src="https://app.samadigitalstudio.fr/api/public/scheduling/embed.js" async></script>
+
+<!-- 2) Bouton flottant : bouton fixe en bas d'écran → popup -->
+<script src="https://app.samadigitalstudio.fr/api/public/scheduling/embed.js" async
+  data-button-url="https://app.samadigitalstudio.fr/rdv/jean/appel-30min"
+  data-button-text="Prendre rendez-vous"
+  data-button-color="#E2552B"
+  data-button-position="right"></script>
+
+<!-- 3) Popup au clic : sur n'importe quel élément -->
+<a href="#" data-sama-rdv-popup="https://app.samadigitalstudio.fr/rdv/jean/appel-30min">Réserver</a>
 <script src="https://app.samadigitalstudio.fr/api/public/scheduling/embed.js" async></script>
 ```
 
-L'iframe s'auto-redimensionne (postMessage `sama-rdv:height`). Le snippet est
-copiable depuis « Ma page & agendas ». Préremplissage possible par query params
-(`?name=&email=&tz=`).
+L'iframe inline s'auto-redimensionne (postMessage `sama-rdv:height`) ; la
+popup se ferme par Échap / clic sur le fond ; `window.SamaRdv.popup(url)` est
+aussi exposé. Préremplissage par query params (`?name=&email=&tz=`).
 
 ## Architecture
 
@@ -91,7 +108,11 @@ Chaque booking est relié au CRM : matching contact par email
 (`contact_id`/`entreprise_id`), évènement `crm_calendar_events` (catégorie
 « Rendez-vous », visible dans `/calendar`, calendrier équipe téléphonie et
 espace agent), champs `opportunite_id`/`call_id` pour la téléphonie, emails
-journalisés dans `email_logs` (type `scheduling`).
+journalisés dans `email_logs` (type `scheduling`), notification in-app à
+l'hôte (table `notifications`, type `scheduling`) à chaque nouvelle
+réservation / annulation / reprogrammation par l'invité. Côté invité, la
+confirmation et la page de gestion proposent aussi « Ajouter à mon agenda »
+(Google / Outlook) en plus du .ics joint aux emails.
 
 ## Extensions prévues (non incluses)
 

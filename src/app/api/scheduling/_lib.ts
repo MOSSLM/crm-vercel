@@ -133,6 +133,19 @@ export const bookingActionSchema = z.object({
   start: z.string().datetime({ offset: true }).optional(),
 });
 
+/** Création d'un booking par l'hôte (cockpit d'appel, admin) — source 'agent'. */
+export const hostBookingCreateSchema = z.object({
+  event_type_id: z.string().uuid(),
+  start: z.string().datetime({ offset: true }),
+  name: z.string().min(1).max(160),
+  email: z.string().email().max(254),
+  phone: z.string().max(40).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+  timezone: timezoneSchema.optional(),
+  call_id: z.string().uuid().nullable().optional(),
+  opportunite_id: z.string().uuid().nullable().optional(),
+});
+
 export const publicBookingCreateSchema = z.object({
   username: slugSchema,
   event_slug: slugSchema,
