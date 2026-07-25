@@ -42,6 +42,10 @@ const envSchema = z
     RENDER_PROVIDER: z.string().min(1).optional(),
     RENDER_API_KEY: z.string().min(1).optional(),
     RENDER_API_URL: z.string().url().optional(),
+    // Google Calendar (module Rendez-vous) — optional; the OAuth routes return
+    // 503 when absent and the scheduling module works without external busy.
+    GOOGLE_CALENDAR_CLIENT_ID: z.string().min(1).optional(),
+    GOOGLE_CALENDAR_CLIENT_SECRET: z.string().min(1).optional(),
     // The cron routes fail closed in production unless at least one of these
     // is set. Either is sufficient: CRON_SECRET is checked when the call comes
     // from Vercel Cron, PG_CRON_SECRET when it comes from Supabase pg_cron.
@@ -77,6 +81,8 @@ const envResult = envSchema.safeParse({
   RENDER_PROVIDER: process.env.RENDER_PROVIDER,
   RENDER_API_KEY: process.env.RENDER_API_KEY,
   RENDER_API_URL: process.env.RENDER_API_URL,
+  GOOGLE_CALENDAR_CLIENT_ID: process.env.GOOGLE_CALENDAR_CLIENT_ID,
+  GOOGLE_CALENDAR_CLIENT_SECRET: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
   CRON_SECRET: process.env.CRON_SECRET,
   PG_CRON_SECRET: process.env.PG_CRON_SECRET,
 });
@@ -109,6 +115,8 @@ export const {
   RENDER_PROVIDER,
   RENDER_API_KEY,
   RENDER_API_URL,
+  GOOGLE_CALENDAR_CLIENT_ID,
+  GOOGLE_CALENDAR_CLIENT_SECRET,
   CRON_SECRET,
   PG_CRON_SECRET,
 } = envResult.data;

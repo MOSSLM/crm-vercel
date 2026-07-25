@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   KanbanSquare,
   CalendarDays,
+  CalendarClock,
   Target,
   Inbox,
   Workflow,
@@ -68,6 +69,7 @@ export const AGENT_SPACES: AgentSpace[] = [
       { title: "Dashboard", href: "/espace-agent/dashboard", icon: LayoutDashboard },
       { title: "Pipeline", href: "/espace-agent/pipeline", icon: KanbanSquare },
       { title: "Calendrier", href: "/espace-agent/calendrier", icon: CalendarDays },
+      { title: "Rendez-vous", href: "/espace-agent/rendez-vous", icon: CalendarClock },
     ],
   },
   {
@@ -145,6 +147,7 @@ const PATH_TO_SPACE: Array<[string, AgentSpaceId]> = [
   ["/espace-agent/dashboard", "pilotage"],
   ["/espace-agent/pipeline", "pilotage"],
   ["/espace-agent/calendrier", "pilotage"],
+  ["/espace-agent/rendez-vous", "pilotage"],
 
   ["/espace-agent/demarchage", "demarchage"],
   ["/espace-agent/messagerie", "demarchage"],

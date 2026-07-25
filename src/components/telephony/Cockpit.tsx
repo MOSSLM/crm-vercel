@@ -8,6 +8,7 @@ import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { useTelephonyOptional } from "./CallProvider";
 import { CallJournal } from "./CallJournal";
+import BookingLinkPanel from "@/components/scheduling/BookingLinkPanel";
 
 interface QueueItem {
   oppId: string;
@@ -301,6 +302,18 @@ export function Cockpit() {
 
         {/* RIGHT — contexte prospect */}
         <aside className="pros-right">
+          <div className="blk">
+            <h4>Proposer un RDV</h4>
+            {current ? (
+              <BookingLinkPanel
+                prospectName={current.name}
+                entrepriseId={current.entrepriseId}
+                opportuniteId={current.oppId}
+              />
+            ) : (
+              <div className="ck-empty">Sélectionnez un prospect.</div>
+            )}
+          </div>
           <div className="blk">
             <h4>Historique d'appels</h4>
             {current?.entrepriseId ? (

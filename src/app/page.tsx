@@ -2,7 +2,6 @@
  * SAMA — Landing page (one-page).
  *
  * Placeholders à compléter (recherche "TODO:" pour les trouver) :
- *  - Calendly URL (#contact, bouton "Réserver un échange")
  *  - Téléphone (lien tel:)
  *  - Email (lien mailto:)
  *  - LinkedIn de SAMA (footer)
@@ -59,7 +58,8 @@ const SUN_PATH =
 
 // TODO: remplacer par les vrais coordonnées + liens
 const CONTACT = {
-  calendlyUrl: "https://calendly.com/REPLACE-ME/echange-15min",
+  // Module Rendez-vous intégré : /rdv redirige vers la page de réservation du studio.
+  calendlyUrl: "/rdv",
   phone: "+33 1 23 45 67 89",
   phoneHref: "tel:+33123456789",
   email: "contact@samadigitalstudio.fr",
