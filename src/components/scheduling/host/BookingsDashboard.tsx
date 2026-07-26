@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * Dashboard hôte des réservations (habillage maquettes cal-skin) :
- * segmented control à venir / en attente / passées / annulées, rangées à
- * barre de statut, détail dépliable, actions confirmer / refuser / annuler /
- * reprogrammer, vue équipe + filtre par hôte pour l'admin.
+ * Dashboard hôte des réservations : filtres à venir / en attente / passées /
+ * annulées (synchronisés avec l'URL), rangées avec barre de statut et détail
+ * dépliable, actions confirmer / refuser / annuler / reprogrammer, vue équipe
+ * et filtre par hôte pour l'admin.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -53,11 +53,30 @@ const FILTERS: { id: BookingFilter; label: string }[] = [
   { id: "cancelled", label: "Annulées" },
 ];
 
-const STATUS_META: Record<string, { label: string; pill: string; bar: string }> = {
-  confirmed: { label: "Confirmé", pill: "ok", bar: "var(--ok)" },
-  pending: { label: "En attente", pill: "warn", bar: "var(--warn)" },
-  cancelled: { label: "Annulé", pill: "danger", bar: "var(--danger)" },
-  declined: { label: "Refusé", pill: "danger", bar: "var(--danger)" },
+const STATUS_META: Record<
+  string,
+  { label: string; bar: string; chip: string }
+> = {
+  confirmed: {
+    label: "Confirmé",
+    bar: "bg-[var(--ok)]",
+    chip: "bg-[var(--ok-tint)] text-[var(--ok)]",
+  },
+  pending: {
+    label: "En attente",
+    bar: "bg-[var(--warn)]",
+    chip: "bg-[var(--warn-tint)] text-[var(--warn)]",
+  },
+  cancelled: {
+    label: "Annulé",
+    bar: "bg-[var(--danger)]",
+    chip: "bg-[var(--danger-tint)] text-[var(--danger)]",
+  },
+  declined: {
+    label: "Refusé",
+    bar: "bg-[var(--danger)]",
+    chip: "bg-[var(--danger-tint)] text-[var(--danger)]",
+  },
 };
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -73,7 +92,7 @@ const fmtDay = (iso: string) =>
   );
 const fmtTime = (iso: string) =>
   new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-const fmtRange = (startIso: string, endIso: string): string =>
+const fmtRange = (startIso: string, endIso: string) =>
   `${fmtDay(startIso)} · ${fmtTime(startIso)} – ${fmtTime(endIso)}`;
 
 const VALID_FILTERS: BookingFilter[] = ["upcoming", "pending", "past", "cancelled"];
@@ -85,7 +104,7 @@ export default function BookingsDashboard() {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
 
-  // L'URL est la source de vérité (liens de la sidebar Cal.SAMA, vue Équipe).
+  // L'URL est la source de vérité (liens de la nav Cal.SAMA, vue Équipe).
   const urlFilter = searchParams?.get("filter") as BookingFilter | null;
   const filter: BookingFilter =
     urlFilter && VALID_FILTERS.includes(urlFilter) ? urlFilter : "upcoming";
@@ -113,7 +132,6 @@ export default function BookingsDashboard() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [pendingCount, setPendingCount] = useState(0);
 
-  // Dialogues d'action
   const [cancelTarget, setCancelTarget] = useState<BookingWithHost | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [rescheduleTarget, setRescheduleTarget] = useState<BookingWithHost | null>(null);
@@ -130,9 +148,7 @@ export default function BookingsDashboard() {
           : fetchBookings("pending", teamWide, hostId).catch(() => null),
       ]);
       setBookings(main.bookings);
-      setPendingCount(
-        filter === "pending" ? main.bookings.length : pending?.bookings.length ?? 0,
-      );
+      setPendingCount(filter === "pending" ? main.bookings.length : pending?.bookings.length ?? 0);
     } catch (err) {
       toast.error("Impossible de charger les réservations", {
         description: err instanceof Error ? err.message : undefined,
@@ -190,75 +206,82 @@ export default function BookingsDashboard() {
     <div className="space-y-4">
       {/* Barre d'outils */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="seg" role="tablist">
+        <div className="inline-flex gap-1 rounded-lg bg-muted p-1">
           {FILTERS.map((f) => (
             <button
               key={f.id}
               type="button"
-              role="tab"
-              aria-selected={filter === f.id}
-              className="seg-btn"
               onClick={() => setFilter(f.id)}
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                filter === f.id
+                  ? "bg-card text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
             >
               {f.label}
               {f.id === "pending" && pendingCount > 0 ? (
-                <span className="nb">{pendingCount}</span>
+                <span className="cal-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--warn)] px-1 text-[10px] font-semibold text-white">
+                  {pendingCount}
+                </span>
               ) : null}
             </button>
           ))}
         </div>
+
         <div className="flex items-center gap-2">
           {hostId ? (
-            <span className="pill outline" style={{ height: 26 }}>
-              <User size={12} />
+            <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs">
+              <User className="h-3 w-3" />
               {bookings[0]?.host?.full_name ?? bookings[0]?.host?.email ?? "Hôte sélectionné"}
               <button
                 type="button"
                 onClick={() => setQuery({ host: null })}
                 aria-label="Retirer le filtre hôte"
-                style={{ display: "inline-flex" }}
+                className="text-muted-foreground hover:text-foreground"
               >
-                <X size={12} />
+                <X className="h-3 w-3" />
               </button>
             </span>
           ) : null}
           {isAdmin && !hostId ? (
-            <button
-              type="button"
-              className={"btn sm " + (teamWide ? "primary" : "outline")}
+            <Button
+              variant={teamWide ? "default" : "outline"}
+              size="sm"
               onClick={() => setTeamWide(!teamWide)}
             >
-              <User size={13} />
+              <User className="mr-1.5 h-4 w-4" />
               {teamWide ? "Toute l'équipe" : "Mes RDV"}
-            </button>
+            </Button>
           ) : null}
-          <button
-            type="button"
-            className="btn outline icon sm"
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-9 w-9"
             onClick={() => void load()}
             disabled={loading}
             aria-label="Rafraîchir"
           >
-            <RefreshCw size={13} className={loading ? "spin" : undefined} />
-          </button>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </Button>
         </div>
       </div>
 
       {loading ? (
-        <div className="blk empty">
-          <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
-          Chargement…
+        <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
         </div>
       ) : bookings.length === 0 ? (
-        <div className="blk empty">
-          <CalendarCheck size={22} />
-          {filter === "upcoming"
-            ? "Aucun rendez-vous à venir. Partagez votre lien de réservation !"
-            : filter === "pending"
-              ? "Aucune demande en attente de validation."
-              : filter === "past"
-                ? "Aucun rendez-vous passé."
-                : "Aucun rendez-vous annulé."}
+        <div className="rounded-xl border bg-card py-16 text-center">
+          <CalendarCheck className="mx-auto h-8 w-8 text-muted-foreground/40" />
+          <p className="mt-3 text-sm text-muted-foreground">
+            {filter === "upcoming"
+              ? "Aucun rendez-vous à venir. Partagez votre lien de réservation !"
+              : filter === "pending"
+                ? "Aucune demande en attente de validation."
+                : filter === "past"
+                  ? "Aucun rendez-vous passé."
+                  : "Aucun rendez-vous annulé."}
+          </p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -267,150 +290,167 @@ export default function BookingsDashboard() {
             const isExpanded = expanded === b.id;
             const isActive = b.status === "pending" || b.status === "confirmed";
             return (
-              <div key={b.id} className="rowcard">
+              <div key={b.id} className="overflow-hidden rounded-xl border bg-card shadow-sm">
                 <button
                   type="button"
-                  className="rowhead"
                   onClick={() => setExpanded(isExpanded ? null : b.id)}
+                  className="flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-[var(--hover)]"
                 >
-                  <span className="colorbar" style={{ background: meta.bar }} />
-                  <span className="when">
-                    <span className="d" style={{ display: "block" }}>
+                  <span className={`h-9 w-[3px] shrink-0 rounded-full ${meta.bar}`} />
+                  <span className="cal-mono w-14 shrink-0 text-center">
+                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
                       {fmtDay(b.start_at)}
                     </span>
-                    <span className="t" style={{ display: "block" }}>
-                      {fmtTime(b.start_at)}
-                    </span>
+                    <span className="block text-sm font-semibold">{fmtTime(b.start_at)}</span>
                   </span>
-                  <span style={{ minWidth: 0, flex: 1 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span className="nm">{b.invitee_name}</span>
-                      <span className={`pill ${meta.pill}`}>{meta.label}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium">{b.invitee_name}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.chip}`}
+                      >
+                        {meta.label}
+                      </span>
                       {b.source !== "public" ? (
-                        <span className="pill muted">{SOURCE_LABELS[b.source] ?? b.source}</span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {SOURCE_LABELS[b.source] ?? b.source}
+                        </span>
                       ) : null}
                       {(teamWide || hostId) && b.host ? (
-                        <span className="pill outline">{b.host.full_name ?? b.host.email}</span>
+                        <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {b.host.full_name ?? b.host.email}
+                        </span>
                       ) : null}
                     </span>
-                    <span className="meta">
+                    <span className="cal-mono mt-0.5 block truncate text-[11px] text-muted-foreground">
                       {b.event_title} · {fmtRange(b.start_at, b.end_at)}
                     </span>
                   </span>
                   {isExpanded ? (
-                    <ChevronUp size={15} style={{ color: "var(--text-3)", flexShrink: 0 }} />
+                    <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
                   ) : (
-                    <ChevronDown size={15} style={{ color: "var(--text-3)", flexShrink: 0 }} />
+                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
                   )}
                 </button>
 
                 {isExpanded ? (
-                  <div className="rowbody">
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                        <p className="kv" style={{ margin: 0 }}>
+                  <div className="border-t bg-muted/30 px-4 py-3">
+                    <div className="grid gap-3 text-sm md:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <p className="text-muted-foreground">
                           Email :{" "}
-                          <a className="link" href={`mailto:${b.invitee_email}`}>
+                          <a
+                            className="text-foreground underline underline-offset-2"
+                            href={`mailto:${b.invitee_email}`}
+                          >
                             {b.invitee_email}
                           </a>
                         </p>
                         {b.invitee_phone ? (
-                          <p className="kv" style={{ margin: 0 }}>
-                            Téléphone : <b>{b.invitee_phone}</b>
+                          <p className="text-muted-foreground">
+                            Téléphone : <span className="text-foreground">{b.invitee_phone}</span>
                           </p>
                         ) : null}
-                        <p className="kv" style={{ margin: 0 }}>
-                          Fuseau invité : <b>{b.invitee_timezone}</b>
+                        <p className="text-muted-foreground">
+                          Fuseau invité :{" "}
+                          <span className="text-foreground">{b.invitee_timezone}</span>
                         </p>
                         {b.additional_guests?.length ? (
-                          <p className="kv" style={{ margin: 0 }}>
-                            Invités : <b>{b.additional_guests.join(", ")}</b>
+                          <p className="text-muted-foreground">
+                            Invités :{" "}
+                            <span className="text-foreground">
+                              {b.additional_guests.join(", ")}
+                            </span>
                           </p>
                         ) : null}
                         {b.meeting_url ? (
-                          <p style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                            <Video size={13} style={{ color: "var(--text-3)" }} />
-                            <a href={b.meeting_url} target="_blank" rel="noreferrer" className="link">
+                          <p className="flex items-center gap-1.5">
+                            <Video className="h-4 w-4 text-muted-foreground" />
+                            <a
+                              href={b.meeting_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-primary underline underline-offset-2"
+                            >
                               Lien visio
                             </a>
                           </p>
                         ) : null}
                         {b.location_text ? (
-                          <p className="kv" style={{ margin: 0, display: "flex", alignItems: "center", gap: 6 }}>
-                            <MapPin size={13} /> {b.location_text}
+                          <p className="flex items-center gap-1.5 text-muted-foreground">
+                            <MapPin className="h-4 w-4" /> {b.location_text}
                           </p>
                         ) : null}
                         {b.cancellation_reason ? (
-                          <p className="kv" style={{ margin: 0 }}>
-                            Motif : <b>{b.cancellation_reason}</b>
+                          <p className="text-muted-foreground">
+                            Motif :{" "}
+                            <span className="text-foreground">{b.cancellation_reason}</span>
                           </p>
                         ) : null}
                       </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div className="space-y-1.5">
                         {(b.answers ?? []).map((a) => (
-                          <p key={a.id} className="kv" style={{ margin: 0 }}>
-                            {a.label} : <b>{a.value}</b>
+                          <p key={a.id} className="text-muted-foreground">
+                            {a.label} : <span className="text-foreground">{a.value}</span>
                           </p>
                         ))}
                         {b.invitee_notes ? (
-                          <p className="kv" style={{ margin: 0 }}>
-                            Notes : <b>{b.invitee_notes}</b>
+                          <p className="text-muted-foreground">
+                            Notes : <span className="text-foreground">{b.invitee_notes}</span>
                           </p>
                         ) : null}
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+                    <div className="mt-4 flex flex-wrap gap-2">
                       {b.status === "pending" ? (
                         <>
-                          <button
-                            type="button"
-                            className="btn accent sm"
-                            disabled={working}
-                            onClick={() => void act(b, "confirm")}
-                          >
-                            <Check size={13} /> Confirmer
-                          </button>
-                          <button
-                            type="button"
-                            className="btn outline sm"
+                          <Button size="sm" disabled={working} onClick={() => void act(b, "confirm")}>
+                            <Check className="mr-1.5 h-4 w-4" /> Confirmer
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
                             disabled={working}
                             onClick={() => void act(b, "decline")}
                           >
-                            <X size={13} /> Refuser
-                          </button>
+                            <X className="mr-1.5 h-4 w-4" /> Refuser
+                          </Button>
                         </>
                       ) : null}
                       {isActive ? (
                         <>
-                          <button
-                            type="button"
-                            className="btn outline sm"
+                          <Button
+                            size="sm"
+                            variant="outline"
                             disabled={working}
                             onClick={() => {
                               setRescheduleTarget(b);
                               setRescheduleAt("");
                             }}
                           >
-                            <RefreshCw size={13} /> Reprogrammer
-                          </button>
-                          <button
-                            type="button"
-                            className="btn danger-ghost sm"
+                            <RefreshCw className="mr-1.5 h-4 w-4" /> Reprogrammer
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-[var(--danger)] hover:text-[var(--danger)]"
                             disabled={working}
                             onClick={() => setCancelTarget(b)}
                           >
-                            <X size={13} /> Annuler
-                          </button>
-                          <button type="button" className="btn ghost sm" onClick={() => copyManageLink(b)}>
-                            <Link2 size={13} /> Lien de gestion
-                          </button>
+                            <X className="mr-1.5 h-4 w-4" /> Annuler
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => copyManageLink(b)}>
+                            <Link2 className="mr-1.5 h-4 w-4" /> Lien de gestion
+                          </Button>
                         </>
                       ) : null}
                       {b.contact_id ? (
-                        <Link href={`/contacts?focus=${b.contact_id}`} className="btn ghost sm">
-                          <ExternalLink size={13} /> Fiche contact
-                        </Link>
+                        <Button size="sm" variant="ghost" asChild>
+                          <Link href={`/contacts?focus=${b.contact_id}`}>
+                            <ExternalLink className="mr-1.5 h-4 w-4" /> Fiche contact
+                          </Link>
+                        </Button>
                       ) : null}
                     </div>
                   </div>
@@ -453,7 +493,7 @@ export default function BookingsDashboard() {
                 cancelTarget && void act(cancelTarget, "cancel", { reason: cancelReason || null })
               }
             >
-              {working ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {working ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
               Annuler le RDV
             </Button>
           </DialogFooter>
@@ -488,11 +528,12 @@ export default function BookingsDashboard() {
               disabled={working || !rescheduleAt}
               onClick={() => {
                 if (!rescheduleTarget || !rescheduleAt) return;
-                const iso = new Date(rescheduleAt).toISOString();
-                void act(rescheduleTarget, "reschedule", { start: iso });
+                void act(rescheduleTarget, "reschedule", {
+                  start: new Date(rescheduleAt).toISOString(),
+                });
               }}
             >
-              {working ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              {working ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
               Reprogrammer
             </Button>
           </DialogFooter>

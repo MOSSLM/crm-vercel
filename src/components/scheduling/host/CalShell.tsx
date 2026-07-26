@@ -1,16 +1,19 @@
 "use client";
 
 /**
- * Coquille de la section Cal.SAMA — habillage « cal-skin » fidèle aux
- * maquettes Claude Design (même famille que la centrale d'appels) : sidebar
- * dédiée à droite de la nav du shell, titres Instrument Serif, labels mono,
- * cartes .blk. Responsive : barre horizontale sur mobile.
+ * Coquille de la section Cal.SAMA : une seconde barre de navigation, à droite
+ * de la sous-nav du Studio (ou de celle du portail agent), listant toutes les
+ * sous-catégories du module.
+ *
+ * Elle reprend exactement les conventions de `SpaceSubNav` (largeur, fond
+ * surface-2, item actif en teinte accent) pour que les deux colonnes se
+ * lisent comme un seul système. Aucun token du design system n'est redéfini :
+ * clair et sombre restent corrects.
  */
 
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
 import {
   BarChart3,
   CalendarCheck,
@@ -62,7 +65,12 @@ const buildNav = (base: string, pendingCount: number): CalNavItem[] => [
   { label: "Ma page", href: `${base}/parametres`, icon: Settings2 },
 ];
 
-function CalSidebarInner({ basePath }: { basePath: string }) {
+const itemBase =
+  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors";
+const itemActive = "bg-[var(--accent-tint)] font-medium text-primary";
+const itemIdle = "text-[var(--text-2)] hover:bg-[var(--bg-3)] hover:text-foreground";
+
+function CalNav({ basePath }: { basePath: string }) {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const { user } = useAuth();
@@ -108,80 +116,112 @@ function CalSidebarInner({ basePath }: { basePath: string }) {
 
   return (
     <>
-      {/* Sidebar verticale (≥ lg) */}
-      <aside className="cs-side hidden lg:flex">
-        <div className="cs-side-hd">
-          <span className="brand-mark">
-            <CalendarClock size={14} strokeWidth={2.2} />
-          </span>
-          <div>
-            <div className="t">Cal.SAMA</div>
-            <div className="s">Rendez-vous en ligne</div>
+      {/* Colonne de navigation — sticky pendant que le contenu défile */}
+      <nav
+        aria-label="Navigation Rendez-vous"
+        className="hidden w-56 shrink-0 flex-col border-r border-border/60 bg-[var(--surface-2)] px-2.5 py-3 lg:sticky lg:top-0 lg:flex lg:max-h-screen lg:self-start lg:overflow-y-auto"
+      >
+        <div className="flex items-center gap-2 px-2 pb-3">
+          <CalendarClock className="h-4 w-4 text-primary" strokeWidth={2} />
+          <div className="leading-tight">
+            <div className="cal-display text-[15px]">Cal.SAMA</div>
+            <div className="cal-tag text-muted-foreground">Rendez-vous</div>
           </div>
         </div>
 
-        <nav className="cs-nav">
+        <div className="flex flex-col gap-0.5">
           {items.map((item) => {
             const active = isItemActive(item);
+            const Icon = item.icon;
             return (
               <div key={item.href}>
-                <Link href={item.href} className="cs-item" aria-current={active || undefined}>
-                  <item.icon size={15} strokeWidth={2} />
-                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {item.label}
-                  </span>
-                  {item.badge ? <span className="nb">{item.badge}</span> : null}
+                <Link
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`${itemBase} ${active ? itemActive : itemIdle}`}
+                >
+                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {item.badge ? (
+                    <span className="cal-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--warn)] px-1 text-[10px] font-semibold text-white">
+                      {item.badge}
+                    </span>
+                  ) : null}
                 </Link>
+
                 {item.children && active ? (
-                  <div className="cs-children">
-                    {item.children.map((child) => (
-                      <Link
-                        key={child.href}
-                        href={child.href}
-                        className="cs-child"
-                        aria-current={isChildActive(item, child) || undefined}
-                      >
-                        {child.label}
-                      </Link>
-                    ))}
+                  <div className="mb-1 ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
+                    {item.children.map((child) => {
+                      const childActive = isChildActive(item, child);
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          aria-current={childActive ? "page" : undefined}
+                          className={`rounded-md px-2 py-1.5 text-[13px] transition-colors ${
+                            childActive
+                              ? "font-medium text-primary"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {child.label}
+                        </Link>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>
             );
           })}
-        </nav>
+        </div>
 
         {publicUrl ? (
-          <div className="cs-side-ft">
-            <span className="cs-tag">Votre lien public</span>
-            <div className="url">{publicUrl.replace(/^https?:\/\//, "")}</div>
-            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <button type="button" className="btn outline xs grow" onClick={copyPublicUrl}>
-                <Copy size={12} /> Copier
+          <div className="mt-auto border-t border-border/60 px-2 pt-3">
+            <div className="cal-tag text-muted-foreground">Votre lien public</div>
+            <div className="cal-mono mt-1 truncate text-[11px] text-[var(--text-2)]">
+              {publicUrl.replace(/^https?:\/\//, "")}
+            </div>
+            <div className="mt-2 flex gap-1.5">
+              <button
+                type="button"
+                onClick={copyPublicUrl}
+                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--hover)]"
+              >
+                <Copy className="h-3 w-3" /> Copier
               </button>
               <a
                 href={publicUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="btn outline icon xs"
                 aria-label="Ouvrir la page publique"
+                className="inline-flex items-center justify-center rounded-md border border-border bg-card px-2 py-1.5 transition-colors hover:bg-[var(--hover)]"
               >
-                <ExternalLink size={12} />
+                <ExternalLink className="h-3 w-3" />
               </a>
             </div>
           </div>
         ) : null}
-      </aside>
+      </nav>
 
-      {/* Barre horizontale (mobile / tablette) */}
-      <div className="cs-hbar lg:hidden">
+      {/* Barre horizontale défilante (mobile / tablette) */}
+      <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-[var(--surface-2)] px-2 py-2 lg:hidden">
         {items.map((item) => {
           const active = isItemActive(item);
+          const Icon = item.icon;
           return (
-            <Link key={item.href} href={item.href} className="cs-item" aria-current={active || undefined}>
-              <item.icon size={14} strokeWidth={2} />
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              className={`${itemBase} shrink-0 ${active ? itemActive : itemIdle}`}
+            >
+              <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
               {item.label}
-              {item.badge ? <span className="nb">{item.badge}</span> : null}
+              {item.badge ? (
+                <span className="cal-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--warn)] px-1 text-[10px] font-semibold text-white">
+                  {item.badge}
+                </span>
+              ) : null}
             </Link>
           );
         })}
@@ -190,26 +230,32 @@ function CalSidebarInner({ basePath }: { basePath: string }) {
   );
 }
 
-/** En-tête standard des pages de la section : titre serif + sous-titre. */
+/** En-tête de page : titre serif + sous-titre, comme les maquettes. */
 export function SectionHeader({
   title,
   subtitle,
-  tag,
+  action,
 }: {
   title: string;
   subtitle: string;
-  tag?: string;
+  action?: ReactNode;
 }) {
   return (
-    <header>
-      {tag ? <div className="cs-tag" style={{ marginBottom: 4 }}>{tag}</div> : null}
-      <h1 className="cs-title">{title}</h1>
-      <p className="cs-sub">{subtitle}</p>
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 className="cal-display text-[26px] text-foreground">{title}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
+      </div>
+      {action}
     </header>
   );
 }
 
-/** Layout de section : sidebar Cal.SAMA + zone de contenu scrollable. */
+/**
+ * Layout de la section. Le `<main>` du shell parent est déjà le conteneur de
+ * défilement : on ne crée donc pas de scroll imbriqué, la colonne de nav est
+ * simplement `sticky`.
+ */
 export default function CalShell({
   basePath,
   children,
@@ -217,17 +263,12 @@ export default function CalShell({
   basePath: string;
   children: ReactNode;
 }) {
-  // Le <main> des deux shells (Studio et portail agent) est une colonne flex
-  // scrollable : on prend toute la hauteur, la sidebar reste fixe et seule la
-  // zone de contenu scrolle.
   return (
-    <div className="cal-skin flex h-full min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+    <div className="flex min-h-full flex-1 flex-col lg:flex-row lg:items-start">
       <Suspense fallback={null}>
-        <CalSidebarInner basePath={basePath} />
+        <CalNav basePath={basePath} />
       </Suspense>
-      <div className="min-w-0 flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
-        {children}
-      </div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

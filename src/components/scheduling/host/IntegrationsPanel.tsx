@@ -19,7 +19,6 @@ import {
   Plug,
   TriangleAlert,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   disconnectConnection,
@@ -95,9 +94,8 @@ export default function IntegrationsPanel() {
 
   if (loading) {
     return (
-      <div className="blk empty">
-        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
-        Chargement…
+      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
       </div>
     );
   }
@@ -105,10 +103,10 @@ export default function IntegrationsPanel() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {/* Agendas connectés */}
-      <div className="blk" style={{ alignSelf: "start" }}>
-        <h4 style={{ margin: 0 }} className="h4">
-          <Plug size={13} /> Agendas connectés
-        </h4>
+      <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
+        <h2 className="cal-tag flex items-center gap-1.5 text-muted-foreground">
+          <Plug className="h-3.5 w-3.5" /> Agendas connectés
+        </h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Le busy de vos agendas est soustrait de vos disponibilités, et chaque RDV confirmé y est
           créé — avec lien Google Meet automatique pour les visios.
@@ -123,13 +121,13 @@ export default function IntegrationsPanel() {
               <div className="min-w-0">
                 <p className="flex items-center gap-2 font-medium">
                   {c.provider === "google" ? "Google Calendar" : c.provider}
-                  <Badge className="bg-emerald-100 text-emerald-800">
-                    <Check className="mr-0.5 h-3 w-3" /> Connecté
-                  </Badge>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--ok-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--ok)]">
+                    <Check className="h-3 w-3" /> Connecté
+                  </span>
                 </p>
                 <p className="truncate text-xs text-muted-foreground">{c.account_email}</p>
                 {c.last_error ? (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-600">
+                  <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--warn)]">
                     <TriangleAlert className="h-3 w-3" /> {c.last_error.slice(0, 80)}
                   </p>
                 ) : null}
@@ -137,7 +135,7 @@ export default function IntegrationsPanel() {
               <Button
                 size="sm"
                 variant="ghost"
-                className="text-red-600"
+                className="text-[var(--danger)] hover:text-[var(--danger)]"
                 onClick={async () => {
                   try {
                     await disconnectConnection(c.id);
@@ -177,10 +175,10 @@ export default function IntegrationsPanel() {
 
       <div className="space-y-4">
         {/* Embed */}
-        <div className="blk">
-          <h4 style={{ margin: 0 }} className="h4">
-            <Code2 size={13} /> Intégrer sur un site (embed)
-          </h4>
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <h2 className="cal-tag flex items-center gap-1.5 text-muted-foreground">
+            <Code2 className="h-3.5 w-3.5" /> Intégrer sur un site (embed)
+          </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Choisissez le type d&apos;intégration — comme Calendly — et collez le snippet généré.
           </p>
@@ -194,10 +192,10 @@ export default function IntegrationsPanel() {
         </div>
 
         {/* Emails */}
-        <div className="blk">
-          <h4 style={{ margin: 0 }} className="h4">
-            <Mail size={13} /> Emails & rappels
-          </h4>
+        <div className="rounded-xl border bg-card p-4 shadow-sm">
+          <h2 className="cal-tag flex items-center gap-1.5 text-muted-foreground">
+            <Mail className="h-3.5 w-3.5" /> Emails &amp; rappels
+          </h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Confirmations, annulations, reprogrammations et rappels partent via le Resend du CRM
             (avec invitation .ics jointe) et sont journalisés dans l&apos;historique email. Les

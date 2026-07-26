@@ -91,7 +91,7 @@ export default function EmbedGenerator({
         <select
           value={targetSlug}
           onChange={(e) => setTargetSlug(e.target.value)}
-          className="mt-1 h-9 w-full rounded-lg border bg-background px-2 text-sm"
+          className="mt-1 h-9 w-full rounded-md border border-input bg-input-background px-2 text-sm"
         >
           <option value="">Ma page complète (tous les types)</option>
           {activeTypes.map((et) => (
@@ -109,15 +109,17 @@ export default function EmbedGenerator({
             key={k.id}
             type="button"
             onClick={() => setKind(k.id)}
-            style={
+            className={`rounded-xl border p-3 text-left transition-colors ${
               kind === k.id
-                ? { border: "1px solid var(--accent)", background: "var(--accent-tint)", borderRadius: 10, padding: 12, textAlign: "left", boxShadow: "0 0 0 1px var(--accent)" }
-                : { border: "1px solid var(--border-2)", background: "var(--surface)", borderRadius: 10, padding: 12, textAlign: "left" }
-            }
+                ? "border-primary bg-[var(--accent-tint)] ring-1 ring-primary"
+                : "hover:bg-[var(--hover)]"
+            }`}
           >
-            <k.icon size={17} style={{ color: kind === k.id ? "var(--accent)" : "var(--text-3)" }} />
-            <p style={{ margin: "6px 0 0", fontSize: 12.5, fontWeight: 500 }}>{k.label}</p>
-            <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-3)" }}>{k.description}</p>
+            <k.icon
+              className={`h-[18px] w-[18px] ${kind === k.id ? "text-primary" : "text-muted-foreground"}`}
+            />
+            <p className="mt-1.5 text-sm font-medium">{k.label}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{k.description}</p>
           </button>
         ))}
       </div>
@@ -147,16 +149,16 @@ export default function EmbedGenerator({
               </div>
               <div>
                 <Label>Position</Label>
-                <div className="mt-1 flex gap-1 rounded-lg border p-0.5">
+                <div className="mt-1 flex gap-1 rounded-md bg-muted p-1">
                   {(["left", "right"] as const).map((p) => (
                     <button
                       key={p}
                       type="button"
                       onClick={() => setPosition(p)}
                       className={
-                        "flex-1 rounded-md px-2 py-1.5 text-xs font-medium transition " +
+                        "flex-1 rounded px-2 py-1 text-xs font-medium transition-colors " +
                         (position === p
-                          ? "bg-primary text-primary-foreground"
+                          ? "bg-card text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground")
                       }
                     >

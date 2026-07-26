@@ -10,7 +10,7 @@
  * confirmation, calendrier CRM, Google, rappels.
  */
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -232,27 +232,20 @@ export default function MiniBookingCalendar({
     void fetchSlots();
   };
 
-  const inputCls = "inp";
-  const dashedBox: CSSProperties = {
-    background: "transparent",
-    border: "1px dashed var(--border-2)",
-    borderRadius: 8,
-    padding: "10px 12px",
-    fontSize: 11.5,
-    color: "var(--text-3)",
-  };
+  const inputCls =
+    "w-full rounded-md border border-input bg-input-background px-2.5 py-1.5 text-sm placeholder:text-muted-foreground/60";
 
   if (loadingTypes) {
     return (
-      <div className="cal-skin" style={{ ...dashedBox, display: "flex", alignItems: "center", gap: 6 }}>
-        <Loader2 size={13} className="spin" /> Chargement…
+      <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement…
       </div>
     );
   }
 
   if (eventTypes.length === 0) {
     return (
-      <div className="cal-skin" style={dashedBox}>
+      <div className="rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
         Créez d&apos;abord un type d&apos;évènement dans Cal.SAMA → Types d&apos;évènements.
       </div>
     );
@@ -261,34 +254,16 @@ export default function MiniBookingCalendar({
   // ---- État succès -------------------------------------------------------
   if (done) {
     return (
-      <div
-        className="cal-skin"
-        style={{
-          background: "var(--ok-tint)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          padding: 12,
-        }}
-      >
-        <p
-          style={{
-            margin: 0,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            fontWeight: 500,
-            fontSize: 12.5,
-            color: "var(--ok)",
-          }}
-        >
-          <Check size={14} /> RDV réservé !
+      <div className="rounded-lg border border-[var(--ok)]/25 bg-[var(--ok-tint)] p-3">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-[var(--ok)]">
+          <Check className="h-4 w-4" /> RDV réservé !
         </p>
-        <p className="mono" style={{ margin: "6px 0 0", fontSize: 10.5, color: "var(--text-2)" }}>
+        <p className="cal-mono mt-1.5 text-[11px] text-muted-foreground">
           {done.invitee_name} · {dayLabel(localDateKey(done.start_at))} à {localTime(done.start_at)}
           <br />
           Confirmation envoyée à {done.invitee_email}.
         </p>
-        <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        <div className="mt-2.5 flex gap-1.5">
           <button
             type="button"
             onClick={() => {
@@ -297,11 +272,15 @@ export default function MiniBookingCalendar({
               );
               toast.success("Lien de gestion copié");
             }}
-            className="btn outline xs grow"
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--hover)]"
           >
-            <Copy size={12} /> Lien de gestion
+            <Copy className="h-3 w-3" /> Lien de gestion
           </button>
-          <button type="button" onClick={reset} className="btn outline xs">
+          <button
+            type="button"
+            onClick={reset}
+            className="rounded-md border border-border bg-card px-2 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--hover)]"
+          >
             Nouveau RDV
           </button>
         </div>
@@ -310,12 +289,12 @@ export default function MiniBookingCalendar({
   }
 
   return (
-    <div className="cal-skin space-y-2.5" style={{ background: "transparent" }}>
+    <div className="space-y-2.5">
       {/* Type d'évènement */}
       <select
         value={eventTypeId}
         onChange={(e) => setEventTypeId(e.target.value)}
-        className="inp"
+        className="h-8 w-full rounded-md border border-input bg-input-background px-2 text-sm"
         aria-label="Type de rendez-vous"
       >
         {eventTypes.map((et) => (
@@ -328,94 +307,64 @@ export default function MiniBookingCalendar({
       {!selectedSlot ? (
         <>
           {/* Mini calendrier (style maquettes) */}
-          <div
-            style={{
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              padding: 8,
-              background: "var(--surface)",
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "0 2px 4px",
-              }}
-            >
+          <div className="rounded-lg border bg-card p-2">
+            <div className="flex items-center justify-between px-0.5 pb-1">
               <button
                 type="button"
                 onClick={() => goMonth(-1)}
                 disabled={isCurrentMonth}
-                className="btn ghost icon xs"
                 aria-label="Mois précédent"
+                className="rounded p-1 text-muted-foreground transition-colors enabled:hover:bg-[var(--hover)] enabled:hover:text-foreground disabled:opacity-30"
               >
-                <ChevronLeft size={14} />
+                <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span
-                className="mono"
-                style={{
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: ".05em",
-                }}
-              >
+              <span className="cal-mono text-[11px] font-semibold uppercase tracking-wide">
                 {MONTHS_FR[monthCursor.month]} {monthCursor.year}
               </span>
               <button
                 type="button"
                 onClick={() => goMonth(1)}
-                className="btn ghost icon xs"
                 aria-label="Mois suivant"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-[var(--hover)] hover:text-foreground"
               >
-                <ChevronRight size={14} />
+                <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="mini-cal">
+
+            <div className="cal-mini">
               {WEEKDAYS_FR.map((d, i) => (
-                <div key={`${d}${i}`} className="wh">
+                <div key={`${d}${i}`} className="cal-mini-wh">
                   {d}
                 </div>
               ))}
               {monthDays.map((key, i) => {
                 if (key === null) return <div key={`e${i}`} />;
-                const has = (slotsByDay.get(key)?.length ?? 0) > 0;
                 const day = Number(key.split("-")[2]);
+                const has = (slotsByDay.get(key)?.length ?? 0) > 0;
                 if (!has) {
                   return (
-                    <div key={key} className="d mute">
+                    <div key={key} className="cal-mini-day" data-state="off">
                       {day}
                     </div>
                   );
                 }
-                const selected = selectedDay === key;
                 return (
                   <button
                     key={key}
                     type="button"
                     onClick={() => setSelectedDay(key)}
-                    className={"d has" + (selected ? " sel" : "")}
+                    className="cal-mini-day"
+                    data-state={selectedDay === key ? "selected" : "free"}
                   >
                     {day}
                   </button>
                 );
               })}
             </div>
+
             {loadingSlots ? (
-              <p
-                className="mono"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                  margin: "6px 2px 0",
-                  fontSize: 10,
-                  color: "var(--text-3)",
-                }}
-              >
-                <Loader2 size={11} className="spin" /> Disponibilités…
+              <p className="cal-mono mt-1.5 flex items-center gap-1.5 px-0.5 text-[10px] text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Disponibilités…
               </p>
             ) : null}
           </div>
@@ -423,19 +372,22 @@ export default function MiniBookingCalendar({
           {/* Créneaux du jour */}
           {selectedDay ? (
             <div>
-              <p className="cs-tag" style={{ margin: "0 0 6px" }}>
-                {dayLabel(selectedDay)}
-              </p>
-              <div className="slots" style={{ maxHeight: 148, overflowY: "auto", paddingRight: 2 }}>
+              <p className="cal-tag mb-1.5 text-muted-foreground">{dayLabel(selectedDay)}</p>
+              <div className="grid max-h-36 grid-cols-3 gap-1.5 overflow-y-auto pr-0.5">
                 {(slotsByDay.get(selectedDay) ?? []).map((iso) => (
-                  <button key={iso} type="button" onClick={() => setSelectedSlot(iso)} className="slot">
+                  <button
+                    key={iso}
+                    type="button"
+                    onClick={() => setSelectedSlot(iso)}
+                    className="cal-slot"
+                  >
                     {localTime(iso)}
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            <p style={{ margin: 0, fontSize: 11, color: "var(--text-3)" }}>
+            <p className="text-[11px] text-muted-foreground">
               Choisissez un jour disponible (point orange).
             </p>
           )}
@@ -443,9 +395,13 @@ export default function MiniBookingCalendar({
       ) : (
         <>
           {/* Formulaire prospect */}
-          <button type="button" onClick={() => setSelectedSlot(null)} className="btn ghost xs">
-            <ArrowLeft size={12} /> {dayLabel(localDateKey(selectedSlot))} à {localTime(selectedSlot)}{" "}
-            — changer
+          <button
+            type="button"
+            onClick={() => setSelectedSlot(null)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-3 w-3" /> {dayLabel(localDateKey(selectedSlot))} à{" "}
+            {localTime(selectedSlot)} — changer
           </button>
           <input
             className={inputCls}
@@ -474,13 +430,16 @@ export default function MiniBookingCalendar({
             type="button"
             onClick={() => void book()}
             disabled={!canBook || booking}
-            className="btn accent sm"
-            style={{ width: "100%" }}
+            className="inline-flex w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {booking ? <Loader2 size={14} className="spin" /> : <Check size={14} />}
+            {booking ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Check className="h-4 w-4" />
+            )}
             Réserver le créneau
           </button>
-          <p style={{ margin: 0, textAlign: "center", fontSize: 10.5, color: "var(--text-3)" }}>
+          <p className="text-center text-[10px] text-muted-foreground">
             Confirmation + invitation (.ics) envoyées automatiquement.
           </p>
         </>
