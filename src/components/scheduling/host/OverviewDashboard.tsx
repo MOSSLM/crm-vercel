@@ -1,98 +1,73 @@
 "use client";
 
 /**
- * Aperçu Cal.SAMA : tuiles de synthèse, carte « prochain rendez-vous » en
- * inversion (signature des maquettes), demandes à valider avec actions
- * rapides, prochains RDV et raccourcis.
+ * Aperçu — portage de `ScreenOverview` (rdv-screens-a.jsx) : hero sombre du
+ * prochain rendez-vous avec sparkline, bandeau de KPIs, listes « à valider »
+ * et « aujourd'hui & demain », sources de réservation et charge de l'équipe.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import {
-  ArrowRight,
-  CalendarClock,
-  CalendarCog,
-  Check,
-  Clock,
-  Clock3,
-  Copy,
-  Hourglass,
-  Loader2,
-  Mail,
-  Phone,
-  Video,
-  X,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/components/AuthContext";
 import {
   bookingAction,
   fetchBookings,
+  fetchEventTypes,
   fetchSchedulingPage,
   fetchStats,
+  fetchTeam,
   type BookingWithHost,
   type SchedulingStats,
+  type TeamMember,
 } from "@/lib/scheduling/client";
+import type { EventType } from "@/lib/scheduling/types";
+import { useAuth } from "@/components/AuthContext";
+import { Av, Blk, Btn, Row, Stack, addMin } from "../rdv/atoms";
+import { Icon } from "../rdv/Icon";
+import BookingRow from "../rdv/BookingRow";
+import { SectionHeader } from "./CalShell";
+import { dayLabel, durationOf, hhmm, rvColorOfHost } from "../rdv/overview-helpers";
 
-const fmtDay = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" }).format(
-    new Date(iso),
-  );
-const fmtTime = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-const fmtLong = (iso: string) => `${fmtDay(iso)} · ${fmtTime(iso)}`;
-
-function StatTile({
-  label,
-  value,
-  hint,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  hint?: string;
-  tone?: "ok" | "warn" | "danger";
-}) {
-  const toneClass =
-    tone === "ok"
-      ? "text-[var(--ok)]"
-      : tone === "warn"
-        ? "text-[var(--warn)]"
-        : tone === "danger"
-          ? "text-[var(--danger)]"
-          : "text-foreground";
-  return (
-    <div className="rounded-xl border bg-card p-4 shadow-sm">
-      <div className="cal-tag text-muted-foreground">{label}</div>
-      <div className={`cal-display mt-1.5 text-[30px] ${toneClass}`}>{value}</div>
-      {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
-    </div>
-  );
-}
+const SRC_LABELS: Record<string, { k: string; c: string }> = {
+  public: { k: "Page publique", c: "var(--info)" },
+  embed: { k: "Embed sur site", c: "var(--magic)" },
+  agent: { k: "Calé par un agent", c: "var(--accent)" },
+  api: { k: "API", c: "var(--text-3)" },
+};
 
 export default function OverviewDashboard({ basePath }: { basePath: string }) {
+  const router = useRouter();
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
   const [stats, setStats] = useState<SchedulingStats | null>(null);
   const [upcoming, setUpcoming] = useState<BookingWithHost[]>([]);
   const [pending, setPending] = useState<BookingWithHost[]>([]);
-  const [publicUrl, setPublicUrl] = useState<string>("");
+  const [types, setTypes] = useState<EventType[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
+  const [publicUrl, setPublicUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsData, upcomingData, pendingData, pageData] = await Promise.all([
+      const [statsData, up, pend, page, tps] = await Promise.all([
         fetchStats(30),
         fetchBookings("upcoming"),
         fetchBookings("pending"),
         fetchSchedulingPage(),
+        fetchEventTypes().catch(() => ({ event_types: [] as EventType[] })),
       ]);
       setStats(statsData);
-      setUpcoming(upcomingData.bookings.slice(0, 6));
-      setPending(pendingData.bookings.slice(0, 4));
-      setPublicUrl(pageData.public_url);
+      setUpcoming(up.bookings);
+      setPending(pend.bookings);
+      setPublicUrl(page.public_url);
+      setTypes(tps.event_types);
+      if (isAdmin) {
+        const t = await fetchTeam().catch(() => null);
+        if (t) setTeam(t.members);
+      }
     } catch (err) {
       toast.error("Chargement impossible", {
         description: err instanceof Error ? err.message : undefined,
@@ -100,16 +75,16 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const quickAction = async (booking: BookingWithHost, action: "confirm" | "decline") => {
-    setWorking(booking.id);
+  const quick = async (b: BookingWithHost, action: "confirm" | "decline") => {
+    setWorking(b.id);
     try {
-      await bookingAction(booking.id, action);
+      await bookingAction(b.id, action);
       toast.success(action === "confirm" ? "Rendez-vous confirmé" : "Demande refusée");
       await load();
     } catch {
@@ -119,246 +94,374 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
     }
   };
 
+  const colorOfType = (b: BookingWithHost): string | null =>
+    types.find((t) => t.id === b.event_type_id)?.color ?? null;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
-      </div>
+      <>
+        <SectionHeader
+          title="Aperçu"
+          subtitle="Vos rendez-vous en ligne, vos demandes à valider et l'état de vos liens de réservation."
+        />
+        <div className="rv-empty" style={{ padding: 40 }}>
+          Chargement…
+        </div>
+      </>
     );
   }
 
-  const next = upcoming.find((b) => b.status === "confirmed") ?? upcoming[0] ?? null;
-  const rest = next ? upcoming.filter((b) => b.id !== next.id).slice(0, 5) : upcoming.slice(0, 5);
+  const confirmed = upcoming.filter((b) => b.status === "confirmed");
+  const next = confirmed[0] ?? null;
+  const soon = confirmed
+    .filter((b) => ["auj.", "demain"].includes(dayLabel(b.start_at)))
+    .slice(0, 4);
+  const weeks = stats?.by_week.slice(-6) ?? [];
+  const maxWeek = Math.max(1, ...weeks.map((w) => w.total));
+
+  const minutesToNext = next
+    ? Math.round((Date.parse(next.start_at) - Date.now()) / 60000)
+    : 0;
+  const nextIn =
+    minutesToNext < 60
+      ? `dans ${Math.max(1, minutesToNext)} min`
+      : minutesToNext < 24 * 60
+        ? `dans ${Math.round(minutesToNext / 60)} h`
+        : dayLabel(next?.start_at ?? "");
+
+  // Répartition par canal, en pourcentage (les stats renvoient des volumes).
+  const srcTotal = (stats?.by_source ?? []).reduce((acc, s) => acc + s.count, 0);
+  const bySrc = (stats?.by_source ?? []).map((s) => ({
+    ...SRC_LABELS[s.label] ?? { k: s.label, c: "var(--text-3)" },
+    n: srcTotal ? Math.round((s.count / srcTotal) * 100) : 0,
+  }));
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatTile label="RDV à venir" value={stats?.totals.upcoming ?? 0} />
-        <StatTile
-          label="En attente"
-          value={stats?.totals.pending ?? 0}
-          tone={stats?.totals.pending ? "warn" : undefined}
-        />
-        <StatTile label="Tenus · 30 j" value={stats?.totals.held_past ?? 0} tone="ok" />
-        <StatTile
-          label="Taux d'annulation · 30 j"
-          value={`${stats?.totals.cancellation_rate ?? 0} %`}
-          hint={`${stats?.totals.cancelled_past ?? 0} annulé(s)`}
-          tone={(stats?.totals.cancellation_rate ?? 0) >= 30 ? "danger" : undefined}
-        />
-      </div>
+    <>
+      <SectionHeader
+        title="Aperçu"
+        subtitle="Vos rendez-vous en ligne, vos demandes à valider et l'état de vos liens de réservation."
+        actions={
+          <>
+            <Btn
+              kind="outline"
+              ic="ext"
+              onClick={() => publicUrl && window.open(publicUrl, "_blank")}
+            >
+              Voir ma page
+            </Btn>
+            <Btn kind="primary" ic="calPlus" onClick={() => router.push(`${basePath}/types`)}>
+              Nouveau type de RDV
+            </Btn>
+          </>
+        }
+      />
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="space-y-4">
-          {/* Prochain RDV — carte inversée (signature maquette) */}
-          {next ? (
-            <div className="rounded-xl bg-foreground p-4 text-background">
-              <div className="cal-tag opacity-50">
-                Prochain rendez-vous ·{" "}
-                {new Intl.DateTimeFormat("fr-FR", { weekday: "long" }).format(
-                  new Date(next.start_at),
-                )}
-              </div>
-              <div className="cal-display mt-2 text-[24px]">{next.invitee_name}</div>
-              <div className="text-[15px] opacity-60">{next.event_title}</div>
-
-              <div className="cal-mono mt-3 space-y-1.5 text-xs opacity-75">
-                <div className="flex items-center gap-2">
-                  <Clock className="h-3.5 w-3.5 shrink-0" />
-                  {fmtLong(next.start_at)}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Mail className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{next.invitee_email}</span>
-                </div>
-                {next.invitee_phone ? (
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-3.5 w-3.5 shrink-0" />
-                    {next.invitee_phone}
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="mt-4 flex gap-2">
-                {next.meeting_url ? (
-                  <a
-                    href={next.meeting_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                  >
-                    <Video className="h-3.5 w-3.5" /> Rejoindre la visio
-                  </a>
-                ) : (
-                  <Link
-                    href={`${basePath}/reservations`}
-                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90"
-                  >
-                    Voir le détail
-                  </Link>
-                )}
-                <a
-                  href={`mailto:${next.invitee_email}`}
-                  aria-label="Écrire à l'invité"
-                  className="inline-flex items-center justify-center rounded-lg bg-background/10 px-3 py-2 ring-1 ring-inset ring-background/20 transition-colors hover:bg-background/20"
-                >
-                  <Mail className="h-3.5 w-3.5" />
+      {next ? (
+        <div className="rv-hero">
+          <div style={{ position: "relative" }}>
+            <span className="tag">Prochain rendez-vous · {nextIn}</span>
+            <h2>
+              {next.invitee_name} — {next.event_title}
+            </h2>
+            <div className="who">
+              <span className="it">
+                <Icon name="clock" className="ico-sm" style={{ color: "var(--accent)" }} />
+                {hhmm(next.start_at)} – {addMin(hhmm(next.start_at), durationOf(next))}
+              </span>
+              <span className="it">
+                <Icon name="mail" className="ico-sm" style={{ color: "var(--accent)" }} />
+                {next.invitee_email}
+              </span>
+              {next.invitee_phone ? (
+                <span className="it">
+                  <Icon name="phone" className="ico-sm" style={{ color: "var(--accent)" }} />
+                  {next.invitee_phone}
+                </span>
+              ) : null}
+              <span className="it">
+                <Icon name="globe" className="ico-sm" style={{ color: "var(--accent)" }} />
+                {next.source === "agent"
+                  ? "Calé pendant un appel"
+                  : next.source === "embed"
+                    ? "Réservé depuis un site"
+                    : "Réservé sur votre page publique"}
+              </span>
+            </div>
+            <div className="acts">
+              {next.meeting_url ? (
+                <a className="gb acc" href={next.meeting_url} target="_blank" rel="noreferrer">
+                  <Icon name="video" className="ico-sm" />
+                  Rejoindre la visio
                 </a>
-              </div>
+              ) : null}
+              {next.contact_id ? (
+                <a className="gb" href={`/contacts?focus=${next.contact_id}`}>
+                  <Icon name="user" className="ico-sm" />
+                  Fiche prospect
+                </a>
+              ) : null}
+              <button
+                type="button"
+                className="gb"
+                onClick={() => router.push(`${basePath}/reservations`)}
+              >
+                <Icon name="repeat" className="ico-sm" />
+                Reprogrammer
+              </button>
             </div>
-          ) : (
-            <div className="rounded-xl border bg-card p-8 text-center">
-              <CalendarClock className="mx-auto h-8 w-8 text-muted-foreground/40" />
-              <p className="mt-3 text-sm text-muted-foreground">
-                Rien de prévu. Partagez votre lien pour recevoir des réservations.
-              </p>
-            </div>
-          )}
+          </div>
 
-          {/* Raccourcis */}
-          <div className="rounded-xl border bg-card p-4 shadow-sm">
-            <div className="cal-tag text-muted-foreground">Raccourcis</div>
-            <div className="mt-3 flex flex-col gap-2">
-              <Button variant="outline" size="sm" className="justify-start" asChild>
-                <Link href={`${basePath}/types`}>
-                  <CalendarCog className="mr-2 h-4 w-4" /> Gérer mes types d&apos;évènements
-                </Link>
-              </Button>
-              <Button variant="outline" size="sm" className="justify-start" asChild>
-                <Link href={`${basePath}/disponibilites`}>
-                  <Clock3 className="mr-2 h-4 w-4" /> Ajuster mes disponibilités
-                </Link>
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="justify-start"
-                onClick={() => {
-                  if (!publicUrl) return;
-                  void navigator.clipboard.writeText(publicUrl);
-                  toast.success("Lien public copié");
+          <div className="side">
+            <div className="row">
+              <span>Réservations à venir</span>
+              <b>{stats?.totals.upcoming ?? 0}</b>
+            </div>
+            <div className="row">
+              <span>En attente de validation</span>
+              <b className={stats?.totals.pending ? "w" : ""}>{stats?.totals.pending ?? 0}</b>
+            </div>
+            <div className="row">
+              <span>Annulation · 30 j</span>
+              <b>{stats?.totals.cancellation_rate ?? 0} %</b>
+            </div>
+            <div>
+              <div
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontSize: 9.5,
+                  color: "var(--on-ink-3)",
+                  textTransform: "uppercase",
+                  letterSpacing: ".09em",
                 }}
               >
-                <Copy className="mr-2 h-4 w-4" /> Copier mon lien public
-              </Button>
+                6 dernières semaines
+              </div>
+              <div className="spark">
+                {weeks.map((w, i) => (
+                  <i
+                    key={w.week}
+                    className={i === weeks.length - 1 ? "hi" : ""}
+                    style={{ height: `${Math.max(4, (w.total / maxWeek) * 100)}%` }}
+                    title={`${w.week} · ${w.total}`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </div>
+      ) : null}
 
-        {/* Demandes à valider */}
-        <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
-          <div className="flex items-center justify-between gap-2">
-            <div className="cal-tag flex items-center gap-1.5 text-muted-foreground">
-              <Hourglass className="h-3.5 w-3.5 text-[var(--warn)]" /> À valider
-            </div>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
-              <Link href={`${basePath}/reservations?filter=pending`}>
-                Tout voir <ArrowRight className="ml-1 h-3 w-3" />
-              </Link>
-            </Button>
+      <div className="rv-kpis">
+        <div className="rv-kpi">
+          <div className="k">
+            <Icon name="calCheck" className="ico-xs" />À venir
           </div>
+          <div className="v">{stats?.totals.upcoming ?? 0}</div>
+          <div className="d">{confirmed.length} confirmé(s)</div>
+        </div>
+        <div className="rv-kpi warn">
+          <div className="k">
+            <Icon name="hourglass" className="ico-xs" />À valider
+          </div>
+          <div className="v">{stats?.totals.pending ?? 0}</div>
+          <div className="d">
+            {pending.length ? "demande(s) en attente" : "rien à traiter"}
+          </div>
+        </div>
+        <div className="rv-kpi ok">
+          <div className="k">
+            <Icon name="check" className="ico-xs" />
+            Tenus · 30 j
+          </div>
+          <div className="v">{stats?.totals.held_past ?? 0}</div>
+          <div className="d">sur {stats?.totals.total_past ?? 0} rendez-vous</div>
+        </div>
+        <div className="rv-kpi">
+          <div className="k">
+            <Icon name="ban" className="ico-xs" />
+            Annulation · 30 j
+          </div>
+          <div className="v">
+            {stats?.totals.cancellation_rate ?? 0}
+            <small>%</small>
+          </div>
+          <div className="d">{stats?.totals.cancelled_past ?? 0} annulé(s)</div>
+        </div>
+      </div>
 
-          {pending.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">Aucune demande en attente. 👌</p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              {pending.map((b) => (
-                <div
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div className="rv-list">
+          <div className="rv-list-hd">
+            <Icon name="hourglass" className="ico-sm" style={{ color: "var(--warn)" }} />
+            <h3>À valider</h3>
+            <span className="n">{pending.length}</span>
+            <Btn
+              kind="ghost"
+              size="xs"
+              onClick={() => router.push(`${basePath}/reservations?filter=pending`)}
+            >
+              Tout voir
+              <Icon name="arrowRight" className="ico-xs" />
+            </Btn>
+          </div>
+          {pending.length ? (
+            pending
+              .slice(0, 4)
+              .map((b) => (
+                <BookingRow
                   key={b.id}
-                  className="flex items-center gap-2.5 rounded-lg border border-[var(--warn)]/25 bg-[var(--warn-tint)] px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{b.invitee_name}</div>
-                    <div className="cal-mono truncate text-[11px] text-muted-foreground">
-                      {b.event_title} · {fmtDay(b.start_at)} {fmtTime(b.start_at)}
-                    </div>
-                  </div>
-                  <Button
-                    size="icon"
-                    className="h-7 w-7 shrink-0"
-                    disabled={working === b.id}
-                    onClick={() => void quickAction(b, "confirm")}
-                    aria-label="Confirmer"
-                  >
-                    <Check className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-7 w-7 shrink-0"
-                    disabled={working === b.id}
-                    onClick={() => void quickAction(b, "decline")}
-                    aria-label="Refuser"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
+                  b={b}
+                  compact
+                  showHost={isAdmin}
+                  working={working === b.id}
+                  typeColor={colorOfType(b)}
+                  onConfirm={(x) => void quick(x, "confirm")}
+                  onDecline={(x) => void quick(x, "decline")}
+                  onSel={() => router.push(`${basePath}/reservations?filter=pending`)}
+                />
+              ))
+          ) : (
+            <div style={{ padding: 28 }}>
+              <div className="rv-empty">Aucune demande en attente.</div>
             </div>
           )}
         </div>
 
-        {/* Prochains RDV */}
-        <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
-          <div className="flex items-center justify-between gap-2">
-            <div className="cal-tag text-muted-foreground">Ensuite</div>
-            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
-              <Link href={`${basePath}/reservations`}>
-                Tout voir <ArrowRight className="ml-1 h-3 w-3" />
-              </Link>
-            </Button>
+        <div className="rv-list">
+          <div className="rv-list-hd">
+            <Icon name="calCheck" className="ico-sm" style={{ color: "var(--ok)" }} />
+            <h3>Aujourd&apos;hui &amp; demain</h3>
+            <span className="n">{soon.length}</span>
+            <Btn kind="ghost" size="xs" onClick={() => router.push(`${basePath}/reservations`)}>
+              Tout voir
+              <Icon name="arrowRight" className="ico-xs" />
+            </Btn>
           </div>
-
-          {rest.length === 0 ? (
-            <p className="mt-3 text-sm text-muted-foreground">Rien d&apos;autre de prévu.</p>
+          {soon.length ? (
+            soon.map((b) => (
+              <BookingRow
+                key={b.id}
+                b={b}
+                compact
+                showHost={isAdmin}
+                typeColor={colorOfType(b)}
+                onSel={() => router.push(`${basePath}/reservations`)}
+              />
+            ))
           ) : (
-            <div className="mt-1 divide-y divide-border">
-              {rest.map((b) => (
-                <div key={b.id} className="flex items-center gap-3 py-2.5">
-                  <div className="cal-mono w-14 shrink-0 text-center">
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {fmtDay(b.start_at)}
-                    </div>
-                    <div className="text-sm font-semibold">{fmtTime(b.start_at)}</div>
-                  </div>
-                  <div className="min-w-0 flex-1 border-l border-border pl-3">
-                    <div className="truncate text-sm font-medium">{b.invitee_name}</div>
-                    <div className="cal-mono truncate text-[11px] text-muted-foreground">
-                      {b.event_title}
-                    </div>
-                  </div>
-                  {b.status === "pending" ? (
-                    <span className="shrink-0 rounded-full bg-[var(--warn-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]">
-                      attente
-                    </span>
-                  ) : null}
-                  {b.meeting_url ? (
-                    <a
-                      href={b.meeting_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label="Lien visio"
-                      className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
-                    >
-                      <Video className="h-4 w-4" />
-                    </a>
-                  ) : null}
-                </div>
-              ))}
+            <div style={{ padding: 28 }}>
+              <div className="rv-empty">Rien de prévu aujourd&apos;hui ni demain.</div>
             </div>
           )}
         </div>
       </div>
 
-      {user?.role === "admin" ? (
-        <p className="text-xs text-muted-foreground">
-          Astuce : la page{" "}
-          <Link className="underline underline-offset-2" href={`${basePath}/equipe`}>
-            Équipe
-          </Link>{" "}
-          liste les liens de réservation de tous les agents.
-        </p>
-      ) : null}
-    </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: isAdmin ? "1fr 1fr" : "1fr",
+          gap: 16,
+          marginTop: 16,
+        }}
+      >
+        <Blk title="D'où viennent les réservations" ic="target">
+          {bySrc.length ? (
+            <Stack gap={9}>
+              {bySrc.map((s) => (
+                <div key={s.k}>
+                  <Row style={{ justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 12 }}>{s.k}</span>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                        color: "var(--text-3)",
+                      }}
+                    >
+                      {s.n} %
+                    </span>
+                  </Row>
+                  <div style={{ height: 5, background: "var(--bg-3)", borderRadius: 999 }}>
+                    <i
+                      style={{
+                        display: "block",
+                        height: "100%",
+                        width: `${s.n}%`,
+                        background: s.c,
+                        borderRadius: 999,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </Stack>
+          ) : (
+            <div className="rv-empty">Pas encore de réservation.</div>
+          )}
+        </Blk>
+
+        {isAdmin ? (
+          <Blk
+            title="Charge de l'équipe"
+            ic="users"
+            right={
+              <Btn kind="ghost" size="xs" onClick={() => router.push(`${basePath}/equipe`)}>
+                Équipe
+                <Icon name="arrowRight" className="ico-xs" />
+              </Btn>
+            }
+          >
+            {team.length ? (
+              <Stack gap={9}>
+                {team.slice(0, 5).map((m) => {
+                  const cap = Math.max(4, ...team.map((x) => x.upcoming));
+                  const ratio = cap ? m.upcoming / cap : 0;
+                  return (
+                    <Row key={m.user_id} style={{ gap: 10 }}>
+                      <Av name={m.name} size={24} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Row style={{ justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, fontWeight: 500 }}>{m.name}</span>
+                          <span
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: 10.5,
+                              color: "var(--text-3)",
+                            }}
+                          >
+                            {m.upcoming} à venir
+                          </span>
+                        </Row>
+                        <div
+                          style={{
+                            height: 4,
+                            background: "var(--bg-3)",
+                            borderRadius: 999,
+                            marginTop: 4,
+                          }}
+                        >
+                          <i
+                            style={{
+                              display: "block",
+                              height: "100%",
+                              width: `${ratio * 100}%`,
+                              background: ratio > 0.85 ? "var(--warn)" : rvColorOfHost(m.name),
+                              borderRadius: 999,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </Row>
+                  );
+                })}
+              </Stack>
+            ) : (
+              <div className="rv-empty">Aucun hôte actif.</div>
+            )}
+          </Blk>
+        ) : null}
+      </div>
+    </>
   );
 }

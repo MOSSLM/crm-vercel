@@ -100,19 +100,36 @@ aussi exposé. Préremplissage par query params (`?name=&email=&tz=`).
 | API hôte (withAuth, staff only) | `src/app/api/scheduling/**` |
 | API publique (service-role, CORS *) | `src/app/api/public/scheduling/**` |
 | Cron rappels | `src/app/api/cron/scheduling-tick/route.ts` |
-| Pages publiques | `src/app/rdv/**` + `src/components/scheduling/{BookingWidget,ManageBookingView}.tsx` |
+| Pages publiques | `src/app/rdv/**` |
 | UI hôte (partagée admin/agent) | `src/components/scheduling/host/**` |
 | Panneau cockpit téléphonie | `src/components/scheduling/BookingLinkPanel.tsx` |
 
-Chaque booking est relié au CRM : matching contact par email
-(`contact_id`/`entreprise_id`), évènement `crm_calendar_events` (catégorie
-« Rendez-vous », visible dans `/calendar`, calendrier équipe téléphonie et
-espace agent), champs `opportunite_id`/`call_id` pour la téléphonie, emails
-journalisés dans `email_logs` (type `scheduling`), notification in-app à
-l'hôte (table `notifications`, type `scheduling`) à chaque nouvelle
-réservation / annulation / reprogrammation par l'invité. Côté invité, la
-confirmation et la page de gestion proposent aussi « Ajouter à mon agenda »
-(Google / Outlook) en plus du .ics joint aux emails.
+### Habillage : la maquette intégrée telle quelle
+
+Le design vient de la maquette Claude Design conservée dans
+`claude design/Rendez-vous/`. Elle n'est pas réinterprétée :
+
+- `scripts/scope-rdv-css.py` préfixe chaque sélecteur de `crm-base.css` et
+  `rdv.css` par `.rv-scope`, et génère `src/components/scheduling/rdv-skin.css`.
+  Les tokens de la maquette (`--accent` orange, `--radius`, `--font-*`) restent
+  donc confinés à la section et n'écrasent jamais le design system du CRM.
+  Pour régénérer après une mise à jour de la maquette :
+
+  ```bash
+  python3 scripts/scope-rdv-css.py \
+    "claude design/Rendez-vous/crm-base.css" \
+    "claude design/Rendez-vous/rdv.css" > src/components/scheduling/rdv-skin.css
+  ```
+
+- `rdv-embed.css` (écrit à la main, jamais régénéré) réadapte la mise en page
+  plein écran de la maquette au shell existant : rail sticky, pas de scroll
+  imbriqué, bandeau horizontal sous 1024 px, curseurs cliquables.
+- `src/components/scheduling/rdv/Icon.tsx` reprend les 71 icônes verbatim ;
+  `rdv/atoms.tsx` porte Btn, Pill, Chip, Sw, Seg, Field, Blk, Av, Row, Stack.
+
+Corollaire : à l'intérieur de `.rv-scope`, on n'utilise **ni Tailwind de
+couleur ni composants shadcn** — uniquement le vocabulaire de la maquette.
+Mélanger les deux avait cassé le mode sombre et les composants shadcn.
 
 ## Extensions prévues (non incluses)
 

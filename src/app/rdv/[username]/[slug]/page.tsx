@@ -3,10 +3,7 @@ import { notFound } from "next/navigation";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { EVENT_TYPE_COLUMNS, getPageByUsername } from "@/lib/scheduling/data";
 import type { EventType } from "@/lib/scheduling/types";
-import {
-  publicEventTypeProjection,
-  publicPageProjection,
-} from "@/app/api/scheduling/_lib";
+import { publicEventTypeProjection, publicPageProjection } from "@/app/api/scheduling/_lib";
 import BookingWidget from "@/components/scheduling/BookingWidget";
 
 export const dynamic = "force-dynamic";
@@ -20,9 +17,9 @@ const first = (v: string | string[] | undefined): string | undefined =>
 async function loadData(params: Params) {
   const username = decodeURIComponent(params.username).trim().toLowerCase();
   const slug = decodeURIComponent(params.slug).trim().toLowerCase();
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(username) || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-    return null;
-  }
+  const ok = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  if (!ok.test(username) || !ok.test(slug)) return null;
+
   const sc = getServiceClient();
   const page = await getPageByUsername(sc, username);
   if (!page) return null;
@@ -67,16 +64,19 @@ export default async function PublicBookingPage({
   const embed = first(sp.embed) === "1";
 
   return (
-    <BookingWidget
-      page={{ ...publicPageProjection(loaded.page), username: loaded.page.username }}
-      eventType={publicEventTypeProjection(loaded.eventType)}
-      embed={embed}
-      prefill={{
-        name: first(sp.name),
-        email: first(sp.email),
-        phone: first(sp.phone),
-        tz: first(sp.tz),
-      }}
-    />
+    <div className={`rv-scope rv-public-stage${embed ? " embed" : ""}`}>
+      <BookingWidget
+        page={{ ...publicPageProjection(loaded.page), username: loaded.page.username }}
+        eventType={publicEventTypeProjection(loaded.eventType)}
+        embed={embed}
+        wide
+        prefill={{
+          name: first(sp.name),
+          email: first(sp.email),
+          phone: first(sp.phone),
+          tz: first(sp.tz),
+        }}
+      />
+    </div>
   );
 }

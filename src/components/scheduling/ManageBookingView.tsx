@@ -1,15 +1,18 @@
 "use client";
 
 /**
- * Page publique « gérer mon rendez-vous » (lien reçu par email) :
- * détail du booking + annulation avec motif + reprogrammation (réutilise
- * BookingWidget en mode reschedule). Sans compte, authentifié par le token.
+ * Page publique « gérer mon rendez-vous » (lien reçu par email) — habillée
+ * comme la maquette : carte claire, en-tête sombre, récapitulatif, actions
+ * de reprogrammation (réutilise BookingWidget) et d'annulation.
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ArrowLeft, Calendar as CalendarIcon, Check, Loader2, MapPin, Video, X } from "lucide-react";
+import { Btn, Pill, Row, Stack, fmtDur, rvInit } from "./rdv/atoms";
+import { Icon } from "./rdv/Icon";
 import BookingWidget from "./BookingWidget";
 import { googleCalendarUrl, outlookCalendarUrl } from "./calendar-links";
+import "./rdv-skin.css";
+import "./rdv-embed.css";
 
 type ManagePayload = {
   booking: {
@@ -50,7 +53,13 @@ type EventTypePayload = {
     duration_minutes: number;
     location_type: string;
     requires_confirmation: boolean;
-    custom_questions: { id: string; label: string; type: "text" | "textarea" | "select" | "checkbox" | "phone"; required: boolean; options?: string[] }[];
+    custom_questions: {
+      id: string;
+      label: string;
+      type: "text" | "textarea" | "select" | "checkbox" | "phone";
+      required: boolean;
+      options?: string[];
+    }[];
     color: string | null;
     price_cents: number | null;
     currency: string;
@@ -58,7 +67,14 @@ type EventTypePayload = {
   };
 };
 
-const fmtDate = (iso: string, tz: string): string => {
+const STATUS: Record<string, [string, string]> = {
+  pending: ["En attente de validation", "warn"],
+  confirmed: ["Confirmé", "ok"],
+  cancelled: ["Annulé", "danger"],
+  declined: ["Refusé", "danger"],
+};
+
+const fmtWhen = (iso: string, tz: string) => {
   const d = new Date(iso);
   const date = new Intl.DateTimeFormat("fr-FR", {
     timeZone: tz,
@@ -72,21 +88,14 @@ const fmtDate = (iso: string, tz: string): string => {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
-  return `${date.charAt(0).toUpperCase()}${date.slice(1)} à ${time}`;
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "En attente de validation",
-  confirmed: "Confirmé",
-  cancelled: "Annulé",
-  declined: "Refusé",
+  return `${date.charAt(0).toUpperCase()}${date.slice(1)} · ${time}`;
 };
 
 export default function ManageBookingView({ token }: { token: string }) {
   const [data, setData] = useState<ManagePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"view" | "cancel" | "reschedule" | "cancelled">("view");
+  const [mode, setMode] = useState<"view" | "cancel" | "reschedule">("view");
   const [reason, setReason] = useState("");
   const [working, setWorking] = useState(false);
   const [eventTypeData, setEventTypeData] = useState<EventTypePayload | null>(null);
@@ -96,7 +105,7 @@ export default function ManageBookingView({ token }: { token: string }) {
     setError(null);
     try {
       const res = await fetch(`/api/public/scheduling/manage/${encodeURIComponent(token)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(String(res.status));
       setData((await res.json()) as ManagePayload);
     } catch {
       setError("Rendez-vous introuvable ou lien expiré.");
@@ -118,7 +127,7 @@ export default function ManageBookingView({ token }: { token: string }) {
           data.event_slug,
         )}`,
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(String(res.status));
       setEventTypeData((await res.json()) as EventTypePayload);
       setMode("reschedule");
     } catch {
@@ -128,20 +137,17 @@ export default function ManageBookingView({ token }: { token: string }) {
     }
   };
 
-  const cancelBooking = async () => {
+  const cancel = async () => {
     setWorking(true);
     try {
-      const res = await fetch(
-        `/api/public/scheduling/manage/${encodeURIComponent(token)}/cancel`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reason: reason.trim() || null }),
-        },
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setMode("cancelled");
-      void load();
+      const res = await fetch(`/api/public/scheduling/manage/${encodeURIComponent(token)}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() || null }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      setMode("view");
+      await load();
     } catch {
       setError("L'annulation a échoué. Réessayez.");
     } finally {
@@ -151,24 +157,35 @@ export default function ManageBookingView({ token }: { token: string }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#FBFAF7]">
-        <Loader2 className="h-6 w-6 animate-spin text-[#8A877F]" />
+      <div className="rv-scope rv-public-stage">
+        <div className="rv-empty">Chargement…</div>
       </div>
     );
   }
 
   if (error || !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#FBFAF7] px-4">
-        <div className="w-full max-w-md rounded-2xl border bg-white p-8 text-center">
-          <AlertTriangle className="mx-auto h-8 w-8 text-amber-500" />
-          <p className="mt-4 text-sm text-[#14120E]">{error ?? "Lien invalide."}</p>
+      <div className="rv-scope rv-public-stage">
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 420,
+            background: "var(--surface)",
+            border: "1px solid var(--border-2)",
+            borderRadius: 16,
+            padding: 30,
+            textAlign: "center",
+            boxShadow: "var(--shadow-pop)",
+          }}
+        >
+          <Icon name="warning" className="ico-xl" style={{ color: "var(--warn)" }} />
+          <p style={{ marginTop: 12, fontSize: 13 }}>{error ?? "Lien invalide."}</p>
         </div>
       </div>
     );
   }
 
-  // Reprogrammé → renvoyer vers le lien du nouveau créneau.
+  // Reprogrammé : on redirige vers le lien du nouveau créneau.
   if (data.booking.status === "cancelled" && data.successor_token) {
     if (typeof window !== "undefined") {
       window.location.replace(`/rdv/gerer/${data.successor_token}`);
@@ -178,85 +195,158 @@ export default function ManageBookingView({ token }: { token: string }) {
 
   if (mode === "reschedule" && eventTypeData) {
     return (
-      <div>
-        <div className="bg-[#FBFAF7] px-4 pt-6">
-          <button
-            type="button"
-            onClick={() => setMode("view")}
-            className="mx-auto flex max-w-3xl items-center gap-1 text-sm text-[#8A877F] hover:text-[#14120E]"
-          >
-            <ArrowLeft className="h-4 w-4" /> Retour au rendez-vous
+      <div className="rv-scope rv-public-stage">
+        <div style={{ width: "100%", maxWidth: 900 }}>
+          <button type="button" className="btn ghost sm" style={{ marginBottom: 12 }} onClick={() => setMode("view")}>
+            <Icon name="chevleft" className="ico-sm" />
+            Retour au rendez-vous
           </button>
+          <BookingWidget
+            page={eventTypeData.page}
+            eventType={eventTypeData.event_type}
+            rescheduleToken={token}
+            wide
+            prefill={{ tz: data.booking.invitee_timezone }}
+          />
         </div>
-        <BookingWidget
-          page={eventTypeData.page}
-          eventType={eventTypeData.event_type}
-          rescheduleToken={token}
-          prefill={{ tz: data.booking.invitee_timezone }}
-        />
       </div>
     );
   }
 
-  const brand = data.brand_color || "#2A6FDB";
   const b = data.booking;
-  const isActive = b.status === "pending" || b.status === "confirmed";
-  const isCancelled = b.status === "cancelled" || b.status === "declined" || mode === "cancelled";
+  const [stLb, stKind] = STATUS[b.status] ?? STATUS.confirmed;
+  const active = b.status === "pending" || b.status === "confirmed";
+  const durationMin = Math.round((Date.parse(b.end_at) - Date.parse(b.start_at)) / 60000);
 
   return (
-    <div className="min-h-screen bg-[#FBFAF7] px-4 py-10 text-[#14120E]">
-      <div className="mx-auto w-full max-w-md overflow-hidden rounded-2xl border bg-white shadow-sm">
-        <div className="h-1.5 w-full" style={{ backgroundColor: brand }} />
-        <div className="p-6">
-          <p className="text-sm text-[#8A877F]">
-            {data.host_display_name ? `Rendez-vous avec ${data.host_display_name}` : "Votre rendez-vous"}
-          </p>
-          <h1 className="mt-1 text-xl font-semibold">{b.event_title}</h1>
-
-          <span
-            className={
-              "mt-3 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium " +
-              (isCancelled
-                ? "bg-red-50 text-red-700"
-                : b.status === "pending"
-                  ? "bg-amber-50 text-amber-700"
-                  : "bg-emerald-50 text-emerald-700")
-            }
-          >
-            {isCancelled ? <X className="h-3 w-3" /> : <Check className="h-3 w-3" />}
-            {mode === "cancelled" ? "Annulé" : STATUS_LABELS[b.status] ?? b.status}
-          </span>
-
-          <div className="mt-4 space-y-2 text-sm">
-            <p className="flex items-start gap-2">
-              <CalendarIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#8A877F]" />
-              <span className={isCancelled ? "line-through opacity-60" : undefined}>
-                {fmtDate(b.start_at, b.invitee_timezone)}
-                <span className="block text-xs text-[#8A877F]">
-                  ({b.invitee_timezone.replace(/_/g, " ")})
-                </span>
+    <div className="rv-scope rv-public-stage">
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          background: "var(--surface)",
+          border: "1px solid var(--border-2)",
+          borderRadius: 16,
+          overflow: "hidden",
+          boxShadow: "var(--shadow-pop)",
+        }}
+      >
+        <div
+          style={{
+            background: "var(--ink)",
+            color: "var(--on-ink)",
+            padding: "22px 22px 20px",
+            position: "relative",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "radial-gradient(ellipse at 80% 0%,rgba(226,85,43,.24),transparent 60%)",
+            }}
+          />
+          <div style={{ position: "relative" }}>
+            <Row style={{ gap: 10 }}>
+              <span
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: "50%",
+                  background: data.brand_color,
+                  color: "#fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                {rvInit(data.host_display_name ?? "?")}
               </span>
-            </p>
-            {b.meeting_url && !isCancelled ? (
-              <p className="flex items-center gap-2">
-                <Video className="h-4 w-4 shrink-0 text-[#8A877F]" />
-                <a href={b.meeting_url} target="_blank" rel="noreferrer" className="underline" style={{ color: brand }}>
+              <div>
+                <div style={{ fontFamily: "var(--font-serif)", fontSize: 21, lineHeight: 1.1 }}>
+                  {b.event_title}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10.5,
+                    color: "var(--on-ink-3)",
+                    textTransform: "uppercase",
+                    letterSpacing: ".08em",
+                    marginTop: 3,
+                  }}
+                >
+                  avec {data.host_display_name ?? "votre hôte"}
+                </div>
+              </div>
+            </Row>
+          </div>
+        </div>
+
+        <div style={{ padding: 18 }}>
+          <Row style={{ marginBottom: 12 }}>
+            <Pill kind={stKind} dot>
+              {stLb}
+            </Pill>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-3)" }}>
+              {fmtDur(durationMin)}
+            </span>
+          </Row>
+
+          <Stack gap={9}>
+            <Row style={{ gap: 10, alignItems: "flex-start" }}>
+              <Icon name="calCheck" className="ico-sm" style={{ color: "var(--accent)", marginTop: 2 }} />
+              <div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    textDecoration: active ? "none" : "line-through",
+                    opacity: active ? 1 : 0.6,
+                  }}
+                >
+                  {fmtWhen(b.start_at, b.invitee_timezone)}
+                </div>
+                <div style={{ fontSize: 11.5, color: "var(--text-3)" }}>
+                  {b.invitee_timezone.replace(/_/g, " ")}
+                </div>
+              </div>
+            </Row>
+
+            {b.meeting_url && active ? (
+              <Row style={{ gap: 10 }}>
+                <Icon name="video" className="ico-sm" style={{ color: "var(--text-3)" }} />
+                <a href={b.meeting_url} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>
                   Rejoindre la visio
                 </a>
-              </p>
+              </Row>
             ) : null}
+
             {b.location_text ? (
-              <p className="flex items-center gap-2 text-[#8A877F]">
-                <MapPin className="h-4 w-4 shrink-0" /> {b.location_text}
-              </p>
+              <Row style={{ gap: 10 }}>
+                <Icon name="mappin" className="ico-sm" style={{ color: "var(--text-3)" }} />
+                <span style={{ fontSize: 12.5 }}>{b.location_text}</span>
+              </Row>
             ) : null}
-          </div>
+
+            {b.cancellation_reason ? (
+              <Row style={{ gap: 10 }}>
+                <Icon name="info" className="ico-sm" style={{ color: "var(--text-3)" }} />
+                <span style={{ fontSize: 12.5, color: "var(--text-2)" }}>
+                  {b.cancellation_reason}
+                </span>
+              </Row>
+            ) : null}
+          </Stack>
 
           {b.status === "confirmed" ? (
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-[#8A877F]">Ajouter à mon agenda :</span>
+            <Row style={{ gap: 6, marginTop: 14, flexWrap: "wrap" }}>
               <a
-                className="rounded-full border px-3 py-1 font-medium hover:bg-[#F4F2EC]"
+                className="btn outline sm"
                 target="_blank"
                 rel="noreferrer"
                 href={googleCalendarUrl({
@@ -267,10 +357,11 @@ export default function ManageBookingView({ token }: { token: string }) {
                   location: b.meeting_url ?? b.location_text ?? undefined,
                 })}
               >
-                Google
+                <Icon name="google" className="ico-sm" />
+                Google Agenda
               </a>
               <a
-                className="rounded-full border px-3 py-1 font-medium hover:bg-[#F4F2EC]"
+                className="btn outline sm"
                 target="_blank"
                 rel="noreferrer"
                 href={outlookCalendarUrl({
@@ -281,71 +372,71 @@ export default function ManageBookingView({ token }: { token: string }) {
                   location: b.meeting_url ?? b.location_text ?? undefined,
                 })}
               >
+                <Icon name="microsoft" className="ico-sm" />
                 Outlook
               </a>
-            </div>
+            </Row>
           ) : null}
 
-          {mode === "cancel" && isActive ? (
-            <div className="mt-6 rounded-xl border bg-[#FBFAF7] p-4">
-              <p className="text-sm font-medium">Annuler ce rendez-vous ?</p>
+          {mode === "cancel" && active ? (
+            <div
+              style={{
+                marginTop: 16,
+                border: "1px solid var(--border)",
+                borderRadius: 11,
+                padding: 12,
+                background: "var(--surface-2)",
+              }}
+            >
+              <div style={{ fontSize: 12.5, fontWeight: 500 }}>Annuler ce rendez-vous ?</div>
               <textarea
-                className="mt-2 w-full rounded-lg border border-[#D8D4C8] bg-white px-3 py-2 text-sm"
+                className="rv-in"
+                style={{ marginTop: 8 }}
                 rows={2}
                 placeholder="Motif (optionnel)"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void cancelBooking()}
-                  disabled={working}
-                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-                >
-                  {working ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              <Row style={{ gap: 6, marginTop: 9 }}>
+                <Btn kind="danger" ic="ban" disabled={working} onClick={() => void cancel()}>
                   Confirmer l&apos;annulation
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("view")}
-                  className="rounded-lg border px-3 py-2 text-sm"
-                >
+                </Btn>
+                <Btn kind="outline" onClick={() => setMode("view")}>
                   Retour
-                </button>
-              </div>
+                </Btn>
+              </Row>
             </div>
           ) : null}
 
-          {mode === "view" && isActive ? (
-            <div className="mt-6 flex flex-col gap-2">
+          {mode === "view" && active ? (
+            <Stack gap={7} style={{ marginTop: 16 }}>
               {data.username && data.event_slug ? (
-                <button
-                  type="button"
-                  onClick={() => void startReschedule()}
+                <Btn
+                  kind="accent"
+                  ic="repeat"
                   disabled={working}
-                  className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
-                  style={{ backgroundColor: brand }}
+                  onClick={() => void startReschedule()}
+                  style={{ justifyContent: "center" }}
                 >
-                  {working ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Reprogrammer
-                </button>
+                </Btn>
               ) : null}
-              <button
-                type="button"
+              <Btn
+                kind="outline"
+                ic="ban"
                 onClick={() => setMode("cancel")}
-                className="rounded-lg border px-4 py-2.5 text-sm font-medium text-red-600"
+                style={{ justifyContent: "center", color: "var(--danger)" }}
               >
                 Annuler le rendez-vous
-              </button>
-            </div>
+              </Btn>
+            </Stack>
           ) : null}
 
-          {isCancelled && data.username ? (
+          {!active && data.username ? (
             <a
+              className="btn accent"
               href={`/rdv/${data.username}`}
-              className="mt-6 inline-block w-full rounded-lg px-4 py-2.5 text-center text-sm font-medium text-white"
-              style={{ backgroundColor: brand }}
+              style={{ marginTop: 16, width: "100%", justifyContent: "center" }}
             >
               Réserver un nouveau créneau
             </a>

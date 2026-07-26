@@ -1,32 +1,23 @@
 "use client";
 
 /**
- * Équipe (admin) : chaque hôte — admin et agents — avec sa page publique,
- * ses compteurs de RDV et des raccourcis (copier le lien, voir ses résas).
+ * Équipe — portage de `ScreenTeam` (rdv-screens-c.jsx) : liste `rv-mem` des
+ * hôtes avec page publique, compteurs et barre de charge.
  */
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Copy, ExternalLink, Loader2, Users } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { fetchTeam, type TeamMember } from "@/lib/scheduling/client";
-import { getAppUrlClient } from "./shared";
-
-const AV_COLORS = ["#E2552B", "#3B7DD8", "#7A5AF0", "#2E9E6B", "#D8912E", "#C64B8C"];
-const colorOf = (name: string): string => {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
-  return AV_COLORS[h % AV_COLORS.length];
-};
-const initials = (name: string): string => {
-  const p = name.trim().split(/\s+/);
-  return ((p[0]?.[0] ?? "?") + (p[1]?.[0] ?? "")).toUpperCase();
-};
+import { Btn, Pill, Row, Seg, rvColor, rvInit } from "../rdv/atoms";
+import { SectionHeader } from "./CalShell";
+import { getAppUrlClient } from "../rdv/shared";
 
 export default function TeamOverview({ basePath }: { basePath: string }) {
+  const router = useRouter();
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scope, setScope] = useState("all");
 
   useEffect(() => {
     (async () => {
@@ -43,95 +34,134 @@ export default function TeamOverview({ basePath }: { basePath: string }) {
     })();
   }, []);
 
-  const copyLink = (username: string) => {
+  const rows = members.filter((m) => (scope === "ag" ? m.role === "freelance" : true));
+  const maxLoad = Math.max(4, ...members.map((m) => m.upcoming + m.pending));
+
+  const copy = (username: string) => {
     void navigator.clipboard.writeText(`${getAppUrlClient()}/rdv/${username}`);
     toast.success("Lien de réservation copié");
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
-      </div>
-    );
-  }
-
-  if (members.length === 0) {
-    return (
-      <div className="rounded-xl border bg-card py-16 text-center">
-        <Users className="mx-auto h-8 w-8 text-muted-foreground/40" />
-        <p className="mt-3 text-sm text-muted-foreground">Aucun membre actif.</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-2">
-      {members.map((m) => (
-        <div
-          key={m.user_id}
-          className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3.5 shadow-sm"
-        >
-          <div
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
-            style={{ backgroundColor: colorOf(m.name) }}
+    <>
+      <SectionHeader
+        title="Équipe"
+        subtitle="Les pages de réservation de tout le monde, leur charge et leurs demandes en attente."
+        actions={
+          <Btn
+            kind="outline"
+            ic="copy"
+            onClick={() => {
+              const links = members
+                .filter((m) => m.username)
+                .map((m) => `${m.name} : ${getAppUrlClient()}/rdv/${m.username}`)
+                .join("\n");
+              if (!links) return;
+              void navigator.clipboard.writeText(links);
+              toast.success("Tous les liens copiés");
+            }}
           >
-            {initials(m.name)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium">{m.name}</span>
-              <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
-                {m.role === "admin" ? "Admin" : "Agent"}
-              </span>
-              {m.username && !m.page_active ? (
-                <span className="rounded-full bg-[var(--danger-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--danger)]">
-                  Page désactivée
-                </span>
-              ) : null}
-            </div>
-            <p className="cal-mono mt-0.5 truncate text-[11px] text-muted-foreground">
-              {m.username ? `/rdv/${m.username}` : "Page non configurée (créée à sa première visite)"}
-            </p>
-          </div>
-          <div className="flex items-center gap-4 text-center">
-            <div>
-              <p className="cal-mono text-[15px] font-semibold">{m.upcoming}</p>
-              <p className="cal-tag text-muted-foreground">à venir</p>
-            </div>
-            <div>
-              <p
-                className={`cal-mono text-[15px] font-semibold ${m.pending ? "text-[var(--warn)]" : ""}`}
-              >
-                {m.pending}
-              </p>
-              <p className="cal-tag text-muted-foreground">en attente</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            {m.username ? (
-              <>
-                <Button size="sm" variant="outline" onClick={() => copyLink(m.username!)}>
-                  <Copy className="mr-1.5 h-3.5 w-3.5" /> Lien
-                </Button>
-                <Button size="icon" variant="outline" className="h-9 w-9" asChild>
-                  <a
-                    href={`${getAppUrlClient()}/rdv/${m.username}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Ouvrir la page"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </Button>
-              </>
-            ) : null}
-            <Button size="sm" variant="ghost" asChild>
-              <Link href={`${basePath}/reservations?host=${m.user_id}`}>Ses résas</Link>
-            </Button>
-          </div>
+            Copier tous les liens
+          </Btn>
+        }
+      />
+
+      <div className="rv-list" style={{ marginBottom: 16 }}>
+        <div className="rv-list-hd">
+          <h3>Hôtes</h3>
+          <span className="n">{rows.length} actifs</span>
+          <Seg
+            opts={[
+              { id: "all", lb: "Tous" },
+              { id: "ag", lb: "Agents" },
+            ]}
+            val={scope}
+            set={setScope}
+          />
         </div>
-      ))}
-    </div>
+
+        {loading ? (
+          <div style={{ padding: 40 }}>
+            <div className="rv-empty">Chargement…</div>
+          </div>
+        ) : rows.length ? (
+          rows.map((m) => {
+            const load = m.upcoming + m.pending;
+            const ratio = load / maxLoad;
+            const color = rvColor(m.name);
+            return (
+              <div key={m.user_id} className="rv-mem">
+                <span className="av" style={{ background: color }}>
+                  {rvInit(m.name)}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <div className="nm">
+                    {m.name}
+                    <Pill kind={m.role === "admin" ? "accent" : ""}>
+                      {m.role === "admin" ? "Admin" : "Agent"}
+                    </Pill>
+                    {m.username && !m.page_active ? (
+                      <Pill kind="warn" dot>
+                        page désactivée
+                      </Pill>
+                    ) : null}
+                  </div>
+                  <div className="u">
+                    {m.username ? `/rdv/${m.username}` : "page non configurée"} · {m.email}
+                  </div>
+                </div>
+                <div className="kv">
+                  <div className="v">{m.upcoming}</div>
+                  <div className="l">à venir</div>
+                </div>
+                <div className="kv">
+                  <div className={`v ${m.pending ? "w" : ""}`.trim()}>{m.pending}</div>
+                  <div className="l">à valider</div>
+                </div>
+                <div className="load">
+                  <div className="bar">
+                    <i
+                      style={{
+                        width: `${ratio * 100}%`,
+                        background: ratio > 0.85 ? "var(--warn)" : color,
+                      }}
+                    />
+                  </div>
+                  <div className="l">{load} rendez-vous</div>
+                </div>
+                <Row style={{ gap: 5 }}>
+                  {m.username ? (
+                    <>
+                      <Btn kind="outline" size="xs" ic="copy" onClick={() => copy(m.username!)}>
+                        Lien
+                      </Btn>
+                      <Btn
+                        kind="outline"
+                        size="xs"
+                        ic="ext"
+                        onClick={() =>
+                          window.open(`${getAppUrlClient()}/rdv/${m.username}`, "_blank")
+                        }
+                      />
+                    </>
+                  ) : null}
+                  <Btn
+                    kind="ghost"
+                    size="xs"
+                    onClick={() => router.push(`${basePath}/reservations?host=${m.user_id}`)}
+                  >
+                    Ses résas
+                  </Btn>
+                </Row>
+              </div>
+            );
+          })
+        ) : (
+          <div style={{ padding: 40 }}>
+            <div className="rv-empty">Aucun hôte actif.</div>
+          </div>
+        )}
+      </div>
+    </>
   );
 }

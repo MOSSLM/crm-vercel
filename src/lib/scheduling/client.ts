@@ -115,6 +115,7 @@ export type SchedulingStats = {
   by_week: { week: string; total: number; cancelled: number }[];
   by_event_type: { label: string; count: number }[];
   by_source: { label: string; count: number }[];
+  by_slot: { weekday: number; hour: number; count: number }[];
 };
 
 export const fetchStats = (days: number, teamWide = false) =>

@@ -1,25 +1,14 @@
 "use client";
 
 /**
- * Intégrations Cal.SAMA : agendas connectés (Google — busy réel + création
- * d'évènements avec lien Meet), widget d'embed pour sites externes, et état
- * de l'envoi d'emails (Resend).
+ * Intégrations — portage de `ScreenIntegrations` (rdv-screens-d.jsx) :
+ * agendas connectés, état des emails, et générateur d'embed avec aperçu
+ * visuel sur un faux site (inline / bouton flottant / popup au clic).
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import {
-  CalendarX2,
-  Check,
-  Code2,
-  Link2,
-  Loader2,
-  Mail,
-  Plug,
-  TriangleAlert,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   disconnectConnection,
   fetchConnections,
@@ -29,31 +18,55 @@ import {
   type CalendarConnection,
 } from "@/lib/scheduling/client";
 import type { EventType } from "@/lib/scheduling/types";
-import EmbedGenerator from "./EmbedGenerator";
+import { Blk, Btn, Field, Pill, Row, Seg, Stack, Sw } from "../rdv/atoms";
+import { Icon } from "../rdv/Icon";
+import { SectionHeader } from "./CalShell";
+import { getAppUrlClient } from "../rdv/shared";
+
+const EMBED_KINDS = [
+  { id: "inline", ic: "layout", n: "Inline", d: "Le calendrier s'affiche dans la page." },
+  { id: "floating", ic: "panelBottom", n: "Bouton flottant", d: "Bouton fixe en bas d'écran → popup." },
+  { id: "popup", ic: "pointer", n: "Popup au clic", d: "N'importe quel bouton de votre site." },
+];
+
+function Code({ lines }: { lines: string[] }) {
+  return (
+    <div className="rv-code">
+      {lines.map((l, i) => (
+        <div key={i}>{l}</div>
+      ))}
+    </div>
+  );
+}
 
 export default function IntegrationsPanel() {
   const searchParams = useSearchParams();
   const [connections, setConnections] = useState<CalendarConnection[]>([]);
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [publicUrl, setPublicUrl] = useState("");
-  const [brandColor, setBrandColor] = useState("#E2552B");
-  const [eventTypes, setEventTypes] = useState<EventType[]>([]);
+  const [types, setTypes] = useState<EventType[]>([]);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
+
+  const [kind, setKind] = useState("floating");
+  const [target, setTarget] = useState("");
+  const [txt, setTxt] = useState("Prendre rendez-vous");
+  const [pos, setPos] = useState("right");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [connData, pageData, typesData] = await Promise.all([
+      const [conn, page, tps] = await Promise.all([
         fetchConnections(),
         fetchSchedulingPage(),
         fetchEventTypes().catch(() => ({ event_types: [] as EventType[] })),
       ]);
-      setConnections(connData.connections);
-      setGoogleAvailable(connData.google_available);
-      setPublicUrl(pageData.public_url);
-      setBrandColor(pageData.page.brand_color || "#E2552B");
-      setEventTypes(typesData.event_types);
+      setConnections(conn.connections);
+      setGoogleAvailable(conn.google_available);
+      setPublicUrl(conn.connections ? page.public_url : page.public_url);
+      setTypes(tps.event_types);
+      const first = tps.event_types.find((t) => t.is_active);
+      if (first) setTarget(first.slug);
     } catch (err) {
       toast.error("Chargement impossible", {
         description: err instanceof Error ? err.message : undefined,
@@ -67,7 +80,6 @@ export default function IntegrationsPanel() {
     void load();
   }, [load]);
 
-  // Retour du flow OAuth Google (?google=connected|refused|…)
   useEffect(() => {
     const g = searchParams?.get("google");
     if (!g) return;
@@ -85,124 +97,278 @@ export default function IntegrationsPanel() {
       const msg = err instanceof Error ? err.message : "";
       toast.error(
         msg === "google_calendar_non_configure"
-          ? "Google Calendar n'est pas configuré (GOOGLE_CALENDAR_CLIENT_ID/SECRET manquants)"
+          ? "Google Calendar n'est pas configuré (variables d'environnement manquantes)"
           : "Impossible de démarrer la connexion Google",
       );
       setConnecting(false);
     }
   };
 
+  const google = connections.find((c) => c.provider === "google");
+  const embedJs = `${getAppUrlClient()}/api/public/scheduling/embed.js`;
+  const url = target ? `${publicUrl}/${target}` : publicUrl;
+  const snip =
+    kind === "inline"
+      ? [`<div class="sama-rdv" data-url="${url}"></div>`, `<script src="${embedJs}" async></script>`]
+      : kind === "popup"
+        ? [
+            `<button data-sama-rdv-popup="${url}">${txt}</button>`,
+            `<script src="${embedJs}" async></script>`,
+          ]
+        : [
+            `<script src="${embedJs}" async`,
+            `  data-button-url="${url}"`,
+            `  data-button-text="${txt}"`,
+            `  data-button-color="#E2552B"`,
+            `  data-button-position="${pos}"></script>`,
+          ];
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
-      </div>
+      <>
+        <SectionHeader
+          title="Intégrations"
+          subtitle="Agendas connectés, emails, et le widget à coller sur vos sites clients ou votre landing."
+        />
+        <div className="rv-empty" style={{ padding: 40 }}>
+          Chargement…
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
-      {/* Agendas connectés */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
-        <h2 className="cal-tag flex items-center gap-1.5 text-muted-foreground">
-          <Plug className="h-3.5 w-3.5" /> Agendas connectés
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Le busy de vos agendas est soustrait de vos disponibilités, et chaque RDV confirmé y est
-          créé — avec lien Google Meet automatique pour les visios.
-        </p>
+    <>
+      <SectionHeader
+        title="Intégrations"
+        subtitle="Agendas connectés, emails, et le widget à coller sur vos sites clients ou votre landing."
+      />
 
-        <div className="mt-3 space-y-2">
-          {connections.map((c) => (
-            <div
-              key={c.id}
-              className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-            >
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 font-medium">
-                  {c.provider === "google" ? "Google Calendar" : c.provider}
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[var(--ok-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--ok)]">
-                    <Check className="h-3 w-3" /> Connecté
-                  </span>
-                </p>
-                <p className="truncate text-xs text-muted-foreground">{c.account_email}</p>
-                {c.last_error ? (
-                  <p className="mt-0.5 flex items-center gap-1 text-xs text-[var(--warn)]">
-                    <TriangleAlert className="h-3 w-3" /> {c.last_error.slice(0, 80)}
-                  </p>
-                ) : null}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+        <Stack gap={16}>
+          <Blk title="Agendas connectés" ic="plug">
+            <div className="rv-conn">
+              <span className="lg">
+                <Icon name="google" className="ico-lg" style={{ color: "#EA4335" }} />
+              </span>
+              <div>
+                <div className="n">
+                  Google Calendar
+                  {google ? (
+                    <Pill kind="ok" dot>
+                      connecté
+                    </Pill>
+                  ) : null}
+                </div>
+                <div className="e">
+                  {google
+                    ? `${google.account_email ?? "compte lié"} · ${google.busy_calendar_ids.length} agenda(s) lus`
+                    : googleAvailable
+                      ? "non connecté"
+                      : "non configuré (variables d'environnement)"}
+                </div>
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-[var(--danger)] hover:text-[var(--danger)]"
-                onClick={async () => {
-                  try {
-                    await disconnectConnection(c.id);
-                    setConnections((list) => list.filter((x) => x.id !== c.id));
-                    toast.success("Agenda déconnecté");
-                  } catch {
-                    toast.error("Déconnexion impossible");
-                  }
+              {google ? (
+                <Row style={{ gap: 5 }}>
+                  <Btn
+                    kind="ghost"
+                    size="xs"
+                    ic="x"
+                    onClick={async () => {
+                      try {
+                        await disconnectConnection(google.id);
+                        setConnections((l) => l.filter((x) => x.id !== google.id));
+                        toast.success("Agenda déconnecté");
+                      } catch {
+                        toast.error("Déconnexion impossible");
+                      }
+                    }}
+                  />
+                </Row>
+              ) : (
+                <Btn
+                  kind="outline"
+                  size="xs"
+                  ic="link"
+                  disabled={connecting || !googleAvailable}
+                  onClick={() => void connectGoogle()}
+                >
+                  Connecter
+                </Btn>
+              )}
+            </div>
+
+            <div className="rv-conn">
+              <span className="lg">
+                <Icon name="calendar" className="ico-lg" style={{ color: "var(--accent-2)" }} />
+              </span>
+              <div>
+                <div className="n">
+                  Calendrier CRM
+                  <Pill kind="accent" dot>
+                    natif
+                  </Pill>
+                </div>
+                <div className="e">RDV, tâches et évènements récurrents</div>
+              </div>
+              <Icon name="check" className="ico-sm" style={{ color: "var(--ok)" }} />
+            </div>
+
+            {google?.last_error ? (
+              <div style={{ fontSize: 11, color: "var(--warn)", marginTop: 8 }}>
+                Dernière erreur de synchronisation : {google.last_error.slice(0, 120)}
+              </div>
+            ) : null}
+
+            <div style={{ fontSize: 11, color: "var(--text-3)", marginTop: 10, lineHeight: 1.5 }}>
+              L&apos;occupé de ces agendas est soustrait de vos créneaux, et chaque RDV confirmé y
+              est créé — avec lien Google Meet automatique pour les visios.
+            </div>
+          </Blk>
+
+          <Blk
+            title="Emails & rappels"
+            ic="mail"
+            right={
+              <Pill kind="ok" dot>
+                Resend actif
+              </Pill>
+            }
+          >
+            <Stack gap={0}>
+              {(
+                [
+                  ["Confirmation à l'invité", "immédiat · avec .ics + lien de gestion"],
+                  ["Notification à l'hôte", "immédiat · in-app + email"],
+                  ["Rappels avant le RDV", "réglés par type d'évènement · cron toutes les 5 min"],
+                  ["Annulation / report", "aux deux parties, avec .ics de mise à jour"],
+                ] as [string, string][]
+              ).map(([n, d], i) => (
+                <Row
+                  key={n}
+                  style={{ padding: "8px 0", borderTop: i ? "1px solid var(--border)" : 0, gap: 9 }}
+                >
+                  <Icon name="check" className="ico-sm" style={{ color: "var(--ok)" }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12.5 }}>{n}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 1 }}>{d}</div>
+                  </div>
+                </Row>
+              ))}
+            </Stack>
+          </Blk>
+        </Stack>
+
+        <Blk title="Intégrer sur un site" ic="code">
+          <Stack gap={12}>
+            <Field label="Quoi intégrer ?">
+              <select
+                className="rv-in"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+              >
+                <option value="">Ma page complète (tous les types)</option>
+                {types
+                  .filter((t) => t.is_active)
+                  .map((t) => (
+                    <option key={t.id} value={t.slug}>
+                      {t.title} ({t.duration_minutes} min)
+                    </option>
+                  ))}
+              </select>
+            </Field>
+
+            <div className="rv-kinds">
+              {EMBED_KINDS.map((k) => (
+                <button
+                  type="button"
+                  key={k.id}
+                  className={`rv-kind ${kind === k.id ? "on" : ""}`.trim()}
+                  onClick={() => setKind(k.id)}
+                >
+                  <Icon name={k.ic} className="ico-lg" />
+                  <div className="n">{k.n}</div>
+                  <div className="d">{k.d}</div>
+                </button>
+              ))}
+            </div>
+
+            {kind !== "inline" && (
+              <div className="rv-grid2">
+                <Field label="Texte du bouton">
+                  <input className="rv-in" value={txt} onChange={(e) => setTxt(e.target.value)} />
+                </Field>
+                {kind === "floating" && (
+                  <Field label="Position">
+                    <Seg
+                      opts={[
+                        { id: "left", lb: "Bas gauche" },
+                        { id: "right", lb: "Bas droite" },
+                      ]}
+                      val={pos}
+                      set={setPos}
+                    />
+                  </Field>
+                )}
+              </div>
+            )}
+
+            <div>
+              <span className="rv-lb">Aperçu sur le site client</span>
+              <div className="rv-embed-prev" style={{ marginTop: 6 }}>
+                <div className="fake">
+                  <i className="t" />
+                  <i style={{ width: "88%" }} />
+                  <i style={{ width: "72%" }} />
+                  <i style={{ width: "80%" }} />
+                </div>
+                {kind === "inline" ? (
+                  <div className="inl">calendrier Cal.SAMA · hauteur auto</div>
+                ) : (
+                  <div className={`fb ${pos === "left" ? "left" : ""}`.trim()}>
+                    <Icon name="calendar" className="ico-sm" />
+                    {txt}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <Row style={{ marginBottom: 6 }}>
+                <span className="rv-lb">Snippet</span>
+                <span style={{ flex: 1 }} />
+                <Btn
+                  kind="outline"
+                  size="xs"
+                  ic="copy"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(snip.join("\n"));
+                    toast.success("Snippet d'intégration copié");
+                  }}
+                >
+                  Copier
+                </Btn>
+              </Row>
+              <Code lines={snip} />
+            </div>
+
+            <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.5 }}>
+              Préremplissage possible avec{" "}
+              <code
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  background: "var(--bg-2)",
+                  padding: "1px 4px",
+                  borderRadius: 4,
                 }}
               >
-                <CalendarX2 className="mr-1 h-4 w-4" /> Déconnecter
-              </Button>
+                ?name=&amp;email=
+              </code>
+              . L&apos;iframe s&apos;auto-redimensionne, la popup se ferme avec Échap.
             </div>
-          ))}
-
-          {connections.length === 0 ? (
-            <div className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
-              Aucun agenda connecté — vos dispos reposent sur votre planning et le calendrier CRM.
-            </div>
-          ) : null}
-
-          <Button
-            variant="outline"
-            className="w-full"
-            disabled={connecting || !googleAvailable}
-            onClick={() => void connectGoogle()}
-          >
-            {connecting ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : (
-              <Link2 className="mr-1 h-4 w-4" />
-            )}
-            {googleAvailable ? "Connecter Google Calendar" : "Google Calendar non configuré (env)"}
-          </Button>
-        </div>
+          </Stack>
+        </Blk>
       </div>
-
-      <div className="space-y-4">
-        {/* Embed */}
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
-          <h2 className="cal-tag flex items-center gap-1.5 text-muted-foreground">
-            <Code2 className="h-3.5 w-3.5" /> Intégrer sur un site (embed)
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Choisissez le type d&apos;intégration — comme Calendly — et collez le snippet généré.
-          </p>
-          <div className="mt-3">
-            <EmbedGenerator
-              publicUrl={publicUrl}
-              eventTypes={eventTypes}
-              brandColor={brandColor}
-            />
-          </div>
-        </div>
-
-        {/* Emails */}
-        <div className="rounded-xl border bg-card p-4 shadow-sm">
-          <h2 className="cal-tag flex items-center gap-1.5 text-muted-foreground">
-            <Mail className="h-3.5 w-3.5" /> Emails &amp; rappels
-          </h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Confirmations, annulations, reprogrammations et rappels partent via le Resend du CRM
-            (avec invitation .ics jointe) et sont journalisés dans l&apos;historique email. Les
-            rappels se règlent par type d&apos;évènement (la veille + 1 h avant par défaut).
-          </p>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

@@ -302,19 +302,20 @@ export function Cockpit() {
 
         {/* RIGHT — contexte prospect */}
         <aside className="pros-right">
-          <div className="blk">
-            <h4>Proposer un RDV</h4>
-            {current ? (
-              <BookingLinkPanel
-                prospectName={current.name}
-                prospectPhone={current.phone}
-                entrepriseId={current.entrepriseId}
-                opportuniteId={current.oppId}
-              />
-            ) : (
+          {current ? (
+            <BookingLinkPanel
+              prospectName={current.name}
+              prospectPhone={current.phone}
+              entrepriseId={current.entrepriseId}
+              opportuniteId={current.oppId}
+              contextLabel={current.org ?? current.name}
+            />
+          ) : (
+            <div className="blk">
+              <h4>Proposer un RDV</h4>
               <div className="ck-empty">Sélectionnez un prospect.</div>
-            )}
-          </div>
+            </div>
+          )}
           <div className="blk">
             <h4>Historique d'appels</h4>
             {current?.entrepriseId ? (

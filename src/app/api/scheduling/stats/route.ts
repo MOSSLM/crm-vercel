@@ -107,6 +107,20 @@ export const GET = withAuth({}, async ({ user, req, cors }) => {
       by_week: [...byWeek.entries()].map(([week, v]) => ({ week, ...v })),
       by_event_type: topOf(countBy(rows, (r) => r.event_title || "—"), 6),
       by_source: topOf(countBy(rows, (r) => r.source), 4),
+      // Densité créneau : jour ISO (1=lun) × heure locale du serveur.
+      by_slot: (() => {
+        const grid = new Map<string, number>();
+        for (const r of rows) {
+          const d = new Date(r.start_at);
+          const weekday = ((d.getUTCDay() + 6) % 7) + 1;
+          const key = `${weekday}-${d.getUTCHours()}`;
+          grid.set(key, (grid.get(key) ?? 0) + 1);
+        }
+        return [...grid.entries()].map(([k, count]) => {
+          const [weekday, hour] = k.split("-").map(Number);
+          return { weekday, hour, count };
+        });
+      })(),
     },
     { headers: cors },
   );

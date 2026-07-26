@@ -1,21 +1,31 @@
 "use client";
 
 /**
- * Panneau « Proposer un RDV » — pensé pour la page d'appel d'un agent.
- * Deux modes, comme Cal/Calendly :
- *   « Réserver » : mini-calendrier avec les vrais créneaux dispo — l'agent
- *     cale le RDV pendant l'appel (confirmation email + .ics automatiques) ;
- *   « Lien » : copie du lien prérempli ou envoi par email au prospect.
+ * Panneau « Proposer un RDV » du cockpit d'appel — portage de `RdvPanel`
+ * (rdv-cockpit.jsx) : bascule Réserver / Envoyer un lien, pastilles de jours
+ * avec nombre de créneaux libres, grille d'heures, bloc de confirmation.
+ *
+ * Branché sur les vraies disponibilités de l'hôte et la création de
+ * réservation côté staff (source « agent »).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarClock, CalendarPlus, Copy, Link2, Loader2, Mail, Send } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import { fetchEventTypes, fetchSchedulingPage } from "@/lib/scheduling/client";
-import type { EventType } from "@/lib/scheduling/types";
-import MiniBookingCalendar from "./MiniBookingCalendar";
-import { getAppUrlClient } from "./host/shared";
+import type { Booking, EventType } from "@/lib/scheduling/types";
+import { Btn, Field, RV_LOC, Row, Seg, Stack, addMin, fmtDur } from "./rdv/atoms";
+import { Icon } from "./rdv/Icon";
+import { getAppUrlClient } from "./rdv/shared";
+import "./rdv-skin.css";
+import "./rdv-embed.css";
+
+const DAY_COUNT = 7;
+
+const dateKey = (d: Date) =>
+  new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+const hhmm = (iso: string) =>
+  new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 export interface BookingLinkPanelProps {
   prospectName?: string | null;
@@ -25,6 +35,8 @@ export interface BookingLinkPanelProps {
   opportuniteId?: string | null;
   contactId?: string | null;
   callId?: string | null;
+  /** Libellé du rattachement affiché en sous-titre (ex. nom de l'opportunité). */
+  contextLabel?: string | null;
 }
 
 export default function BookingLinkPanel({
@@ -35,95 +47,190 @@ export default function BookingLinkPanel({
   opportuniteId,
   contactId,
   callId,
+  contextLabel,
 }: BookingLinkPanelProps) {
-  const [mode, setMode] = useState<"book" | "link">("book");
+  const [mode, setMode] = useState("book");
+  const [types, setTypes] = useState<EventType[]>([]);
+  const [tid, setTid] = useState("");
   const [username, setUsername] = useState<string | null>(null);
-  const [hostName, setHostName] = useState<string>("");
-  const [eventTypes, setEventTypes] = useState<EventType[]>([]);
-  const [selectedSlug, setSelectedSlug] = useState<string>("");
-  const [email, setEmail] = useState(prospectEmail ?? "");
-  const [sending, setSending] = useState(false);
+  const [hostName, setHostName] = useState("");
   const [loading, setLoading] = useState(true);
 
+  const [slots, setSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [dayIdx, setDayIdx] = useState(0);
+  const [slot, setSlot] = useState<string | null>(null);
+
+  const [name, setName] = useState(prospectName ?? "");
+  const [email, setEmail] = useState(prospectEmail ?? "");
+  const [phone, setPhone] = useState(prospectPhone ?? "");
+  const [sending, setSending] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const [done, setDone] = useState<Booking | null>(null);
+
+  useEffect(() => setName(prospectName ?? ""), [prospectName]);
+  useEffect(() => setEmail(prospectEmail ?? ""), [prospectEmail]);
+  useEffect(() => setPhone(prospectPhone ?? ""), [prospectPhone]);
+
+  const type = types.find((t) => t.id === tid) ?? null;
+
   useEffect(() => {
-    let cancelled = false;
     (async () => {
       try {
-        const [pageData, typesData] = await Promise.all([
-          fetchSchedulingPage(),
-          fetchEventTypes(),
-        ]);
-        if (cancelled) return;
-        setUsername(pageData.page.username);
-        setHostName(pageData.page.display_name);
-        const active = typesData.event_types.filter((et) => et.is_active);
-        setEventTypes(active);
-        setSelectedSlug(active[0]?.slug ?? "");
+        const [page, tps] = await Promise.all([fetchSchedulingPage(), fetchEventTypes()]);
+        setUsername(page.page.username);
+        setHostName(page.page.display_name);
+        const active = tps.event_types.filter((t) => t.is_active);
+        setTypes(active);
+        setTid(active[0]?.id ?? "");
       } catch {
-        // panneau non bloquant
+        /* panneau non bloquant */
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
     })();
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
+  // Fenêtre glissante de 7 jours à partir d'aujourd'hui.
+  const days = useMemo(
+    () =>
+      Array.from({ length: DAY_COUNT }, (_, i) => {
+        const d = new Date();
+        d.setDate(d.getDate() + i);
+        return {
+          key: dateKey(d),
+          lb:
+            i === 0
+              ? "Auj."
+              : new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(d).replace(".", ""),
+          n: d.getDate(),
+        };
+      }),
+    [],
+  );
+
+  const loadSlots = useCallback(async () => {
+    if (!tid) return;
+    setLoadingSlots(true);
+    try {
+      const from = new Date();
+      const to = new Date();
+      to.setDate(to.getDate() + DAY_COUNT);
+      const res = await authedFetch(
+        `/api/scheduling/event-types/${tid}/slots?from=${from.toISOString()}&to=${to.toISOString()}`,
+      );
+      if (!res.ok) throw new Error(String(res.status));
+      const data = (await res.json()) as { slots: string[] };
+      setSlots(data.slots ?? []);
+    } catch {
+      setSlots([]);
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, [tid]);
+
   useEffect(() => {
-    setEmail(prospectEmail ?? "");
-  }, [prospectEmail]);
+    setSlot(null);
+    void loadSlots();
+  }, [loadSlots]);
+
+  const byDay = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const iso of slots) {
+      const k = dateKey(new Date(iso));
+      const arr = m.get(k);
+      if (arr) arr.push(iso);
+      else m.set(k, [iso]);
+    }
+    return m;
+  }, [slots]);
+
+  const currentDay = days[dayIdx];
+  const daySlots = currentDay ? byDay.get(currentDay.key) ?? [] : [];
 
   const link = useMemo(() => {
-    if (!username || !selectedSlug) return null;
-    const url = new URL(`${getAppUrlClient()}/rdv/${username}/${selectedSlug}`);
-    if (prospectName) url.searchParams.set("name", prospectName);
+    if (!username || !type) return null;
+    const url = new URL(`${getAppUrlClient()}/rdv/${username}/${type.slug}`);
+    if (name.trim()) url.searchParams.set("name", name.trim());
     if (email.trim()) url.searchParams.set("email", email.trim());
     return url.toString();
-  }, [username, selectedSlug, prospectName, email]);
+  }, [username, type, name, email]);
 
-  const copyLink = () => {
-    if (!link) return;
-    void navigator.clipboard.writeText(link);
-    toast.success("Lien de réservation copié");
+  const phoneRequired = type?.location_type === "phone";
+  const canBook =
+    !!slot &&
+    name.trim().length > 0 &&
+    /.+@.+\..+/.test(email) &&
+    (!phoneRequired || phone.trim().length > 0);
+
+  const book = async () => {
+    if (!canBook || !slot || booking) return;
+    setBooking(true);
+    try {
+      const res = await authedFetch("/api/scheduling/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_type_id: tid,
+          start: slot,
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone.trim() || null,
+          call_id: callId ?? null,
+          opportunite_id: opportuniteId ?? null,
+        }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string; booking?: Booking };
+      if (!res.ok || !data.booking) {
+        if (data.error === "slot_taken" || data.error === "slot_unavailable") {
+          toast.error("Ce créneau vient d'être pris — liste rafraîchie.");
+          setSlot(null);
+          void loadSlots();
+        } else {
+          toast.error("Réservation impossible", { description: data.error });
+        }
+        return;
+      }
+      setDone(data.booking);
+      toast.success(`RDV confirmé — invitation envoyée à ${data.booking.invitee_email}`);
+    } catch {
+      toast.error("Erreur réseau — réessayez.");
+    } finally {
+      setBooking(false);
+    }
   };
 
-  const sendByEmail = async () => {
-    if (!link || !email.trim() || sending) return;
+  const sendLink = async () => {
+    if (!link || !/.+@.+\..+/.test(email) || sending) return;
     setSending(true);
     try {
-      const et = eventTypes.find((e) => e.slug === selectedSlug);
-      const firstName = (prospectName ?? "").trim().split(/\s+/)[0] || null;
+      const firstName = (name ?? "").trim().split(/\s+/)[0] || null;
       const bodyHtml =
         `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#111111;line-height:1.6;">` +
         `<p style="margin:0 0 16px 0;">Bonjour${firstName ? ` ${firstName}` : ""},</p>` +
         `<p style="margin:0 0 16px 0;">Comme convenu, voici le lien pour réserver directement un créneau` +
-        (et ? ` pour « ${et.title} »` : "") +
+        (type ? ` pour « ${type.title} »` : "") +
         ` :</p>` +
         `<p style="margin:0 0 16px 0;"><a href="${link}" style="display:inline-block;padding:10px 18px;background:#E2552B;color:#ffffff;border-radius:8px;text-decoration:none;">Choisir mon créneau</a></p>` +
-        `<p style="margin:0 0 16px 0;">Vous recevrez immédiatement une confirmation avec l'invitation agenda.</p>` +
-        `<p style="margin:0;">À très vite,<br>${hostName}</p>` +
-        `</div>`;
+        `<p style="margin:0;">À très vite,<br>${hostName}</p></div>`;
 
       const res = await authedFetch("/api/email/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           to_email: email.trim(),
-          to_name: prospectName ?? undefined,
-          subject: `Réservez votre créneau${et ? ` — ${et.title}` : ""}`,
+          to_name: name || undefined,
+          subject: `Réservez votre créneau${type ? ` — ${type.title}` : ""}`,
           body_html: bodyHtml,
-          body_text:
-            `Bonjour${firstName ? ` ${firstName}` : ""},\n\n` +
-            `Voici le lien pour réserver un créneau : ${link}\n\nÀ très vite,\n${hostName}`,
+          body_text: `Bonjour${firstName ? ` ${firstName}` : ""},\n\nVoici le lien pour réserver un créneau : ${link}\n\nÀ très vite,\n${hostName}`,
           type: "scheduling_link",
           entreprise_id: entrepriseId ?? undefined,
           opportunite_id: opportuniteId ?? undefined,
           contact_id: contactId ?? undefined,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast.success(`Lien de RDV envoyé à ${email.trim()}`);
+      if (!res.ok) throw new Error(String(res.status));
+      toast.success(`Lien envoyé à ${email.trim()}`);
     } catch {
       toast.error("Envoi impossible (Resend configuré ?)");
     } finally {
@@ -131,107 +238,274 @@ export default function BookingLinkPanel({
     }
   };
 
-  const linkContent = loading ? (
-    <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
-      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement du module RDV…
-    </div>
-  ) : !username || eventTypes.length === 0 ? (
-    <div className="rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
-      <CalendarClock className="mb-1 h-3.5 w-3.5" />
-      Configurez vos types d&apos;évènements dans Cal.SAMA pour proposer un lien de réservation
-      pendant l&apos;appel.
-    </div>
-  ) : (
-    <div className="space-y-2">
-      <select
-        value={selectedSlug}
-        onChange={(e) => setSelectedSlug(e.target.value)}
-        className="h-8 w-full rounded-md border border-input bg-input-background px-2 text-sm"
-        aria-label="Type de rendez-vous"
-      >
-        {eventTypes.map((et) => (
-          <option key={et.id} value={et.slug}>
-            {et.title} ({et.duration_minutes} min)
-          </option>
-        ))}
-      </select>
-
-      <div className="flex items-center gap-1.5">
-        <div className="relative flex-1">
-          <Mail className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="email du prospect"
-            className="h-8 w-full rounded-md border border-input bg-input-background py-1.5 pl-7 pr-2 text-sm"
-          />
+  if (loading) {
+    return (
+      <div className="rv-scope">
+        <div className="rv-panel">
+          <div className="pb">
+            <div className="rv-empty">Chargement…</div>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={() => void sendByEmail()}
-          disabled={sending || !/.+@.+\..+/.test(email)}
-          title="Envoyer le lien par email"
-          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
-        >
-          {sending ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Send className="h-3.5 w-3.5" />
-          )}
-          Envoyer
-        </button>
       </div>
+    );
+  }
 
-      <button
-        type="button"
-        onClick={copyLink}
-        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--hover)]"
-      >
-        <Copy className="h-3.5 w-3.5" /> Copier le lien prérempli
-      </button>
-    </div>
-  );
+  if (!username || types.length === 0) {
+    return (
+      <div className="rv-scope">
+        <div className="rv-panel">
+          <div className="pb">
+            <div className="rv-empty">
+              Créez un type de rendez-vous dans Cal.SAMA pour proposer un créneau pendant
+              l&apos;appel.
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-2.5">
-      {/* Onglets Réserver / Lien */}
-      <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
-        <button
-          type="button"
-          onClick={() => setMode("book")}
-          className={`inline-flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-            mode === "book"
-              ? "bg-card text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <CalendarPlus className="h-3.5 w-3.5" /> Réserver
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("link")}
-          className={`inline-flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
-            mode === "link"
-              ? "bg-card text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Link2 className="h-3.5 w-3.5" /> Lien
-        </button>
-      </div>
+    <div className="rv-scope">
+      <div className="rv-panel">
+        <div className="ph">
+          <span className="ic">
+            <Icon name="calPlus" className="ico-sm" />
+          </span>
+          <div className="t">
+            Proposer un RDV
+            {contextLabel ? <div className="s">lié à {contextLabel}</div> : null}
+          </div>
+        </div>
 
-      {mode === "book" ? (
-        <MiniBookingCalendar
-          prospectName={prospectName}
-          prospectEmail={prospectEmail}
-          prospectPhone={prospectPhone}
-          callId={callId}
-          opportuniteId={opportuniteId}
-        />
-      ) : (
-        linkContent
-      )}
+        <div className="pb">
+          <Seg
+            opts={[
+              { id: "book", lb: "Réserver", ic: "calPlus" },
+              { id: "link", lb: "Envoyer un lien", ic: "link" },
+            ]}
+            val={mode}
+            set={(v) => setMode(v)}
+            accent
+          />
+
+          {mode === "book" ? (
+            done ? (
+              <div className="rv-confirm">
+                <div className="rc">
+                  <Icon name="check" className="ico-sm" style={{ color: "var(--ok)" }} />
+                  <b>Rendez-vous confirmé</b>
+                </div>
+                <div className="sub">
+                  {done.invitee_name} · {hhmm(done.start_at)}
+                  <br />
+                  Invitation envoyée à {done.invitee_email}.
+                </div>
+                <button
+                  type="button"
+                  className="go"
+                  onClick={() => {
+                    setDone(null);
+                    setSlot(null);
+                    void loadSlots();
+                  }}
+                >
+                  <Icon name="calPlus" className="ico-sm" />
+                  Nouveau rendez-vous
+                </button>
+              </div>
+            ) : (
+              <>
+                <select
+                  className="rv-in"
+                  value={tid}
+                  onChange={(e) => setTid(e.target.value)}
+                  aria-label="Type de rendez-vous"
+                >
+                  {types.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.title} · {fmtDur(t.duration_minutes)}
+                    </option>
+                  ))}
+                </select>
+
+                <div className="rv-days">
+                  {days.map((d, i) => {
+                    const free = byDay.get(d.key)?.length ?? 0;
+                    return (
+                      <button
+                        type="button"
+                        key={d.key}
+                        className={`rv-dpill ${dayIdx === i ? "on" : ""} ${free === 0 ? "full" : ""}`.trim()}
+                        onClick={() => {
+                          setDayIdx(i);
+                          setSlot(null);
+                        }}
+                      >
+                        <span className="dl">{d.lb}</span>
+                        <span className="dn">{d.n}</span>
+                        <span className="n">{free} libres</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="rv-slotgrid" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
+                  {daySlots.map((iso) => (
+                    <button
+                      type="button"
+                      key={iso}
+                      className={`rv-sc ${slot === iso ? "on" : ""}`.trim()}
+                      onClick={() => setSlot(iso)}
+                    >
+                      {hhmm(iso)}
+                    </button>
+                  ))}
+                </div>
+                {!loadingSlots && !daySlots.length ? (
+                  <div className="rv-empty">Aucun créneau libre ce jour-là.</div>
+                ) : null}
+
+                <Field label="Coordonnées du prospect">
+                  <Stack gap={6}>
+                    <input
+                      className="rv-in"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Nom complet *"
+                    />
+                    <input
+                      className="rv-in"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="email@prospect.fr *"
+                    />
+                    <input
+                      className="rv-in"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder={phoneRequired ? "Téléphone *" : "Téléphone"}
+                    />
+                  </Stack>
+                </Field>
+
+                {slot && type ? (
+                  <div className="rv-confirm">
+                    <div className="rc">
+                      <Icon name="calCheck" className="ico-sm" style={{ color: "var(--accent)" }} />
+                      <b>
+                        {currentDay?.lb} {currentDay?.n} · {hhmm(slot)}–
+                        {addMin(hhmm(slot), type.duration_minutes)}
+                      </b>
+                    </div>
+                    <div className="sub">
+                      {type.title} · {(RV_LOC[type.location_type] ?? RV_LOC.custom).lb}
+                      <br />
+                      Email de confirmation + invitation .ics
+                      {email.trim() ? ` à ${email.trim()}` : ""}.
+                    </div>
+                    <button
+                      type="button"
+                      className="go"
+                      disabled={!canBook || booking}
+                      onClick={() => void book()}
+                    >
+                      <Icon name="send" className="ico-sm" />
+                      {booking ? "Confirmation…" : "Confirmer et envoyer l'invitation"}
+                    </button>
+                  </div>
+                ) : (
+                  <div
+                    className="rv-confirm"
+                    style={{
+                      background: "var(--surface-2)",
+                      color: "var(--text-3)",
+                      border: "1px dashed var(--border-2)",
+                    }}
+                  >
+                    <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+                      Choisissez un créneau : les heures affichées sont vos vraies disponibilités,
+                      occupé Google inclus.
+                    </div>
+                  </div>
+                )}
+              </>
+            )
+          ) : (
+            <Stack gap={9}>
+              <select
+                className="rv-in"
+                value={tid}
+                onChange={(e) => setTid(e.target.value)}
+                aria-label="Type de rendez-vous"
+              >
+                {types.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.title} · {fmtDur(t.duration_minutes)}
+                  </option>
+                ))}
+              </select>
+
+              <Field label="Email du prospect">
+                <Row style={{ gap: 6 }}>
+                  <input
+                    className="rv-in"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="email@prospect.fr"
+                  />
+                  <Btn
+                    kind="accent"
+                    ic="send"
+                    disabled={sending || !/.+@.+\..+/.test(email)}
+                    onClick={() => void sendLink()}
+                  >
+                    Envoyer
+                  </Btn>
+                </Row>
+              </Field>
+
+              {link ? (
+                <div
+                  style={{
+                    background: "var(--surface-2)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 8,
+                    padding: "8px 10px",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10.5,
+                    color: "var(--text-2)",
+                    wordBreak: "break-all",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {link.replace(/^https?:\/\//, "")}
+                </div>
+              ) : null}
+
+              <Btn
+                kind="outline"
+                ic="copy"
+                style={{ justifyContent: "center" }}
+                onClick={() => {
+                  if (!link) return;
+                  void navigator.clipboard.writeText(link);
+                  toast.success("Lien prérempli copié");
+                }}
+              >
+                Copier le lien prérempli
+              </Btn>
+
+              <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.45 }}>
+                À utiliser quand le prospect veut « voir ça plus tard » : le lien est prérempli, il
+                ne choisit que son créneau.
+              </div>
+            </Stack>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
