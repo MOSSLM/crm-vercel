@@ -4,9 +4,12 @@
  *
  * Strategies, in priority order:
  *   1. field-id  — element carries an explicit `data-field-id` attribute
- *   2. direct    — content[key] === target value (text/src/href/placeholder)
- *   3. composite — content[key] is an object whose .label/.placeholder/.src matches
- *   4. pair      — legacy schemas store `xxxLabel` + sibling `xxxHref`/`xxx_href`
+ *   2. pair      — buttons/links only: legacy schemas store `xxxLabel` + sibling
+ *                  `xxxHref`/`xxx_href`. Tried BEFORE `direct` because both match
+ *                  the same plain string key: `direct` would bind the label alone
+ *                  and silently drop the href on the next edit.
+ *   3. direct    — content[key] === target value (text/src/href/placeholder)
+ *   4. composite — content[key] is an object whose .label/.placeholder/.src matches
  *   5. override  — nothing found; the element is hardcoded in the section code
  */
 
@@ -58,15 +61,24 @@ function isHrefKey(key: string): boolean {
   return /href$|_href$|Href$|url$|_url$|Url$/.test(key);
 }
 
+/**
+ * Candidate href keys for a label key, best guess first.
+ *
+ * Suffix replacements come first: `primaryLabel` → `primaryHref` is how legacy
+ * schemas actually name the pair. The naive appends (`primaryLabelHref`) are
+ * only a last resort — they'd otherwise win the fallback and create a key no
+ * section template reads. When the label key has no Label/Text suffix the
+ * replacements are no-ops and get filtered out by the caller.
+ */
 function neighbourHrefKey(labelKey: string): string[] {
   return [
+    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "Href"),
+    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "_href"),
+    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "Url"),
     `${labelKey}Href`,
     `${labelKey}_href`,
     `${labelKey}Url`,
     `${labelKey}_url`,
-    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "Href"),
-    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "_href"),
-    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "Url"),
   ];
 }
 
@@ -96,14 +108,20 @@ function scan(
   const compositeKey = compositeSubkeyForKind(element.kind);
   const keys = Object.keys(content).filter((k) => !k.startsWith("__"));
 
-  // 2. direct — string value match
+  // 2. pair — legacy schemas: labelKey holds the text, neighbour holds the href.
+  // Must run before `direct`, which would match the same label key and bind the
+  // text only, losing the href.
+  const pair = scanPair(scope, content, keys, element);
+  if (pair) return pair;
+
+  // 3. direct — string value match
   for (const key of keys) {
     if (matchesString(content[key], target)) {
       return { strategy: "direct", key, location: scope };
     }
   }
 
-  // 3. composite — object whose subkey matches
+  // 4. composite — object whose subkey matches
   for (const key of keys) {
     const value = content[key];
     if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -119,28 +137,46 @@ function scan(
     }
   }
 
-  // 4. pair — legacy schemas: labelKey holds the text, neighbour holds the href
-  if (element.kind === "button" || element.kind === "link") {
-    for (const labelKey of keys) {
-      if (!matchesString(content[labelKey], element.text)) continue;
-      if (isHrefKey(labelKey)) continue;
-      const href = element.attrs.href ?? "";
-      const candidates = neighbourHrefKey(labelKey).filter((k) => k && k !== labelKey);
-      let hrefKey: string | undefined;
-      for (const cand of candidates) {
-        if (Object.prototype.hasOwnProperty.call(content, cand)) {
-          hrefKey = cand;
-          if (matchesString(content[cand], href)) break;
-        }
+  return null;
+}
+
+/**
+ * Legacy `xxxLabel` + `xxxHref` pair, for buttons and links only. Returns null
+ * for every other element kind, and for composite (object) values — those are
+ * handled by the `composite` strategy.
+ */
+function scanPair(
+  scope: BindingLocation,
+  content: Record<string, unknown>,
+  keys: string[],
+  element: ElementClickInfo,
+): BindingResult | null {
+  if (element.kind !== "button" && element.kind !== "link") return null;
+
+  for (const labelKey of keys) {
+    if (!matchesString(content[labelKey], element.text)) continue;
+    if (isHrefKey(labelKey)) continue;
+    const href = element.attrs.href ?? "";
+    const candidates = neighbourHrefKey(labelKey).filter((k) => k && k !== labelKey);
+    // An existing key whose value IS the element's href is a certain match.
+    // Otherwise fall back to the best-guess key that already exists — the first
+    // one, not the last, since `candidates` is ordered best guess first.
+    let hrefKey: string | undefined;
+    for (const cand of candidates) {
+      if (!Object.prototype.hasOwnProperty.call(content, cand)) continue;
+      if (matchesString(content[cand], href)) {
+        hrefKey = cand;
+        break;
       }
-      if (hrefKey) {
-        return { strategy: "pair", labelKey, hrefKey, location: scope };
-      }
-      // Even without a matching href key, return pair with the most likely
-      // neighbour name so the editor can create it on first edit.
-      const fallbackHref = candidates.find((c) => /href$|Href$/.test(c)) ?? `${labelKey}Href`;
-      return { strategy: "pair", labelKey, hrefKey: fallbackHref, location: scope };
+      hrefKey ??= cand;
     }
+    if (hrefKey) {
+      return { strategy: "pair", labelKey, hrefKey, location: scope };
+    }
+    // Even without a matching href key, return pair with the most likely
+    // neighbour name so the editor can create it on first edit.
+    const fallbackHref = candidates.find((c) => /href$|Href$/.test(c)) ?? `${labelKey}Href`;
+    return { strategy: "pair", labelKey, hrefKey: fallbackHref, location: scope };
   }
 
   return null;

@@ -221,12 +221,13 @@ export function ContentWorkspace({ enterpriseId, tagCatalog = [] }: { enterprise
                 <ChevronDown size={11} className="chev" />
                 <span>Page</span>
               </div>
-              <div className="ct-page-select" style={{ paddingBottom: 12 }}>
+              <div className="ct-page-select" role="listbox" aria-label="Pages" style={{ paddingBottom: 12 }}>
                 {state.sitemap.map((p, i) => {
                   const hidden = !!(p.service_tag && !activeTags.includes(p.service_tag));
                   return (
                     <button
                       key={p.id}
+                      role="option"
                       className="ct-page-row"
                       aria-selected={state.activePage === p.slug}
                       data-hidden={hidden ? "true" : "false"}
@@ -248,7 +249,7 @@ export function ContentWorkspace({ enterpriseId, tagCatalog = [] }: { enterprise
                 <ChevronDown size={11} className="chev" />
                 <span>Sections</span>
               </div>
-              <div className="ct-sec-list" style={{ paddingBottom: 12 }}>
+              <div className="ct-sec-list" role="listbox" aria-label="Sections de la page" style={{ paddingBottom: 12 }}>
                 {sections.length === 0 && (
                   <p style={{ fontSize: 11, color: "var(--text-4)", fontStyle: "italic", padding: "4px 8px", margin: 0 }}>
                     Aucune section sur cette page.
@@ -262,6 +263,7 @@ export function ContentWorkspace({ enterpriseId, tagCatalog = [] }: { enterprise
                   return (
                     <button
                       key={inst.id}
+                      role="option"
                       className="ct-sec-row"
                       aria-selected={selectedId === inst.id}
                       onClick={() => selectSection(inst.id)}

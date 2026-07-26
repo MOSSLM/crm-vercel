@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  # No branch filter: every PR gets checked whatever it targets. The previous
+  # `branches: [main]` filter meant a PR opened against any other integration
+  # branch ran no checks at all.
+  pull_request:
+
+# A new push to a PR makes the in-flight run obsolete — cancel it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # Each step runs even if an earlier one failed, so a single run reports
+      # every problem instead of stopping at the first lint warning.
+      - name: Lint
+        if: '!cancelled()'
+        run: npm run lint
+
+      - name: Typecheck
+        if: '!cancelled()'
+        run: npm run typecheck
+
+      - name: Tests
+        if: '!cancelled()'
+        run: npm test -- --ci

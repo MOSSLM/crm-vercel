@@ -132,7 +132,6 @@ export function useGoogleFonts(families: string[]) {
       link.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(family)}:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap`;
       document.head.appendChild(link);
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 }
 
@@ -1025,6 +1024,8 @@ function ButtonVariantEditor({
           <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 2 }}>Légère ombre dynamique au survol.</div>
         </div>
         <button
+          role="switch"
+          aria-label="Ombre portée"
           className="toggle"
           aria-checked={shadowEnabled ? "true" : "false"}
           onClick={() =>

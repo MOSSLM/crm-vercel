@@ -427,11 +427,12 @@ export function SoftphonePanel() {
             {/* Tabs + list (hidden while a call is on screen) */}
             {!active && (
               <>
-                <div className="pros-tabs-bar" style={{ display: "flex", gap: 4, padding: "6px 10px 0" }}>
+                <div className="pros-tabs-bar" role="tablist" style={{ display: "flex", gap: 4, padding: "6px 10px 0" }}>
                   {TABS.map(([id, label, Icon]) => (
                     <button
                       key={id}
                       type="button"
+                      role="tab"
                       className="pros-tab"
                       aria-selected={tab === id}
                       onClick={() => setTab(id)}

@@ -59,7 +59,6 @@ export function NumbersAdmin() {
     setNumbers((nums.data as PhoneNumber[]) ?? []);
     setExtensions((exts.data as Extension[]) ?? []);
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

@@ -161,8 +161,8 @@ export function SmsInbox() {
       <div className="msg-page" style={{ height: "100%", border: "1px solid var(--border)", borderRadius: 14, overflow: "hidden" }}>
         {/* Thread list */}
         <aside className="msg-list">
-          <div className="pros-tabs-bar" style={{ borderBottom: "1px solid var(--border)" }}>
-            <button type="button" className="pros-tab" aria-selected>
+          <div className="pros-tabs-bar" role="tablist" style={{ borderBottom: "1px solid var(--border)" }}>
+            <button type="button" role="tab" className="pros-tab" aria-selected>
               Boîte<span className="nb">{threads.length}</span>
             </button>
           </div>

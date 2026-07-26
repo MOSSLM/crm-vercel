@@ -263,14 +263,16 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
       {/* ─ Left Panel ──────────────────────────────────────────────────── */}
       {leftPanel && (
         <Pane style={{ width: 260, flexShrink: 0 }}>
-          <div className="wf-side-tabs">
+          <div className="wf-side-tabs" role="tablist">
             <button
+              role="tab"
               onClick={() => setLeftPanel("library")}
               aria-selected={leftPanel === "library" ? "true" : "false"}
             >
               <Layers size={12} />Sections
             </button>
             <button
+              role="tab"
               className="magic"
               onClick={() => setLeftPanel("ai")}
               aria-selected={leftPanel === "ai" ? "true" : "false"}
@@ -292,10 +294,11 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
                     style={{ paddingLeft: 26 }}
                   />
                 </div>
-                <div className="wf-cats">
+                <div className="wf-cats" role="tablist">
                   {CATEGORIES.slice(0, 5).map((cat) => (
                     <button
                       key={cat}
+                      role="tab"
                       onClick={() => setActiveCategory(cat)}
                       className="wf-cat"
                       aria-selected={activeCategory === cat ? "true" : "false"}
@@ -399,10 +402,11 @@ export function WireframeWorkspace({ sectionDefs, availableSections, onRegenerat
               <Layers size={12} />
               <span>{state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}</span>
             </div>
-            <div className="page-tabs">
+            <div className="page-tabs" role="tablist">
               {state.sitemap.map((p, i) => (
                 <button
                   key={p.id}
+                  role="tab"
                   onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug })}
                   className="page-tab"
                   aria-selected={state.activePage === p.slug ? "true" : "false"}

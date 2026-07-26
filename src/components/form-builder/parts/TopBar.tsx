@@ -117,12 +117,13 @@ export function TopBar({ form, tab, onTab, saving, onPublish, onSettings }: TopB
       </div>
 
       {/* Center tabs */}
-      <div className="tabs">
+      <div className="tabs" role="tablist">
         {TABS.map((t) => {
           const Icon = t.icon;
           return (
             <button
               key={t.id}
+              role="tab"
               className="tab"
               aria-selected={tab === t.id}
               onClick={() => onTab(t.id)}

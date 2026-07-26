@@ -141,8 +141,8 @@ export function Cockpit() {
             </div>
           </div>
 
-          <div className="pros-tabs-bar">
-            <button type="button" className="pros-tab" aria-selected>
+          <div className="pros-tabs-bar" role="tablist">
+            <button type="button" role="tab" className="pros-tab" aria-selected>
               File du jour<span className="nb">{queue.length}</span>
             </button>
           </div>

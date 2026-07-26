@@ -20,16 +20,32 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Branch strategy (V2.0)
+## Stratégie de branches
 
-À partir de maintenant, la branche `main` est gelée.
-Le développement de la refonte (nouvelles fonctionnalités + nouveau design) se fait exclusivement sur la branche `V2.0`.
+`main` est la branche d'intégration : c'est la cible des PRs et la base des
+branches de travail.
 
-### Workflow recommandé
+> La version précédente de ce README décrivait un gel de `main` au profit d'une
+> branche `V2.0`. Cette branche n'existe pas et tous les merges vont dans `main`
+> depuis. La section a été alignée sur la réalité du dépôt.
 
-1. Créer les branches de travail depuis `V2.0` (ex: `feat/v2-auth-redesign`).
-2. Ouvrir les PRs vers `V2.0` uniquement.
-3. N'autoriser le merge vers `main` qu'au moment de la finalisation de la V2.0.
+### Workflow
+
+1. Créer la branche de travail depuis `main` (ex: `feat/pipeline-filters`).
+2. Ouvrir la PR vers `main`.
+3. La CI (`.github/workflows/ci.yml`) lance lint + typecheck + tests sur chaque
+   PR, quelle que soit sa cible.
+
+## Vérifications locales
+
+```bash
+npm run lint       # ESLint (next lint)
+npm run typecheck  # tsc --noEmit
+npm test           # Jest
+```
+
+Ces trois commandes sont exactement ce que la CI exécute — les lancer avant de
+pousser évite un aller-retour.
 
 ## Learn More
 

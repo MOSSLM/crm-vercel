@@ -24,6 +24,15 @@
 .DS_Store
 *.pem
 
+# archives — design/template bundles belong in object storage, not in git.
+# A 24 MB zip here was 90% of the clone size for something no code imported.
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
 # debug
 npm-debug.log*
 yarn-debug.log*

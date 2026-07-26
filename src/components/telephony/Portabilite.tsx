@@ -47,7 +47,6 @@ export function Portabilite() {
     setItems(rows);
     setSelected((cur) => cur ?? rows[0]?.id ?? null);
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

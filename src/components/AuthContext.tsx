@@ -1,7 +1,8 @@
 "use client";
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, ReactNode } from 'react';
 import { createClient } from '../utils/supabase/client';
 import { User as SupabaseUser } from '@supabase/supabase-js';
+import { clearCrmCache } from '../utils/crmCache';
 
 import logger from '../utils/logger';
 interface User {
@@ -56,7 +57,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [profileLoaded, setProfileLoaded] = useState(false);
-  const supabase = createClient();
+  // Memoised: the bootstrap effect below depends on this identity, so a fresh
+  // client per render would tear down and re-subscribe onAuthStateChange on
+  // every state update — an unbounded loop. The browser client happens to be a
+  // module singleton today, but the effect must not rely on that.
+  const supabase = useMemo(() => createClient(), []);
   const currentUserIdRef = useRef<string | null>(null);
 
   const enrichUserFromProfile = useCallback(async (userId: string) => {
@@ -173,6 +178,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setProfileLoaded(false);
         void enrichUserFromProfile(session.user.id);
       } else {
+        // Session gone (sign-out, expiry, revoked token) — the cached dataset
+        // belongs to a session that no longer exists.
+        clearCrmCache();
         currentUserIdRef.current = null;
         setUser(null);
         setProfileLoaded(true);
@@ -205,6 +213,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = async () => {
+    // Drop the cached CRM dataset first: if signOut throws we still must not
+    // leave client names and deal amounts readable on a shared machine.
+    clearCrmCache();
     try {
       await supabase.auth.signOut();
       setUser(null);

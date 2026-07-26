@@ -49,7 +49,6 @@ function makeClient(opts: { existingCall?: Record<string, unknown> | null } = {}
     return b;
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { client: { from } as any, inserted, updated };
 }
 
