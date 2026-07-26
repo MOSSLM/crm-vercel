@@ -8,25 +8,29 @@ import { parseEnterpriseTags } from "@/components/site-builder/SitePageView";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { resolvePreviewSlug } from "@/lib/site-builder/preview-slug";
-
-/**
- * Every 404 below is otherwise indistinguishable from "wildcard domain not
- * wired up" once deployed. Log the reason so the platform logs answer the
- * question: a line here means the request DID reach the app.
- */
-function preview404(siteId: string, reason: string): never {
-  console.warn(`[preview] 404 for site ${siteId}: ${reason}`);
-  notFound();
-}
+import { PreviewDiagnostic } from "@/components/site-builder/PreviewDiagnostic";
 
 interface PreviewProps {
   params: Promise<{ siteId: string; path?: string[] }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 /** Join the optional catch-all segments into a sitemap slug. */
 function slugFromPath(path: string[] | undefined): string {
   const segments = (path ?? []).filter(Boolean);
   return segments.length > 0 ? "/" + segments.join("/") : "/";
+}
+
+/**
+ * Why a preview can't render. Thrown rather than returned so the checks below
+ * stay linear; caught in the page, which decides between a 404 and the
+ * self-service `?diag=1` report.
+ */
+class PreviewUnavailable extends Error {}
+// A function declaration, not an arrow: TS only narrows control flow through
+// never-returning calls when the callee is declared this way.
+function unavailable(reason: string): never {
+  throw new PreviewUnavailable(reason);
 }
 
 // Re-emit the viewport meta (stripped on import) so mobile @media fires, and
@@ -38,35 +42,19 @@ export const dynamic = "force-dynamic";
 // keep it out of every search index so it stays truly private ("introuvable").
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-/**
- * Live draft preview of a site by id, OUTSIDE the editor iframe. Renders the
- * current (unpublished, incl. template) design with sample company data via the
- * exact public render pipeline (DynamicPageRenderer), so animations, the design's
- * own JS and responsive breakpoints are exercised for real. The unguessable
- * site UUID is the capability token; it only ever shows sample data.
- */
-export default async function DraftPreviewPage({ params }: PreviewProps) {
-  const { siteId, path } = await params;
-  const site = await resolveDraftSite(siteId);
-  if (!site) preview404(siteId, "resolveDraftSite returned null (see [site-resolver] warning above)");
+/** Everything the renderer needs, or a PreviewUnavailable carrying the reason. */
+async function loadPreview(siteId: string, path: string[] | undefined) {
+  const result = await resolveDraftSite(siteId);
+  if (!result.ok) unavailable(result.reason);
 
-  const {
-    enterpriseVariables,
-    enterpriseId,
-    reviews,
-    publishedInstances,
-    publishedStyleGuide,
-    styleGuide,
-    menus,
-    publishedSitemap,
-    claudeDesign,
-    paywallEnabled,
-    bookingUrl,
-    companyName,
-  } = site;
+  const { site } = result;
+  const { enterpriseVariables, publishedInstances, publishedSitemap } = site;
 
   if (!publishedInstances || publishedInstances.length === 0) {
-    preview404(siteId, "the site has no section instances (import incomplete, or nothing saved yet)");
+    unavailable(
+      "ce design ne contient aucune section enregistrée " +
+        "(import interrompu, ou rien n'a encore été enregistré dans l'éditeur)",
+    );
   }
 
   const instances = publishedInstances as Array<{ page_slug: string; is_hidden?: boolean }>;
@@ -80,7 +68,7 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
     return !tag || enterpriseTags.includes(tag);
   };
   const resolved = resolvePreviewSlug(instances, publishedSitemap, requestedSlug, tagAllows);
-  if (!resolved) preview404(siteId, `no visible section instance for "${requestedSlug}"`);
+  if (!resolved) unavailable(`aucune page visible ne correspond à « ${requestedSlug} »`);
 
   const { slug: pageSlug, fellBack } = resolved;
   const targetPage = publishedSitemap?.find((p) => p.slug === pageSlug);
@@ -89,30 +77,70 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
   // a missing service tag. Skipped for a fallback slug — it was picked from the
   // instances that do exist, so re-checking the sitemap would undo the fallback.
   if (!fellBack && pageSlug !== "/" && !targetPage) {
-    preview404(siteId, `"${pageSlug}" is not in the sitemap`);
+    unavailable(`« ${pageSlug} » n'est pas dans le plan du site`);
   }
   if (targetPage?.service_tag && !enterpriseTags.includes(targetPage.service_tag)) {
-    preview404(siteId, `"${pageSlug}" is gated by service tag "${targetPage.service_tag}"`);
+    unavailable(`« ${pageSlug} » est réservée au service « ${targetPage.service_tag} »`);
   }
 
-  const visibleMenus = buildPublicMenus(menus, publishedSitemap, instances, enterpriseTags);
+  return {
+    site,
+    pageSlug,
+    instances,
+    visibleMenus: buildPublicMenus(site.menus, publishedSitemap, instances, enterpriseTags),
+  };
+}
+
+/**
+ * Live draft preview of a site by id, OUTSIDE the editor iframe. Renders the
+ * current (unpublished, incl. template) design with sample company data via the
+ * exact public render pipeline (DynamicPageRenderer), so animations, the design's
+ * own JS and responsive breakpoints are exercised for real. The unguessable
+ * site UUID is the capability token; it only ever shows sample data.
+ */
+export default async function DraftPreviewPage({ params, searchParams }: PreviewProps) {
+  const { siteId, path } = await params;
+
+  let data: Awaited<ReturnType<typeof loadPreview>>;
+  try {
+    data = await loadPreview(siteId, path);
+  } catch (e) {
+    if (!(e instanceof PreviewUnavailable)) throw e;
+    // A line here means the request DID reach the app — which is what tells an
+    // app-level 404 apart from the platform 404 you get when the wildcard
+    // domain isn't attached to the Vercel project.
+    console.warn(`[preview] 404 for site ${siteId}: ${e.message}`);
+
+    // Holding this URL already grants full read access to the design, so
+    // showing the reason to whoever has it leaks nothing — and saves digging
+    // through the platform logs.
+    const diag = (await searchParams)?.diag;
+    if (diag !== undefined) return <PreviewDiagnostic siteId={siteId} reason={e.message} />;
+    notFound();
+  }
+
+  const { site, pageSlug, visibleMenus } = data;
 
   return (
     <>
       <DynamicPageRenderer
         siteId={siteId}
         pageSlug={pageSlug}
-        styleGuide={publishedStyleGuide ?? styleGuide}
-        variables={enterpriseVariables}
-        reviews={reviews}
+        styleGuide={site.publishedStyleGuide ?? site.styleGuide}
+        variables={site.enterpriseVariables}
+        reviews={site.reviews}
         menus={visibleMenus}
-        preloadedInstances={publishedInstances}
-        claudeDesign={claudeDesign}
-        serviceTagBySlug={claudeDesign ? serviceTagMapFromSitemap(publishedSitemap) : undefined}
-        enterpriseId={enterpriseId}
+        preloadedInstances={site.publishedInstances}
+        claudeDesign={site.claudeDesign}
+        serviceTagBySlug={site.claudeDesign ? serviceTagMapFromSitemap(site.publishedSitemap) : undefined}
+        enterpriseId={site.enterpriseId}
       />
-      {paywallEnabled && (
-        <DemoPaywallBar siteId={siteId} bookingUrl={bookingUrl} companyName={companyName} />
+      {site.paywallEnabled && (
+        <DemoPaywallBar
+          siteId={siteId}
+          bookingUrl={site.bookingUrl}
+          companyName={site.companyName}
+        />
       )}
     </>
   );
