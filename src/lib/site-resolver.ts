@@ -344,6 +344,88 @@ export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult>
   };
 }
 
+/**
+ * Facts gathered when a draft preview can't render, shown on the preview's
+ * failure page so the URL holder sees WHY without reading platform logs.
+ * Each query degrades independently: a schema drift lands in `queryErrors`
+ * instead of blanking the whole probe.
+ */
+export interface DraftSiteProbe {
+  siteExists: boolean;
+  siteName: string | null;
+  isTemplate: boolean;
+  /** All live section instances, split on visibility (deduplicated slugs). */
+  visibleSlugs: string[];
+  hiddenSlugs: string[];
+  sitemapSlugs: string[];
+  /** Name of a `site_templates` row with this id — the OTHER template system,
+   *  whose ids are not previewable on a subdomain. */
+  legacyTemplateName: string | null;
+  queryErrors: string[];
+}
+
+export async function probeDraftSite(siteId: string): Promise<DraftSiteProbe> {
+  const supabase = getServiceClient();
+  const probe: DraftSiteProbe = {
+    siteExists: false,
+    siteName: null,
+    isTemplate: false,
+    visibleSlugs: [],
+    hiddenSlugs: [],
+    sitemapSlugs: [],
+    legacyTemplateName: null,
+    queryErrors: [],
+  };
+
+  // Two stages: id+name have existed since the table was created, the other
+  // columns arrived by migration — keep existence detection immune to drift.
+  const { data: site, error: siteErr } = await supabase
+    .from("sites")
+    .select("id, name")
+    .eq("id", siteId)
+    .maybeSingle();
+  if (siteErr) probe.queryErrors.push(`sites: ${siteErr.code ?? "?"} ${siteErr.message}`);
+  if (site) {
+    probe.siteExists = true;
+    probe.siteName = (site as { name?: string | null }).name ?? null;
+
+    const { data: extra, error: extraErr } = await supabase
+      .from("sites")
+      .select("is_template, sitemap")
+      .eq("id", siteId)
+      .maybeSingle();
+    if (extraErr) probe.queryErrors.push(`sites (colonnes v2): ${extraErr.code ?? "?"} ${extraErr.message}`);
+    probe.isTemplate = Boolean((extra as { is_template?: boolean | null } | null)?.is_template);
+    probe.sitemapSlugs = (((extra as { sitemap?: SitemapPage[] | null } | null)?.sitemap) ?? []).map(
+      (p) => p.slug,
+    );
+  }
+
+  const { data: inst, error: instErr } = await supabase
+    .from("site_section_instances")
+    .select("page_slug, is_hidden")
+    .eq("site_id", siteId);
+  if (instErr) probe.queryErrors.push(`site_section_instances: ${instErr.code ?? "?"} ${instErr.message}`);
+  const visible = new Set<string>();
+  const hidden = new Set<string>();
+  for (const row of (inst ?? []) as Array<{ page_slug: string; is_hidden?: boolean | null }>) {
+    (row.is_hidden ? hidden : visible).add(row.page_slug);
+  }
+  probe.visibleSlugs = [...visible];
+  probe.hiddenSlugs = [...hidden].filter((s) => !visible.has(s));
+
+  if (!probe.siteExists) {
+    const { data: tpl } = await supabase
+      .from("site_templates")
+      .select("name")
+      .eq("id", siteId)
+      .maybeSingle();
+    if (tpl) probe.legacyTemplateName = (tpl as { name?: string | null }).name ?? "(sans nom)";
+  }
+
+  return probe;
+}
+
 // Fetch published blog posts for a site
 export async function fetchBlogPosts(siteId: string): Promise<BlogPost[]> {
   const supabase = getServiceClient();

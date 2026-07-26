@@ -1,16 +1,98 @@
 import React from "react";
+import type { DraftSiteProbe } from "@/lib/site-resolver";
 
 /**
- * Self-service explanation of why a draft preview can't render, shown when the
- * preview URL carries `?diag=1`.
+ * Failure page for a draft preview, rendered in place of a bare 404. Names the
+ * cause and, from the probe, what to do about it — including direct links to
+ * the pages that DO exist, since any path on this subdomain routes back into
+ * the same design.
  *
- * The default response stays a plain 404 (see preview/not-found.tsx). This page
- * exists because the reason otherwise only lives in the platform logs, which
- * whoever is holding the broken link usually can't reach. Holding the URL
- * already grants read access to the whole design, so naming the cause to its
- * bearer leaks nothing new.
+ * Shown to whoever holds the preview URL: holding it already grants read
+ * access to the whole design, so naming the cause leaks nothing new.
  */
-export function PreviewDiagnostic({ siteId, reason }: { siteId: string; reason: string }) {
+
+interface Verdict {
+  title: string;
+  advice: React.ReactNode;
+}
+
+function verdictFor(probe: DraftSiteProbe | null, reason: string): Verdict {
+  if (!probe) {
+    return {
+      title: reason,
+      advice:
+        "Le diagnostic complémentaire n'a pas pu interroger la base — la raison ci-dessus est la seule information disponible.",
+    };
+  }
+
+  if (probe.legacyTemplateName) {
+    return {
+      title: `Cet identifiant est celui du template « ${probe.legacyTemplateName} » de l'ancienne galerie (/site-templates).`,
+      advice:
+        "Ces templates n'ont pas d'aperçu par sous-domaine : ils ne deviennent un site qu'après « Utiliser ». " +
+        "Pour un aperçu partageable, ouvrez le design dans le Site Builder Claude Design et utilisez son bouton Aperçu — " +
+        "l'URL générée portera l'identifiant du site, pas celui du template de galerie.",
+    };
+  }
+
+  if (!probe.siteExists) {
+    return {
+      title: "Aucun design ne porte cet identifiant dans la base.",
+      advice:
+        "Le design a été supprimé, ou ce lien a été généré avant un échec de création. " +
+        "Rouvrez la galerie des designs (/site-builder/claude), ouvrez le design voulu dans l'éditeur " +
+        "et régénérez le lien avec son bouton Aperçu.",
+    };
+  }
+
+  const name = probe.siteName ? `« ${probe.siteName} »` : "Ce design";
+
+  if (probe.visibleSlugs.length === 0 && probe.hiddenSlugs.length === 0) {
+    return {
+      title: `${name} existe mais ne contient aucune section enregistrée.`,
+      advice:
+        "L'import ne s'est pas terminé : la fiche du design a été créée, pas ses pages. " +
+        "Réimportez le design (ZIP), puis rouvrez cet aperçu.",
+    };
+  }
+
+  if (probe.visibleSlugs.length === 0) {
+    return {
+      title: `${name} existe mais toutes ses pages sont masquées (${probe.hiddenSlugs.join(", ")}).`,
+      advice: "Réaffichez au moins une page dans l'éditeur, puis rouvrez cet aperçu.",
+    };
+  }
+
+  return {
+    title: `${name} existe et a des pages affichables, mais aucune ne correspond à l'adresse demandée.`,
+    advice: (
+      <>
+        Pages disponibles sur ce sous-domaine :
+        <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+          {probe.visibleSlugs.map((slug) => (
+            <li key={slug} style={{ margin: "2px 0" }}>
+              <a href={slug} style={{ color: "#1d4ed8", textDecoration: "underline" }}>
+                {slug}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </>
+    ),
+  };
+}
+
+export function PreviewDiagnostic({
+  siteId,
+  reason,
+  probe,
+}: {
+  siteId: string;
+  reason: string;
+  probe: DraftSiteProbe | null;
+}) {
+  const verdict = verdictFor(probe, reason);
+
   return (
     <div
       style={{
@@ -27,35 +109,56 @@ export function PreviewDiagnostic({ siteId, reason }: { siteId: string; reason: 
     >
       <div style={{ maxWidth: 560, width: "100%" }}>
         <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, color: "#9ca3af" }}>
-          DIAGNOSTIC D&apos;APERÇU
+          APERÇU INDISPONIBLE
         </div>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: "8px 0 20px" }}>
-          Cet aperçu ne peut pas s&apos;afficher
+        <h1 style={{ fontSize: 21, fontWeight: 700, margin: "8px 0 20px", lineHeight: 1.35 }}>
+          {verdict.title}
         </h1>
 
         <div
           style={{
-            border: "1px solid #fecaca",
-            background: "#fef2f2",
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
             borderRadius: 10,
             padding: "14px 16px",
-            fontSize: 15,
-            lineHeight: 1.5,
-            color: "#991b1b",
+            fontSize: 14.5,
+            lineHeight: 1.55,
+            color: "#374151",
           }}
         >
-          {reason}
+          {verdict.advice}
         </div>
 
-        <dl style={{ margin: "20px 0 0", fontSize: 13, color: "#6b7280", lineHeight: 1.6 }}>
+        {probe && probe.queryErrors.length > 0 && (
+          <div
+            style={{
+              marginTop: 14,
+              border: "1px solid #fecaca",
+              background: "#fef2f2",
+              borderRadius: 10,
+              padding: "12px 16px",
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: "#991b1b",
+            }}
+          >
+            Erreurs de requête (migration SQL probablement non appliquée sur cet environnement) :
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {probe.queryErrors.map((err) => (
+                <li key={err} style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+                  {err}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <dl style={{ margin: "20px 0 0", fontSize: 12.5, color: "#6b7280", lineHeight: 1.6 }}>
+          <dt style={{ fontWeight: 600, color: "#374151" }}>Détail technique</dt>
+          <dd style={{ margin: "0 0 10px" }}>{reason}</dd>
           <dt style={{ fontWeight: 600, color: "#374151" }}>Identifiant du design</dt>
-          <dd style={{ margin: "0 0 12px", fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+          <dd style={{ margin: 0, fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
             {siteId}
-          </dd>
-          <dt style={{ fontWeight: 600, color: "#374151" }}>La requête a bien atteint l&apos;app</dt>
-          <dd style={{ margin: 0 }}>
-            Le domaine et le routage fonctionnent : la cause est celle indiquée ci-dessus, pas la
-            configuration DNS ou Vercel.
           </dd>
         </dl>
       </div>
