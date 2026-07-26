@@ -222,8 +222,15 @@ export async function resolveSite(
  * variables when one is linked, else sample values. Renders exactly like the
  * public site (same DynamicPageRenderer), so animations / JS / breakpoints are
  * exercised for real outside the editor iframe. Sample-data only ⇒ no leak.
+ *
+ * Returns a discriminated result rather than a bare null: the failure reason is
+ * the whole diagnosis when a preview 404s, and a null threw it away.
  */
-export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | null> {
+export type DraftSiteResult =
+  | { ok: true; site: ResolvedSite }
+  | { ok: false; reason: string };
+
+export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult> {
   const supabase = getServiceClient();
 
   const { data: siteRow, error } = await supabase
@@ -238,11 +245,15 @@ export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | n
   // this environment) rather than an unknown id. Same lesson as
   // api/site-builder/claude/[siteId]/pages/route.ts.
   if (error || !siteRow) {
-    console.warn(
-      `[site-resolver] resolveDraftSite(${siteId}) → null: ` +
-        (error ? `${error.code ?? "?"} ${error.message}` : "no row with that id"),
-    );
-    return null;
+    // PGRST116 = "no rows" from .single(); anything else is a real query failure
+    // (most often a column in the select above missing in this environment).
+    const reason = error
+      ? error.code === "PGRST116"
+        ? `aucun site n'a l'identifiant ${siteId}`
+        : `la requête sur "sites" a échoué (${error.code ?? "?"}: ${error.message})`
+      : `aucun site n'a l'identifiant ${siteId}`;
+    console.warn(`[site-resolver] resolveDraftSite(${siteId}) → ${reason}`);
+    return { ok: false, reason };
   }
 
   // Live section instances (no published snapshot) + their defs for native sections.
@@ -252,11 +263,13 @@ export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | n
     .eq("site_id", siteId)
     .order("sort_order");
   if (instancesError) {
-    // Swallowed, this would degrade to an empty page set and a 404 with no trace.
-    console.warn(
-      `[site-resolver] resolveDraftSite(${siteId}): site_section_instances query failed — ` +
-        `${instancesError.code ?? "?"} ${instancesError.message}`,
-    );
+    // Swallowed, this would degrade to an empty page set and a 404 blaming the
+    // design ("no sections") for what is really a failed query.
+    const reason =
+      `la requête sur "site_section_instances" a échoué ` +
+      `(${instancesError.code ?? "?"}: ${instancesError.message})`;
+    console.warn(`[site-resolver] resolveDraftSite(${siteId}) → ${reason}`);
+    return { ok: false, reason };
   }
   const instances = (instanceRows ?? []) as Array<unknown>;
 
@@ -305,26 +318,29 @@ export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | n
   const claudeDesign = cd.is_claude_design ? buildClaudeDesign(cd.shared_assets, cd.tweaks) : null;
 
   return {
-    siteId: siteRow.id,
-    enterpriseId: (siteRow as { enterprise_id?: number | null }).enterprise_id ?? null,
-    paywallEnabled: (siteRow as { paywall_enabled?: boolean | null }).paywall_enabled ?? false,
-    bookingUrl: (siteRow as { booking_url?: string | null }).booking_url ?? null,
-    config,
-    enterpriseVariables: vars,
-    companyName,
-    logoUrl,
-    phone,
-    isPublished: false,
-    styleGuide,
-    publishedStyleGuide: styleGuide,
-    publishedInstances: instances,
-    publishedSiteConfig: siteConfig,
-    menus: siteConfig?.menus ?? null,
-    faviconUrl: null,
-    reviews,
-    publishedSitemap: sitemap,
-    seo: null,
-    claudeDesign,
+    ok: true,
+    site: {
+      siteId: siteRow.id,
+      enterpriseId: (siteRow as { enterprise_id?: number | null }).enterprise_id ?? null,
+      paywallEnabled: (siteRow as { paywall_enabled?: boolean | null }).paywall_enabled ?? false,
+      bookingUrl: (siteRow as { booking_url?: string | null }).booking_url ?? null,
+      config,
+      enterpriseVariables: vars,
+      companyName,
+      logoUrl,
+      phone,
+      isPublished: false,
+      styleGuide,
+      publishedStyleGuide: styleGuide,
+      publishedInstances: instances,
+      publishedSiteConfig: siteConfig,
+      menus: siteConfig?.menus ?? null,
+      faviconUrl: null,
+      reviews,
+      publishedSitemap: sitemap,
+      seo: null,
+      claudeDesign,
+    },
   };
 }
 
