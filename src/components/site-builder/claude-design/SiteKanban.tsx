@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 interface Demo {
   id: string;
@@ -34,7 +35,6 @@ const STAGES: Array<{ key: string; label: string; hint: string }> = [
   { key: "pret", label: "Prêt", hint: "Prêt à envoyer" },
 ];
 
-const SITE_DOMAIN = "samadigitalstudio.fr";
 
 /** Shareable URL for a demo: its deployed subdomain, else the id-based preview. */
 function demoShareUrl(demo: Demo): string {

@@ -1,10 +1,10 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const dynamic = "force-dynamic";
 
-const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN || "samadigitalstudio.fr";
 
 /** How many opportunities to pull into the marketing board at once. */
 const OPPORTUNITY_LIMIT = 1000;

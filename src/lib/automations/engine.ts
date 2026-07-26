@@ -14,6 +14,7 @@ import type {
   SequenceEnrollment,
   TraceEntry,
 } from '@/components/automations/types'
+import { SITE_DOMAIN } from '@/lib/site-domain'
 
 export interface RunContext {
   opportunite_id?: string | null
@@ -123,11 +124,10 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       candidates[0] ??
       null
     if (site) {
-      const domain = process.env.NEXT_PUBLIC_SITE_DOMAIN || 'samadigitalstudio.fr'
       if (site.published_domain) {
         demoUrl = site.published_domain.startsWith('http') ? site.published_domain : `https://${site.published_domain}`
       } else if (site.published_subdomain) {
-        demoUrl = `https://${site.published_subdomain}.${domain}`
+        demoUrl = `https://${site.published_subdomain}.${SITE_DOMAIN}`
       }
     }
 

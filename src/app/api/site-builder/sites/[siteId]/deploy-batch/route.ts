@@ -5,6 +5,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { publishSite } from "@/lib/site-builder/publish-site";
 import { deriveSubdomainLabel, uniqueSubdomain } from "@/lib/site-builder/derive-subdomain";
 import { cloneTemplateSite, type TemplateSlice, type TemplateInstance } from "@/lib/site-builder/clone-template-site";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,6 @@ interface DeployResult {
   error?: string;
 }
 
-const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr";
 
 /**
  * Bulk-creates company demo sites from a template site (siteId) and publishes

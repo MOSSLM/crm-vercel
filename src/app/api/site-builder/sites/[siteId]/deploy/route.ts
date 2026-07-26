@@ -4,12 +4,12 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { publishSite } from "@/lib/site-builder/publish-site";
 import { deriveSubdomainLabel, uniqueSubdomain } from "@/lib/site-builder/derive-subdomain";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const dynamic = "force-dynamic";
 
 type Params = { siteId: string };
 
-const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr";
 
 /**
  * POST /api/site-builder/sites/[siteId]/deploy

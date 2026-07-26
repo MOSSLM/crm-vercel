@@ -19,6 +19,7 @@ import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { cn } from "@/lib/utils";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,7 +245,6 @@ export function WhatsAppTab() {
         }
         setAuditMap(map);
       });
-    const siteDomain = process.env.NEXT_PUBLIC_SITE_DOMAIN || "samadigitalstudio.fr";
     void supabase
       .from("sites")
       .select("enterprise_id, is_published, published_subdomain, published_domain, build_stage, is_template")
@@ -270,7 +270,7 @@ export function WhatsAppTab() {
           if (s.published_domain) {
             map.set(entId, s.published_domain.startsWith("http") ? s.published_domain : `https://${s.published_domain}`);
           } else if (s.published_subdomain) {
-            map.set(entId, `https://${s.published_subdomain}.${siteDomain}`);
+            map.set(entId, `https://${s.published_subdomain}.${SITE_DOMAIN}`);
           }
         }
         setSiteMap(map);

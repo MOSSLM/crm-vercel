@@ -3,6 +3,7 @@
 import React from "react";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 interface EditableSection {
   id: string;
@@ -118,7 +119,7 @@ export default function PortailPage() {
           </div>
           {portalData.subdomain && (
             <a
-              href={`https://${portalData.subdomain}.samadigitalstudio.fr`}
+              href={`https://${portalData.subdomain}.${SITE_DOMAIN}`}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sm text-blue-600 hover:underline"

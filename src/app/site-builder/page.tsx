@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import type { SiteV2 } from "@/types";
 import { authedFetch } from "@/utils/authedFetch";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 /** The listing API now also returns the Claude-design discriminators. */
 type SiteRow = SiteV2 & {
@@ -56,13 +57,13 @@ function SiteCard({ site, onDelete }: { site: SiteRow; onDelete: (id: string) =>
       <h3 className="font-semibold truncate mb-1">{site.name}</h3>
       {site.published_subdomain && (
         <a
-          href={`https://${site.published_subdomain}.samadigitalstudio.fr`}
+          href={`https://${site.published_subdomain}.${SITE_DOMAIN}`}
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-blue-600 hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
-          {site.published_subdomain}.samadigitalstudio.fr ↗
+          {site.published_subdomain}.{SITE_DOMAIN} ↗
         </a>
       )}
       <div className="flex gap-2 mt-4">

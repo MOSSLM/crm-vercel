@@ -5,6 +5,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { STRIPE_SECRET_KEY } from "@/env";
 import { getStripe } from "@/lib/stripe";
 import { getAppUrl } from "@/lib/app-url";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -57,7 +58,7 @@ export const POST = async (req: Request) => {
   const cancelUrl =
     origin ??
     (site.published_subdomain
-      ? `https://${site.published_subdomain}.${process.env.NEXT_PUBLIC_APP_DOMAIN ?? "samadigitalstudio.fr"}`
+      ? `https://${site.published_subdomain}.${SITE_DOMAIN}`
       : appUrl);
 
   const commonMetadata = {
