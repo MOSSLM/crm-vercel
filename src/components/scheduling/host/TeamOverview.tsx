@@ -9,8 +9,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Copy, ExternalLink, Loader2, Users } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { fetchTeam, type TeamMember } from "@/lib/scheduling/client";
 import { getAppUrlClient } from "./shared";
 
@@ -51,17 +49,18 @@ export default function TeamOverview({ basePath }: { basePath: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement…
+      <div className="blk empty">
+        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
+        Chargement…
       </div>
     );
   }
 
   if (members.length === 0) {
     return (
-      <div className="rounded-2xl border bg-card py-16 text-center shadow-sm">
-        <Users className="mx-auto h-10 w-10 text-muted-foreground/50" />
-        <p className="mt-3 text-sm text-muted-foreground">Aucun membre actif.</p>
+      <div className="blk empty">
+        <Users size={22} />
+        Aucun membre actif.
       </div>
     );
   }
@@ -69,53 +68,91 @@ export default function TeamOverview({ basePath }: { basePath: string }) {
   return (
     <div className="space-y-2">
       {members.map((m) => (
-        <div key={m.user_id} className="flex flex-wrap items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm">
+        <div
+          key={m.user_id}
+          className="rowcard"
+          style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 14px" }}
+        >
           <div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
-            style={{ backgroundColor: colorOf(m.name) }}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: "50%",
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              fontWeight: 600,
+              fontSize: 13,
+              backgroundColor: colorOf(m.name),
+            }}
           >
             {initials(m.name)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-medium">{m.name}</p>
-              <Badge variant="outline">{m.role === "admin" ? "Admin" : "Agent"}</Badge>
+              <span className="nm">{m.name}</span>
+              <span className="pill outline">{m.role === "admin" ? "Admin" : "Agent"}</span>
               {m.username && !m.page_active ? (
-                <Badge className="bg-red-100 text-red-700">Page désactivée</Badge>
+                <span className="pill danger">Page désactivée</span>
               ) : null}
             </div>
-            <p className="truncate text-xs text-muted-foreground">
+            <p
+              className="mono"
+              style={{
+                margin: "2px 0 0",
+                fontSize: 10.5,
+                color: "var(--text-3)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {m.username ? `/rdv/${m.username}` : "Page non configurée (créée à sa première visite)"}
             </p>
           </div>
-          <div className="flex items-center gap-4 text-center text-sm">
+          <div style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "center" }}>
             <div>
-              <p className="font-semibold tabular-nums">{m.upcoming}</p>
-              <p className="text-[11px] text-muted-foreground">à venir</p>
+              <p className="mono" style={{ margin: 0, fontWeight: 600, fontSize: 15 }}>
+                {m.upcoming}
+              </p>
+              <p className="cs-tag" style={{ margin: 0 }}>
+                à venir
+              </p>
             </div>
             <div>
-              <p className={`font-semibold tabular-nums ${m.pending ? "text-amber-600" : ""}`}>
+              <p
+                className="mono"
+                style={{ margin: 0, fontWeight: 600, fontSize: 15, color: m.pending ? "var(--warn)" : undefined }}
+              >
                 {m.pending}
               </p>
-              <p className="text-[11px] text-muted-foreground">en attente</p>
+              <p className="cs-tag" style={{ margin: 0 }}>
+                en attente
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
             {m.username ? (
               <>
-                <Button size="sm" variant="outline" onClick={() => copyLink(m.username!)}>
-                  <Copy className="mr-1 h-3.5 w-3.5" /> Lien
-                </Button>
-                <Button size="sm" variant="outline" asChild>
-                  <a href={`${getAppUrlClient()}/rdv/${m.username}`} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </Button>
+                <button type="button" className="btn outline xs" onClick={() => copyLink(m.username!)}>
+                  <Copy size={12} /> Lien
+                </button>
+                <a
+                  href={`${getAppUrlClient()}/rdv/${m.username}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn outline icon xs"
+                  aria-label="Ouvrir la page"
+                >
+                  <ExternalLink size={12} />
+                </a>
               </>
             ) : null}
-            <Button size="sm" variant="ghost" asChild>
-              <Link href={`${basePath}/reservations?host=${m.user_id}`}>Ses résas</Link>
-            </Button>
+            <Link href={`${basePath}/reservations?host=${m.user_id}`} className="btn ghost xs">
+              Ses résas
+            </Link>
           </div>
         </div>
       ))}

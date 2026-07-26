@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Aperçu Cal.SAMA : tuiles de stats, demandes à valider (actions rapides),
- * prochains rendez-vous et raccourcis de configuration.
+ * Aperçu Cal.SAMA (habillage maquettes) : tuiles serif, carte héro sombre
+ * « prochain RDV », demandes à valider, prochains rendez-vous, raccourcis.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -10,18 +10,19 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowRight,
-  CalendarCheck,
   CalendarClock,
   CalendarCog,
   Check,
+  Clock,
   Clock3,
   Copy,
   Hourglass,
   Loader2,
+  Mail,
+  Phone,
   Video,
   X,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthContext";
 import {
   bookingAction,
@@ -38,6 +39,14 @@ const fmtDay = (iso: string) =>
   );
 const fmtTime = (iso: string) =>
   new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+const fmtLong = (iso: string) => {
+  const s = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(new Date(iso));
+  return `${s} · ${fmtTime(iso)}`;
+};
 
 function StatTile({
   label,
@@ -48,21 +57,13 @@ function StatTile({
   label: string;
   value: string | number;
   hint?: string;
-  tone?: "default" | "warn" | "ok" | "danger";
+  tone?: "ok" | "warn" | "danger";
 }) {
-  const toneCls =
-    tone === "warn"
-      ? "text-amber-600"
-      : tone === "ok"
-        ? "text-emerald-600"
-        : tone === "danger"
-          ? "text-red-600"
-          : "text-foreground";
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-sm">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold tabular-nums ${toneCls}`}>{value}</p>
-      {hint ? <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p> : null}
+    <div className="blk stat">
+      <span className="cs-tag">{label}</span>
+      <div className={`v ${tone ?? ""}`}>{value}</div>
+      {hint ? <div className="h">{hint}</div> : null}
     </div>
   );
 }
@@ -117,11 +118,15 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement…
+      <div className="blk empty">
+        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
+        Chargement…
       </div>
     );
   }
+
+  const next = upcoming.find((b) => b.status === "confirmed") ?? upcoming[0] ?? null;
+  const rest = next ? upcoming.filter((b) => b.id !== next.id).slice(0, 5) : upcoming.slice(0, 5);
 
   return (
     <div className="space-y-4">
@@ -129,66 +134,158 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="RDV à venir" value={stats?.totals.upcoming ?? 0} />
         <StatTile
-          label="En attente de validation"
+          label="En attente"
           value={stats?.totals.pending ?? 0}
-          tone={stats?.totals.pending ? "warn" : "default"}
+          tone={stats?.totals.pending ? "warn" : undefined}
         />
+        <StatTile label="Tenus · 30 j" value={stats?.totals.held_past ?? 0} tone="ok" />
         <StatTile
-          label="Tenus (30 derniers jours)"
-          value={stats?.totals.held_past ?? 0}
-          tone="ok"
-        />
-        <StatTile
-          label="Taux d'annulation (30 j)"
+          label="Taux d'annulation · 30 j"
           value={`${stats?.totals.cancellation_rate ?? 0} %`}
           hint={`${stats?.totals.cancelled_past ?? 0} annulé(s)`}
-          tone={(stats?.totals.cancellation_rate ?? 0) >= 30 ? "danger" : "default"}
+          tone={(stats?.totals.cancellation_rate ?? 0) >= 30 ? "danger" : undefined}
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {/* Demandes à valider */}
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 font-semibold">
-              <Hourglass className="h-4 w-4 text-amber-500" /> À valider
-            </h2>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`${basePath}/reservations?filter=pending`}>
-                Tout voir <ArrowRight className="ml-1 h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          </div>
-          {pending.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">Aucune demande en attente. 👌</p>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Prochain RDV — carte héro sombre (signature maquette) */}
+        <div>
+          {next ? (
+            <div className="hero-dark">
+              <div className="h4">
+                Prochain rendez-vous ·{" "}
+                {new Intl.DateTimeFormat("fr-FR", { weekday: "long" }).format(
+                  new Date(next.start_at),
+                )}
+              </div>
+              <div className="nm">
+                {next.invitee_name}
+                <br />
+                <span>{next.event_title}</span>
+              </div>
+              <div className="meta">
+                <div>
+                  <Clock size={13} /> {fmtLong(next.start_at)}
+                </div>
+                <div>
+                  <Mail size={13} /> {next.invitee_email}
+                </div>
+                {next.invitee_phone ? (
+                  <div>
+                    <Phone size={13} /> {next.invitee_phone}
+                  </div>
+                ) : null}
+              </div>
+              <div className="actions">
+                {next.meeting_url ? (
+                  <a
+                    href={next.meeting_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn accent xs grow"
+                  >
+                    <Video size={13} /> Rejoindre la visio
+                  </a>
+                ) : (
+                  <Link href={`${basePath}/reservations`} className="btn accent xs grow">
+                    Voir le détail
+                  </Link>
+                )}
+                <a href={`mailto:${next.invitee_email}`} className="btn dark-ghost icon xs" aria-label="Écrire">
+                  <Mail size={13} />
+                </a>
+              </div>
+            </div>
           ) : (
-            <div className="mt-3 space-y-2">
+            <div className="blk empty">
+              <CalendarClock size={22} />
+              Rien de prévu.
+              <br />
+              Partagez votre lien pour recevoir des réservations.
+            </div>
+          )}
+
+          {/* Raccourcis */}
+          <div className="blk" style={{ marginTop: 12 }}>
+            <h4>Raccourcis</h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <Link href={`${basePath}/types`} className="btn outline sm" style={{ justifyContent: "flex-start" }}>
+                <CalendarCog size={14} /> Gérer mes types d&apos;évènements
+              </Link>
+              <Link
+                href={`${basePath}/disponibilites`}
+                className="btn outline sm"
+                style={{ justifyContent: "flex-start" }}
+              >
+                <Clock3 size={14} /> Ajuster mes disponibilités
+              </Link>
+              <button
+                type="button"
+                className="btn outline sm"
+                style={{ justifyContent: "flex-start" }}
+                onClick={() => {
+                  if (!publicUrl) return;
+                  void navigator.clipboard.writeText(publicUrl);
+                  toast.success("Lien public copié");
+                }}
+              >
+                <Copy size={14} /> Copier mon lien public
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Demandes à valider */}
+        <div className="blk" style={{ alignSelf: "start" }}>
+          <h4>
+            <Hourglass size={13} style={{ color: "var(--warn)" }} /> À valider
+            <Link href={`${basePath}/reservations?filter=pending`} className="btn ghost xs" style={{ marginLeft: "auto" }}>
+              Tout voir <ArrowRight size={12} />
+            </Link>
+          </h4>
+          {pending.length === 0 ? (
+            <p style={{ color: "var(--text-3)", fontSize: 12.5, margin: 0 }}>
+              Aucune demande en attente. 👌
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {pending.map((b) => (
                 <div
                   key={b.id}
-                  className="flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 10px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 9,
+                    background: "var(--warn-tint)",
+                  }}
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{b.invitee_name}</p>
-                    <p className="truncate text-xs text-muted-foreground">
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 500, fontSize: 12.5 }}>{b.invitee_name}</div>
+                    <div className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>
                       {b.event_title} · {fmtDay(b.start_at)} {fmtTime(b.start_at)}
-                    </p>
+                    </div>
                   </div>
-                  <Button
-                    size="sm"
+                  <button
+                    type="button"
+                    className="btn accent icon xs"
                     disabled={working === b.id}
                     onClick={() => void quickAction(b, "confirm")}
+                    aria-label="Confirmer"
                   >
-                    <Check className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
+                    <Check size={13} />
+                  </button>
+                  <button
+                    type="button"
+                    className="btn outline icon xs"
                     disabled={working === b.id}
                     onClick={() => void quickAction(b, "decline")}
+                    aria-label="Refuser"
                   >
-                    <X className="h-4 w-4" />
-                  </Button>
+                    <X size={13} />
+                  </button>
                 </div>
               ))}
             </div>
@@ -196,44 +293,52 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
         </div>
 
         {/* Prochains RDV */}
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 font-semibold">
-              <CalendarCheck className="h-4 w-4 text-emerald-600" /> Prochains rendez-vous
-            </h2>
-            <Button variant="ghost" size="sm" asChild>
-              <Link href={`${basePath}/reservations`}>
-                Tout voir <ArrowRight className="ml-1 h-3.5 w-3.5" />
-              </Link>
-            </Button>
-          </div>
-          {upcoming.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">
-              Rien de prévu. Partagez votre lien pour recevoir des réservations !
+        <div className="blk" style={{ alignSelf: "start" }}>
+          <h4>
+            Ensuite
+            <Link href={`${basePath}/reservations`} className="btn ghost xs" style={{ marginLeft: "auto" }}>
+              Tout voir <ArrowRight size={12} />
+            </Link>
+          </h4>
+          {rest.length === 0 ? (
+            <p style={{ color: "var(--text-3)", fontSize: 12.5, margin: 0 }}>
+              Rien d&apos;autre de prévu.
             </p>
           ) : (
-            <div className="mt-3 space-y-2">
-              {upcoming.map((b) => (
-                <div key={b.id} className="flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm">
-                  <div className="w-16 shrink-0 text-center">
-                    <p className="text-xs font-medium capitalize text-muted-foreground">
-                      {fmtDay(b.start_at)}
-                    </p>
-                    <p className="font-semibold tabular-nums">{fmtTime(b.start_at)}</p>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {rest.map((b, i) => (
+                <div
+                  key={b.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 2px",
+                    borderTop: i === 0 ? "none" : "1px solid var(--border)",
+                  }}
+                >
+                  <div className="when">
+                    <div className="d">{fmtDay(b.start_at)}</div>
+                    <div className="t">{fmtTime(b.start_at)}</div>
                   </div>
-                  <div className="min-w-0 flex-1 border-l pl-3">
-                    <p className="truncate font-medium">{b.invitee_name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{b.event_title}</p>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontWeight: 500, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {b.invitee_name}
+                    </div>
+                    <div className="mono" style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {b.event_title}
+                    </div>
                   </div>
+                  {b.status === "pending" ? <span className="pill warn">attente</span> : null}
                   {b.meeting_url ? (
                     <a
                       href={b.meeting_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-muted-foreground hover:text-primary"
+                      className="btn ghost icon xs"
                       aria-label="Lien visio"
                     >
-                      <Video className="h-4 w-4" />
+                      <Video size={13} />
                     </a>
                   ) : null}
                 </div>
@@ -243,47 +348,12 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
         </div>
       </div>
 
-      {/* Raccourcis */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Link
-          href={`${basePath}/types`}
-          className="group flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm transition hover:shadow-md"
-        >
-          <CalendarCog className="h-5 w-5 text-primary" />
-          <span className="flex-1 text-sm font-medium">Gérer mes types d&apos;évènements</span>
-          <ArrowRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5" />
-        </Link>
-        <Link
-          href={`${basePath}/disponibilites`}
-          className="group flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-sm transition hover:shadow-md"
-        >
-          <Clock3 className="h-5 w-5 text-primary" />
-          <span className="flex-1 text-sm font-medium">Ajuster mes disponibilités</span>
-          <ArrowRight className="h-4 w-4 text-muted-foreground transition group-hover:translate-x-0.5" />
-        </Link>
-        <button
-          type="button"
-          onClick={() => {
-            if (!publicUrl) return;
-            void navigator.clipboard.writeText(publicUrl);
-            toast.success("Lien public copié");
-          }}
-          className="group flex items-center gap-3 rounded-2xl border bg-card p-4 text-left shadow-sm transition hover:shadow-md"
-        >
-          <CalendarClock className="h-5 w-5 text-primary" />
-          <span className="flex-1 text-sm font-medium">
-            Copier mon lien public
-            <span className="block truncate text-xs font-normal text-muted-foreground">
-              {publicUrl.replace(/^https?:\/\//, "") || "…"}
-            </span>
-          </span>
-          <Copy className="h-4 w-4 text-muted-foreground" />
-        </button>
-      </div>
-
       {user?.role === "admin" ? (
-        <p className="text-xs text-muted-foreground">
-          Astuce : la page <Link className="underline" href={`${basePath}/equipe`}>Équipe</Link>{" "}
+        <p style={{ fontSize: 11.5, color: "var(--text-3)" }}>
+          Astuce : la page{" "}
+          <Link className="link" href={`${basePath}/equipe`}>
+            Équipe
+          </Link>{" "}
           liste les liens de réservation de tous les agents.
         </p>
       ) : null}

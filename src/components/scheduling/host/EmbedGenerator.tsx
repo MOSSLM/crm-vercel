@@ -109,18 +109,15 @@ export default function EmbedGenerator({
             key={k.id}
             type="button"
             onClick={() => setKind(k.id)}
-            className={
-              "rounded-xl border p-3 text-left transition " +
-              (kind === k.id
-                ? "border-primary bg-primary/5 ring-1 ring-primary"
-                : "hover:bg-muted/60")
+            style={
+              kind === k.id
+                ? { border: "1px solid var(--accent)", background: "var(--accent-tint)", borderRadius: 10, padding: 12, textAlign: "left", boxShadow: "0 0 0 1px var(--accent)" }
+                : { border: "1px solid var(--border-2)", background: "var(--surface)", borderRadius: 10, padding: 12, textAlign: "left" }
             }
           >
-            <k.icon
-              className={"h-5 w-5 " + (kind === k.id ? "text-primary" : "text-muted-foreground")}
-            />
-            <p className="mt-1.5 text-sm font-medium">{k.label}</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">{k.description}</p>
+            <k.icon size={17} style={{ color: kind === k.id ? "var(--accent)" : "var(--text-3)" }} />
+            <p style={{ margin: "6px 0 0", fontSize: 12.5, fontWeight: 500 }}>{k.label}</p>
+            <p style={{ margin: "2px 0 0", fontSize: 11, color: "var(--text-3)" }}>{k.description}</p>
           </button>
         ))}
       </div>

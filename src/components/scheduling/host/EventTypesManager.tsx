@@ -18,7 +18,6 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -229,44 +228,43 @@ export default function EventTypesManager() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-3)" }}>
           Chaque type d&apos;évènement a son lien public réservable.
         </p>
-        <Button onClick={() => openEditor("new")}>
-          <Plus className="mr-1 h-4 w-4" /> Nouveau type
-        </Button>
+        <button type="button" className="btn accent sm" onClick={() => openEditor("new")}>
+          <Plus size={14} /> Nouveau type
+        </button>
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement…
+        <div className="blk empty">
+          <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
+          Chargement…
         </div>
       ) : eventTypes.length === 0 ? (
-        <div className="rounded-2xl border bg-card py-16 text-center shadow-sm">
-          <CalendarPlus className="mx-auto h-10 w-10 text-muted-foreground/50" />
-          <p className="mt-3 text-sm text-muted-foreground">
-            Créez votre premier type d&apos;évènement pour obtenir un lien réservable.
-          </p>
+        <div className="blk empty">
+          <CalendarPlus size={22} />
+          Créez votre premier type d&apos;évènement pour obtenir un lien réservable.
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {eventTypes.map((et) => (
-            <div key={et.id} className="rounded-2xl border bg-card p-4 shadow-sm">
+            <div key={et.id} className="blk" style={{ opacity: et.is_active ? 1 : 0.65 }}>
               <div className="flex items-start gap-3">
                 <span
-                  className="mt-1 h-10 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: et.color || "#2A6FDB" }}
+                  className="legend-bar"
+                  style={{ height: 38, marginTop: 3, background: et.color || "var(--accent)" }}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium">{et.title}</p>
-                    {!et.is_active ? <Badge variant="outline">Désactivé</Badge> : null}
+                    <p style={{ margin: 0, fontWeight: 500, fontSize: 13.5 }}>{et.title}</p>
+                    {!et.is_active ? <span className="pill muted">Désactivé</span> : null}
                     {et.requires_confirmation ? (
-                      <Badge className="bg-amber-100 text-amber-800">Validation manuelle</Badge>
+                      <span className="pill warn">Validation manuelle</span>
                     ) : null}
                   </div>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
+                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-2)" }}>
                     {durationLabel(et.duration_minutes)} ·{" "}
                     {LOCATION_LABELS[et.location_type] ?? et.location_type}
                     {et.price_cents
@@ -276,31 +274,42 @@ export default function EventTypesManager() {
                         })}`
                       : ""}
                   </p>
-                  <p className="mt-1 truncate text-xs text-muted-foreground/80">
+                  <p
+                    className="mono"
+                    style={{
+                      margin: "4px 0 0",
+                      fontSize: 10.5,
+                      color: "var(--text-3)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     /rdv/{username ?? "…"}/{et.slug}
                   </p>
                 </div>
-                <Switch
+                <input
+                  type="checkbox"
+                  className="tgl"
                   checked={et.is_active}
-                  onCheckedChange={() => void toggleActive(et)}
+                  onChange={() => void toggleActive(et)}
                   aria-label="Activer / désactiver"
                 />
               </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button size="sm" variant="outline" onClick={() => copyLink(et)}>
-                  <Copy className="mr-1 h-4 w-4" /> Copier le lien
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => openEditor(et)}>
-                  <Pencil className="mr-1 h-4 w-4" /> Modifier
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-red-600"
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                <button type="button" className="btn outline xs" onClick={() => copyLink(et)}>
+                  <Copy size={12} /> Copier le lien
+                </button>
+                <button type="button" className="btn outline xs" onClick={() => openEditor(et)}>
+                  <Pencil size={12} /> Modifier
+                </button>
+                <button
+                  type="button"
+                  className="btn danger-ghost xs"
                   onClick={() => setDeleteTarget(et)}
                 >
-                  <Trash2 className="mr-1 h-4 w-4" /> Supprimer
-                </Button>
+                  <Trash2 size={12} /> Supprimer
+                </button>
               </div>
             </div>
           ))}

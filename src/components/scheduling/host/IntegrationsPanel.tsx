@@ -95,8 +95,9 @@ export default function IntegrationsPanel() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement…
+      <div className="blk empty">
+        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
+        Chargement…
       </div>
     );
   }
@@ -104,10 +105,10 @@ export default function IntegrationsPanel() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {/* Agendas connectés */}
-      <div className="rounded-2xl border bg-card p-4 shadow-sm">
-        <h2 className="flex items-center gap-2 font-semibold">
-          <Plug className="h-4 w-4" /> Agendas connectés
-        </h2>
+      <div className="blk" style={{ alignSelf: "start" }}>
+        <h4 style={{ margin: 0 }} className="h4">
+          <Plug size={13} /> Agendas connectés
+        </h4>
         <p className="mt-1 text-xs text-muted-foreground">
           Le busy de vos agendas est soustrait de vos disponibilités, et chaque RDV confirmé y est
           créé — avec lien Google Meet automatique pour les visios.
@@ -176,10 +177,10 @@ export default function IntegrationsPanel() {
 
       <div className="space-y-4">
         {/* Embed */}
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
-          <h2 className="flex items-center gap-2 font-semibold">
-            <Code2 className="h-4 w-4" /> Intégrer sur un site (embed)
-          </h2>
+        <div className="blk">
+          <h4 style={{ margin: 0 }} className="h4">
+            <Code2 size={13} /> Intégrer sur un site (embed)
+          </h4>
           <p className="mt-1 text-xs text-muted-foreground">
             Choisissez le type d&apos;intégration — comme Calendly — et collez le snippet généré.
           </p>
@@ -193,10 +194,10 @@ export default function IntegrationsPanel() {
         </div>
 
         {/* Emails */}
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
-          <h2 className="flex items-center gap-2 font-semibold">
-            <Mail className="h-4 w-4" /> Emails & rappels
-          </h2>
+        <div className="blk">
+          <h4 style={{ margin: 0 }} className="h4">
+            <Mail size={13} /> Emails & rappels
+          </h4>
           <p className="mt-1 text-xs text-muted-foreground">
             Confirmations, annulations, reprogrammations et rappels partent via le Resend du CRM
             (avec invitation .ics jointe) et sont journalisés dans l&apos;historique email. Les

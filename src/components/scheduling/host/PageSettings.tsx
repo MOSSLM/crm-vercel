@@ -89,8 +89,9 @@ export default function PageSettings() {
 
   if (loading || !page) {
     return (
-      <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement…
+      <div className="blk empty">
+        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
+        Chargement…
       </div>
     );
   }
@@ -98,8 +99,8 @@ export default function PageSettings() {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       {/* Identité publique */}
-      <div className="rounded-2xl border bg-card p-4 shadow-sm">
-        <h2 className="font-semibold">Identité de la page</h2>
+      <div className="blk">
+        <h4 style={{ margin: 0 }} className="h4">Identité de la page</h4>
         <div className="mt-4 space-y-3">
           <div>
             <Label htmlFor="pg-username">Nom d&apos;utilisateur (URL)</Label>
@@ -166,21 +167,17 @@ export default function PageSettings() {
             <Switch checked={page.is_active} onCheckedChange={(v) => update("is_active", v)} />
           </label>
           <div className="flex justify-end border-t pt-3">
-            <Button onClick={() => void save()} disabled={saving || !dirty}>
-              {saving ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-1 h-4 w-4" />
-              )}
+            <button type="button" className="btn accent sm" onClick={() => void save()} disabled={saving || !dirty}>
+              {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
               Enregistrer
-            </Button>
+            </button>
           </div>
         </div>
       </div>
 
       {/* Lien public */}
-      <div className="h-fit rounded-2xl border bg-card p-4 shadow-sm">
-        <h2 className="font-semibold">Partager</h2>
+      <div className="blk" style={{ alignSelf: "start" }}>
+        <h4 style={{ margin: 0 }} className="h4">Partager</h4>
         <p className="mt-1 text-xs text-muted-foreground">
           Votre page publique liste tous vos types d&apos;évènements actifs. Chaque type a aussi
           son lien direct (onglet Types d&apos;évènements → Copier le lien).

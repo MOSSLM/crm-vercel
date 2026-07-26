@@ -116,8 +116,9 @@ export default function AvailabilityEditor() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement…
+      <div className="blk empty">
+        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
+        Chargement…
       </div>
     );
   }
@@ -125,9 +126,9 @@ export default function AvailabilityEditor() {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       {/* Plages hebdo */}
-      <div className="rounded-2xl border bg-card p-4 shadow-sm lg:col-span-2">
+      <div className="blk lg:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-semibold">Horaires récurrents</h2>
+          <h4 style={{ margin: 0 }} className="h4">Horaires récurrents</h4>
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground">Fuseau</Label>
             <select
@@ -228,16 +229,16 @@ export default function AvailabilityEditor() {
         </div>
 
         <div className="mt-4 flex justify-end border-t pt-4">
-          <Button onClick={() => void save()} disabled={saving || !dirty}>
-            {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <Save className="mr-1 h-4 w-4" />}
+          <button type="button" className="btn accent sm" onClick={() => void save()} disabled={saving || !dirty}>
+            {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
             Enregistrer
-          </Button>
+          </button>
         </div>
       </div>
 
       {/* Exceptions de dates */}
-      <div className="rounded-2xl border bg-card p-4 shadow-sm">
-        <h2 className="font-semibold">Exceptions de dates</h2>
+      <div className="blk" style={{ alignSelf: "start" }}>
+        <h4 style={{ margin: 0 }} className="h4">Exceptions de dates</h4>
         <p className="mt-1 text-xs text-muted-foreground">
           Congés, jours fériés, ou horaires différents un jour précis.
         </p>

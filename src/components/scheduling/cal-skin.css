@@ -1,0 +1,465 @@
+/* cal-skin.css — habillage de la section Cal.SAMA (admin + agent + cockpit),
+   fidèle aux maquettes Claude Design « Sama CRM / Sama Agent / Rendez-vous » :
+   mêmes tokens que tel-skin (centrale d'appels), titres Instrument Serif,
+   micro-labels Geist Mono uppercase, cartes .blk, mini-calendrier, carte héro
+   sombre, boutons compacts. Palette claire fixe, comme les maquettes. */
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap');
+
+.cal-skin{
+  --bg: #FBFAF7;
+  --bg-2: #F4F2EC;
+  --bg-3: #ECE9E1;
+  --surface: #FFFFFF;
+  --surface-2: #F8F6F1;
+  --hover: rgba(20, 18, 14, 0.04);
+  --hover-2: rgba(20, 18, 14, 0.07);
+  --border: rgba(20, 18, 14, 0.08);
+  --border-2: rgba(20, 18, 14, 0.14);
+  --border-strong: rgba(20, 18, 14, 0.22);
+  --text: #14120E;
+  --text-2: #5C5953;
+  --text-3: #8A877F;
+  --text-4: #B5B2AA;
+  --accent: #E2552B;
+  --accent-2: #C73E16;
+  --accent-tint: rgba(226, 85, 43, 0.10);
+  --accent-tint-2: rgba(226, 85, 43, 0.18);
+  --ok: #1F8A5B;
+  --ok-tint: rgba(31, 138, 91, .10);
+  --warn: #C8881F;
+  --warn-tint: rgba(200, 136, 31, .14);
+  --danger: #B5322F;
+  --danger-tint: rgba(181, 50, 47, .10);
+  --info: #2A6FDB;
+  --info-tint: rgba(42, 111, 219, 0.10);
+  --magic: #7A5AE0;
+  --magic-tint: rgba(122, 90, 224, 0.10);
+
+  --radius: 8px;
+  --radius-sm: 6px;
+  --radius-lg: 12px;
+  --shadow-1: 0 1px 0 rgba(20,18,14,0.04), 0 1px 2px rgba(20,18,14,0.04);
+  --shadow-2: 0 1px 0 rgba(20,18,14,0.04), 0 4px 12px rgba(20,18,14,0.06), 0 12px 32px rgba(20,18,14,0.05);
+  --shadow-pop: 0 1px 0 rgba(20,18,14,0.04), 0 8px 24px rgba(20,18,14,0.10), 0 24px 64px rgba(20,18,14,0.10);
+
+  --font-ui: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-serif: "Instrument Serif", "Times New Roman", serif;
+
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+.cal-skin *{ box-sizing: border-box; }
+.cal-skin ::selection{ background: var(--accent-tint-2); }
+.cal-skin input, .cal-skin textarea, .cal-skin select, .cal-skin button{ font-family: inherit; }
+
+/* ───── Titres & labels ───── */
+.cal-skin .cs-title{
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 28px;
+  line-height: 1.05;
+  letter-spacing: -.01em;
+  color: var(--text);
+  margin: 0;
+}
+.cal-skin .cs-tag{
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text-3);
+}
+.cal-skin .cs-sub{ font-size: 12.5px; color: var(--text-3); margin: 4px 0 0; }
+
+/* ───── Cartes ───── */
+.cal-skin .blk{
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  padding: 16px;
+}
+.cal-skin .blk > h4, .cal-skin .blk .h4{
+  font-size: 11px; font-weight: 600;
+  color: var(--text-3); text-transform: uppercase;
+  letter-spacing: .07em;
+  margin: 0 0 10px;
+  font-family: var(--font-ui);
+  display: flex; align-items: center; gap: 6px;
+}
+
+/* Tuile de stat : label mono + grand chiffre serif */
+.cal-skin .stat .v{
+  font-family: var(--font-serif);
+  font-size: 32px; line-height: 1;
+  letter-spacing: -.01em;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-skin .stat .h{ font-size: 11px; color: var(--text-3); margin-top: 4px; }
+.cal-skin .stat .v.ok{ color: var(--ok); }
+.cal-skin .stat .v.warn{ color: var(--warn); }
+.cal-skin .stat .v.danger{ color: var(--danger); }
+
+/* Carte héro sombre (prochain RDV) */
+.cal-skin .hero-dark{
+  background: var(--text);
+  border: 1px solid var(--text);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  color: var(--bg);
+}
+.cal-skin .hero-dark .h4{
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em;
+  color: rgba(255,255,255,.45); margin: 0 0 10px;
+}
+.cal-skin .hero-dark .nm{
+  font-family: var(--font-serif);
+  font-size: 24px; line-height: 1.1; letter-spacing: -.005em;
+}
+.cal-skin .hero-dark .nm span{ color: rgba(255,255,255,.6); font-size: 16px; }
+.cal-skin .hero-dark .meta{
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 12px;
+  font-size: 12px; color: rgba(255,255,255,.7);
+  font-family: var(--font-mono);
+}
+.cal-skin .hero-dark .meta > div{ display: flex; align-items: center; gap: 6px; }
+.cal-skin .hero-dark .actions{ display: flex; gap: 6px; margin-top: 14px; }
+.cal-skin .hero-dark .btn.dark-ghost{
+  background: rgba(255,255,255,.1); color: var(--bg);
+  border: 1px solid rgba(255,255,255,.15);
+}
+.cal-skin .hero-dark .btn.dark-ghost:hover{ background: rgba(255,255,255,.18); }
+
+/* ───── Boutons ───── */
+.cal-skin .btn{
+  appearance: none; background: transparent;
+  height: 30px; padding: 0 11px;
+  font: inherit; font-size: 12.5px; font-weight: 500;
+  color: var(--text);
+  border-radius: 7px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  letter-spacing: -.005em;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.cal-skin .btn:hover{ background: var(--hover); }
+.cal-skin .btn:disabled{ opacity: .5; cursor: default; }
+.cal-skin .btn.ghost{ color: var(--text-2); }
+.cal-skin .btn.outline{ border-color: var(--border-2); background: var(--surface); }
+.cal-skin .btn.outline:hover{ background: var(--surface-2); }
+.cal-skin .btn.subtle{ background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); }
+.cal-skin .btn.subtle:hover{ background: var(--bg-2); color: var(--text); }
+.cal-skin .btn.primary{ background: var(--text); color: var(--bg); }
+.cal-skin .btn.primary:hover{ background: #000; }
+.cal-skin .btn.accent{ background: var(--accent); color: #fff; }
+.cal-skin .btn.accent:hover{ background: var(--accent-2); }
+.cal-skin .btn.danger-ghost{ color: var(--danger); }
+.cal-skin .btn.danger-ghost:hover{ background: var(--danger-tint); }
+.cal-skin .btn.sm{ height: 28px; padding: 0 10px; font-size: 12px; }
+.cal-skin .btn.xs{ height: 24px; padding: 0 8px; font-size: 11.5px; border-radius: 6px; gap: 4px; }
+.cal-skin .btn.icon{ width: 30px; padding: 0; }
+.cal-skin .btn.icon.sm{ width: 28px; }
+.cal-skin .btn.icon.xs{ width: 24px; }
+.cal-skin .btn.grow{ flex: 1; }
+
+/* ───── Segmented control (filtres) ───── */
+.cal-skin .seg{
+  display: inline-flex; gap: 2px;
+  background: var(--bg-2);
+  padding: 2px;
+  border-radius: 8px;
+}
+.cal-skin .seg .seg-btn{
+  appearance: none; border: 0; background: transparent;
+  height: 26px; padding: 0 11px;
+  font: inherit; font-size: 12px; font-weight: 500;
+  color: var(--text-3);
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  white-space: nowrap;
+}
+.cal-skin .seg .seg-btn:hover{ color: var(--text); }
+.cal-skin .seg .seg-btn[aria-selected="true"]{
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-1);
+}
+.cal-skin .seg .nb{
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  background: var(--warn); color: #fff;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* ───── Pills de statut ───── */
+.cal-skin .pill{
+  display: inline-flex; align-items: center; gap: 4px;
+  height: 20px; padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px; font-weight: 500;
+  white-space: nowrap;
+}
+.cal-skin .pill.ok{ background: var(--ok-tint); color: var(--ok); }
+.cal-skin .pill.warn{ background: var(--warn-tint); color: var(--warn); }
+.cal-skin .pill.danger{ background: var(--danger-tint); color: var(--danger); }
+.cal-skin .pill.info{ background: var(--info-tint); color: var(--info); }
+.cal-skin .pill.muted{ background: var(--bg-2); color: var(--text-3); }
+.cal-skin .pill.outline{ background: transparent; border: 1px solid var(--border-2); color: var(--text-2); }
+
+/* ───── Rangées de liste (réservations, équipe) ───── */
+.cal-skin .rowcard{
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+.cal-skin .rowcard .rowhead{
+  width: 100%;
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: transparent; border: 0;
+  text-align: left; font: inherit; color: inherit;
+  cursor: pointer;
+}
+.cal-skin .rowcard .rowhead:hover{ background: var(--hover); }
+.cal-skin .rowcard .colorbar{
+  width: 3px; align-self: stretch; border-radius: 2px; flex-shrink: 0;
+}
+.cal-skin .rowcard .nm{ font-weight: 500; font-size: 13px; }
+.cal-skin .rowcard .meta{
+  font-family: var(--font-mono);
+  font-size: 11px; color: var(--text-3);
+  margin-top: 2px;
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+}
+.cal-skin .rowcard .rowbody{
+  border-top: 1px solid var(--border);
+  padding: 12px 14px;
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+.cal-skin .kv{ color: var(--text-3); }
+.cal-skin .kv b, .cal-skin .kv .v{ color: var(--text); font-weight: 500; }
+
+/* Bloc jour/heure à gauche d'une rangée */
+.cal-skin .when{
+  width: 64px; flex-shrink: 0; text-align: center;
+  font-family: var(--font-mono);
+}
+.cal-skin .when .d{ font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--text-3); }
+.cal-skin .when .t{ font-size: 14px; font-weight: 600; color: var(--text); margin-top: 1px; }
+
+/* ───── Mini-calendrier (identique aux maquettes) ───── */
+.cal-skin .mini-cal{
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.cal-skin .mini-cal .wh{ text-align: center; color: var(--text-4); padding: 3px 0; }
+.cal-skin .mini-cal .d{
+  height: 26px; width: 100%;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-2);
+  border-radius: 5px;
+  cursor: default;
+  position: relative;
+  background: transparent; border: 0; font: inherit; padding: 0;
+}
+.cal-skin .mini-cal button.d{ cursor: pointer; }
+.cal-skin .mini-cal .d:hover{ background: var(--hover); color: var(--text); }
+.cal-skin .mini-cal .d.mute{ color: var(--text-4); }
+.cal-skin .mini-cal .d.mute:hover{ background: transparent; color: var(--text-4); }
+.cal-skin .mini-cal .d.sel{
+  background: var(--text); color: var(--bg); font-weight: 600;
+}
+.cal-skin .mini-cal .d.has::after{
+  content: ""; position: absolute; bottom: 3px; left: 50%; transform: translateX(-50%);
+  width: 3px; height: 3px; border-radius: 50%;
+  background: var(--accent);
+}
+.cal-skin .mini-cal .d.sel.has::after{ background: var(--bg); }
+.cal-skin .mini-cal .d.has{ color: var(--text); font-weight: 500; }
+
+/* Chips de créneaux horaires */
+.cal-skin .slots{
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+}
+.cal-skin .slot{
+  appearance: none;
+  height: 30px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  border-radius: 7px;
+  font: inherit; font-size: 12px; font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--text);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .1s ease, border-color .1s ease, color .1s ease;
+}
+.cal-skin .slot:hover{ border-color: var(--accent); color: var(--accent); }
+.cal-skin .slot.sel, .cal-skin .slot:active{
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+
+/* ───── Inputs ───── */
+.cal-skin .inp, .cal-skin select.inp, .cal-skin textarea.inp{
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 7px;
+  font: inherit; font-size: 12.5px;
+  color: var(--text);
+  outline: none;
+}
+.cal-skin textarea.inp{ height: auto; padding: 7px 9px; resize: vertical; }
+.cal-skin .inp::placeholder{ color: var(--text-4); }
+.cal-skin .inp:focus{ border-color: var(--border-strong); }
+.cal-skin .lbl{
+  display: block;
+  font-size: 11.5px; font-weight: 500;
+  color: var(--text-2);
+  margin: 0 0 4px;
+}
+
+/* Barre de proportion (stats) */
+.cal-skin .propbar{ height: 5px; background: var(--bg-3); border-radius: 999px; overflow: hidden; }
+.cal-skin .propbar i{ display: block; height: 100%; background: var(--accent); border-radius: 999px; opacity: .75; }
+
+/* ───── Sidebar Cal.SAMA ───── */
+.cal-skin .cs-side{
+  width: 218px; flex-shrink: 0;
+  background: var(--bg-2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.cal-skin .cs-side-hd{
+  display: flex; align-items: center; gap: 9px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.cal-skin .brand-mark{
+  width: 28px; height: 28px;
+  background: var(--text); color: var(--bg);
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.cal-skin .cs-side-hd .t{ font-family: var(--font-serif); font-size: 17px; line-height: 1; }
+.cal-skin .cs-side-hd .s{ font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-3); margin-top: 2px; }
+.cal-skin .cs-nav{ flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 1px; }
+.cal-skin .cs-item{
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--text-2);
+  text-decoration: none;
+  transition: background .1s ease, color .1s ease;
+}
+.cal-skin .cs-item:hover{ background: var(--hover); color: var(--text); }
+.cal-skin .cs-item[aria-current="true"]{ background: var(--accent-tint); color: var(--accent); }
+.cal-skin .cs-item .nb{
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600;
+  background: var(--warn); color: #fff;
+  min-width: 17px; height: 17px; padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-left: auto;
+}
+.cal-skin .cs-children{
+  margin: 1px 0 4px 15px;
+  padding-left: 11px;
+  border-left: 1px solid var(--border-2);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.cal-skin .cs-child{
+  display: block;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  text-decoration: none;
+}
+.cal-skin .cs-child:hover{ color: var(--text); background: var(--hover); }
+.cal-skin .cs-child[aria-current="true"]{ color: var(--accent); font-weight: 500; }
+.cal-skin .cs-side-ft{
+  border-top: 1px solid var(--border);
+  padding: 12px 14px;
+}
+.cal-skin .cs-side-ft .url{
+  font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-top: 3px;
+}
+
+/* Barre horizontale mobile */
+.cal-skin .cs-hbar{
+  display: flex; align-items: center; gap: 2px;
+  overflow-x: auto;
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+.cal-skin .cs-hbar .cs-item{ flex-shrink: 0; }
+
+/* ───── Divers ───── */
+.cal-skin .divider{ height: 1px; background: var(--border); border: 0; margin: 12px 0; }
+.cal-skin .empty{
+  padding: 40px 16px;
+  text-align: center;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.cal-skin .empty svg{ margin: 0 auto 10px; opacity: .4; }
+.cal-skin .spin{ animation: cs-spin 1s linear infinite; }
+@keyframes cs-spin{ to{ transform: rotate(360deg); } }
+.cal-skin .legend-bar{ width: 3px; height: 14px; border-radius: 2px; flex-shrink: 0; }
+.cal-skin .mono{ font-family: var(--font-mono); }
+.cal-skin a{ color: inherit; }
+.cal-skin .link{ color: var(--info); text-decoration: underline; text-underline-offset: 2px; }
+.cal-skin code, .cal-skin pre{
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: var(--bg-2);
+  border-radius: 6px;
+}
+.cal-skin pre{ padding: 10px 12px; overflow-x: auto; line-height: 1.55; border: 1px solid var(--border); }
+.cal-skin code{ padding: 1px 5px; }
+
+/* Toggle switch maison (remplace le Switch shadcn dans la section) */
+.cal-skin .tgl{
+  appearance: none; position: relative;
+  width: 32px; height: 18px; border-radius: 999px;
+  background: var(--bg-3); border: 1px solid var(--border-2);
+  cursor: pointer; flex-shrink: 0;
+  transition: background .12s ease;
+}
+.cal-skin .tgl::after{
+  content: ""; position: absolute; top: 1.5px; left: 2px;
+  width: 13px; height: 13px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.15);
+  transition: transform .12s ease;
+}
+.cal-skin .tgl:checked{ background: var(--ok); border-color: var(--ok); }
+.cal-skin .tgl:checked::after{ transform: translateX(13px); }

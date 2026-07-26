@@ -18,7 +18,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthContext";
 import { fetchStats, type SchedulingStats } from "@/lib/scheduling/client";
 
@@ -53,9 +52,18 @@ function ChartTooltip({
   const total = payload[0]?.value ?? 0;
   const cancelled = payload[0]?.payload?.cancelled ?? 0;
   return (
-    <div className="rounded-lg border bg-card px-3 py-2 text-xs shadow-md">
-      <p className="font-medium">Semaine du {label}</p>
-      <p className="mt-0.5 text-muted-foreground">
+    <div
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border-2)",
+        borderRadius: 8,
+        padding: "8px 10px",
+        fontSize: 11.5,
+        boxShadow: "var(--shadow-2)",
+      }}
+    >
+      <p style={{ margin: 0, fontWeight: 500 }}>Semaine du {label}</p>
+      <p style={{ margin: "2px 0 0", color: "var(--text-3)" }}>
         {total} réservation{total > 1 ? "s" : ""}
         {cancelled ? ` · dont ${cancelled} annulée${cancelled > 1 ? "s" : ""}` : ""}
       </p>
@@ -75,28 +83,25 @@ function ProportionList({
   const max = Math.max(1, ...items.map((i) => i.count));
   const total = items.reduce((acc, i) => acc + i.count, 0);
   return (
-    <div className="rounded-2xl border bg-card p-4 shadow-sm">
-      <h2 className="font-semibold">{title}</h2>
+    <div className="blk">
+      <h4>{title}</h4>
       {items.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">Pas encore de données.</p>
+        <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-3)" }}>Pas encore de données.</p>
       ) : (
-        <div className="mt-3 space-y-2.5">
+        <div className="space-y-2.5">
           {items.map((item) => (
-            <div key={item.label} className="text-sm">
+            <div key={item.label} style={{ fontSize: 12.5 }}>
               <div className="flex items-baseline justify-between gap-3">
                 <span className="min-w-0 flex-1 truncate">{labelMap?.[item.label] ?? item.label}</span>
-                <span className="tabular-nums text-muted-foreground">
+                <span className="mono" style={{ color: "var(--text-3)", fontSize: 11.5 }}>
                   {item.count}
-                  <span className="ml-1 text-xs">
+                  <span style={{ marginLeft: 4, fontSize: 10.5 }}>
                     ({total ? Math.round((item.count / total) * 100) : 0} %)
                   </span>
                 </span>
               </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary/70"
-                  style={{ width: `${(item.count / max) * 100}%` }}
-                />
+              <div className="propbar" style={{ marginTop: 4 }}>
+                <i style={{ width: `${(item.count / max) * 100}%` }} />
               </div>
             </div>
           ))}
@@ -140,79 +145,69 @@ export default function InsightsDashboard() {
     <div className="space-y-4">
       {/* Filtres */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex gap-1 rounded-xl border bg-card p-1 shadow-sm">
+        <div className="seg" role="tablist">
           {PERIODS.map((p) => (
             <button
               key={p.days}
               type="button"
+              role="tab"
+              aria-selected={days === p.days}
+              className="seg-btn"
               onClick={() => setDays(p.days)}
-              className={
-                "rounded-lg px-3 py-1.5 text-sm font-medium transition " +
-                (days === p.days
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground")
-              }
             >
               {p.label}
             </button>
           ))}
         </div>
         {isAdmin ? (
-          <Button
-            variant={teamWide ? "default" : "outline"}
-            size="sm"
+          <button
+            type="button"
+            className={"btn sm " + (teamWide ? "primary" : "outline")}
             onClick={() => setTeamWide((v) => !v)}
           >
-            <User className="mr-1 h-4 w-4" />
+            <User size={13} />
             {teamWide ? "Toute l'équipe" : "Mes RDV"}
-          </Button>
+          </button>
         ) : null}
       </div>
 
       {loading || !stats ? (
-        <div className="flex items-center justify-center rounded-2xl border bg-card py-16 text-muted-foreground">
-          <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Chargement…
+        <div className="blk empty">
+          <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
+          Chargement…
         </div>
       ) : (
         <>
           {/* Tuiles de synthèse */}
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">
-                Réservations (période passée)
-              </p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{stats.totals.total_past}</p>
+            <div className="blk stat">
+              <span className="cs-tag">Réservations · période</span>
+              <div className="v">{stats.totals.total_past}</div>
             </div>
-            <div className="rounded-2xl border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">RDV tenus</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums text-emerald-600">
-                {stats.totals.held_past}
-              </p>
+            <div className="blk stat">
+              <span className="cs-tag">RDV tenus</span>
+              <div className="v ok">{stats.totals.held_past}</div>
             </div>
-            <div className="rounded-2xl border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">Annulés / refusés</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums text-red-600">
-                {stats.totals.cancelled_past}
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                soit {stats.totals.cancellation_rate} % de la période
-              </p>
+            <div className="blk stat">
+              <span className="cs-tag">Annulés / refusés</span>
+              <div className="v danger">{stats.totals.cancelled_past}</div>
+              <div className="h">soit {stats.totals.cancellation_rate} % de la période</div>
             </div>
-            <div className="rounded-2xl border bg-card p-4 shadow-sm">
-              <p className="text-xs font-medium text-muted-foreground">À venir (confirmés)</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums">{stats.totals.upcoming}</p>
+            <div className="blk stat">
+              <span className="cs-tag">À venir (confirmés)</span>
+              <div className="v">{stats.totals.upcoming}</div>
               {stats.totals.pending ? (
-                <p className="mt-0.5 text-xs text-amber-600">
+                <div className="h" style={{ color: "var(--warn)" }}>
                   + {stats.totals.pending} en attente
-                </p>
+                </div>
               ) : null}
             </div>
           </div>
 
           {/* Réservations par semaine — mono-série, teinte primaire */}
-          <div className="rounded-2xl border bg-card p-4 shadow-sm">
-            <h2 className="font-semibold">Réservations par semaine</h2>
-            <p className="text-xs text-muted-foreground">
+          <div className="blk">
+            <h4>Réservations par semaine</h4>
+            <p style={{ margin: "-4px 0 0", fontSize: 11.5, color: "var(--text-3)" }}>
               Rendez-vous dont la date tombe dans la semaine (période analysée).
             </p>
             <div className="mt-4 h-64">
@@ -223,7 +218,7 @@ export default function InsightsDashboard() {
                     dataKey="label"
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                    tick={{ fill: "var(--text-3)", fontSize: 11, fontFamily: "var(--font-mono)" }}
                     interval="preserveStartEnd"
                     minTickGap={24}
                   />
@@ -231,12 +226,12 @@ export default function InsightsDashboard() {
                     allowDecimals={false}
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                    tick={{ fill: "var(--text-3)", fontSize: 11, fontFamily: "var(--font-mono)" }}
                   />
-                  <Tooltip content={<ChartTooltip />} cursor={{ fill: "var(--muted)" }} />
+                  <Tooltip content={<ChartTooltip />} cursor={{ fill: "var(--hover-2)" }} />
                   <Bar
                     dataKey="total"
-                    fill="var(--primary)"
+                    fill="var(--accent)"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={28}
                   />
