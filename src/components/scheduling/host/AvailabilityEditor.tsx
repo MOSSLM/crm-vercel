@@ -116,9 +116,8 @@ export default function AvailabilityEditor() {
 
   if (loading) {
     return (
-      <div className="blk empty">
-        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
-        Chargement…
+      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
       </div>
     );
   }
@@ -126,9 +125,9 @@ export default function AvailabilityEditor() {
   return (
     <div className="grid gap-4 lg:grid-cols-3">
       {/* Plages hebdo */}
-      <div className="blk lg:col-span-2">
+      <div className="rounded-xl border bg-card p-4 shadow-sm lg:col-span-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h4 style={{ margin: 0 }} className="h4">Horaires récurrents</h4>
+          <h2 className="cal-tag text-muted-foreground">Horaires récurrents</h2>
           <div className="flex items-center gap-2">
             <Label className="text-xs text-muted-foreground">Fuseau</Label>
             <select
@@ -229,16 +228,20 @@ export default function AvailabilityEditor() {
         </div>
 
         <div className="mt-4 flex justify-end border-t pt-4">
-          <button type="button" className="btn accent sm" onClick={() => void save()} disabled={saving || !dirty}>
-            {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
+          <Button size="sm" onClick={() => void save()} disabled={saving || !dirty}>
+            {saving ? (
+              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="mr-1.5 h-4 w-4" />
+            )}
             Enregistrer
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Exceptions de dates */}
-      <div className="blk" style={{ alignSelf: "start" }}>
-        <h4 style={{ margin: 0 }} className="h4">Exceptions de dates</h4>
+      <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
+        <h2 className="cal-tag text-muted-foreground">Exceptions de dates</h2>
         <p className="mt-1 text-xs text-muted-foreground">
           Congés, jours fériés, ou horaires différents un jour précis.
         </p>

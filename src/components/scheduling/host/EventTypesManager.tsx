@@ -229,42 +229,52 @@ export default function EventTypesManager() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p style={{ margin: 0, fontSize: 12.5, color: "var(--text-3)" }}>
+        <p className="text-sm text-muted-foreground">
           Chaque type d&apos;évènement a son lien public réservable.
         </p>
-        <button type="button" className="btn accent sm" onClick={() => openEditor("new")}>
-          <Plus size={14} /> Nouveau type
-        </button>
+        <Button size="sm" onClick={() => openEditor("new")}>
+          <Plus className="mr-1.5 h-4 w-4" /> Nouveau type
+        </Button>
       </div>
 
       {loading ? (
-        <div className="blk empty">
-          <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
-          Chargement…
+        <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
         </div>
       ) : eventTypes.length === 0 ? (
-        <div className="blk empty">
-          <CalendarPlus size={22} />
-          Créez votre premier type d&apos;évènement pour obtenir un lien réservable.
+        <div className="rounded-xl border bg-card py-16 text-center">
+          <CalendarPlus className="mx-auto h-8 w-8 text-muted-foreground/40" />
+          <p className="mt-3 text-sm text-muted-foreground">
+            Créez votre premier type d&apos;évènement pour obtenir un lien réservable.
+          </p>
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
           {eventTypes.map((et) => (
-            <div key={et.id} className="blk" style={{ opacity: et.is_active ? 1 : 0.65 }}>
+            <div
+              key={et.id}
+              className={`rounded-xl border bg-card p-4 shadow-sm ${et.is_active ? "" : "opacity-60"}`}
+            >
               <div className="flex items-start gap-3">
                 <span
-                  className="legend-bar"
-                  style={{ height: 38, marginTop: 3, background: et.color || "var(--accent)" }}
+                  className="mt-1 h-10 w-[3px] shrink-0 rounded-full"
+                  style={{ backgroundColor: et.color || "var(--primary)" }}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p style={{ margin: 0, fontWeight: 500, fontSize: 13.5 }}>{et.title}</p>
-                    {!et.is_active ? <span className="pill muted">Désactivé</span> : null}
+                    <p className="text-sm font-medium">{et.title}</p>
+                    {!et.is_active ? (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                        Désactivé
+                      </span>
+                    ) : null}
                     {et.requires_confirmation ? (
-                      <span className="pill warn">Validation manuelle</span>
+                      <span className="rounded-full bg-[var(--warn-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]">
+                        Validation manuelle
+                      </span>
                     ) : null}
                   </div>
-                  <p style={{ margin: "2px 0 0", fontSize: 12, color: "var(--text-2)" }}>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">
                     {durationLabel(et.duration_minutes)} ·{" "}
                     {LOCATION_LABELS[et.location_type] ?? et.location_type}
                     {et.price_cents
@@ -274,42 +284,31 @@ export default function EventTypesManager() {
                         })}`
                       : ""}
                   </p>
-                  <p
-                    className="mono"
-                    style={{
-                      margin: "4px 0 0",
-                      fontSize: 10.5,
-                      color: "var(--text-3)",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <p className="cal-mono mt-1 truncate text-[11px] text-muted-foreground">
                     /rdv/{username ?? "…"}/{et.slug}
                   </p>
                 </div>
-                <input
-                  type="checkbox"
-                  className="tgl"
+                <Switch
                   checked={et.is_active}
-                  onChange={() => void toggleActive(et)}
+                  onCheckedChange={() => void toggleActive(et)}
                   aria-label="Activer / désactiver"
                 />
               </div>
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                <button type="button" className="btn outline xs" onClick={() => copyLink(et)}>
-                  <Copy size={12} /> Copier le lien
-                </button>
-                <button type="button" className="btn outline xs" onClick={() => openEditor(et)}>
-                  <Pencil size={12} /> Modifier
-                </button>
-                <button
-                  type="button"
-                  className="btn danger-ghost xs"
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" onClick={() => copyLink(et)}>
+                  <Copy className="mr-1.5 h-3.5 w-3.5" /> Copier le lien
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => openEditor(et)}>
+                  <Pencil className="mr-1.5 h-3.5 w-3.5" /> Modifier
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-[var(--danger)] hover:text-[var(--danger)]"
                   onClick={() => setDeleteTarget(et)}
                 >
-                  <Trash2 size={12} /> Supprimer
-                </button>
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Supprimer
+                </Button>
               </div>
             </div>
           ))}

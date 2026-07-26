@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Aperçu Cal.SAMA (habillage maquettes) : tuiles serif, carte héro sombre
- * « prochain RDV », demandes à valider, prochains rendez-vous, raccourcis.
+ * Aperçu Cal.SAMA : tuiles de synthèse, carte « prochain rendez-vous » en
+ * inversion (signature des maquettes), demandes à valider avec actions
+ * rapides, prochains RDV et raccourcis.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -23,6 +24,7 @@ import {
   Video,
   X,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthContext";
 import {
   bookingAction,
@@ -39,14 +41,7 @@ const fmtDay = (iso: string) =>
   );
 const fmtTime = (iso: string) =>
   new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-const fmtLong = (iso: string) => {
-  const s = new Intl.DateTimeFormat("fr-FR", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
-  }).format(new Date(iso));
-  return `${s} · ${fmtTime(iso)}`;
-};
+const fmtLong = (iso: string) => `${fmtDay(iso)} · ${fmtTime(iso)}`;
 
 function StatTile({
   label,
@@ -59,11 +54,19 @@ function StatTile({
   hint?: string;
   tone?: "ok" | "warn" | "danger";
 }) {
+  const toneClass =
+    tone === "ok"
+      ? "text-[var(--ok)]"
+      : tone === "warn"
+        ? "text-[var(--warn)]"
+        : tone === "danger"
+          ? "text-[var(--danger)]"
+          : "text-foreground";
   return (
-    <div className="blk stat">
-      <span className="cs-tag">{label}</span>
-      <div className={`v ${tone ?? ""}`}>{value}</div>
-      {hint ? <div className="h">{hint}</div> : null}
+    <div className="rounded-xl border bg-card p-4 shadow-sm">
+      <div className="cal-tag text-muted-foreground">{label}</div>
+      <div className={`cal-display mt-1.5 text-[30px] ${toneClass}`}>{value}</div>
+      {hint ? <div className="mt-1 text-xs text-muted-foreground">{hint}</div> : null}
     </div>
   );
 }
@@ -118,9 +121,8 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
 
   if (loading) {
     return (
-      <div className="blk empty">
-        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
-        Chargement…
+      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
       </div>
     );
   }
@@ -130,7 +132,6 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
 
   return (
     <div className="space-y-4">
-      {/* Tuiles */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatTile label="RDV à venir" value={stats?.totals.upcoming ?? 0} />
         <StatTile
@@ -148,144 +149,149 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Prochain RDV — carte héro sombre (signature maquette) */}
-        <div>
+        <div className="space-y-4">
+          {/* Prochain RDV — carte inversée (signature maquette) */}
           {next ? (
-            <div className="hero-dark">
-              <div className="h4">
+            <div className="rounded-xl bg-foreground p-4 text-background">
+              <div className="cal-tag opacity-50">
                 Prochain rendez-vous ·{" "}
                 {new Intl.DateTimeFormat("fr-FR", { weekday: "long" }).format(
                   new Date(next.start_at),
                 )}
               </div>
-              <div className="nm">
-                {next.invitee_name}
-                <br />
-                <span>{next.event_title}</span>
-              </div>
-              <div className="meta">
-                <div>
-                  <Clock size={13} /> {fmtLong(next.start_at)}
+              <div className="cal-display mt-2 text-[24px]">{next.invitee_name}</div>
+              <div className="text-[15px] opacity-60">{next.event_title}</div>
+
+              <div className="cal-mono mt-3 space-y-1.5 text-xs opacity-75">
+                <div className="flex items-center gap-2">
+                  <Clock className="h-3.5 w-3.5 shrink-0" />
+                  {fmtLong(next.start_at)}
                 </div>
-                <div>
-                  <Mail size={13} /> {next.invitee_email}
+                <div className="flex items-center gap-2">
+                  <Mail className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{next.invitee_email}</span>
                 </div>
                 {next.invitee_phone ? (
-                  <div>
-                    <Phone size={13} /> {next.invitee_phone}
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                    {next.invitee_phone}
                   </div>
                 ) : null}
               </div>
-              <div className="actions">
+
+              <div className="mt-4 flex gap-2">
                 {next.meeting_url ? (
                   <a
                     href={next.meeting_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="btn accent xs grow"
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90"
                   >
-                    <Video size={13} /> Rejoindre la visio
+                    <Video className="h-3.5 w-3.5" /> Rejoindre la visio
                   </a>
                 ) : (
-                  <Link href={`${basePath}/reservations`} className="btn accent xs grow">
+                  <Link
+                    href={`${basePath}/reservations`}
+                    className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-90"
+                  >
                     Voir le détail
                   </Link>
                 )}
-                <a href={`mailto:${next.invitee_email}`} className="btn dark-ghost icon xs" aria-label="Écrire">
-                  <Mail size={13} />
+                <a
+                  href={`mailto:${next.invitee_email}`}
+                  aria-label="Écrire à l'invité"
+                  className="inline-flex items-center justify-center rounded-lg bg-background/10 px-3 py-2 ring-1 ring-inset ring-background/20 transition-colors hover:bg-background/20"
+                >
+                  <Mail className="h-3.5 w-3.5" />
                 </a>
               </div>
             </div>
           ) : (
-            <div className="blk empty">
-              <CalendarClock size={22} />
-              Rien de prévu.
-              <br />
-              Partagez votre lien pour recevoir des réservations.
+            <div className="rounded-xl border bg-card p-8 text-center">
+              <CalendarClock className="mx-auto h-8 w-8 text-muted-foreground/40" />
+              <p className="mt-3 text-sm text-muted-foreground">
+                Rien de prévu. Partagez votre lien pour recevoir des réservations.
+              </p>
             </div>
           )}
 
           {/* Raccourcis */}
-          <div className="blk" style={{ marginTop: 12 }}>
-            <h4>Raccourcis</h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <Link href={`${basePath}/types`} className="btn outline sm" style={{ justifyContent: "flex-start" }}>
-                <CalendarCog size={14} /> Gérer mes types d&apos;évènements
-              </Link>
-              <Link
-                href={`${basePath}/disponibilites`}
-                className="btn outline sm"
-                style={{ justifyContent: "flex-start" }}
-              >
-                <Clock3 size={14} /> Ajuster mes disponibilités
-              </Link>
-              <button
-                type="button"
-                className="btn outline sm"
-                style={{ justifyContent: "flex-start" }}
+          <div className="rounded-xl border bg-card p-4 shadow-sm">
+            <div className="cal-tag text-muted-foreground">Raccourcis</div>
+            <div className="mt-3 flex flex-col gap-2">
+              <Button variant="outline" size="sm" className="justify-start" asChild>
+                <Link href={`${basePath}/types`}>
+                  <CalendarCog className="mr-2 h-4 w-4" /> Gérer mes types d&apos;évènements
+                </Link>
+              </Button>
+              <Button variant="outline" size="sm" className="justify-start" asChild>
+                <Link href={`${basePath}/disponibilites`}>
+                  <Clock3 className="mr-2 h-4 w-4" /> Ajuster mes disponibilités
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="justify-start"
                 onClick={() => {
                   if (!publicUrl) return;
                   void navigator.clipboard.writeText(publicUrl);
                   toast.success("Lien public copié");
                 }}
               >
-                <Copy size={14} /> Copier mon lien public
-              </button>
+                <Copy className="mr-2 h-4 w-4" /> Copier mon lien public
+              </Button>
             </div>
           </div>
         </div>
 
         {/* Demandes à valider */}
-        <div className="blk" style={{ alignSelf: "start" }}>
-          <h4>
-            <Hourglass size={13} style={{ color: "var(--warn)" }} /> À valider
-            <Link href={`${basePath}/reservations?filter=pending`} className="btn ghost xs" style={{ marginLeft: "auto" }}>
-              Tout voir <ArrowRight size={12} />
-            </Link>
-          </h4>
+        <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
+          <div className="flex items-center justify-between gap-2">
+            <div className="cal-tag flex items-center gap-1.5 text-muted-foreground">
+              <Hourglass className="h-3.5 w-3.5 text-[var(--warn)]" /> À valider
+            </div>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
+              <Link href={`${basePath}/reservations?filter=pending`}>
+                Tout voir <ArrowRight className="ml-1 h-3 w-3" />
+              </Link>
+            </Button>
+          </div>
+
           {pending.length === 0 ? (
-            <p style={{ color: "var(--text-3)", fontSize: 12.5, margin: 0 }}>
-              Aucune demande en attente. 👌
-            </p>
+            <p className="mt-3 text-sm text-muted-foreground">Aucune demande en attente. 👌</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="mt-3 space-y-2">
               {pending.map((b) => (
                 <div
                   key={b.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 10px",
-                    border: "1px solid var(--border)",
-                    borderRadius: 9,
-                    background: "var(--warn-tint)",
-                  }}
+                  className="flex items-center gap-2.5 rounded-lg border border-[var(--warn)]/25 bg-[var(--warn-tint)] px-3 py-2"
                 >
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 500, fontSize: 12.5 }}>{b.invitee_name}</div>
-                    <div className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-medium">{b.invitee_name}</div>
+                    <div className="cal-mono truncate text-[11px] text-muted-foreground">
                       {b.event_title} · {fmtDay(b.start_at)} {fmtTime(b.start_at)}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    className="btn accent icon xs"
+                  <Button
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
                     disabled={working === b.id}
                     onClick={() => void quickAction(b, "confirm")}
                     aria-label="Confirmer"
                   >
-                    <Check size={13} />
-                  </button>
-                  <button
-                    type="button"
-                    className="btn outline icon xs"
+                    <Check className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="h-7 w-7 shrink-0"
                     disabled={working === b.id}
                     onClick={() => void quickAction(b, "decline")}
                     aria-label="Refuser"
                   >
-                    <X size={13} />
-                  </button>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               ))}
             </div>
@@ -293,52 +299,48 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
         </div>
 
         {/* Prochains RDV */}
-        <div className="blk" style={{ alignSelf: "start" }}>
-          <h4>
-            Ensuite
-            <Link href={`${basePath}/reservations`} className="btn ghost xs" style={{ marginLeft: "auto" }}>
-              Tout voir <ArrowRight size={12} />
-            </Link>
-          </h4>
+        <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
+          <div className="flex items-center justify-between gap-2">
+            <div className="cal-tag text-muted-foreground">Ensuite</div>
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" asChild>
+              <Link href={`${basePath}/reservations`}>
+                Tout voir <ArrowRight className="ml-1 h-3 w-3" />
+              </Link>
+            </Button>
+          </div>
+
           {rest.length === 0 ? (
-            <p style={{ color: "var(--text-3)", fontSize: 12.5, margin: 0 }}>
-              Rien d&apos;autre de prévu.
-            </p>
+            <p className="mt-3 text-sm text-muted-foreground">Rien d&apos;autre de prévu.</p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column" }}>
-              {rest.map((b, i) => (
-                <div
-                  key={b.id}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "8px 2px",
-                    borderTop: i === 0 ? "none" : "1px solid var(--border)",
-                  }}
-                >
-                  <div className="when">
-                    <div className="d">{fmtDay(b.start_at)}</div>
-                    <div className="t">{fmtTime(b.start_at)}</div>
-                  </div>
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 500, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {b.invitee_name}
+            <div className="mt-1 divide-y divide-border">
+              {rest.map((b) => (
+                <div key={b.id} className="flex items-center gap-3 py-2.5">
+                  <div className="cal-mono w-14 shrink-0 text-center">
+                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                      {fmtDay(b.start_at)}
                     </div>
-                    <div className="mono" style={{ fontSize: 10.5, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div className="text-sm font-semibold">{fmtTime(b.start_at)}</div>
+                  </div>
+                  <div className="min-w-0 flex-1 border-l border-border pl-3">
+                    <div className="truncate text-sm font-medium">{b.invitee_name}</div>
+                    <div className="cal-mono truncate text-[11px] text-muted-foreground">
                       {b.event_title}
                     </div>
                   </div>
-                  {b.status === "pending" ? <span className="pill warn">attente</span> : null}
+                  {b.status === "pending" ? (
+                    <span className="shrink-0 rounded-full bg-[var(--warn-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--warn)]">
+                      attente
+                    </span>
+                  ) : null}
                   {b.meeting_url ? (
                     <a
                       href={b.meeting_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="btn ghost icon xs"
                       aria-label="Lien visio"
+                      className="shrink-0 text-muted-foreground transition-colors hover:text-primary"
                     >
-                      <Video size={13} />
+                      <Video className="h-4 w-4" />
                     </a>
                   ) : null}
                 </div>
@@ -349,9 +351,9 @@ export default function OverviewDashboard({ basePath }: { basePath: string }) {
       </div>
 
       {user?.role === "admin" ? (
-        <p style={{ fontSize: 11.5, color: "var(--text-3)" }}>
+        <p className="text-xs text-muted-foreground">
           Astuce : la page{" "}
-          <Link className="link" href={`${basePath}/equipe`}>
+          <Link className="underline underline-offset-2" href={`${basePath}/equipe`}>
             Équipe
           </Link>{" "}
           liste les liens de réservation de tous les agents.

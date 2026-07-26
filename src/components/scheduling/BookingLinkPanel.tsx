@@ -132,32 +132,12 @@ export default function BookingLinkPanel({
   };
 
   const linkContent = loading ? (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        border: "1px dashed var(--border-2)",
-        borderRadius: 8,
-        padding: "10px 12px",
-        fontSize: 11.5,
-        color: "var(--text-3)",
-      }}
-    >
-      <Loader2 size={13} className="spin" /> Chargement du module RDV…
+    <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
+      <Loader2 className="h-3.5 w-3.5 animate-spin" /> Chargement du module RDV…
     </div>
   ) : !username || eventTypes.length === 0 ? (
-    <div
-      style={{
-        border: "1px dashed var(--border-2)",
-        borderRadius: 8,
-        padding: "10px 12px",
-        fontSize: 11.5,
-        color: "var(--text-3)",
-      }}
-    >
-      <CalendarClock size={14} style={{ marginBottom: 4 }} />
-      <br />
+    <div className="rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
+      <CalendarClock className="mb-1 h-3.5 w-3.5" />
       Configurez vos types d&apos;évènements dans Cal.SAMA pour proposer un lien de réservation
       pendant l&apos;appel.
     </div>
@@ -166,7 +146,7 @@ export default function BookingLinkPanel({
       <select
         value={selectedSlug}
         onChange={(e) => setSelectedSlug(e.target.value)}
-        className="inp"
+        className="h-8 w-full rounded-md border border-input bg-input-background px-2 text-sm"
         aria-label="Type de rendez-vous"
       >
         {eventTypes.map((et) => (
@@ -176,67 +156,68 @@ export default function BookingLinkPanel({
         ))}
       </select>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <div style={{ position: "relative", flex: 1 }}>
-          <Mail
-            size={13}
-            style={{
-              position: "absolute",
-              left: 8,
-              top: "50%",
-              transform: "translateY(-50%)",
-              color: "var(--text-3)",
-              pointerEvents: "none",
-            }}
-          />
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1">
+          <Mail className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="email du prospect"
-            className="inp"
-            style={{ paddingLeft: 26 }}
+            className="h-8 w-full rounded-md border border-input bg-input-background py-1.5 pl-7 pr-2 text-sm"
           />
         </div>
         <button
           type="button"
           onClick={() => void sendByEmail()}
           disabled={sending || !/.+@.+\..+/.test(email)}
-          className="btn accent sm"
           title="Envoyer le lien par email"
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md bg-primary px-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {sending ? <Loader2 size={13} className="spin" /> : <Send size={13} />}
+          {sending ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Send className="h-3.5 w-3.5" />
+          )}
           Envoyer
         </button>
       </div>
 
-      <button type="button" onClick={copyLink} className="btn outline sm" style={{ width: "100%" }}>
-        <Copy size={13} /> Copier le lien prérempli
+      <button
+        type="button"
+        onClick={copyLink}
+        className="inline-flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-[var(--hover)]"
+      >
+        <Copy className="h-3.5 w-3.5" /> Copier le lien prérempli
       </button>
     </div>
   );
 
   return (
-    <div className="cal-skin space-y-2.5" style={{ background: "transparent" }}>
+    <div className="space-y-2.5">
       {/* Onglets Réserver / Lien */}
-      <div className="seg" style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+      <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-1">
         <button
           type="button"
-          className="seg-btn"
-          aria-selected={mode === "book"}
           onClick={() => setMode("book")}
-          style={{ justifyContent: "center" }}
+          className={`inline-flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+            mode === "book"
+              ? "bg-card text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
         >
-          <CalendarPlus size={13} /> Réserver
+          <CalendarPlus className="h-3.5 w-3.5" /> Réserver
         </button>
         <button
           type="button"
-          className="seg-btn"
-          aria-selected={mode === "link"}
           onClick={() => setMode("link")}
-          style={{ justifyContent: "center" }}
+          className={`inline-flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors ${
+            mode === "link"
+              ? "bg-card text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground"
+          }`}
         >
-          <Link2 size={13} /> Lien
+          <Link2 className="h-3.5 w-3.5" /> Lien
         </button>
       </div>
 

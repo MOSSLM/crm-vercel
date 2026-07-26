@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Copy, ExternalLink, Loader2, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { fetchTeam, type TeamMember } from "@/lib/scheduling/client";
 import { getAppUrlClient } from "./shared";
 
@@ -49,18 +50,17 @@ export default function TeamOverview({ basePath }: { basePath: string }) {
 
   if (loading) {
     return (
-      <div className="blk empty">
-        <Loader2 size={18} className="spin" style={{ margin: "0 auto 8px" }} />
-        Chargement…
+      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
       </div>
     );
   }
 
   if (members.length === 0) {
     return (
-      <div className="blk empty">
-        <Users size={22} />
-        Aucun membre actif.
+      <div className="rounded-xl border bg-card py-16 text-center">
+        <Users className="mx-auto h-8 w-8 text-muted-foreground/40" />
+        <p className="mt-3 text-sm text-muted-foreground">Aucun membre actif.</p>
       </div>
     );
   }
@@ -70,89 +70,65 @@ export default function TeamOverview({ basePath }: { basePath: string }) {
       {members.map((m) => (
         <div
           key={m.user_id}
-          className="rowcard"
-          style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "12px 14px" }}
+          className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-3.5 shadow-sm"
         >
           <div
-            style={{
-              width: 38,
-              height: 38,
-              borderRadius: "50%",
-              flexShrink: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#fff",
-              fontWeight: 600,
-              fontSize: 13,
-              backgroundColor: colorOf(m.name),
-            }}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
+            style={{ backgroundColor: colorOf(m.name) }}
           >
             {initials(m.name)}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="nm">{m.name}</span>
-              <span className="pill outline">{m.role === "admin" ? "Admin" : "Agent"}</span>
+              <span className="text-sm font-medium">{m.name}</span>
+              <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+                {m.role === "admin" ? "Admin" : "Agent"}
+              </span>
               {m.username && !m.page_active ? (
-                <span className="pill danger">Page désactivée</span>
+                <span className="rounded-full bg-[var(--danger-tint)] px-2 py-0.5 text-[11px] font-medium text-[var(--danger)]">
+                  Page désactivée
+                </span>
               ) : null}
             </div>
-            <p
-              className="mono"
-              style={{
-                margin: "2px 0 0",
-                fontSize: 10.5,
-                color: "var(--text-3)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
+            <p className="cal-mono mt-0.5 truncate text-[11px] text-muted-foreground">
               {m.username ? `/rdv/${m.username}` : "Page non configurée (créée à sa première visite)"}
             </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, textAlign: "center" }}>
+          <div className="flex items-center gap-4 text-center">
             <div>
-              <p className="mono" style={{ margin: 0, fontWeight: 600, fontSize: 15 }}>
-                {m.upcoming}
-              </p>
-              <p className="cs-tag" style={{ margin: 0 }}>
-                à venir
-              </p>
+              <p className="cal-mono text-[15px] font-semibold">{m.upcoming}</p>
+              <p className="cal-tag text-muted-foreground">à venir</p>
             </div>
             <div>
               <p
-                className="mono"
-                style={{ margin: 0, fontWeight: 600, fontSize: 15, color: m.pending ? "var(--warn)" : undefined }}
+                className={`cal-mono text-[15px] font-semibold ${m.pending ? "text-[var(--warn)]" : ""}`}
               >
                 {m.pending}
               </p>
-              <p className="cs-tag" style={{ margin: 0 }}>
-                en attente
-              </p>
+              <p className="cal-tag text-muted-foreground">en attente</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5">
             {m.username ? (
               <>
-                <button type="button" className="btn outline xs" onClick={() => copyLink(m.username!)}>
-                  <Copy size={12} /> Lien
-                </button>
-                <a
-                  href={`${getAppUrlClient()}/rdv/${m.username}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="btn outline icon xs"
-                  aria-label="Ouvrir la page"
-                >
-                  <ExternalLink size={12} />
-                </a>
+                <Button size="sm" variant="outline" onClick={() => copyLink(m.username!)}>
+                  <Copy className="mr-1.5 h-3.5 w-3.5" /> Lien
+                </Button>
+                <Button size="icon" variant="outline" className="h-9 w-9" asChild>
+                  <a
+                    href={`${getAppUrlClient()}/rdv/${m.username}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Ouvrir la page"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                </Button>
               </>
             ) : null}
-            <Link href={`${basePath}/reservations?host=${m.user_id}`} className="btn ghost xs">
-              Ses résas
-            </Link>
+            <Button size="sm" variant="ghost" asChild>
+              <Link href={`${basePath}/reservations?host=${m.user_id}`}>Ses résas</Link>
+            </Button>
           </div>
         </div>
       ))}
