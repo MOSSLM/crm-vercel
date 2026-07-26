@@ -61,25 +61,53 @@ function isHrefKey(key: string): boolean {
   return /href$|_href$|Href$|url$|_url$|Url$/.test(key);
 }
 
+const LABEL_SUFFIX = /^(.*?)([Ll]abel|[Tt]ext)$/;
+
 /**
- * Candidate href keys for a label key, best guess first.
+ * The sibling key a label key pairs with, in the schema's own casing:
  *
- * Suffix replacements come first: `primaryLabel` → `primaryHref` is how legacy
- * schemas actually name the pair. The naive appends (`primaryLabelHref`) are
- * only a last resort — they'd otherwise win the fallback and create a key no
- * section template reads. When the label key has no Label/Text suffix the
- * replacements are no-ops and get filtered out by the caller.
+ *   label        → href          (bare block shape)
+ *   cta_text     → cta_href      (snake_case)
+ *   primaryLabel → primaryHref   (camelCase)
+ *
+ * Casing matters: writing `cta_Href` next to an existing `cta_href` creates a
+ * dead key the renderer never reads, so the edit silently does nothing.
+ * Returns null when the key isn't named like a label at all.
+ */
+function canonicalSiblingKey(labelKey: string, kind: "href" | "url"): string | null {
+  const match = labelKey.match(LABEL_SUFFIX);
+  if (!match) return null;
+  const prefix = match[1];
+  if (prefix === "") return kind;
+  if (prefix.endsWith("_")) return `${prefix}${kind}`;
+  return `${prefix}${kind === "href" ? "Href" : "Url"}`;
+}
+
+/**
+ * Every spelling worth probing for an existing sibling, best guess first. The
+ * canonical forms lead; the older replacements and the naive appends follow as
+ * a safety net for schemas that don't follow the convention.
  */
 function neighbourHrefKey(labelKey: string): string[] {
-  return [
-    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "Href"),
-    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "_href"),
-    labelKey.replace(/([Ll]abel|[Tt]ext)$/, "Url"),
-    `${labelKey}Href`,
-    `${labelKey}_href`,
-    `${labelKey}Url`,
-    `${labelKey}_url`,
-  ];
+  const seen = new Set<string>([labelKey]);
+  const out: string[] = [];
+  const push = (key: string | null) => {
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(key);
+  };
+
+  push(canonicalSiblingKey(labelKey, "href"));
+  push(canonicalSiblingKey(labelKey, "url"));
+  push(labelKey.replace(LABEL_SUFFIX, "$1Href"));
+  push(labelKey.replace(LABEL_SUFFIX, "$1_href"));
+  push(labelKey.replace(LABEL_SUFFIX, "$1Url"));
+  push(`${labelKey}Href`);
+  push(`${labelKey}_href`);
+  push(`${labelKey}Url`);
+  push(`${labelKey}_url`);
+
+  return out;
 }
 
 function matchesString(value: unknown, target: string): boolean {
@@ -157,12 +185,12 @@ function scanPair(
     if (!matchesString(content[labelKey], element.text)) continue;
     if (isHrefKey(labelKey)) continue;
     const href = element.attrs.href ?? "";
-    const candidates = neighbourHrefKey(labelKey).filter((k) => k && k !== labelKey);
+
     // An existing key whose value IS the element's href is a certain match.
     // Otherwise fall back to the best-guess key that already exists — the first
     // one, not the last, since `candidates` is ordered best guess first.
     let hrefKey: string | undefined;
-    for (const cand of candidates) {
+    for (const cand of neighbourHrefKey(labelKey)) {
       if (!Object.prototype.hasOwnProperty.call(content, cand)) continue;
       if (matchesString(content[cand], href)) {
         hrefKey = cand;
@@ -173,10 +201,17 @@ function scanPair(
     if (hrefKey) {
       return { strategy: "pair", labelKey, hrefKey, location: scope };
     }
-    // Even without a matching href key, return pair with the most likely
-    // neighbour name so the editor can create it on first edit.
-    const fallbackHref = candidates.find((c) => /href$|Href$/.test(c)) ?? `${labelKey}Href`;
-    return { strategy: "pair", labelKey, hrefKey: fallbackHref, location: scope };
+
+    // No sibling exists yet. Naming one so the editor can create it on first
+    // edit is only safe when the key is itself named like a button label —
+    // `primaryLabel` implies a `primaryHref`. A plain text key that merely
+    // happens to equal the button's caption (a `heading` reused as a CTA
+    // label) implies nothing: inventing `headingHref` there would write to a
+    // key no template reads, so leave those to `direct`.
+    const canonical = canonicalSiblingKey(labelKey, "href");
+    if (canonical) {
+      return { strategy: "pair", labelKey, hrefKey: canonical, location: scope };
+    }
   }
 
   return null;

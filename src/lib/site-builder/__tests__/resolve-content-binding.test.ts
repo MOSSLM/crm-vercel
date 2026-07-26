@@ -108,6 +108,49 @@ describe("resolveContentBinding", () => {
         hrefKey: "primaryHref",
       });
     });
+
+    // The sibling must be matched in the schema's own casing. Binding a bare
+    // `{ label, href }` block to `Href`, or `cta_text` to `cta_Href`, writes to
+    // a key the renderer never reads — the edit looks saved but does nothing.
+    it("binds the bare label + href block shape", () => {
+      const result = resolveContentBinding(
+        el({ kind: "link", text: "Contact", attrs: { href: "/contact" } }),
+        { label: "Contact", href: "/contact" },
+      );
+      expect(result).toMatchObject({ strategy: "pair", labelKey: "label", hrefKey: "href" });
+    });
+
+    it("binds a snake_case pair", () => {
+      const result = resolveContentBinding(
+        el({ kind: "button", text: "Demander un devis", attrs: { href: "/devis" } }),
+        { cta_text: "Demander un devis", cta_href: "/devis" },
+      );
+      expect(result).toMatchObject({
+        strategy: "pair",
+        labelKey: "cta_text",
+        hrefKey: "cta_href",
+      });
+    });
+
+    it("finds the sibling even when its stored value is stale", () => {
+      // The rendered href was rewritten somewhere downstream — the key is still
+      // the right binding target, so it must not be treated as absent.
+      const result = resolveContentBinding(
+        el({ kind: "link", text: "Contact", attrs: { href: "/nous-contacter" } }),
+        { label: "Contact", href: "/contact" },
+      );
+      expect(result).toMatchObject({ strategy: "pair", labelKey: "label", hrefKey: "href" });
+    });
+
+    it("leaves a plain text key to the direct strategy", () => {
+      // `heading` is not named like a button label, so there is no sibling to
+      // invent — fabricating `headingHref` would write to a key nothing reads.
+      const result = resolveContentBinding(
+        el({ kind: "button", text: "En savoir plus", attrs: { href: "/en-savoir-plus" } }),
+        { heading: "En savoir plus" },
+      );
+      expect(result).toMatchObject({ strategy: "direct", key: "heading" });
+    });
   });
 
   describe("override strategy", () => {
