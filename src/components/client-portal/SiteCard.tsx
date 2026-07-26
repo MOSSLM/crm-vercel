@@ -3,6 +3,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Globe, ExternalLink } from "lucide-react";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export type SiteRow = {
   id: string;
@@ -14,7 +15,7 @@ export type SiteRow = {
 
 function buildUrl(site: SiteRow): string | null {
   if (site.published_domain) return `https://${site.published_domain}`;
-  if (site.published_subdomain) return `https://${site.published_subdomain}.samadigitalstudio.fr`;
+  if (site.published_subdomain) return `https://${site.published_subdomain}.${SITE_DOMAIN}`;
   return null;
 }
 

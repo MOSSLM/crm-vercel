@@ -15,6 +15,7 @@ import { tweakEnabled } from "@/lib/site-builder/claude-design/apply-tweaks";
 import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import {
   initHistory, pushSnapshot, undo as undoHistory, redo as redoHistory,
@@ -51,7 +52,6 @@ interface BoardData {
 }
 interface Company { id: number; nom: string; pret_pour_lm?: boolean }
 
-const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr";
 
 type LeftTab = "theme" | "tags";
 type Viewport = "desktop" | "mobile";

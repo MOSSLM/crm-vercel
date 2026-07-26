@@ -7,6 +7,17 @@ import { DemoPaywallBar } from "@/components/site-builder/DemoPaywallBar";
 import { parseEnterpriseTags } from "@/components/site-builder/SitePageView";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
+import { resolvePreviewSlug } from "@/lib/site-builder/preview-slug";
+
+/**
+ * Every 404 below is otherwise indistinguishable from "wildcard domain not
+ * wired up" once deployed. Log the reason so the platform logs answer the
+ * question: a line here means the request DID reach the app.
+ */
+function preview404(siteId: string, reason: string): never {
+  console.warn(`[preview] 404 for site ${siteId}: ${reason}`);
+  notFound();
+}
 
 interface PreviewProps {
   params: Promise<{ siteId: string; path?: string[] }>;
@@ -37,7 +48,7 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 export default async function DraftPreviewPage({ params }: PreviewProps) {
   const { siteId, path } = await params;
   const site = await resolveDraftSite(siteId);
-  if (!site) notFound();
+  if (!site) preview404(siteId, "resolveDraftSite returned null (see [site-resolver] warning above)");
 
   const {
     enterpriseVariables,
@@ -54,19 +65,35 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
     companyName,
   } = site;
 
-  if (!publishedInstances || publishedInstances.length === 0) notFound();
+  if (!publishedInstances || publishedInstances.length === 0) {
+    preview404(siteId, "the site has no section instances (import incomplete, or nothing saved yet)");
+  }
 
   const instances = publishedInstances as Array<{ page_slug: string; is_hidden?: boolean }>;
   const enterpriseTags = parseEnterpriseTags(enterpriseVariables);
-  const pageSlug = slugFromPath(path);
-  const isHome = pageSlug === "/";
+  const requestedSlug = slugFromPath(path);
+
+  // A design imported without an index.html has no "/" page; rather than 404 the
+  // bare preview subdomain, fall back to its first renderable page.
+  const tagAllows = (slug: string) => {
+    const tag = publishedSitemap?.find((p) => p.slug === slug)?.service_tag;
+    return !tag || enterpriseTags.includes(tag);
+  };
+  const resolved = resolvePreviewSlug(instances, publishedSitemap, requestedSlug, tagAllows);
+  if (!resolved) preview404(siteId, `no visible section instance for "${requestedSlug}"`);
+
+  const { slug: pageSlug, fellBack } = resolved;
   const targetPage = publishedSitemap?.find((p) => p.slug === pageSlug);
 
-  // Same gating as the public SitePageView: page must exist, not be gated by a
-  // missing service tag, and have at least one visible section.
-  if (!isHome && !targetPage) notFound();
-  if (targetPage?.service_tag && !enterpriseTags.includes(targetPage.service_tag)) notFound();
-  if (!instances.some((i) => i.page_slug === pageSlug && !i.is_hidden)) notFound();
+  // Same gating as the public SitePageView: page must exist and not be gated by
+  // a missing service tag. Skipped for a fallback slug — it was picked from the
+  // instances that do exist, so re-checking the sitemap would undo the fallback.
+  if (!fellBack && pageSlug !== "/" && !targetPage) {
+    preview404(siteId, `"${pageSlug}" is not in the sitemap`);
+  }
+  if (targetPage?.service_tag && !enterpriseTags.includes(targetPage.service_tag)) {
+    preview404(siteId, `"${pageSlug}" is gated by service tag "${targetPage.service_tag}"`);
+  }
 
   const visibleMenus = buildPublicMenus(menus, publishedSitemap, instances, enterpriseTags);
 

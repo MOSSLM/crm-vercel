@@ -2,15 +2,7 @@ import React from "react";
 import Link from "next/link";
 import { headers } from "next/headers";
 import { resolveSite } from "@/lib/site-resolver";
-
-const APP_DOMAIN = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "samadigitalstudio.fr";
-
-function extractSubdomain(hostname: string): string | null {
-  if (hostname === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return null;
-  if (!hostname.endsWith(APP_DOMAIN)) return null;
-  const withoutBase = hostname.slice(0, -(APP_DOMAIN.length + 1));
-  return withoutBase || null;
-}
+import { extractSubdomain } from "@/lib/site-domain";
 
 /** 404 for published sites. Branded with the site's logo when resolvable. */
 export default async function SiteNotFound() {

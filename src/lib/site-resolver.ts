@@ -233,14 +233,31 @@ export async function resolveDraftSite(siteId: string): Promise<ResolvedSite | n
     )
     .eq("id", siteId)
     .single();
-  if (error || !siteRow) return null;
+  // Never fail silently: this null becomes a bare 404 on the preview subdomain,
+  // and the cause is usually a schema drift (one of the columns above missing in
+  // this environment) rather than an unknown id. Same lesson as
+  // api/site-builder/claude/[siteId]/pages/route.ts.
+  if (error || !siteRow) {
+    console.warn(
+      `[site-resolver] resolveDraftSite(${siteId}) → null: ` +
+        (error ? `${error.code ?? "?"} ${error.message}` : "no row with that id"),
+    );
+    return null;
+  }
 
   // Live section instances (no published snapshot) + their defs for native sections.
-  const { data: instanceRows } = await supabase
+  const { data: instanceRows, error: instancesError } = await supabase
     .from("site_section_instances")
     .select("*, section_def:site_sections(*)")
     .eq("site_id", siteId)
     .order("sort_order");
+  if (instancesError) {
+    // Swallowed, this would degrade to an empty page set and a 404 with no trace.
+    console.warn(
+      `[site-resolver] resolveDraftSite(${siteId}): site_section_instances query failed — ` +
+        `${instancesError.code ?? "?"} ${instancesError.message}`,
+    );
+  }
   const instances = (instanceRows ?? []) as Array<unknown>;
 
   const sitemap = ((siteRow.sitemap as SitemapPage[] | null) ?? []) as SitemapPage[];

@@ -29,8 +29,8 @@ import { formatPrice } from "@/components/agent-portal/format";
 import { AgentExchangeHistory } from "@/components/agent-portal/AgentExchangeHistory";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { CallJournal } from "@/components/telephony/CallJournal";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
-const SITE_DOMAIN = "samadigitalstudio.fr";
 
 type SiteRow = {
   id: string;

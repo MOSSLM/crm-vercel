@@ -7,14 +7,14 @@
  */
 
 import type { BookingWithHost } from "@/lib/scheduling/client";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 /** URL de base côté client (même logique que getAppUrl côté serveur). */
 export const getAppUrlClient = (): string => {
   const explicit = process.env.NEXT_PUBLIC_APP_URL;
   if (explicit) return explicit.replace(/\/+$/, "");
   if (typeof window !== "undefined") return window.location.origin;
-  const domain = process.env.NEXT_PUBLIC_APP_DOMAIN ?? "samadigitalstudio.fr";
-  return `https://app.${domain}`;
+  return `https://app.${SITE_DOMAIN}`;
 };
 
 const dateKey = (d: Date) =>

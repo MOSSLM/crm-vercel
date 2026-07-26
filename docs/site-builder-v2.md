@@ -117,19 +117,45 @@ Dans les champs `data`, utiliser `{{entreprise.xxx}}` pour injecter les données
 
 ## Routage multi-tenant
 
-Le `middleware.ts` détecte le sous-domaine et reroute vers `src/app/site/[subdomain]/` :
+Le `middleware.ts` détecte le sous-domaine et reroute selon sa **forme** :
 
 ```
-app.monsupercrm.fr    → Routes CRM (inchangées)
-demo.monsupercrm.fr   → src/app/site/[subdomain]/ (demo)
-client-a.monsupercrm.fr → src/app/site/[subdomain]/ (client-a)
+app.samadigitalstudio.fr        → Routes CRM (inchangées)
+client-a.samadigitalstudio.fr   → src/app/site/[subdomain]/      (site publié)
+{uuid}.samadigitalstudio.fr     → src/app/preview/[siteId]/      (aperçu brouillon/template)
 ```
+
+Un sous-domaine en forme d'UUID (8-4-4-4-12) est un **aperçu privé** : il rend le design
+non publié via `resolveDraftSite`. Les labels publiés sont slugifiés (`[a-z0-9-]`) et ne
+peuvent donc jamais entrer en collision avec cette forme.
+
+Le domaine racine vient d'une **source unique**, `src/lib/site-domain.ts` (`SITE_DOMAIN`) :
+`NEXT_PUBLIC_SITE_DOMAIN`, sinon `NEXT_PUBLIC_APP_DOMAIN`, sinon `samadigitalstudio.fr`.
+La valeur est normalisée (protocole, port, préfixe `app.`/`www.` retirés). Ne lisez plus
+ces variables directement : le middleware et le code qui fabrique les URLs doivent
+impérativement voir la même valeur.
+
+### ⚠️ Prérequis infrastructure (non géré par le code)
+
+Aucun code n'enregistre de domaine auprès de Vercel. Pour que le moindre sous-domaine
+réponde, **deux** choses doivent être en place, à faire une seule fois :
+
+1. **DNS** : un enregistrement wildcard `*.samadigitalstudio.fr` vers Vercel.
+2. **Vercel** : le domaine `*.samadigitalstudio.fr` ajouté au projet
+   (Settings → Domains). Le certificat wildcard exige une validation DNS-01.
+
+Sans l'étape 2, Vercel renvoie son 404 de plateforme (`DEPLOYMENT_NOT_FOUND`) **avant**
+que la requête n'atteigne l'app — aucun log applicatif n'apparaît. C'est le premier
+point à vérifier quand un sous-domaine tombe en 404. À l'inverse, une 404 provenant de
+l'app laisse toujours une ligne `[preview]` ou `[site-resolver]` dans les logs Vercel,
+et affiche `src/app/preview/not-found.tsx` (« Aperçu indisponible ») ou la 404 brandée
+`src/app/site/[subdomain]/not-found.tsx`.
 
 ### Publication d'un site
 
 1. Dans l'éditeur V2, cliquer "Publier"
 2. Entrer un sous-domaine (ex: `mon-client`)
-3. Le site est accessible sur `mon-client.monsupercrm.fr`
+3. Le site est accessible sur `mon-client.samadigitalstudio.fr`
 
 Pour un domaine personnalisé, stocker le domaine dans `published_domain` et demander au client de configurer un CNAME vers Vercel.
 
@@ -217,9 +243,11 @@ supabase db push
 ```
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=xxx
-ANTHROPIC_API_KEY=xxx              # Pour la génération IA
-NEXT_PUBLIC_APP_DOMAIN=monsupercrm.fr  # Optionnel, défaut: "monsupercrm.fr"
+ANTHROPIC_API_KEY=xxx                        # Pour la génération IA
+NEXT_PUBLIC_SITE_DOMAIN=samadigitalstudio.fr # Optionnel, défaut: "samadigitalstudio.fr"
 ```
+
+Liste complète : voir `.env.example` à la racine.
 
 ---
 

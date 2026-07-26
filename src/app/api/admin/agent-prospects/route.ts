@@ -2,11 +2,11 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN || "samadigitalstudio.fr";
 
 // Admin: the prospects owned by an agent, with per-company audit and demo-site
 // readiness so the admin can check in one click that everything is ready to be
