@@ -1,58 +1,77 @@
 "use client";
 
 /**
- * Éditeur de disponibilités : plages hebdo récurrentes par jour (fuseau du
- * planning) + exceptions de dates (congés / horaires spéciaux).
- * Les heures sont saisies en local du planning et stockées en minutes ;
- * la conversion UTC se fait par date au moment du calcul des créneaux.
+ * Disponibilités — portage de `ScreenAvail` (rdv-screens-c.jsx) : timeline
+ * hebdomadaire avec bandes déplaçables (échelle 7 h → 21 h), panneau
+ * latéral (volume, exceptions de dates, sources d'occupation).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CalendarOff, Loader2, Plus, Save, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   deleteOverride,
+  fetchConnections,
   fetchSchedule,
   putSchedule,
   upsertOverride,
+  type CalendarConnection,
 } from "@/lib/scheduling/client";
 import type { DateOverride } from "@/lib/scheduling/types";
-import { WEEKDAYS_FR, minutesToTime, timeToMinutes, timezoneOptions } from "./shared";
+import { Blk, Btn, Chip, Pill, Row, Stack, Sw, minToHHMM } from "../rdv/atoms";
+import { Icon } from "../rdv/Icon";
+import { SectionHeader } from "./CalShell";
+import { timezoneOptions } from "./shared";
 
-type DayRanges = { startMinute: number; endMinute: number }[];
+const T0 = 420; // 7 h
+const T1 = 1260; // 21 h
+const TSPAN = T1 - T0;
+const pct = (m: number) => ((m - T0) / TSPAN) * 100;
+
+const DAYS = [
+  { iso: 1, lb: "Lundi" },
+  { iso: 2, lb: "Mardi" },
+  { iso: 3, lb: "Mercredi" },
+  { iso: 4, lb: "Jeudi" },
+  { iso: 5, lb: "Vendredi" },
+  { iso: 6, lb: "Samedi" },
+  { iso: 7, lb: "Dimanche" },
+];
+
+type Range = [number, number];
+type DayState = { iso: number; lb: string; ranges: Range[] };
 
 export default function AvailabilityEditor() {
+  const [days, setDays] = useState<DayState[]>(DAYS.map((d) => ({ ...d, ranges: [] })));
   const [timezone, setTimezone] = useState("Europe/Paris");
-  const [days, setDays] = useState<Record<number, DayRanges>>({});
   const [overrides, setOverrides] = useState<DateOverride[]>([]);
+  const [connections, setConnections] = useState<CalendarConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
-
-  // Nouvel override
   const [ovDate, setOvDate] = useState("");
-  const [ovUnavailable, setOvUnavailable] = useState(true);
-  const [ovStart, setOvStart] = useState("09:00");
-  const [ovEnd, setOvEnd] = useState("12:00");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchSchedule();
+      const [data, conn] = await Promise.all([
+        fetchSchedule(),
+        fetchConnections().catch(() => ({ connections: [] as CalendarConnection[], google_available: false })),
+      ]);
       setTimezone(data.schedule.timezone);
-      const byDay: Record<number, DayRanges> = {};
+      const byDay = new Map<number, Range[]>();
       for (const r of data.rules) {
-        (byDay[r.weekday] ??= []).push({ startMinute: r.start_minute, endMinute: r.end_minute });
+        const arr = byDay.get(r.weekday) ?? [];
+        arr.push([r.start_minute, r.end_minute]);
+        byDay.set(r.weekday, arr);
       }
-      for (const arr of Object.values(byDay)) arr.sort((a, b) => a.startMinute - b.startMinute);
-      setDays(byDay);
-      setOverrides(
-        [...data.overrides].sort((a, b) => a.date.localeCompare(b.date)),
+      setDays(
+        DAYS.map((d) => ({
+          ...d,
+          ranges: (byDay.get(d.iso) ?? []).sort((a, b) => a[0] - b[0]),
+        })),
       );
+      setOverrides([...data.overrides].sort((a, b) => a.date.localeCompare(b.date)));
+      setConnections(conn.connections);
       setDirty(false);
     } catch (err) {
       toast.error("Chargement impossible", {
@@ -67,15 +86,22 @@ export default function AvailabilityEditor() {
     void load();
   }, [load]);
 
+  const mutate = (iso: number, ranges: Range[]) => {
+    setDays((ds) => ds.map((d) => (d.iso === iso ? { ...d, ranges } : d)));
+    setDirty(true);
+  };
+
+  const toggleDay = (iso: number) => {
+    const d = days.find((x) => x.iso === iso);
+    if (!d) return;
+    mutate(iso, d.ranges.length ? [] : [[540, 1080]]);
+  };
+
   const save = async () => {
-    const rules = Object.entries(days).flatMap(([weekday, ranges]) =>
-      ranges
-        .filter((r) => r.endMinute > r.startMinute)
-        .map((r) => ({
-          weekday: Number(weekday),
-          start_minute: r.startMinute,
-          end_minute: r.endMinute,
-        })),
+    const rules = days.flatMap((d) =>
+      d.ranges
+        .filter((r) => r[1] > r[0])
+        .map((r) => ({ weekday: d.iso, start_minute: r[0], end_minute: r[1] })),
     );
     setSaving(true);
     try {
@@ -91,22 +117,16 @@ export default function AvailabilityEditor() {
     }
   };
 
-  const setDay = (iso: number, ranges: DayRanges) => {
-    setDays((d) => ({ ...d, [iso]: ranges }));
-    setDirty(true);
-  };
+  const totalH = useMemo(
+    () => days.reduce((s, d) => s + d.ranges.reduce((a, r) => a + (r[1] - r[0]), 0), 0) / 60,
+    [days],
+  );
 
-  const addOverride = async () => {
+  const blockDate = async () => {
     if (!ovDate) return;
     try {
-      await upsertOverride({
-        date: ovDate,
-        is_unavailable: ovUnavailable,
-        ranges: ovUnavailable
-          ? []
-          : [{ startMinute: timeToMinutes(ovStart), endMinute: timeToMinutes(ovEnd) }],
-      });
-      toast.success(ovUnavailable ? "Journée bloquée" : "Horaires spéciaux enregistrés");
+      await upsertOverride({ date: ovDate, is_unavailable: true, ranges: [] });
+      toast.success("Journée bloquée");
       setOvDate("");
       await load();
     } catch {
@@ -114,216 +134,349 @@ export default function AvailabilityEditor() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
-      </div>
-    );
-  }
+  const google = connections.find((c) => c.provider === "google");
 
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      {/* Plages hebdo */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm lg:col-span-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="cal-tag text-muted-foreground">Horaires récurrents</h2>
-          <div className="flex items-center gap-2">
-            <Label className="text-xs text-muted-foreground">Fuseau</Label>
-            <select
-              value={timezone}
-              onChange={(e) => {
-                setTimezone(e.target.value);
-                setDirty(true);
-              }}
-              className="rounded-lg border bg-background px-2 py-1.5 text-sm"
-            >
-              {timezoneOptions().map((z) => (
-                <option key={z} value={z}>
-                  {z.replace(/_/g, " ")}
-                </option>
+    <>
+      <SectionHeader
+        title="Disponibilités"
+        subtitle="Vos horaires réels. Tout est calculé dans le fuseau du planning — les changements d'heure ne décalent jamais vos créneaux."
+        actions={
+          <Btn kind="accent" ic="check" disabled={saving || !dirty} onClick={() => void save()}>
+            {saving ? "Enregistrement…" : "Enregistrer"}
+          </Btn>
+        }
+      />
+
+      <Row style={{ marginBottom: 14, gap: 10 }}>
+        <Chip ic="check" color="var(--ok)">
+          planning par défaut
+        </Chip>
+        <span style={{ flex: 1 }} />
+        <Row style={{ gap: 6 }}>
+          <span className="rv-lb">Fuseau</span>
+          <select
+            className="rv-in mono"
+            style={{ width: 190 }}
+            value={timezone}
+            onChange={(e) => {
+              setTimezone(e.target.value);
+              setDirty(true);
+            }}
+          >
+            {timezoneOptions().map((z) => (
+              <option key={z} value={z}>
+                {z.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+        </Row>
+      </Row>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, alignItems: "start" }}>
+        <div className="rv-list" style={{ padding: "14px 16px 16px" }}>
+          <div className="rv-scale">
+            <span />
+            <div className="ticks">
+              {[7, 9, 11, 13, 15, 17, 19, 21].map((h) => (
+                <span key={h}>{h}h</span>
               ))}
-            </select>
+            </div>
           </div>
-        </div>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Ces horaires suivent l&apos;heure locale du fuseau choisi — le passage été/hiver ne
-          décale jamais vos créneaux.
-        </p>
 
-        <div className="mt-4 space-y-3">
-          {WEEKDAYS_FR.map(({ iso, label }) => {
-            const ranges = days[iso] ?? [];
-            const enabled = ranges.length > 0;
-            return (
-              <div key={iso} className="flex flex-wrap items-start gap-3 border-t pt-3 first:border-t-0 first:pt-0">
-                <label className="flex w-28 shrink-0 items-center gap-2 pt-1.5 text-sm font-medium">
-                  <Switch
-                    checked={enabled}
-                    onCheckedChange={(v) =>
-                      setDay(iso, v ? [{ startMinute: 540, endMinute: 1080 }] : [])
-                    }
-                  />
-                  {label}
-                </label>
-                {enabled ? (
-                  <div className="flex-1 space-y-2">
-                    {ranges.map((r, idx) => (
-                      <div key={idx} className="flex flex-wrap items-center gap-2">
-                        <Input
-                          type="time"
-                          className="w-28"
-                          value={minutesToTime(r.startMinute)}
-                          onChange={(e) => {
-                            const arr = [...ranges];
-                            arr[idx] = { ...arr[idx], startMinute: timeToMinutes(e.target.value) };
-                            setDay(iso, arr);
-                          }}
-                        />
-                        <span className="text-muted-foreground">–</span>
-                        <Input
-                          type="time"
-                          className="w-28"
-                          value={minutesToTime(r.endMinute === 1440 ? 1439 : r.endMinute)}
-                          onChange={(e) => {
-                            const arr = [...ranges];
-                            arr[idx] = { ...arr[idx], endMinute: timeToMinutes(e.target.value) };
-                            setDay(iso, arr);
-                          }}
-                        />
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-8 w-8 text-red-600"
-                          onClick={() => setDay(iso, ranges.filter((_, i) => i !== idx))}
-                          aria-label="Supprimer la plage"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        {r.endMinute <= r.startMinute ? (
-                          <span className="text-xs text-red-600">fin avant début</span>
-                        ) : null}
-                      </div>
-                    ))}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        const last = ranges[ranges.length - 1];
-                        const start = last ? Math.min(last.endMinute + 120, 1320) : 540;
-                        setDay(iso, [...ranges, { startMinute: start, endMinute: Math.min(start + 180, 1440) }]);
-                      }}
-                    >
-                      <Plus className="mr-1 h-4 w-4" /> Ajouter une plage
-                    </Button>
+          {loading ? (
+            <div className="rv-empty" style={{ padding: 30 }}>
+              Chargement…
+            </div>
+          ) : (
+            days.map((d) => {
+              const on = d.ranges.length > 0;
+              return (
+                <div key={d.iso} className={`rv-dayrow ${on ? "" : "off"}`.trim()}>
+                  <div className="dl">
+                    <Sw on={on} onClick={() => toggleDay(d.iso)} />
+                    {d.lb}
                   </div>
-                ) : (
-                  <p className="pt-1.5 text-sm text-muted-foreground">Indisponible</p>
-                )}
+                  <div className={`rv-track ${on ? "" : "off"}`.trim()}>
+                    {on ? (
+                      <>
+                        {[9, 11, 13, 15, 17, 19].map((h) => (
+                          <i key={h} className="g" style={{ left: `${pct(h * 60)}%` }} />
+                        ))}
+                        {d.ranges.map((r, i) => (
+                          <div
+                            key={i}
+                            className="rv-band"
+                            style={{
+                              left: `${pct(r[0])}%`,
+                              width: `${((r[1] - r[0]) / TSPAN) * 100}%`,
+                            }}
+                            title={`${minToHHMM(r[0])} – ${minToHHMM(r[1])}`}
+                          >
+                            <i className="gr l" />
+                            <span>
+                              {minToHHMM(r[0])} – {minToHHMM(r[1])}
+                            </span>
+                            <i className="gr r" />
+                          </div>
+                        ))}
+                      </>
+                    ) : (
+                      <span className="offtx">Indisponible</span>
+                    )}
+                  </div>
+                  <Row style={{ gap: 3, marginLeft: 8 }}>
+                    <Btn
+                      kind="ghost"
+                      size="xs"
+                      ic="plus"
+                      title="Ajouter une plage"
+                      onClick={() => {
+                        const last = d.ranges[d.ranges.length - 1];
+                        const start = last ? Math.min(last[1] + 60, 1200) : 540;
+                        mutate(d.iso, [...d.ranges, [start, Math.min(start + 180, 1260)]]);
+                      }}
+                    />
+                    {d.ranges.length ? (
+                      <Btn
+                        kind="ghost"
+                        size="xs"
+                        ic="trash"
+                        title="Retirer la dernière plage"
+                        onClick={() => mutate(d.iso, d.ranges.slice(0, -1))}
+                      />
+                    ) : null}
+                  </Row>
+                </div>
+              );
+            })
+          )}
+
+          {/* Édition fine des heures */}
+          {!loading ? (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+              <div className="rv-lb" style={{ marginBottom: 8 }}>
+                Horaires précis
               </div>
-            );
-          })}
-        </div>
-
-        <div className="mt-4 flex justify-end border-t pt-4">
-          <Button size="sm" onClick={() => void save()} disabled={saving || !dirty}>
-            {saving ? (
-              <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="mr-1.5 h-4 w-4" />
-            )}
-            Enregistrer
-          </Button>
-        </div>
-      </div>
-
-      {/* Exceptions de dates */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm lg:self-start">
-        <h2 className="cal-tag text-muted-foreground">Exceptions de dates</h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Congés, jours fériés, ou horaires différents un jour précis.
-        </p>
-
-        <div className="mt-3 space-y-2 rounded-xl border p-3">
-          <Input type="date" value={ovDate} onChange={(e) => setOvDate(e.target.value)} />
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={ovUnavailable} onCheckedChange={setOvUnavailable} />
-            Journée entière indisponible
-          </label>
-          {!ovUnavailable ? (
-            <div className="flex items-center gap-2">
-              <Input
-                type="time"
-                className="w-28"
-                value={ovStart}
-                onChange={(e) => setOvStart(e.target.value)}
-              />
-              <span className="text-muted-foreground">–</span>
-              <Input
-                type="time"
-                className="w-28"
-                value={ovEnd}
-                onChange={(e) => setOvEnd(e.target.value)}
-              />
+              <Stack gap={7}>
+                {days
+                  .filter((d) => d.ranges.length)
+                  .map((d) => (
+                    <Row key={d.iso} style={{ gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ width: 74, fontSize: 12, color: "var(--text-2)" }}>{d.lb}</span>
+                      {d.ranges.map((r, i) => (
+                        <Row key={i} style={{ gap: 4 }}>
+                          <input
+                            className="rv-in mono"
+                            type="time"
+                            style={{ width: 92 }}
+                            value={minToHHMM(r[0])}
+                            onChange={(e) => {
+                              const [h, m] = e.target.value.split(":").map(Number);
+                              const next = [...d.ranges];
+                              next[i] = [h * 60 + m, r[1]];
+                              mutate(d.iso, next);
+                            }}
+                          />
+                          <span style={{ color: "var(--text-4)" }}>–</span>
+                          <input
+                            className="rv-in mono"
+                            type="time"
+                            style={{ width: 92 }}
+                            value={minToHHMM(r[1] === 1440 ? 1439 : r[1])}
+                            onChange={(e) => {
+                              const [h, m] = e.target.value.split(":").map(Number);
+                              const next = [...d.ranges];
+                              next[i] = [r[0], h * 60 + m];
+                              mutate(d.iso, next);
+                            }}
+                          />
+                        </Row>
+                      ))}
+                    </Row>
+                  ))}
+              </Stack>
             </div>
           ) : null}
-          <Button size="sm" className="w-full" onClick={() => void addOverride()} disabled={!ovDate}>
-            <Plus className="mr-1 h-4 w-4" /> Ajouter l&apos;exception
-          </Button>
+
+          <Row style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--border)", gap: 14 }}>
+            <Row style={{ gap: 6 }}>
+              <i style={{ width: 12, height: 8, borderRadius: 3, background: "var(--accent)" }} />
+              <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>Ouvert à la réservation</span>
+            </Row>
+            <span style={{ flex: 1 }} />
+            <Btn
+              kind="ghost"
+              size="xs"
+              ic="copy"
+              onClick={() => {
+                const monday = days.find((d) => d.iso === 1);
+                if (!monday?.ranges.length) {
+                  toast.error("Lundi n'a aucune plage à copier");
+                  return;
+                }
+                setDays((ds) =>
+                  ds.map((d) =>
+                    d.iso >= 2 && d.iso <= 5
+                      ? { ...d, ranges: monday.ranges.map((r) => [...r] as Range) }
+                      : d,
+                  ),
+                );
+                setDirty(true);
+                toast.success("Lundi copié sur mardi → vendredi");
+              }}
+            >
+              Copier lundi sur la semaine
+            </Btn>
+          </Row>
         </div>
 
-        <div className="mt-4 space-y-2">
-          {overrides.length === 0 ? (
-            <p className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CalendarOff className="h-4 w-4" /> Aucune exception.
-            </p>
-          ) : (
-            overrides.map((o) => (
-              <div
-                key={o.date}
-                className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-              >
-                <div>
-                  <p className="font-medium">
-                    {new Intl.DateTimeFormat("fr-FR", {
-                      weekday: "short",
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                      timeZone: "UTC",
-                    }).format(new Date(`${o.date}T00:00:00Z`))}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {o.is_unavailable
-                      ? "Indisponible"
-                      : (o.ranges ?? [])
-                          .map((r) => `${minutesToTime(r.startMinute)}–${minutesToTime(r.endMinute)}`)
-                          .join(", ") || "Indisponible"}
-                  </p>
+        <Stack gap={14}>
+          <Blk title="Cette semaine" ic="clock">
+            <Row style={{ gap: 16 }}>
+              {(
+                [
+                  [`${totalH.toFixed(0)} h`, "ouvertes"],
+                  [`${days.filter((d) => d.ranges.length).length}`, "jours actifs"],
+                  [`${overrides.length}`, "exceptions"],
+                ] as [string, string][]
+              ).map(([v, l]) => (
+                <div key={l}>
+                  <div style={{ fontFamily: "var(--font-serif)", fontSize: 26, lineHeight: 1 }}>
+                    {v}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      color: "var(--text-3)",
+                      textTransform: "uppercase",
+                      letterSpacing: ".05em",
+                      marginTop: 3,
+                    }}
+                  >
+                    {l}
+                  </div>
                 </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8 text-red-600"
-                  onClick={async () => {
-                    try {
-                      await deleteOverride(o.date);
-                      setOverrides((list) => list.filter((x) => x.date !== o.date));
-                    } catch {
-                      toast.error("Suppression impossible");
-                    }
-                  }}
-                  aria-label="Supprimer l'exception"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+              ))}
+            </Row>
+          </Blk>
+
+          <Blk title="Exceptions de dates" ic="calOff">
+            <Stack gap={9}>
+              <Row style={{ gap: 6 }}>
+                <input
+                  className="rv-in"
+                  type="date"
+                  style={{ flex: 1 }}
+                  value={ovDate}
+                  onChange={(e) => setOvDate(e.target.value)}
+                />
+                <Btn kind="outline" size="sm" ic="plus" disabled={!ovDate} onClick={() => void blockDate()}>
+                  Bloquer
+                </Btn>
+              </Row>
+              <div>
+                {overrides.length ? (
+                  overrides.map((o) => (
+                    <div key={o.date} className="rv-ovr">
+                      <span className="dt">
+                        {new Intl.DateTimeFormat("fr-FR", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          timeZone: "UTC",
+                        }).format(new Date(`${o.date}T00:00:00Z`))}
+                      </span>
+                      <span className="st">
+                        {o.is_unavailable
+                          ? "journée entière"
+                          : (o.ranges ?? [])
+                              .map((r) => `${minToHHMM(r.startMinute)}–${minToHHMM(r.endMinute)}`)
+                              .join(", ")}
+                      </span>
+                      {o.is_unavailable ? (
+                        <Pill kind="danger" dot>
+                          fermé
+                        </Pill>
+                      ) : (
+                        <Pill kind="warn" dot>
+                          partiel
+                        </Pill>
+                      )}
+                      <Btn
+                        kind="ghost"
+                        size="xs"
+                        ic="trash"
+                        onClick={async () => {
+                          try {
+                            await deleteOverride(o.date);
+                            setOverrides((l) => l.filter((x) => x.date !== o.date));
+                          } catch {
+                            toast.error("Suppression impossible");
+                          }
+                        }}
+                      />
+                    </div>
+                  ))
+                ) : (
+                  <div className="rv-empty">Aucune exception.</div>
+                )}
               </div>
-            ))
-          )}
-        </div>
+            </Stack>
+          </Blk>
+
+          <Blk title="Sources d'occupation" ic="plug">
+            <Stack gap={7}>
+              {(
+                [
+                  [
+                    "google",
+                    "Google Agenda",
+                    google?.account_email ?? "non connecté",
+                    !!google,
+                  ],
+                  ["calendar", "Calendrier CRM", "évènements + récurrences", true],
+                ] as [string, string, string, boolean][]
+              ).map(([ic, n, s, on]) => (
+                <Row key={n} style={{ gap: 9 }}>
+                  <span
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: 6,
+                      background: on ? "var(--ok-tint)" : "var(--bg-2)",
+                      color: on ? "var(--ok)" : "var(--text-4)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Icon name={ic} className="ico-xs" />
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 500 }}>{n}</div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10,
+                        color: "var(--text-3)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {s}
+                    </div>
+                  </div>
+                  {on ? (
+                    <Icon name="check" className="ico-sm" style={{ color: "var(--ok)" }} />
+                  ) : null}
+                </Row>
+              ))}
+            </Stack>
+          </Blk>
+        </Stack>
       </div>
-    </div>
+    </>
   );
 }

@@ -1,101 +1,32 @@
 "use client";
 
 /**
- * Dashboard hôte des réservations : filtres à venir / en attente / passées /
- * annulées (synchronisés avec l'URL), rangées avec barre de statut et détail
- * dépliable, actions confirmer / refuser / annuler / reprogrammer, vue équipe
- * et filtre par hôte pour l'admin.
+ * Réservations — portage de `ScreenBookings` + `BookingDrawer`
+ * (rdv-screens-a.jsx) : segmented des filtres, recherche, sélecteur d'hôte,
+ * séparateurs de jour, rangées `rv-bk` et tiroir de détail avec journal.
  */
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
-  CalendarCheck,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Link2,
-  Loader2,
-  MapPin,
-  RefreshCw,
-  User,
-  Video,
-  X,
-} from "lucide-react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/components/AuthContext";
-import {
   bookingAction,
   fetchBookings,
+  fetchEventTypes,
+  fetchTeam,
   type BookingFilter,
   type BookingWithHost,
+  type TeamMember,
 } from "@/lib/scheduling/client";
-import { getAppUrlClient } from "./shared";
+import type { EventType } from "@/lib/scheduling/types";
+import { useAuth } from "@/components/AuthContext";
+import { Blk, Btn, Chip, Pill, RV_LOC, Row, Seg, Stack, ST_LB, addMin } from "../rdv/atoms";
+import { Icon } from "../rdv/Icon";
+import BookingRow from "../rdv/BookingRow";
+import { SectionHeader, BOOKING_FILTERS } from "./CalShell";
+import { dayLong, displayStatus, durationOf, getAppUrlClient, hhmm } from "../rdv/shared";
 
-const FILTERS: { id: BookingFilter; label: string }[] = [
-  { id: "upcoming", label: "À venir" },
-  { id: "pending", label: "En attente" },
-  { id: "past", label: "Passées" },
-  { id: "cancelled", label: "Annulées" },
-];
-
-const STATUS_META: Record<
-  string,
-  { label: string; bar: string; chip: string }
-> = {
-  confirmed: {
-    label: "Confirmé",
-    bar: "bg-[var(--ok)]",
-    chip: "bg-[var(--ok-tint)] text-[var(--ok)]",
-  },
-  pending: {
-    label: "En attente",
-    bar: "bg-[var(--warn)]",
-    chip: "bg-[var(--warn-tint)] text-[var(--warn)]",
-  },
-  cancelled: {
-    label: "Annulé",
-    bar: "bg-[var(--danger)]",
-    chip: "bg-[var(--danger-tint)] text-[var(--danger)]",
-  },
-  declined: {
-    label: "Refusé",
-    bar: "bg-[var(--danger)]",
-    chip: "bg-[var(--danger-tint)] text-[var(--danger)]",
-  },
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  public: "Lien public",
-  embed: "Site web",
-  agent: "Agent",
-  api: "API",
-};
-
-const fmtDay = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" }).format(
-    new Date(iso),
-  );
-const fmtTime = (iso: string) =>
-  new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
-const fmtRange = (startIso: string, endIso: string) =>
-  `${fmtDay(startIso)} · ${fmtTime(startIso)} – ${fmtTime(endIso)}`;
-
-const VALID_FILTERS: BookingFilter[] = ["upcoming", "pending", "past", "cancelled"];
+const VALID: BookingFilter[] = ["upcoming", "pending", "past", "cancelled"];
 
 export default function BookingsDashboard() {
   const { user } = useAuth();
@@ -104,19 +35,16 @@ export default function BookingsDashboard() {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
 
-  // L'URL est la source de vérité (liens de la nav Cal.SAMA, vue Équipe).
   const urlFilter = searchParams?.get("filter") as BookingFilter | null;
-  const filter: BookingFilter =
-    urlFilter && VALID_FILTERS.includes(urlFilter) ? urlFilter : "upcoming";
+  const filter: BookingFilter = urlFilter && VALID.includes(urlFilter) ? urlFilter : "upcoming";
   const hostId = isAdmin ? searchParams?.get("host") ?? null : null;
-  const teamWide = isAdmin && !hostId && searchParams?.get("all") === "1";
 
   const setQuery = useCallback(
     (patch: Record<string, string | null>) => {
       const params = new URLSearchParams(searchParams?.toString() ?? "");
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === null) params.delete(key);
-        else params.set(key, value);
+      for (const [k, v] of Object.entries(patch)) {
+        if (v === null) params.delete(k);
+        else params.set(k, v);
       }
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
@@ -124,31 +52,30 @@ export default function BookingsDashboard() {
     [router, pathname, searchParams],
   );
 
-  const setFilter = (f: BookingFilter) => setQuery({ filter: f === "upcoming" ? null : f });
-  const setTeamWide = (v: boolean) => setQuery({ all: v ? "1" : null, host: null });
-
   const [bookings, setBookings] = useState<BookingWithHost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [types, setTypes] = useState<EventType[]>([]);
+  const [team, setTeam] = useState<TeamMember[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
-
-  const [cancelTarget, setCancelTarget] = useState<BookingWithHost | null>(null);
-  const [cancelReason, setCancelReason] = useState("");
-  const [rescheduleTarget, setRescheduleTarget] = useState<BookingWithHost | null>(null);
-  const [rescheduleAt, setRescheduleAt] = useState("");
-  const [working, setWorking] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [sel, setSel] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [working, setWorking] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [main, pending] = await Promise.all([
-        fetchBookings(filter, teamWide, hostId),
-        filter === "pending"
-          ? Promise.resolve(null)
-          : fetchBookings("pending", teamWide, hostId).catch(() => null),
+      const [main, pend, tps] = await Promise.all([
+        fetchBookings(filter, isAdmin && !hostId, hostId),
+        filter === "pending" ? Promise.resolve(null) : fetchBookings("pending").catch(() => null),
+        fetchEventTypes().catch(() => ({ event_types: [] as EventType[] })),
       ]);
       setBookings(main.bookings);
-      setPendingCount(filter === "pending" ? main.bookings.length : pending?.bookings.length ?? 0);
+      setTypes(tps.event_types);
+      setPendingCount(filter === "pending" ? main.bookings.length : pend?.bookings.length ?? 0);
+      if (isAdmin && team.length === 0) {
+        const t = await fetchTeam().catch(() => null);
+        if (t) setTeam(t.members);
+      }
     } catch (err) {
       toast.error("Impossible de charger les réservations", {
         description: err instanceof Error ? err.message : undefined,
@@ -156,20 +83,22 @@ export default function BookingsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [filter, teamWide, hostId]);
+    // team.length volontairement hors deps : chargé une seule fois.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, hostId, isAdmin]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const act = async (
-    booking: BookingWithHost,
+    b: BookingWithHost,
     action: "confirm" | "decline" | "cancel" | "reschedule",
     extra: { reason?: string | null; start?: string } = {},
   ) => {
-    setWorking(true);
+    setWorking(b.id);
     try {
-      await bookingAction(booking.id, action, extra);
+      await bookingAction(b.id, action, extra);
       toast.success(
         action === "confirm"
           ? "Rendez-vous confirmé — emails envoyés"
@@ -177,368 +106,473 @@ export default function BookingsDashboard() {
             ? "Demande refusée"
             : action === "cancel"
               ? "Rendez-vous annulé — invité prévenu"
-              : "Rendez-vous reprogrammé — emails envoyés",
+              : "Rendez-vous reprogrammé",
       );
-      setCancelTarget(null);
-      setCancelReason("");
-      setRescheduleTarget(null);
-      setRescheduleAt("");
+      setSel(null);
       await load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       toast.error(
         msg === "slot_unavailable" || msg === "slot_taken"
-          ? "Ce créneau n'est pas disponible (règles de dispo ou conflit)."
+          ? "Ce créneau n'est pas disponible."
           : "L'action a échoué",
-        { description: msg && !msg.startsWith("slot") ? msg : undefined },
       );
     } finally {
-      setWorking(false);
+      setWorking(null);
     }
   };
 
-  const copyManageLink = (b: BookingWithHost) => {
-    void navigator.clipboard.writeText(`${getAppUrlClient()}/rdv/gerer/${b.manage_token}`);
-    toast.success("Lien de gestion copié (reprogrammer / annuler)");
+  const reschedule = (b: BookingWithHost) => {
+    const raw = window.prompt(
+      "Nouveau créneau (format JJ/MM/AAAA HH:MM, votre heure locale) :",
+      "",
+    );
+    if (!raw) return;
+    const m = raw.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/);
+    if (!m) {
+      toast.error("Format attendu : JJ/MM/AAAA HH:MM");
+      return;
+    }
+    const [, d, mo, y, h, mi] = m;
+    const dt = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi));
+    if (Number.isNaN(dt.getTime())) {
+      toast.error("Date invalide");
+      return;
+    }
+    void act(b, "reschedule", { start: dt.toISOString() });
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Barre d'outils */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex gap-1 rounded-lg bg-muted p-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFilter(f.id)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                filter === f.id
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {f.label}
-              {f.id === "pending" && pendingCount > 0 ? (
-                <span className="cal-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--warn)] px-1 text-[10px] font-semibold text-white">
-                  {pendingCount}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
+  const list = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return bookings;
+    return bookings.filter((b) =>
+      [b.invitee_name, b.invitee_email, b.event_title, b.invitee_phone ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [bookings, q]);
 
-        <div className="flex items-center gap-2">
-          {hostId ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs">
-              <User className="h-3 w-3" />
-              {bookings[0]?.host?.full_name ?? bookings[0]?.host?.email ?? "Hôte sélectionné"}
-              <button
-                type="button"
-                onClick={() => setQuery({ host: null })}
-                aria-label="Retirer le filtre hôte"
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ) : null}
-          {isAdmin && !hostId ? (
-            <Button
-              variant={teamWide ? "default" : "outline"}
-              size="sm"
-              onClick={() => setTeamWide(!teamWide)}
-            >
-              <User className="mr-1.5 h-4 w-4" />
-              {teamWide ? "Toute l'équipe" : "Mes RDV"}
-            </Button>
-          ) : null}
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-9 w-9"
-            onClick={() => void load()}
-            disabled={loading}
-            aria-label="Rafraîchir"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </Button>
+  const days = [...new Set(list.map((b) => dayLong(b.start_at)))];
+  const current = bookings.find((b) => b.id === sel) ?? null;
+  const colorOfType = (b: BookingWithHost) =>
+    types.find((t) => t.id === b.event_type_id)?.color ?? null;
+
+  return (
+    <>
+      <SectionHeader
+        title="Réservations"
+        subtitle="Tout ce qui est réservé sur vos liens — page publique, embed, ou calé par un agent pendant un appel."
+      />
+
+      <Row style={{ marginBottom: 13, gap: 10 }}>
+        <Seg
+          opts={BOOKING_FILTERS.map((f) => ({
+            id: f.id,
+            lb:
+              f.id === "pending" && pendingCount ? (
+                <>
+                  En attente
+                  <span className="pill warn" style={{ height: 15, padding: "0 4px", marginLeft: 4 }}>
+                    {pendingCount}
+                  </span>
+                </>
+              ) : (
+                f.lb
+              ),
+          }))}
+          val={filter}
+          set={(id) => setQuery({ filter: id === "upcoming" ? null : id })}
+          lg
+        />
+        <span style={{ flex: 1 }} />
+        <div style={{ position: "relative" }}>
+          <Icon
+            name="search"
+            className="ico-sm"
+            style={{ position: "absolute", left: 8, top: 8, color: "var(--text-4)" }}
+          />
+          <input
+            className="rv-in"
+            style={{ width: 210, paddingLeft: 27 }}
+            placeholder="Invité, entreprise, email…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
         </div>
+        {isAdmin ? (
+          <select
+            className="rv-in"
+            style={{ width: 150 }}
+            value={hostId ?? "all"}
+            onChange={(e) => setQuery({ host: e.target.value === "all" ? null : e.target.value })}
+          >
+            <option value="all">Tous les hôtes</option>
+            {team.map((h) => (
+              <option key={h.user_id} value={h.user_id}>
+                {h.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
+      </Row>
+
+      <div className="rv-list">
+        {loading ? (
+          <div style={{ padding: 40 }}>
+            <div className="rv-empty">Chargement…</div>
+          </div>
+        ) : list.length ? (
+          days.map((d) => (
+            <div key={d}>
+              <div className="rv-day-sep">
+                <span>{d}</span>
+                <span>
+                  {list.filter((x) => dayLong(x.start_at) === d).length} rendez-vous
+                </span>
+              </div>
+              {list
+                .filter((x) => dayLong(x.start_at) === d)
+                .map((x) => (
+                  <BookingRow
+                    key={x.id}
+                    b={x}
+                    sel={sel}
+                    onSel={setSel}
+                    showHost={isAdmin}
+                    working={working === x.id}
+                    typeColor={colorOfType(x)}
+                    onConfirm={(b) => void act(b, "confirm")}
+                    onDecline={(b) => void act(b, "decline")}
+                    onReschedule={reschedule}
+                  />
+                ))}
+            </div>
+          ))
+        ) : (
+          <div style={{ padding: 40 }}>
+            <div className="rv-empty">Rien dans cette vue.</div>
+          </div>
+        )}
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center rounded-xl border bg-card py-16 text-sm text-muted-foreground">
-          <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Chargement…
+      {current ? (
+        <BookingDrawer
+          b={current}
+          types={types}
+          working={working === current.id}
+          onClose={() => setSel(null)}
+          onAct={act}
+          onReschedule={reschedule}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function BookingDrawer({
+  b,
+  types,
+  working,
+  onClose,
+  onAct,
+  onReschedule,
+}: {
+  b: BookingWithHost;
+  types: EventType[];
+  working?: boolean;
+  onClose: () => void;
+  onAct: (
+    b: BookingWithHost,
+    action: "confirm" | "decline" | "cancel" | "reschedule",
+    extra?: { reason?: string | null; start?: string },
+  ) => void;
+  onReschedule: (b: BookingWithHost) => void;
+}) {
+  const st = displayStatus(b);
+  const [lb, kind] = ST_LB[st] ?? ST_LB.confirmed;
+  const loc = RV_LOC[b.location_type] ?? RV_LOC.custom;
+  const type = types.find((t) => t.id === b.event_type_id) ?? null;
+
+  // Journal reconstitué depuis les horodatages réels du booking.
+  const stamp = (iso: string | null) =>
+    iso
+      ? new Intl.DateTimeFormat("fr-FR", {
+          day: "numeric",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        }).format(new Date(iso))
+      : "—";
+
+  const timeline: { ic: string; lb: string; d: string; tint: string }[] = [
+    {
+      ic: b.source === "agent" ? "phone" : b.source === "embed" ? "code" : "globe",
+      lb:
+        b.source === "agent"
+          ? "Calée par un agent pendant un appel"
+          : b.source === "embed"
+            ? "Réservée depuis un site (embed)"
+            : "Réservée par l'invité",
+      d: stamp(b.created_at),
+      tint: "info",
+    },
+  ];
+  if (b.confirmed_at) {
+    timeline.push({
+      ic: "mail",
+      lb: "Confirmation + invitation .ics envoyées",
+      d: stamp(b.confirmed_at),
+      tint: "ok",
+    });
+  }
+  if (b.calendar_event_id || b.google_event_id) {
+    timeline.push({
+      ic: "calendar",
+      lb: b.google_event_id
+        ? "Ajoutée au calendrier CRM et à Google Agenda"
+        : "Ajoutée au calendrier CRM",
+      d: stamp(b.confirmed_at ?? b.created_at),
+      tint: "",
+    });
+  }
+  if (b.cancelled_at) {
+    timeline.push({
+      ic: "ban",
+      lb: `Annulée par ${b.cancelled_by === "invitee" ? "l'invité" : "l'hôte"}`,
+      d: stamp(b.cancelled_at),
+      tint: "danger",
+    });
+  }
+
+  const manageUrl = `${getAppUrlClient()}/rdv/gerer/${b.manage_token}`;
+
+  return (
+    <div
+      className="rv-ov"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="rv-drawer" role="dialog" aria-modal="true">
+        <div className="rv-dr-hd">
+          <div style={{ flex: 1 }}>
+            <Row style={{ gap: 7, marginBottom: 8 }}>
+              <Pill kind={kind} dot>
+                {lb}
+              </Pill>
+              <Chip line ic="clock">
+                {dayLong(b.start_at)} · {hhmm(b.start_at)}–
+                {addMin(hhmm(b.start_at), durationOf(b))}
+              </Chip>
+            </Row>
+            <h2 className="t">{b.invitee_name}</h2>
+            <div className="s">{b.event_title.toUpperCase()}</div>
+          </div>
+          <button type="button" className="cx" onClick={onClose} aria-label="Fermer">
+            <Icon name="x" className="ico-sm" />
+          </button>
         </div>
-      ) : bookings.length === 0 ? (
-        <div className="rounded-xl border bg-card py-16 text-center">
-          <CalendarCheck className="mx-auto h-8 w-8 text-muted-foreground/40" />
-          <p className="mt-3 text-sm text-muted-foreground">
-            {filter === "upcoming"
-              ? "Aucun rendez-vous à venir. Partagez votre lien de réservation !"
-              : filter === "pending"
-                ? "Aucune demande en attente de validation."
-                : filter === "past"
-                  ? "Aucun rendez-vous passé."
-                  : "Aucun rendez-vous annulé."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {bookings.map((b) => {
-            const meta = STATUS_META[b.status] ?? STATUS_META.confirmed;
-            const isExpanded = expanded === b.id;
-            const isActive = b.status === "pending" || b.status === "confirmed";
-            return (
-              <div key={b.id} className="overflow-hidden rounded-xl border bg-card shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setExpanded(isExpanded ? null : b.id)}
-                  className="flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-[var(--hover)]"
+
+        <div className="rv-dr-bd">
+          <Blk title="Invité">
+            <Stack gap={8}>
+              {(
+                [
+                  ["Email", b.invitee_email],
+                  ["Téléphone", b.invitee_phone ?? "—"],
+                  ["Fuseau", b.invitee_timezone.replace("_", " ")],
+                  ["Lieu", b.location_text || loc.lb],
+                ] as [string, string][]
+              ).map(([k, v]) => (
+                <Row key={k} style={{ gap: 12 }}>
+                  <span
+                    style={{ width: 76, fontSize: 11.5, color: "var(--text-3)", flexShrink: 0 }}
+                  >
+                    {k}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      fontFamily:
+                        k === "Email" || k === "Téléphone" ? "var(--font-mono)" : "inherit",
+                    }}
+                  >
+                    {v}
+                  </span>
+                </Row>
+              ))}
+              {b.meeting_url ? (
+                <Row style={{ gap: 12 }}>
+                  <span style={{ width: 76, fontSize: 11.5, color: "var(--text-3)" }}>Visio</span>
+                  <a
+                    style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}
+                    href={b.meeting_url}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {b.meeting_url.replace(/^https?:\/\//, "")}
+                  </a>
+                </Row>
+              ) : null}
+              {b.additional_guests?.length ? (
+                <Row style={{ gap: 12 }}>
+                  <span style={{ width: 76, fontSize: 11.5, color: "var(--text-3)" }}>Invités</span>
+                  <span style={{ fontSize: 12.5, fontFamily: "var(--font-mono)" }}>
+                    {b.additional_guests.join(", ")}
+                  </span>
+                </Row>
+              ) : null}
+            </Stack>
+          </Blk>
+
+          <Blk title="Réponses au formulaire">
+            <Stack gap={9}>
+              {b.answers?.length ? (
+                b.answers.map((a) => (
+                  <div key={a.id}>
+                    <div style={{ fontSize: 11, color: "var(--text-3)" }}>{a.label}</div>
+                    <div style={{ fontSize: 12.5, marginTop: 2 }}>{a.value}</div>
+                  </div>
+                ))
+              ) : (
+                <div style={{ fontSize: 12, color: "var(--text-3)" }}>
+                  {type?.custom_questions?.length
+                    ? "Aucune réponse fournie."
+                    : "Aucune question sur ce type de RDV."}
+                </div>
+              )}
+              {b.invitee_notes ? (
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--text-3)" }}>Notes de l&apos;invité</div>
+                  <div style={{ fontSize: 12.5, marginTop: 2 }}>{b.invitee_notes}</div>
+                </div>
+              ) : null}
+            </Stack>
+          </Blk>
+
+          <Blk
+            title="Rattachement CRM"
+            right={
+              b.contact_id ? (
+                <Btn
+                  kind="ghost"
+                  size="xs"
+                  ic="ext"
+                  onClick={() => window.open(`/contacts?focus=${b.contact_id}`, "_blank")}
                 >
-                  <span className={`h-9 w-[3px] shrink-0 rounded-full ${meta.bar}`} />
-                  <span className="cal-mono w-14 shrink-0 text-center">
-                    <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {fmtDay(b.start_at)}
-                    </span>
-                    <span className="block text-sm font-semibold">{fmtTime(b.start_at)}</span>
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium">{b.invitee_name}</span>
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.chip}`}
-                      >
-                        {meta.label}
-                      </span>
-                      {b.source !== "public" ? (
-                        <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
-                          {SOURCE_LABELS[b.source] ?? b.source}
-                        </span>
-                      ) : null}
-                      {(teamWide || hostId) && b.host ? (
-                        <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
-                          {b.host.full_name ?? b.host.email}
-                        </span>
-                      ) : null}
-                    </span>
-                    <span className="cal-mono mt-0.5 block truncate text-[11px] text-muted-foreground">
-                      {b.event_title} · {fmtRange(b.start_at, b.end_at)}
-                    </span>
-                  </span>
-                  {isExpanded ? (
-                    <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
-                </button>
+                  Ouvrir
+                </Btn>
+              ) : undefined
+            }
+          >
+            <Row style={{ gap: 7, flexWrap: "wrap" }}>
+              {b.contact_id ? (
+                <Chip ic="user">Contact rapproché par email</Chip>
+              ) : (
+                <Chip ic="user">Aucun contact rapproché</Chip>
+              )}
+              {b.entreprise_id ? <Chip ic="building">Entreprise liée</Chip> : null}
+              {b.opportunite_id ? <Chip ic="pipeline">Opportunité liée</Chip> : null}
+              {b.call_id ? <Chip ic="phone">Appel lié</Chip> : null}
+            </Row>
+          </Blk>
 
-                {isExpanded ? (
-                  <div className="border-t bg-muted/30 px-4 py-3">
-                    <div className="grid gap-3 text-sm md:grid-cols-2">
-                      <div className="space-y-1.5">
-                        <p className="text-muted-foreground">
-                          Email :{" "}
-                          <a
-                            className="text-foreground underline underline-offset-2"
-                            href={`mailto:${b.invitee_email}`}
-                          >
-                            {b.invitee_email}
-                          </a>
-                        </p>
-                        {b.invitee_phone ? (
-                          <p className="text-muted-foreground">
-                            Téléphone : <span className="text-foreground">{b.invitee_phone}</span>
-                          </p>
-                        ) : null}
-                        <p className="text-muted-foreground">
-                          Fuseau invité :{" "}
-                          <span className="text-foreground">{b.invitee_timezone}</span>
-                        </p>
-                        {b.additional_guests?.length ? (
-                          <p className="text-muted-foreground">
-                            Invités :{" "}
-                            <span className="text-foreground">
-                              {b.additional_guests.join(", ")}
-                            </span>
-                          </p>
-                        ) : null}
-                        {b.meeting_url ? (
-                          <p className="flex items-center gap-1.5">
-                            <Video className="h-4 w-4 text-muted-foreground" />
-                            <a
-                              href={b.meeting_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-primary underline underline-offset-2"
-                            >
-                              Lien visio
-                            </a>
-                          </p>
-                        ) : null}
-                        {b.location_text ? (
-                          <p className="flex items-center gap-1.5 text-muted-foreground">
-                            <MapPin className="h-4 w-4" /> {b.location_text}
-                          </p>
-                        ) : null}
-                        {b.cancellation_reason ? (
-                          <p className="text-muted-foreground">
-                            Motif :{" "}
-                            <span className="text-foreground">{b.cancellation_reason}</span>
-                          </p>
-                        ) : null}
-                      </div>
-                      <div className="space-y-1.5">
-                        {(b.answers ?? []).map((a) => (
-                          <p key={a.id} className="text-muted-foreground">
-                            {a.label} : <span className="text-foreground">{a.value}</span>
-                          </p>
-                        ))}
-                        {b.invitee_notes ? (
-                          <p className="text-muted-foreground">
-                            Notes : <span className="text-foreground">{b.invitee_notes}</span>
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {b.status === "pending" ? (
-                        <>
-                          <Button size="sm" disabled={working} onClick={() => void act(b, "confirm")}>
-                            <Check className="mr-1.5 h-4 w-4" /> Confirmer
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={working}
-                            onClick={() => void act(b, "decline")}
-                          >
-                            <X className="mr-1.5 h-4 w-4" /> Refuser
-                          </Button>
-                        </>
-                      ) : null}
-                      {isActive ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            disabled={working}
-                            onClick={() => {
-                              setRescheduleTarget(b);
-                              setRescheduleAt("");
-                            }}
-                          >
-                            <RefreshCw className="mr-1.5 h-4 w-4" /> Reprogrammer
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="text-[var(--danger)] hover:text-[var(--danger)]"
-                            disabled={working}
-                            onClick={() => setCancelTarget(b)}
-                          >
-                            <X className="mr-1.5 h-4 w-4" /> Annuler
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => copyManageLink(b)}>
-                            <Link2 className="mr-1.5 h-4 w-4" /> Lien de gestion
-                          </Button>
-                        </>
-                      ) : null}
-                      {b.contact_id ? (
-                        <Button size="sm" variant="ghost" asChild>
-                          <Link href={`/contacts?focus=${b.contact_id}`}>
-                            <ExternalLink className="mr-1.5 h-4 w-4" /> Fiche contact
-                          </Link>
-                        </Button>
-                      ) : null}
+          <Blk title="Journal">
+            <Stack gap={0}>
+              {timeline.map((e, i) => (
+                <Row
+                  key={`${e.ic}-${i}`}
+                  style={{
+                    gap: 10,
+                    padding: "8px 0",
+                    borderTop: i ? "1px solid var(--border)" : 0,
+                    alignItems: "flex-start",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 6,
+                      background: e.tint ? `var(--${e.tint}-tint)` : "var(--bg-2)",
+                      color: e.tint ? `var(--${e.tint})` : "var(--text-3)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Icon name={e.ic} className="ico-xs" />
+                  </span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12.5 }}>{e.lb}</div>
+                    <div
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 10.5,
+                        color: "var(--text-4)",
+                        marginTop: 1,
+                      }}
+                    >
+                      {e.d}
                     </div>
                   </div>
-                ) : null}
-              </div>
-            );
-          })}
+                </Row>
+              ))}
+            </Stack>
+          </Blk>
+
+          <Blk title="Lien de gestion invité">
+            <Row style={{ gap: 7 }}>
+              <input className="rv-in" readOnly value={manageUrl} style={{ flex: 1 }} />
+              <Btn
+                kind="outline"
+                size="xs"
+                ic="copy"
+                onClick={() => {
+                  void navigator.clipboard.writeText(manageUrl);
+                  toast.success("Lien de gestion copié");
+                }}
+              />
+            </Row>
+          </Blk>
         </div>
-      )}
 
-      {/* Annulation avec motif */}
-      <Dialog open={!!cancelTarget} onOpenChange={(o) => !o && setCancelTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Annuler le rendez-vous</DialogTitle>
-            <DialogDescription>
-              {cancelTarget
-                ? `${cancelTarget.invitee_name} — ${fmtRange(cancelTarget.start_at, cancelTarget.end_at)}. L'invité sera prévenu par email.`
-                : null}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="cancel-reason">Motif (transmis à l&apos;invité, optionnel)</Label>
-            <Textarea
-              id="cancel-reason"
-              value={cancelReason}
-              onChange={(e) => setCancelReason(e.target.value)}
-              rows={3}
-              placeholder="Ex. imprévu de mon côté, je vous propose un autre créneau…"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelTarget(null)}>
-              Retour
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={working}
-              onClick={() =>
-                cancelTarget && void act(cancelTarget, "cancel", { reason: cancelReason || null })
-              }
-            >
-              {working ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-              Annuler le RDV
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Reprogrammation */}
-      <Dialog open={!!rescheduleTarget} onOpenChange={(o) => !o && setRescheduleTarget(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reprogrammer le rendez-vous</DialogTitle>
-            <DialogDescription>
-              Le nouveau créneau doit respecter vos disponibilités — il est vérifié comme une
-              réservation normale, et l&apos;invité reçoit la mise à jour par email.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="reschedule-at">Nouveau créneau (votre heure locale)</Label>
-            <Input
-              id="reschedule-at"
-              type="datetime-local"
-              value={rescheduleAt}
-              onChange={(e) => setRescheduleAt(e.target.value)}
-              step={300}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRescheduleTarget(null)}>
-              Retour
-            </Button>
-            <Button
-              disabled={working || !rescheduleAt}
-              onClick={() => {
-                if (!rescheduleTarget || !rescheduleAt) return;
-                void act(rescheduleTarget, "reschedule", {
-                  start: new Date(rescheduleAt).toISOString(),
-                });
-              }}
-            >
-              {working ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
-              Reprogrammer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        <div className="rv-dr-ft">
+          {st === "pending" && (
+            <Btn kind="ok" ic="check" disabled={working} onClick={() => onAct(b, "confirm")}>
+              Valider la demande
+            </Btn>
+          )}
+          {st === "pending" || st === "confirmed" ? (
+            <>
+              <Btn kind="outline" ic="repeat" disabled={working} onClick={() => onReschedule(b)}>
+                Reprogrammer
+              </Btn>
+              <Btn
+                kind="outline"
+                ic="mail"
+                onClick={() => window.open(`mailto:${b.invitee_email}`, "_blank")}
+              >
+                Relancer
+              </Btn>
+              <span className="sp" />
+              <Btn
+                kind="danger"
+                ic="ban"
+                disabled={working}
+                onClick={() => {
+                  const reason = window.prompt("Motif d'annulation (optionnel) :", "") ?? null;
+                  onAct(b, "cancel", { reason });
+                }}
+              >
+                Annuler
+              </Btn>
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

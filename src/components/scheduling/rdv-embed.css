@@ -1,0 +1,136 @@
+/* Règles d'intégration de la maquette Rendez-vous dans le CRM.
+ *
+ * `rdv-skin.css` est généré depuis la maquette, qui est un document plein
+ * écran (rail CRM + rail Cal.SAMA + contenu, en `height:100vh`). Ici, la
+ * section vit à l'intérieur du shell existant (rail + sous-nav + topbar),
+ * dans un `<main>` qui gère déjà le défilement.
+ *
+ * Ce fichier — écrit à la main, jamais régénéré — réadapte donc uniquement
+ * la mise en page. Il est importé APRÈS rdv-skin.css.
+ */
+
+/* Le scope n'est plus le document : ni hauteur imposée, ni overflow bloqué. */
+.rv-scope.rv-embed {
+  display: flex;
+  align-items: stretch;
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+}
+
+/* Rail Cal.SAMA : largeur de la maquette, collé pendant que le corps défile. */
+.rv-scope.rv-embed .rv-cal-rail {
+  width: 220px;
+  flex: 0 0 220px;
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+}
+
+.rv-scope.rv-embed .rv-content {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+}
+
+/* Le défilement appartient au <main> du shell : on laisse le corps s'étendre. */
+.rv-scope.rv-embed .rv-body {
+  overflow: visible;
+  min-height: 0;
+}
+
+/* Sur petit écran, le rail passe en bandeau horizontal défilant. */
+@media (max-width: 1023px) {
+  .rv-scope.rv-embed {
+    display: block;
+  }
+  .rv-scope.rv-embed .rv-cal-rail {
+    width: auto;
+    flex: none;
+    position: static;
+    max-height: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 8px 10px;
+  }
+  .rv-scope.rv-embed .rv-cr-hd,
+  .rv-scope.rv-embed .rv-cr-ft,
+  .rv-scope.rv-embed .rv-cr-lb,
+  .rv-scope.rv-embed .rv-csub {
+    display: none;
+  }
+  .rv-scope.rv-embed .rv-cr-nav {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0;
+    overflow: visible;
+  }
+  .rv-scope.rv-embed .rv-cr-nav > div {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .rv-scope.rv-embed .rv-ci {
+    width: auto;
+    white-space: nowrap;
+    padding: 0 11px;
+  }
+  .rv-scope.rv-embed .rv-body {
+    padding: 18px 14px 48px;
+  }
+}
+
+/* Les liens de navigation du rail sont des <a> Next : on neutralise les
+   styles de lien hérités de la maquette (qui cible `a`). */
+.rv-scope .rv-ci,
+.rv-scope .rv-csub a,
+.rv-scope .rv-link-card .bs a {
+  text-decoration: none;
+}
+.rv-scope .rv-ci:hover,
+.rv-scope .rv-csub a:hover {
+  color: inherit;
+}
+.rv-scope .rv-ci.on:hover {
+  color: #fff;
+}
+.rv-scope .rv-csub a {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: var(--on-ink-3);
+  text-align: left;
+  padding: 4px 8px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+.rv-scope .rv-csub a:hover {
+  color: var(--on-ink);
+}
+.rv-scope .rv-csub a.on {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Curseurs : la maquette fige `cursor:default` (prototype non cliquable). */
+.rv-scope button:not(:disabled),
+.rv-scope a,
+.rv-scope .rv-ci,
+.rv-scope .btn:not(:disabled),
+.rv-scope .rv-sw,
+.rv-scope .rv-bk {
+  cursor: pointer;
+}
+.rv-scope button:disabled,
+.rv-scope .btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}

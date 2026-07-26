@@ -24,7 +24,8 @@ import { authedFetch } from "@/utils/authedFetch";
 import { fetchEventTypes } from "@/lib/scheduling/client";
 import type { Booking, EventType } from "@/lib/scheduling/types";
 import { getAppUrlClient } from "./host/shared";
-import "./cal-skin.css";
+import "./rdv-skin.css";
+import "./rdv-embed.css";
 
 const MONTHS_FR = [
   "janvier", "février", "mars", "avril", "mai", "juin",

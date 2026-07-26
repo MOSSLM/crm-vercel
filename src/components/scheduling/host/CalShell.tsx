@@ -1,93 +1,98 @@
 "use client";
 
 /**
- * Coquille de la section Cal.SAMA : une seconde barre de navigation, à droite
- * de la sous-nav du Studio (ou de celle du portail agent), listant toutes les
- * sous-catégories du module.
+ * Coquille du module Rendez-vous — portage du `rv-cal-rail` de la maquette
+ * Claude Design : rail sombre (encre) avec grille en filigrane, sections
+ * Rendez-vous / Pilotage / Réglages, badge de demandes en attente,
+ * sous-filtres à compteurs et carte « votre lien public » en pied.
  *
- * Elle reprend exactement les conventions de `SpaceSubNav` (largeur, fond
- * surface-2, item actif en teinte accent) pour que les deux colonnes se
- * lisent comme un seul système. Aucun token du design system n'est redéfini :
- * clair et sombre restent corrects.
+ * Tout est enveloppé dans `.rv-scope` : la CSS de la maquette (rdv-skin.css)
+ * y est confinée et n'écrase jamais le design system du CRM.
  */
 
 import { Suspense, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import {
-  BarChart3,
-  CalendarCheck,
-  CalendarClock,
-  CalendarCog,
-  Clock3,
-  Copy,
-  ExternalLink,
-  LayoutDashboard,
-  Plug,
-  Settings2,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/components/AuthContext";
 import { fetchBookings, fetchSchedulingPage } from "@/lib/scheduling/client";
-import "../cal-skin.css";
+import { Icon } from "../rdv/Icon";
+import "../rdv-skin.css";
+import "../rdv-embed.css";
 
-type CalNavChild = { label: string; href: string; matchQuery?: [string, string] };
-type CalNavItem = {
-  label: string;
+type SubItem = { id: string; lb: string };
+type NavItem = {
+  id: string;
+  lb: string;
+  ic: string;
   href: string;
-  icon: LucideIcon;
-  adminOnly?: boolean;
+  admin?: boolean;
   badge?: number;
-  children?: CalNavChild[];
+  subs?: SubItem[];
 };
 
-const buildNav = (base: string, pendingCount: number): CalNavItem[] => [
-  { label: "Aperçu", href: base, icon: LayoutDashboard },
-  {
-    label: "Réservations",
-    href: `${base}/reservations`,
-    icon: CalendarCheck,
-    badge: pendingCount,
-    children: [
-      { label: "À venir", href: `${base}/reservations?filter=upcoming`, matchQuery: ["filter", "upcoming"] },
-      { label: "En attente", href: `${base}/reservations?filter=pending`, matchQuery: ["filter", "pending"] },
-      { label: "Passées", href: `${base}/reservations?filter=past`, matchQuery: ["filter", "past"] },
-      { label: "Annulées", href: `${base}/reservations?filter=cancelled`, matchQuery: ["filter", "cancelled"] },
-    ],
-  },
-  { label: "Types d'évènements", href: `${base}/types`, icon: CalendarCog },
-  { label: "Disponibilités", href: `${base}/disponibilites`, icon: Clock3 },
-  { label: "Équipe", href: `${base}/equipe`, icon: Users, adminOnly: true },
-  { label: "Statistiques", href: `${base}/statistiques`, icon: BarChart3 },
-  { label: "Intégrations", href: `${base}/integrations`, icon: Plug },
-  { label: "Ma page", href: `${base}/parametres`, icon: Settings2 },
+export const BOOKING_FILTERS: SubItem[] = [
+  { id: "upcoming", lb: "À venir" },
+  { id: "pending", lb: "En attente" },
+  { id: "past", lb: "Passées" },
+  { id: "cancelled", lb: "Annulées" },
 ];
 
-const itemBase =
-  "flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors";
-const itemActive = "bg-[var(--accent-tint)] font-medium text-primary";
-const itemIdle = "text-[var(--text-2)] hover:bg-[var(--bg-3)] hover:text-foreground";
+const buildNav = (base: string, pending: number): { s: string; items: NavItem[] }[] => [
+  {
+    s: "Rendez-vous",
+    items: [
+      { id: "overview", lb: "Aperçu", ic: "grid", href: base },
+      {
+        id: "bookings",
+        lb: "Réservations",
+        ic: "calCheck",
+        href: `${base}/reservations`,
+        badge: pending,
+        subs: BOOKING_FILTERS,
+      },
+      { id: "types", lb: "Types d'évènements", ic: "calCog", href: `${base}/types` },
+      { id: "avail", lb: "Disponibilités", ic: "clock", href: `${base}/disponibilites` },
+    ],
+  },
+  {
+    s: "Pilotage",
+    items: [
+      { id: "team", lb: "Équipe", ic: "users", href: `${base}/equipe`, admin: true },
+      { id: "stats", lb: "Statistiques", ic: "bar", href: `${base}/statistiques` },
+    ],
+  },
+  {
+    s: "Réglages",
+    items: [
+      { id: "integrations", lb: "Intégrations", ic: "plug", href: `${base}/integrations` },
+      { id: "settings", lb: "Ma page", ic: "settings", href: `${base}/parametres` },
+    ],
+  },
+];
 
-function CalNav({ basePath }: { basePath: string }) {
+function CalRail({ basePath }: { basePath: string }) {
   const pathname = usePathname() ?? "";
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const isAdmin = user?.role === "admin";
 
-  const [pendingCount, setPendingCount] = useState(0);
+  const [pending, setPending] = useState(0);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [publicUrl, setPublicUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [pending, page] = await Promise.all([
+      const [pendingRes, page] = await Promise.all([
         fetchBookings("pending").catch(() => null),
         fetchSchedulingPage().catch(() => null),
       ]);
       if (cancelled) return;
-      if (pending) setPendingCount(pending.bookings.length);
+      if (pendingRes) {
+        setPending(pendingRes.bookings.length);
+        setCounts((c) => ({ ...c, pending: pendingRes.bookings.length }));
+      }
       if (page) setPublicUrl(page.public_url);
     })();
     return () => {
@@ -95,166 +100,137 @@ function CalNav({ basePath }: { basePath: string }) {
     };
   }, [pathname]);
 
-  const items = buildNav(basePath, pendingCount).filter((i) => !i.adminOnly || isAdmin);
+  // Compteurs des sous-filtres : chargés seulement quand la section est ouverte.
+  const onBookings = pathname.startsWith(`${basePath}/reservations`);
+  useEffect(() => {
+    if (!onBookings) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        (["upcoming", "past", "cancelled"] as const).map(async (f) => {
+          const r = await fetchBookings(f).catch(() => null);
+          return [f, r?.bookings.length ?? 0] as const;
+        }),
+      );
+      if (!cancelled) setCounts((c) => ({ ...c, ...Object.fromEntries(entries) }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [onBookings]);
 
-  const isItemActive = (item: CalNavItem) =>
+  const nav = buildNav(basePath, pending);
+  const activeFilter = searchParams?.get("filter") ?? "upcoming";
+
+  const isOn = (item: NavItem) =>
     item.href === basePath
       ? pathname === basePath
       : pathname === item.href || pathname.startsWith(item.href + "/");
 
-  const isChildActive = (item: CalNavItem, child: CalNavChild) => {
-    if (!isItemActive(item) || !child.matchQuery) return false;
-    const [key, value] = child.matchQuery;
-    return (searchParams?.get(key) ?? "upcoming") === value;
-  };
-
-  const copyPublicUrl = () => {
-    if (!publicUrl) return;
-    void navigator.clipboard.writeText(publicUrl);
-    toast.success("Lien public copié");
-  };
-
   return (
-    <>
-      {/* Colonne de navigation — sticky pendant que le contenu défile */}
-      <nav
-        aria-label="Navigation Rendez-vous"
-        className="hidden w-56 shrink-0 flex-col border-r border-border/60 bg-[var(--surface-2)] px-2.5 py-3 lg:sticky lg:top-0 lg:flex lg:max-h-screen lg:self-start lg:overflow-y-auto"
-      >
-        <div className="flex items-center gap-2 px-2 pb-3">
-          <CalendarClock className="h-4 w-4 text-primary" strokeWidth={2} />
-          <div className="leading-tight">
-            <div className="cal-display text-[15px]">Cal.SAMA</div>
-            <div className="cal-tag text-muted-foreground">Rendez-vous</div>
-          </div>
+    <nav className="rv-cal-rail">
+      <div className="rv-cr-hd">
+        <span className="ic">
+          <Icon name="calCheck" className="ico-lg" />
+        </span>
+        <div>
+          <div className="t">Cal.SAMA</div>
+          <div className="s">Rendez-vous en ligne</div>
         </div>
+      </div>
 
-        <div className="flex flex-col gap-0.5">
-          {items.map((item) => {
-            const active = isItemActive(item);
-            const Icon = item.icon;
-            return (
-              <div key={item.href}>
-                <Link
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`${itemBase} ${active ? itemActive : itemIdle}`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-                  <span className="flex-1 truncate">{item.label}</span>
-                  {item.badge ? (
-                    <span className="cal-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--warn)] px-1 text-[10px] font-semibold text-white">
-                      {item.badge}
-                    </span>
-                  ) : null}
-                </Link>
-
-                {item.children && active ? (
-                  <div className="mb-1 ml-4 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
-                    {item.children.map((child) => {
-                      const childActive = isChildActive(item, child);
-                      return (
-                        <Link
-                          key={child.href}
-                          href={child.href}
-                          aria-current={childActive ? "page" : undefined}
-                          className={`rounded-md px-2 py-1.5 text-[13px] transition-colors ${
-                            childActive
-                              ? "font-medium text-primary"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          {child.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-
-        {publicUrl ? (
-          <div className="mt-auto border-t border-border/60 px-2 pt-3">
-            <div className="cal-tag text-muted-foreground">Votre lien public</div>
-            <div className="cal-mono mt-1 truncate text-[11px] text-[var(--text-2)]">
-              {publicUrl.replace(/^https?:\/\//, "")}
-            </div>
-            <div className="mt-2 flex gap-1.5">
-              <button
-                type="button"
-                onClick={copyPublicUrl}
-                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs font-medium transition-colors hover:bg-[var(--hover)]"
-              >
-                <Copy className="h-3 w-3" /> Copier
-              </button>
-              <a
-                href={publicUrl}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Ouvrir la page publique"
-                className="inline-flex items-center justify-center rounded-md border border-border bg-card px-2 py-1.5 transition-colors hover:bg-[var(--hover)]"
-              >
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-          </div>
-        ) : null}
-      </nav>
-
-      {/* Barre horizontale défilante (mobile / tablette) */}
-      <div className="flex items-center gap-1 overflow-x-auto border-b border-border/60 bg-[var(--surface-2)] px-2 py-2 lg:hidden">
-        {items.map((item) => {
-          const active = isItemActive(item);
-          const Icon = item.icon;
+      <div className="rv-cr-nav">
+        {nav.map((sec) => {
+          const items = sec.items.filter((i) => !i.admin || isAdmin);
+          if (!items.length) return null;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-current={active ? "page" : undefined}
-              className={`${itemBase} shrink-0 ${active ? itemActive : itemIdle}`}
-            >
-              <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-              {item.label}
-              {item.badge ? (
-                <span className="cal-mono inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--warn)] px-1 text-[10px] font-semibold text-white">
-                  {item.badge}
-                </span>
-              ) : null}
-            </Link>
+            <div key={sec.s}>
+              <div className="rv-cr-lb">{sec.s}</div>
+              {items.map((i) => {
+                const on = isOn(i);
+                return (
+                  <div key={i.id}>
+                    <Link href={i.href} className={`rv-ci ${on ? "on" : ""}`.trim()}>
+                      <Icon name={i.ic} className="ico-sm" />
+                      <span className="lb">{i.lb}</span>
+                      {i.badge ? <span className="bd">{i.badge}</span> : null}
+                    </Link>
+                    {i.subs && on ? (
+                      <div className="rv-csub">
+                        {i.subs.map((sub) => (
+                          <Link
+                            key={sub.id}
+                            href={`${i.href}?filter=${sub.id}`}
+                            className={activeFilter === sub.id ? "on" : ""}
+                          >
+                            {sub.lb}
+                            <span className="n">{counts[sub.id] ?? ""}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           );
         })}
       </div>
-    </>
-  );
-}
 
-/** En-tête de page : titre serif + sous-titre, comme les maquettes. */
-export function SectionHeader({
-  title,
-  subtitle,
-  action,
-}: {
-  title: string;
-  subtitle: string;
-  action?: ReactNode;
-}) {
-  return (
-    <header className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h1 className="cal-display text-[26px] text-foreground">{title}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
-      </div>
-      {action}
-    </header>
+      {publicUrl ? (
+        <div className="rv-cr-ft">
+          <div className="rv-link-card">
+            <div className="k">Votre lien public</div>
+            <div className="u">{publicUrl.replace(/^https?:\/\//, "")}</div>
+            <div className="bs">
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(publicUrl);
+                  toast.success("Lien public copié");
+                }}
+              >
+                <Icon name="copy" className="ico-xs" />
+                Copier
+              </button>
+              <a className="w" href={publicUrl} target="_blank" rel="noreferrer" aria-label="Ouvrir">
+                <Icon name="ext" className="ico-xs" />
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </nav>
   );
 }
 
 /**
- * Layout de la section. Le `<main>` du shell parent est déjà le conteneur de
- * défilement : on ne crée donc pas de scroll imbriqué, la colonne de nav est
- * simplement `sticky`.
+ * En-tête de page de la maquette : titre serif, sous-titre et actions.
+ */
+export function SectionHeader({
+  title,
+  subtitle,
+  actions,
+}: {
+  title: string;
+  subtitle: string;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="rv-ph">
+      <div>
+        <h1>{title}</h1>
+        <div className="sub">{subtitle}</div>
+      </div>
+      {actions ? <div className="actions">{actions}</div> : null}
+    </div>
+  );
+}
+
+/**
+ * Layout de la section : rail Cal.SAMA + corps défilant.
+ * Le `<main>` du shell parent gère déjà le défilement de la page, donc le
+ * rail est simplement `sticky` (cf. rdv-skin.css → .rv-scope .rv-cal-rail).
  */
 export default function CalShell({
   basePath,
@@ -264,11 +240,13 @@ export default function CalShell({
   children: ReactNode;
 }) {
   return (
-    <div className="flex min-h-full flex-1 flex-col lg:flex-row lg:items-start">
+    <div className="rv-scope rv-embed">
       <Suspense fallback={null}>
-        <CalNav basePath={basePath} />
+        <CalRail basePath={basePath} />
       </Suspense>
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="rv-content">
+        <div className="rv-body">{children}</div>
+      </div>
     </div>
   );
 }
