@@ -103,7 +103,6 @@ export function CallJournal({ filters = {} }: { filters?: CallFilters }) {
     } finally {
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   useEffect(() => {
@@ -119,7 +118,6 @@ export function CallJournal({ filters = {} }: { filters?: CallFilters }) {
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 
   const recCount = useMemo(() => calls.filter((c) => c.recording_status !== "none").length, [calls]);
@@ -176,11 +174,12 @@ export function CallJournal({ filters = {} }: { filters?: CallFilters }) {
           </button>
         </div>
 
-        <div className="jr-filters">
+        <div className="jr-filters" role="tablist">
           {filterDefs.map((f) => (
             <button
               key={f.id}
               type="button"
+              role="tab"
               className="jr-filter"
               aria-selected={f.id === filter}
               onClick={() => setFilter(f.id)}

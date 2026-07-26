@@ -76,8 +76,9 @@ export function SectionPickerModal({ open, sections, initialCategory, onPick, on
         </div>
       </div>
 
-      <div className="modal-tabs">
+      <div className="modal-tabs" role="tablist">
         <button
+          role="tab"
           className="modal-tab"
           aria-selected={filterCategory === null ? "true" : "false"}
           onClick={() => setFilterCategory(null)}
@@ -87,6 +88,7 @@ export function SectionPickerModal({ open, sections, initialCategory, onPick, on
         {categories.map((cat) => (
           <button
             key={cat}
+            role="tab"
             className="modal-tab"
             aria-selected={filterCategory === cat ? "true" : "false"}
             onClick={() => setFilterCategory(cat)}

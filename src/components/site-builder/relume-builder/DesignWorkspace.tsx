@@ -893,7 +893,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
               <span>{state.sitemap.find((p) => p.slug === state.activePage)?.title ?? "Accueil"}</span>
               <span className="slug">{state.activePage}</span>
             </div>
-            <div className="page-tabs">
+            <div className="page-tabs" role="tablist">
               {state.sitemap.map((p, i) => {
                 // Page gated by a service tag that the simulated set excludes →
                 // it would 404 on the published company site. Dim it as a cue.
@@ -905,6 +905,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                   <button
                     key={p.id}
                     onClick={(e) => { e.stopPropagation(); dispatch({ type: "SET_ACTIVE_PAGE", payload: p.slug }); }}
+                    role="tab"
                     className="page-tab"
                     aria-selected={state.activePage === p.slug ? "true" : "false"}
                     style={tagHidden ? { opacity: 0.4 } : undefined}
@@ -1054,14 +1055,17 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
               </button>
             </div>
           </div>
-          <div className="pane-body" style={{ padding: "8px 6px" }}>
+          {/* Layers pane: pages own their sections, so this is a tree — treeitem
+              is the role that carries both aria-selected and aria-expanded. */}
+          <div className="pane-body" role="tree" aria-label="Calques" style={{ padding: "8px 6px" }}>
             {state.sitemap.map((page) => {
               const ids = state.instancesByPage[page.slug] ?? [];
               const isActive = page.slug === state.activePage;
               return (
-                <div key={page.id} style={{ marginBottom: 4 }}>
+                <div key={page.id} role="none" style={{ marginBottom: 4 }}>
                   <button
                     onClick={() => dispatch({ type: "SET_ACTIVE_PAGE", payload: page.slug })}
+                    role="treeitem"
                     className="layer-page"
                     aria-selected={isActive ? "true" : "false"}
                     aria-expanded={isActive ? "true" : "false"}
@@ -1072,7 +1076,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                     <span className="count">{ids.length}</span>
                   </button>
                   {isActive && (
-                    <div className="layer-children">
+                    <div className="layer-children" role="group">
                       {ids.map((instanceId) => {
                         const inst = state.instances[instanceId];
                         if (!inst) return null;

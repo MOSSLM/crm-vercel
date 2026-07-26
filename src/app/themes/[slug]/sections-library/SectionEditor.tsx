@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import { Loader2, Save, WrapText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 type IStandaloneCodeEditor = import("monaco-editor").editor.IStandaloneCodeEditor;
-type MonacoInstance = any; // eslint-disable-line @typescript-eslint/no-explicit-any
+type MonacoInstance = any;
 
 const MonacoEditor = dynamic(
   () => import("@monaco-editor/react").then((m) => m.default),

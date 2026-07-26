@@ -89,7 +89,6 @@ export function SviBuilder() {
     setScenarios(rows);
     setActive((cur) => cur ?? rows[0]?.id ?? null);
     setLoading(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadNodes = useCallback(async (scenarioId: string | null) => {
@@ -100,7 +99,6 @@ export function SviBuilder() {
       .eq("scenario_id", scenarioId)
       .order("position", { ascending: true });
     setNodes((data as Node[]) ?? []);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

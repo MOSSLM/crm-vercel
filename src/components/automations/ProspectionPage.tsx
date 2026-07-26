@@ -101,13 +101,14 @@ export function ProspectionPage() {
             )}
           </div>
         </div>
-        <div className="pros-side-tabs">
+        <div className="pros-side-tabs" role="tablist">
           {TABS.map((tab) => {
             const count = tasks.filter(tab.match).length
             return (
               <button
                 key={tab.id}
                 type="button"
+                role="tab"
                 className="pros-side-tab"
                 aria-selected={activeTab === tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -248,16 +249,16 @@ function ProsDetail({
         </div>
       </div>
 
-      <div className="pros-tabs">
-        <button type="button" aria-selected={tab === 'action'} onClick={() => setTab('action')}>
+      <div className="pros-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === 'action'} onClick={() => setTab('action')}>
           <XI name="bolt" className="ico-sm" />
           Action
         </button>
-        <button type="button" aria-selected={tab === 'context'} onClick={() => setTab('context')}>
+        <button type="button" role="tab" aria-selected={tab === 'context'} onClick={() => setTab('context')}>
           <XI name="company" className="ico-sm" />
           Contexte
         </button>
-        <button type="button" aria-selected={tab === 'history'} onClick={() => setTab('history')}>
+        <button type="button" role="tab" aria-selected={tab === 'history'} onClick={() => setTab('history')}>
           <XI name="history" className="ico-sm" />
           Historique
         </button>

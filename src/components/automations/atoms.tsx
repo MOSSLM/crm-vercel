@@ -1,6 +1,6 @@
 'use client'
 // atoms.tsx — atomes partagés portés depuis claude design/automations-atoms.jsx.
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useId, useRef } from 'react'
 import { XI } from './icons'
 
 export type Cn = string | false | null | undefined
@@ -28,7 +28,6 @@ export function useOutsideClose(
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ref, onClose])
 }
 
@@ -98,14 +97,19 @@ export function ToggleRow({
   onChange?: (v: boolean) => void
   accent?: boolean
 }) {
+  // `label` is a ReactNode, so it can't go in aria-label (string only) —
+  // point at the rendered label instead, which also keeps the two in sync.
+  const labelId = useId()
   return (
     <div className="toggle-row">
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="lbl">{label}</div>
+        <div className="lbl" id={labelId}>{label}</div>
         {desc && <div className="desc">{desc}</div>}
       </div>
       <button
         type="button"
+        role="switch"
+        aria-labelledby={labelId}
         className={cx('toggle', accent && 'accent')}
         aria-checked={!!checked}
         onClick={() => onChange?.(!checked)}

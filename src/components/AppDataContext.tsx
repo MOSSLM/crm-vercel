@@ -1,6 +1,6 @@
 "use client";
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo } from 'react';
-import { CACHE_KEY, CACHE_TTL_MS } from '../utils/constants';
+import { loadCrmCache, saveCrmCache } from '../utils/crmCache';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
 import {
@@ -377,38 +377,9 @@ const debounce = (func: Function, wait: number) => {
 const INITIAL_CONTACT_COMPANY_BATCH = 20;
 
 // ---------------------------------------------------------------------------
-// SWR cache: hydrate UI instantly from localStorage, then refresh in background
+// SWR cache: hydrate UI instantly from localStorage, then refresh in background.
+// Implementation (user scoping + clearing) lives in utils/crmCache.
 // ---------------------------------------------------------------------------
-
-interface CachedData {
-  opportunities: Opportunity[];
-  pipelines: Pipeline[];
-  pipelineStages: PipelineStage[];
-  offers: Offer[];
-  cached_at: number;
-}
-
-export function loadCachedData(): CachedData | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = window.localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as CachedData;
-    if (!parsed.cached_at || Date.now() - parsed.cached_at > CACHE_TTL_MS) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-export function saveCachedData(data: Omit<CachedData, 'cached_at'>): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(CACHE_KEY, JSON.stringify({ ...data, cached_at: Date.now() }));
-  } catch {
-    // localStorage quota exceeded – silently ignore
-  }
-}
 
 export const AppDataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, loading: authLoading } = useAuth();
@@ -445,15 +416,19 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   }, []);
 
-  // Hydrate from cache before the first network fetch so the UI is instantly populated
+  // Hydrate from cache before the first network fetch so the UI is instantly
+  // populated. Keyed on the signed-in user: on a shared browser the cache left
+  // by the previous account must never paint into this one, so this waits for
+  // the session to resolve instead of running once on mount.
   useEffect(() => {
-    const cached = loadCachedData();
+    if (authLoading || !user?.id) return;
+    const cached = loadCrmCache(user.id);
     if (!cached) return;
     setOpportunities(cached.opportunities);
     setPipelines(cached.pipelines);
     setPipelineStages(cached.pipelineStages);
     setOffers(cached.offers);
-  }, []);
+  }, [authLoading, user?.id]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -575,7 +550,7 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
       setAnnualObjectives(getDefaultAnnualObjectives());
 
       // Persist to localStorage so the next page load hydrates instantly
-      saveCachedData({
+      saveCrmCache(user?.id, {
         opportunities: safeOpportunities,
         pipelines: pipelinesData,
         pipelineStages: pipelineStagesData,

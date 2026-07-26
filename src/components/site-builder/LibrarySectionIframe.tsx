@@ -148,7 +148,6 @@ export function LibrarySectionIframe({
   // iframe never reloads + Babel never recompiles during user edits.
   const srcDoc = React.useMemo(
     () => buildHTML(code, content, allVariables, styleGuide, { wireframe, selectionEnabled, overrides, simulatedViewportHeight, rawStyle }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [code, styleGuide, wireframe, selectionEnabled, simulatedViewportHeight, rawStyle],
   );
 
@@ -260,7 +259,6 @@ export function LibrarySectionIframe({
     return () => window.removeEventListener("message", handler);
   }, [selectionEnabled, onElementClick, onDomTree, minHeight, content, allVariables, overrides, onCanvasWheel, onFormSlot]);
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
   const handleLoad = React.useCallback(() => {
     // Height measurement is done via postMessage from the height reporter
     // script injected inside the iframe HTML (see buildHTML). No external

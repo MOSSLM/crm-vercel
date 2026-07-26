@@ -1,6 +1,6 @@
 import React, { ReactNode } from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { AuthProvider, useAuth } from '../AuthContext';
+import { AuthProvider, useAuth, type LoginResult } from '../AuthContext';
 
 const mockGetSession = jest.fn();
 const mockSignInWithPassword = jest.fn();
@@ -65,6 +65,7 @@ describe('AuthContext / AuthProvider', () => {
         email: 'me@test',
         name: 'Real Name',
         role: 'admin',
+        onboardedAt: null,
       });
       expect(result.current.isAuthenticated).toBe(true);
       expect(result.current.loading).toBe(false);
@@ -125,7 +126,21 @@ describe('AuthContext / AuthProvider', () => {
       mockGetSession.mockResolvedValue({ data: { session: null } });
     });
 
-    it('returns true on a successful sign-in', async () => {
+    // login resolves to a LoginResult discriminated union — the sign-in screen
+    // renders a different message per `reason`.
+    const doLogin = async (
+      result: { current: ReturnType<typeof useAuth> },
+      email = 'me@test',
+      password = 'pw',
+    ): Promise<LoginResult> => {
+      let outcome: LoginResult = { ok: false, reason: 'unknown' };
+      await act(async () => {
+        outcome = await result.current.login(email, password);
+      });
+      return outcome;
+    };
+
+    it('returns ok on a successful sign-in', async () => {
       mockSignInWithPassword.mockResolvedValue({
         data: { user: sessionUser },
         error: null,
@@ -133,39 +148,66 @@ describe('AuthContext / AuthProvider', () => {
       const { result } = renderHook(() => useAuth(), { wrapper });
       await waitFor(() => expect(result.current.loading).toBe(false));
 
-      let ok = false;
-      await act(async () => {
-        ok = await result.current.login('me@test', 'pw');
-      });
-      expect(ok).toBe(true);
+      expect(await doLogin(result)).toEqual({ ok: true });
       expect(mockSignInWithPassword).toHaveBeenCalledWith({ email: 'me@test', password: 'pw' });
     });
 
-    it('returns false when Supabase returns an error', async () => {
+    it('reports invalid_credentials from the error code', async () => {
       mockSignInWithPassword.mockResolvedValue({
         data: { user: null },
-        error: { message: 'bad creds' },
+        error: { code: 'invalid_credentials', message: 'bad creds' },
       });
       const { result } = renderHook(() => useAuth(), { wrapper });
       await waitFor(() => expect(result.current.loading).toBe(false));
 
-      let ok = true;
-      await act(async () => {
-        ok = await result.current.login('me@test', 'wrong');
+      expect(await doLogin(result, 'me@test', 'wrong')).toEqual({
+        ok: false,
+        reason: 'invalid_credentials',
       });
-      expect(ok).toBe(false);
     });
 
-    it('returns false when signInWithPassword throws', async () => {
+    it('reports invalid_credentials from the message when no code is present', async () => {
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: null },
+        error: { message: 'Invalid login credentials' },
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(await doLogin(result, 'me@test', 'wrong')).toEqual({
+        ok: false,
+        reason: 'invalid_credentials',
+      });
+    });
+
+    it('reports email_not_confirmed so the UI can offer to resend', async () => {
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: null },
+        error: { code: 'email_not_confirmed', message: 'Email not confirmed' },
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(await doLogin(result)).toEqual({ ok: false, reason: 'email_not_confirmed' });
+    });
+
+    it('falls back to reason=unknown for an unrecognised error', async () => {
+      mockSignInWithPassword.mockResolvedValue({
+        data: { user: null },
+        error: { code: 'over_request_rate_limit', message: 'slow down' },
+      });
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(await doLogin(result)).toEqual({ ok: false, reason: 'unknown' });
+    });
+
+    it('returns reason=unknown when signInWithPassword throws', async () => {
       mockSignInWithPassword.mockRejectedValue(new Error('boom'));
       const { result } = renderHook(() => useAuth(), { wrapper });
       await waitFor(() => expect(result.current.loading).toBe(false));
 
-      let ok = true;
-      await act(async () => {
-        ok = await result.current.login('me@test', 'pw');
-      });
-      expect(ok).toBe(false);
+      expect(await doLogin(result)).toEqual({ ok: false, reason: 'unknown' });
     });
   });
 

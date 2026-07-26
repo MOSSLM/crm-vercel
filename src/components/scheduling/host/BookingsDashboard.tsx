@@ -84,7 +84,6 @@ export default function BookingsDashboard() {
       setLoading(false);
     }
     // team.length volontairement hors deps : chargé une seule fois.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, hostId, isAdmin]);
 
   useEffect(() => {

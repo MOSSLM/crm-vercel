@@ -170,11 +170,12 @@ function TemplateSide({
       </div>
 
       {/* Filter tabs */}
-      <div className="pros-side-tabs" style={{ flexWrap: "wrap" }}>
+      <div className="pros-side-tabs" role="tablist" style={{ flexWrap: "wrap" }}>
         {TYPE_FILTERS.map((f) => (
           <button
             key={f.key}
             type="button"
+            role="tab"
             className="pros-side-tab"
             aria-selected={filter === f.key}
             onClick={() => onFilter(f.key as TemplateType | "all")}
