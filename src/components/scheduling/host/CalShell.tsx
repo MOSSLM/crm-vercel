@@ -1,15 +1,10 @@
 "use client";
 
 /**
- * Coquille de la section Cal.SAMA — le « Calendly maison » du CRM.
- *
- * Ajoute une deuxième sidebar verticale à droite de la navigation du shell
- * (rail + sous-nav du Studio, ou nav du portail agent), façon Cal.com, avec
- * toutes les sous-catégories du module : Aperçu, Réservations (avec
- * sous-filtres + badge en attente), Types d'évènements, Disponibilités,
- * Équipe (admin), Statistiques, Intégrations, Ma page.
- *
- * Responsive : sur mobile la sidebar devient une barre horizontale scrollable.
+ * Coquille de la section Cal.SAMA — habillage « cal-skin » fidèle aux
+ * maquettes Claude Design (même famille que la centrale d'appels) : sidebar
+ * dédiée à droite de la nav du shell, titres Instrument Serif, labels mono,
+ * cartes .blk. Responsive : barre horizontale sur mobile.
  */
 
 import { useEffect, useState, type ReactNode } from "react";
@@ -31,9 +26,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { useAuth } from "@/components/AuthContext";
 import { fetchBookings, fetchSchedulingPage } from "@/lib/scheduling/client";
+import "../cal-skin.css";
 
 type CalNavChild = { label: string; href: string; matchQuery?: [string, string] };
 type CalNavItem = {
@@ -114,51 +109,37 @@ function CalSidebarInner({ basePath }: { basePath: string }) {
   return (
     <>
       {/* Sidebar verticale (≥ lg) */}
-      <aside className="hidden w-56 shrink-0 flex-col border-r bg-card/50 lg:flex">
-        <div className="flex items-center gap-2 border-b px-4 py-4">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <CalendarClock className="h-4 w-4" />
+      <aside className="cs-side hidden lg:flex">
+        <div className="cs-side-hd">
+          <span className="brand-mark">
+            <CalendarClock size={14} strokeWidth={2.2} />
           </span>
-          <div className="leading-tight">
-            <p className="text-sm font-semibold">Cal.SAMA</p>
-            <p className="text-[11px] text-muted-foreground">Rendez-vous en ligne</p>
+          <div>
+            <div className="t">Cal.SAMA</div>
+            <div className="s">Rendez-vous en ligne</div>
           </div>
         </div>
 
-        <nav className="flex-1 space-y-0.5 overflow-y-auto p-2">
+        <nav className="cs-nav">
           {items.map((item) => {
             const active = isItemActive(item);
             return (
               <div key={item.href}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition",
-                    active
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  )}
-                >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  <span className="flex-1 truncate">{item.label}</span>
-                  {item.badge ? (
-                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white">
-                      {item.badge}
-                    </span>
-                  ) : null}
+                <Link href={item.href} className="cs-item" aria-current={active || undefined}>
+                  <item.icon size={15} strokeWidth={2} />
+                  <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {item.label}
+                  </span>
+                  {item.badge ? <span className="nb">{item.badge}</span> : null}
                 </Link>
                 {item.children && active ? (
-                  <div className="mb-1 ml-4 mt-0.5 space-y-0.5 border-l pl-3">
+                  <div className="cs-children">
                     {item.children.map((child) => (
                       <Link
                         key={child.href}
                         href={child.href}
-                        className={cn(
-                          "block rounded-md px-2 py-1.5 text-[13px] transition",
-                          isChildActive(item, child)
-                            ? "font-medium text-primary"
-                            : "text-muted-foreground hover:text-foreground",
-                        )}
+                        className="cs-child"
+                        aria-current={isChildActive(item, child) || undefined}
                       >
                         {child.label}
                       </Link>
@@ -171,25 +152,21 @@ function CalSidebarInner({ basePath }: { basePath: string }) {
         </nav>
 
         {publicUrl ? (
-          <div className="border-t p-3">
-            <p className="text-[11px] font-medium text-muted-foreground">Votre lien public</p>
-            <p className="mt-0.5 truncate text-xs">{publicUrl.replace(/^https?:\/\//, "")}</p>
-            <div className="mt-2 flex gap-1.5">
-              <button
-                type="button"
-                onClick={copyPublicUrl}
-                className="inline-flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 text-xs font-medium hover:bg-muted"
-              >
-                <Copy className="h-3 w-3" /> Copier
+          <div className="cs-side-ft">
+            <span className="cs-tag">Votre lien public</span>
+            <div className="url">{publicUrl.replace(/^https?:\/\//, "")}</div>
+            <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+              <button type="button" className="btn outline xs grow" onClick={copyPublicUrl}>
+                <Copy size={12} /> Copier
               </button>
               <a
                 href={publicUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center rounded-md border px-2 py-1.5 hover:bg-muted"
+                className="btn outline icon xs"
                 aria-label="Ouvrir la page publique"
               >
-                <ExternalLink className="h-3 w-3" />
+                <ExternalLink size={12} />
               </a>
             </div>
           </div>
@@ -197,43 +174,37 @@ function CalSidebarInner({ basePath }: { basePath: string }) {
       </aside>
 
       {/* Barre horizontale (mobile / tablette) */}
-      <div className="border-b bg-card/50 px-2 py-2 lg:hidden">
-        <div className="flex items-center gap-1 overflow-x-auto">
-          {items.map((item) => {
-            const active = isItemActive(item);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition",
-                  active
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-                {item.badge ? (
-                  <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
-                    {item.badge}
-                  </span>
-                ) : null}
-              </Link>
-            );
-          })}
-        </div>
+      <div className="cs-hbar lg:hidden">
+        {items.map((item) => {
+          const active = isItemActive(item);
+          return (
+            <Link key={item.href} href={item.href} className="cs-item" aria-current={active || undefined}>
+              <item.icon size={14} strokeWidth={2} />
+              {item.label}
+              {item.badge ? <span className="nb">{item.badge}</span> : null}
+            </Link>
+          );
+        })}
       </div>
     </>
   );
 }
 
-/** En-tête standard des pages de la section. */
-export function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
+/** En-tête standard des pages de la section : titre serif + sous-titre. */
+export function SectionHeader({
+  title,
+  subtitle,
+  tag,
+}: {
+  title: string;
+  subtitle: string;
+  tag?: string;
+}) {
   return (
     <header>
-      <h1 className="text-2xl font-semibold">{title}</h1>
-      <p className="text-sm text-muted-foreground">{subtitle}</p>
+      {tag ? <div className="cs-tag" style={{ marginBottom: 4 }}>{tag}</div> : null}
+      <h1 className="cs-title">{title}</h1>
+      <p className="cs-sub">{subtitle}</p>
     </header>
   );
 }
@@ -250,11 +221,13 @@ export default function CalShell({
   // scrollable : on prend toute la hauteur, la sidebar reste fixe et seule la
   // zone de contenu scrolle.
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
+    <div className="cal-skin flex h-full min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
       <Suspense fallback={null}>
         <CalSidebarInner basePath={basePath} />
       </Suspense>
-      <div className="min-w-0 flex-1 overflow-y-auto">{children}</div>
+      <div className="min-w-0 flex-1 overflow-y-auto" style={{ background: "var(--bg)" }}>
+        {children}
+      </div>
     </div>
   );
 }
