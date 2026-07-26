@@ -2,15 +2,19 @@
  * `logger` reads NODE_ENV at module load, so each case re-imports it inside an
  * isolated module registry with the env pinned.
  */
-const loadLogger = (nodeEnv: string) => {
+const loadLogger = async (nodeEnv: string) => {
   let logger!: typeof import('../logger').default;
-  jest.isolateModules(() => {
-    const previous = process.env.NODE_ENV;
-    // NODE_ENV is readonly in @types/node — assign through the record type.
-    (process.env as Record<string, string | undefined>).NODE_ENV = nodeEnv;
-    logger = require('../logger').default;
-    (process.env as Record<string, string | undefined>).NODE_ENV = previous;
-  });
+  // NODE_ENV is readonly in @types/node — assign through the record type.
+  const env = process.env as Record<string, string | undefined>;
+  const previous = env.NODE_ENV;
+  env.NODE_ENV = nodeEnv;
+  try {
+    await jest.isolateModulesAsync(async () => {
+      logger = (await import('../logger')).default;
+    });
+  } finally {
+    env.NODE_ENV = previous;
+  }
   return logger;
 };
 
@@ -30,8 +34,8 @@ describe('logger', () => {
   });
 
   describe('outside production', () => {
-    it('forwards log, warn and error', () => {
-      const logger = loadLogger('development');
+    it('forwards log, warn and error', async () => {
+      const logger = await loadLogger('development');
       logger.log('a');
       logger.warn('b');
       logger.error('c');
@@ -42,8 +46,8 @@ describe('logger', () => {
   });
 
   describe('in production', () => {
-    it('silences log and warn', () => {
-      const logger = loadLogger('production');
+    it('silences log and warn', async () => {
+      const logger = await loadLogger('production');
       logger.log('a');
       logger.warn('b');
       expect(log).not.toHaveBeenCalled();
@@ -52,8 +56,8 @@ describe('logger', () => {
 
     // Regression guard: errors used to be swallowed in prod, which meant server
     // incidents left no trace in the platform logs.
-    it('still emits errors, with every argument', () => {
-      const logger = loadLogger('production');
+    it('still emits errors, with every argument', async () => {
+      const logger = await loadLogger('production');
       const cause = new Error('boom');
       logger.error('context:', cause);
       expect(error).toHaveBeenCalledWith('context:', cause);
