@@ -134,3 +134,25 @@
   cursor: default;
   opacity: 0.55;
 }
+
+/* Scène des pages publiques (/rdv/…) : fond à points de la maquette. */
+.rv-scope.rv-public-stage {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 40px 20px 60px;
+  background: var(--bg-2);
+  background-image: radial-gradient(rgba(20, 18, 14, 0.05) 1px, transparent 1px);
+  background-size: 20px 20px;
+  overflow: visible;
+  height: auto;
+}
+
+/* En mode embed (iframe), pas de fond ni de marges : la page hôte décide. */
+.rv-scope.rv-public-stage.embed {
+  min-height: 0;
+  padding: 8px;
+  background: transparent;
+  background-image: none;
+}

@@ -239,7 +239,7 @@ export const RV_LOC: Record<string, { lb: string; ic: string }> = {
   google_meet: { lb: "Google Meet", ic: "video" },
   zoom: { lb: "Zoom", ic: "video" },
   teams: { lb: "Microsoft Teams", ic: "video" },
-  phone: { lb: "Téléphone", ic: "phone" },
-  in_person: { lb: "Sur place", ic: "pin" },
-  custom: { lb: "À définir", ic: "pin" },
+  phone: { lb: "Appel téléphonique", ic: "phone" },
+  in_person: { lb: "En présentiel", ic: "mappin" },
+  custom: { lb: "À définir", ic: "info" },
 };
