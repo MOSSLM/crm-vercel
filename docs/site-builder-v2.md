@@ -146,10 +146,11 @@ réponde, **deux** choses doivent être en place, à faire une seule fois :
 
 Sans l'étape 2, Vercel renvoie son 404 de plateforme (`DEPLOYMENT_NOT_FOUND`) **avant**
 que la requête n'atteigne l'app — aucun log applicatif n'apparaît. C'est le premier
-point à vérifier quand un sous-domaine tombe en 404. À l'inverse, une 404 provenant de
-l'app laisse toujours une ligne `[preview]` ou `[site-resolver]` dans les logs Vercel,
-et affiche `src/app/preview/not-found.tsx` (« Aperçu indisponible ») ou la 404 brandée
-`src/app/site/[subdomain]/not-found.tsx`.
+point à vérifier quand un sous-domaine tombe en 404. À l'inverse, un échec provenant de
+l'app laisse toujours une ligne `[preview]` ou `[site-resolver]` dans les logs Vercel.
+Un aperçu en échec affiche son auto-diagnostic (`PreviewDiagnostic` : cause exacte,
+pages réellement disponibles, erreurs de schéma) ; un site publié affiche la 404
+brandée `src/app/site/[subdomain]/not-found.tsx`.
 
 ### Publication d'un site
 

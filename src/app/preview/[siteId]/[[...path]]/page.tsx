@@ -1,7 +1,6 @@
 import React from "react";
 import type { Metadata, Viewport } from "next";
-import { notFound } from "next/navigation";
-import { resolveDraftSite } from "@/lib/site-resolver";
+import { resolveDraftSite, probeDraftSite } from "@/lib/site-resolver";
 import { DynamicPageRenderer } from "@/components/site-builder/DynamicPageRenderer";
 import { DemoPaywallBar } from "@/components/site-builder/DemoPaywallBar";
 import { parseEnterpriseTags } from "@/components/site-builder/SitePageView";
@@ -12,7 +11,6 @@ import { PreviewDiagnostic } from "@/components/site-builder/PreviewDiagnostic";
 
 interface PreviewProps {
   params: Promise<{ siteId: string; path?: string[] }>;
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 /** Join the optional catch-all segments into a sitemap slug. */
@@ -23,8 +21,7 @@ function slugFromPath(path: string[] | undefined): string {
 
 /**
  * Why a preview can't render. Thrown rather than returned so the checks below
- * stay linear; caught in the page, which decides between a 404 and the
- * self-service `?diag=1` report.
+ * stay linear; caught in the page, which renders the self-service diagnosis.
  */
 class PreviewUnavailable extends Error {}
 // A function declaration, not an arrow: TS only narrows control flow through
@@ -98,7 +95,7 @@ async function loadPreview(siteId: string, path: string[] | undefined) {
  * own JS and responsive breakpoints are exercised for real. The unguessable
  * site UUID is the capability token; it only ever shows sample data.
  */
-export default async function DraftPreviewPage({ params, searchParams }: PreviewProps) {
+export default async function DraftPreviewPage({ params }: PreviewProps) {
   const { siteId, path } = await params;
 
   let data: Awaited<ReturnType<typeof loadPreview>>;
@@ -107,16 +104,15 @@ export default async function DraftPreviewPage({ params, searchParams }: Preview
   } catch (e) {
     if (!(e instanceof PreviewUnavailable)) throw e;
     // A line here means the request DID reach the app — which is what tells an
-    // app-level 404 apart from the platform 404 you get when the wildcard
+    // app-level failure apart from the platform 404 you get when the wildcard
     // domain isn't attached to the Vercel project.
-    console.warn(`[preview] 404 for site ${siteId}: ${e.message}`);
+    console.warn(`[preview] unavailable for site ${siteId}: ${e.message}`);
 
-    // Holding this URL already grants full read access to the design, so
-    // showing the reason to whoever has it leaks nothing — and saves digging
-    // through the platform logs.
-    const diag = (await searchParams)?.diag;
-    if (diag !== undefined) return <PreviewDiagnostic siteId={siteId} reason={e.message} />;
-    notFound();
+    // Render the diagnosis instead of a mute 404: the URL holder already has
+    // full read access to the design, and the platform logs where the reason
+    // used to live are exactly what the link's recipients can't reach.
+    const probe = await probeDraftSite(siteId).catch(() => null);
+    return <PreviewDiagnostic siteId={siteId} reason={e.message} probe={probe} />;
   }
 
   const { site, pageSlug, visibleMenus } = data;
