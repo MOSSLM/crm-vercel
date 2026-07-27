@@ -8,6 +8,33 @@ export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
 
+/**
+ * Releases the deals this agent still owns on companies that are no longer
+ * his. `entreprises.owner_id` is authoritative — a deal that outlived its
+ * company's release is what used to show a prospect on the agent's pipeline
+ * while the admin counted zero. Reconciling here means opening the Agents page
+ * repairs any leftover from before the fix. Best-effort and idempotent.
+ */
+async function releaseOrphanDeals(
+  sc: ReturnType<typeof getServiceClient>,
+  agentId: string,
+  ownedEntIds: number[],
+): Promise<void> {
+  const { data: deals } = await sc
+    .from("opportunites")
+    .select("id, entreprise_id")
+    .eq("owner_id", agentId);
+
+  const owned = new Set(ownedEntIds);
+  const orphans = (deals ?? [])
+    .filter((d) => d.entreprise_id == null || !owned.has(d.entreprise_id as number))
+    .map((d) => d.id as string);
+
+  if (orphans.length > 0) {
+    await sc.from("opportunites").update({ owner_id: null }).in("id", orphans);
+  }
+}
+
 // Admin: the prospects owned by an agent, with per-company audit and demo-site
 // readiness so the admin can check in one click that everything is ready to be
 // sent before the agent launches a sequence.
@@ -22,6 +49,12 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
     .eq("owner_id", agentId)
     .order("name");
   if (entErr) return jsonError(entErr.message, 500, {}, cors);
+
+  await releaseOrphanDeals(
+    sc,
+    agentId,
+    (ents ?? []).map((e) => e.id as number),
+  );
 
   const entIds = (ents ?? []).map((e) => e.id as number);
   if (entIds.length === 0) return json({ prospects: [] }, { headers: cors });

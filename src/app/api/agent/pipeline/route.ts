@@ -8,7 +8,12 @@ export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
 // Kanban data: the agent pipeline stages + the caller's opportunities, joined
-// with their company and primary contact. Scoped by owner_id.
+// with their company and primary contact.
+//
+// Scoped by the deal's owner_id *and* the company's: `entreprises.owner_id` is
+// what attribution actually writes, so requiring both means a prospect taken
+// back by the admin leaves the board immediately, even if a stale deal row
+// survived the release.
 export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   const sc = getServiceClient();
   const agent = await getAgentPipeline();
@@ -18,10 +23,11 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     .from("opportunites")
     .select(
       "id, name, stage_id, montant, priorite, type, mrr, date_prochain_suivi, " +
-        "entreprise:entreprises(id, name, ville, telephone, site_web_canonique), " +
+        "entreprise:entreprises!inner(id, name, ville, telephone, site_web_canonique, owner_id), " +
         "contact:contacts(id, first_name, last_name, tel, email)",
     )
     .eq("owner_id", user.id)
+    .eq("entreprise.owner_id", user.id)
     .eq("pipeline_id", agent.pipelineId)
     .order("updated_at", { ascending: false });
 

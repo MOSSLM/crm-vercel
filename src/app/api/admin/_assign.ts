@@ -1,6 +1,38 @@
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { getAgentPipeline } from "@/app/api/agent/_lib";
 
+type ServiceClient = ReturnType<typeof getServiceClient>;
+
+/**
+ * `entreprises.owner_id` is the single source of truth for who works a
+ * prospect; a deal never owns itself. This realigns every opportunity of a
+ * company on its owner, so the admin view (which reads the company) and the
+ * agent's board (which reads the deals) can never disagree — the drift that
+ * left released prospects sitting in an agent's pipeline.
+ *
+ * Only touches rows that are actually out of sync.
+ */
+async function syncOpportuniteOwners(
+  sc: ServiceClient,
+  entrepriseId: number,
+  ownerId: string | null,
+): Promise<string | null> {
+  const { data, error } = await sc
+    .from("opportunites")
+    .select("id, owner_id")
+    .eq("entreprise_id", entrepriseId);
+  if (error) return error.message;
+
+  const stale = (data ?? []).filter((o) => o.owner_id !== ownerId).map((o) => o.id as string);
+  if (stale.length === 0) return null;
+
+  const { error: updErr } = await sc
+    .from("opportunites")
+    .update({ owner_id: ownerId })
+    .in("id", stale);
+  return updErr ? updErr.message : null;
+}
+
 export type AssignResult =
   | { ok: true; entrepriseId: number; agentId: string; opportuniteId: string }
   | { ok: false; error: string };
@@ -39,20 +71,16 @@ export async function assignProspectToAgent(
     .select("id, owner_id")
     .eq("entreprise_id", entrepriseId)
     .eq("pipeline_id", agent.pipelineId)
-    .or(`owner_id.eq.${agentId},owner_id.is.null`)
-    .limit(10);
+    .limit(20);
 
-  const existing =
-    (candidates ?? []).find((o) => o.owner_id === agentId) ?? (candidates ?? [])[0] ?? null;
+  const reusable = (candidates ?? []).filter((o) => o.owner_id === agentId || o.owner_id == null);
+  const existing = reusable.find((o) => o.owner_id === agentId) ?? reusable[0] ?? null;
 
-  if (existing?.id && existing.owner_id === agentId) {
-    return { ok: true, entrepriseId, agentId, opportuniteId: existing.id as string };
-  }
+  const alreadyOwned = existing?.id != null && existing.owner_id === agentId;
 
   let opportuniteId: string;
   if (existing?.id) {
-    // Released deal → hand it back to the agent.
-    await sc.from("opportunites").update({ owner_id: agentId }).eq("id", existing.id);
+    // The agent's own deal, or one released by a previous unassignment.
     opportuniteId = existing.id as string;
   } else {
     const { data: opp, error: oppErr } = await sc
@@ -68,6 +96,15 @@ export async function assignProspectToAgent(
       .single();
     if (oppErr) return { ok: false, error: oppErr.message };
     opportuniteId = opp.id as string;
+  }
+
+  // Every deal of the company follows its new owner — including ones a
+  // previous release left behind.
+  const syncErr = await syncOpportuniteOwners(sc, entrepriseId, agentId);
+  if (syncErr) return { ok: false, error: syncErr };
+
+  if (alreadyOwned) {
+    return { ok: true, entrepriseId, agentId, opportuniteId };
   }
 
   // Seed the cold-call task — the agent's manual step in the sequence. Skipped
@@ -103,11 +140,16 @@ export type UnassignResult =
 
 /**
  * Give a company back to the pool (admin-driven) — the mirror of
- * `assignProspectToAgent`. Releases ownership, releases the agent-pipeline deal
- * (kept, not deleted, so the history survives a later re-attribution), drops
- * the manual tasks still waiting on the prospect and exits its running
- * sequences so nothing keeps firing for an agent who no longer owns it.
- * Safe to call twice.
+ * `assignProspectToAgent`. Releases ownership, releases its deals (kept, not
+ * deleted, so the history survives a later re-attribution), drops the manual
+ * tasks still waiting on the prospect and exits its running sequences so
+ * nothing keeps firing for an agent who no longer owns it.
+ *
+ * Every step runs even when the company is already back in the pool, and every
+ * error is reported instead of swallowed: a half-applied release used to leave
+ * the deal owned by the agent — the prospect vanished from the admin's list but
+ * stayed on the agent's pipeline — and re-clicking "Retirer" was a no-op that
+ * could never repair it. Re-running it now always reconciles.
  */
 export async function unassignProspectFromAgent(
   entrepriseId: number,
@@ -127,33 +169,33 @@ export async function unassignProspectFromAgent(
   if (expectedAgentId && ownerId && ownerId !== expectedAgentId) {
     return { ok: false, error: "entreprise_attribuee_a_un_autre_agent" };
   }
-  if (!ownerId) return { ok: true, entrepriseId, agentId: null };
 
-  const { error: relErr } = await sc
-    .from("entreprises")
-    .update({ owner_id: null })
-    .eq("id", entrepriseId);
-  if (relErr) return { ok: false, error: relErr.message };
+  if (ownerId) {
+    const { error: relErr } = await sc
+      .from("entreprises")
+      .update({ owner_id: null })
+      .eq("id", entrepriseId);
+    if (relErr) return { ok: false, error: relErr.message };
+  }
 
-  // Deals stay in place but lose their owner: they drop off the agent's kanban
-  // and are picked back up if the prospect is re-attributed to someone.
-  await sc
-    .from("opportunites")
-    .update({ owner_id: null })
-    .eq("entreprise_id", entrepriseId)
-    .eq("owner_id", ownerId);
+  // Deals lose their owner too — whoever it was. Runs even on an already
+  // released company, which is what repairs a previously botched removal.
+  const syncErr = await syncOpportuniteOwners(sc, entrepriseId, null);
+  if (syncErr) return { ok: false, error: syncErr };
 
-  await sc
+  const { error: taskErr } = await sc
     .from("prospection_tasks")
     .delete()
     .eq("entreprise_id", entrepriseId)
     .eq("status", "pending");
+  if (taskErr) return { ok: false, error: taskErr.message };
 
-  await sc
+  const { error: enrollErr } = await sc
     .from("sequence_enrollments")
     .update({ status: "exited", next_run_at: null })
     .eq("entreprise_id", entrepriseId)
     .in("status", ["active", "paused"]);
+  if (enrollErr) return { ok: false, error: enrollErr.message };
 
   return { ok: true, entrepriseId, agentId: ownerId };
 }

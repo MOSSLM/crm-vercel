@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { toast } from "sonner";
@@ -126,7 +126,12 @@ export default function AgentsAdmin() {
   }, [load]);
 
   // Prospects (+ avancement des 4 étapes du pipeline) de l'agent sélectionné.
+  // `reqRef` ignore les réponses dépassées : sans ça, la requête lancée avant
+  // un retrait peut arriver après celle d'après et réafficher l'entreprise
+  // qu'on vient d'enlever.
+  const reqRef = useRef(0);
   const loadProspects = useCallback(async (agentId: string) => {
+    const seq = ++reqRef.current;
     if (!agentId) {
       setAgentProspects([]);
       return;
@@ -135,11 +140,11 @@ export default function AgentsAdmin() {
     try {
       const res = await authedFetch(`/api/admin/agent-prospects?agent_id=${agentId}`);
       const data = res.ok ? await res.json() : { prospects: [] };
-      setAgentProspects((data?.prospects ?? []) as AgentProspect[]);
+      if (seq === reqRef.current) setAgentProspects((data?.prospects ?? []) as AgentProspect[]);
     } catch {
-      setAgentProspects([]);
+      if (seq === reqRef.current) setAgentProspects([]);
     } finally {
-      setProspectsLoading(false);
+      if (seq === reqRef.current) setProspectsLoading(false);
     }
   }, []);
 
@@ -229,11 +234,17 @@ export default function AgentsAdmin() {
         `/api/admin/assign?entreprise_id=${entrepriseId}&agent_id=${selectedAgent}`,
         { method: "DELETE" },
       );
-      if (!res.ok) throw new Error();
+      // Un retrait qui échoue à mi-chemin laissait l'entreprise dans un état
+      // bâtard : on remonte la raison exacte plutôt qu'un « impossible » muet.
+      if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error || detail?.message || "");
+      }
       toast.success("Prospect retiré de l'agent, remis dans le pool.");
       await refreshLists();
-    } catch {
-      toast.error("Retrait impossible.");
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : "";
+      toast.error(detail ? `Retrait impossible : ${detail}` : "Retrait impossible.");
     } finally {
       setBusy(null);
     }
