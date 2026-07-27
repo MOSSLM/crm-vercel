@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/EnrichmentProgressModal";
-import { PipelineMatrix } from "./marketing-pipeline/PipelineMatrix";
+import { PipelineMatrix, STAGES, AGENT_STAGES } from "./marketing-pipeline/PipelineMatrix";
 import type { MatrixHandlers } from "./marketing-pipeline/types";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
@@ -90,8 +90,24 @@ function displayName(item: BoardItem): string {
 
 /* ── Component ────────────────────────────────────────────────────────────── */
 
-export const MarketingWebPipeline: React.FC = () => {
+/**
+ * `admin` : board global, 5 étapes, attribution comprise.
+ * `agent` : board restreint aux entreprises de l'agent connecté, 4 étapes
+ *   (l'attribution a déjà eu lieu). Les actions d'étape passent par les routes
+ *   `/api/agent/marketing-pipeline/*`, qui revérifient la propriété de
+ *   l'entreprise et journalisent l'action — les écritures Supabase directes du
+ *   mode admin seraient refusées par la RLS pour un freelance.
+ */
+export type MarketingPipelineVariant = "admin" | "agent";
+
+export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant }> = ({
+  variant = "admin",
+}) => {
   const supabase = React.useMemo(() => createClient(), []);
+  const isAgent = variant === "agent";
+  const boardUrl = isAgent
+    ? "/api/agent/marketing-pipeline/board"
+    : "/api/marketing-pipeline/board";
 
   const [board, setBoard] = React.useState<BoardData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -109,7 +125,7 @@ export const MarketingWebPipeline: React.FC = () => {
 
   const load = React.useCallback(async () => {
     try {
-      const res = await authedFetch("/api/marketing-pipeline/board");
+      const res = await authedFetch(boardUrl);
       if (!res.ok) throw new Error();
       const data = (await res.json()) as BoardData;
       setBoard(data);
@@ -119,7 +135,7 @@ export const MarketingWebPipeline: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [boardUrl]);
 
   React.useEffect(() => {
     load();
@@ -259,10 +275,21 @@ export const MarketingWebPipeline: React.FC = () => {
     }
     setWorking("validate-enrich");
     try {
-      const patch = board?.has_validated_column ? { enrichment_validated: true } : { pret_pour_lm: true };
-      const { error } = await supabase.from("lead_magnet_projects").update(patch).in("id", projectIds);
-      if (error) throw error;
-      toast.success(`${projectIds.length} enrichissement(s) validé(s)`);
+      if (isAgent) {
+        const res = await authedFetch("/api/agent/marketing-pipeline/validate-enrichment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ project_ids: projectIds }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+        const data = (await res.json()) as { validated: number };
+        toast.success(`${data.validated} enrichissement(s) validé(s)`);
+      } else {
+        const patch = board?.has_validated_column ? { enrichment_validated: true } : { pret_pour_lm: true };
+        const { error } = await supabase.from("lead_magnet_projects").update(patch).in("id", projectIds);
+        if (error) throw error;
+        toast.success(`${projectIds.length} enrichissement(s) validé(s)`);
+      }
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la validation");
@@ -284,21 +311,39 @@ export const MarketingWebPipeline: React.FC = () => {
     }
     setWorking("create-site");
     try {
-      const results = await Promise.allSettled(
-        targets.map(async (it) => {
-          const res = await authedFetch(`/api/site-builder/claude/${templateId}/create-demo`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ companyId: it.entreprise_id }),
-          });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
-        }),
-      );
-      const ok = results.filter((r) => r.status === "fulfilled").length;
-      const ko = results.length - ok;
-      if (ok > 0) toast.success(`${ok} site(s) démo créé(s)`);
-      if (ko > 0) toast.error(`${ko} création(s) en échec`);
+      if (isAgent) {
+        const res = await authedFetch("/api/agent/marketing-pipeline/site", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "create",
+            template_id: templateId,
+            entreprise_ids: targets.map((it) => it.entreprise_id),
+          }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+        const data = (await res.json()) as { created: number; failed: number };
+        if (data.created > 0) toast.success(`${data.created} site(s) démo créé(s)`);
+        if (data.failed > 0) toast.error(`${data.failed} création(s) en échec`);
+      } else {
+        const results = await Promise.allSettled(
+          targets.map(async (it) => {
+            const res = await authedFetch(`/api/site-builder/claude/${templateId}/create-demo`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ companyId: it.entreprise_id }),
+            });
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+          }),
+        );
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        const ko = results.length - ok;
+        if (ok > 0) toast.success(`${ok} site(s) démo créé(s)`);
+        if (ko > 0) toast.error(`${ko} création(s) en échec`);
+      }
       await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la création du site");
     } finally {
       setWorking(null);
     }
@@ -365,19 +410,32 @@ export const MarketingWebPipeline: React.FC = () => {
     }
     setWorking("validate-site");
     try {
-      const results = await Promise.allSettled(
-        siteIds.map(async (id) => {
-          const res = await authedFetch(`/api/site-builder/sites/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ build_stage: "pret" }),
-          });
-          if (!res.ok) throw new Error();
-        }),
-      );
-      const ok = results.filter((r) => r.status === "fulfilled").length;
-      if (ok > 0) toast.success(`${ok} site(s) validé(s)`);
+      if (isAgent) {
+        const res = await authedFetch("/api/agent/marketing-pipeline/site", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "validate", site_ids: siteIds }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+        const data = (await res.json()) as { validated: number };
+        toast.success(`${data.validated} site(s) validé(s)`);
+      } else {
+        const results = await Promise.allSettled(
+          siteIds.map(async (id) => {
+            const res = await authedFetch(`/api/site-builder/sites/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ build_stage: "pret" }),
+            });
+            if (!res.ok) throw new Error();
+          }),
+        );
+        const ok = results.filter((r) => r.status === "fulfilled").length;
+        if (ok > 0) toast.success(`${ok} site(s) validé(s)`);
+      }
       await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la validation du site");
     } finally {
       setWorking(null);
     }
@@ -391,24 +449,37 @@ export const MarketingWebPipeline: React.FC = () => {
     }
     setWorking("create-audit");
     try {
-      let ok = 0;
-      for (const it of targets) {
-        try {
-          await createAudit({
-            opportunite_id: it.id,
-            entreprise_nom: it.company_name ?? it.name,
-            entreprise_ville: it.ville ?? undefined,
-            entreprise_logo_url: it.logo_url ?? undefined,
-            demo_site_url: it.site?.url ?? undefined,
-          });
-          ok += 1;
-        } catch {
-          /* keep going */
+      if (isAgent) {
+        const res = await authedFetch("/api/agent/marketing-pipeline/audit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "create", opportunite_ids: targets.map((it) => it.id) }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+        const data = (await res.json()) as { created: number };
+        if (data.created > 0) toast.success(`${data.created} audit(s) créé(s)`);
+      } else {
+        let ok = 0;
+        for (const it of targets) {
+          try {
+            await createAudit({
+              opportunite_id: it.id,
+              entreprise_nom: it.company_name ?? it.name,
+              entreprise_ville: it.ville ?? undefined,
+              entreprise_logo_url: it.logo_url ?? undefined,
+              demo_site_url: it.site?.url ?? undefined,
+            });
+            ok += 1;
+          } catch {
+            /* keep going */
+          }
         }
+        if (ok > 0) toast.success(`${ok} audit(s) créé(s)`);
+        if (ok < targets.length) toast.error(`${targets.length - ok} audit(s) en échec`);
       }
-      if (ok > 0) toast.success(`${ok} audit(s) créé(s)`);
-      if (ok < targets.length) toast.error(`${targets.length - ok} audit(s) en échec`);
       await afterAction();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la création de l'audit");
     } finally {
       setWorking(null);
     }
@@ -422,12 +493,26 @@ export const MarketingWebPipeline: React.FC = () => {
     }
     setWorking("validate-audit");
     try {
-      const { error } = await supabase
-        .from("audits")
-        .update({ statut: "ready", updated_at: new Date().toISOString() })
-        .in("id", auditIds);
-      if (error) throw error;
-      toast.success(`${auditIds.length} audit(s) validé(s)`);
+      if (isAgent) {
+        const res = await authedFetch("/api/agent/marketing-pipeline/audit", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "validate",
+            opportunite_ids: items.filter((it) => it.audit).map((it) => it.id),
+          }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+        const data = (await res.json()) as { validated: number };
+        toast.success(`${data.validated} audit(s) validé(s)`);
+      } else {
+        const { error } = await supabase
+          .from("audits")
+          .update({ statut: "ready", updated_at: new Date().toISOString() })
+          .in("id", auditIds);
+        if (error) throw error;
+        toast.success(`${auditIds.length} audit(s) validé(s)`);
+      }
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la validation");
@@ -499,7 +584,8 @@ export const MarketingWebPipeline: React.FC = () => {
     onValidateSite: (item) => validateSites([item]),
     onCreateAudit: (item) => createAudits([item]),
     onValidateAudit: (item) => validateAudits([item]),
-    onAssign: (item, aId) => assignAgentTo(item, aId),
+    // Pas d'attribution en mode agent : la colonne et son menu n'existent pas.
+    onAssign: isAgent ? undefined : (item, aId) => assignAgentTo(item, aId),
     onMove: (item, pId) => movePipeline([item], pId),
     onDetails: (item) => {
       setSiteRequirement(false);
@@ -520,6 +606,8 @@ export const MarketingWebPipeline: React.FC = () => {
         working={working}
         onRefresh={load}
         handlers={matrixHandlers}
+        stages={isAgent ? AGENT_STAGES : STAGES}
+        canAssign={!isAgent}
       />
 
       <EnrichmentProgressModal

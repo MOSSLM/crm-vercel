@@ -535,18 +535,9 @@ const buildOpportunityNoteFromPartial = (
   };
 };
 
-export const canonicalizeDomain = (url: string): string => {
-  try {
-    const { hostname } = new URL(url.startsWith('http') ? url : `http://${url}`);
-    return hostname.replace(/^www\./, '').toLowerCase();
-  } catch {
-    return url
-      .replace(/^https?:\/\//, '')
-      .replace(/^www\./, '')
-      .split('/')[0]
-      .toLowerCase();
-  }
-};
+// Implémentation dans `@/lib/url-canonical` (pure, utilisable côté serveur) ;
+// réexportée ici pour les appelants existants.
+export { canonicalizeDomain } from '@/lib/url-canonical';
 // Search Results API (table: recherches)
 export const searchResultsApi = {
   getAll: async (): Promise<SearchResult[]> => {

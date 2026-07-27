@@ -75,7 +75,8 @@ export interface MatrixHandlers {
   onValidateSite: (item: BoardItem) => void;
   onCreateAudit: (item: BoardItem) => void;
   onValidateAudit: (item: BoardItem) => void;
-  onAssign: (item: BoardItem, agentId: string) => void;
+  /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */
+  onAssign?: (item: BoardItem, agentId: string) => void;
   onMove: (item: BoardItem, pipelineId: string) => void;
   onDetails: (item: BoardItem) => void;
 }

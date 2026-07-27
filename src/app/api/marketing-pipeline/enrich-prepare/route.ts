@@ -1,8 +1,9 @@
 import { preflight } from "@/app/api/_lib/cors";
-import { json } from "@/app/api/_lib/respond";
+import { json, jsonError } from "@/app/api/_lib/respond";
 import { marketingEnrichPrepareSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { resolveAgentContext } from "@/app/api/_lib/require-capability";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,11 +65,27 @@ function stripSurroundingCities(variables: Record<string, unknown> | null): Reco
  * Uses the service client (RLS-bypassing) after `withAuth` has validated the
  * caller, mirroring the other marketing-pipeline routes.
  */
-export const POST = withAuth({ body: marketingEnrichPrepareSchema }, async ({ body, cors }) => {
+export const POST = withAuth({ body: marketingEnrichPrepareSchema }, async ({ body, user, cors }) => {
   const { opportunity_ids, overwrite } = body;
   const supabase = getServiceClient();
 
-  const ids = [...new Set(opportunity_ids)];
+  let ids = [...new Set(opportunity_ids)];
+
+  // Un agent freelance ne prépare que ses propres entreprises. L'admin, lui,
+  // travaille sur tout le board — comportement inchangé.
+  const ctx = await resolveAgentContext(user.id);
+  if (ctx.role === "freelance") {
+    if (!ctx.canUseMarketingPipeline) {
+      return jsonError("capability_refusee", 403, { capability: "marketing_pipeline" }, cors);
+    }
+    const { data: scoped } = await supabase
+      .from("opportunites")
+      .select("id, entreprises!inner(id, owner_id)")
+      .in("id", ids)
+      .eq("entreprises.owner_id", user.id);
+    ids = (scoped ?? []).map((o) => o.id as string);
+    if (ids.length === 0) return jsonError("entreprise_non_attribuee", 403, {}, cors);
+  }
 
   const [oppsRes, projectsRes] = await Promise.all([
     supabase.from("opportunites").select("id, entreprise_id").in("id", ids),

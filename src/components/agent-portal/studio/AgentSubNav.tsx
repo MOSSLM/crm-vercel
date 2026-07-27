@@ -4,6 +4,7 @@ import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getAgentSpaceById, getAgentSpaceFromPath } from "@/components/agent-portal/agentSpaces";
+import { useAgentCapabilities } from "@/components/agent-portal/useAgentCapabilities";
 
 /**
  * Level 2 of the agent shell: the tools of the active section. Hidden on
@@ -12,11 +13,20 @@ import { getAgentSpaceById, getAgentSpaceFromPath } from "@/components/agent-por
 export function AgentSubNav() {
   const pathname = usePathname() ?? "";
   const space = getAgentSpaceById(getAgentSpaceFromPath(pathname));
+  const { canQualify, canUseMarketingPipeline, loading } = useAgentCapabilities();
 
   const isActive = (href: string, activeHref?: string) => {
     const target = activeHref ?? href;
     return pathname === target || pathname.startsWith(target + "/");
   };
+
+  // Les outils sous capacité restent masqués tant qu'elle n'est pas confirmée,
+  // pour ne pas les faire clignoter au chargement.
+  const tools = space.tools.filter((tool) => {
+    if (!tool.capability) return true;
+    if (loading) return false;
+    return tool.capability === "qualify" ? canQualify : canUseMarketingPipeline;
+  });
 
   return (
     <nav
@@ -28,7 +38,7 @@ export function AgentSubNav() {
         <span className="text-sm font-semibold tracking-tight">{space.label}</span>
       </div>
 
-      {space.tools.map((tool) => {
+      {tools.map((tool) => {
         const active = isActive(tool.href, tool.activeHref);
         const Icon = tool.icon;
         return (

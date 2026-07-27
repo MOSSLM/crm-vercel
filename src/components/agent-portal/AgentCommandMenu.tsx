@@ -13,6 +13,7 @@ import {
   CommandItem,
 } from "@/components/ui/command";
 import { getAllAgentTools } from "@/components/agent-portal/agentSpaces";
+import { useAgentCapabilities } from "@/components/agent-portal/useAgentCapabilities";
 
 const QUICK_ACTIONS = [
   { title: "Démarchage du jour", href: "/espace-agent/demarchage", hint: "ouvrir la file de démarchage" },
@@ -39,7 +40,19 @@ export function AgentCommandMenu({
   const q = query.trim().toLowerCase();
   const match = (haystack: string) => q.length === 0 || haystack.toLowerCase().includes(q);
 
-  const tools = React.useMemo(() => getAllAgentTools(), []);
+  const { canQualify, canUseMarketingPipeline, loading: capsLoading } = useAgentCapabilities();
+
+  // Même filtrage par capacité que la sous-nav : on ne propose pas un outil
+  // auquel l'agent n'a pas droit.
+  const tools = React.useMemo(
+    () =>
+      getAllAgentTools().filter((t) => {
+        if (!t.capability) return true;
+        if (capsLoading) return false;
+        return t.capability === "qualify" ? canQualify : canUseMarketingPipeline;
+      }),
+    [canQualify, canUseMarketingPipeline, capsLoading],
+  );
 
   const go = (href: string) => {
     onOpenChange(false);

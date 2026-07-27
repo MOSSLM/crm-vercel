@@ -1715,3 +1715,69 @@ export interface PlancheBoardDetail {
 export interface PlancheBoardSummary extends PlancheBoard {
   card_count: number;
 }
+
+// ─── Espace agent : capacités, pré-tri de qualification, activité, dépense ───
+// Voir sql/20260727_agent_qualification_and_pipeline.sql.
+
+/** Capacités accordées à un agent freelance. Absence de ligne = aucune capacité. */
+export interface AgentSettings {
+  agent_id: string;
+  can_qualify: boolean;
+  can_use_marketing_pipeline: boolean;
+  /** null = pas de plafond. En centimes. */
+  enrichment_budget_cents: number | null;
+  budget_period: 'month' | 'total';
+  updated_at: string;
+  updated_by: string | null;
+}
+
+/** Ce qu'un agent propose depuis sa file de qualification. */
+export type AgentQualificationDecisionKind = 'qualify' | 'skip';
+
+/** Ce que l'admin fait réellement au moment de la revue. */
+export type AgentReviewAction = 'qualify' | 'blacklist' | 'hide' | 'requeue' | 'delete';
+
+export interface AgentQualificationDecision {
+  id: string;
+  entreprise_id: number;
+  agent_id: string;
+  decision: AgentQualificationDecisionKind;
+  note: string | null;
+  created_at: string;
+  review_status: 'pending' | 'confirmed' | 'overridden';
+  review_action: AgentReviewAction | null;
+  reviewed_at: string | null;
+  reviewed_by: string | null;
+}
+
+export type AgentActivityAction =
+  | 'qualify'
+  | 'skip'
+  | 'enrich'
+  | 'validate_enrich'
+  | 'create_site'
+  | 'validate_site'
+  | 'create_audit'
+  | 'validate_audit';
+
+export interface AgentActivityEvent {
+  id: string;
+  agent_id: string;
+  entreprise_id: number | null;
+  action: AgentActivityAction;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AgentUsageEvent {
+  id: string;
+  agent_id: string;
+  entreprise_id: number | null;
+  kind: string;
+  provider: string | null;
+  model: string | null;
+  cost_cents: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  created_at: string;
+}

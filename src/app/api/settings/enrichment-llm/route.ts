@@ -11,21 +11,41 @@ import {
 
 export const OPTIONS = (req: Request) => preflight(req);
 
+/** `true` quand la colonne n'existe pas encore (migration non appliquée). */
+const isMissingColumn = (error: { code?: string; message?: string } | null): boolean =>
+  !!error &&
+  (error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column .* does not exist|could not find the .* column/i.test(error.message ?? ""));
+
 // Configuration globale du modèle IA de l'enrichissement.
 // Table `enrichment_llm_settings` : une seule ligne id='default'.
 export const GET = withAuth({}, async ({ cors }) => {
   const sb = getServiceClient();
-  const { data, error } = await sb
+  // `cost_per_run_cents` vient de la migration 20260727, appliquée hors CI :
+  // on retombe sur la sélection historique tant qu'elle ne l'est pas.
+  let { data, error } = await sb
     .from("enrichment_llm_settings")
-    .select("provider, model")
+    .select("provider, model, cost_per_run_cents")
     .eq("id", "default")
     .maybeSingle();
+
+  if (error && isMissingColumn(error)) {
+    ({ data, error } = await sb
+      .from("enrichment_llm_settings")
+      .select("provider, model")
+      .eq("id", "default")
+      .maybeSingle());
+  }
 
   if (error) return jsonError(error.message, 500, {}, cors);
 
   const current = {
     provider: data?.provider ?? DEFAULT_LLM_PROVIDER,
     model: data?.model ?? DEFAULT_LLM_MODEL,
+    // Coût forfaitaire estimé d'un run, utilisé pour décompter le budget des
+    // agents. 0 (ou colonne absente) = aucun décompte.
+    cost_per_run_cents: Number(data?.cost_per_run_cents) || 0,
   };
   return json({ current, options: ENRICHMENT_LLM_OPTIONS }, { headers: cors });
 });
@@ -44,13 +64,27 @@ export const PUT = withAuth({}, async ({ req, cors }) => {
   const model = typeof modelRaw === "string" ? modelRaw.trim() : "";
   if (!model) return jsonError("model_required", 400, {}, cors);
 
-  const { error } = await getServiceClient()
+  const costRaw = (body as { cost_per_run_cents?: unknown })?.cost_per_run_cents;
+  const costPerRunCents =
+    costRaw == null ? null : Math.max(0, Math.round(Number(costRaw) || 0));
+
+  const sb = getServiceClient();
+  const base = { id: "default", provider, model, updated_at: new Date().toISOString() };
+
+  let { error } = await sb
     .from("enrichment_llm_settings")
     .upsert(
-      { id: "default", provider, model, updated_at: new Date().toISOString() },
+      costPerRunCents == null ? base : { ...base, cost_per_run_cents: costPerRunCents },
       { onConflict: "id" },
     );
 
+  // Migration 20260727 pas encore appliquée : on enregistre au moins le modèle.
+  if (error && isMissingColumn(error)) {
+    ({ error } = await sb
+      .from("enrichment_llm_settings")
+      .upsert(base, { onConflict: "id" }));
+  }
+
   if (error) return jsonError(error.message, 500, {}, cors);
-  return json({ ok: true, provider, model }, { status: 200, headers: cors });
+  return json({ ok: true, provider, model, cost_per_run_cents: costPerRunCents }, { status: 200, headers: cors });
 });

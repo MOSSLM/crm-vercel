@@ -74,32 +74,10 @@ export const formatUrlForDisplay = (url?: string | null): string => {
   return domain || url;
 };
 
-// Canonicalize URL: force https, remove protocol/www, trailing slash, params and lowercase
-export const canonicalizeUrl = (url: string): string => {
-  if (!url) return '';
-
-  try {
-    // Ensure we have a protocol for URL constructor
-    let temp = url.trim();
-    if (!temp.startsWith('http://') && !temp.startsWith('https://')) {
-      temp = `https://${temp}`;
-    }
-
-    const parsed = new URL(temp);
-    const hostname = parsed.hostname.replace(/^www\./i, '').toLowerCase();
-    const pathname = parsed.pathname.toLowerCase().replace(/\/$/, '');
-    const canonical = `https://${hostname}${pathname}`;
-    return canonical;
-  } catch {
-    // Fallback manual cleaning
-    let cleaned = url.trim().toLowerCase();
-    cleaned = cleaned.replace(/^https?:\/\//, '');
-    cleaned = cleaned.replace(/^www\./, '');
-    cleaned = cleaned.split(/[?#]/)[0];
-    cleaned = cleaned.replace(/\/$/, '');
-    return cleaned ? `https://${cleaned}` : '';
-  }
-};
+// Canonicalize URL: force https, remove protocol/www, trailing slash, params and lowercase.
+// L'implémentation vit dans `@/lib/url-canonical` (pure, utilisable côté serveur) ;
+// réexportée ici pour les appelants existants.
+export { canonicalizeUrl } from '@/lib/url-canonical';
 
 // Helper function to ensure URL has a valid protocol for opening in new window
 export const ensureHttpsUrl = (url: string): string => {
