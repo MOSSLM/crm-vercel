@@ -20,6 +20,18 @@ describe("rewriteAssets", () => {
     ]);
     expect(rewriteAssets(`<img src="images/a-2.png">`, map)).toBe(`<img src="URL_A2">`);
   });
+
+  it("consumes leading ../ hops (multi-template export: images live above the pages)", () => {
+    const map = new Map([["images/certifications/qualipac.png", "URL_Q"]]);
+    const html = `<img src="../images/certifications/qualipac.png"><img src="./images/certifications/qualipac.png">`;
+    expect(rewriteAssets(html, map)).toBe(`<img src="URL_Q"><img src="URL_Q">`);
+  });
+
+  it("also resolves ../ refs inside CSS url() and JS strings", () => {
+    const map = new Map([["images/hero.jpg", "URL_H"]]);
+    expect(rewriteAssets(`.a{background:url(../images/hero.jpg)}`, map)).toBe(`.a{background:url(URL_H)}`);
+    expect(rewriteAssets(`var src = "../../images/hero.jpg";`, map)).toBe(`var src = "URL_H";`);
+  });
 });
 
 describe("fileNameToSlug", () => {

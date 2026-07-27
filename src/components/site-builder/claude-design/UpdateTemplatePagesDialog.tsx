@@ -14,8 +14,13 @@ import {
   buildProcessedPages,
   imagesForPages,
   sharedJsFromBundle,
-  refPath,
 } from "@/lib/site-builder/claude-design/build-import-pages";
+import { uploadBundleImages } from "@/lib/site-builder/claude-design/upload-bundle-images";
+import {
+  splitTemplateBundle,
+  normalizeTemplateName,
+  type DetectedTemplate,
+} from "@/lib/site-builder/claude-design/split-template-bundle";
 
 export interface TemplateRef { id: string; name: string }
 
@@ -36,6 +41,9 @@ interface Props {
  */
 export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) {
   const [file, setFile] = React.useState<File | null>(null);
+  /** Templates found in the ZIP — several when the export ships skins side by side. */
+  const [detected, setDetected] = React.useState<DetectedTemplate[]>([]);
+  const [templateKey, setTemplateKey] = React.useState<string>("");
   const [bundle, setBundle] = React.useState<ParsedBundle | null>(null);
   const [existingSlugs, setExistingSlugs] = React.useState<Set<string>>(new Set());
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -45,7 +53,7 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
 
   // Reset everything whenever the target template changes (open / close / swap).
   React.useEffect(() => {
-    setFile(null); setBundle(null); setSelected(new Set());
+    setFile(null); setBundle(null); setSelected(new Set()); setDetected([]); setTemplateKey("");
     setExistingSlugs(new Set()); setUpdateShared(false); setBusy(false); setProgress("");
     if (!template) return;
     let alive = true;
@@ -59,7 +67,7 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
   }, [template]);
 
   const handleFile = async (f: File | null) => {
-    setFile(f); setBundle(null); setSelected(new Set());
+    setFile(f); setBundle(null); setSelected(new Set()); setDetected([]); setTemplateKey("");
     if (!f) return;
     setBusy(true); setProgress("Analyse du template…");
     try {
@@ -71,9 +79,13 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
           files.push({ path: entry.name, bytes: await entry.async("uint8array") });
         }),
       );
-      const parsed = parseTemplateBundle(files);
-      if (parsed.pages.length === 0) throw new Error("Aucune page HTML trouvée dans le ZIP.");
-      setBundle(parsed);
+      const templates = splitTemplateBundle(files);
+      if (templates.length === 0) throw new Error("Aucune page HTML trouvée dans le ZIP.");
+      setDetected(templates);
+      // Default to the skin that matches the template being edited, so a
+      // multi-variant ZIP doesn't quietly load the wrong one.
+      const match = templates.find((t) => normalizeTemplateName(t.name) === normalizeTemplateName(template?.name ?? ""));
+      setTemplateKey((match ?? templates[0]).key);
       // Pre-select nothing: the operator explicitly picks which pages to replace.
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ZIP illisible");
@@ -82,6 +94,17 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
       setBusy(false); setProgress("");
     }
   };
+
+  // Parse the chosen skin (and re-parse when the operator switches skins).
+  React.useEffect(() => {
+    if (detected.length === 0) { setBundle(null); return; }
+    const tpl = detected.find((t) => t.key === templateKey);
+    if (!tpl) return;
+    const parsed = parseTemplateBundle(tpl.files);
+    setBundle(parsed.pages.length > 0 ? parsed : null);
+    setSelected(new Set());
+    if (parsed.pages.length === 0) toast.error(`« ${tpl.name} » ne contient aucune page HTML.`);
+  }, [detected, templateKey]);
 
   const toggle = (slug: string) => {
     setSelected((prev) => {
@@ -101,19 +124,14 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
       // A shared-asset refresh needs every image (CSS backgrounds reference many);
       // a pages-only import uploads just the images the selected pages use.
       const imgs = updateShared ? bundle.images : imagesForPages(bundle, slugs);
-      const urlByPath = new Map<string, string>();
-      let done = 0;
-      for (const img of imgs) {
-        const ref = refPath(img.path);
-        setProgress(`Upload images (${++done}/${imgs.length})…`);
-        const fd = new FormData();
-        fd.append("file", new Blob([img.bytes as BlobPart], { type: img.mime }), ref.replace(/^.*\//, ""));
-        fd.append("original_path", ref);
-        const res = await authedFetch(`/api/site-builder/assets?site=${template.id}`, { method: "POST", body: fd });
-        if (res.ok) {
-          const { public_url } = (await res.json()) as { public_url: string };
-          if (public_url) urlByPath.set(ref, public_url);
-        }
+      const { urlByPath, failed } = await uploadBundleImages(
+        imgs,
+        template.id,
+        authedFetch,
+        (done, total) => setProgress(`Upload images (${done}/${total})…`),
+      );
+      if (failed.length > 0) {
+        toast.warning(`${failed.length} image(s) n’ont pas pu être envoyées — elles resteront vides.`);
       }
 
       setProgress("Préparation des pages…");
@@ -135,11 +153,27 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec de la mise à jour");
-      const { updated = 0, created = 0 } = (await res.json()) as { updated?: number; created?: number };
+      const { updated = 0, created = 0, keptOverrides = 0, droppedOverrides = [] } = (await res.json()) as {
+        updated?: number; created?: number; keptOverrides?: number;
+        droppedOverrides?: Array<{ slug: string; keys: string[] }>;
+      };
 
-      const parts = [updated && `${updated} remplacée${updated > 1 ? "s" : ""}`, created && `${created} ajoutée${created > 1 ? "s" : ""}`]
-        .filter(Boolean).join(", ");
+      const parts = [
+        updated && `${updated} remplacée${updated > 1 ? "s" : ""}`,
+        created && `${created} ajoutée${created > 1 ? "s" : ""}`,
+        keptOverrides && `${keptOverrides} réglage${keptOverrides > 1 ? "s" : ""} conservé${keptOverrides > 1 ? "s" : ""}`,
+      ].filter(Boolean).join(", ");
       toast.success(`Template mis à jour (${parts || `${pages.length} pages`})`);
+
+      // The markup moved under some edits: say which pages, so the operator knows
+      // exactly where to look instead of hunting for a photo that vanished.
+      const lost = droppedOverrides.reduce((n, d) => n + d.keys.length, 0);
+      if (lost > 0) {
+        toast.warning(
+          `${lost} réglage${lost > 1 ? "s" : ""} n’a pas pu être reporté (${droppedOverrides.map((d) => d.slug).join(", ")}) — le markup a changé à cet endroit.`,
+          { duration: 10000 },
+        );
+      }
       onDone?.();
       onClose();
     } catch (e) {
@@ -159,7 +193,8 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
         <div className="flex flex-col gap-4 py-1">
           <p className="text-sm text-muted-foreground">
             Importe un <strong>.zip</strong> Claude Design puis choisis les pages à remplacer. Seules les pages
-            cochées sont mises à jour — les autres pages du template (et leurs photos) restent intactes.
+            cochées sont mises à jour — les autres pages du template restent intactes. Les photos déjà posées
+            sont reportées sur le nouveau markup.
           </p>
 
           {!bundle ? (
@@ -174,6 +209,21 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
             </div>
           ) : (
             <>
+              {detected.length > 1 && (
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                  Variante du ZIP à utiliser
+                  <select
+                    className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
+                    value={templateKey} disabled={busy}
+                    onChange={(e) => setTemplateKey(e.target.value)}
+                  >
+                    {detected.map((t) => (
+                      <option key={t.key} value={t.key}>{t.name} — {t.pageCount} page{t.pageCount > 1 ? "s" : ""}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
               <div className="max-h-64 overflow-y-auto rounded-lg border">
                 {bundle.pages.map((p) => {
                   const isExisting = existingSlugs.has(p.slug);

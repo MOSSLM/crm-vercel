@@ -4,6 +4,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { wrapRawHtml } from "@/lib/site-builder/wrap-raw-html";
 import { addImageLoadingHints } from "@/lib/site-builder/claude-design/add-image-loading-hints";
+import { remapOverrides } from "@/lib/site-builder/claude-design/remap-overrides";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
 import type { SitemapPage } from "@/types";
 
@@ -39,8 +40,12 @@ function unionArr(existing: unknown, incoming: string[]): string[] {
  * small processed result here.
  *
  * For a slug that already exists on the site the page's `theme_sections` markup
- * + JS are overwritten (and that page's now-stale inline `__overrides` cleared);
- * a slug not yet present is added (section + instance + sitemap entry). Shared
+ * + JS are overwritten and its inline `__overrides` are CARRIED OVER onto the
+ * new markup (`remapOverrides`) — a template holds hundreds of hand-placed
+ * photos, and a re-export that only changes copy or CSS must not throw them
+ * away. Overrides whose slot no longer exists are reported as `droppedOverrides`
+ * instead of being applied to whatever now sits at that position.
+ * A slug not yet present is added (section + instance + sitemap entry). Shared
  * CSS/JS are only touched when `updateShared` is set.
  *
  * Body: {
@@ -97,10 +102,29 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     }
   }
 
+  // The markup those overrides were written against, so they can be re-keyed
+  // onto the incoming version. Fetched in one round-trip for the pages we touch.
+  const targetIds = pages.map((p) => bySlug.get(p.slug)?.sectionId).filter((id): id is string => !!id);
+  const htmlBySectionId = new Map<string, string>();
+  if (targetIds.length > 0) {
+    const { data: sections, error: secErr } = await supabase
+      .from("theme_sections")
+      .select("section_id, example_data")
+      .eq("theme_slug", CLAUDE_DESIGN_THEME_SLUG)
+      .in("section_id", targetIds);
+    if (secErr) return jsonError(`theme_sections: ${secErr.message}`, 500);
+    for (const s of (sections ?? []) as Array<{ section_id: string; example_data: Record<string, unknown> | null }>) {
+      const prev = s.example_data?.__token_html;
+      if (typeof prev === "string") htmlBySectionId.set(s.section_id, prev);
+    }
+  }
+
   const sitemap = ((site as { sitemap?: SitemapPage[] | null }).sitemap ?? []) as SitemapPage[];
   let sitemapChanged = false;
   let updated = 0;
   let created = 0;
+  let keptOverrides = 0;
+  const droppedOverrides: Array<{ slug: string; keys: string[] }> = [];
 
   for (const page of pages) {
     // Mirror createClaudeDesignMultiPage exactly so a re-imported page is stored
@@ -113,7 +137,15 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     if (existing) {
       // Overwrite this page's markup/JS only. Its sitemap entry, the other pages
       // and the shared assets stay as-is. Inline overrides targeted the OLD
-      // markup, so clear them for this page to avoid mis-applied edits.
+      // markup, so re-key them onto the new one instead of dropping the photos.
+      const prevOverrides = (existing.content.__overrides as Record<string, unknown> | undefined) ?? {};
+      const prevHtml = htmlBySectionId.get(existing.sectionId);
+      const remapped = prevHtml
+        ? remapOverrides(prevHtml, withHints, prevOverrides)
+        : { overrides: {}, dropped: Object.keys(prevOverrides) };
+      keptOverrides += Object.keys(remapped.overrides).length;
+      if (remapped.dropped.length > 0) droppedOverrides.push({ slug: page.slug, keys: remapped.dropped });
+
       const { error: tsErr } = await supabase
         .from("theme_sections")
         .update({ code, example_data: exampleData })
@@ -123,7 +155,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
 
       const { error: instErr } = await supabase
         .from("site_section_instances")
-        .update({ content: { ...existing.content, __overrides: {} } })
+        .update({ content: { ...existing.content, __overrides: remapped.overrides } })
         .eq("id", existing.instanceId);
       if (instErr) return jsonError(instErr.message, 500);
       updated++;
@@ -186,5 +218,5 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     if (upErr) return jsonError(upErr.message, 500);
   }
 
-  return json({ ok: true, updated, created });
+  return json({ ok: true, updated, created, keptOverrides, droppedOverrides });
 });

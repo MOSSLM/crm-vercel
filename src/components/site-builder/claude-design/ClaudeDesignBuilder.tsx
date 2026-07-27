@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
   Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
-  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff, FileArchive,
+  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff, FileArchive, Images,
 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
@@ -17,6 +17,7 @@ import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport"
 import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
+import { isImageOverrideKey } from "@/lib/site-builder/claude-design/image-override-keys";
 import {
   initHistory, pushSnapshot, undo as undoHistory, redo as redoHistory,
   canUndo as histCanUndo, canRedo as histCanRedo, currentSnapshot,
@@ -27,6 +28,7 @@ import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
 import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
 import { MissingImagesPanel } from "./MissingImagesPanel";
 import { UpdateTemplatePagesDialog } from "./UpdateTemplatePagesDialog";
+import { CopyImagesDialog } from "./CopyImagesDialog";
 
 interface PageData {
   slug: string;
@@ -72,11 +74,6 @@ function snapshotOf(d: BoardData): DesignSnapshot {
   };
 }
 
-/** Image-type override keys cleared by "Réinitialiser les images". */
-function isImageOverrideKey(key: string): boolean {
-  return /:(image|bg_image|image_set|image_mobile)$/.test(key);
-}
-
 export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [data, setData] = React.useState<BoardData | null>(null);
   const [activeSlug, setActiveSlug] = React.useState("/");
@@ -84,6 +81,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [viewport, setViewport] = React.useState<Viewport>("desktop");
   const [save, setSave] = React.useState<SaveState>("saved");
   const [importPagesOpen, setImportPagesOpen] = React.useState(false);
+  const [copyImagesOpen, setCopyImagesOpen] = React.useState(false);
   const [companies, setCompanies] = React.useState<Company[]>([]);
   const [company, setCompany] = React.useState<Company | null>(null);
   const [companyVars, setCompanyVars] = React.useState<Record<string, string> | null>(null);
@@ -421,6 +419,13 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               <Globe className="ico-xs" />{data.publishedSubdomain}.{SITE_DOMAIN}
             </a>
           ) : null}
+          <button
+            className="cd-btn outline"
+            onClick={() => setCopyImagesOpen(true)}
+            title="Reprendre les photos déjà posées sur un autre design Claude et les replacer dans les mêmes zones ici"
+          >
+            <Images className="ico-sm" />Images depuis…
+          </button>
           {data.isTemplate ? (
             <button
               className="cd-btn outline"
@@ -522,6 +527,14 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
       <UpdateTemplatePagesDialog
         template={importPagesOpen ? { id: siteId, name: data.name } : null}
         onClose={() => setImportPagesOpen(false)}
+        onDone={load}
+      />
+
+      <CopyImagesDialog
+        open={copyImagesOpen}
+        siteId={siteId}
+        pages={data.pages.map((p) => ({ slug: p.slug, title: p.title }))}
+        onClose={() => setCopyImagesOpen(false)}
         onDone={load}
       />
     </div>
