@@ -28,7 +28,42 @@ export function imageSlotPaths(overrides: Record<string, unknown>): Set<string> 
   return paths;
 }
 
-/** Removes every image kind of `path` from `overrides` (mutates the map). */
-export function clearImageKeys(overrides: Record<string, unknown>, path: string): void {
-  for (const kind of IMAGE_OVERRIDE_KINDS) delete overrides[`${path}:${kind}`];
+/**
+ * Clears the image kinds of `path` that the incoming write does NOT replace —
+ * so a slot never ends up holding two contradictory settings, and never loses a
+ * variant nobody was going to rewrite.
+ *
+ * `incomingKinds` are the kinds about to be written. `image_mobile` is only an
+ * art-direction companion to `image`, so it survives a plain `image` write;
+ * everything else is mutually exclusive with the incoming kind and goes.
+ * Clearing all four unconditionally used to drop a target's `image_mobile` when
+ * the source only carried an `image`.
+ */
+export function clearImageKeys(
+  overrides: Record<string, unknown>,
+  path: string,
+  incomingKinds: readonly string[] = IMAGE_OVERRIDE_KINDS,
+): void {
+  const incoming = new Set(incomingKinds);
+  const keepsMobile = !incoming.has("image_set") && incoming.has("image");
+  for (const kind of IMAGE_OVERRIDE_KINDS) {
+    if (incoming.has(kind)) continue;
+    if (kind === "image_mobile" && keepsMobile) continue;
+    delete overrides[`${path}:${kind}`];
+  }
+}
+
+/**
+ * The kind that actually applies to a slot in the TARGET markup.
+ *
+ * `image` sets `src`, `bg_image` sets a background — the renderer picks by kind,
+ * not by element. Copying an `image` onto a `.ph` placeholder therefore writes
+ * `src` on a `<div>`: the key exists, the photo never shows. `bg_image` works on
+ * any element, so it is the safe landing kind for anything that is not an `<img>`.
+ */
+export function kindForElement(kind: string, isImgElement: boolean): string {
+  if (kind === "image_set" || kind === "image_mobile") return kind;
+  if (kind === "image" && !isImgElement) return "bg_image";
+  if (kind === "bg_image" && isImgElement) return "image";
+  return kind;
 }

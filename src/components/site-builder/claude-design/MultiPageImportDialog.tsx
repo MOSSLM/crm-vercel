@@ -16,6 +16,7 @@ import { rewriteAssets } from "@/lib/site-builder/claude-design/rewrite-asset-pa
 import { buildProcessedPages, sharedJsFromBundle } from "@/lib/site-builder/claude-design/build-import-pages";
 import { uploadBundleImages } from "@/lib/site-builder/claude-design/upload-bundle-images";
 import { buildTweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
+import { parseThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
 import {
   splitTemplateBundle,
   normalizeTemplateName,
@@ -34,10 +35,48 @@ interface ExistingTemplate { id: string; name: string }
 interface RowConfig {
   selected: boolean;
   name: string;
-  /** "" = create a new template, otherwise the id of the one to update. */
+  /** "" = create a new template, otherwise the id of the one to update.
+   *  Never pre-filled: overwriting an existing template must be a deliberate
+   *  choice, not something a matching folder name decides on its own. */
   targetId: string;
   /** "" = none, otherwise the template whose photos are pulled in after import. */
   imagesFromId: string;
+  /** Update only: also replace the shared CSS/JS, fonts and Tweaks schema. */
+  updateShared: boolean;
+  /** Update only: also reset the colours/typography to the ZIP's defaults. */
+  resetTweaks: boolean;
+}
+
+/** What `import-pages` reports about the photos it carried over. */
+interface ImportReport {
+  keptOverrides?: number;
+  uncertainOverrides?: number;
+  droppedOverrides?: Array<{ slug: string; keys: string[] }>;
+  unverifiedPages?: string[];
+}
+
+/**
+ * Surfaces what an update did to the photos already in place. Silence here is
+ * how a template lost every image it had while the dialog reported success.
+ */
+function reportOverrides(label: string, r: ImportReport): void {
+  const kept = r.keptOverrides ?? 0;
+  const lost = (r.droppedOverrides ?? []).reduce((n, d) => n + d.keys.length, 0);
+  const uncertain = r.uncertainOverrides ?? 0;
+  if (kept > 0) toast.success(`${label} : ${kept} réglage${kept > 1 ? "s" : ""} d'image conservé${kept > 1 ? "s" : ""}.`);
+  if (uncertain > 0) {
+    toast.warning(`${label} : ${uncertain} placement${uncertain > 1 ? "s" : ""} à vérifier — le markup a bougé.`, { duration: 10000 });
+  }
+  if (lost > 0) {
+    const pages = (r.droppedOverrides ?? []).map((d) => d.slug).join(", ");
+    toast.error(
+      `${label} : ${lost} image${lost > 1 ? "s" : ""} n'a pas pu être replacée (${pages}). Utilise « Restaurer les images » dans l'éditeur.`,
+      { duration: 15000 },
+    );
+  }
+  if ((r.unverifiedPages ?? []).length > 0) {
+    toast.warning(`${label} : version précédente inconnue sur ${r.unverifiedPages!.length} page(s) — les images ont été conservées telles quelles, à vérifier.`, { duration: 10000 });
+  }
 }
 
 /**
@@ -110,7 +149,10 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       const fallback = f.name.replace(/\.zip$/i, "");
       const named = templates.map((t) => (t.key ? t : { ...t, name: fallback }));
       setDetected(named);
-      setRows(Object.fromEntries(named.map((t) => [t.key, { selected: true, name: t.name, targetId: "", imagesFromId: "" }])));
+      setRows(Object.fromEntries(named.map((t) => [
+        t.key,
+        { selected: true, name: t.name, targetId: "", imagesFromId: "", updateShared: true, resetTweaks: false },
+      ])));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ZIP illisible");
       setFile(null);
@@ -119,22 +161,12 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
     }
   };
 
-  // Pre-fill each row's update target once both the ZIP and the CRM list are in:
-  // a folder whose name matches an existing template is a re-import, not a new one.
-  React.useEffect(() => {
-    if (detected.length === 0 || existing.length === 0) return;
-    setRows((prev) => {
-      const next = { ...prev };
-      let changed = false;
-      for (const t of detected) {
-        const row = next[t.key];
-        if (!row || row.targetId) continue;
-        const match = existing.find((e) => normalizeTemplateName(e.name) === normalizeTemplateName(row.name));
-        if (match) { next[t.key] = { ...row, targetId: match.id }; changed = true; }
-      }
-      return changed ? next : prev;
-    });
-  }, [detected, existing]);
+  /** The existing template a ZIP folder looks like — a SUGGESTION only. Selecting
+   *  it (and so overwriting that template) stays a deliberate click. */
+  const suggestionFor = React.useCallback(
+    (name: string) => existing.find((e) => normalizeTemplateName(e.name) === normalizeTemplateName(name)) ?? null,
+    [existing],
+  );
 
   const setRow = (key: string, patch: Partial<RowConfig>) =>
     setRows((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -166,6 +198,16 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
     const sharedJs = sharedJsFromBundle(bundle, urlByPath);
     const pages = buildProcessedPages(bundle, urlByPath);
 
+    // Tweaks schema (the panel's controls) + theme sets (what a tweak VALUE
+    // means in CSS). Both belong to THIS skin — "Chantier" only exists in Brut's
+    // tables — so both travel with every import, update included.
+    const pageTweaksBySlug: Record<string, string> = {};
+    for (const p of bundle.pages) {
+      if (p.tweaksFile && bundle.tweaksJsx[p.tweaksFile]) pageTweaksBySlug[p.slug] = bundle.tweaksJsx[p.tweaksFile];
+    }
+    const tweaksSchema = buildTweaksSchema(bundle.tweaksJsx["theme-tweaks.jsx"] ?? "", pageTweaksBySlug);
+    const themeSets = parseThemeSets(bundle.themeApplyJs);
+
     if (isUpdate) {
       step("Mise à jour du template…");
       const res = await authedFetch(`/api/site-builder/designs/${siteId}/import-pages`, {
@@ -173,22 +215,21 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           pages,
-          updateShared: true,
+          updateShared: row.updateShared,
           sharedCss,
           sharedJs,
           scriptLinks: bundle.scriptLinks,
           fontLinks: bundle.fontLinks,
+          tweaksSchema,
+          themeSets,
+          tweaks: bundle.tweaksDefaults,
+          resetTweaks: row.resetTweaks,
         }),
       });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Échec de la mise à jour de « ${label} »`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body as { error?: string }).error || `Échec de la mise à jour de « ${label} »`);
+      reportOverrides(label, body as ImportReport);
     } else {
-      // Tweaks schema (preset palettes + per-page extras) from the *-tweaks.jsx.
-      const pageTweaksBySlug: Record<string, string> = {};
-      for (const p of bundle.pages) {
-        if (p.tweaksFile && bundle.tweaksJsx[p.tweaksFile]) pageTweaksBySlug[p.slug] = bundle.tweaksJsx[p.tweaksFile];
-      }
-      const tweaksSchema = buildTweaksSchema(bundle.tweaksJsx["theme-tweaks.jsx"] ?? "", pageTweaksBySlug);
-
       step("Création du site…");
       const res = await authedFetch("/api/site-builder/designs/import-bundle", {
         method: "POST",
@@ -203,6 +244,7 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
           fontLinks: bundle.fontLinks,
           tweaks: bundle.tweaksDefaults,
           tweaksSchema,
+          themeSets,
         }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Échec de l'import de « ${label} »`);
@@ -229,9 +271,58 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
 
   const chosen = detected.filter((t) => rows[t.key]?.selected);
 
+  /** Asks `import-pages` what an update would cost, without writing anything. */
+  const previewUpdate = async (tpl: DetectedTemplate, row: RowConfig): Promise<ImportReport | null> => {
+    const bundle = parseTemplateBundle(tpl.files);
+    if (bundle.pages.length === 0) return null;
+    // No image URLs needed: only the markup drives the re-keying.
+    const pages = buildProcessedPages(bundle, new Map());
+    const res = await authedFetch(`/api/site-builder/designs/${row.targetId}/import-pages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pages, dryRun: true }),
+    });
+    return res.ok ? ((await res.json()) as ImportReport) : null;
+  };
+
   const handleImport = async () => {
     if (chosen.length === 0) { toast.error("Coche au moins un template."); return; }
+
+    // Two rows overwriting the same template would replace its markup twice,
+    // each pass re-keying against what the previous one just wrote.
+    const targets = chosen.map((t) => rows[t.key].targetId).filter(Boolean);
+    if (new Set(targets).size !== targets.length) {
+      toast.error("Deux variantes visent le même template. Choisis une cible différente pour chacune.");
+      return;
+    }
+
+    // Anything that overwrites an existing template gets a dry run first, and
+    // the operator confirms the cost before a single row is written.
     setBusy(true);
+    try {
+      const losses: string[] = [];
+      for (const tpl of chosen) {
+        const row = rows[tpl.key];
+        if (!row.targetId) continue;
+        setProgress(`${row.name || tpl.name} · Analyse de l'impact…`);
+        const report = await previewUpdate(tpl, row);
+        const lost = (report?.droppedOverrides ?? []).reduce((n, d) => n + d.keys.length, 0);
+        if (lost > 0) {
+          const name = existing.find((e) => e.id === row.targetId)?.name ?? row.targetId;
+          losses.push(`« ${name} » : ${lost} image(s) ne pourront pas être replacées`);
+        }
+      }
+      if (losses.length > 0) {
+        const ok = window.confirm(
+          `Cette mise à jour ne pourra pas replacer certaines images :\n\n${losses.join("\n")}\n\n` +
+          "Elles seront sauvegardées et restaurables depuis l'éditeur (« Restaurer les images »).\n\nContinuer ?",
+        );
+        if (!ok) { setBusy(false); setProgress(""); return; }
+      }
+    } catch {
+      // A failed preview must not block the import; the backup still protects it.
+    }
+
     const doneIds: string[] = [];
     try {
       for (const tpl of chosen) {
@@ -285,6 +376,7 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                 const row = rows[t.key];
                 if (!row) return null;
                 const isUpdate = !!row.targetId;
+                const suggestion = suggestionFor(row.name);
                 return (
                   <div key={t.key} className="flex flex-col gap-2 p-3">
                     <div className="flex items-center gap-3">
@@ -326,6 +418,38 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                         </select>
                       </label>
                     </div>
+
+                    {!isUpdate && suggestion && (
+                      <p className="pl-7 text-xs text-muted-foreground">
+                        Ressemble à « {suggestion.name} ».{" "}
+                        <button type="button" className="underline underline-offset-2" disabled={busy}
+                          onClick={() => setRow(t.key, { targetId: suggestion.id })}>
+                          Mettre à jour ce template
+                        </button>{" "}
+                        au lieu d’en créer un nouveau.
+                      </p>
+                    )}
+
+                    {isUpdate && (
+                      <div className="flex flex-col gap-1 pl-7">
+                        <label className="flex cursor-pointer items-start gap-2 text-xs">
+                          <Checkbox checked={row.updateShared} disabled={busy || !row.selected} className="mt-0.5"
+                            onCheckedChange={(v) => setRow(t.key, { updateShared: v === true })} />
+                          <span>
+                            Mettre aussi à jour le style partagé
+                            <span className="block text-muted-foreground">CSS/JS, polices et options des Tweaks de cette variante.</span>
+                          </span>
+                        </label>
+                        <label className="flex cursor-pointer items-start gap-2 text-xs">
+                          <Checkbox checked={row.resetTweaks} disabled={busy || !row.selected || !row.updateShared} className="mt-0.5"
+                            onCheckedChange={(v) => setRow(t.key, { resetTweaks: v === true })} />
+                          <span>
+                            Réinitialiser le thème
+                            <span className="block text-muted-foreground">Remet les couleurs et la typo par défaut du ZIP — tes réglages actuels sont perdus.</span>
+                          </span>
+                        </label>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -334,7 +458,8 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
 
           {detected.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              Une mise à jour remplace les pages et le style, et <strong>conserve</strong> les photos déjà posées.
+              Une mise à jour remplace les pages et <strong>reporte</strong> les photos déjà posées sur le nouveau
+              markup. Ce qui ne peut pas être reporté est sauvegardé et restaurable depuis l’éditeur.
             </p>
           )}
           {busy && progress && <p className="text-sm text-muted-foreground">{progress}</p>}

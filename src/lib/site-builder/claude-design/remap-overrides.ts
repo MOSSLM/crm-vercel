@@ -5,37 +5,57 @@
  * indices from the page root), so they only stay correct as long as the markup
  * around them does. Two flows need to carry them across a markup swap:
  *
- *   - re-importing a page from an updated ZIP (`import-pages/route.ts`), which
- *     used to wipe them and lose every photo the operator had placed;
+ *   - re-importing a page from an updated ZIP (`import-pages/route.ts`), where
+ *     losing the match means losing photos an operator placed by hand;
  *   - copying the images of one template onto a sibling template
  *     (`copy-images/route.ts`) — the Claude export ships several variants whose
  *     bodies are identical, so a slot in "Classique" IS the same slot in "Brut".
  *
- * Strategy, per path:
- *   1. Fast path — the element at the SAME path in the target has the same
- *      signature. That is the nominal case (variants share their body markup,
- *      a re-export usually only touches copy/CSS), and it is exact.
- *   2. Fallback — find the element carrying the same signature at the same
- *      occurrence rank, and rewrite the path to it. Survives a section being
- *      inserted or removed ABOVE the slot.
- *   3. Otherwise the slot no longer exists: the key is reported as `dropped`
- *      rather than silently applied to whatever now sits at that position.
+ * A slot is located through a ladder of increasingly permissive matchers, so a
+ * redesign that renames classes or rewrites copy costs precision, not the whole
+ * placement. Each tier records how it matched, and everything below `rank` is
+ * reported as `uncertain` so the caller can flag it for review:
  *
- * A SIGNATURE deliberately ignores `src`/`style` (the same photo lives under a
- * different bucket URL in each template) and theme-only classes (`ph--azur`
- * changes between variants). It keeps what identifies the slot: the element and
- * its parent's structural classes, its id, its alt text, its service tag, and
- * the `.ph-label` description the design ships inside empty photo slots.
+ *   path   the same position still holds the same element — exact
+ *   rank   same full signature, same occurrence number among its twins
+ *   loose  same tag + own classes + id, ignoring the parent and the copy —
+ *          survives a class added on a wrapper, which otherwise invalidates
+ *          every direct child at once
+ *   label  same `.ph-label` description — content identity, survives a full
+ *          CSS refactor
+ *   asset  same underlying image (the `src` resolved to the bundle-relative
+ *          `original_path` of the uploaded asset) — independent of both
+ *          structure and copy
+ *
+ * A target slot is claimed at most once, so two source slots can never collapse
+ * onto the same element. Unmatched keys are returned in `dropped`; callers must
+ * treat that as "needs a decision", never as "safe to delete".
  *
  * Pure + DOM-free (node-html-parser), so it runs in API routes and unit tests.
  */
 import { parse, type HTMLElement } from "node-html-parser";
 
+/** How a slot was located in the target markup, best first. */
+export type MatchTier = "path" | "rank" | "loose" | "label" | "asset";
+
+/** Tiers below this one are guesses worth showing to the operator. */
+const CONFIDENT_TIERS: ReadonlySet<MatchTier> = new Set<MatchTier>(["path", "rank"]);
+
 export interface RemapResult<T> {
   /** The overrides, re-keyed for the target markup. */
   overrides: Record<string, T>;
-  /** Keys whose slot could not be located in the target markup. */
+  /** Keys whose slot could not be located. NEVER silently discard these. */
   dropped: string[];
+  /** Keys placed by a weaker matcher, or whose twin count changed — to review. */
+  uncertain: string[];
+  /** How each surviving key was matched, for reporting. */
+  tierByKey: Record<string, MatchTier>;
+}
+
+export interface RemapOptions {
+  /** Public image URL → bundle-relative path (`site_builder_assets.original_path`).
+   *  Enables the `asset` tier; without it that tier is simply skipped. */
+  assetPathByUrl?: Map<string, string>;
 }
 
 const ELEMENT_NODE = 1;
@@ -58,33 +78,78 @@ function collapse(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
-/** Identity of one element, stable across template variants and re-exports. */
-function signatureOf(el: HTMLElement): string {
-  const parent = el.parentNode as HTMLElement | null;
+function labelOf(el: HTMLElement): string {
   const label = el.querySelector(".ph-label");
+  return label ? collapse(label.text) : "";
+}
+
+/** Tag + own classes + id — no parent, no copy. */
+function looseSignature(el: HTMLElement): string {
   return [
     el.tagName?.toLowerCase() ?? "",
     structuralClasses(el).join(" "),
     el.getAttribute("id") ?? "",
+  ].join("|");
+}
+
+/** The loose signature plus everything that pins the element down: its copy,
+ *  its service tag and its parent's shape. */
+function strictSignature(el: HTMLElement): string {
+  const parent = el.parentNode as HTMLElement | null;
+  return [
+    looseSignature(el),
     collapse(el.getAttribute("alt") ?? ""),
     el.getAttribute("data-svc") ?? el.getAttribute("data-service-tag") ?? "",
-    label ? collapse(label.text) : "",
+    labelOf(el),
     parent ? `${parent.tagName?.toLowerCase() ?? ""}.${structuralClasses(parent).join(" ")}` : "",
   ].join("|");
 }
 
-interface DocIndex {
-  /** dotted path → signature */
-  sigByPath: Map<string, string>;
-  /** signature → dotted paths, in document order */
-  pathsBySig: Map<string, string[]>;
+/** The image this element points at, as a bundle-relative path. Each template
+ *  uploads its own copy of the same picture, so the URL differs between two
+ *  designs while `original_path` ("images/hero.jpg") does not. */
+function assetSignature(el: HTMLElement, assetPathByUrl?: Map<string, string>): string {
+  if (!assetPathByUrl || assetPathByUrl.size === 0) return "";
+  const src = el.getAttribute("src");
+  if (!src) return "";
+  const original = assetPathByUrl.get(src);
+  return original ? `${el.tagName?.toLowerCase() ?? ""}|${original}` : "";
 }
 
-/** Walks every element of a page body once, indexing it both ways. */
-function indexDocument(html: string): DocIndex {
-  const sigByPath = new Map<string, string>();
-  const pathsBySig = new Map<string, string[]>();
+interface DocIndex {
+  /** dotted path → its signatures, one per tier that applies. */
+  sigsByPath: Map<string, Partial<Record<MatchTier, string>>>;
+  /** tier → signature → dotted paths, in document order. */
+  pathsBySig: Record<MatchTier, Map<string, string[]>>;
+  /** dotted path → document order, so source slots resolve front to back. */
+  orderByPath: Map<string, number>;
+}
+
+const FALLBACK_TIERS: MatchTier[] = ["rank", "loose", "label", "asset"];
+
+function emptyPathsBySig(): Record<MatchTier, Map<string, string[]>> {
+  return {
+    path: new Map(),
+    rank: new Map(),
+    loose: new Map(),
+    label: new Map(),
+    asset: new Map(),
+  };
+}
+
+/** Walks every element of a page body once, indexing it for every tier. */
+function indexDocument(html: string, assetPathByUrl?: Map<string, string>): DocIndex {
+  const sigsByPath = new Map<string, Partial<Record<MatchTier, string>>>();
+  const pathsBySig = emptyPathsBySig();
+  const orderByPath = new Map<string, number>();
   const root = parse(html) as unknown as HTMLElement;
+  let order = 0;
+
+  const add = (tier: MatchTier, sig: string, path: string): void => {
+    const list = pathsBySig[tier].get(sig);
+    if (list) list.push(path);
+    else pathsBySig[tier].set(sig, [path]);
+  };
 
   const walk = (node: HTMLElement, path: number[]): void => {
     const kids = elementChildren(node);
@@ -92,23 +157,37 @@ function indexDocument(html: string): DocIndex {
       const child = kids[i];
       const childPath = [...path, i];
       const key = childPath.join(".");
-      const sig = signatureOf(child);
-      sigByPath.set(key, sig);
-      const list = pathsBySig.get(sig);
-      if (list) list.push(key);
-      else pathsBySig.set(sig, [key]);
+      orderByPath.set(key, order++);
+
+      const strict = strictSignature(child);
+      const loose = looseSignature(child);
+      const label = labelOf(child);
+      const asset = assetSignature(child, assetPathByUrl);
+      const sigs: Partial<Record<MatchTier, string>> = { path: strict, rank: strict, loose };
+      add("rank", strict, key);
+      add("loose", loose, key);
+      if (label) { sigs.label = `${child.tagName?.toLowerCase() ?? ""}|${label}`; add("label", sigs.label, key); }
+      if (asset) { sigs.asset = asset; add("asset", asset, key); }
+      sigsByPath.set(key, sigs);
+
       walk(child, childPath);
     }
   };
   walk(root, []);
 
-  return { sigByPath, pathsBySig };
+  return { sigsByPath, pathsBySig, orderByPath };
 }
 
 /** Splits `"3.1.0:image"` into its path and kind. */
 export function splitOverrideKey(key: string): { path: string; kind: string } {
   const i = key.lastIndexOf(":");
   return i < 0 ? { path: key, kind: "" } : { path: key.slice(0, i), kind: key.slice(i + 1) };
+}
+
+interface Resolution {
+  path: string;
+  tier: MatchTier;
+  confident: boolean;
 }
 
 /**
@@ -119,41 +198,72 @@ export function remapOverrides<T>(
   fromHtml: string,
   toHtml: string,
   overrides: Record<string, T>,
+  opts: RemapOptions = {},
 ): RemapResult<T> {
   const keys = Object.keys(overrides ?? {});
-  if (keys.length === 0) return { overrides: {}, dropped: [] };
+  if (keys.length === 0) return { overrides: {}, dropped: [], uncertain: [], tierByKey: {} };
 
-  const from = indexDocument(fromHtml);
-  const to = indexDocument(toHtml);
+  const from = indexDocument(fromHtml, opts.assetPathByUrl);
+  const to = indexDocument(toHtml, opts.assetPathByUrl);
 
-  // One path can carry several keys (":image" + ":remove"): resolve it once.
-  const resolved = new Map<string, string | null>();
-  const resolvePath = (path: string): string | null => {
-    if (resolved.has(path)) return resolved.get(path)!;
+  // Resolve front to back in the SOURCE document, so when two slots compete for
+  // the same target the earlier one wins — the stable, predictable outcome.
+  const paths = [...new Set(keys.map((k) => splitOverrideKey(k).path))].sort(
+    (a, b) => (from.orderByPath.get(a) ?? 0) - (from.orderByPath.get(b) ?? 0),
+  );
 
-    const sig = from.sigByPath.get(path);
-    let next: string | null = null;
-    if (sig !== undefined) {
-      if (to.sigByPath.get(path) === sig) {
-        next = path; // (1) same position, same element.
-      } else {
-        // (2) same element, moved: match on occurrence rank among twins.
-        const rank = (from.pathsBySig.get(sig) ?? []).indexOf(path);
-        const candidates = to.pathsBySig.get(sig) ?? [];
-        next = rank >= 0 && candidates.length > rank ? candidates[rank] : null;
-      }
+  const claimed = new Set<string>();
+  const resolved = new Map<string, Resolution | null>();
+
+  for (const path of paths) {
+    const sigs = from.sigsByPath.get(path);
+    if (!sigs) { resolved.set(path, null); continue; }
+
+    // (1) The same position still holds the same element.
+    if (!claimed.has(path) && to.sigsByPath.get(path)?.path === sigs.path) {
+      claimed.add(path);
+      resolved.set(path, { path, tier: "path", confident: true });
+      continue;
     }
-    resolved.set(path, next);
-    return next;
-  };
+
+    // (2…5) Same element identity at this tier, matched on occurrence number.
+    let found: Resolution | null = null;
+    for (const tier of FALLBACK_TIERS) {
+      const sig = sigs[tier];
+      if (!sig) continue;
+      const sourceTwins = from.pathsBySig[tier].get(sig) ?? [];
+      const targetTwins = to.pathsBySig[tier].get(sig) ?? [];
+      if (targetTwins.length === 0) continue;
+
+      const rank = sourceTwins.indexOf(path);
+      const preferred = rank >= 0 ? targetTwins[rank] : undefined;
+      const pick = preferred && !claimed.has(preferred)
+        ? preferred
+        : targetTwins.find((p) => !claimed.has(p));
+      if (!pick) continue;
+
+      // A twin added or removed shifts every following slot by one: the match is
+      // plausible but must be eyeballed.
+      const sameShape = sourceTwins.length === targetTwins.length && pick === preferred;
+      claimed.add(pick);
+      found = { path: pick, tier, confident: CONFIDENT_TIERS.has(tier) && sameShape };
+      break;
+    }
+    resolved.set(path, found);
+  }
 
   const out: Record<string, T> = {};
   const dropped: string[] = [];
+  const uncertain: string[] = [];
+  const tierByKey: Record<string, MatchTier> = {};
   for (const key of keys) {
     const { path, kind } = splitOverrideKey(key);
-    const next = resolvePath(path);
-    if (next === null) dropped.push(key);
-    else out[kind ? `${next}:${kind}` : next] = overrides[key];
+    const hit = resolved.get(path);
+    if (!hit) { dropped.push(key); continue; }
+    const nextKey = kind ? `${hit.path}:${kind}` : hit.path;
+    out[nextKey] = overrides[key];
+    tierByKey[nextKey] = hit.tier;
+    if (!hit.confident) uncertain.push(nextKey);
   }
-  return { overrides: out, dropped };
+  return { overrides: out, dropped, uncertain, tierByKey };
 }

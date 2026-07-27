@@ -303,6 +303,7 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
           sharedCss={claudeDesign.sharedCss}
           fontLinks={claudeDesign.fontLinks}
           tweaks={claudeDesign.tweaks}
+          themeSets={claudeDesign.themeSets}
           js={claudeDesign.js}
           scriptLinks={claudeDesign.scriptLinks}
         />

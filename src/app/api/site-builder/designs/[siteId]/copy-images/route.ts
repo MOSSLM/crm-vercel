@@ -2,8 +2,11 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
+import { parse, type HTMLElement } from "node-html-parser";
 import { remapOverrides, splitOverrideKey } from "@/lib/site-builder/claude-design/remap-overrides";
-import { clearImageKeys, imageSlotPaths, isImageOverrideKey } from "@/lib/site-builder/claude-design/image-override-keys";
+import { clearImageKeys, imageSlotPaths, isImageOverrideKey, kindForElement } from "@/lib/site-builder/claude-design/image-override-keys";
+import { pushBackup } from "@/lib/site-builder/claude-design/override-backups";
+import { assetPathMap } from "@/lib/site-builder/claude-design/asset-path-map";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -17,6 +20,27 @@ interface DesignPage {
   content: Record<string, unknown>;
   overrides: Record<string, unknown>;
   html: string;
+}
+
+/** Tells whether the element at a dotted path is an `<img>` — the renderer sets
+ *  `src` for an `image` override and a background for `bg_image`, so the kind
+ *  has to match the element it lands on or the photo never shows. */
+function imgLookup(html: string): (path: string) => boolean {
+  const root = parse(html || "") as unknown as HTMLElement;
+  const cache = new Map<string, boolean>();
+  return (path: string) => {
+    const hit = cache.get(path);
+    if (hit !== undefined) return hit;
+    let node: HTMLElement | null = root;
+    for (const idx of path.split(".").filter(Boolean).map(Number)) {
+      const kids = (node?.childNodes.filter((c) => c.nodeType === 1) ?? []) as HTMLElement[];
+      node = kids[idx] ?? null;
+      if (!node) break;
+    }
+    const isImg = node?.tagName?.toLowerCase() === "img";
+    cache.set(path, isImg);
+    return isImg;
+  };
 }
 
 /** Loads a Claude Design's pages: the instance that stores the overrides plus
@@ -120,7 +144,11 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   if ("error" in target) return jsonError(target.error, target.status);
   if ("error" in source) return jsonError(`Template source : ${source.error}`, source.status);
 
-  const results: Array<{ slug: string; applied: number; skipped: number; dropped: number }> = [];
+  // The same picture lives under a different URL in each design; `original_path`
+  // is what lets the remapper recognise a slot once the markup has drifted.
+  const assetPathByUrl = await assetPathMap(supabase, [siteId, sourceSiteId]);
+
+  const results: Array<{ slug: string; applied: number; skipped: number; uncertain: number; dropped: number }> = [];
   const commonSlugs: string[] = [];
 
   for (const [slug, targetPage] of target.pages) {
@@ -135,7 +163,13 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     }
     if (Object.keys(sourceImages).length === 0) continue;
 
-    const { overrides: remapped, dropped } = remapOverrides(sourcePage.html, targetPage.html, sourceImages);
+    const { overrides: remapped, dropped, uncertain } = remapOverrides(
+      sourcePage.html, targetPage.html, sourceImages, { assetPathByUrl },
+    );
+
+    // Where each remapped key lands, so a photo is written in the kind that
+    // element actually renders (`src` vs background).
+    const isImgAt = imgLookup(targetPage.html);
 
     // Slots the target already fills — left alone unless the operator asked for
     // a full sync. Computed BEFORE any write so the whole page is judged against
@@ -144,24 +178,45 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     const next = { ...targetPage.overrides };
     let applied = 0;
     let skipped = 0;
+
+    // Group by slot: a slot's incoming kinds must be known before clearing, so
+    // an `image_mobile` the target already has isn't dropped by an `image` write.
+    const bySlot = new Map<string, Array<{ kind: string; entry: unknown }>>();
     for (const [key, entry] of Object.entries(remapped)) {
-      const { path } = splitOverrideKey(key);
-      if (filled.has(path)) {
-        if (!overwrite) { skipped++; continue; }
-        // A slot holds either a single image or a tagged set, never both.
-        clearImageKeys(next, path);
-        filled.delete(path);
-      }
-      next[key] = entry;
-      applied++;
+      const { path, kind } = splitOverrideKey(key);
+      const landed = kindForElement(kind, isImgAt(path));
+      const list = bySlot.get(path);
+      if (list) list.push({ kind: landed, entry });
+      else bySlot.set(path, [{ kind: landed, entry }]);
     }
 
-    results.push({ slug, applied, skipped, dropped: dropped.length });
+    for (const [path, entries] of bySlot) {
+      if (filled.has(path)) {
+        if (!overwrite) { skipped += entries.length; continue; }
+        clearImageKeys(next, path, entries.map((e) => e.kind));
+      }
+      for (const { kind, entry } of entries) {
+        next[`${path}:${kind}`] = entry;
+        applied++;
+      }
+    }
+
+    results.push({ slug, applied, skipped, uncertain: uncertain.length, dropped: dropped.length });
     if (applied === 0 || dryRun) continue;
+
+    // Overwriting replaces photos already in place: snapshot them first.
+    const content = overwrite
+      ? pushBackup(targetPage.content, {
+          at: new Date().toISOString(),
+          reason: "copy-images",
+          label: slug,
+          overrides: targetPage.overrides,
+        })
+      : targetPage.content;
 
     const { error: updErr } = await supabase
       .from("site_section_instances")
-      .update({ content: { ...targetPage.content, __overrides: next } })
+      .update({ content: { ...content, __overrides: next } })
       .eq("id", targetPage.instanceId);
     if (updErr) return jsonError(updErr.message, 500);
   }
@@ -171,6 +226,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     commonSlugs,
     totalApplied: results.reduce((n, r) => n + r.applied, 0),
     totalSkipped: results.reduce((n, r) => n + r.skipped, 0),
+    totalUncertain: results.reduce((n, r) => n + r.uncertain, 0),
     totalDropped: results.reduce((n, r) => n + r.dropped, 0),
   });
 });

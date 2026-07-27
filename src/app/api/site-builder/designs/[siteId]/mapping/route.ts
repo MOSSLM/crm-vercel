@@ -4,6 +4,8 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { wrapRawHtml } from "@/lib/site-builder/wrap-raw-html";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
 import { applyBracketTokens, type BracketMappingEntry } from "@/lib/site-builder/claude-design/bracket-tokens";
+import { addImageLoadingHints } from "@/lib/site-builder/claude-design/add-image-loading-hints";
+import { nextExampleData } from "@/lib/site-builder/claude-design/override-backups";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -69,11 +71,25 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     const result = applyBracketTokens(sourceHtml, mapping);
     totalApplied += result.applied.reduce((n, a) => n + a.count, 0);
 
+    // Store exactly what the importers store: `addImageLoadingHints` first, then
+    // wrap. Skipping it here stripped the lazy-loading hints from every image on
+    // the deployed page, and left `__token_html` in a different shape from the
+    // one the override re-keying compares against.
+    const html = addImageLoadingHints(result.html);
+    const previous = exampleData.__token_html;
+
     const { error: updErr } = await supabase
       .from("theme_sections")
       .update({
-        code: wrapRawHtml(result.html),
-        example_data: { ...exampleData, __token_html: result.html, __var_mapping: result.applied },
+        code: wrapRawHtml(html),
+        // Token replacement is text-only: element positions — and so the image
+        // overrides keyed to them — are untouched. The previous markup is kept
+        // anyway so a restore can re-key against the right version.
+        example_data: nextExampleData(
+          exampleData,
+          { __token_html: html, __var_mapping: result.applied },
+          typeof previous === "string" && previous.length > 0 ? previous : null,
+        ),
       })
       .eq("id", section.id);
     if (updErr) return jsonError(updErr.message, 500);

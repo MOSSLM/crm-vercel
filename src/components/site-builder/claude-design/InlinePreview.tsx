@@ -10,6 +10,7 @@ import {
   tweaksInlineStyle,
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
+import { coerceThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 import { STAMP_PATHS } from "@/lib/site-builder/claude-design/stamp-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
@@ -31,6 +32,10 @@ interface Props {
   sharedCss: string;
   fontLinks: string[];
   tweaks: Tweaks;
+  /** The design's own font/weight/corner tables (shared_assets.themeSets). The
+   *  vars below are written INLINE on <html>, so without them a skin's typeface
+   *  is overwritten by the first design's in the preview too. */
+  themeSets?: unknown;
   /** The design's shared runtime JS (site.js) — run in the preview iframe so
    *  animations/interactions match the deployed site. */
   js?: string;
@@ -327,7 +332,7 @@ const EDIT_SCRIPT = `
 `;
 
 /** Faithful per-page preview with inline text/image editing. */
-export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, siteId, serviceTagBySlug, overrides, onEdit, onEditBatch, isHome, variables, onNavigate, onHeight, className, simViewportHeight }: Props) {
+export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, js, pageJs, scriptLinks, siteId, serviceTagBySlug, overrides, onEdit, onEditBatch, isHome, variables, onNavigate, onHeight, className, simViewportHeight }: Props) {
   const onEditRef = React.useRef(onEdit);
   onEditRef.current = onEdit;
   const onEditBatchRef = React.useRef(onEditBatch);
@@ -472,14 +477,17 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
   };
 
   const srcDoc = React.useMemo(() => {
-    const rootVars = `:root{${Object.entries(tweaksToCssVars(tweaks)).map(([k, v]) => `${k}:${v}`).join(";")}}`;
+    const sets = coerceThemeSets(themeSets);
+    const rootVars = `:root{${Object.entries(tweaksToCssVars(tweaks, sets)).map(([k, v]) => `${k}:${v}`).join(";")}}`;
     // Apply the tweak vars as an INLINE style on <html> (like the template's own
     // theme-apply.js). Inline custom-properties beat any `:root{}` the imported
     // design ships in sharedCss, so colours / fonts / corners actually update.
-    const htmlStyle = tweaksInlineStyle(tweaks).replace(/'/g, "&#39;");
-    const dataAttrs = tweaksDataAttrs(tweaks);
+    const htmlStyle = tweaksInlineStyle(tweaks, sets).replace(/'/g, "&#39;");
+    const dataAttrs = tweaksDataAttrs(tweaks, sets);
     const attrStr = Object.entries(dataAttrs).map(([k, v]) => `${k}="${v}"`).join(" ");
-    const fonts = [tweaksFontLinkHref(tweaks), ...fontLinks].map((h) => `<link rel="stylesheet" href="${h}">`).join("");
+    const fonts = [tweaksFontLinkHref(tweaks, sets), ...fontLinks]
+      .filter(Boolean)
+      .map((h) => `<link rel="stylesheet" href="${h}">`).join("");
     // Entreprises tab: resolve with the company's real variables + filter the
     // service-tag regions it doesn't have. Otherwise use sample values (all shown).
     let body = resolveVars(html, variables ?? SAMPLE_VARIABLES);
@@ -516,7 +524,7 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, js, pageJs, 
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
     return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script><script>${STAMP_PATHS}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
-  }, [html, sharedCss, fontLinks, tweaks, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
+  }, [html, sharedCss, fontLinks, tweaks, themeSets, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (
     <>

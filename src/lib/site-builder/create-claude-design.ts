@@ -137,6 +137,11 @@ export interface CreateClaudeDesignMultiPageInput {
   tweaks: Record<string, unknown>;
   /** Controls schema extracted from the template's *-tweaks.jsx (palettes…). */
   tweaksSchema?: Record<string, unknown>;
+  /** This design's font/weight/corner tables, read from its own theme-apply.js
+   *  (see parse-theme-sets.ts). Each skin defines its own — without them the
+   *  renderer falls back to the first design's typeface and overrides the
+   *  skin's stylesheet with it. */
+  themeSets?: Record<string, unknown> | null;
   enterpriseId?: number | null;
 }
 
@@ -216,6 +221,7 @@ export async function createClaudeDesignMultiPage(
       scriptLinks: input.scriptLinks ?? [],
       fonts: input.fontLinks,
       tweaksSchema: input.tweaksSchema ?? {},
+      themeSets: input.themeSets ?? null,
     },
     tweaks: input.tweaks ?? {},
   });
