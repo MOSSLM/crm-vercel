@@ -1,5 +1,25 @@
 -- Rattrapage : colonnes de `sites` attendues par le code.
 --
+-- ┌─ D'ABORD, UN CONSTAT SANS RIEN MODIFIER ─────────────────────────────────┐
+-- │ Cette requête liste les colonnes qui manquent. Si elle ne renvoie AUCUNE │
+-- │ ligne, la base est à jour et le reste de ce fichier est inutile.         │
+-- └──────────────────────────────────────────────────────────────────────────┘
+--
+--   select c.nom as colonne_manquante
+--   from unnest(array[
+--     'published_subdomain','published_domain','is_published','enterprise_id',
+--     'site_config','client_portal_token','client_portal_activated',
+--     'lead_magnet_project_id','is_template','build_stage','is_claude_design',
+--     'tweaks','shared_assets','published_tweaks','published_shared_assets',
+--     'style_guide','sitemap','published_style_guide','published_site_config',
+--     'published_sitemap','published_instances','published_variables',
+--     'published_reviews','paywall_enabled','booking_url','client_brief'
+--   ]) as c(nom)
+--   where not exists (
+--     select 1 from information_schema.columns
+--     where table_schema = 'public' and table_name = 'sites' and column_name = c.nom
+--   );
+--
 -- À exécuter dans l'éditeur SQL Supabase quand un aperçu ou un site publié
 -- signale « column sites.<x> does not exist ». Le symptôme observé : une seule
 -- colonne absente (paywall_enabled) faisait échouer la requête entière de
@@ -9,6 +29,29 @@
 -- Sans risque et rejouable : chaque instruction est `if not exists`, aucune
 -- donnée existante n'est touchée. Regroupe les colonnes des migrations qui
 -- altèrent `sites`, de la plus ancienne à la plus récente.
+
+-- ⚠️ AVANT TOUT : vérifiez que vous êtes sur le BON projet Supabase.
+--
+-- Le serveur lit la variable SUPABASE_URL configurée dans Vercel :
+-- https://<ref>.supabase.co → ouvrez le projet <ref> dans le dashboard.
+-- (Le bundle navigateur, lui, code en dur son propre ref dans
+--  src/utils/supabase/info.tsx ; rien ne garantit que les deux coïncident.)
+--
+-- Pour identifier le bon projet, exécutez ceci dans chacun — il doit répondre `t` :
+--   select to_regclass('public.sites') is not null as bon_projet;
+--
+-- Le message « relation "public.sites" does not exist » ne veut PAS dire qu'il
+-- manque des migrations : il veut dire que la table n'est pas dans CE projet.
+-- N'appliquez surtout pas les migrations « pour créer la table » — vous
+-- fabriqueriez un schéma vide en double dans un projet qui n'est pas le vôtre.
+
+do $$
+begin
+  if to_regclass('public.sites') is null then
+    raise exception
+      'Mauvais projet Supabase : public.sites est introuvable ici. Ouvrez le projet correspondant à SUPABASE_URL (Vercel → Settings → Environment Variables) et relancez ce script.';
+  end if;
+end $$;
 
 begin;
 
@@ -38,6 +81,20 @@ alter table public.sites
   add column if not exists shared_assets           jsonb not null default '{}',
   add column if not exists published_tweaks        jsonb,
   add column if not exists published_shared_assets jsonb;
+
+-- La contrainte qui accompagne build_stage (identique à la migration source :
+-- un CHECK plutôt qu'un enum PG, pour renommer une étape sans ALTER TYPE).
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.constraint_column_usage
+    where table_name = 'sites' and constraint_name = 'sites_build_stage_check'
+  ) then
+    alter table public.sites
+      add constraint sites_build_stage_check
+      check (build_stage in ('a_faire', 'en_cours', 'a_verifier', 'pret'));
+  end if;
+end $$;
 
 -- Instantanés de publication (verrou snapshot de resolveSite)
 alter table public.sites

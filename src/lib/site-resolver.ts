@@ -27,6 +27,18 @@ function buildClaudeDesign(
   };
 }
 
+/**
+ * The Supabase project ref the SERVER is configured against ("abcd1234" out of
+ * https://abcd1234.supabase.co). Surfaced on the preview failure page so a
+ * schema fix is applied to the project the app actually reads, rather than
+ * whichever one happens to be open in the dashboard.
+ */
+export function supabaseProjectRef(): string | null {
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) return null;
+  return /^https?:\/\/([^.]+)\./.exec(url)?.[1] ?? null;
+}
+
 function getServiceClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -411,6 +423,10 @@ export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult>
  * instead of blanking the whole probe.
  */
 export interface DraftSiteProbe {
+  /** Supabase project ref the SERVER talks to, from SUPABASE_URL. Names which
+   *  project to open in the dashboard — the client bundle hardcodes its own in
+   *  utils/supabase/info.tsx, and the two are not guaranteed to match. */
+  projectRef: string | null;
   siteExists: boolean;
   siteName: string | null;
   isTemplate: boolean;
@@ -427,6 +443,7 @@ export interface DraftSiteProbe {
 export async function probeDraftSite(siteId: string): Promise<DraftSiteProbe> {
   const supabase = getServiceClient();
   const probe: DraftSiteProbe = {
+    projectRef: supabaseProjectRef(),
     siteExists: false,
     siteName: null,
     isTemplate: false,

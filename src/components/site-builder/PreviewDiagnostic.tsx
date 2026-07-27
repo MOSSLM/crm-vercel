@@ -34,10 +34,25 @@ function verdictFor(
   if (kind === "query-failed" || (probe && probe.queryErrors.length > 0)) {
     return {
       title: "La base de données de cet environnement n'est pas à jour.",
-      advice:
-        "Une requête a échoué sur une colonne absente : une migration SQL du dossier /sql " +
-        "n'a pas été appliquée sur cette base. Appliquez-la dans l'éditeur SQL Supabase " +
-        "(les migrations sont idempotentes : add column if not exists), puis rechargez cette page.",
+      advice: (
+        <>
+          Une requête a échoué sur une colonne absente : une migration SQL du dossier{" "}
+          <code>/sql</code> n&apos;a pas été appliquée sur cette base. Exécutez{" "}
+          <code>sql/RATTRAPAGE_colonnes_sites.sql</code> dans l&apos;éditeur SQL Supabase
+          (idempotent : <code>add column if not exists</code>), puis rechargez cette page.
+          {probe?.projectRef && (
+            <div style={{ marginTop: 10 }}>
+              À exécuter dans le projet Supabase{" "}
+              <strong style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+                {probe.projectRef}
+              </strong>{" "}
+              — celui que ce serveur interroge. Une erreur{" "}
+              <code>relation &quot;public.sites&quot; does not exist</code> signifie que
+              l&apos;éditeur SQL est ouvert sur un autre projet.
+            </div>
+          )}
+        </>
+      ),
     };
   }
 
