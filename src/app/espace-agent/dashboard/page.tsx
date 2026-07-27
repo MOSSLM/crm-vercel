@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CalendarCheck, Trophy, Layers, Inbox, Target, ArrowRight } from "lucide-react";
 import { formatPrice, stageTint } from "@/components/agent-portal/format";
+import AgentProgressPanels from "@/components/agent-portal/AgentProgressPanels";
 
 type DashboardData = {
   total: number;
@@ -95,6 +96,9 @@ export default function AgentDashboardPage() {
             <Kpi label="Clients signés" value={data.signes} icon={Trophy} />
             <Kpi label="Tâches à traiter" value={data.tachesEnAttente} icon={Inbox} />
           </div>
+
+          {/* Ne s'affiche que pour les capacités accordées à l'agent. */}
+          <AgentProgressPanels />
 
           <div className="grid gap-4 lg:grid-cols-3">
             <Card className="lg:col-span-2">
