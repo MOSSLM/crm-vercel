@@ -1,41 +1,43 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
-  Building2,
-  MapPin,
-  Phone,
-  Mail,
-  Star,
   Search,
-  Check,
-  EyeOff,
   ExternalLink,
-  Loader2,
-  ClipboardCheck,
+  MapPin,
+  Target,
+  LayoutGrid,
+  List,
+  Eye,
+  EyeOff,
+  Check,
+  Phone,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Globe,
   History,
-  ArrowRight,
+  Loader2,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authedFetch } from "@/utils/authedFetch";
-import { getCompanyDisplayName } from "@/utils/displayHelpers";
+import { getCompanyDisplayName, ensureHttpsUrl } from "@/utils/displayHelpers";
+import { normalizeServiceTags } from "@/utils/serviceTags";
 
 /**
  * File de qualification de l'agent.
  *
- * Volontairement séparée de `QualificationPage` (l'écran admin) : celui-ci est
- * entièrement câblé sur `AppDataContext` (chargement global de toutes les
- * entreprises, filtres localStorage) et expose blacklist, suppression et
- * déqualification — trois gestes que l'agent ne doit pas avoir. Ici, deux
- * actions seulement : **Qualifier** et **Masquer**.
+ * Reprend le tableau, les filtres et le design system de l'écran admin
+ * (`QualificationPage`, styles `.studio-surface` de `studio.css`) — mais c'est
+ * un composant distinct, pas une variante : l'écran admin est câblé sur
+ * `AppDataContext`, qui charge toutes les entreprises côté client et expose la
+ * déqualification, le blacklist et la suppression. L'agent n'a droit à aucun
+ * de ces trois gestes, et sa file passe par une API paginée.
  *
- * Aucune des deux n'écrit sur l'entreprise : elles enregistrent une proposition
- * que l'admin valide ou corrige depuis Relations › Agents. L'entreprise sort
- * immédiatement de la file — celle de tous les agents, le pool étant commun.
+ * Quatre actions par ligne : visiter le site, chercher sur Google, **qualifier**,
+ * **masquer**. Les deux dernières sont des propositions — elles n'écrivent rien
+ * sur l'entreprise, l'admin valide ou corrige derrière.
  */
 
 type QueueCompany = {
@@ -51,9 +53,10 @@ type QueueCompany = {
   note_moyenne: number | null;
   nombre_avis: number | null;
   service_tags: string[] | null;
-  premiers_tags: string[] | null;
+  premiers_tags: string | null;
   logo_url: string | null;
   sources: string[] | null;
+  created_at: string | null;
 };
 
 type HistoryRow = {
@@ -66,11 +69,40 @@ type HistoryRow = {
   entreprises: { id: number; name: string | null; ville: string | null } | null;
 };
 
-const PAGE_SIZE = 30;
+type UrlFilter = "all" | "with-url" | "without-url";
 
-const siteOf = (c: QueueCompany): string | null => c.canonical_url || c.site_web_canonique || null;
+const SOURCE_OPTIONS = [
+  { value: "google_search", label: "Google Search" },
+  { value: "google_maps", label: "Google Maps" },
+];
 
-const httpUrl = (url: string): string => (/^https?:\/\//i.test(url) ? url : `https://${url}`);
+/**
+ * Préférences de filtres persistées, comme côté admin
+ * (`qualification.filters.v1`) — clé distincte pour que les deux écrans ne se
+ * marchent pas dessus.
+ */
+const FILTERS_STORAGE_KEY = "agent.qualification.filters.v1";
+
+type PersistedFilters = {
+  searchTerm: string;
+  selectedSources: string[];
+  urlFilter: UrlFilter;
+  viewMode: "grid" | "list";
+};
+
+function loadPersistedFilters(): Partial<PersistedFilters> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(FILTERS_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PersistedFilters>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Une page de tableau, comme l'admin. Le serveur, lui, renvoie par gros lots. */
+const ITEMS_PER_PAGE = 12;
+const FETCH_SIZE = 60;
 
 const REVIEW_LABEL: Record<string, string> = {
   qualify: "Qualifiée",
@@ -80,95 +112,31 @@ const REVIEW_LABEL: Record<string, string> = {
   delete: "Supprimée",
 };
 
-function CompanyCard({
-  company,
-  busy,
-  onQualify,
-  onSkip,
-}: {
-  company: QueueCompany;
-  busy: boolean;
-  onQualify: () => void;
-  onSkip: () => void;
-}) {
-  const site = siteOf(company);
-  const tags = company.service_tags?.length ? company.service_tags : company.premiers_tags;
+const formatDate = (dateString: string | null) =>
+  dateString ? new Date(dateString).toLocaleDateString("fr-FR") : "—";
 
-  return (
-    <Card>
-      <CardContent className="space-y-3 p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 font-medium">
-              <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">
-                {getCompanyDisplayName(company.name, company.canonical_url) || "Sans nom"}
-              </span>
-              {company.note_moyenne != null && (
-                <span className="ml-1 flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
-                  <Star className="h-3 w-3 fill-current text-[var(--warn)]" />
-                  {company.note_moyenne}
-                  {company.nombre_avis ? ` (${company.nombre_avis})` : ""}
-                </span>
-              )}
-            </div>
-            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-              {(company.ville || company.code_postal) && (
-                <span className="flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
-                  {[company.code_postal, company.ville].filter(Boolean).join(" ")}
-                </span>
-              )}
-              {company.telephone && (
-                <span className="flex items-center gap-1">
-                  <Phone className="h-3 w-3" /> {company.telephone}
-                </span>
-              )}
-              {company.email && (
-                <span className="flex items-center gap-1">
-                  <Mail className="h-3 w-3" /> {company.email}
-                </span>
-              )}
-            </div>
-          </div>
-          {site && (
-            <Button variant="ghost" size="sm" className="shrink-0" asChild>
-              <a href={httpUrl(site)} target="_blank" rel="noreferrer">
-                Voir le site <ExternalLink className="ml-1 h-3.5 w-3.5" />
-              </a>
-            </Button>
-          )}
-        </div>
-
-        {tags && tags.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {tags.slice(0, 6).map((tag) => (
-              <Badge key={tag} variant="secondary" className="text-[11px]">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-wrap gap-2 border-t pt-3">
-          <Button size="sm" disabled={busy} onClick={onQualify}>
-            <Check className="mr-1 h-4 w-4" /> Qualifier
-          </Button>
-          <Button size="sm" variant="outline" disabled={busy} onClick={onSkip}>
-            <EyeOff className="mr-1 h-4 w-4" /> Masquer
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
+/** Recherche Google sur le nom + la ville — pour vérifier l'entreprise vite fait. */
+const googleSearchUrl = (c: QueueCompany) =>
+  `https://www.google.com/search?q=${encodeURIComponent(
+    `${getCompanyDisplayName(c.name, c.canonical_url) || c.name || ""} ${c.ville ?? ""}`.trim(),
+  )}`;
 
 export default function AgentQualification() {
   const [tab, setTab] = useState<"queue" | "history">("queue");
+
+  const [persisted] = useState(loadPersistedFilters);
+  const [searchTerm, setSearchTerm] = useState(persisted.searchTerm ?? "");
+  const [selectedSources, setSelectedSources] = useState<string[]>(
+    () => persisted.selectedSources ?? SOURCE_OPTIONS.map((o) => o.value),
+  );
+  // Par défaut : les entreprises AVEC site. Sans site, il n'y a ni refonte à
+  // proposer ni audit à produire — ce n'est pas le gros du démarchage.
+  const [urlFilter, setUrlFilter] = useState<UrlFilter>(persisted.urlFilter ?? "with-url");
+  const [viewMode, setViewMode] = useState<"grid" | "list">(persisted.viewMode ?? "list");
+
   const [companies, setCompanies] = useState<QueueCompany[]>([]);
   const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [search, setSearch] = useState("");
-  const [appliedSearch, setAppliedSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
@@ -176,13 +144,36 @@ export default function AgentQualification() {
   const [busyId, setBusyId] = useState<number | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
-  const fetchQueue = useCallback(
-    async (opts: { after?: number | null; q: string; append: boolean }) => {
-      const params = new URLSearchParams({ limit: String(PAGE_SIZE) });
-      if (opts.q) params.set("q", opts.q);
-      if (opts.after != null) params.set("after_id", String(opts.after));
+  // Persiste les filtres (pas la page : elle repart à 1 quand ils changent).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const data: PersistedFilters = { searchTerm, selectedSources, urlFilter, viewMode };
+    try {
+      window.localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // quota / sérialisation : sans importance, on garde juste l'état en mémoire.
+    }
+  }, [searchTerm, selectedSources, urlFilter, viewMode]);
 
-      const res = await authedFetch(`/api/agent/qualification/queue?${params.toString()}`);
+  const buildParams = useCallback(
+    (after: number | null) => {
+      const params = new URLSearchParams({
+        limit: String(FETCH_SIZE),
+        url_filter: urlFilter,
+      });
+      if (searchTerm.trim()) params.set("q", searchTerm.trim());
+      if (selectedSources.length > 0 && selectedSources.length < SOURCE_OPTIONS.length) {
+        params.set("sources", selectedSources.join(","));
+      }
+      if (after != null) params.set("after_id", String(after));
+      return params;
+    },
+    [searchTerm, selectedSources, urlFilter],
+  );
+
+  const fetchQueue = useCallback(
+    async (after: number | null, append: boolean) => {
+      const res = await authedFetch(`/api/agent/qualification/queue?${buildParams(after)}`);
       if (res.status === 403) {
         setForbidden(true);
         return;
@@ -196,25 +187,29 @@ export default function AgentQualification() {
         next_after_id: number | null;
         has_more: boolean;
       };
-      setCompanies((cur) => (opts.append ? [...cur, ...data.companies] : data.companies));
+      setCompanies((cur) => (append ? [...cur, ...data.companies] : data.companies));
       setCursor(data.next_after_id);
       setHasMore(data.has_more);
     },
-    [],
+    [buildParams],
   );
 
-  const loadQueue = useCallback(
-    async (q: string) => {
-      setLoading(true);
-      await fetchQueue({ q, append: false });
-      setLoading(false);
-    },
-    [fetchQueue],
-  );
-
+  // Recharge à chaque changement de filtre, avec un léger debounce sur la
+  // recherche pour ne pas tirer une requête par frappe.
   useEffect(() => {
-    void loadQueue(appliedSearch);
-  }, [loadQueue, appliedSearch]);
+    let cancelled = false;
+    const run = async () => {
+      setLoading(true);
+      setCurrentPage(1);
+      await fetchQueue(null, false);
+      if (!cancelled) setLoading(false);
+    };
+    const t = setTimeout(run, searchTerm ? 300 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [fetchQueue, searchTerm]);
 
   const loadHistory = useCallback(async () => {
     const res = await authedFetch("/api/agent/qualification/history");
@@ -227,6 +222,12 @@ export default function AgentQualification() {
     if (tab === "history") void loadHistory();
   }, [tab, loadHistory]);
 
+  const loadMore = async () => {
+    setLoadingMore(true);
+    await fetchQueue(cursor, true);
+    setLoadingMore(false);
+  };
+
   const decide = async (company: QueueCompany, decision: "qualify" | "skip") => {
     setBusyId(company.id);
     try {
@@ -236,11 +237,12 @@ export default function AgentQualification() {
         body: JSON.stringify({ entreprise_id: company.id, decision }),
       });
 
-      if (res.status === 409) {
-        toast.info("Cette entreprise vient d'être traitée par quelqu'un d'autre.");
-      } else if (res.status === 503) {
+      if (res.status === 503) {
         toast.error("Fonctionnalité pas encore activée en base. Préviens l'administrateur.");
         return;
+      }
+      if (res.status === 409) {
+        toast.info("Cette entreprise vient d'être traitée par quelqu'un d'autre.");
       } else if (!res.ok) {
         toast.error("Action impossible.");
         return;
@@ -252,7 +254,6 @@ export default function AgentQualification() {
             : `${label} écartée — en attente de validation.`,
         );
       }
-      // Traitée dans les deux cas : elle sort de la file.
       setCompanies((cur) => cur.filter((c) => c.id !== company.id));
     } catch {
       toast.error("Action impossible.");
@@ -261,180 +262,521 @@ export default function AgentQualification() {
     }
   };
 
-  const loadMore = async () => {
-    setLoadingMore(true);
-    await fetchQueue({ after: cursor, q: appliedSearch, append: true });
-    setLoadingMore(false);
+  const toggleSource = (source: string) => {
+    setSelectedSources((prev) =>
+      prev.includes(source) ? prev.filter((v) => v !== source) : [...prev, source],
+    );
   };
 
+  const sourceFilterLabel =
+    selectedSources.length === 0 || selectedSources.length === SOURCE_OPTIONS.length
+      ? "Toutes les sources"
+      : `${selectedSources.length} source${selectedSources.length > 1 ? "s" : ""}`;
+
+  const totalPages = Math.max(1, Math.ceil(companies.length / ITEMS_PER_PAGE));
+  const paginated = useMemo(
+    () => companies.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE),
+    [companies, currentPage],
+  );
   const pendingCount = useMemo(
     () => history.filter((h) => h.review_status === "pending").length,
     [history],
   );
 
+  /* ── Actions communes aux deux vues ─────────────────────────────────────── */
+  const RowActions = ({ company }: { company: QueueCompany }) => {
+    const disabled = busyId === company.id;
+    return (
+      <>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => window.open(ensureHttpsUrl(company.canonical_url ?? ""), "_blank")}
+          disabled={!company.canonical_url}
+          title="Visiter le site"
+        >
+          <ExternalLink className="ico-sm" />
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => window.open(googleSearchUrl(company), "_blank")}
+          title="Chercher sur Google"
+        >
+          <Search className="ico-sm" />
+        </button>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => decide(company, "skip")}
+          disabled={disabled}
+          title="Masquer — proposer d'écarter cette entreprise"
+        >
+          <EyeOff className="ico-sm" />
+        </button>
+        <button
+          type="button"
+          className="btn primary labelled"
+          onClick={() => decide(company, "qualify")}
+          disabled={disabled}
+          title="Qualifier — proposer cette entreprise à la validation"
+        >
+          <Check className="ico-sm" />
+          Qualifier
+        </button>
+      </>
+    );
+  };
+
   if (forbidden) {
     return (
-      <div className="mx-auto w-full max-w-4xl p-6">
-        <Card>
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            La qualification ne t&apos;a pas été ouverte. Demande à l&apos;administrateur de
-            t&apos;accorder l&apos;accès depuis Relations › Agents.
-          </CardContent>
-        </Card>
+      <div className="studio-surface flex min-h-full flex-col">
+        <div className="ws-overview">
+          <div className="dtable">
+            <div className="py-12 text-center">
+              <Target className="mx-auto mb-4" style={{ width: 40, height: 40, color: "var(--text-4)" }} />
+              <h3 className="mb-2 font-medium">Qualification non ouverte</h3>
+              <p style={{ color: "var(--text-3)", fontSize: "12.5px" }}>
+                Demande à l&apos;administrateur de t&apos;accorder l&apos;accès depuis Relations ›
+                Agents.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
-      <div>
-        <h1 className="text-2xl font-semibold">Qualification</h1>
-        <p className="text-sm text-muted-foreground">
-          Trie le pool commun d&apos;entreprises. Tes décisions sont des propositions :
-          l&apos;administrateur les valide ou les corrige. Une entreprise que tu traites sort de
-          la file de tous les agents.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2 border-b">
+    <div className="studio-surface flex min-h-full flex-col">
+      {/* Tabs strip */}
+      <div className="tabs-strip">
         <button
           type="button"
+          role="tab"
+          className="tab"
+          aria-selected={tab === "queue"}
           onClick={() => setTab("queue")}
-          className={[
-            "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
-            tab === "queue"
-              ? "border-primary font-medium text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground",
-          ].join(" ")}
         >
-          <ClipboardCheck className="h-4 w-4" /> File à qualifier
+          <List className="ico-sm" />
+          File à qualifier <span className="bd">{companies.length}</span>
         </button>
         <button
           type="button"
+          role="tab"
+          className="tab"
+          aria-selected={tab === "history"}
           onClick={() => setTab("history")}
-          className={[
-            "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
-            tab === "history"
-              ? "border-primary font-medium text-primary"
-              : "border-transparent text-muted-foreground hover:text-foreground",
-          ].join(" ")}
         >
-          <History className="h-4 w-4" /> Mes décisions
-          {pendingCount > 0 && (
-            <Badge variant="secondary" className="ml-1 text-[11px]">
-              {pendingCount} en attente
-            </Badge>
-          )}
+          <History className="ico-sm" />
+          Mes décisions {pendingCount > 0 && <span className="bd">{pendingCount}</span>}
         </button>
+        <span className="grow" />
       </div>
 
-      {tab === "queue" && (
-        <>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              setAppliedSearch(search.trim());
-            }}
-            className="relative"
-          >
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filtrer par nom ou ville, puis Entrée…"
-              className="pl-8"
-            />
-          </form>
-
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Chargement…
-            </div>
-          ) : companies.length === 0 ? (
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                {appliedSearch
-                  ? "Aucune entreprise ne correspond à ce filtre."
-                  : "La file est vide. Tout a été trié !"}
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              {companies.map((c) => (
-                <CompanyCard
-                  key={c.id}
-                  company={c}
-                  busy={busyId === c.id}
-                  onQualify={() => decide(c, "qualify")}
-                  onSkip={() => decide(c, "skip")}
-                />
-              ))}
-
-              {hasMore && (
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  disabled={loadingMore}
-                  onClick={loadMore}
-                >
-                  {loadingMore ? (
-                    <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="mr-1 h-4 w-4" />
-                  )}
-                  Charger la suite
-                </Button>
-              )}
-            </div>
-          )}
-        </>
-      )}
-
-      {tab === "history" && (
-        <div className="space-y-2">
-          {history.length === 0 ? (
-            <Card>
-              <CardContent className="py-10 text-center text-sm text-muted-foreground">
-                Tu n&apos;as encore trié aucune entreprise.
-              </CardContent>
-            </Card>
-          ) : (
-            history.map((h) => (
-              <div
-                key={h.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-sm font-medium">
-                    <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{h.entreprises?.name || "Sans nom"}</span>
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    Tu as {h.decision === "qualify" ? "qualifié" : "masqué"} ·{" "}
-                    {new Date(h.created_at).toLocaleDateString("fr-FR")}
-                    {h.entreprises?.ville ? ` · ${h.entreprises.ville}` : ""}
-                  </div>
+      <div className="ws-overview">
+        {tab === "queue" && (
+          <>
+            <div className="ws-header" style={{ marginBottom: 14 }}>
+              <div>
+                <div className="ws-eyebrow">FILE DE QUALIFICATION</div>
+                <h1>
+                  <em>
+                    {companies.length} entreprise{companies.length > 1 ? "s" : ""}
+                  </em>{" "}
+                  à trier
+                </h1>
+                <div className="sub">
+                  Tes décisions sont des propositions : l&apos;administrateur les valide ou les
+                  corrige. Une entreprise que tu traites sort de la file de tous les agents.
                 </div>
-                <Badge
-                  variant={
-                    h.review_status === "pending"
-                      ? "secondary"
-                      : h.review_status === "confirmed"
-                        ? "default"
-                        : "outline"
-                  }
-                >
-                  {h.review_status === "pending"
-                    ? "En attente"
-                    : h.review_status === "confirmed"
-                      ? "Validée"
-                      : `Corrigée : ${REVIEW_LABEL[h.review_action ?? ""] ?? "autre"}`}
-                </Badge>
               </div>
-            ))
-          )}
-        </div>
-      )}
+            </div>
+
+            {/* Filter bar — même barre que l'écran admin, moins les bascules
+                Qualifiées / Doublons / Masquées, qui n'ont pas de sens ici. */}
+            <div className="filter-bar">
+              <div className="search-w">
+                <Search className="ico-sm" />
+                <input
+                  placeholder="Rechercher entreprise, ville, adresse…"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              <details className="relative">
+                <summary className="select-w list-none" style={{ listStyle: "none" }}>
+                  <span className="lb">Sources :</span>
+                  <span className="val">{sourceFilterLabel}</span>
+                  <ChevronDown className="chev ico-xs" />
+                </summary>
+                <div
+                  className="absolute z-20 mt-2 w-56 space-y-2 rounded-md border p-3 shadow-lg"
+                  style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+                >
+                  {SOURCE_OPTIONS.map((option) => (
+                    <label key={option.value} className="flex cursor-pointer items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedSources.includes(option.value)}
+                        onChange={() => toggleSource(option.value)}
+                      />
+                      <span>{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </details>
+
+              <Select value={urlFilter} onValueChange={(v) => setUrlFilter(v as UrlFilter)}>
+                <SelectTrigger id="agent-url-filter" className="select-w" aria-label="Filtre URL">
+                  <span className="lb">Site :</span>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="with-url">Avec site uniquement</SelectItem>
+                  <SelectItem value="without-url">Sans site uniquement</SelectItem>
+                  <SelectItem value="all">Toutes les entreprises</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <span className="grow" />
+
+              <div className="seg">
+                <button
+                  type="button"
+                  className="s icon"
+                  aria-pressed={viewMode === "grid"}
+                  onClick={() => setViewMode("grid")}
+                  title="Grille"
+                >
+                  <LayoutGrid className="ico-sm" />
+                </button>
+                <button
+                  type="button"
+                  className="s icon"
+                  aria-pressed={viewMode === "list"}
+                  onClick={() => setViewMode("list")}
+                  title="Liste"
+                >
+                  <List className="ico-sm" />
+                </button>
+              </div>
+            </div>
+
+            {loading ? (
+              <div className="dtable">
+                <div className="flex items-center justify-center gap-2 py-12" style={{ color: "var(--text-3)" }}>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Chargement…
+                </div>
+              </div>
+            ) : viewMode === "grid" ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {paginated.map((company) => {
+                  const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+                  const tags = normalizeServiceTags(company.service_tags, company.premiers_tags);
+                  const isMaps = company.sources?.includes("google_maps") ?? false;
+
+                  return (
+                    <div
+                      key={company.id}
+                      className="rounded-xl border p-3.5 transition-shadow hover:shadow-sm"
+                      style={{ background: "var(--surface)", borderColor: "var(--border)" }}
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium" style={{ letterSpacing: "-0.005em" }}>
+                            {displayName || "Sans nom"}
+                          </span>
+                          {company.telephone && <Phone className="ico-phone ico-xs" />}
+                        </div>
+                        {company.canonical_url && (
+                          <a
+                            href={ensureHttpsUrl(company.canonical_url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Ouvrir ${company.canonical_url} dans un nouvel onglet`}
+                            className="url mt-0.5 block hover:underline"
+                            style={{
+                              fontFamily: "var(--font-mono)",
+                              fontSize: "10.5px",
+                              color: "var(--text-3)",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {company.canonical_url}
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <span className={`src-pill ${isMaps ? "maps" : "search"}`}>
+                          {isMaps ? <MapPin className="ico-xs" /> : <Globe className="ico-xs" />}
+                          {isMaps ? "Maps" : "Search"}
+                        </span>
+                        <span className="date">{formatDate(company.created_at)}</span>
+                      </div>
+
+                      {company.adresse && (
+                        <div
+                          className="addr mt-2.5"
+                          style={{
+                            fontSize: "11.5px",
+                            color: "var(--text-2)",
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "4px",
+                          }}
+                        >
+                          <MapPin className="ico-xs" style={{ marginTop: "2px", color: "var(--text-4)" }} />
+                          <span>{company.adresse}</span>
+                        </div>
+                      )}
+
+                      {tags.length > 0 && (
+                        <div className="tags mt-2.5 flex flex-wrap gap-1">
+                          {tags.slice(0, 3).map((tag, index) => (
+                            <span key={index} className="pill">
+                              {tag}
+                            </span>
+                          ))}
+                          {tags.length > 3 && <span className="pill">+{tags.length - 3}</span>}
+                        </div>
+                      )}
+
+                      <div
+                        className="actions mt-3 flex items-center gap-1.5 border-t pt-3"
+                        style={{ borderColor: "var(--border)" }}
+                      >
+                        <RowActions company={company} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="dtable agent-queue">
+                <div className="dtable-head">
+                  <div></div>
+                  <div>Entreprise</div>
+                  <div>Source</div>
+                  <div>Adresse</div>
+                  <div>Tags</div>
+                  <div>Date</div>
+                  <div>Actions</div>
+                </div>
+                {paginated.map((company) => {
+                  const displayName = getCompanyDisplayName(company.name, company.canonical_url);
+                  const tags = normalizeServiceTags(company.service_tags, company.premiers_tags);
+                  const isMaps = company.sources?.includes("google_maps") ?? false;
+
+                  return (
+                    <div key={company.id} className="dtable-row">
+                      <div className="chk" aria-hidden="true" />
+                      <div className="ent">
+                        <div className="nm">
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {displayName || "Sans nom"}
+                          </span>
+                          {company.telephone && <Phone className="ico-phone ico-xs" />}
+                        </div>
+                        {company.canonical_url && (
+                          <a
+                            href={ensureHttpsUrl(company.canonical_url)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`Ouvrir ${company.canonical_url} dans un nouvel onglet`}
+                            className="url hover:underline"
+                          >
+                            {company.canonical_url}
+                          </a>
+                        )}
+                      </div>
+                      <div>
+                        <div className={`src-pill ${isMaps ? "maps" : "search"}`}>
+                          {isMaps ? <MapPin className="ico-xs" /> : <Globe className="ico-xs" />}
+                          {isMaps ? "Maps" : "Search"}
+                        </div>
+                      </div>
+                      <div className="addr">
+                        {company.adresse ? (
+                          <>
+                            <MapPin className="ico-xs" />
+                            <span>{company.adresse}</span>
+                          </>
+                        ) : (
+                          <span style={{ color: "var(--text-4)" }}>—</span>
+                        )}
+                      </div>
+                      <div className="tags">
+                        {tags.slice(0, 2).map((tag, index) => (
+                          <span key={index} className="pill">
+                            {tag}
+                          </span>
+                        ))}
+                        {tags.length > 2 && <span className="pill">+{tags.length - 2}</span>}
+                      </div>
+                      <div className="date">{formatDate(company.created_at)}</div>
+                      <div className="actions">
+                        <RowActions company={company} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Pagination */}
+            {!loading && companies.length > 0 && (
+              <div className="pagination">
+                <button
+                  type="button"
+                  className={`pg-btn ${currentPage === 1 ? "disabled" : ""}`}
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  aria-label="Page précédente"
+                >
+                  <ChevronLeft className="ico-sm" />
+                </button>
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    className="pg-btn"
+                    aria-current={currentPage === pageNum ? "page" : undefined}
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  className={`pg-btn ${currentPage === totalPages ? "disabled" : ""}`}
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages}
+                  aria-label="Page suivante"
+                >
+                  <ChevronRight className="ico-sm" />
+                </button>
+
+                {hasMore && (
+                  <button type="button" className="btn sm" disabled={loadingMore} onClick={loadMore}>
+                    {loadingMore ? <Loader2 className="ico-sm animate-spin" /> : <ChevronRight className="ico-sm" />}
+                    Charger la suite
+                  </button>
+                )}
+
+                <span className="pg-info">
+                  Page {currentPage} / {totalPages} · {companies.length} entreprise
+                  {companies.length > 1 ? "s" : ""} chargée{companies.length > 1 ? "s" : ""}
+                  {hasMore ? " (il en reste)" : ""}
+                </span>
+              </div>
+            )}
+
+            {!loading && companies.length === 0 && (
+              <div className="dtable">
+                <div className="py-12 text-center">
+                  <Target className="mx-auto mb-4" style={{ width: 40, height: 40, color: "var(--text-4)" }} />
+                  <h3 className="mb-2 font-medium">Aucune entreprise trouvée</h3>
+                  <p style={{ color: "var(--text-3)", fontSize: "12.5px" }}>
+                    {searchTerm ||
+                    urlFilter !== "all" ||
+                    selectedSources.length !== SOURCE_OPTIONS.length
+                      ? "Modifiez vos filtres pour voir plus d'entreprises"
+                      : "La file est vide — tout a été trié !"}
+                  </p>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === "history" && (
+          <>
+            <div className="ws-header" style={{ marginBottom: 14 }}>
+              <div>
+                <div className="ws-eyebrow">MES DÉCISIONS</div>
+                <h1>
+                  <em>{history.length}</em> entreprise{history.length > 1 ? "s" : ""} triée
+                  {history.length > 1 ? "s" : ""}
+                </h1>
+                <div className="sub">
+                  Ce que tu as proposé et ce que l&apos;administrateur en a fait.
+                </div>
+              </div>
+            </div>
+
+            {history.length === 0 ? (
+              <div className="dtable">
+                <div className="py-12 text-center">
+                  <History className="mx-auto mb-4" style={{ width: 40, height: 40, color: "var(--text-4)" }} />
+                  <h3 className="mb-2 font-medium">Aucune décision pour l&apos;instant</h3>
+                  <p style={{ color: "var(--text-3)", fontSize: "12.5px" }}>
+                    Trie quelques entreprises depuis la file pour les voir apparaître ici.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="dtable agent-history">
+                <div className="dtable-head">
+                  <div></div>
+                  <div>Entreprise</div>
+                  <div>Ma décision</div>
+                  <div>Date</div>
+                  <div>Verdict</div>
+                </div>
+                {history.map((h) => (
+                  <div key={h.id} className="dtable-row">
+                    <div className="chk" aria-hidden="true" />
+                    <div className="ent">
+                      <div className="nm">
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {h.entreprises?.name || "Sans nom"}
+                        </span>
+                      </div>
+                      {h.entreprises?.ville && <span className="url">{h.entreprises.ville}</span>}
+                    </div>
+                    <div>
+                      <span className="pill">
+                        {h.decision === "qualify" ? (
+                          <>
+                            <Check className="ico-xs" /> Qualifiée
+                          </>
+                        ) : (
+                          <>
+                            <EyeOff className="ico-xs" /> Masquée
+                          </>
+                        )}
+                      </span>
+                    </div>
+                    <div className="date">{formatDate(h.created_at)}</div>
+                    <div>
+                      {h.review_status === "pending" ? (
+                        <span className="pill">
+                          <Eye className="ico-xs" /> En attente
+                        </span>
+                      ) : h.review_status === "confirmed" ? (
+                        <span className="pill" style={{ color: "var(--ok)" }}>
+                          <Check className="ico-xs" /> Validée
+                        </span>
+                      ) : (
+                        <span className="pill">
+                          Corrigée : {REVIEW_LABEL[h.review_action ?? ""] ?? "autre"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

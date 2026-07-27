@@ -13,7 +13,7 @@ import { canonicalizeDomain, canonicalizeUrl } from "@/lib/url-canonical";
  */
 
 export const QUEUE_COLUMNS =
-  "id, name, ville, code_postal, adresse, telephone, email, canonical_url, site_web_canonique, note_moyenne, nombre_avis, service_tags, premiers_tags, logo_url, sources";
+  "id, name, ville, code_postal, adresse, telephone, email, canonical_url, site_web_canonique, note_moyenne, nombre_avis, service_tags, premiers_tags, logo_url, sources, created_at";
 
 export type QueueCompany = {
   id: number;
@@ -28,9 +28,10 @@ export type QueueCompany = {
   note_moyenne: number | null;
   nombre_avis: number | null;
   service_tags: string[] | null;
-  premiers_tags: string[] | null;
+  premiers_tags: string | null;
   logo_url: string | null;
   sources: string[] | null;
+  created_at: string | null;
 };
 
 /** URL canonique d'une entreprise, `canonical_url` d'abord puis l'ancien champ. */

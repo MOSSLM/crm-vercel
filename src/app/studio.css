@@ -263,6 +263,26 @@
   & .dtable-row .qualif-cell { display: flex; align-items: center; justify-content: center; gap: 6px; }
   & .dtable-row .qualif-cell .ok-mark { color: var(--ok); }
 
+  /* ── File de qualification côté agent ──
+     Même tableau que l'écran admin, mais l'agent n'a ni bascule de
+     qualification, ni blacklist, ni suppression : moins de colonnes, et une
+     action « Qualifier » libellée plutôt qu'une simple icône. */
+  & .dtable.agent-queue .dtable-head,
+  & .dtable.agent-queue .dtable-row {
+    grid-template-columns: 32px 2fr 90px 1.5fr 1.2fr 1fr 200px;
+  }
+  & .dtable.agent-history .dtable-head,
+  & .dtable.agent-history .dtable-row {
+    grid-template-columns: 32px 2fr 130px 1fr 170px;
+  }
+  & .dtable-row .actions .btn.labelled { width: auto; padding: 0 9px; gap: 5px; }
+  & .dtable-row .actions .btn.primary {
+    background: var(--text); color: var(--bg); border-color: var(--text);
+  }
+  & .dtable-row .actions .btn.primary:hover:not(:disabled) {
+    background: var(--text); color: var(--bg); opacity: 0.9;
+  }
+
   /* ── Pagination ── */
   & .pagination { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 16px 0; flex-wrap: wrap; }
   & .pagination .pg-btn {
