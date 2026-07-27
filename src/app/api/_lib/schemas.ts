@@ -166,6 +166,16 @@ export const marketingEnrichPrepareSchema = z.object({
 export type MarketingEnrichPreparePayload = z.infer<typeof marketingEnrichPrepareSchema>;
 
 /**
+ * Validation humaine des données enrichies (étape 2 du marketing pipeline) :
+ * les projets lead magnet passent en `enrichment_validated`, ce qui débloque la
+ * création du site démo.
+ */
+export const marketingValidateEnrichmentSchema = z.object({
+  project_ids: z.array(z.string().uuid()).min(1).max(100),
+});
+export type MarketingValidateEnrichmentPayload = z.infer<typeof marketingValidateEnrichmentSchema>;
+
+/**
  * Chargement du référentiel des communes, un département à la fois (voir
  * /api/settings/communes-fr). Le code est celui de geo.api.gouv.fr : deux
  * chiffres en métropole, trois en outre-mer, "2A"/"2B" pour la Corse.

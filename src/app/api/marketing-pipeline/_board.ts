@@ -118,7 +118,59 @@ type AuditRow = {
 
 type AgentRow = { id: string; full_name: string | null; email: string | null };
 
+/**
+ * Statuts d'`automated_enrichment` (ancien pipeline Production ›
+ * Enrichissement) qui ne valent pas « enrichi ».
+ */
 const ENRICHMENT_FAIL_STATUSES = new Set(["pending", "queued", "running", "failed", "error"]);
+
+/**
+ * Statuts de `lead_magnet_projects` qui signent un enrichissement terminé :
+ * l'edge function `enrich-lead-magnet` pose `framer` en fin de run réussi,
+ * `ready`/`published` sont les états postérieurs (mêmes valeurs que
+ * `TERMINAL_STATUSES` dans `enrich-prepare`).
+ */
+const PROJECT_ENRICHED_STATUSES = new Set(["framer", "ready", "published"]);
+
+/**
+ * L'étape « Enrichissement » est-elle franchie ? C'est ce booléen qui débloque
+ * la carte « Validation données » côté matrice (`activeStageIndex`).
+ *
+ * Le signal qui compte est le **projet lead magnet** : c'est lui que
+ * `/api/lead-magnet/enrich` fait tourner et que l'edge function passe à
+ * `framer`. `automated_enrichment` appartient à l'ancien pipeline de production
+ * et n'est jamais écrit par ce run — s'y fier seule laissait la ligne collée
+ * sur la carte « Enrichir » après un enrichissement pourtant réussi, donc la
+ * carte de validation restait verrouillée et il n'y avait rien à valider.
+ *
+ * @param project Projet lead magnet de l'opportunité (statut + validation
+ *   humaine déjà résolue), `null` s'il n'y en a pas encore.
+ * @param legacy Dernière ligne `automated_enrichment` de l'entreprise.
+ */
+export function isEnrichmentDone(
+  project: { statut: string | null; validated: boolean } | null,
+  legacy: { status: string | null } | null,
+): boolean {
+  // Déjà validé par un humain : l'étape ne régresse plus, même pendant un
+  // ré-enrichissement (qui repasse le statut à `draft` le temps du run).
+  if (project?.validated) return true;
+
+  const statut = project?.statut ?? null;
+  if (statut != null && PROJECT_ENRICHED_STATUSES.has(statut)) return true;
+
+  // Run en échec : la carte « Enrichir » reste active pour porter le bouton
+  // « Relancer » et le message d'erreur, quoi qu'en dise l'ancien pipeline.
+  if (statut === "failed") return false;
+
+  // Ancien pipeline : une fiche déjà enrichie hors marketing pipeline compte,
+  // mais seulement s'il y a un projet — sinon la carte suivante s'ouvrirait sur
+  // un bouton « Valider » inerte (il n'y a pas de projet à valider).
+  if (project && legacy && !(legacy.status != null && ENRICHMENT_FAIL_STATUSES.has(legacy.status))) {
+    return true;
+  }
+
+  return false;
+}
 
 function siteUrl(s: SiteRow | undefined): string | null {
   if (!s) return null;
@@ -311,7 +363,10 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     const audit = auditByOpp.get(o.id) ?? null;
     const owner = ent?.owner_id ? agentById.get(ent.owner_id) : undefined;
 
-    const enriched = !!enrich && !(enrich.status != null && ENRICHMENT_FAIL_STATUSES.has(enrich.status));
+    const enriched = isEnrichmentDone(
+      project ? { statut: project.statut, validated: isValidated(project) } : null,
+      enrich ? { status: enrich.status } : null,
+    );
 
     // Milestones (linear).
     const m1 = !!project && isValidated(project); // enrichment validated → ready for LM
