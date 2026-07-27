@@ -11,6 +11,7 @@ import {
   Globe,
   FileText,
   Wallet,
+  Undo2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,6 +44,7 @@ type Spend = {
 const ACTION_META: Record<string, { label: string; icon: LucideIcon }> = {
   qualify: { label: "A qualifié", icon: Check },
   skip: { label: "A écarté", icon: EyeOff },
+  undo: { label: "A annulé sa décision sur", icon: Undo2 },
   enrich: { label: "A lancé l'enrichissement", icon: Sparkles },
   validate_enrich: { label: "A validé les données", icon: ClipboardCheck },
   create_site: { label: "A créé le site démo", icon: Globe },

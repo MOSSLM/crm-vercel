@@ -19,6 +19,7 @@ import {
   Globe,
   History,
   Loader2,
+  Undo2,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authedFetch } from "@/utils/authedFetch";
@@ -150,6 +151,7 @@ export default function AgentQualification() {
   /** Taille totale de la file pour les filtres courants (calculée en base). */
   const [total, setTotal] = useState(0);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [undoingId, setUndoingId] = useState<string | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
   // Persiste les filtres (pas la page : elle repart à 1 quand ils changent).
@@ -279,6 +281,43 @@ export default function AgentQualification() {
       toast.error("Action impossible.");
     } finally {
       setBusyId(null);
+    }
+  };
+
+  /**
+   * Annule une décision encore en attente et remet l'entreprise dans la file.
+   * Une fois que l'admin a tranché, l'effet est appliqué : plus de retour en
+   * arrière possible côté agent, le serveur refuse (409).
+   */
+  const undo = async (row: HistoryRow) => {
+    setUndoingId(row.id);
+    try {
+      const res = await authedFetch(`/api/agent/qualification/decision?id=${row.id}`, {
+        method: "DELETE",
+      });
+
+      if (res.status === 409) {
+        toast.error("Trop tard : l'administrateur a déjà traité cette entreprise.");
+        await loadHistory();
+        return;
+      }
+      if (!res.ok) {
+        toast.error("Annulation impossible.");
+        return;
+      }
+
+      toast.success(
+        `${row.entreprises?.name || "Entreprise"} remise dans la file à qualifier.`,
+      );
+      setHistory((cur) => cur.filter((h) => h.id !== row.id));
+      // Elle redevient disponible : on recharge la file depuis le début pour
+      // qu'elle y réapparaisse à sa place.
+      setCurrentPage(1);
+      await fetchQueue(null, false);
+    } catch {
+      toast.error("Annulation impossible.");
+    } finally {
+      setUndoingId(null);
     }
   };
 
@@ -749,6 +788,7 @@ export default function AgentQualification() {
                   <div>Ma décision</div>
                   <div>Date</div>
                   <div>Verdict</div>
+                  <div>Actions</div>
                 </div>
                 {history.map((h) => (
                   <div key={h.id} className="dtable-row">
@@ -787,6 +827,28 @@ export default function AgentQualification() {
                       ) : (
                         <span className="pill">
                           Corrigée : {REVIEW_LABEL[h.review_action ?? ""] ?? "autre"}
+                        </span>
+                      )}
+                    </div>
+                    <div className="actions">
+                      {h.review_status === "pending" ? (
+                        <button
+                          type="button"
+                          className="btn labelled"
+                          disabled={undoingId === h.id}
+                          onClick={() => undo(h)}
+                          title="Annuler — remettre l'entreprise dans la file à qualifier"
+                        >
+                          {undoingId === h.id ? (
+                            <Loader2 className="ico-sm animate-spin" />
+                          ) : (
+                            <Undo2 className="ico-sm" />
+                          )}
+                          Annuler
+                        </button>
+                      ) : (
+                        <span style={{ color: "var(--text-4)", fontSize: "11px" }}>
+                          Déjà traitée par l&apos;admin
                         </span>
                       )}
                     </div>
