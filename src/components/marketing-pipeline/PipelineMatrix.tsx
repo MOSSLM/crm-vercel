@@ -607,6 +607,14 @@ interface PipelineMatrixProps {
   working: string | null;
   onRefresh: () => void;
   handlers: MatrixHandlers;
+  /**
+   * `false` quand la colonne `lead_magnet_projects.enrichment_validated` manque
+   * en base : l'étape « Validation données » n'a alors nulle part où s'inscrire
+   * et retombe sur `pret_pour_lm`, que la préparation de l'enrichissement met
+   * déjà à `true` — la validation apparaît donc faite sans que personne ne l'ait
+   * faite. On le dit au lieu de le subir en silence.
+   */
+  hasValidatedColumn?: boolean;
   /** Jeu d'étapes à afficher. `STAGES` (5) côté admin, `AGENT_STAGES` (4) côté agent. */
   stages?: StageDef[];
   /**
@@ -628,6 +636,7 @@ export function PipelineMatrix({
   working,
   onRefresh,
   handlers,
+  hasValidatedColumn = true,
   stages = STAGES,
   canAssign = true,
 }: PipelineMatrixProps) {
@@ -739,6 +748,31 @@ export function PipelineMatrix({
           </button>
         </div>
       </div>
+
+      {!hasValidatedColumn && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 8,
+            border: "1px solid var(--danger)",
+            background: "var(--danger-tint)",
+            color: "var(--danger)",
+            borderRadius: 8,
+            padding: "10px 12px",
+            fontSize: 12.5,
+            marginBottom: 12,
+          }}
+        >
+          <AlertTriangle className="ico-sm" style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>
+            <strong>Étape « Validation données » inopérante :</strong> la colonne{" "}
+            <code>lead_magnet_projects.enrichment_validated</code> manque en base. Les lignes
+            enrichies sautent la validation. Applique la migration{" "}
+            <code>sql/20260708_marketing_pipeline_enrichment_validated.sql</code>.
+          </span>
+        </div>
+      )}
 
       {/* ── toolbar ── */}
       <div className="toolbar">

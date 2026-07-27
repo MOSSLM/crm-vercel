@@ -259,9 +259,13 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
 
       setEnrichLogs(processed);
       setEnrichProgress({ current: withProject.length, total: withProject.length, isComplete: true });
+      // Rafraîchit tout de suite : la carte « Validation données » doit être là
+      // dès la fin du run, sans attendre la fermeture de la modale.
+      await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de l'enrichissement");
       setEnrichProgress((p) => ({ ...p, isComplete: true }));
+      await afterAction();
     } finally {
       setWorking(null);
     }
@@ -275,21 +279,20 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
     setWorking("validate-enrich");
     try {
-      if (isAgent) {
-        const res = await authedFetch("/api/agent/marketing-pipeline/validate-enrichment", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ project_ids: projectIds }),
-        });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
-        const data = (await res.json()) as { validated: number };
-        toast.success(`${data.validated} enrichissement(s) validé(s)`);
-      } else {
-        const patch = board?.has_validated_column ? { enrichment_validated: true } : { pret_pour_lm: true };
-        const { error } = await supabase.from("lead_magnet_projects").update(patch).in("id", projectIds);
-        if (error) throw error;
-        toast.success(`${projectIds.length} enrichissement(s) validé(s)`);
-      }
+      // Les deux variantes écrivent côté serveur (service client) : un UPDATE
+      // depuis le navigateur peut être filtré par la RLS et « réussir » sans
+      // toucher une seule ligne — la carte suivante ne s'ouvrait alors jamais.
+      const url = isAgent
+        ? "/api/agent/marketing-pipeline/validate-enrichment"
+        : "/api/marketing-pipeline/validate-enrichment";
+      const res = await authedFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ project_ids: projectIds }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { validated?: number; error?: string };
+      if (!res.ok) throw new Error(data.error || "Échec de la validation");
+      toast.success(`${data.validated ?? projectIds.length} enrichissement(s) validé(s)`);
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la validation");
@@ -606,6 +609,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
         working={working}
         onRefresh={load}
         handlers={matrixHandlers}
+        hasValidatedColumn={board?.has_validated_column ?? true}
         stages={isAgent ? AGENT_STAGES : STAGES}
         canAssign={!isAgent}
       />
