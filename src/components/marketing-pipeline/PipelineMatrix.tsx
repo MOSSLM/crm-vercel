@@ -52,7 +52,8 @@ interface StageDef {
   icon: LucideIcon;
 }
 
-const STAGES: StageDef[] = [
+/** Les 5 étapes du board admin. */
+export const STAGES: StageDef[] = [
   { id: "enrich", name: "Enrichissement", short: "Enrichi", color: "#2A6FDB", icon: Sparkles },
   { id: "validation", name: "Validation données", short: "Validées", color: "#7A5AE0", icon: ClipboardCheck },
   { id: "site", name: "Site démo", short: "Site", color: "#E2552B", icon: Globe },
@@ -60,24 +61,36 @@ const STAGES: StageDef[] = [
   { id: "attribution", name: "Attribution", short: "Attribué", color: "#1F8A5B", icon: UserPlus },
 ];
 
+/**
+ * Les 4 étapes du board agent. L'attribution a déjà eu lieu — l'agent ne voit
+ * que ses propres entreprises — donc la dernière colonne n'a plus de sens et
+ * disparaît, avec tout ce qui l'accompagne (filtres d'attribution, bouton de
+ * réattribution, menu « Attribuer à »).
+ */
+export const AGENT_STAGES: StageDef[] = STAGES.filter((s) => s.id !== "attribution");
+
 type CellStatus = "done" | "active" | "locked";
 
 function siteValidated(item: BoardItem): boolean {
   return !!item.site && (item.site.is_published || item.site.build_stage === "pret");
 }
 
-/** Index of the current (active) stage; 5 means every stage is done. */
-function activeStageIndex(item: BoardItem): number {
+/**
+ * Index de l'étape en cours ; `stages.length` signifie « tout est fait ».
+ * L'étape d'attribution n'est évaluée que si elle fait partie du jeu d'étapes.
+ */
+function activeStageIndex(item: BoardItem, stages: StageDef[] = STAGES): number {
   if (!item.enriched) return 0;
   if (!item.project?.enrichment_validated) return 1;
   if (!siteValidated(item)) return 2;
   if (item.audit?.statut !== "ready") return 3;
+  if (!stages.some((s) => s.id === "attribution")) return 4;
   if (!item.agent) return 4;
   return 5;
 }
 
-function cellStatus(item: BoardItem, i: number): CellStatus {
-  const a = activeStageIndex(item);
+function cellStatus(item: BoardItem, i: number, stages: StageDef[] = STAGES): CellStatus {
+  const a = activeStageIndex(item, stages);
   return i < a ? "done" : i === a ? "active" : "locked";
 }
 
@@ -194,14 +207,30 @@ function ColHead({ stage, i, counts }: { stage: StageDef; i: number; counts: Rec
 }
 
 /* ── Row head ─────────────────────────────────────────────────────────── */
-function RowHead({ item, onMenu, onAssignClick }: { item: BoardItem; onMenu: (e: React.MouseEvent, item: BoardItem) => void; onAssignClick: (e: React.MouseEvent, item: BoardItem) => void }) {
-  const active = activeStageIndex(item);
-  const doneCount = Math.min(active, STAGES.length);
-  const done = active >= STAGES.length;
+function RowHead({
+  item,
+  stages,
+  canAssign,
+  onMenu,
+  onAssignClick,
+}: {
+  item: BoardItem;
+  stages: StageDef[];
+  canAssign: boolean;
+  onMenu: (e: React.MouseEvent, item: BoardItem) => void;
+  onAssignClick: (e: React.MouseEvent, item: BoardItem) => void;
+}) {
+  const active = activeStageIndex(item, stages);
+  const doneCount = Math.min(active, stages.length);
+  const done = active >= stages.length;
   const name = displayName(item);
   const val = valueLabel(item);
   const website = normalizeUrl(item.company_url);
-  const statusLabel = done ? "Attribué · transféré" : `${doneCount}/${STAGES.length} validées`;
+  const statusLabel = done
+    ? canAssign
+      ? "Attribué · transféré"
+      : "Prêt · toutes les étapes validées"
+    : `${doneCount}/${stages.length} validées`;
 
   return (
     <div className={"mx-rowhead" + (done ? " row-done" : "")}>
@@ -234,8 +263,8 @@ function RowHead({ item, onMenu, onAssignClick }: { item: BoardItem; onMenu: (e:
 
       <div>
         <div className="rail">
-          {STAGES.map((s, i) => {
-            const st = cellStatus(item, i);
+          {stages.map((s, i) => {
+            const st = cellStatus(item, i, stages);
             const cls = st === "done" ? "done" : st === "active" ? "act" : "";
             return <i key={s.id} className={cls} style={{ "--seg": s.color } as React.CSSProperties} />;
           })}
@@ -247,7 +276,12 @@ function RowHead({ item, onMenu, onAssignClick }: { item: BoardItem; onMenu: (e:
       </div>
 
       <div className="rh-foot">
-        {item.agent ? (
+        {!canAssign ? (
+          <span className="assign" style={{ pointerEvents: "none" }}>
+            <User className="ico-sm" />
+            {item.agent?.name.split(" ")[0] ?? "Mon prospect"}
+          </span>
+        ) : item.agent ? (
           <button className="assign has" title="Réattribuer" onClick={(e) => onAssignClick(e, item)}>
             <Avatar initials={initialsOf(item.agent.name)} color={colorForId(item.agent.id)} size={20} />
             {item.agent.name.split(" ")[0]}
@@ -546,7 +580,7 @@ function AttributionCell({ item, stage, status, agents, working, handlers }: { i
         ) : (
           <div className="agents">
             {agents.map((a) => (
-              <button key={a.id} className="agent-pick" title={"Attribuer à " + a.name} disabled={busy} onClick={() => handlers.onAssign(item, a.id)}>
+              <button key={a.id} className="agent-pick" title={"Attribuer à " + a.name} disabled={busy} onClick={() => handlers.onAssign?.(item, a.id)}>
                 <Avatar initials={initialsOf(a.name)} color={colorForId(a.id)} size={18} />
                 {a.name.split(" ")[0]}
               </button>
@@ -573,6 +607,14 @@ interface PipelineMatrixProps {
   working: string | null;
   onRefresh: () => void;
   handlers: MatrixHandlers;
+  /** Jeu d'étapes à afficher. `STAGES` (5) côté admin, `AGENT_STAGES` (4) côté agent. */
+  stages?: StageDef[];
+  /**
+   * Affiche tout ce qui touche à l'attribution : colonne, filtres, bouton de
+   * réattribution, menu « Attribuer à ». Faux côté agent, où l'attribution a
+   * déjà eu lieu en amont.
+   */
+  canAssign?: boolean;
 }
 
 export function PipelineMatrix({
@@ -586,6 +628,8 @@ export function PipelineMatrix({
   working,
   onRefresh,
   handlers,
+  stages = STAGES,
+  canAssign = true,
 }: PipelineMatrixProps) {
   const [q, setQ] = React.useState("");
   const [attribution, setAttribution] = React.useState<AttributionFilter>("all");
@@ -622,23 +666,26 @@ export function PipelineMatrix({
 
   const counts = React.useMemo(() => {
     const m: Record<string, { active: number; done: number }> = {};
-    STAGES.forEach((s) => (m[s.id] = { active: 0, done: 0 }));
+    stages.forEach((s) => (m[s.id] = { active: 0, done: 0 }));
     visibleRows.forEach((it) =>
-      STAGES.forEach((s, i) => {
-        const st = cellStatus(it, i);
+      stages.forEach((s, i) => {
+        const st = cellStatus(it, i, stages);
         if (st === "active") m[s.id].active++;
         else if (st === "done") m[s.id].done++;
       }),
     );
     return m;
-  }, [visibleRows]);
+  }, [visibleRows, stages]);
 
   const stats = React.useMemo(() => {
     const total = items.length;
     const attribues = items.filter((it) => !!it.agent).length;
-    const enCours = items.filter((it) => activeStageIndex(it) < STAGES.length && !it.agent).length;
-    return { total, attribues, enCours };
-  }, [items]);
+    const enCours = items.filter(
+      (it) => activeStageIndex(it, stages) < stages.length && (!canAssign || !it.agent),
+    ).length;
+    const termines = items.filter((it) => activeStageIndex(it, stages) >= stages.length).length;
+    return { total, attribues, enCours, termines };
+  }, [items, stages, canAssign]);
 
   const openMenu = (e: React.MouseEvent, item: BoardItem, kind: "row" | "assign" = "row") => {
     e.stopPropagation();
@@ -665,7 +712,14 @@ export function PipelineMatrix({
           </div>
           <h1 className="disp">Tableau d&apos;avancement</h1>
           <div className="sub">
-            Chaque ligne est une <em>entreprise en préparation</em>. Validez une étape pour <em>débloquer la carte suivante</em> — les cartes précédentes restent accessibles sur la ligne ; la dernière l&apos;<em>attribue à un agent</em>.
+            Chaque ligne est une <em>entreprise en préparation</em>. Validez une étape pour <em>débloquer la carte suivante</em> — les cartes précédentes restent accessibles sur la ligne
+            {canAssign ? (
+              <>
+                {" "}; la dernière l&apos;<em>attribue à un agent</em>.
+              </>
+            ) : (
+              <> ; ce sont vos <em>entreprises attribuées</em>.</>
+            )}
           </div>
         </div>
         <div className="topbar-actions">
@@ -693,42 +747,49 @@ export function PipelineMatrix({
           <input placeholder="Rechercher une entreprise…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
 
-        <div className="tb-div" />
-        <span className="tb-lb">Attribution</span>
-        <div className="seg">
-          {(
-            [
-              ["all", "Tous"],
-              ["assigned", "Attribués"],
-              ["unassigned", "Non attribués"],
-            ] as [AttributionFilter, string][]
-          ).map(([v, l]) => (
-            <button key={v} className={attribution === v ? "on" : ""} onClick={() => setAttribution(v)}>
-              {l}
+        {canAssign && (
+          <>
+            <div className="tb-div" />
+            <span className="tb-lb">Attribution</span>
+            <div className="seg">
+              {(
+                [
+                  ["all", "Tous"],
+                  ["assigned", "Attribués"],
+                  ["unassigned", "Non attribués"],
+                ] as [AttributionFilter, string][]
+              ).map(([v, l]) => (
+                <button key={v} className={attribution === v ? "on" : ""} onClick={() => setAttribution(v)}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {agents.length > 0 && (
+              <div className="own-filter" title="Filtrer par agent">
+                {agents.slice(0, 6).map((a) => (
+                  <button
+                    key={a.id}
+                    className={"av-btn" + (owner === a.id ? " sel" : owner !== "all" ? " dim" : "")}
+                    title={a.name}
+                    onClick={() => setOwner(owner === a.id ? "all" : a.id)}
+                  >
+                    <Avatar initials={initialsOf(a.name)} color={colorForId(a.id)} size={26} />
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="tb-div" />
+            <button
+              className={"btn subtle sm" + (hideAttributed ? " on" : "")}
+              onClick={() => setHideAttributed((v) => !v)}
+            >
+              {hideAttributed ? <EyeOff className="ico-sm" /> : <Check className="ico-sm" />}
+              Masquer attribués
             </button>
-          ))}
-        </div>
-
-        {agents.length > 0 && (
-          <div className="own-filter" title="Filtrer par agent">
-            {agents.slice(0, 6).map((a) => (
-              <button
-                key={a.id}
-                className={"av-btn" + (owner === a.id ? " sel" : owner !== "all" ? " dim" : "")}
-                title={a.name}
-                onClick={() => setOwner(owner === a.id ? "all" : a.id)}
-              >
-                <Avatar initials={initialsOf(a.name)} color={colorForId(a.id)} size={26} />
-              </button>
-            ))}
-          </div>
+          </>
         )}
-
-        <div className="tb-div" />
-        <button className={"btn subtle sm" + (hideAttributed ? " on" : "")} onClick={() => setHideAttributed((v) => !v)}>
-          {hideAttributed ? <EyeOff className="ico-sm" /> : <Check className="ico-sm" />}
-          Masquer attribués
-        </button>
         {hiddenCount > 0 && (
           <button className="btn ghost sm" onClick={() => setHidden(new Set())}>
             <Eye className="ico-sm" />
@@ -771,20 +832,20 @@ export function PipelineMatrix({
             <span className="l">En cours</span>
           </div>
           <div className="stat">
-            <span className="v ok">{stats.attribues}</span>
-            <span className="l">Attribués</span>
+            <span className="v ok">{canAssign ? stats.attribues : stats.termines}</span>
+            <span className="l">{canAssign ? "Attribués" : "Terminés"}</span>
           </div>
         </div>
       </div>
 
       {/* ── matrix ── */}
       <div className="mx-scroll">
-        <div className="matrix" style={{ "--ncol": STAGES.length } as React.CSSProperties}>
+        <div className="matrix" style={{ "--ncol": stages.length } as React.CSSProperties}>
           <div className="mx-corner">
             <div className="t">Entreprise</div>
             <div className="s">{visibleRows.length} lignes</div>
           </div>
-          {STAGES.map((s, i) => (
+          {stages.map((s, i) => (
             <ColHead key={s.id} stage={s} i={i} counts={counts} />
           ))}
 
@@ -802,9 +863,15 @@ export function PipelineMatrix({
           ) : (
             visibleRows.map((r) => (
               <React.Fragment key={r.id}>
-                <RowHead item={r} onMenu={(e, it) => openMenu(e, it, "row")} onAssignClick={(e, it) => openMenu(e, it, "assign")} />
-                {STAGES.map((s, i) => {
-                  const status = cellStatus(r, i);
+                <RowHead
+                  item={r}
+                  stages={stages}
+                  canAssign={canAssign}
+                  onMenu={(e, it) => openMenu(e, it, "row")}
+                  onAssignClick={(e, it) => openMenu(e, it, "assign")}
+                />
+                {stages.map((s, i) => {
+                  const status = cellStatus(r, i, stages);
                   if (s.id === "attribution") {
                     return <AttributionCell key={s.id} item={r} stage={s} status={status} agents={agents} working={working} handlers={handlers} />;
                   }
@@ -831,7 +898,7 @@ export function PipelineMatrix({
           À débloquer
         </span>
         <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)" }}>
-          {visibleRows.length} entreprises · {STAGES.length} étapes
+          {visibleRows.length} entreprises · {stages.length} étapes
         </span>
       </div>
 
@@ -840,7 +907,7 @@ export function PipelineMatrix({
         <>
           <div className="mp-scope-pop-scrim" onClick={() => setMenu(null)} />
           <div className="mp-scope-pop" style={{ top: menu.y, left: menu.x }}>
-            {menu.kind === "assign" ? (
+            {menu.kind === "assign" && canAssign ? (
               <>
                 <div className="ph">Attribuer à</div>
                 {agents.length === 0 && <div className="pop-item">Aucun agent</div>}
@@ -849,7 +916,7 @@ export function PipelineMatrix({
                     key={a.id}
                     className="pop-item"
                     onClick={() => {
-                      handlers.onAssign(menu.item, a.id);
+                      handlers.onAssign?.(menu.item, a.id);
                       setMenu(null);
                     }}
                   >

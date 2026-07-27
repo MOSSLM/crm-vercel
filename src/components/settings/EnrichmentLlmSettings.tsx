@@ -15,6 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { authedFetch } from "@/utils/authedFetch";
 
 interface LlmOption {
@@ -30,6 +32,8 @@ const keyOf = (provider: string, model: string) => `${provider}::${model}`;
 export function EnrichmentLlmSettings() {
   const [options, setOptions] = useState<LlmOption[]>([]);
   const [selected, setSelected] = useState<string>("");
+  /** Coût forfaitaire d'un run, saisi en euros, stocké en centimes. */
+  const [costEuros, setCostEuros] = useState<string>("0");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -39,7 +43,10 @@ export function EnrichmentLlmSettings() {
       .then((r) => r.json())
       .then((data) => {
         if (Array.isArray(data?.options)) setOptions(data.options);
-        if (data?.current) setSelected(keyOf(data.current.provider, data.current.model));
+        if (data?.current) {
+          setSelected(keyOf(data.current.provider, data.current.model));
+          setCostEuros(((Number(data.current.cost_per_run_cents) || 0) / 100).toFixed(2));
+        }
       })
       .catch(() => toast.error("Impossible de charger la configuration IA"))
       .finally(() => setLoading(false));
@@ -59,7 +66,11 @@ export function EnrichmentLlmSettings() {
       const res = await authedFetch("/api/settings/enrichment-llm", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: current.provider, model: current.model }),
+        body: JSON.stringify({
+          provider: current.provider,
+          model: current.model,
+          cost_per_run_cents: Math.max(0, Math.round((Number(costEuros) || 0) * 100)),
+        }),
       });
       if (!res.ok) throw new Error("save_failed");
       setSaved(true);
@@ -141,6 +152,30 @@ export function EnrichmentLlmSettings() {
                 fonction Supabase.
               </p>
             )}
+
+            <div className="space-y-1.5 rounded-lg border bg-muted/30 p-3">
+              <Label htmlFor="enrich-cost" className="text-sm">
+                Coût estimé d&apos;un enrichissement (€)
+              </Label>
+              <Input
+                id="enrich-cost"
+                type="number"
+                min="0"
+                step="0.01"
+                value={costEuros}
+                onChange={(e) => {
+                  setCostEuros(e.target.value);
+                  setSaved(false);
+                }}
+                className="max-w-[10rem]"
+              />
+              <p className="text-xs text-muted-foreground">
+                Montant décompté du budget d&apos;un agent à chaque enrichissement qu&apos;il
+                lance. C&apos;est une estimation forfaitaire que tu fixes toi-même, pas le coût
+                réel facturé par le provider — l&apos;edge function ne remonte pas encore sa
+                consommation de tokens. 0 = aucun décompte.
+              </p>
+            </div>
 
             <Button onClick={handleSave} disabled={saving || !current} className="w-full gap-2">
               {saving ? (

@@ -7,7 +7,6 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import {
   Building2,
   MapPin,
@@ -22,17 +21,28 @@ import {
   ExternalLink,
   ArrowRight,
   ArrowLeft,
-  Search,
 } from "lucide-react";
+import {
+  ListPanel,
+  EmptyRow,
+  one,
+  agentLabel,
+  matches,
+  type Agent,
+  type Ent,
+} from "./agents/shared";
+import AgentPermissionsPanel from "./agents/AgentPermissionsPanel";
+import AgentQualificationReview from "./agents/AgentQualificationReview";
+import AgentActivityFeed from "./agents/AgentActivityFeed";
 
-type Agent = { id: string; full_name: string | null; email: string | null };
-type Ent = { id: number; name: string | null; ville: string | null; telephone: string | null };
 type Sequence = { id: string; name: string | null; status: string; steps_count: number };
 type SeqAssignment = { automation_id: string; agent_id: string };
 type AgentProspect = {
   id: number;
   name: string | null;
   ville: string | null;
+  enriched?: boolean;
+  data_validated?: boolean;
   audit: { statut: string; url: string | null; ready: boolean } | null;
   demo: { url: string | null; is_published: boolean; build_stage: string | null; ready: boolean } | null;
 };
@@ -43,67 +53,26 @@ type ClaimRequest = {
   agent: Agent | Agent[] | null;
 };
 
-function one<T>(v: T | T[] | null): T | null {
-  return Array.isArray(v) ? v[0] ?? null : v;
-}
-
-function agentLabel(a: Agent | null): string {
-  if (!a) return "Agent";
-  return a.full_name?.trim() || a.email || "Agent";
-}
-
-function matches(query: string, ...fields: (string | null | undefined)[]): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return fields.some((f) => (f ?? "").toLowerCase().includes(q));
-}
-
-/** Fixed-height panel with its own scrollbar, so the page never grows with the list. */
-function ListPanel({
-  title,
-  icon,
-  count,
-  hint,
-  search,
-  onSearch,
-  searchPlaceholder,
-  children,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  count: number;
-  hint: string;
-  search: string;
-  onSearch: (v: string) => void;
-  searchPlaceholder: string;
-  children: React.ReactNode;
-}) {
+/** Les 4 étapes de production, telles que l'agent les voit sur son board. */
+function PipelineSteps({ p }: { p: AgentProspect }) {
+  const steps: { label: string; done: boolean }[] = [
+    { label: "Enrichi", done: p.enriched === true },
+    { label: "Données validées", done: p.data_validated === true },
+    { label: "Site démo", done: p.demo?.ready === true },
+    { label: "Audit", done: p.audit?.ready === true },
+  ];
   return (
-    <section className="flex h-[32rem] flex-col rounded-xl border bg-card">
-      <div className="shrink-0 space-y-2 border-b px-4 py-3">
-        <h2 className="flex items-center gap-2 text-base font-semibold">
-          {icon} {title} <span className="text-muted-foreground">({count})</span>
-        </h2>
-        <p className="text-xs text-muted-foreground">{hint}</p>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => onSearch(e.target.value)}
-            placeholder={searchPlaceholder}
-            className="h-8 pl-8 text-sm"
-          />
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">{children}</div>
-    </section>
-  );
-}
-
-function EmptyRow({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-dashed py-8 text-center text-sm text-muted-foreground">
-      {children}
+    <div className="mt-1 flex flex-wrap items-center gap-1">
+      {steps.map((s) => (
+        <Badge
+          key={s.label}
+          variant={s.done ? "default" : "outline"}
+          className="gap-1 text-[11px] font-normal"
+        >
+          {s.done && <Check className="h-3 w-3" />}
+          {s.label}
+        </Badge>
+      ))}
     </div>
   );
 }
@@ -156,7 +125,7 @@ export default function AgentsAdmin() {
     void load();
   }, [load]);
 
-  // Prospects (+ audit / site démo readiness) of the selected agent.
+  // Prospects (+ avancement des 4 étapes du pipeline) de l'agent sélectionné.
   const loadProspects = useCallback(async (agentId: string) => {
     if (!agentId) {
       setAgentProspects([]);
@@ -288,9 +257,10 @@ export default function AgentsAdmin() {
       <div>
         <h1 className="text-2xl font-semibold">Agents</h1>
         <p className="text-sm text-muted-foreground">
-          Attribue ou retire des entreprises à tes agents et traite leurs demandes. Une attribution
-          ouvre l&apos;opportunité et crée la tâche d&apos;appel à froid dans leur démarchage ; un
-          retrait remet l&apos;entreprise dans le pool et arrête ses séquences en cours.
+          Attribue ou retire des entreprises à tes agents, ouvre-leur la qualification et le
+          marketing pipeline, et valide leur pré-tri. Une attribution ouvre l&apos;opportunité et
+          crée la tâche d&apos;appel à froid dans leur démarchage ; un retrait remet
+          l&apos;entreprise dans le pool et arrête ses séquences en cours.
         </p>
       </div>
 
@@ -298,7 +268,7 @@ export default function AgentsAdmin() {
 
       {!loading && (
         <>
-          {/* Agent picker — drives both columns and the sequence list below. */}
+          {/* Agent picker — drives every section below. */}
           <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm">
             <Users className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">Agent :</span>
@@ -319,6 +289,21 @@ export default function AgentsAdmin() {
               {agentProspects.length > 1 ? "s" : ""}
             </span>
           </div>
+
+          {/* Ce que l'agent a le droit de faire. */}
+          {selectedAgent && (
+            <AgentPermissionsPanel
+              agentId={selectedAgent}
+              agentName={agentLabel(currentAgent)}
+            />
+          )}
+
+          {/* Le pré-tri à valider — le cœur de la boucle agent → admin. */}
+          <AgentQualificationReview
+            agentId={selectedAgent}
+            agents={agents}
+            onChanged={refreshLists}
+          />
 
           {/* Pool ⇄ agent: two fixed-height, independently scrolling lists. */}
           <div className="grid gap-4 lg:grid-cols-2">
@@ -381,7 +366,7 @@ export default function AgentsAdmin() {
               title={`Entreprises de ${currentAgent ? agentLabel(currentAgent) : "l'agent"}`}
               icon={<Building2 className="h-4 w-4" />}
               count={filteredOwned.length}
-              hint="Avec l'état de leur audit et de leur site démo. Retirer les remet dans le pool."
+              hint="Avec l'avancement des 4 étapes du marketing pipeline. Retirer les remet dans le pool."
               search={ownedQuery}
               onSearch={setOwnedQuery}
               searchPlaceholder="Filtrer par nom, ville…"
@@ -405,25 +390,10 @@ export default function AgentsAdmin() {
                             <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
                             <span className="truncate">{p.name || "Sans nom"}</span>
                           </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-                            {p.ville && <span className="text-muted-foreground">{p.ville}</span>}
-                            <Badge variant={p.audit?.ready ? "default" : "secondary"}>
-                              {p.audit?.ready
-                                ? "Audit prêt"
-                                : p.audit
-                                  ? "Audit en cours"
-                                  : "Pas d'audit"}
-                            </Badge>
-                            <Badge variant={p.demo?.ready ? "default" : "secondary"}>
-                              {p.demo?.is_published
-                                ? "Site en ligne"
-                                : p.demo?.ready
-                                  ? "Site prêt"
-                                  : p.demo
-                                    ? "Site en cours"
-                                    : "Pas de site"}
-                            </Badge>
-                          </div>
+                          {p.ville && (
+                            <div className="mt-0.5 text-xs text-muted-foreground">{p.ville}</div>
+                          )}
+                          <PipelineSteps p={p} />
                         </div>
                         <Button
                           size="sm"
@@ -460,6 +430,9 @@ export default function AgentsAdmin() {
               )}
             </ListPanel>
           </div>
+
+          {/* Ce que l'agent a fait, et ce qu'il a dépensé. */}
+          {selectedAgent && <AgentActivityFeed agentId={selectedAgent} />}
 
           {/* Pending claim requests */}
           <section className="space-y-3">

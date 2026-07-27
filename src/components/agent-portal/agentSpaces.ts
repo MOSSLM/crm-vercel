@@ -4,6 +4,8 @@ import {
   KanbanSquare,
   CalendarDays,
   CalendarClock,
+  ClipboardCheck,
+  GitBranch,
   Target,
   Inbox,
   Workflow,
@@ -38,6 +40,16 @@ export type AgentSpaceId =
   | "sama"
   | "reglages";
 
+/**
+ * Capacité déléguée requise pour voir un outil. Accordée agent par agent depuis
+ * Relations › Agents (table `agent_settings`). Un outil sans `capability` est
+ * visible par tous les agents.
+ *
+ * Ce filtrage est un confort d'affichage : la vérité est côté serveur, dans
+ * `withAuth({ capability })`.
+ */
+export type AgentToolCapability = "qualify" | "marketing_pipeline";
+
 export type AgentTool = {
   title: string;
   href: string;
@@ -46,6 +58,8 @@ export type AgentTool = {
   activeHref?: string;
   /** Feature not shipped yet — rendered with a "Bientôt" badge. */
   soon?: boolean;
+  /** Hidden unless the agent has been granted this capability. */
+  capability?: AgentToolCapability;
 };
 
 export type AgentSpace = {
@@ -68,6 +82,12 @@ export const AGENT_SPACES: AgentSpace[] = [
     tools: [
       { title: "Dashboard", href: "/espace-agent/dashboard", icon: LayoutDashboard },
       { title: "Pipeline", href: "/espace-agent/pipeline", icon: KanbanSquare },
+      {
+        title: "Marketing pipeline",
+        href: "/espace-agent/marketing-pipeline",
+        icon: GitBranch,
+        capability: "marketing_pipeline",
+      },
       { title: "Calendrier", href: "/espace-agent/calendrier", icon: CalendarDays },
       { title: "Rendez-vous", href: "/espace-agent/rendez-vous", icon: CalendarClock },
     ],
@@ -79,6 +99,12 @@ export const AGENT_SPACES: AgentSpace[] = [
     href: "/espace-agent/demarchage",
     tools: [
       { title: "Démarchage", href: "/espace-agent/demarchage", icon: Target },
+      {
+        title: "Qualification",
+        href: "/espace-agent/qualification",
+        icon: ClipboardCheck,
+        capability: "qualify",
+      },
       { title: "Messagerie", href: "/espace-agent/messagerie", icon: Inbox, soon: true },
       { title: "Séquences", href: "/espace-agent/sequences", icon: Workflow },
     ],
@@ -145,11 +171,13 @@ export function getAgentSpaceById(id: AgentSpaceId): AgentSpace {
  */
 const PATH_TO_SPACE: Array<[string, AgentSpaceId]> = [
   ["/espace-agent/dashboard", "pilotage"],
+  ["/espace-agent/marketing-pipeline", "pilotage"],
   ["/espace-agent/pipeline", "pilotage"],
   ["/espace-agent/calendrier", "pilotage"],
   ["/espace-agent/rendez-vous", "pilotage"],
 
   ["/espace-agent/demarchage", "demarchage"],
+  ["/espace-agent/qualification", "demarchage"],
   ["/espace-agent/messagerie", "demarchage"],
   ["/espace-agent/sequences", "demarchage"],
 

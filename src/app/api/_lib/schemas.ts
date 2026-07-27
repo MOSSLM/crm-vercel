@@ -301,6 +301,59 @@ export const agentSequenceEnrollSchema = z.object({
 });
 export type AgentSequenceEnrollPayload = z.infer<typeof agentSequenceEnrollSchema>;
 
+/* ── Espace agent : qualification déléguée + capacités ────────────────────── */
+
+/**
+ * File de qualification de l'agent. Pagination par curseur (`after_id`) et non
+ * par offset : la file se vide au fur et à mesure que les agents la traitent,
+ * un offset sauterait des entreprises.
+ */
+export const agentQualificationQuerySchema = z.object({
+  q: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  after_id: z.coerce.number().int().min(0).optional(),
+});
+export type AgentQualificationQuery = z.infer<typeof agentQualificationQuerySchema>;
+
+/**
+ * Décision de pré-tri d'un agent : « qualifier » ou « masquer ». N'écrit rien
+ * sur `entreprises` — l'admin valide ou corrige ensuite (cf.
+ * sql/20260727_agent_qualification_and_pipeline.sql).
+ */
+export const agentQualificationDecisionSchema = z.object({
+  entreprise_id: z.coerce.number().int().positive(),
+  decision: z.enum(["qualify", "skip"]),
+  note: z.string().trim().max(500).optional(),
+});
+export type AgentQualificationDecisionPayload = z.infer<typeof agentQualificationDecisionSchema>;
+
+/** Verdict de l'admin sur une décision d'agent. */
+export const adminAgentReviewSchema = z.object({
+  decision_id: z.string().uuid(),
+  action: z.enum(["qualify", "blacklist", "hide", "requeue", "delete"]),
+  /** Pour `blacklist` : bloquer le domaine entier plutôt que l'URL exacte. */
+  blacklist_scope: z.enum(["exact_url", "domain"]).optional().default("domain"),
+});
+export type AdminAgentReviewPayload = z.infer<typeof adminAgentReviewSchema>;
+
+/** Capacités + plafond de dépense accordés à un agent. */
+export const adminAgentSettingsSchema = z.object({
+  agent_id: z.string().uuid(),
+  can_qualify: z.boolean(),
+  can_use_marketing_pipeline: z.boolean(),
+  /** null = pas de plafond. En centimes. */
+  enrichment_budget_cents: z.coerce.number().int().min(0).nullable().optional(),
+  budget_period: z.enum(["month", "total"]).optional().default("month"),
+});
+export type AdminAgentSettingsPayload = z.infer<typeof adminAgentSettingsSchema>;
+
+/** Validation d'une étape du marketing pipeline exécutée par un agent. */
+export const agentPipelineStepSchema = z.object({
+  entreprise_id: z.coerce.number().int().positive(),
+  opportunite_id: z.string().uuid().optional(),
+});
+export type AgentPipelineStepPayload = z.infer<typeof agentPipelineStepSchema>;
+
 /**
  * Reads JSON from the request and validates it.
  *

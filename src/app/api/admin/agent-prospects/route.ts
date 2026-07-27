@@ -81,13 +81,45 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
     return null;
   };
 
+  // Jalons amont du marketing pipeline (enrichissement puis validation des
+  // données), pour que l'admin puisse vérifier les 4 étapes depuis cet écran et
+  // pas seulement l'audit et le site démo.
+  const [enrichRes, projectsRes] = await Promise.all([
+    sc.from("automated_enrichment").select("entreprise_id, status, updated_at").in("entreprise_id", entIds),
+    sc
+      .from("lead_magnet_projects")
+      .select("entreprise_id, pret_pour_lm, enrichment_validated")
+      .in("entreprise_id", entIds),
+  ]);
+
+  // Statuts que l'edge function considère comme « pas encore enrichi ».
+  const ENRICH_PENDING = new Set(["pending", "queued", "running", "failed", "error"]);
+  const enrichedEnts = new Set<number>();
+  for (const r of enrichRes.data ?? []) {
+    const status = r.status as string | null;
+    if (status == null || !ENRICH_PENDING.has(status)) enrichedEnts.add(Number(r.entreprise_id));
+  }
+
+  const validatedEnts = new Set<number>();
+  for (const p of projectsRes.data ?? []) {
+    // `enrichment_validated` peut manquer si la migration n'est pas appliquée :
+    // on retombe alors sur `pret_pour_lm`, comme le board.
+    const validated =
+      p.enrichment_validated === true ||
+      (p.enrichment_validated === undefined && p.pret_pour_lm === true);
+    if (validated) validatedEnts.add(Number(p.entreprise_id));
+  }
+
   const prospects = (ents ?? []).map((e) => {
-    const audit = auditByEnt.get(e.id as number);
-    const site = siteByEnt.get(e.id as number);
+    const entId = e.id as number;
+    const audit = auditByEnt.get(entId);
+    const site = siteByEnt.get(entId);
     return {
       id: e.id,
       name: e.name,
       ville: e.ville,
+      enriched: enrichedEnts.has(entId),
+      data_validated: validatedEnts.has(entId),
       audit: audit
         ? { statut: audit.statut, url: audit.pdf_url, ready: audit.statut === "ready" && !!audit.pdf_url }
         : null,
