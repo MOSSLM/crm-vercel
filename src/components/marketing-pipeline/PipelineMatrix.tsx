@@ -27,11 +27,12 @@ import {
   FileText,
   Target,
   ChevronRight,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
-import type { BoardItem, AgentRef, TemplateRef, PipelineRef, MatrixHandlers } from "./types";
+import type { BoardItem, AgentRef, TemplateRef, PipelineRef, MatrixHandlers, BulkHandlers } from "./types";
 import "./mp-skin.css";
 
 /* ── Stage model ──────────────────────────────────────────────────────────
@@ -187,21 +188,45 @@ function ResearchLinks({ item, compact }: { item: BoardItem; compact?: boolean }
 }
 
 /* ── Column head ──────────────────────────────────────────────────────── */
-function ColHead({ stage, i, counts }: { stage: StageDef; i: number; counts: Record<string, { active: number; done: number }> }) {
+/**
+ * L'en-tête est aussi le filtre de l'étape : un clic ne garde que les lignes qui
+ * en sont là (« celles qui ont besoin du site », « … de l'audit »), un second
+ * clic l'enlève. Les compteurs, eux, ignorent ce filtre pour rester lisibles.
+ */
+function ColHead({
+  stage,
+  i,
+  counts,
+  filtered,
+  onFilter,
+}: {
+  stage: StageDef;
+  i: number;
+  counts: Record<string, { active: number; done: number }>;
+  filtered: boolean;
+  onFilter: () => void;
+}) {
   const c = counts[stage.id] ?? { active: 0, done: 0 };
   const I = stage.icon;
   return (
-    <div className="mx-colhead">
-      <div className="hd">
-        <span className="sw" style={{ background: rgba(stage.color, 0.12), color: stage.color }}>
-          <I className="ico-sm" />
-        </span>
-        <span className="nm">{stage.name}</span>
-        <span className="idx">{String(i + 1).padStart(2, "0")}</span>
-      </div>
-      <div className="meta">
-        <b style={{ color: stage.color }}>{c.active}</b> en cours · {c.done} faites
-      </div>
+    <div className={"mx-colhead" + (filtered ? " filt" : "")} style={{ "--seg": stage.color } as React.CSSProperties}>
+      <button
+        type="button"
+        className="colhead-btn"
+        onClick={onFilter}
+        title={filtered ? "Enlever le filtre" : `N'afficher que les lignes à l'étape « ${stage.name} »`}
+      >
+        <div className="hd">
+          <span className="sw" style={{ background: rgba(stage.color, 0.12), color: stage.color }}>
+            <I className="ico-sm" />
+          </span>
+          <span className="nm">{stage.name}</span>
+          <span className="idx">{String(i + 1).padStart(2, "0")}</span>
+        </div>
+        <div className="meta">
+          <b style={{ color: stage.color }}>{c.active}</b> en cours · {c.done} faites
+        </div>
+      </button>
     </div>
   );
 }
@@ -211,12 +236,16 @@ function RowHead({
   item,
   stages,
   canAssign,
+  selected,
+  onToggleSelect,
   onMenu,
   onAssignClick,
 }: {
   item: BoardItem;
   stages: StageDef[];
   canAssign: boolean;
+  selected: boolean;
+  onToggleSelect: (item: BoardItem) => void;
   onMenu: (e: React.MouseEvent, item: BoardItem) => void;
   onAssignClick: (e: React.MouseEvent, item: BoardItem) => void;
 }) {
@@ -233,8 +262,16 @@ function RowHead({
     : `${doneCount}/${stages.length} validées`;
 
   return (
-    <div className={"mx-rowhead" + (done ? " row-done" : "")}>
+    <div className={"mx-rowhead" + (done ? " row-done" : "") + (selected ? " row-sel" : "")}>
       <div className="rh-top">
+        <input
+          type="checkbox"
+          className="rh-check"
+          checked={selected}
+          onChange={() => onToggleSelect(item)}
+          title="Sélectionner pour une action de masse"
+          aria-label={`Sélectionner ${name}`}
+        />
         {item.logo_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img className="rh-logo" src={item.logo_url} alt="" />
@@ -592,9 +629,131 @@ function AttributionCell({ item, stage, status, agents, working, handlers }: { i
   );
 }
 
+/* ── Bulk action bar ──────────────────────────────────────────────────────
+ * Une sélection peut mélanger des lignes à des étapes différentes : plutôt que
+ * d'imposer une étape courante, chaque action n'agit que sur les lignes
+ * éligibles et affiche ce compte. Rien d'éligible → bouton désactivé.
+ */
+function BulkBar({
+  rows,
+  agents,
+  pipelines,
+  canAssign,
+  busy,
+  overwrite,
+  onOverwriteChange,
+  onClear,
+  bulk,
+}: {
+  rows: BoardItem[];
+  agents: AgentRef[];
+  pipelines: PipelineRef[];
+  canAssign: boolean;
+  busy: boolean;
+  overwrite: boolean;
+  onOverwriteChange: (v: boolean) => void;
+  onClear: () => void;
+  bulk: BulkHandlers;
+}) {
+  const toValidateEnrich = rows.filter((r) => r.project && !r.project.enrichment_validated);
+  const toCreateSite = rows.filter((r) => r.entreprise_id != null && !r.site);
+  const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
+  const toCreateAudit = rows.filter((r) => !r.audit);
+  const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready");
+
+  const ct = (n: number) => <span className="ct">{n}</span>;
+
+  return (
+    <div className="bulkbar" role="group" aria-label="Actions de masse">
+      <span className="cnt">{rows.length} sélectionnée{rows.length > 1 ? "s" : ""}</span>
+      <button className="btn ghost xs" onClick={onClear} title="Tout désélectionner">
+        <X className="ico-sm" />
+      </button>
+      <div className="tb-div" />
+
+      <label className="ow" title="Vide l'enrichissement précédent avant de relancer, pour repartir de zéro (les corrections manuelles seront perdues).">
+        <input type="checkbox" checked={overwrite} onChange={(e) => onOverwriteChange(e.target.checked)} />
+        Écraser
+      </label>
+      <button className="btn sm" disabled={busy || rows.length === 0} onClick={() => bulk.onEnrich(rows, overwrite)}>
+        <Sparkles className="ico-sm" />
+        {overwrite ? "Ré-enrichir" : "Enrichir"}
+        {ct(rows.length)}
+      </button>
+      <button className="btn sm" disabled={busy || toValidateEnrich.length === 0} onClick={() => bulk.onValidateEnrich(toValidateEnrich)}>
+        <ClipboardCheck className="ico-sm" />
+        Valider données
+        {ct(toValidateEnrich.length)}
+      </button>
+      <button className="btn sm" disabled={busy || toCreateSite.length === 0} onClick={() => bulk.onCreateSites(toCreateSite)}>
+        <Globe className="ico-sm" />
+        Créer les sites
+        {ct(toCreateSite.length)}
+      </button>
+      <button className="btn sm" disabled={busy || toValidateSite.length === 0} onClick={() => bulk.onValidateSites(toValidateSite)}>
+        <Check className="ico-sm" />
+        Valider les sites
+        {ct(toValidateSite.length)}
+      </button>
+      <button className="btn sm" disabled={busy || toCreateAudit.length === 0} onClick={() => bulk.onCreateAudits(toCreateAudit)}>
+        <FileText className="ico-sm" />
+        Créer les audits
+        {ct(toCreateAudit.length)}
+      </button>
+      <button className="btn sm" disabled={busy || toValidateAudit.length === 0} onClick={() => bulk.onValidateAudits(toValidateAudit)}>
+        <Check className="ico-sm" />
+        Valider les audits
+        {ct(toValidateAudit.length)}
+      </button>
+
+      {canAssign && agents.length > 0 && bulk.onAssign && (
+        <select
+          className="mp-select"
+          value=""
+          disabled={busy}
+          title="Attribuer les lignes sélectionnées à un agent"
+          onChange={(e) => {
+            if (e.target.value) bulk.onAssign?.(rows, e.target.value);
+            e.target.value = "";
+          }}
+        >
+          <option value="">Attribuer à…</option>
+          {agents.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      )}
+      {pipelines.length > 0 && (
+        <select
+          className="mp-select"
+          value=""
+          disabled={busy}
+          title="Déplacer les lignes sélectionnées vers un autre pipeline"
+          onChange={(e) => {
+            if (e.target.value) bulk.onMove(rows, e.target.value);
+            e.target.value = "";
+          }}
+        >
+          <option value="">Déplacer vers…</option>
+          {pipelines.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nom}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 /* ── The matrix view ──────────────────────────────────────────────────── */
 type MenuState = { kind: "row" | "assign"; item: BoardItem; x: number; y: number } | null;
 type AttributionFilter = "all" | "assigned" | "unassigned";
+/** Filtre d'étape : « toutes », l'index d'une étape en cours, ou « terminées ». */
+type StageFilter = "all" | "done" | number;
+type SortMode = "recent" | "stage-asc" | "stage-desc";
 
 interface PipelineMatrixProps {
   items: BoardItem[];
@@ -607,6 +766,8 @@ interface PipelineMatrixProps {
   working: string | null;
   onRefresh: () => void;
   handlers: MatrixHandlers;
+  /** Actions de masse sur les lignes cochées (barre de sélection). */
+  bulk: BulkHandlers;
   /**
    * `false` quand la colonne `lead_magnet_projects.enrichment_validated` manque
    * en base : l'étape « Validation données » n'a alors nulle part où s'inscrire
@@ -636,6 +797,7 @@ export function PipelineMatrix({
   working,
   onRefresh,
   handlers,
+  bulk,
   hasValidatedColumn = true,
   stages = STAGES,
   canAssign = true,
@@ -645,7 +807,11 @@ export function PipelineMatrix({
   const [owner, setOwner] = React.useState<string>("all");
   const [hideAttributed, setHideAttributed] = React.useState(false);
   const [pipelineFilter, setPipelineFilter] = React.useState("all");
+  const [stageFilter, setStageFilter] = React.useState<StageFilter>("all");
+  const [sort, setSort] = React.useState<SortMode>("recent");
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [overwriteEnrich, setOverwriteEnrich] = React.useState(false);
   const [menu, setMenu] = React.useState<MenuState>(null);
 
   const toggleHidden = (id: string) =>
@@ -656,7 +822,18 @@ export function PipelineMatrix({
       return n;
     });
 
-  const visibleRows = React.useMemo(() => {
+  const toggleSelected = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
+  // Lignes retenues par tout sauf le filtre d'étape : c'est sur elles que les
+  // compteurs des en-têtes sont calculés, sinon filtrer sur une étape ferait
+  // tomber à zéro les compteurs des autres colonnes — donc du filtre lui-même.
+  const baseRows = React.useMemo(() => {
     const nq = q.trim().toLowerCase();
     return items.filter((it) => {
       if (hidden.has(it.id)) return false;
@@ -673,10 +850,25 @@ export function PipelineMatrix({
     });
   }, [items, q, attribution, owner, hideAttributed, pipelineFilter, hidden]);
 
+  const visibleRows = React.useMemo(() => {
+    const rows =
+      stageFilter === "all"
+        ? baseRows
+        : baseRows.filter((it) => {
+            const a = activeStageIndex(it, stages);
+            return stageFilter === "done" ? a >= stages.length : a === stageFilter;
+          });
+    if (sort === "recent") return rows;
+    const dir = sort === "stage-asc" ? 1 : -1;
+    // Tri stable : `items` arrive déjà trié par `updated_at`, on ne réordonne
+    // qu'à avancement égal.
+    return [...rows].sort((a, b) => (activeStageIndex(a, stages) - activeStageIndex(b, stages)) * dir);
+  }, [baseRows, stageFilter, sort, stages]);
+
   const counts = React.useMemo(() => {
     const m: Record<string, { active: number; done: number }> = {};
     stages.forEach((s) => (m[s.id] = { active: 0, done: 0 }));
-    visibleRows.forEach((it) =>
+    baseRows.forEach((it) =>
       stages.forEach((s, i) => {
         const st = cellStatus(it, i, stages);
         if (st === "active") m[s.id].active++;
@@ -684,7 +876,22 @@ export function PipelineMatrix({
       }),
     );
     return m;
-  }, [visibleRows, stages]);
+  }, [baseRows, stages]);
+
+  // On n'agit jamais sur une ligne qu'on ne voit pas : la sélection est
+  // intersectée avec les lignes affichées.
+  const selectedRows = React.useMemo(
+    () => visibleRows.filter((it) => selected.has(it.id)),
+    [visibleRows, selected],
+  );
+  const allVisibleSelected = visibleRows.length > 0 && selectedRows.length === visibleRows.length;
+  const toggleAllVisible = () =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (allVisibleSelected) visibleRows.forEach((it) => n.delete(it.id));
+      else visibleRows.forEach((it) => n.add(it.id));
+      return n;
+    });
 
   const stats = React.useMemo(() => {
     const total = items.length;
@@ -781,6 +988,37 @@ export function PipelineMatrix({
           <input placeholder="Rechercher une entreprise…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
 
+        <div className="tb-div" />
+        <span className="tb-lb">Étape</span>
+        <select
+          className="mp-select"
+          value={String(stageFilter)}
+          onChange={(e) => {
+            const v = e.target.value;
+            setStageFilter(v === "all" || v === "done" ? v : Number(v));
+          }}
+          title="Ne garder que les lignes qui en sont à cette étape"
+        >
+          <option value="all">Toutes les étapes</option>
+          {stages.map((s, i) => (
+            <option key={s.id} value={i}>
+              {String(i + 1).padStart(2, "0")} · À faire : {s.name}
+            </option>
+          ))}
+          <option value="done">Terminées</option>
+        </select>
+
+        <select
+          className="mp-select"
+          value={sort}
+          onChange={(e) => setSort(e.target.value as SortMode)}
+          title="Ordre des lignes"
+        >
+          <option value="recent">Trier : récentes</option>
+          <option value="stage-asc">Trier : moins avancées</option>
+          <option value="stage-desc">Trier : plus avancées</option>
+        </select>
+
         {canAssign && (
           <>
             <div className="tb-div" />
@@ -872,15 +1110,48 @@ export function PipelineMatrix({
         </div>
       </div>
 
+      {selectedRows.length > 0 && (
+        <BulkBar
+          rows={selectedRows}
+          agents={agents}
+          pipelines={pipelines}
+          canAssign={canAssign}
+          busy={working !== null}
+          overwrite={overwriteEnrich}
+          onOverwriteChange={setOverwriteEnrich}
+          onClear={() => setSelected(new Set())}
+          bulk={bulk}
+        />
+      )}
+
       {/* ── matrix ── */}
       <div className="mx-scroll">
         <div className="matrix" style={{ "--ncol": stages.length } as React.CSSProperties}>
           <div className="mx-corner">
-            <div className="t">Entreprise</div>
-            <div className="s">{visibleRows.length} lignes</div>
+            <label className="cnr-sel" title="Tout sélectionner / désélectionner">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleAllVisible}
+                disabled={visibleRows.length === 0}
+                aria-label="Tout sélectionner"
+              />
+              <span className="t">Entreprise</span>
+            </label>
+            <div className="s">
+              {visibleRows.length} lignes
+              {selectedRows.length > 0 ? ` · ${selectedRows.length} sél.` : ""}
+            </div>
           </div>
           {stages.map((s, i) => (
-            <ColHead key={s.id} stage={s} i={i} counts={counts} />
+            <ColHead
+              key={s.id}
+              stage={s}
+              i={i}
+              counts={counts}
+              filtered={stageFilter === i}
+              onFilter={() => setStageFilter((f) => (f === i ? "all" : i))}
+            />
           ))}
 
           {loading && visibleRows.length === 0 ? (
@@ -901,6 +1172,8 @@ export function PipelineMatrix({
                   item={r}
                   stages={stages}
                   canAssign={canAssign}
+                  selected={selected.has(r.id)}
+                  onToggleSelect={(it) => toggleSelected(it.id)}
                   onMenu={(e, it) => openMenu(e, it, "row")}
                   onAssignClick={(e, it) => openMenu(e, it, "assign")}
                 />

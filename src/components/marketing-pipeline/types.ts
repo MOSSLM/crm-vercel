@@ -66,6 +66,24 @@ export interface BoardData {
   has_validated_column: boolean;
 }
 
+/**
+ * Actions de masse, déclenchées depuis la barre de sélection sur toutes les
+ * lignes cochées. Chaque action ne reçoit que les lignes pour lesquelles elle a
+ * un sens (la barre filtre en amont et affiche ce compte), et tape sur les mêmes
+ * fonctions batch que les actions par carte — elles ont toujours pris un tableau.
+ */
+export interface BulkHandlers {
+  onEnrich: (items: BoardItem[], overwrite: boolean) => void;
+  onValidateEnrich: (items: BoardItem[]) => void;
+  onCreateSites: (items: BoardItem[]) => void;
+  onValidateSites: (items: BoardItem[]) => void;
+  onCreateAudits: (items: BoardItem[]) => void;
+  onValidateAudits: (items: BoardItem[]) => void;
+  /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */
+  onAssign?: (items: BoardItem[], agentId: string) => void;
+  onMove: (items: BoardItem[], pipelineId: string) => void;
+}
+
 /** Per-item action callbacks the matrix cells invoke (bound to real handlers). */
 export interface MatrixHandlers {
   onEnrich: (item: BoardItem) => void;

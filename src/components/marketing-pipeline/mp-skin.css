@@ -27,7 +27,7 @@
   --font-serif: "Instrument Serif", "Times New Roman", serif;
   /* Fixed columns, middle ground: narrower than the stretched original but
      roomy enough for the cards; height unchanged. */
-  --rowh: 216px; --colw: 200px;
+  --rowh: 216px; --colw: 230px;
 
   display: flex;
   flex-direction: column;
@@ -122,6 +122,15 @@
 
 /* select (native, styled) */
 .mp-scope select.mp-select{ height:34px; border:1px solid var(--border-2); background:var(--surface); border-radius:8px; padding:0 9px; font-size:12.5px; color:var(--text); max-width:200px; }
+.mp-scope select.mp-select:disabled{ opacity:.5; }
+
+/* ── selection (cases à cocher + barre d'actions de masse) ── */
+.mp-scope input[type="checkbox"]{ accent-color:var(--accent); width:15px; height:15px; margin:0; cursor:pointer; flex-shrink:0; }
+.mp-scope input[type="checkbox"]:disabled{ opacity:.4; cursor:default; }
+.mp-scope .bulkbar{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 24px 14px; padding:9px 12px; background:var(--surface); border:1px solid var(--border-2); border-radius:10px; box-shadow:var(--shadow-1); }
+.mp-scope .bulkbar .cnt{ font-family:var(--font-mono); font-size:11px; color:var(--text-2); font-weight:600; }
+.mp-scope .bulkbar .ow{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-3); cursor:pointer; white-space:nowrap; }
+.mp-scope .bulkbar select.mp-select{ height:30px; font-size:11.5px; }
 
 /* ── matrix ── */
 .mp-scope .mx-scroll{ flex:1; overflow:auto; border-top:1px solid var(--border); background:var(--bg); min-height:0; }
@@ -132,6 +141,7 @@
 .mp-scope .mx-corner{ position:sticky; top:0; left:0; z-index:40; background:var(--bg-2); padding:13px 16px; display:flex; flex-direction:column; justify-content:center; min-height:60px; }
 .mp-scope .mx-corner .t{ font-size:12px; font-weight:600; color:var(--text); }
 .mp-scope .mx-corner .s{ font-size:10.5px; color:var(--text-3); font-family:var(--font-mono); margin-top:2px; }
+.mp-scope .cnr-sel{ display:flex; align-items:center; gap:8px; cursor:pointer; }
 .mp-scope .mx-colhead{ position:sticky; top:0; z-index:30; background:var(--bg-2); padding:10px 12px; display:flex; flex-direction:column; gap:4px; justify-content:center; min-height:60px; }
 .mp-scope .mx-colhead .hd{ display:flex; align-items:center; gap:7px; }
 .mp-scope .mx-colhead .sw{ width:22px; height:22px; border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -140,10 +150,16 @@
 .mp-scope .mx-colhead .idx{ font-family:var(--font-mono); font-size:10px; color:var(--text-4); margin-left:auto; align-self:flex-start; }
 .mp-scope .mx-colhead .meta{ display:flex; align-items:center; gap:6px; font-size:10px; color:var(--text-3); font-family:var(--font-mono); }
 .mp-scope .mx-colhead .meta b{ color:var(--text-2); font-weight:600; }
+/* L'en-tête entier est le bouton de filtre de l'étape. */
+.mp-scope .colhead-btn{ display:flex; flex-direction:column; gap:4px; align-items:stretch; text-align:left; border:0; background:transparent; padding:0; color:inherit; width:100%; }
+.mp-scope .colhead-btn:hover .nm{ color:var(--seg,var(--accent)); }
+.mp-scope .mx-colhead.filt{ background:var(--surface); box-shadow:inset 0 -2px 0 var(--seg,var(--accent)); }
 
 /* row head */
 .mp-scope .mx-rowhead{ position:sticky; left:0; z-index:20; background:var(--surface); padding:12px 13px; display:flex; flex-direction:column; gap:9px; min-height:150px; }
 .mp-scope .rh-top{ display:flex; align-items:flex-start; gap:9px; }
+.mp-scope .rh-check{ margin-top:8px; }
+.mp-scope .row-sel .mx-rowhead, .mp-scope .mx-rowhead.row-sel{ background:var(--accent-tint); box-shadow:inset 2px 0 0 var(--accent); }
 .mp-scope .rh-logo{ width:30px; height:30px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:600; font-size:12px; color:#fff; flex-shrink:0; letter-spacing:-.02em; overflow:hidden; object-fit:cover; }
 .mp-scope .rh-name{ font-size:13.5px; font-weight:600; line-height:1.15; letter-spacing:-.01em; }
 .mp-scope .rh-meta{ font-size:11.5px; color:var(--text-3); margin-top:2px; display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
