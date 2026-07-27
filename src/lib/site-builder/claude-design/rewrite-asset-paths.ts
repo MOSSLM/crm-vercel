@@ -17,9 +17,13 @@ function escapeRegExp(s: string): string {
 
 /**
  * Replaces every occurrence of each original template-relative path with its
- * uploaded public URL. The map keys are the exact paths as they appear in the
- * markup (e.g. "images/clim-gainable.png"). Longer paths are replaced first so
- * a path that is a prefix of another can't partially match.
+ * uploaded public URL. The map keys are the canonical ref paths
+ * (e.g. "images/clim-gainable.png"); any leading `./` / `../` hops are consumed
+ * along with them, because a multi-template export keeps the images one level
+ * ABOVE the pages and writes `src="../images/clim-gainable.png"` — matching the
+ * bare path alone would leave a stray `../` in front of the absolute URL.
+ * Longer paths are replaced first so a path that is a prefix of another can't
+ * partially match.
  */
 export function rewriteAssets(source: string, urlByOriginalPath: Map<string, string>): string {
   let out = source;
@@ -27,7 +31,7 @@ export function rewriteAssets(source: string, urlByOriginalPath: Map<string, str
   for (const path of paths) {
     const url = urlByOriginalPath.get(path);
     if (!url) continue;
-    out = out.replace(new RegExp(escapeRegExp(path), "g"), url);
+    out = out.replace(new RegExp(`(?:\\.{1,2}\\/)*${escapeRegExp(path)}`, "g"), url);
   }
   return out;
 }
