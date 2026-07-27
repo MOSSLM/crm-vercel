@@ -1,0 +1,793 @@
+/* ════════════════════════════════════════════════════════════════
+   sama — Editorial corporate homepage
+   Design system: light-blue elevated + deep navy narrative moments
+   Type: Cormorant Garamond (display) · DM Sans (body) · DM Mono (spec)
+   ════════════════════════════════════════════════════════════════ */
+
+.sama-home{
+  /* ink + surfaces */
+  --nuit: #0A1B33;        /* deep narrative navy */
+  --nuit-2: #0E2543;      /* slightly lifted navy */
+  --ink: #122844;         /* primary text on light */
+  --ink-soft: #4A648C;    /* secondary text */
+  --ink-faint: #8AA0C0;   /* tertiary / captions */
+
+  /* blue family (elevated) */
+  --azur: #2F7AE0;        /* primary accent */
+  --azur-deep: #1F5BC0;   /* deeper accent for corporate */
+  --sky: #5B9BE8;
+  --brume: #B5D0F0;
+
+  /* light surfaces */
+  --mist: #E7F0FB;
+  --mist-2: #F0F6FD;
+  --paper: #F7FAFD;
+  --white: #FFFFFF;
+
+  --line: rgba(18,40,68,0.10);
+  --line-soft: rgba(18,40,68,0.06);
+  --line-blue: rgba(47,122,224,0.18);
+  --line-light: rgba(255,255,255,0.14);
+
+  /* tweakable accent (overridden by panel) */
+  --accent: var(--azur);
+  --accent-deep: var(--azur-deep);
+
+  --maxw: 1240px;
+  --pad: 64px;
+  --ease: cubic-bezier(.4,0,.2,1);
+  --ease-out: cubic-bezier(.16,.84,.34,1);
+}
+
+.sama-home *, .sama-home *::before, .sama-home *::after{ margin: 0; padding: 0; box-sizing: border-box; transition: none; }
+.sama-home{
+  font-family: var(--font-dm-sans), 'DM Sans', sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+  /* `clip` et non `hidden` : la maquette portait ce réglage sur <body> (propagé
+     au viewport). Sur un simple <div>, `hidden` créerait un conteneur de
+     défilement et casserait le `position: sticky` de la section Transform. */
+  overflow-x: clip;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+body.sama-intro-lock{ overflow: hidden; height: 100vh; }
+.sama-home a{ text-decoration: none; color: inherit; }
+.sama-home img{ display: block; max-width: 100%; }
+.sama-home ::selection{ background: rgba(47,122,224,0.20); }
+
+/* ─── shared serif / mono helpers ─── */
+.sama-home .serif{ font-family: var(--font-cormorant), 'Cormorant Garamond', serif; }
+.sama-home .mono{ font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; }
+.sama-home em.hl{ font-style: italic; color: var(--accent); }
+
+/* spec label — the editorial signature */
+.sama-home .spec{
+  font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, monospace;
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+  color: var(--ink-faint);
+  display: inline-flex; align-items: center; gap: 12px;
+}
+.sama-home .spec .rule{ width: 34px; height: 1px; background: currentColor; opacity: .5; }
+.sama-home .spec .num{ color: var(--accent); }
+
+/* ════════════════ NAV ════════════════ */
+.sama-home nav{
+  position: fixed; top: 0; left: 0; right: 0; z-index: 90;
+  padding: 24px var(--pad);
+  display: flex; align-items: center; justify-content: space-between;
+  transition: background .45s var(--ease), backdrop-filter .45s, padding .35s, border-color .45s;
+  border-bottom: 1px solid transparent;
+}
+.sama-home nav.scrolled{
+  background: rgba(247,250,253,0.78);
+  backdrop-filter: blur(20px) saturate(150%);
+  padding: 14px var(--pad);
+  border-bottom: 1px solid var(--line);
+}
+.sama-home .nav-logo{ display: flex; align-items: center; gap: 12px; cursor: pointer; }
+.sama-home .nav-logo .sun{ width: 26px; height: 26px; color: var(--accent); transition: transform .7s var(--ease); }
+.sama-home .nav-logo:hover .sun{ transform: rotate(72deg); }
+.sama-home .nav-logo-text{
+  font-family: var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 500; font-size: 22px;
+  letter-spacing: 0.36em; color: var(--ink); text-transform: lowercase; padding-left: 0.36em;
+}
+.sama-home .nav-links{ display: flex; align-items: center; gap: 36px; }
+.sama-home .nav-links a{
+  font-size: 12.5px; font-weight: 500; letter-spacing: 0.02em; color: var(--ink-soft);
+  transition: color .2s; position: relative;
+}
+.sama-home .nav-links a:not(.nav-cta)::after{
+  content:''; position:absolute; left:0; right:100%; bottom:-6px; height:1px;
+  background: var(--accent); transition: right .35s var(--ease);
+}
+.sama-home .nav-links a:not(.nav-cta):hover{ color: var(--ink); }
+.sama-home .nav-links a:not(.nav-cta):hover::after{ right: 0; }
+.sama-home .nav-cta{
+  background: var(--accent); color: var(--white) !important; white-space: nowrap;
+  padding: 11px 22px; border-radius: 999px; font-size: 12.5px; letter-spacing: 0.01em;
+  box-shadow: 0 8px 22px -8px rgba(47,122,224,.55);
+  transition: transform .2s, box-shadow .2s, background .2s !important;
+}
+.sama-home .nav-cta:hover{ background: var(--accent-deep); transform: translateY(-1px); box-shadow: 0 12px 28px -8px rgba(47,122,224,.7); }
+
+/* ════════════════ INTRO OVERLAY ════════════════ */
+.sama-home .intro{
+  position: fixed; inset: 0; z-index: 1000; background: var(--nuit);
+  display: grid; place-items: center; overflow: hidden;
+  transition: opacity .8s var(--ease), visibility .8s;
+}
+.sama-home .intro.done{ opacity: 0; visibility: hidden; pointer-events: none; }
+.sama-home .intro-bg{
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 45%, rgba(47,122,224,0.30), transparent 70%);
+  opacity: 0; animation: introGlow 2.6s var(--ease) .2s forwards;
+}
+@keyframes introGlow { 0%{opacity:0;} 40%{opacity:1;} 100%{opacity:.55;} }
+.sama-home .intro-center{ position: relative; z-index: 2; text-align: center; }
+.sama-home .intro-sun{
+  width: 110px; height: 110px; color: #cfe3fb; margin: 0 auto 30px;
+  opacity: 0; transform: scale(.4) rotate(-90deg);
+  animation: introSun 1.5s var(--ease-out) .15s forwards;
+}
+.sama-home .intro-sun g{ transform-origin: 50% 50%; animation: slowspin 30s linear infinite; }
+@keyframes introSun {
+  0%{ opacity:0; transform: scale(.3) rotate(-120deg); }
+  60%{ opacity:1; }
+  100%{ opacity:1; transform: scale(1) rotate(0); }
+}
+.sama-home .intro-word{
+  font-family: var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 400;
+  font-size: 56px; letter-spacing: 0.5em; color: #fff; text-transform: lowercase;
+  padding-left: 0.5em; display: inline-flex; overflow: hidden;
+}
+.sama-home .intro-word span{
+  display: inline-block; transform: translateY(110%); opacity: 0;
+  animation: introLetter .7s var(--ease-out) forwards;
+}
+@keyframes introLetter { to { transform: translateY(0); opacity: 1; } }
+.sama-home .intro-tag{
+  margin-top: 22px; font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 11px;
+  letter-spacing: 0.32em; text-transform: uppercase; color: rgba(207,227,251,0.7);
+  opacity: 0; animation: introFade .8s var(--ease) 1.05s forwards;
+}
+.sama-home .intro-line{
+  width: 0; height: 1px; background: rgba(207,227,251,.5); margin: 26px auto 0;
+  animation: introLine 1s var(--ease) 1.2s forwards;
+}
+@keyframes introLine { to { width: 120px; } }
+@keyframes introFade { to { opacity: 1; } }
+.sama-home .intro-skip{
+  position: absolute; bottom: 34px; right: 40px; z-index: 3;
+  font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .2em; text-transform: uppercase;
+  color: rgba(207,227,251,.55); cursor: pointer; transition: color .2s;
+  opacity: 0; animation: introFade .6s ease 1.4s forwards;
+}
+.sama-home .intro-skip:hover{ color: #fff; }
+
+/* ════════════════ HERO (editorial) ════════════════ */
+.sama-home .hero{
+  position: relative; padding: 168px var(--pad) 70px;
+  background:
+    radial-gradient(ellipse 720px 520px at 84% 22%, rgba(91,155,232,0.18) 0%, transparent 60%),
+    linear-gradient(180deg, var(--mist-2) 0%, var(--paper) 80%);
+  overflow: hidden;
+}
+.sama-home .hero-grid-bg{
+  position: absolute; inset: 0; pointer-events: none; opacity: 1;
+  background-image:
+    linear-gradient(rgba(47,122,224,0.09) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47,122,224,0.09) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, #000 30%, transparent 82%);
+          mask-image: radial-gradient(ellipse 90% 80% at 50% 30%, #000 30%, transparent 82%);
+}
+.sama-home .hero-inner{ position: relative; z-index: 3; max-width: var(--maxw); margin: 0 auto; }
+.sama-home .hero-top{
+  display: flex; justify-content: space-between; align-items: flex-end;
+  padding-bottom: 30px; margin-bottom: 46px; border-bottom: 1px solid var(--line);
+}
+.sama-home .hero-issue{ font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); }
+.sama-home .hero-issue b{ color: var(--accent); font-weight: 500; }
+.sama-home .hero-h1{
+  font-family: var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 300;
+  font-size: clamp(50px, 7.4vw, 116px); line-height: 0.94; letter-spacing: -0.02em;
+  color: var(--ink); max-width: 15ch;
+}
+.sama-home .hero-h1 em{ font-style: italic; color: var(--accent); }
+.sama-home .hero-body{
+  display: grid; grid-template-columns: 1.5fr 1fr; gap: 60px; align-items: end;
+  margin-top: 38px;
+}
+.sama-home .hero-sub{ font-size: clamp(16px,1.3vw,18.5px); line-height: 1.72; font-weight: 300; color: var(--ink-soft); max-width: 60ch; }
+.sama-home .hero-actions{ display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin-top: 32px; }
+.sama-home .btn-primary{
+  display: inline-flex; align-items: center; gap: 11px; background: var(--accent); color: #fff;
+  padding: 17px 30px; border-radius: 999px; font-size: 13px; font-weight: 500; letter-spacing: .01em;
+  box-shadow: 0 12px 30px -10px rgba(47,122,224,.6); transition: transform .22s, box-shadow .22s, background .22s;
+}
+.sama-home .btn-primary svg{ transition: transform .25s; }
+.sama-home .btn-primary:hover{ background: var(--accent-deep); transform: translateY(-2px); box-shadow: 0 18px 38px -12px rgba(47,122,224,.7); }
+.sama-home .btn-primary:hover svg{ transform: translateX(4px); }
+.sama-home .btn-ghost{ display: inline-flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: var(--ink); transition: gap .2s, color .2s; }
+.sama-home .btn-ghost:hover{ gap: 14px; color: var(--accent); }
+.sama-home .btn-ghost .ico{ width: 32px; height: 32px; border-radius: 50%; border:1px solid var(--line-blue); display: grid; place-items: center; transition: background .2s, border-color .2s; }
+.sama-home .btn-ghost:hover .ico{ background: rgba(47,122,224,.08); border-color: var(--accent); }
+.sama-home .hero-aside{ display: flex; flex-direction: column; gap: 18px; }
+.sama-home .hero-aside .lead-cap{ font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); }
+
+/* hero editorial image */
+.sama-home .hero-figure{ position: relative; margin-top: 60px; }
+.sama-home .hero-figure img{ width: 100%; height: clamp(380px, 50vw, 640px); display: block; }
+.sama-home .hero-figure .figcap{
+  position: absolute; left: 22px; bottom: 22px; z-index: 4;
+  font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase;
+  color: #fff; background: rgba(10,27,51,.55); backdrop-filter: blur(6px);
+  border: 1px solid rgba(255,255,255,.18); padding: 8px 14px; border-radius: 999px;
+}
+.sama-home .hero-figure .corner{
+  position: absolute; top: 18px; right: 18px; z-index: 4;
+  background: rgba(255,255,255,.9); border:1px solid var(--line-blue); border-radius: 14px;
+  padding: 14px 18px; box-shadow: 0 16px 40px -20px rgba(18,40,68,.4);
+}
+.sama-home .hero-figure .corner .n{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-size: 30px; color: var(--ink); line-height: 1; }
+.sama-home .hero-figure .corner .n em{ font-style: normal; color: var(--accent); }
+.sama-home .hero-figure .corner .l{ font-size: 11px; color: var(--ink-soft); margin-top: 4px; }
+
+/* ════════════════ MARQUEE / LOGOS ════════════════ */
+.sama-home .marquee-wrap{ background: var(--white); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 30px 0; overflow: hidden; position: relative; }
+.sama-home .marquee-label{ text-align: center; font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 22px; }
+.sama-home .marquee-wrap::before, .sama-home .marquee-wrap::after{ content:''; position:absolute; top:0; bottom:0; width: 180px; z-index: 2; pointer-events:none; }
+.sama-home .marquee-wrap::before{ left:0; background: linear-gradient(90deg, var(--white), transparent); }
+.sama-home .marquee-wrap::after{ right:0; background: linear-gradient(270deg, var(--white), transparent); }
+.sama-home .marquee{ display: flex; width: max-content; gap: 64px; animation: scrollx 40s linear infinite; align-items: center; }
+.sama-home .marquee:hover{ animation-play-state: paused; }
+@keyframes scrollx { from{ transform: translateX(0);} to{ transform: translateX(-50%);} }
+.sama-home .mq-item{ display: inline-flex; align-items: center; gap: 13px; font-size: 15px; font-weight: 500; color: var(--ink-soft); white-space: nowrap; }
+.sama-home .mq-item .d{ width: 5px; height: 5px; border-radius: 50%; background: var(--brume); }
+
+/* ════════════════ SECTION SCAFFOLD ════════════════ */
+.sama-home section.block{ padding: 130px var(--pad); position: relative; }
+.sama-home .wrap{ max-width: var(--maxw); margin: 0 auto; }
+.sama-home .section-head{ margin-bottom: 64px; }
+.sama-home .section-head .spec{ margin-bottom: 22px; }
+.sama-home .h2{
+  font-family: var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 300;
+  font-size: clamp(36px, 4.6vw, 68px); line-height: 1.02; letter-spacing: -0.015em; color: var(--ink); max-width: 18ch;
+}
+.sama-home .h2 em{ font-style: italic; color: var(--accent); }
+.sama-home .lead{ font-size: 17px; line-height: 1.75; font-weight: 300; color: var(--ink-soft); max-width: 56ch; margin-top: 22px; }
+
+/* ════════════════ MANIFESTO (navy) ════════════════ */
+.sama-home .manifesto{
+  background: var(--nuit); color: #fff; position: relative; overflow: hidden;
+  padding: 150px var(--pad);
+}
+.sama-home .manifesto::before{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(ellipse 60% 60% at 78% 18%, rgba(47,122,224,.22), transparent 62%);
+}
+.sama-home .manifesto .wrap{ position: relative; z-index: 2; }
+.sama-home .manifesto .spec{ color: rgba(207,227,251,.7); }
+.sama-home .manifesto .spec .num{ color: var(--sky); }
+.sama-home .manifesto-statement{
+  font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 300; font-size: clamp(30px, 4vw, 60px);
+  line-height: 1.16; letter-spacing: -0.01em; color: #fff; max-width: 22ch; margin-top: 34px;
+}
+.sama-home .manifesto-statement em{ font-style: italic; color: var(--sky); }
+.sama-home .manifesto-statement .dim{ color: rgba(207,227,251,.42); }
+.sama-home .manifesto-grid{ display: grid; grid-template-columns: repeat(3,1fr); gap: 0; margin-top: 80px; border-top: 1px solid var(--line-light); }
+.sama-home .mani-col{ padding: 34px 30px 34px 0; border-right: 1px solid var(--line-light); }
+.sama-home .mani-col:last-child{ border-right: none; padding-right: 0; }
+.sama-home .mani-col .k{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-size: 40px; color: var(--sky); line-height: 1; margin-bottom: 16px; }
+.sama-home .mani-col h4{ font-size: 16px; font-weight: 500; color: #fff; margin-bottom: 9px; }
+.sama-home .mani-col p{ font-size: 14px; line-height: 1.65; color: rgba(207,227,251,.66); font-weight: 300; }
+
+/* ════════════════ TRANSFORM (the wow scroll moment) ════════════════ */
+.sama-home .transform{ background: var(--nuit-2); color: #fff; position: relative; }
+.sama-home .transform-rail{ height: 320vh; position: relative; }
+.sama-home .transform-sticky{
+  position: sticky; top: 0; height: 100vh; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding: clamp(78px, 11vh, 124px) 24px 44px;
+}
+.sama-home .transform-sticky::before{
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(47,122,224,.18), transparent 70%);
+}
+.sama-home .tf-caption{ position: relative; z-index: 6; text-align: center; width: 92%; max-width: 760px; flex: 0 0 auto; }
+.sama-home .tf-stage{ position: relative; width: min(960px, 92vw); flex: 1 1 auto; margin-top: 22px; min-height: 0; }
+.sama-home .tf-step{ font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing: .26em; text-transform: uppercase; color: var(--sky); margin-bottom: 16px; }
+.sama-home .tf-head{
+  font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 300; font-size: clamp(28px, 3.6vw, 52px);
+  line-height: 1.05; color: #fff; position: relative; min-height: 2.2em;
+}
+.sama-home .tf-head .a, .sama-home .tf-head .b{ position: absolute; left:0; right:0; transition: opacity .5s var(--ease), transform .5s var(--ease); }
+.sama-home .tf-head em{ font-style: italic; color: var(--sky); }
+.sama-home .tf-sub{ margin-top: 18px; font-size: 14.5px; color: rgba(207,227,251,.62); font-weight: 300; max-width: 46ch; margin-left:auto; margin-right:auto; min-height: 2.4em; }
+/* center hub */
+.sama-home .tf-hub{
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) scale(.4);
+  width: 132px; height: 132px; border-radius: 32px; background: #fff;
+  display: grid; place-items: center; color: var(--accent); z-index: 5;
+  box-shadow: 0 30px 70px -24px rgba(47,122,224,.7); opacity: 0;
+}
+.sama-home .tf-hub .sun{ width: 62px; height: 62px; }
+.sama-home .tf-hub .sun g{ transform-origin: 50% 50%; animation: slowspin 26s linear infinite; }
+.sama-home .tf-hub-label{ position:absolute; left:50%; bottom:-30px; transform:translateX(-50%); font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size:10px; letter-spacing:.24em; text-transform:uppercase; color:var(--sky); white-space:nowrap; }
+/* chips */
+.sama-home .tf-chip{
+  position: absolute; left: 0; top: 0; will-change: transform, opacity;
+  display: inline-flex; align-items: center; gap: 9px; white-space: nowrap;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16);
+  color: rgba(255,255,255,.9); padding: 10px 15px; border-radius: 12px;
+  font-size: 12.5px; font-weight: 500; backdrop-filter: blur(4px);
+}
+.sama-home .tf-chip .ic{ width: 18px; height: 18px; color: var(--sky); display:grid; place-items:center; flex-shrink:0; }
+.sama-home .tf-chip .ic svg{ width: 18px; height: 18px; }
+.sama-home .tf-chip.warn{ border-color: rgba(255,138,120,0.4); }
+.sama-home .tf-chip.warn .ic{ color: #ff9b86; }
+/* connection lines svg */
+.sama-home .tf-lines{ position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: visible; }
+.sama-home .tf-lines path{ fill: none; stroke: var(--sky); stroke-width: 1.5; opacity: 0; }
+
+
+/* ════════════════ JOURNEY ════════════════ */
+.sama-home .journey{ background: var(--paper); }
+.sama-home .journey-list{ display: flex; flex-direction: column; }
+.sama-home .journey-step{
+  display: grid; grid-template-columns: 120px 1.1fr 1fr; gap: 50px; align-items: center;
+  padding: 52px 0; border-top: 1px solid var(--line);
+}
+.sama-home .journey-step:last-child{ border-bottom: 1px solid var(--line); }
+.sama-home .journey-step .jnum{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 300; font-size: 76px; color: var(--brume); line-height: 1; transition: color .4s; }
+.sama-home .journey-step:hover .jnum{ color: var(--accent); }
+.sama-home .journey-step .jbody h3{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(26px,2.6vw,38px); line-height: 1.08; color: var(--ink); margin-bottom: 12px; }
+.sama-home .journey-step .jbody h3 em{ font-style: italic; color: var(--accent); }
+.sama-home .journey-step .jbody p{ font-size: 15px; line-height: 1.7; color: var(--ink-soft); font-weight: 300; max-width: 46ch; }
+.sama-home .journey-step .jbody .jtag{ display:inline-block; margin-top: 16px; font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10.5px; letter-spacing:.16em; text-transform:uppercase; color: var(--accent); }
+.sama-home .journey-step .jfig{ display:flex; align-items:center; gap:16px; justify-content:flex-end; }
+.sama-home .journey-step .jicon{ width:64px; height:64px; border:1px solid var(--line-blue); border-radius:50%; display:grid; place-items:center; color:var(--accent); flex-shrink:0; transition:background .35s,color .35s; }
+.sama-home .journey-step:hover .jicon{ background:var(--accent); color:#fff; }
+.sama-home .journey-step .jicon svg{ width:26px; height:26px; }
+.sama-home .journey-step .jfig .tagcap{ font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10px; letter-spacing:.14em; text-transform:uppercase; color: var(--ink-soft); }
+
+/* ════════════════ CASE STUDY ════════════════ */
+.sama-home .case{ background: var(--white); }
+.sama-home .case-grid{ display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 70px; align-items: stretch; }
+.sama-home .case-figure{ position: relative; }
+.sama-home .case-figure img{ width: 100%; height: 100%; min-height: 520px; display:block; }
+.sama-home .case-figure .badge{
+  position: absolute; top: 20px; left: 20px; font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10px; letter-spacing:.18em; text-transform:uppercase;
+  color: var(--ink); background: rgba(255,255,255,.92); border:1px solid var(--line-blue); padding: 8px 14px; border-radius: 999px;
+}
+.sama-home .case-body{ display: flex; flex-direction: column; justify-content: center; }
+.sama-home .case-quote{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 300; font-size: clamp(26px,2.8vw,40px); line-height: 1.22; color: var(--ink); letter-spacing: -0.01em; }
+.sama-home .case-quote em{ font-style: italic; color: var(--accent); }
+.sama-home .case-quote .mark{ color: var(--brume); font-size: 1.4em; line-height: 0; vertical-align: -0.2em; }
+.sama-home .case-author{ display: flex; align-items: center; gap: 14px; margin-top: 30px; }
+.sama-home .case-author img{ width: 50px; height: 50px; flex-shrink:0; }
+.sama-home .case-author .who .n{ font-size: 14.5px; font-weight: 500; color: var(--ink); }
+.sama-home .case-author .who .r{ font-size: 12.5px; color: var(--ink-soft); }
+.sama-home .case-metrics{ display: grid; grid-template-columns: repeat(3,1fr); gap: 0; margin-top: 44px; border-top: 1px solid var(--line); }
+.sama-home .case-metric{ padding: 26px 18px 0 0; border-right: 1px solid var(--line); }
+.sama-home .case-metric:last-child{ border-right: none; }
+.sama-home .case-metric .v{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 400; font-size: 46px; color: var(--accent); line-height: 1; }
+.sama-home .case-metric .v small{ font-size: .5em; color: var(--ink-soft); }
+.sama-home .case-metric .l{ font-size: 12px; color: var(--ink-soft); margin-top: 8px; line-height: 1.4; }
+
+/* ════════════════ SERVICES ════════════════ */
+.sama-home .svc{ background: linear-gradient(180deg, var(--paper), var(--mist-2)); }
+.sama-home .svc-grid{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.sama-home .svc-card{
+  position: relative; grid-column: span 1; background: var(--white);
+  border: 1px solid var(--line); border-radius: 18px; padding: 30px 26px 26px;
+  overflow: hidden; cursor: pointer;
+  transition: transform .35s var(--ease-out), box-shadow .35s, border-color .35s;
+}
+.sama-home .svc-card::before{
+  content:''; position: absolute; inset: 0; opacity: 0;
+  background: radial-gradient(circle 280px at var(--mx,50%) var(--my,0%), rgba(47,122,224,.10), transparent 60%);
+  transition: opacity .4s;
+}
+.sama-home .svc-card:hover{ transform: translateY(-8px); box-shadow: 0 36px 60px -34px rgba(47,122,224,.5); border-color: var(--line-blue); }
+.sama-home .svc-card:hover::before{ opacity: 1; }
+.sama-home .svc-card.wide{ grid-column: span 2; }
+.sama-home .svc-ico{ width: 72px; height: 72px; border-radius: 18px; background: var(--mist); display: grid; place-items: center; color: var(--accent); margin-bottom: 22px; transition: background .35s, color .35s; }
+.sama-home .svc-card:hover .svc-ico{ background: var(--accent); color: #fff; }
+.sama-home .svc-ico svg{ width: 40px; height: 40px; overflow: visible; }
+.sama-home .svc-num{ position:absolute; top: 26px; right: 28px; font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 11px; letter-spacing:.1em; color: var(--ink-faint); }
+.sama-home .svc-name{ font-size: 17px; font-weight: 500; color: var(--ink); margin-bottom: 8px; }
+.sama-home .svc-desc{ font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); font-weight: 300; }
+.sama-home .svc-tag{ display:inline-block; margin-bottom: 14px; font-size: 10px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.sama-home .svc-card.feature{ grid-column: span 2; background: linear-gradient(145deg, #0e2647, #163a6b); border-color: transparent; color: #fff; }
+.sama-home .svc-card.feature::after{ content:''; position:absolute; right:-60px; top:-60px; width: 260px; height: 260px; background: radial-gradient(circle, rgba(91,155,232,.35), transparent 65%); pointer-events:none; }
+.sama-home .svc-card.feature .svc-ico{ background: rgba(255,255,255,.12); color: #cfe3fb; }
+.sama-home .svc-card.feature:hover .svc-ico{ background:#fff; color: var(--accent); }
+.sama-home .svc-card.feature .svc-name{ color: #fff; }
+.sama-home .svc-card.feature .svc-desc{ color: rgba(207,227,251,.78); }
+.sama-home .svc-card.feature .svc-tag{ color:#9ec5f5; }
+.sama-home .svc-card.feature .svc-num{ color: rgba(207,227,251,.6); }
+
+/* idle icon animations */
+@media (prefers-reduced-motion: no-preference) {
+  .sama-home .an-bar{ transform-origin: bottom; animation: barGrow 3.4s ease-in-out infinite; }
+  .sama-home .an-bar.b2{ animation-delay: .35s; } .sama-home .an-bar.b3{ animation-delay: .7s; }
+  @keyframes barGrow { 0%,100%{ transform: scaleY(.55);} 50%{ transform: scaleY(1);} }
+  .sama-home .svc-card:hover .an-bar{ animation-duration: 1.1s; }
+  .sama-home .an-pulse{ transform-origin: center; animation: heart 2.8s ease-in-out infinite; }
+  @keyframes heart { 0%,100%{ transform: scale(1);} 30%{ transform: scale(1.16);} }
+  .sama-home .an-cta{ animation: ctaTap 2.6s ease-in-out infinite; transform-origin: center; }
+  @keyframes ctaTap { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(2px);} }
+  .sama-home .an-form line{ stroke-dasharray: 22; stroke-dashoffset: 22; animation: draw 3s ease-in-out infinite; }
+  .sama-home .an-form line:nth-child(2){ animation-delay:.4s;} .sama-home .an-form line:nth-child(3){ animation-delay:.8s;}
+  @keyframes draw { 0%{ stroke-dashoffset:22;} 40%,100%{ stroke-dashoffset:0;} }
+  .sama-home .an-tile{ transform-origin: center; animation: tilep 3.2s ease-in-out infinite; }
+  .sama-home .an-tile.t2{ animation-delay:.3s;} .sama-home .an-tile.t3{ animation-delay:.6s;} .sama-home .an-tile.t4{ animation-delay:.9s;}
+  @keyframes tilep { 0%,100%{ opacity:.5;} 50%{ opacity:1;} }
+  .sama-home .an-frame{ animation: filmstep 2.4s steps(1) infinite; }
+  @keyframes filmstep { 0%{ opacity:.25;} 25%{ opacity:1;} 50%{ opacity:.25;} }
+  .sama-home .an-play{ transform-origin: center; animation: playp 2.8s ease-in-out infinite; }
+  @keyframes playp { 0%,100%{ transform: scale(1);} 50%{ transform: scale(1.12);} }
+  .sama-home .an-pin{ animation: pinbob 2.8s ease-in-out infinite; transform-origin: center bottom; }
+  @keyframes pinbob { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(-4px);} }
+  .sama-home .an-star{ transform-origin: center; opacity:.35; animation: starfill 3.2s ease-in-out infinite; }
+  .sama-home .an-star.s2{ animation-delay:.25s;} .sama-home .an-star.s3{ animation-delay:.5s;} .sama-home .an-star.s4{ animation-delay:.75s;} .sama-home .an-star.s5{ animation-delay:1s;}
+  @keyframes starfill { 0%,80%,100%{ opacity:.35; transform: scale(.9);} 40%{ opacity:1; transform: scale(1.05);} }
+  .sama-home .an-bub{ transform-origin: bottom left; animation: bubpop 3s ease-in-out infinite; }
+  .sama-home .an-bub.bb2{ animation-delay: .6s; transform-origin: bottom right; }
+  @keyframes bubpop { 0%,100%{ transform: scale(.92); opacity:.55;} 45%{ transform: scale(1); opacity:1;} }
+}
+
+/* ════════════════ USE CASES / WHO IT'S FOR ════════════════ */
+.sama-home .uc{ background: var(--white); }
+.sama-home .uc-layout{ display: grid; grid-template-columns: 0.82fr 1.18fr; gap: 64px; align-items: start; margin-top: 8px; }
+.sama-home .uc-rail{ display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.sama-home .uc-tab{
+  display: flex; align-items: baseline; gap: 16px; padding: 26px 6px; border-bottom: 1px solid var(--line);
+  cursor: pointer; transition: padding-left .3s var(--ease); position: relative;
+}
+.sama-home .uc-tab .ti{ font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 12px; color: var(--ink-faint); flex-shrink: 0; }
+.sama-home .uc-tab .tn{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 300; font-size: clamp(22px, 2.1vw, 30px); line-height: 1.06; color: var(--ink-soft); transition: color .25s; }
+.sama-home .uc-tab .arrow{ margin-left: auto; align-self: center; color: var(--accent); opacity: 0; transform: translateX(-8px); transition: opacity .25s, transform .25s; }
+.sama-home .uc-tab:hover{ padding-left: 10px; }
+.sama-home .uc-tab:hover .tn{ color: var(--ink); }
+.sama-home .uc-tab.active{ padding-left: 10px; }
+.sama-home .uc-tab.active .tn{ color: var(--accent); }
+.sama-home .uc-tab.active .arrow{ opacity: 1; transform: translateX(0); }
+.sama-home .uc-panels{ position: relative; }
+.sama-home .uc-panel{ display: none; }
+.sama-home .uc-panel.active{ display: block; animation: ucFade .55s var(--ease); }
+@keyframes ucFade { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+.sama-home .uc-figure{ position: relative; margin-bottom: 30px; }
+.sama-home .uc-figure img{ width: 100%; height: clamp(260px, 32vw, 380px); display: block; }
+.sama-home .uc-figure .cap{
+  position: absolute; left: 16px; bottom: 16px; font-family:var(--font-dm-mono), 'DM Mono', ui-monospace, monospace; font-size: 10px; letter-spacing: .14em; text-transform: uppercase;
+  color: #fff; background: rgba(10,27,51,.55); backdrop-filter: blur(6px); border: 1px solid rgba(255,255,255,.18); padding: 7px 13px; border-radius: 999px;
+}
+.sama-home .uc-panel h3{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight: 400; font-size: clamp(26px, 2.8vw, 40px); line-height: 1.08; color: var(--ink); margin-bottom: 14px; }
+.sama-home .uc-panel h3 em{ font-style: italic; color: var(--accent); }
+.sama-home .uc-panel p{ font-size: 15px; line-height: 1.72; color: var(--ink-soft); font-weight: 300; max-width: 54ch; margin-bottom: 26px; }
+.sama-home .uc-chips{ display: flex; flex-wrap: wrap; gap: 9px; }
+.sama-home .uc-chip{ font-size: 12.5px; font-weight: 500; color: var(--ink); background: var(--mist-2); border: 1px solid var(--line); padding: 9px 15px; border-radius: 10px; display: inline-flex; align-items: center; gap: 9px; transition: all .22s; }
+.sama-home .uc-chip:hover{ background: var(--accent); color: #fff; border-color: var(--accent); transform: translateY(-2px); }
+.sama-home .uc-chip .gl{ width: 6px; height: 6px; border-radius: 50%; background: var(--brume); transition: background .22s; }
+.sama-home .uc-chip:hover .gl{ background: #fff; }
+
+/* ════════════════ PLATFORM ════════════════ */
+.sama-home .plat{ background: var(--white); }
+.sama-home .plat-grid{ display: grid; grid-template-columns: 1fr 1.15fr; gap: 70px; align-items: center; }
+.sama-home .plat-list{ margin-top: 30px; display:flex; flex-direction: column; gap: 18px; }
+.sama-home .plat-li{ display:flex; gap: 14px; align-items:flex-start; font-size: 15px; color: var(--ink); line-height: 1.5; }
+.sama-home .plat-li .c{ width: 22px; height: 22px; flex-shrink:0; border-radius: 50%; background: var(--accent); color:#fff; display:grid; place-items:center; margin-top: 1px; }
+.sama-home .plat-li .c svg{ width: 11px; height: 11px; }
+.sama-home .plat-li span b{ font-weight: 500; }
+.sama-home .plat-li span small{ display:block; font-size: 13px; color: var(--ink-soft); font-weight: 300; margin-top: 2px; }
+.sama-home .dash{ border-radius: 20px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 50px 90px -50px rgba(18,40,68,.5); background:#fff; transition: transform .4s; transform: perspective(1400px) rotateY(-7deg) rotateX(2deg); }
+.sama-home .dash:hover{ transform: perspective(1400px) rotateY(-2deg) rotateX(0deg) translateY(-4px); }
+.sama-home .dash-bar{ display:flex; align-items:center; gap:7px; padding: 13px 16px; background: var(--mist-2); border-bottom: 1px solid var(--line); }
+.sama-home .dash-bar .dot{ width: 10px; height: 10px; border-radius: 50%; }
+.sama-home .dash-bar .u{ font-size: 11px; color: var(--ink-soft); margin-left: 12px; letter-spacing:.04em; }
+.sama-home .dash-body{ padding: 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.sama-home .dash-kpi{ background: var(--mist-2); border:1px solid var(--line); border-radius: 12px; padding: 14px; }
+.sama-home .dash-kpi .k{ font-size: 10px; color: var(--ink-soft); letter-spacing:.05em; text-transform:uppercase; }
+.sama-home .dash-kpi .v{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-size: 26px; color: var(--ink); margin-top: 4px; }
+.sama-home .dash-kpi .v em{ font-style:normal; color: var(--accent); }
+.sama-home .dash-chart{ grid-column: span 2; background: var(--mist-2); border:1px solid var(--line); border-radius: 12px; padding: 16px; }
+.sama-home .dash-chart .lbl{ font-size: 10px; color: var(--ink-soft); letter-spacing:.05em; text-transform:uppercase; margin-bottom: 12px; }
+.sama-home .dash-bars{ display:flex; align-items:flex-end; gap: 8px; height: 78px; }
+.sama-home .dash-bars i{ flex:1; background: linear-gradient(180deg, var(--sky), var(--accent)); border-radius: 4px 4px 0 0; display:block; }
+.sama-home .dash-feed{ background: var(--mist-2); border:1px solid var(--line); border-radius: 12px; padding: 14px; display:flex; flex-direction:column; gap: 10px; }
+.sama-home .dash-feed .row{ display:flex; align-items:center; gap: 10px; font-size: 11px; color: var(--ink); }
+.sama-home .dash-feed .row .av{ width: 22px; height: 22px; border-radius: 50%; background: var(--mist); color: var(--accent); display:grid; place-items:center; flex-shrink:0; }
+.sama-home .dash-feed .row .av svg{ width: 12px; height: 12px; }
+.sama-home .dash-feed .row .tt{ color: var(--ink-soft); font-size: 10px; margin-left:auto; }
+
+/* ════════════════ TESTIMONIALS ════════════════ */
+.sama-home .testi{ background: linear-gradient(180deg, var(--mist-2), var(--paper)); }
+.sama-home .testi-grid{ display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; margin-top: 12px; }
+.sama-home .testi-card{ background: var(--white); border:1px solid var(--line); border-radius: 18px; padding: 30px 28px; display:flex; flex-direction:column; transition: transform .3s, box-shadow .3s; }
+.sama-home .testi-card:hover{ transform: translateY(-6px); box-shadow: 0 30px 50px -34px rgba(47,122,224,.5); }
+.sama-home .testi-stars{ display:flex; gap: 3px; color: var(--accent); margin-bottom: 18px; }
+.sama-home .testi-stars svg{ width: 15px; height: 15px; }
+.sama-home .testi-card p{ font-size: 15px; line-height: 1.65; color: var(--ink); font-weight: 300; flex: 1; }
+.sama-home .testi-card p b{ font-weight: 500; }
+.sama-home .testi-who{ display:flex; align-items:center; gap: 12px; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line); }
+.sama-home .testi-who img{ width: 42px; height: 42px; flex-shrink:0; }
+.sama-home .testi-who .n{ font-size: 13.5px; font-weight: 500; color: var(--ink); }
+.sama-home .testi-who .r{ font-size: 12px; color: var(--ink-soft); }
+
+/* ════════════════ CTA ════════════════ */
+.sama-home .cta{ position: relative; overflow:hidden; background: linear-gradient(140deg, #0e2c5e, var(--accent) 58%, var(--sky)); padding: 130px var(--pad); }
+.sama-home .cta-glow{ position:absolute; inset:0; background: radial-gradient(ellipse 600px 400px at 80% 20%, rgba(255,255,255,.16), transparent 60%); pointer-events:none; }
+.sama-home .cta-inner{ position: relative; z-index:2; max-width: var(--maxw); margin: 0 auto; display:grid; grid-template-columns: 1fr 1fr; gap: 70px; align-items:center; }
+.sama-home .cta .spec{ color: rgba(255,255,255,.7); }
+.sama-home .cta .spec .num{ color: #fff; }
+.sama-home .cta h2{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight:300; font-size: clamp(38px,4.4vw,62px); line-height:1.04; color:#fff; margin: 22px 0 18px; }
+.sama-home .cta h2 em{ font-style:italic; color:#dbeafe; }
+.sama-home .cta p{ font-size: 16px; line-height:1.7; color: rgba(255,255,255,.82); font-weight:300; max-width: 46ch; }
+.sama-home .cta-form{ background: rgba(255,255,255,.1); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,.22); border-radius: 22px; padding: 32px; }
+.sama-home .cta-form .ff{ display:flex; gap: 12px; margin-bottom: 12px; }
+.sama-home .cta-input{ width:100%; background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.28); border-radius: 11px; padding: 15px 16px; font-family:var(--font-dm-sans), 'DM Sans', sans-serif; font-size: 14px; color:#fff; outline:none; transition: border-color .2s, background .2s; }
+.sama-home .cta-input::placeholder{ color: rgba(255,255,255,.6); }
+.sama-home .cta-input:focus{ border-color:#fff; background: rgba(255,255,255,.18); }
+.sama-home .cta-submit{ width:100%; margin-top: 6px; background:#fff; color: var(--accent); border:none; border-radius: 11px; padding: 17px; font-family:var(--font-dm-sans), 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; cursor:pointer; transition: transform .2s, box-shadow .2s; box-shadow: 0 10px 26px -10px rgba(0,0,0,.3); }
+.sama-home .cta-submit:hover{ transform: translateY(-2px); box-shadow: 0 16px 32px -12px rgba(0,0,0,.4); }
+.sama-home .cta-note{ font-size: 12px; color: rgba(255,255,255,.6); margin-top: 14px; text-align:center; }
+
+/* ════════════════ FOOTER ════════════════ */
+.sama-home footer{ background: var(--paper); padding: 70px var(--pad) 40px; border-top: 1px solid var(--line); }
+.sama-home .foot-top{ max-width: var(--maxw); margin: 0 auto; display:grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 40px; padding-bottom: 48px; border-bottom: 1px solid var(--line); }
+.sama-home .foot-brand .logo{ display:flex; align-items:center; gap: 11px; margin-bottom: 16px; }
+.sama-home .foot-brand .logo .sun{ width: 26px; height: 26px; color: var(--accent); }
+.sama-home .foot-brand .logo span{ font-family:var(--font-cormorant), 'Cormorant Garamond', serif; font-weight:500; font-size: 21px; letter-spacing:.34em; padding-left:.34em; color: var(--ink); }
+.sama-home .foot-brand p{ font-size: 13.5px; line-height: 1.65; color: var(--ink-soft); font-weight:300; max-width: 32ch; }
+.sama-home .foot-col h4{ font-size: 11px; letter-spacing:.14em; text-transform:uppercase; color: var(--ink); margin-bottom: 16px; font-weight:500; }
+.sama-home .foot-col a{ display:block; font-size: 13.5px; color: var(--ink-soft); margin-bottom: 11px; transition: color .2s, padding-left .2s; }
+.sama-home .foot-col a:hover{ color: var(--accent); padding-left: 4px; }
+.sama-home .foot-bottom{ max-width: var(--maxw); margin: 0 auto; padding-top: 26px; display:flex; justify-content: space-between; align-items:center; }
+.sama-home .foot-bottom span{ font-size: 12px; color: var(--ink-soft); }
+
+/* ════════════════ REVEAL ════════════════ */
+@media (prefers-reduced-motion: no-preference) {
+  .sama-home .reveal.in{ animation: revealUp .85s var(--ease) both; }
+  @keyframes revealUp { from{ opacity:0; transform: translateY(34px);} to{ opacity:1; transform:none;} }
+  .sama-home .reveal.d1.in{ animation-delay:.08s;} .sama-home .reveal.d2.in{ animation-delay:.16s;} .sama-home .reveal.d3.in{ animation-delay:.24s;}
+  .sama-home .reveal.d4.in{ animation-delay:.32s;} .sama-home .reveal.d5.in{ animation-delay:.4s;} .sama-home .reveal.d6.in{ animation-delay:.48s;}
+}
+
+/* grain */
+.sama-home .grain{ position: fixed; inset:0; pointer-events:none; z-index:80; opacity:.022;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='256' height='256' filter='url(%23n)'/%3E%3C/svg%3E"); background-size: 200px; }
+
+@keyframes slowspin { from{ transform: rotate(0);} to{ transform: rotate(360deg);} }
+
+/* ════════════════ RESPONSIVE ════════════════ */
+@media (max-width: 1080px) {
+  .sama-home{ --pad: 40px; }
+  .sama-home .hero-body, .sama-home .plat-grid, .sama-home .case-grid, .sama-home .cta-inner, .sama-home .uc-layout{ grid-template-columns: 1fr; gap: 40px; }
+  .sama-home .svc-grid{ grid-template-columns: repeat(2,1fr); }
+  .sama-home .manifesto-grid{ grid-template-columns: 1fr; }
+  .sama-home .mani-col{ border-right: none; border-bottom: 1px solid var(--line-light); padding-right: 0; }
+  .sama-home .mani-col:last-child{ border-bottom: none; }
+  .sama-home .testi-grid{ grid-template-columns: 1fr; }
+  .sama-home .journey-step{ grid-template-columns: 70px 1fr; gap: 28px; }
+  .sama-home .journey-step .jfig{ grid-column: 2; justify-content:flex-start; margin-top: 18px; }
+  .sama-home .case-figure img{ min-height: 360px; }
+}
+/* ════════════════ SHINE — "brilliantly" ════════════════
+   Glossy light sweeps across accent text + the nav button,
+   and a scroll-driven highlighter ("surligné") on the manifesto.
+   ──────────────────────────────────────────────────────── */
+
+/* shared light-sweep keyframe: a quick glint, then a long rest */
+@keyframes sama-glint {
+  0%   { background-position: 135% 0; }
+  38%  { background-position: -35% 0; }
+  100% { background-position: -35% 0; }
+}
+
+/* 1 ─ Hero: "brilliantly" shimmers like polished metal */
+.sama-home .hero-h1 em{
+  font-style: italic;
+  background-image: linear-gradient(
+    100deg,
+    var(--accent) 0%, var(--accent) 38%,
+    #8fc0ff 46%, #ffffff 50%, #8fc0ff 54%,
+    var(--accent) 62%, var(--accent) 100%);
+  background-size: 230% 100%;
+  background-repeat: repeat;
+  background-position: 135% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: sama-glint 6s ease-in-out 1.1s infinite;
+}
+
+/* 2 ─ Nav CTA: a sheen glides across the blue pill */
+.sama-home .nav-cta{
+  background: linear-gradient(
+    100deg,
+    var(--accent) 0%, var(--accent) 42%,
+    #74acf3 50%, var(--accent) 58%, var(--accent) 100%) !important;
+  background-size: 220% 100% !important;
+  background-repeat: repeat !important;
+  background-position: 140% 0;
+  animation: sama-glint 5.5s ease-in-out 2s infinite;
+}
+.sama-home .nav-cta:hover{
+  animation: none;
+  background: var(--accent-deep) !important;
+  background-size: 100% 100% !important;
+}
+
+/* 3 ─ Manifesto: highlighter grows + colour brightens as you scroll */
+.sama-home .manifesto-statement em{
+  font-style: italic;
+  /* highlighter pen — width driven by scroll progress */
+  background-image: linear-gradient(
+    transparent 56%,
+    rgba(120,180,255,.50) 56%,
+    rgba(120,180,255,.50) 90%,
+    transparent 90%);
+  background-repeat: no-repeat;
+  background-position: 0 100%;
+  background-size: var(--mani-hi, 0%) 100%;
+  transition: background-size .12s linear;
+  /* colour intensifies toward white-hot as the highlight passes */
+  color: color-mix(in oklab, var(--sky), #ffffff calc(var(--mani-shine, 0) * 65%));
+  text-shadow: 0 0 calc(var(--mani-shine, 0) * 22px)
+               rgba(150,195,255, calc(var(--mani-shine, 0) * .55));
+}
+
+/* 4 ─ Bottom CTA: "For free." catches a white glint */
+.sama-home .cta h2 em{
+  font-style: italic;
+  background-image: linear-gradient(
+    100deg,
+    #ffffff 0%, #ffffff 40%,
+    #dbeafe 47%, #ffffff 50%, #cfe3fb 60%,
+    #ffffff 100%);
+  background-size: 220% 100%;
+  background-repeat: repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: sama-glint 6.5s ease-in-out 1.5s infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sama-home .hero-h1 em, .sama-home .nav-cta, .sama-home .cta h2 em{ animation: none; }
+  .sama-home .hero-h1 em{ -webkit-text-fill-color: var(--accent); color: var(--accent); }
+  .sama-home .cta h2 em{ -webkit-text-fill-color: #fff; color: #fff; }
+  .sama-home .nav-cta{ background: var(--accent) !important; }
+}
+
+@media (max-width: 720px) {
+  .sama-home{ --pad: 22px; }
+  .sama-home nav, .sama-home nav.scrolled{ padding: 14px 22px; }
+  .sama-home .nav-links{ gap: 14px; }
+  .sama-home .nav-links a:not(.nav-cta){ display: none; }
+  .sama-home section.block, .sama-home .cta, .sama-home .manifesto{ padding: 80px 22px; }
+  .sama-home .hero{ padding: 130px 22px 60px; }
+  .sama-home .hero-top{ flex-direction: column; align-items: flex-start; gap: 14px; }
+  .sama-home .svc-grid{ grid-template-columns: 1fr; }
+  .sama-home .svc-card.wide, .sama-home .svc-card.feature{ grid-column: span 1; }
+  .sama-home .case-metrics, .sama-home .case-author{ } 
+  .sama-home .foot-top{ grid-template-columns: 1fr 1fr; }
+  .sama-home .intro-word{ font-size: 40px; }
+  .sama-home .transform-rail{ height: 280vh; }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   EDITORIAL ARTIFACTS — registration marks, margin labels, glints
+   Small, deliberate details placed at key moments (not everywhere).
+   ──────────────────────────────────────────────────────────────── */
+
+/* — vertical margin labels: left/right gutter annotations — */
+.sama-home .v-label{
+  position: absolute; z-index: 4; pointer-events: none;
+  writing-mode: vertical-rl; text-orientation: mixed;
+  font-family: var(--font-dm-mono), 'DM Mono', ui-monospace, monospace;
+  font-size: 10px; letter-spacing: .36em; text-transform: uppercase;
+  color: var(--ink-faint); opacity: .5;
+  display: flex; align-items: center; gap: 16px;
+}
+.sama-home .v-label::after{ content: ''; width: 1px; height: 38px; background: currentColor; opacity: .4; }
+.sama-home .hero .v-label{ top: 210px; }
+.sama-home .hero .v-label.l{ left: 26px; transform: rotate(180deg); }
+.sama-home .hero .v-label.r{ right: 26px; }
+
+/* — registration / crop cross — */
+.sama-home .reg{ position: absolute; width: 15px; height: 15px; pointer-events: none; z-index: 4;
+       color: var(--ink-faint); opacity: .45; }
+.sama-home .reg::before, .sama-home .reg::after{ content: ''; position: absolute; background: currentColor; }
+.sama-home .reg::before{ left: 50%; top: 0; width: 1px; height: 100%; transform: translateX(-50%); }
+.sama-home .reg::after{ top: 50%; left: 0; height: 1px; width: 100%; transform: translateY(-50%); }
+.sama-home .reg.light{ color: rgba(207,227,251,.55); opacity: 1; }
+.sama-home .reg.white{ color: rgba(255,255,255,.5); opacity: 1; }
+
+/* — sparkle glint (inline, next to a brilliance word) — */
+.sama-home .spark{ color: var(--accent); vertical-align: .5em; }
+@media (prefers-reduced-motion: no-preference) {
+  .sama-home .spark{ transform-origin: center; animation: sama-twinkle 4.6s ease-in-out infinite; }
+  .sama-home .spark.d{ animation-delay: 1.8s; }
+  @keyframes sama-twinkle {
+    0%, 100% { opacity: .3; transform: scale(.62) rotate(0deg); }
+    50%      { opacity: 1;  transform: scale(1) rotate(48deg); }
+  }
+}
+
+/* — extra shine 1: hero primary button catches a periodic sheen — */
+.sama-home .btn-primary{
+  background: linear-gradient(100deg,
+    var(--accent) 0%, var(--accent) 42%,
+    #79aff5 50%, var(--accent) 58%, var(--accent) 100%);
+  background-size: 220% 100%;
+  background-position: 140% 0;
+  animation: sama-glint 6.2s ease-in-out 2.6s infinite;
+}
+.sama-home .btn-primary:hover{ animation: none; background: var(--accent-deep); background-size: 100% 100%; }
+
+/* — extra shine 2: holographic foil on the dashboard (pointer-tracked) — */
+.sama-home .dash{ position: relative; will-change: transform; }
+.sama-home .dash-foil, .sama-home .dash-glare{
+  position: absolute; inset: 0; z-index: 7; pointer-events: none;
+  border-radius: inherit; opacity: 0; transition: opacity .55s var(--ease);
+}
+.sama-home .dash-foil{
+  mix-blend-mode: color-dodge;
+  background-image:
+    repeating-linear-gradient(108deg,
+      rgba(255,90,160,.45)  0%,  rgba(255,170,70,.45)  9%,
+      rgba(250,235,90,.45) 18%, rgba(70,220,160,.45) 27%,
+      rgba(70,180,255,.45) 36%, rgba(160,90,255,.45) 45%,
+      rgba(255,90,160,.45) 54%),
+    repeating-linear-gradient(-48deg,
+      rgba(255,255,255,.10) 0 1px, transparent 1px 5px);
+  background-size: 300% 300%, 180% 180%;
+  background-position: var(--bg-x,50%) var(--bg-y,50%), 0 0;
+  background-blend-mode: overlay;
+  filter: brightness(1.06) contrast(1.45) saturate(1.35);
+}
+.sama-home .dash-glare{
+  mix-blend-mode: overlay;
+  background: radial-gradient(circle at var(--pointer-x,50%) var(--pointer-y,50%),
+    rgba(255,255,255,.75) 0%, rgba(255,255,255,.22) 16%, rgba(255,255,255,0) 52%);
+}
+.sama-home .dash.holo-active .dash-foil{ opacity: .5; }
+.sama-home .dash.holo-active .dash-glare{ opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sama-home .btn-primary{ animation: none; background: var(--accent); background-size: 100% 100%; }
+}
+
+@media (max-width: 1080px) {
+  .sama-home .hero .v-label{ display: none; }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   PORTAGE REACT — ajustements par rapport à la maquette statique
+   ──────────────────────────────────────────────────────────────── */
+
+/* Le preflight Tailwind (globals.css) force `svg { display: block }`. La maquette
+   compte sur le flux inline pour l'étincelle posée après un mot — sinon elle
+   casse la ligne et fait exploser l'interlignage des titres. */
+.sama-home .spark { display: inline-block; }
+
+/* Les <image-slot> de la maquette sont devenus de vraies <img>. */
+.sama-home .hero-figure img { object-fit: cover; border-radius: 22px; }
+.sama-home .uc-figure img   { object-fit: cover; border-radius: 18px; }
+
+/* .uc-tab et .intro-skip sont des <button> (accessibilité clavier) :
+   on neutralise le style natif, le reste vient des règles ci-dessus. */
+.sama-home .uc-tab {
+  width: 100%; background: none; border: none; border-bottom: 1px solid var(--line);
+  text-align: left; color: inherit; font: inherit;
+}
+.sama-home .uc-tab:focus-visible,
+.sama-home .intro-skip:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.sama-home .intro-skip { background: none; border: none; }
