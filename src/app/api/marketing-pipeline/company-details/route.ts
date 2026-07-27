@@ -9,6 +9,13 @@ export const dynamic = "force-dynamic";
 
 export const OPTIONS = (req: Request) => preflight(req);
 
+/** `true` quand la colonne n'existe pas encore (migration non appliquée). */
+const isMissingColumn = (error: { code?: string; message?: string } | null): boolean =>
+  !!error &&
+  (error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column .* does not exist|could not find the .* column/i.test(error.message ?? ""));
+
 /**
  * POST /api/marketing-pipeline/company-details
  *
@@ -97,6 +104,20 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
 
   // 3) Lead magnet project overrides / logo / stats / zones.
   if (project_id && project) {
+    // Provenance de la ville SEO : on ne bascule sur 'manual' que si la valeur
+    // CHANGE réellement. Sans cette comparaison, un simple enregistrement de la
+    // fiche (qui renvoie toujours le payload complet) marquerait comme saisie à
+    // la main une valeur posée par l'enrichissement, et la sortirait du
+    // recalcul en masse alors que personne ne l'a validée.
+    const { data: currentProject } = await supabase
+      .from("lead_magnet_projects")
+      .select("override_city")
+      .eq("id", project_id)
+      .maybeSingle();
+    const previousCity = (currentProject as { override_city?: string | null } | null)?.override_city ?? null;
+    const nextCity = project.override_city || null;
+    const cityChanged = (previousCity ?? "") !== (nextCity ?? "");
+
     const payload: Record<string, unknown> = {
       override_entreprise_name: project.override_entreprise_name || null,
       override_city: project.override_city || null,
@@ -114,8 +135,16 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
     };
     // Only overwrite the jsonb when the client actually sent it (never blank it).
     if (project.variables != null) payload.variables = project.variables;
+    if (cityChanged) payload.override_city_source = nextCity ? "manual" : null;
 
-    const { error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", project_id);
+    let { error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", project_id);
+    // `override_city_source` vient de la migration 20260727_ville_seo_geo,
+    // appliquée à la main : tant qu'elle ne l'est pas, on enregistre sans elle
+    // plutôt que de faire échouer la fiche entière.
+    if (error && isMissingColumn(error)) {
+      delete payload.override_city_source;
+      ({ error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", project_id));
+    }
     if (error) return jsonError(error.message, 500, {}, cors);
   }
 

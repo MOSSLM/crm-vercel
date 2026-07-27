@@ -30,6 +30,8 @@ import {
   moveOpportunityToFallbackPipeline,
   applyExtraction,
   loadLlmConfig,
+  recomputeVilleSeo,
+  type RecomputeResult,
 } from "./db.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -237,6 +239,31 @@ Deno.serve(async (req: Request) => {
   if (uniq.length === 0) {
     return jsonResponse({ error: "no_project_ids" }, 400);
   }
+
+  // Recalcul de la ville SEO : ni scraping, ni Google, ni LLM — donc pas de
+  // raison de plafonner à 20 comme l'enrichissement, et pas de lock à prendre.
+  if (body.action === "recompute_ville_seo") {
+    if (uniq.length > 500) {
+      return jsonResponse({ error: "too_many_projects", max: 500 }, 400);
+    }
+    const sb = makeSupabaseClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    console.log(`Recomputing ville SEO for ${uniq.length} project(s)`);
+    const results: RecomputeResult[] = [];
+    for (const id of uniq) {
+      results.push(await recomputeVilleSeo(sb, id));
+    }
+    return jsonResponse({
+      results,
+      summary: {
+        total: results.length,
+        updated: results.filter((r) => r.status === "updated").length,
+        unchanged: results.filter((r) => r.status === "unchanged").length,
+        skipped: results.filter((r) => r.status === "skipped").length,
+        failed: results.filter((r) => r.status === "failed").length,
+      },
+    }, 200);
+  }
+
   if (uniq.length > 20) {
     return jsonResponse({ error: "too_many_projects", max: 20 }, 400);
   }

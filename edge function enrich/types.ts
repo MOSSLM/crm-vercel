@@ -28,6 +28,13 @@ export interface LlmConfig {
 export interface EnrichRequest {
   project_id?: string;
   project_ids?: string[];
+  /**
+   * Par défaut : enrichissement complet (scraping + Google + LLM).
+   * `recompute_ville_seo` ne rejoue QUE le calcul de la ville SEO — aucun appel
+   * externe, aucun coût — pour rattraper les projets remplis par une version
+   * antérieure de la règle.
+   */
+  action?: "enrich" | "recompute_ville_seo";
 }
 
 export interface EnrichResult {
@@ -131,4 +138,7 @@ export interface GooglePlaceData {
   total_reviews: number | null;
   reviews_5star: GoogleReview[];
   name: string | null;
+  /** Coordonnées du lieu — source la plus précise pour calculer la ville SEO. */
+  lat: number | null;
+  lng: number | null;
 }

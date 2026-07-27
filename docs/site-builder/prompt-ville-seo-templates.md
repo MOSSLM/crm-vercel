@@ -93,10 +93,10 @@ Sur les 4 skins : 180 remplacements, 72 `[Ville]` conservés.
 
 ## Pourquoi ça marche côté CRM
 
-- L'enrichissement (edge function `enrich-lead-magnet`) écrit la grande ville la
-  plus proche dans `lead_magnet_projects.override_city`, avec replis successifs
-  sur la grande ville du département puis sur la ville de l'entreprise : la valeur
-  est toujours une vraie ville.
+- L'enrichissement (edge function `enrich-lead-magnet`) écrit la grande ville
+  retenue dans `lead_magnet_projects.override_city`. Elle est calculée sur la
+  distance réelle à partir du référentiel officiel des communes — voir
+  [`ville-seo.md`](../ville-seo.md) pour la règle et ses réglages.
 - `override_city` alimente `{{ entreprise.ville_seo }}`, et `{{ entreprise.ville }}`
   reste la ville réelle de `entreprises.ville` — voir
   `src/lib/site-builder/city-variables.ts`.

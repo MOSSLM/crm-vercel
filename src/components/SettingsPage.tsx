@@ -43,6 +43,7 @@ import { useTheme } from './ThemeContext';
 import { THEME_PRESETS, ThemePreset } from './themePresets';
 import { EnrichmentTagsSettings } from './settings/EnrichmentTagsSettings';
 import { EnrichmentLlmSettings } from './settings/EnrichmentLlmSettings';
+import { VilleSeoSettings } from './settings/VilleSeoSettings';
 import { MediaAutotagSettings } from './settings/MediaAutotagSettings';
 
 export const SettingsPage: React.FC = () => {
@@ -486,6 +487,7 @@ export const SettingsPage: React.FC = () => {
 
         <TabsContent value="enrichment" className="space-y-6">
           <EnrichmentLlmSettings />
+          <VilleSeoSettings />
           <MediaAutotagSettings />
           <EnrichmentTagsSettings />
         </TabsContent>

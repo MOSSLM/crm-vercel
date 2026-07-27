@@ -11,7 +11,14 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import type { ProjectContext, LLMExtraction, GooglePlaceData, EnrichResult, LlmConfig, LlmProvider } from "./types.ts";
-import { bigCityFromCodePostal } from "./geo.ts";
+import { extractLatLngFromUrl } from "./google.ts";
+import { pickSeoCity, type LatLng } from "./geo.ts";
+import {
+  loadBigCityCandidates,
+  loadGeoSettings,
+  loadOriginCommune,
+  loadVilleSeoOverride,
+} from "./communes.ts";
 
 // Pipeline "Entreprises sans site web" — UUID constant dans ce projet
 const NO_WEBSITE_PIPELINE_ID = "1bbf2933-3c91-4494-9ab9-c582369d25eb";
@@ -427,29 +434,29 @@ export async function applyExtraction(
     }
   }
 
-  // --- ville SEO : la grande ville la plus proche ---
+  // --- ville SEO : la grande ville mise en avant sur le site ---
   // Source de vérité = `override_city`, qui alimente `{{ entreprise.ville_seo }}`.
   // `override_location` est conservé en miroir pour les designs déjà publiés qui
   // utilisent encore `{{ entreprise.location }}`.
-  // Replis, tous de vraies villes (jamais de placeholder) :
-  //   LLM → grande ville du département (code postal) → ville de l'entreprise.
   // Écriture fill-only : une valeur saisie à la main n'est jamais écrasée.
-  {
-    const seoCity =
-      extraction.closest_big_city ??
-      bigCityFromCodePostal(ctx.entreprise.code_postal) ??
-      ctx.entreprise.ville;
-    if (seoCity) {
+  if (!ctx.lmp.override_city || !ctx.lmp.override_location) {
+    const decision = await resolveVilleSeo(sb, ctx, extraction, google);
+    if (decision) {
+      console.log(
+        `[${ctx.project_id}] ville SEO = ${decision.ville} — source ${decision.source}` +
+          (decision.detail ? ` (${decision.detail})` : ""),
+      );
       if (!ctx.lmp.override_city) {
-        lmpUpdate.override_city = seoCity;
-        updatedFields.push("override_city");
+        lmpUpdate.override_city = decision.ville;
+        lmpUpdate.override_city_source = "auto";
+        updatedFields.push(`override_city(${decision.source})`);
       }
       if (!ctx.lmp.override_location) {
-        lmpUpdate.override_location = seoCity;
+        lmpUpdate.override_location = decision.ville;
         updatedFields.push("override_location");
       }
     } else {
-      console.warn(`[${ctx.project_id}] ville SEO indéterminable (ni LLM, ni code postal, ni ville)`);
+      console.warn(`[${ctx.project_id}] ville SEO indéterminable (aucune source n'a répondu)`);
     }
   }
 
@@ -526,11 +533,8 @@ export async function applyExtraction(
   // ===== Écriture lmp =====
   if (Object.keys(lmpUpdate).length > 0) {
     lmpUpdate.updated_at = new Date().toISOString();
-    const { error } = await sb
-      .from("lead_magnet_projects")
-      .update(lmpUpdate)
-      .eq("id", ctx.project_id);
-    if (error) throw new Error(`lmp_update: ${error.message}`);
+    const error = await updateProject(sb, ctx.project_id, lmpUpdate);
+    if (error) throw new Error(`lmp_update: ${error}`);
   }
 
   // ===== Écriture entreprise =====
@@ -555,6 +559,193 @@ export async function applyExtraction(
   updatedFields.push("opportunite.lead_magnet");
 
   return { updated_fields: updatedFields, reviews_inserted: reviewsInserted };
+}
+
+// ---------------------------------------------------------------------
+// Ville SEO
+// ---------------------------------------------------------------------
+
+/**
+ * Écrit sur `lead_magnet_projects` en tolérant l'absence d'une colonne récente.
+ *
+ * `override_city_source` vient de la migration 20260727, appliquée à la main
+ * dans Supabase. Sans ce repli, l'edge function déployée avant la migration
+ * ferait échouer TOUT l'enrichissement du projet sur une colonne inconnue —
+ * alors que la seule chose qu'on perd, c'est la trace de provenance.
+ * Retourne le message d'erreur, ou null si l'écriture a réussi.
+ */
+async function updateProject(
+  sb: SupabaseClient,
+  projectId: string,
+  payload: Record<string, unknown>,
+): Promise<string | null> {
+  const { error } = await sb.from("lead_magnet_projects").update(payload).eq("id", projectId);
+  if (!error) return null;
+
+  const missingColumn =
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column .* does not exist|could not find the .* column/i.test(error.message ?? "");
+  if (!missingColumn || !("override_city_source" in payload)) return error.message;
+
+  console.warn(`updateProject: override_city_source absente (migration non appliquée) — écriture sans elle`);
+  const { override_city_source: _dropped, ...rest } = payload;
+  const retry = await sb.from("lead_magnet_projects").update(rest).eq("id", projectId);
+  return retry.error ? retry.error.message : null;
+}
+
+export type VilleSeoSource = "override" | "geo" | "llm" | "entreprise";
+
+export interface VilleSeoDecision {
+  ville: string;
+  source: VilleSeoSource;
+  /** Détail du palier géographique, quand c'est le calcul qui a décidé. */
+  detail?: string;
+}
+
+/**
+ * Coordonnées de l'entreprise, du plus précis au plus large :
+ *   1. Google Places (le point du commerce lui-même)
+ *   2. les coordonnées lisibles dans l'URL Google stockée
+ *   3. le centre de sa commune, via le code postal
+ * Les deux premières sont gratuites — on les a déjà en mémoire à ce stade.
+ */
+async function resolveOrigin(
+  sb: SupabaseClient,
+  ctx: ProjectContext,
+  google: GooglePlaceData | null,
+): Promise<{ point: LatLng; from: string } | null> {
+  if (typeof google?.lat === "number" && typeof google?.lng === "number") {
+    return { point: { lat: google.lat, lon: google.lng }, from: "google_places" };
+  }
+
+  const fromUrl =
+    extractLatLngFromUrl(ctx.entreprise.google_url) ??
+    extractLatLngFromUrl(ctx.entreprise.google_maps_url);
+  if (fromUrl) {
+    return { point: { lat: fromUrl.lat, lon: fromUrl.lng }, from: "google_url" };
+  }
+
+  const commune = await loadOriginCommune(sb, ctx.entreprise.code_postal, ctx.entreprise.ville);
+  if (commune) {
+    return { point: { lat: commune.lat, lon: commune.lon }, from: `commune:${commune.nom}` };
+  }
+
+  return null;
+}
+
+/**
+ * Détermine la ville SEO, par ordre d'autorité :
+ *   1. `ville_seo_overrides` — une correction manuelle gagne toujours
+ *   2. le calcul géographique sur `communes_fr` (distance réelle + paliers)
+ *   3. l'extraction du LLM — filet quand le référentiel n'est pas chargé ou
+ *      qu'aucune coordonnée n'est trouvable
+ *   4. la ville de l'entreprise — dernier recours, toujours une vraie ville
+ *
+ * Aucune étape ne peut faire échouer l'enrichissement : les lectures de
+ * `communes.ts` dégradent en silence si la migration n'est pas appliquée.
+ */
+export async function resolveVilleSeo(
+  sb: SupabaseClient,
+  ctx: ProjectContext,
+  extraction: LLMExtraction | null,
+  google: GooglePlaceData | null,
+): Promise<VilleSeoDecision | null> {
+  const override = await loadVilleSeoOverride(
+    sb,
+    ctx.entreprise.code_postal,
+    ctx.entreprise.ville,
+  );
+  if (override) return { ville: override, source: "override" };
+
+  const origin = await resolveOrigin(sb, ctx, google);
+  if (origin) {
+    const settings = await loadGeoSettings(sb);
+    const candidates = await loadBigCityCandidates(
+      sb,
+      origin.point,
+      settings.maxRadiusKm,
+      settings.bigCityPopulation,
+    );
+    const pick = pickSeoCity(origin.point, candidates, settings);
+    if (pick) {
+      return {
+        ville: pick.nom,
+        source: "geo",
+        detail: `${pick.rule}, ${pick.distanceKm.toFixed(1)} km, ${pick.population} hab, origine ${origin.from}`,
+      };
+    }
+    console.log(
+      `[${ctx.project_id}] aucune grande ville dans ${settings.maxRadiusKm} km (origine ${origin.from}, ${candidates.length} candidates)`,
+    );
+  }
+
+  if (extraction?.closest_big_city) {
+    return { ville: extraction.closest_big_city, source: "llm" };
+  }
+  if (ctx.entreprise.ville) {
+    return { ville: ctx.entreprise.ville, source: "entreprise" };
+  }
+  return null;
+}
+
+export interface RecomputeResult {
+  project_id: string;
+  status: "updated" | "unchanged" | "skipped" | "failed";
+  ville_seo?: string;
+  source?: VilleSeoSource;
+  reason?: string;
+}
+
+/**
+ * Recalcule la ville SEO d'un projet déjà enrichi, sans rejouer le scraping ni
+ * le LLM — donc sans coût. Sert à rattraper les projets remplis par une version
+ * antérieure de la règle.
+ *
+ * Contrairement à l'enrichissement, l'écriture ÉCRASE la valeur en place : c'est
+ * tout l'intérêt d'un recalcul. Garde-fou : les projets dont la ville SEO a été
+ * saisie à la main (`override_city_source = 'manual'`) sont laissés intacts.
+ */
+export async function recomputeVilleSeo(
+  sb: SupabaseClient,
+  projectId: string,
+): Promise<RecomputeResult> {
+  const ctxOrErr = await loadProjectContext(sb, projectId);
+  if ("error" in ctxOrErr) {
+    return { project_id: projectId, status: "failed", reason: ctxOrErr.error };
+  }
+  const ctx = ctxOrErr;
+
+  const { data: row } = await sb
+    .from("lead_magnet_projects")
+    .select("override_city, override_city_source")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (row?.override_city_source === "manual") {
+    return { project_id: projectId, status: "skipped", reason: "manual" };
+  }
+
+  // Pas d'appel Google ici : `resolveOrigin` se rabat sur les coordonnées de
+  // l'URL Google déjà stockée, puis sur le centre de la commune. Gratuit.
+  const decision = await resolveVilleSeo(sb, ctx, null, null);
+  if (!decision) {
+    return { project_id: projectId, status: "failed", reason: "no_source" };
+  }
+  if (decision.ville === row?.override_city) {
+    return { project_id: projectId, status: "unchanged", ville_seo: decision.ville, source: decision.source };
+  }
+
+  const error = await updateProject(sb, projectId, {
+    override_city: decision.ville,
+    override_location: decision.ville,
+    override_city_source: "auto",
+    updated_at: new Date().toISOString(),
+  });
+  if (error) {
+    return { project_id: projectId, status: "failed", reason: error };
+  }
+
+  return { project_id: projectId, status: "updated", ville_seo: decision.ville, source: decision.source };
 }
 
 async function insertReviewsIfNeeded(
