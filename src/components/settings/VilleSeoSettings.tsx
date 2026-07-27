@@ -55,6 +55,8 @@ export function VilleSeoSettings() {
   const [seeding, setSeeding] = useState<{ done: number; total: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [recomputing, setRecomputing] = useState(false);
+  /** Projets déjà vus par le recalcul en cours — affiché pendant le balayage. */
+  const [recomputeProgress, setRecomputeProgress] = useState(0);
 
   const refresh = useCallback(async () => {
     const [statusRes, configRes] = await Promise.all([
@@ -152,22 +154,46 @@ export function VilleSeoSettings() {
     setOverrides((prev) => prev.filter((o) => o.id !== id));
   };
 
+  /**
+   * Le recalcul balaie tout le parc par lots : la route rend un curseur
+   * (`next_after_id`) dès que son budget de temps est épuisé, et on la rappelle
+   * jusqu'à `done`. Un seul appel expirait au bout de quelques milliers de
+   * projets — c'était l'erreur affichée ici.
+   */
   const recompute = async () => {
     setRecomputing(true);
+    const totals = { updated: 0, unchanged: 0, skipped: 0, failed: 0 };
     try {
-      const res = await authedFetch("/api/settings/ville-seo/recompute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const payload = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(payload.error ?? "Recalcul impossible");
-      const s = payload.summary ?? {};
-      toast.success(`${s.updated ?? 0} ville(s) SEO mises à jour · ${s.unchanged ?? 0} inchangées · ${s.skipped ?? 0} saisies à la main`);
+      let after: string | null = null;
+      for (let pass = 0; pass < 200; pass++) {
+        const res = await authedFetch("/api/settings/ville-seo/recompute", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(after ? { after_id: after } : {}),
+        });
+        const payload = await res.json().catch(() => ({}));
+        const s = payload.summary ?? payload.partial ?? {};
+        totals.updated += s.updated ?? 0;
+        totals.unchanged += s.unchanged ?? 0;
+        totals.skipped += s.skipped ?? 0;
+        totals.failed += s.failed ?? 0;
+        if (!res.ok) throw new Error(payload.error ?? "Recalcul impossible");
+        setRecomputeProgress(totals.updated + totals.unchanged + totals.skipped + totals.failed);
+        if (payload.done || !payload.next_after_id) break;
+        after = payload.next_after_id as string;
+      }
+      toast.success(
+        `${totals.updated} ville(s) SEO mises à jour · ${totals.unchanged} inchangées · ${totals.skipped} saisies à la main`,
+      );
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Recalcul impossible");
+      const seen = totals.updated + totals.unchanged + totals.skipped + totals.failed;
+      toast.error(
+        (e instanceof Error ? e.message : "Recalcul impossible") +
+          (seen > 0 ? ` — ${totals.updated} mise(s) à jour avant l'arrêt, relance pour continuer` : ""),
+      );
     } finally {
       setRecomputing(false);
+      setRecomputeProgress(0);
     }
   };
 
@@ -258,12 +284,22 @@ export function VilleSeoSettings() {
               </Button>
               <Button variant="outline" size="sm" onClick={recompute} disabled={recomputing || !status?.ready}>
                 {recomputing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-                Recalculer les projets existants
+                {recomputing && recomputeProgress > 0
+                  ? `Recalcul… ${recomputeProgress} projets`
+                  : "Recalculer les projets existants"}
               </Button>
             </div>
             <p className="text-[11px] leading-snug text-muted-foreground">
               Le recalcul ne rescrape rien et n&apos;appelle aucun modèle : il est gratuit et
-              relançable. Les villes SEO saisies à la main ne sont jamais touchées.
+              relançable. Les villes SEO saisies à la main ne sont jamais touchées. Il balaie
+              tout le parc par lots — laisse la page ouverte jusqu&apos;au message final.
+            </p>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              Île-de-France (75, 77, 78, 91, 92, 93, 94, 95) : la ville SEO est
+              «&nbsp;Région parisienne&nbsp;», pas une commune. Dans l&apos;agglomération, la
+              ville la plus proche n&apos;a souvent aucun rapport avec l&apos;entreprise
+              (Évry-Courcouronnes →&nbsp;Montreuil). Une correction manuelle reste
+              prioritaire si tu veux une ville précise sur un code postal.
             </p>
           </section>
         )}

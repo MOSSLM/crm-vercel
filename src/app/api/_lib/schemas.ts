@@ -176,6 +176,32 @@ export const marketingValidateEnrichmentSchema = z.object({
 export type MarketingValidateEnrichmentPayload = z.infer<typeof marketingValidateEnrichmentSchema>;
 
 /**
+ * Ré-enrichissement en masse des projets déjà enrichis (voir
+ * /api/marketing-pipeline/reenrich).
+ *
+ * Un appel ne traite que ce qu'il peut dans son budget de temps et renvoie
+ * `next_after_id` : le client rappelle avec ce curseur jusqu'à `done`. C'est ce
+ * qui permet de balayer tout le parc sans qu'aucune requête ne dépasse son
+ * temps d'exécution.
+ */
+export const marketingReenrichSchema = z.object({
+  /**
+   * `enriched` : les anciens enrichissements (statut framer/ready/published).
+   * `failed` : les runs en échec. `all` : tout projet lié à une entreprise.
+   * `ids` : une liste explicite.
+   */
+  scope: z.enum(["enriched", "failed", "all", "ids"]).optional().default("enriched"),
+  project_ids: z.array(z.string().uuid()).max(2000).optional(),
+  /** Vide les colonnes issues de l'enrichissement avant de relancer. */
+  overwrite: z.boolean().optional().default(true),
+  /** Curseur keyset : ne traite que les projets d'id supérieur. */
+  after_id: z.string().uuid().optional(),
+  /** Compte seulement, n'écrit rien et n'appelle pas l'edge function. */
+  dry_run: z.boolean().optional().default(false),
+});
+export type MarketingReenrichPayload = z.infer<typeof marketingReenrichSchema>;
+
+/**
  * Chargement du référentiel des communes, un département à la fois (voir
  * /api/settings/communes-fr). Le code est celui de geo.api.gouv.fr : deux
  * chiffres en métropole, trois en outre-mer, "2A"/"2B" pour la Corse.
@@ -219,6 +245,8 @@ export type VilleSeoOverridePayload = z.infer<typeof villeSeoOverrideSchema>;
 /** Recalcul de la ville SEO. Sans `project_ids`, porte sur tout le parc. */
 export const villeSeoRecomputeSchema = z.object({
   project_ids: z.array(z.string().uuid()).max(2000).optional(),
+  /** Curseur keyset : ne recalcule que les projets d'id supérieur (reprise). */
+  after_id: z.string().uuid().optional(),
 });
 export type VilleSeoRecomputePayload = z.infer<typeof villeSeoRecomputeSchema>;
 
