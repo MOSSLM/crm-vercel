@@ -2,7 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
-import { assignProspectToAgent } from "../_assign";
+import { assignProspectToAgent, unassignProspectFromAgent } from "../_assign";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -42,4 +42,23 @@ export const POST = withAuth({ role: "admin" }, async ({ user, req, cors }) => {
     .eq("status", "pending");
 
   return json({ ok: true, opportunite_id: res.opportuniteId }, { status: 201, headers: cors });
+});
+
+// Admin: take a company back from an agent and return it to the pool.
+// Params travel in the query string — DELETE bodies aren't reliably forwarded.
+export const DELETE = withAuth({ role: "admin" }, async ({ req, cors }) => {
+  const params = new URL(req.url).searchParams;
+  const entrepriseId = Number(params.get("entreprise_id"));
+  if (!Number.isFinite(entrepriseId)) {
+    return jsonError("entreprise_id requis", 400, {}, cors);
+  }
+  const agentId = params.get("agent_id");
+
+  const res = await unassignProspectFromAgent(entrepriseId, agentId);
+  if (!res.ok) {
+    const status = res.error === "entreprise_attribuee_a_un_autre_agent" ? 409 : 500;
+    return jsonError(res.error, status, {}, cors);
+  }
+
+  return json({ ok: true }, { headers: cors });
 });
