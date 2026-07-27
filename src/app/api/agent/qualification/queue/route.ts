@@ -23,11 +23,16 @@ const WINDOW = 200;
 const MAX_PASSES = 5;
 
 /**
- * GET /api/agent/qualification/queue?q=&limit=&after_id=
+ * GET /api/agent/qualification/queue?q=&limit=&after_id=&sources=&url_filter=
  *
  * File à qualifier de l'agent : le pool global des entreprises non qualifiées,
  * moins celles déjà traitées (par l'admin ou par un autre agent) et moins les
  * blacklistées.
+ *
+ * Les filtres reprennent ceux de l'écran admin : recherche, sources
+ * (google_search / google_maps) et présence d'un site. `url_filter` vaut
+ * `with-url` par défaut — sans site il n'y a ni refonte à proposer ni audit à
+ * produire.
  *
  * Le filtrage blacklist / décisions en attente se fait en mémoire sur une
  * fenêtre de lignes, parce qu'il demande une canonicalisation d'URL que
@@ -42,7 +47,11 @@ export const GET = withAuth(
   async ({ req, cors }) => {
     const parsed = parseQuery(new URL(req.url), agentQualificationQuerySchema, cors);
     if (!parsed.ok) return parsed.response;
-    const { q, limit, after_id } = parsed.data;
+    const { q, limit, after_id, url_filter } = parsed.data;
+    const sources = (parsed.data.sources ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
 
     const sc = getServiceClient();
     const [blacklist, pending] = await Promise.all([loadBlacklist(), loadPendingEntrepriseIds()]);
@@ -67,8 +76,16 @@ export const GET = withAuth(
 
       if (q) {
         const escaped = q.replace(/[%,()]/g, " ");
-        query = query.or(`name.ilike.%${escaped}%,ville.ilike.%${escaped}%`);
+        query = query.or(`name.ilike.%${escaped}%,ville.ilike.%${escaped}%,adresse.ilike.%${escaped}%`);
       }
+
+      // `sources` est un tableau : overlaps = « au moins une des sources cochées ».
+      if (sources.length > 0) query = query.overlaps("sources", sources);
+
+      // Le filtre URL se pose en base sur le null, puis se raffine en mémoire
+      // sur les chaînes vides (que la colonne autorise).
+      if (url_filter === "with-url") query = query.not("canonical_url", "is", null);
+      else if (url_filter === "without-url") query = query.is("canonical_url", null);
 
       const { data, error } = await query;
       if (error) return jsonError(error.message, 500, {}, cors);
@@ -82,6 +99,11 @@ export const GET = withAuth(
         if (picked.length >= limit) break;
         if (pending.has(Number(row.id))) continue;
         if (isBlacklisted(row, blacklist)) continue;
+
+        // Une `canonical_url` vide compte comme « sans site ».
+        const hasUrl = Boolean(row.canonical_url?.trim());
+        if (url_filter === "with-url" && !hasUrl) continue;
+        if (url_filter === "without-url" && hasUrl) continue;
 
         const site = companyCanonicalSite(row);
         if (site) {

@@ -312,6 +312,10 @@ export const agentQualificationQuerySchema = z.object({
   q: z.string().trim().max(120).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
   after_id: z.coerce.number().int().min(0).optional(),
+  /** Sources séparées par des virgules (`google_search,google_maps`). Vide = toutes. */
+  sources: z.string().trim().max(200).optional(),
+  /** Par défaut `with-url` : sans site, il n'y a rien à auditer ni à refondre. */
+  url_filter: z.enum(["all", "with-url", "without-url"]).default("with-url"),
 });
 export type AgentQualificationQuery = z.infer<typeof agentQualificationQuerySchema>;
 
