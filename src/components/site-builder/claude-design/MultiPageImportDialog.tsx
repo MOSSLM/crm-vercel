@@ -4,7 +4,7 @@ import React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import JSZip from "jszip";
-import { UploadCloud, Wand2, ArrowRight, RefreshCw, Plus } from "lucide-react";
+import { UploadCloud, Wand2, ArrowRight, RefreshCw, Plus, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -31,13 +31,22 @@ interface Props {
 
 interface ExistingTemplate { id: string; name: string }
 
+/** What an import row does to the CRM.
+ *  - create: a brand new template (the default, always safe)
+ *  - theme:  repair an existing template's theme tables only — pages and photos
+ *            untouched. For designs imported before `themeSets` existed, which
+ *            render the first design's typeface whatever the panel says.
+ *  - update: replace an existing template's pages (and optionally its style) */
+type RowMode = "create" | "theme" | "update";
+
 /** Per-detected-template choices made in the list. */
 interface RowConfig {
   selected: boolean;
   name: string;
-  /** "" = create a new template, otherwise the id of the one to update.
-   *  Never pre-filled: overwriting an existing template must be a deliberate
-   *  choice, not something a matching folder name decides on its own. */
+  mode: RowMode;
+  /** The template `theme` and `update` act on. `update` is never pre-filled:
+   *  overwriting pages must be a deliberate choice, not something a matching
+   *  folder name decides on its own. `theme` can be, since it risks nothing. */
   targetId: string;
   /** "" = none, otherwise the template whose photos are pulled in after import. */
   imagesFromId: string;
@@ -151,7 +160,10 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       setDetected(named);
       setRows(Object.fromEntries(named.map((t) => [
         t.key,
-        { selected: true, name: t.name, targetId: "", imagesFromId: "", updateShared: true, resetTweaks: false },
+        {
+          selected: true, name: t.name, mode: "create" as RowMode, targetId: "",
+          imagesFromId: "", updateShared: true, resetTweaks: false,
+        },
       ])));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "ZIP illisible");
@@ -161,12 +173,30 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
     }
   };
 
-  /** The existing template a ZIP folder looks like — a SUGGESTION only. Selecting
-   *  it (and so overwriting that template) stays a deliberate click. */
+  /** The existing template a ZIP folder looks like. */
   const suggestionFor = React.useCallback(
     (name: string) => existing.find((e) => normalizeTemplateName(e.name) === normalizeTemplateName(name)) ?? null,
     [existing],
   );
+
+  // A folder matching an existing template defaults to repairing that template's
+  // THEME — it cannot lose anything, and it is what a design imported before the
+  // theme tables existed actually needs. Replacing its pages stays a deliberate
+  // switch to "Mettre à jour".
+  React.useEffect(() => {
+    if (detected.length === 0 || existing.length === 0) return;
+    setRows((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const t of detected) {
+        const row = next[t.key];
+        if (!row || row.mode !== "create" || row.targetId) continue;
+        const match = suggestionFor(row.name);
+        if (match) { next[t.key] = { ...row, mode: "theme", targetId: match.id }; changed = true; }
+      }
+      return changed ? next : prev;
+    });
+  }, [detected, existing, suggestionFor]);
 
   const setRow = (key: string, patch: Partial<RowConfig>) =>
     setRows((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
@@ -180,7 +210,34 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
     const bundle = parseTemplateBundle(tpl.files);
     if (bundle.pages.length === 0) throw new Error(`« ${label} » : aucune page HTML.`);
 
-    const isUpdate = !!row.targetId;
+    // Tweaks schema (the panel's controls) + theme sets (what a tweak VALUE
+    // means in CSS). Both belong to THIS skin — "Chantier" only exists in Brut's
+    // tables — so both travel with every import, whatever the mode.
+    const pageTweaksBySlug: Record<string, string> = {};
+    for (const p of bundle.pages) {
+      if (p.tweaksFile && bundle.tweaksJsx[p.tweaksFile]) pageTweaksBySlug[p.slug] = bundle.tweaksJsx[p.tweaksFile];
+    }
+    const tweaksSchema = buildTweaksSchema(bundle.tweaksJsx["theme-tweaks.jsx"] ?? "", pageTweaksBySlug);
+    const themeSets = parseThemeSets(bundle.themeApplyJs);
+
+    // Theme-only repair: the target already has the right pages and photos, it
+    // just predates `themeSets` and so renders the first design's typeface.
+    // Stops here — no image upload, no markup, nothing that could lose work.
+    if (row.mode === "theme") {
+      step("Réparation du thème…");
+      const res = await authedFetch(`/api/site-builder/designs/${row.targetId}/theme-sets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ themeSets, tweaksSchema, fontLinks: bundle.fontLinks }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body as { error?: string }).error || `Échec de la réparation de « ${label} »`);
+      const fonts = Object.keys(themeSets?.fontSets ?? {}).length;
+      toast.success(`${label} : thème réparé (${fonts} jeu${fonts > 1 ? "x" : ""} de polices).`);
+      return row.targetId;
+    }
+
+    const isUpdate = row.mode === "update";
     const siteId = isUpdate ? row.targetId : crypto.randomUUID();
 
     const { urlByPath, failed } = await uploadBundleImages(
@@ -197,16 +254,6 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
     const sharedCss = rewriteAssets(bundle.sharedCss, urlByPath);
     const sharedJs = sharedJsFromBundle(bundle, urlByPath);
     const pages = buildProcessedPages(bundle, urlByPath);
-
-    // Tweaks schema (the panel's controls) + theme sets (what a tweak VALUE
-    // means in CSS). Both belong to THIS skin — "Chantier" only exists in Brut's
-    // tables — so both travel with every import, update included.
-    const pageTweaksBySlug: Record<string, string> = {};
-    for (const p of bundle.pages) {
-      if (p.tweaksFile && bundle.tweaksJsx[p.tweaksFile]) pageTweaksBySlug[p.slug] = bundle.tweaksJsx[p.tweaksFile];
-    }
-    const tweaksSchema = buildTweaksSchema(bundle.tweaksJsx["theme-tweaks.jsx"] ?? "", pageTweaksBySlug);
-    const themeSets = parseThemeSets(bundle.themeApplyJs);
 
     if (isUpdate) {
       step("Mise à jour du template…");
@@ -303,7 +350,7 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       const losses: string[] = [];
       for (const tpl of chosen) {
         const row = rows[tpl.key];
-        if (!row.targetId) continue;
+        if (row.mode !== "update") continue; // only replacing pages can lose a photo
         setProgress(`${row.name || tpl.name} · Analyse de l'impact…`);
         const report = await previewUpdate(tpl, row);
         const lost = (report?.droppedOverrides ?? []).reduce((n, d) => n + d.keys.length, 0);
@@ -328,10 +375,13 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
       for (const tpl of chosen) {
         doneIds.push(await importOne(tpl, rows[tpl.key]));
       }
+      const onlyThemes = chosen.every((t) => rows[t.key].mode === "theme");
       toast.success(
-        doneIds.length === 1
-          ? `Template importé (${rows[chosen[0].key].name.trim() || chosen[0].name})`
-          : `${doneIds.length} templates importés`,
+        onlyThemes
+          ? `Thème réparé sur ${doneIds.length} template${doneIds.length > 1 ? "s" : ""}`
+          : doneIds.length === 1
+            ? `Template importé (${rows[chosen[0].key].name.trim() || chosen[0].name})`
+            : `${doneIds.length} templates importés`,
       );
       onImported?.();
       handleOpenChange(false);
@@ -375,8 +425,14 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
               {detected.map((t) => {
                 const row = rows[t.key];
                 if (!row) return null;
-                const isUpdate = !!row.targetId;
+                const isUpdate = row.mode === "update";
+                const isTheme = row.mode === "theme";
                 const suggestion = suggestionFor(row.name);
+                const badge = isUpdate
+                  ? { cls: "bg-amber-100 text-amber-800", icon: <RefreshCw className="h-3 w-3" />, text: "Met à jour" }
+                  : isTheme
+                    ? { cls: "bg-sky-100 text-sky-800", icon: <Palette className="h-3 w-3" />, text: "Thème seul" }
+                    : { cls: "bg-emerald-100 text-emerald-800", icon: <Plus className="h-3 w-3" />, text: "Nouveau" };
                 return (
                   <div key={t.key} className="flex flex-col gap-2 p-3">
                     <div className="flex items-center gap-3">
@@ -387,8 +443,8 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                       <span className="shrink-0 text-xs text-muted-foreground">
                         {t.pageCount} page{t.pageCount > 1 ? "s" : ""} · {t.imageCount} image{t.imageCount > 1 ? "s" : ""}
                       </span>
-                      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${isUpdate ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}>
-                        {isUpdate ? <><RefreshCw className="h-3 w-3" />Met à jour</> : <><Plus className="h-3 w-3" />Nouveau</>}
+                      <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ${badge.cls}`}>
+                        {badge.icon}{badge.text}
                       </span>
                     </div>
 
@@ -397,34 +453,60 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                         Cible
                         <select
                           className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
-                          value={row.targetId} disabled={busy || !row.selected}
-                          onChange={(e) => setRow(t.key, { targetId: e.target.value })}
+                          value={row.mode === "create" ? "create" : `${row.mode}:${row.targetId}`}
+                          disabled={busy || !row.selected}
+                          onChange={(e) => {
+                            const [mode, id = ""] = e.target.value.split(":");
+                            setRow(t.key, { mode: mode as RowMode, targetId: id });
+                          }}
                         >
-                          <option value="">Créer un nouveau template</option>
-                          {existing.map((s) => <option key={s.id} value={s.id}>Mettre à jour « {s.name} »</option>)}
+                          <option value="create">Créer un nouveau template</option>
+                          {existing.length > 0 && (
+                            <optgroup label="Réparer le thème (pages et photos intactes)">
+                              {existing.map((s) => (
+                                <option key={s.id} value={`theme:${s.id}`}>Polices et Tweaks de « {s.name} »</option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {existing.length > 0 && (
+                            <optgroup label="Remplacer les pages">
+                              {existing.map((s) => (
+                                <option key={s.id} value={`update:${s.id}`}>Mettre à jour « {s.name} »</option>
+                              ))}
+                            </optgroup>
+                          )}
                         </select>
                       </label>
-                      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                        Reprendre les images de
-                        <select
-                          className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
-                          value={row.imagesFromId} disabled={busy || !row.selected}
-                          onChange={(e) => setRow(t.key, { imagesFromId: e.target.value })}
-                        >
-                          <option value="">Aucun</option>
-                          {existing.filter((s) => s.id !== row.targetId).map((s) => (
-                            <option key={s.id} value={s.id}>{s.name}</option>
-                          ))}
-                        </select>
-                      </label>
+                      {!isTheme && (
+                        <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                          Reprendre les images de
+                          <select
+                            className="rounded-md border bg-background px-2 py-1.5 text-sm text-foreground"
+                            value={row.imagesFromId} disabled={busy || !row.selected}
+                            onChange={(e) => setRow(t.key, { imagesFromId: e.target.value })}
+                          >
+                            <option value="">Aucun</option>
+                            {existing.filter((s) => s.id !== row.targetId).map((s) => (
+                              <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                     </div>
 
-                    {!isUpdate && suggestion && (
+                    {isTheme && (
+                      <p className="pl-7 text-xs text-muted-foreground">
+                        Réécrit uniquement les polices et les options de Tweaks de ce template. Ses pages, ses
+                        textes et ses photos ne sont pas touchés.
+                      </p>
+                    )}
+
+                    {row.mode === "create" && suggestion && (
                       <p className="pl-7 text-xs text-muted-foreground">
                         Ressemble à « {suggestion.name} ».{" "}
                         <button type="button" className="underline underline-offset-2" disabled={busy}
-                          onClick={() => setRow(t.key, { targetId: suggestion.id })}>
-                          Mettre à jour ce template
+                          onClick={() => setRow(t.key, { mode: "theme", targetId: suggestion.id })}>
+                          Réparer son thème
                         </button>{" "}
                         au lieu d’en créer un nouveau.
                       </p>
@@ -458,8 +540,10 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
 
           {detected.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              Une mise à jour remplace les pages et <strong>reporte</strong> les photos déjà posées sur le nouveau
-              markup. Ce qui ne peut pas être reporté est sauvegardé et restaurable depuis l’éditeur.
+              <strong>Réparer le thème</strong> ne réécrit que les polices et les options de Tweaks — c’est ce qu’il
+              faut pour un template importé avant le correctif des typographies. Une <strong>mise à jour</strong>,
+              elle, remplace les pages et reporte les photos déjà posées ; ce qui ne peut pas être reporté est
+              sauvegardé et restaurable depuis l’éditeur.
             </p>
           )}
           {busy && progress && <p className="text-sm text-muted-foreground">{progress}</p>}
