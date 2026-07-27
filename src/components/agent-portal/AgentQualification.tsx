@@ -100,9 +100,15 @@ function loadPersistedFilters(): Partial<PersistedFilters> {
   }
 }
 
-/** Une page de tableau, comme l'admin. Le serveur, lui, renvoie par gros lots. */
+/**
+ * Une page de tableau, comme l'admin. Le serveur, lui, renvoie par gros lots :
+ * la file peut faire plusieurs milliers d'entreprises, on ne les charge pas
+ * toutes d'un coup (c'est ce que fait l'écran admin, et c'est ce qui le rend
+ * lourd). Le lot suivant part automatiquement dès qu'on atteint la dernière
+ * page chargée, donc la navigation reste continue.
+ */
 const ITEMS_PER_PAGE = 12;
-const FETCH_SIZE = 60;
+const FETCH_SIZE = 300;
 
 const REVIEW_LABEL: Record<string, string> = {
   qualify: "Qualifiée",
@@ -141,6 +147,8 @@ export default function AgentQualification() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [cursor, setCursor] = useState<number | null>(null);
+  /** Taille totale de la file pour les filtres courants (calculée en base). */
+  const [total, setTotal] = useState(0);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
@@ -186,10 +194,12 @@ export default function AgentQualification() {
         companies: QueueCompany[];
         next_after_id: number | null;
         has_more: boolean;
+        total: number;
       };
       setCompanies((cur) => (append ? [...cur, ...data.companies] : data.companies));
       setCursor(data.next_after_id);
       setHasMore(data.has_more);
+      setTotal(data.total ?? 0);
     },
     [buildParams],
   );
@@ -222,11 +232,20 @@ export default function AgentQualification() {
     if (tab === "history") void loadHistory();
   }, [tab, loadHistory]);
 
-  const loadMore = async () => {
+  const loadMore = useCallback(async () => {
     setLoadingMore(true);
     await fetchQueue(cursor, true);
     setLoadingMore(false);
-  };
+  }, [fetchQueue, cursor]);
+
+  // Dès qu'on atteint la dernière page chargée, on demande le lot suivant : la
+  // pagination reste continue jusqu'au bout de la file sans jamais tout charger
+  // d'un coup.
+  useEffect(() => {
+    if (loading || loadingMore || !hasMore) return;
+    if (currentPage < Math.ceil(companies.length / ITEMS_PER_PAGE)) return;
+    void loadMore();
+  }, [currentPage, companies.length, hasMore, loading, loadingMore, loadMore]);
 
   const decide = async (company: QueueCompany, decision: "qualify" | "skip") => {
     setBusyId(company.id);
@@ -255,6 +274,7 @@ export default function AgentQualification() {
         );
       }
       setCompanies((cur) => cur.filter((c) => c.id !== company.id));
+      setTotal((t) => Math.max(0, t - 1));
     } catch {
       toast.error("Action impossible.");
     } finally {
@@ -359,7 +379,7 @@ export default function AgentQualification() {
           onClick={() => setTab("queue")}
         >
           <List className="ico-sm" />
-          File à qualifier <span className="bd">{companies.length}</span>
+          File à qualifier <span className="bd">{total.toLocaleString("fr-FR")}</span>
         </button>
         <button
           type="button"
@@ -382,7 +402,7 @@ export default function AgentQualification() {
                 <div className="ws-eyebrow">FILE DE QUALIFICATION</div>
                 <h1>
                   <em>
-                    {companies.length} entreprise{companies.length > 1 ? "s" : ""}
+                    {total.toLocaleString("fr-FR")} entreprise{total > 1 ? "s" : ""}
                   </em>{" "}
                   à trier
                 </h1>
@@ -671,9 +691,9 @@ export default function AgentQualification() {
                 )}
 
                 <span className="pg-info">
-                  Page {currentPage} / {totalPages} · {companies.length} entreprise
-                  {companies.length > 1 ? "s" : ""} chargée{companies.length > 1 ? "s" : ""}
-                  {hasMore ? " (il en reste)" : ""}
+                  Page {currentPage} / {totalPages} · {companies.length.toLocaleString("fr-FR")}
+                  {hasMore ? "+" : ""} chargée{companies.length > 1 ? "s" : ""} sur{" "}
+                  {total.toLocaleString("fr-FR")} au total
                 </span>
               </div>
             )}
