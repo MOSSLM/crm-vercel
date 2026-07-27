@@ -11,6 +11,7 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import type { ProjectContext, LLMExtraction, GooglePlaceData, EnrichResult, LlmConfig, LlmProvider } from "./types.ts";
+import { bigCityFromCodePostal } from "./geo.ts";
 
 // Pipeline "Entreprises sans site web" — UUID constant dans ce projet
 const NO_WEBSITE_PIPELINE_ID = "1bbf2933-3c91-4494-9ab9-c582369d25eb";
@@ -426,10 +427,30 @@ export async function applyExtraction(
     }
   }
 
-  // --- override_location : la grande ville la plus proche ---
-  if (!ctx.lmp.override_location && extraction.closest_big_city) {
-    lmpUpdate.override_location = extraction.closest_big_city;
-    updatedFields.push("override_location");
+  // --- ville SEO : la grande ville la plus proche ---
+  // Source de vérité = `override_city`, qui alimente `{{ entreprise.ville_seo }}`.
+  // `override_location` est conservé en miroir pour les designs déjà publiés qui
+  // utilisent encore `{{ entreprise.location }}`.
+  // Replis, tous de vraies villes (jamais de placeholder) :
+  //   LLM → grande ville du département (code postal) → ville de l'entreprise.
+  // Écriture fill-only : une valeur saisie à la main n'est jamais écrasée.
+  {
+    const seoCity =
+      extraction.closest_big_city ??
+      bigCityFromCodePostal(ctx.entreprise.code_postal) ??
+      ctx.entreprise.ville;
+    if (seoCity) {
+      if (!ctx.lmp.override_city) {
+        lmpUpdate.override_city = seoCity;
+        updatedFields.push("override_city");
+      }
+      if (!ctx.lmp.override_location) {
+        lmpUpdate.override_location = seoCity;
+        updatedFields.push("override_location");
+      }
+    } else {
+      console.warn(`[${ctx.project_id}] ville SEO indéterminable (ni LLM, ni code postal, ni ville)`);
+    }
   }
 
   // --- villes autour : stockées dans variables (jsonb) ---

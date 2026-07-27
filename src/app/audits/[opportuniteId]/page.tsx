@@ -74,7 +74,9 @@ export default function AuditPage() {
         } | null;
         const lmpVariables = lmpData?.variables || {};
         const companyAdresse = lmpData?.override_address || (lmpVariables as { address?: string }).address || company?.adresse || '';
-        const companyVille = lmpData?.override_location || lmpData?.override_city || company?.ville || '';
+        // Support marketing : on met en avant la ville SEO (`override_city`),
+        // avec repli sur son miroir historique puis sur la vraie ville.
+        const companyVille = lmpData?.override_city || lmpData?.override_location || company?.ville || '';
 
         // Problèmes pré-détectés par l'edge function d'enrichissement
         const detected = normalizeIssueKeys((lmpVariables as { audit_detected_issues?: string[] }).audit_detected_issues);

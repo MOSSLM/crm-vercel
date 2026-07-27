@@ -871,7 +871,8 @@ const ASPECT_RATIO_OPTIONS: Array<{ id: string; label: string; value: string | u
 const ENTREPRISE_VAR_LABELS: Record<string, string> = {
   "entreprise.nom": "Nom de l'entreprise",
   "entreprise.logo_url": "Logo de l'entreprise",
-  "entreprise.ville": "Ville",
+  "entreprise.ville": "Ville (adresse)",
+  "entreprise.ville_seo": "Ville SEO (grande ville)",
   "entreprise.adresse": "Adresse",
   "entreprise.code_postal": "Code postal",
   "entreprise.pays": "Pays",

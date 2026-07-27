@@ -7,6 +7,7 @@ import {
   fetchEnrichmentSlice,
 } from "@/lib/site-builder/enrichment-variables";
 import { applyProjectEnrichment } from "@/lib/site-builder/project-enrichment";
+import { resolveCities } from "@/lib/site-builder/city-variables";
 import type { StatItem } from "@/lib/site-builder/menu-overrides";
 
 export const dynamic = "force-dynamic";
@@ -140,16 +141,24 @@ export const GET = withAuth({}, async ({ req }) => {
   const servicesList = serviceTags.join(", ");
 
   const nom = proj?.override_entreprise_name ?? ent.nom ?? "";
-  const ville = proj?.override_city ?? ent.ville ?? "";
+  // ville / ville SEO / location : règle unique partagée avec le résolveur de
+  // publication. `entreprise.ville` reste la VRAIE ville — `override_city` porte
+  // désormais la ville SEO et ne doit plus l'écraser.
+  const cities = resolveCities({
+    ville: ent.ville,
+    overrideCity: proj?.override_city,
+    overrideLocation: proj?.override_location,
+  });
+  const ville = cities.ville;
   const telephone = proj?.override_phone ?? ent.telephone ?? "";
   const email = proj?.override_email ?? ent.email ?? "";
   const adresse = proj?.override_address ?? ent.adresse ?? "";
 
   const variables: Record<string, string> = {
     "entreprise.nom":         nom,
-    "entreprise.ville":       ville,
-    "entreprise.ville_seo":   proj?.override_city ?? "",
-    "entreprise.location":    proj?.override_location ?? ville,
+    "entreprise.ville":       cities.ville,
+    "entreprise.ville_seo":   cities.villeSeo,
+    "entreprise.location":    cities.location,
     "entreprise.telephone":   telephone,
     "entreprise.email":       email,
     "entreprise.adresse":     adresse,

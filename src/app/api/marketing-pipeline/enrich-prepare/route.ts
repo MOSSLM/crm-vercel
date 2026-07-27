@@ -22,6 +22,9 @@ const OVERWRITE_CLEARED_COLUMNS = {
   override_entreprise_name: null,
   override_email: null,
   override_address: null,
+  // Ville SEO (`override_city`) + son miroir historique : sans ce reset, un
+  // ré-enrichissement « overwrite » conserverait une ville SEO devenue fausse.
+  override_city: null,
   override_location: null,
   logo_url: null,
   stat_years_experience: null,

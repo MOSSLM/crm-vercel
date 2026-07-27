@@ -75,7 +75,7 @@ const EXTRACTION_SCHEMA = {
     },
     closest_big_city: {
       type: ["string", "null"],
-      description: "La grande ville (préfecture/sous-préfecture ou ville connue >20k hab) la plus proche de l'adresse de l'entreprise, dans un rayon de 30 à 50 km. Si l'entreprise est DÉJÀ dans cette grande ville, mettre cette ville. Null si adresse inconnue.",
+      description: "VILLE SEO — la grande ville (préfecture/sous-préfecture ou ville connue >20k hab) la plus proche de l'adresse, dans un rayon de 30 à 50 km. C'est elle qui sera mise en avant partout sur le site. Si l'entreprise est DÉJÀ dans une grande ville, renvoyer cette ville elle-même (ex: Dijon → Dijon). Sinon, la grande ville voisine (ex: Quetigny → Dijon). Ce champ est quasi toujours renseignable : le code postal suffit à situer le département. Ne renvoyer null QUE si l'adresse ET le code postal sont inconnus.",
     },
     surrounding_cities: {
       type: "array",
@@ -111,7 +111,9 @@ const JSON_SHAPE_HINT = `Réponds UNIQUEMENT avec un objet JSON valide respectan
   "site_accessible": true,
   "site_accessible_reason": "string|null"
 }
-N'ajoute aucune clé supplémentaire, aucun texte hors du JSON.`;
+N'ajoute aucune clé supplémentaire, aucun texte hors du JSON.
+
+Rappel sur "closest_big_city" (VILLE SEO) : c'est la grande ville mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, renvoie cette ville elle-même ; sinon la grande ville voisine. null uniquement si l'adresse ET le code postal sont inconnus.`;
 
 export interface LLMInput {
   site_markdown: string; // concaténation des pages scrapées
@@ -343,6 +345,7 @@ RÈGLES IMPORTANTES :
 - N'invente AUCUNE information. Si tu n'es pas sûr, retourne null.
 - Pour les services : utilise UNIQUEMENT la taxonomie fournie (climatisation, pompe à chaleur, chauffage, ventilation, plomberie, électricité, photovoltaïque, rénovation). Ajoute un tag custom SEULEMENT si un service mentionné ne rentre dans aucune catégorie.
 - Pour la géographie : raisonne sur la position réelle de la ville en France. Donne des vraies villes existantes. Évite de citer des communes trop petites (<3000 hab) ou trop lointaines (>50km).
+- La VILLE SEO (closest_big_city) est la donnée la plus importante de la partie géographique : c'est la grande ville affichée partout sur le site. Le code postal suffit à situer le département, donc tu dois presque toujours pouvoir la déterminer — ne te rabats sur null qu'en dernier recours.
 - Pour le logo : l'URL doit être ABSOLUE (https://...) et pointer vers une image (.png/.jpg/.svg/.webp). Regarde les balises <img> du header/footer dans le markdown.
 - Pour l'email : privilégie toujours un email de type contact@, info@, commercial@ plutôt qu'un email perso. S'il y a plusieurs emails, prends le plus pro.`;
 

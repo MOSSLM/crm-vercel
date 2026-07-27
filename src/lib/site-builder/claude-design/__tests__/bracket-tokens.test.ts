@@ -59,6 +59,27 @@ describe("defaultMappingFromTokens", () => {
   });
 });
 
+describe("ville / ville SEO", () => {
+  // Les templates distinguent la ville de l'adresse ([Ville]) de la grande ville
+  // mise en avant dans le texte marketing ([Ville SEO]) : les deux crochets
+  // doivent se tokeniser vers deux variables différentes, sans intervention
+  // dans l'écran de mapping.
+  const html = "<h1>Plombier à [Ville SEO]</h1><li>[N° et rue], [Code postal] [Ville]</li>";
+
+  it("maps each bracket to its own token", () => {
+    const byFind = Object.fromEntries(detectBracketTokens(html).map((t) => [t.find, t]));
+    expect(byFind["[Ville SEO]"].suggestedToken).toBe("{{ entreprise.ville_seo }}");
+    expect(byFind["[Ville]"].suggestedToken).toBe("{{ entreprise.ville }}");
+  });
+
+  it("tokenises both automatically with the default mapping", () => {
+    const { html: out } = applyBracketTokens(html, defaultMappingFromTokens(detectBracketTokens(html)));
+    expect(out).toContain("<h1>Plombier à {{ entreprise.ville_seo }}</h1>");
+    expect(out).toContain("{{ entreprise.code_postal }} {{ entreprise.ville }}");
+    expect(out).not.toContain("[Ville");
+  });
+});
+
 describe("detectIdentityStrings", () => {
   it("reports hardcoded city/postal when present", () => {
     const found = detectIdentityStrings("<p>74000 Annecy, Annecy</p>");

@@ -30,17 +30,35 @@ le token `{{ entreprise.xxx }}` du §3, qui fonctionne partout (texte et attribu
 | `[Nom de l'entreprise]` | Nom de l'entreprise |
 | `[XX XX XX XX XX]` | Numéro de téléphone (format affiché : `06 12 34 56 78`) |
 | `[N° et rue]` | Adresse postale (numéro + rue) |
-| `[Ville]` | Ville |
+| `[Ville SEO]` | **Grande ville mise en avant** (ex. `Dijon`) — voir la règle ci-dessous |
+| `[Ville]` | Ville réelle de l'adresse postale (ex. `Quetigny`) |
 | `[Code postal]` | Code postal |
 | `[Région]` | Région |
 | `[Département]` | Département |
 | `[Zones desservies]` | Liste des villes/zones d'intervention (ex. `Annecy, Seynod, Cran-Gevrier`) |
 
+### ⚠️ Règle « Ville SEO » vs « Ville » — la plus importante de cette liste
+
+Une entreprise est rarement située dans la grande ville qu'elle veut cibler. Son
+adresse est à Quetigny, mais tout son SEO se joue sur Dijon. D'où **deux
+placeholders distincts, jamais interchangeables** :
+
+| Placeholder | Contenu | Où l'utiliser |
+|---|---|---|
+| `[Ville SEO]` | La grande ville la plus proche (`Dijon`). Si l'entreprise est déjà dans une grande ville, c'est cette ville. **Toujours renseignée.** | **Tout le texte marketing** : `<h1>`/`<h2>`, accroches, section « zone d'intervention », chips de villes, phrase du footer, `<title>`/meta |
+| `[Ville]` | La ville réelle de l'adresse (`Quetigny`) | **Uniquement l'adresse postale** (bloc contact, footer, mentions légales, données structurées) et le `placeholder` d'un champ « Ville » de formulaire |
+
+Par défaut, quand tu écris une phrase qui vend l'entreprise, c'est `[Ville SEO]`.
+`[Ville]` ne sort que collé à un numéro de rue ou à un code postal.
+
 Exemples d'usage en contexte :
 
 ```html
-<p>[Nom de l'entreprise], votre chauffagiste à [Ville] ([Code postal]) et dans tout le département [Département].</p>
-<p>Nous intervenons à [Ville] et dans les environs : [Zones desservies].</p>
+<h1>Chauffagiste à [Ville SEO]</h1>
+<p>[Nom de l'entreprise] intervient à [Ville SEO] et dans tout le département [Département].</p>
+<p>Nous intervenons dans un rayon de 40 km autour de [Ville SEO] : [Zones desservies].</p>
+
+<!-- Adresse postale : c'est le SEUL endroit où l'on écrit [Ville] -->
 <footer>
   <p>[Nom de l'entreprise] — [N° et rue], [Code postal] [Ville]</p>
 </footer>
@@ -63,7 +81,8 @@ Pour l'**email affiché en texte**, pas de crochet : utilise directement le toke
 | `{{ entreprise.email }}` | Email de contact |
 | `{{ entreprise.email_domain }}` | Domaine de l'email (partie après le `@`) |
 | `{{ entreprise.adresse }}` | Adresse (n° + rue) |
-| `{{ entreprise.ville }}` | Ville |
+| `{{ entreprise.ville_seo }}` | **Grande ville mise en avant** (`Dijon`) — l'équivalent token de `[Ville SEO]`. Jamais vide : elle retombe sur la ville réelle si l'entreprise est déjà dans une grande ville |
+| `{{ entreprise.ville }}` | Ville réelle de l'adresse (`Quetigny`) — réservée à l'adresse postale |
 | `{{ entreprise.code_postal }}` | Code postal |
 | `{{ entreprise.departement }}` | Département (déduit du code postal) |
 | `{{ entreprise.region }}` | Région (déduite du code postal) |
@@ -81,7 +100,7 @@ restent correctes sans la valeur (jamais au cœur d'un hero).
 
 | Token | Contenu |
 |---|---|
-| `{{ entreprise.location }}` | Grande ville / zone d'intervention principale |
+| `{{ entreprise.location }}` | Alias historique de `{{ entreprise.ville_seo }}` — conservé pour les designs déjà publiés. **Pour un nouveau design, utilise `ville_seo`.** |
 | `{{ entreprise.zones_desservies }}` | Villes desservies autour (liste) |
 | `{{ entreprise.horaires }}` | Horaires d'ouverture (texte) |
 | `{{ entreprise.annee_experience }}` | Années d'expérience (nombre) |
@@ -263,6 +282,10 @@ d'**identité de l'entreprise** (§2 et §3) sont variables.
       des §2/§3.
 - [ ] Tous les crochets utilisés appartiennent à la liste fermée du §2
       (orthographe exacte).
+- [ ] **Chaque mention de ville dans un texte marketing (titres, accroches, zone
+      d'intervention, chips, footer) utilise `[Ville SEO]` ; `[Ville]` n'apparaît
+      que dans l'adresse postale et le placeholder du champ « Ville » du
+      formulaire.**
 - [ ] Tous les `tel:` utilisent `{{ entreprise.telephone_lien }}` et les
       `mailto:` utilisent `{{ entreprise.email }}`.
 - [ ] Logo = `src="{{ entreprise.logo_url }}"`, hauteur contrainte,
