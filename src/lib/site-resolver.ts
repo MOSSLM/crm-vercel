@@ -6,6 +6,7 @@ import {
   type ReviewItem,
 } from "@/lib/site-builder/resolve-variables";
 import { SAMPLE_VARIABLES } from "@/lib/site-builder/claude-design/sample-variables";
+import { selectDroppingMissingColumns } from "@/lib/schema-drift";
 
 export type { ReviewItem };
 
@@ -26,11 +27,78 @@ function buildClaudeDesign(
   };
 }
 
+/**
+ * The Supabase project ref the SERVER is configured against ("abcd1234" out of
+ * https://abcd1234.supabase.co). Surfaced on the preview failure page so a
+ * schema fix is applied to the project the app actually reads, rather than
+ * whichever one happens to be open in the dashboard.
+ */
+export function supabaseProjectRef(): string | null {
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!url) return null;
+  return /^https?:\/\/([^.]+)\./.exec(url)?.[1] ?? null;
+}
+
 function getServiceClient() {
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
   return createClient(url, key, { auth: { persistSession: false } });
+}
+
+/**
+ * A `sites` row as the resolvers read it. Every column is optional on purpose:
+ * `selectDroppingMissingColumns` may have dropped any of them, so the reads
+ * below must stay defensive rather than assume the full schema is present.
+ */
+interface SiteRowLike {
+  id: string;
+  name?: string | null;
+  is_published?: boolean | null;
+  published_subdomain?: string | null;
+  published_domain?: string | null;
+  enterprise_id?: number | null;
+  paywall_enabled?: boolean | null;
+  booking_url?: string | null;
+  lead_magnet_project_id?: string | null;
+  site_config?: SiteConfig | null;
+  style_guide?: StyleGuide | null;
+  sitemap?: SitemapPage[] | null;
+  published_style_guide?: StyleGuide | null;
+  published_site_config?: (Partial<SiteConfig> & { menus?: SiteMenus }) | null;
+  published_sitemap?: SitemapPage[] | null;
+  published_instances?: Array<unknown> | null;
+  published_variables?: Record<string, string> | null;
+  published_reviews?: ReviewItem[] | null;
+  is_claude_design?: boolean | null;
+  shared_assets?: ClaudeSharedAssets | null;
+  tweaks?: Record<string, unknown> | null;
+  published_shared_assets?: ClaudeSharedAssets | null;
+  published_tweaks?: Record<string, unknown> | null;
+}
+
+/** Columns read for a PUBLISHED site (`resolveSite`). */
+const PUBLISHED_SITE_COLUMNS = [
+  "id", "name", "is_published", "published_subdomain", "published_domain", "enterprise_id",
+  "paywall_enabled", "booking_url", "lead_magnet_project_id", "site_config", "style_guide",
+  "published_style_guide", "published_site_config", "published_sitemap", "published_instances",
+  "published_variables", "published_reviews", "is_claude_design", "shared_assets", "tweaks",
+  "published_shared_assets", "published_tweaks",
+] as const;
+
+/** Columns read for a DRAFT/template site (`resolveDraftSite`). */
+const DRAFT_SITE_COLUMNS = [
+  "id", "name", "enterprise_id", "paywall_enabled", "booking_url", "lead_magnet_project_id",
+  "site_config", "style_guide", "sitemap", "is_claude_design", "shared_assets", "tweaks",
+] as const;
+
+function warnDroppedColumns(where: string, dropped: string[]) {
+  if (dropped.length === 0) return;
+  console.warn(
+    `[site-resolver] ${where}: colonnes absentes de la base — ${dropped.join(", ")}. ` +
+      `Une migration SQL n'a pas été appliquée sur cet environnement ; ` +
+      `les fonctionnalités correspondantes sont désactivées.`,
+  );
 }
 
 export interface ResolvedSite {
@@ -83,24 +151,29 @@ export async function resolveSite(
 ): Promise<ResolvedSite | null> {
   const supabase = getServiceClient();
 
-  // Try subdomain first, then custom domain
-  let query = supabase
-    .from("sites")
-    .select(
-      "id, name, is_published, published_subdomain, published_domain, enterprise_id, paywall_enabled, booking_url, lead_magnet_project_id, site_config, style_guide, published_style_guide, published_site_config, published_sitemap, published_instances, published_variables, published_reviews, is_claude_design, shared_assets, tweaks, published_shared_assets, published_tweaks"
-    )
-    .eq("is_published", true);
+  if (!subdomain && !host) return null;
 
-  if (subdomain) {
-    query = query.eq("published_subdomain", subdomain);
-  } else if (host) {
-    query = query.eq("published_domain", host);
-  } else {
+  const { data: siteRow, error, dropped } = await selectDroppingMissingColumns<SiteRowLike>(
+    PUBLISHED_SITE_COLUMNS,
+    (select) => {
+    // Try subdomain first, then custom domain
+    const query = supabase.from("sites").select(select).eq("is_published", true);
+    return subdomain
+      ? query.eq("published_subdomain", subdomain).single()
+      : query.eq("published_domain", host as string).single();
+    },
+  );
+  warnDroppedColumns(`resolveSite(${subdomain || host})`, dropped);
+  if (error || !siteRow) {
+    // PGRST116 ("no rows") is the ordinary unknown-subdomain case — not worth a
+    // log line on every stray request. Anything else is a real failure.
+    if (error && error.code !== "PGRST116") {
+      console.warn(
+        `[site-resolver] resolveSite(${subdomain || host}) → ${error.code ?? "?"} ${error.message}`,
+      );
+    }
     return null;
   }
-
-  const { data: siteRow, error } = await query.single();
-  if (error || !siteRow) return null;
 
   let config: SiteConfig = siteRow.site_config ?? {
     theme: "theme-default",
@@ -108,6 +181,7 @@ export async function resolveSite(
       colors: { primary: "#1a56db", secondary: "#6b7280", accent: "#f59e0b", background: "#ffffff", text: "#111827" },
       fonts: { heading: "Inter", body: "Inter" },
     },
+    pages: [],
     sections: [],
   };
 
@@ -201,7 +275,7 @@ export async function resolveSite(
     companyName,
     logoUrl,
     phone,
-    isPublished: siteRow.is_published,
+    isPublished: Boolean(siteRow.is_published),
     styleGuide: (siteRow.style_guide as StyleGuide) ?? null,
     publishedStyleGuide: (siteRow.published_style_guide as StyleGuide) ?? null,
     publishedInstances: (siteRow.published_instances as Array<unknown>) ?? null,
@@ -226,34 +300,32 @@ export async function resolveSite(
  * Returns a discriminated result rather than a bare null: the failure reason is
  * the whole diagnosis when a preview 404s, and a null threw it away.
  */
+/** Machine-readable cause, so the failure page can advise instead of guessing. */
+export type DraftFailureKind = "site-missing" | "query-failed";
+
 export type DraftSiteResult =
   | { ok: true; site: ResolvedSite }
-  | { ok: false; reason: string };
+  | { ok: false; kind: DraftFailureKind; reason: string };
 
 export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult> {
   const supabase = getServiceClient();
 
-  const { data: siteRow, error } = await supabase
-    .from("sites")
-    .select(
-      "id, name, enterprise_id, paywall_enabled, booking_url, lead_magnet_project_id, site_config, style_guide, sitemap, is_claude_design, shared_assets, tweaks",
-    )
-    .eq("id", siteId)
-    .single();
-  // Never fail silently: this null becomes a bare 404 on the preview subdomain,
-  // and the cause is usually a schema drift (one of the columns above missing in
-  // this environment) rather than an unknown id. Same lesson as
-  // api/site-builder/claude/[siteId]/pages/route.ts.
+  const { data: siteRow, error, dropped } = await selectDroppingMissingColumns<SiteRowLike>(
+    DRAFT_SITE_COLUMNS,
+    (select) =>
+      supabase.from("sites").select(select).eq("id", siteId).single(),
+  );
+  warnDroppedColumns(`resolveDraftSite(${siteId})`, dropped);
+  // Never fail silently: this used to become a bare 404 on the preview
+  // subdomain. Same lesson as api/site-builder/claude/[siteId]/pages/route.ts.
   if (error || !siteRow) {
-    // PGRST116 = "no rows" from .single(); anything else is a real query failure
-    // (most often a column in the select above missing in this environment).
-    const reason = error
-      ? error.code === "PGRST116"
-        ? `aucun site n'a l'identifiant ${siteId}`
-        : `la requête sur "sites" a échoué (${error.code ?? "?"}: ${error.message})`
+    // PGRST116 = "no rows" from .single(); anything else is a real query failure.
+    const queryFailed = Boolean(error) && error?.code !== "PGRST116";
+    const reason = queryFailed
+      ? `la requête sur "sites" a échoué (${error?.code ?? "?"}: ${error?.message})`
       : `aucun site n'a l'identifiant ${siteId}`;
     console.warn(`[site-resolver] resolveDraftSite(${siteId}) → ${reason}`);
-    return { ok: false, reason };
+    return { ok: false, kind: queryFailed ? "query-failed" : "site-missing", reason };
   }
 
   // Live section instances (no published snapshot) + their defs for native sections.
@@ -269,7 +341,7 @@ export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult>
       `la requête sur "site_section_instances" a échoué ` +
       `(${instancesError.code ?? "?"}: ${instancesError.message})`;
     console.warn(`[site-resolver] resolveDraftSite(${siteId}) → ${reason}`);
-    return { ok: false, reason };
+    return { ok: false, kind: "query-failed", reason };
   }
   const instances = (instanceRows ?? []) as Array<unknown>;
 
@@ -351,6 +423,10 @@ export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult>
  * instead of blanking the whole probe.
  */
 export interface DraftSiteProbe {
+  /** Supabase project ref the SERVER talks to, from SUPABASE_URL. Names which
+   *  project to open in the dashboard — the client bundle hardcodes its own in
+   *  utils/supabase/info.tsx, and the two are not guaranteed to match. */
+  projectRef: string | null;
   siteExists: boolean;
   siteName: string | null;
   isTemplate: boolean;
@@ -367,6 +443,7 @@ export interface DraftSiteProbe {
 export async function probeDraftSite(siteId: string): Promise<DraftSiteProbe> {
   const supabase = getServiceClient();
   const probe: DraftSiteProbe = {
+    projectRef: supabaseProjectRef(),
     siteExists: false,
     siteName: null,
     isTemplate: false,

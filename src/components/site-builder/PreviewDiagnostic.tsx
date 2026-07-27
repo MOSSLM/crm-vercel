@@ -11,12 +11,51 @@ import type { DraftSiteProbe } from "@/lib/site-resolver";
  * access to the whole design, so naming the cause leaks nothing new.
  */
 
+/** Why the preview failed, as reported by the code that failed — never inferred. */
+export type PreviewFailureKind =
+  | "site-missing"
+  | "query-failed"
+  | "no-sections"
+  | "page-missing";
+
 interface Verdict {
   title: string;
   advice: React.ReactNode;
 }
 
-function verdictFor(probe: DraftSiteProbe | null, reason: string): Verdict {
+function verdictFor(
+  probe: DraftSiteProbe | null,
+  kind: PreviewFailureKind,
+  reason: string,
+): Verdict {
+  // A failed query is always the headline: the rest of what we know about the
+  // design was read by other queries and would otherwise blame the design for a
+  // schema problem (the "no page matches" verdict a missing column used to get).
+  if (kind === "query-failed" || (probe && probe.queryErrors.length > 0)) {
+    return {
+      title: "La base de données de cet environnement n'est pas à jour.",
+      advice: (
+        <>
+          Une requête a échoué sur une colonne absente : une migration SQL du dossier{" "}
+          <code>/sql</code> n&apos;a pas été appliquée sur cette base. Exécutez{" "}
+          <code>sql/RATTRAPAGE_colonnes_sites.sql</code> dans l&apos;éditeur SQL Supabase
+          (idempotent : <code>add column if not exists</code>), puis rechargez cette page.
+          {probe?.projectRef && (
+            <div style={{ marginTop: 10 }}>
+              À exécuter dans le projet Supabase{" "}
+              <strong style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace" }}>
+                {probe.projectRef}
+              </strong>{" "}
+              — celui que ce serveur interroge. Une erreur{" "}
+              <code>relation &quot;public.sites&quot; does not exist</code> signifie que
+              l&apos;éditeur SQL est ouvert sur un autre projet.
+            </div>
+          )}
+        </>
+      ),
+    };
+  }
+
   if (!probe) {
     return {
       title: reason,
@@ -84,14 +123,16 @@ function verdictFor(probe: DraftSiteProbe | null, reason: string): Verdict {
 
 export function PreviewDiagnostic({
   siteId,
+  kind,
   reason,
   probe,
 }: {
   siteId: string;
+  kind: PreviewFailureKind;
   reason: string;
   probe: DraftSiteProbe | null;
 }) {
-  const verdict = verdictFor(probe, reason);
+  const verdict = verdictFor(probe, kind, reason);
 
   return (
     <div

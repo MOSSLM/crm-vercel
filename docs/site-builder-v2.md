@@ -152,6 +152,25 @@ Un aperçu en échec affiche son auto-diagnostic (`PreviewDiagnostic` : cause ex
 pages réellement disponibles, erreurs de schéma) ; un site publié affiche la 404
 brandée `src/app/site/[subdomain]/not-found.tsx`.
 
+### ⚠️ Décalage de schéma (migrations SQL non appliquées)
+
+Les tables sont construites par ~85 migrations du dossier `/sql` appliquées **à la
+main** dans Supabase, sans exécuteur en CI. Une base qui retarde d'une colonne sur
+le code est donc un incident courant — et il a déjà mis hors ligne tous les aperçus
+et tous les sites publiés à la fois (`column sites.paywall_enabled does not exist`,
+migration `20260722_demo_site_paywall.sql` jamais appliquée).
+
+Deux protections :
+
+1. `src/lib/schema-drift.ts` (`selectDroppingMissingColumns`) rejoue le `select`
+   sans les colonnes absentes. La fonctionnalité correspondante est désactivée,
+   le reste du site s'affiche, et un avertissement `[site-resolver]` nomme les
+   colonnes retirées. Corollaire : **toute valeur lue d'une ligne `sites` doit
+   avoir un `?? défaut`** — ne présumez jamais qu'une colonne existe.
+2. `sql/RATTRAPAGE_colonnes_sites.sql` regroupe toutes les colonnes de `sites`
+   attendues par le code, en `add column if not exists`. À exécuter dans
+   l'éditeur SQL Supabase pour remettre une base à niveau.
+
 ### Publication d'un site
 
 1. Dans l'éditeur V2, cliquer "Publier"

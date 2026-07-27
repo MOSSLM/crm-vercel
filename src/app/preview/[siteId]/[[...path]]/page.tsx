@@ -7,7 +7,7 @@ import { parseEnterpriseTags } from "@/components/site-builder/SitePageView";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { resolvePreviewSlug } from "@/lib/site-builder/preview-slug";
-import { PreviewDiagnostic } from "@/components/site-builder/PreviewDiagnostic";
+import { PreviewDiagnostic, type PreviewFailureKind } from "@/components/site-builder/PreviewDiagnostic";
 
 interface PreviewProps {
   params: Promise<{ siteId: string; path?: string[] }>;
@@ -22,12 +22,18 @@ function slugFromPath(path: string[] | undefined): string {
 /**
  * Why a preview can't render. Thrown rather than returned so the checks below
  * stay linear; caught in the page, which renders the self-service diagnosis.
+ * `kind` keeps the cause machine-readable so the diagnosis advises from the
+ * actual failure rather than inferring one from the row it managed to read.
  */
-class PreviewUnavailable extends Error {}
+class PreviewUnavailable extends Error {
+  constructor(readonly kind: PreviewFailureKind, reason: string) {
+    super(reason);
+  }
+}
 // A function declaration, not an arrow: TS only narrows control flow through
 // never-returning calls when the callee is declared this way.
-function unavailable(reason: string): never {
-  throw new PreviewUnavailable(reason);
+function unavailable(kind: PreviewFailureKind, reason: string): never {
+  throw new PreviewUnavailable(kind, reason);
 }
 
 // Re-emit the viewport meta (stripped on import) so mobile @media fires, and
@@ -42,13 +48,14 @@ export const metadata: Metadata = { robots: { index: false, follow: false } };
 /** Everything the renderer needs, or a PreviewUnavailable carrying the reason. */
 async function loadPreview(siteId: string, path: string[] | undefined) {
   const result = await resolveDraftSite(siteId);
-  if (!result.ok) unavailable(result.reason);
+  if (!result.ok) unavailable(result.kind, result.reason);
 
   const { site } = result;
   const { enterpriseVariables, publishedInstances, publishedSitemap } = site;
 
   if (!publishedInstances || publishedInstances.length === 0) {
     unavailable(
+      "no-sections",
       "ce design ne contient aucune section enregistrée " +
         "(import interrompu, ou rien n'a encore été enregistré dans l'éditeur)",
     );
@@ -65,7 +72,7 @@ async function loadPreview(siteId: string, path: string[] | undefined) {
     return !tag || enterpriseTags.includes(tag);
   };
   const resolved = resolvePreviewSlug(instances, publishedSitemap, requestedSlug, tagAllows);
-  if (!resolved) unavailable(`aucune page visible ne correspond à « ${requestedSlug} »`);
+  if (!resolved) unavailable("page-missing", `aucune page visible ne correspond à « ${requestedSlug} »`);
 
   const { slug: pageSlug, fellBack } = resolved;
   const targetPage = publishedSitemap?.find((p) => p.slug === pageSlug);
@@ -74,10 +81,10 @@ async function loadPreview(siteId: string, path: string[] | undefined) {
   // a missing service tag. Skipped for a fallback slug — it was picked from the
   // instances that do exist, so re-checking the sitemap would undo the fallback.
   if (!fellBack && pageSlug !== "/" && !targetPage) {
-    unavailable(`« ${pageSlug} » n'est pas dans le plan du site`);
+    unavailable("page-missing", `« ${pageSlug} » n'est pas dans le plan du site`);
   }
   if (targetPage?.service_tag && !enterpriseTags.includes(targetPage.service_tag)) {
-    unavailable(`« ${pageSlug} » est réservée au service « ${targetPage.service_tag} »`);
+    unavailable("page-missing", `« ${pageSlug} » est réservée au service « ${targetPage.service_tag} »`);
   }
 
   return {
@@ -112,7 +119,7 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
     // full read access to the design, and the platform logs where the reason
     // used to live are exactly what the link's recipients can't reach.
     const probe = await probeDraftSite(siteId).catch(() => null);
-    return <PreviewDiagnostic siteId={siteId} reason={e.message} probe={probe} />;
+    return <PreviewDiagnostic siteId={siteId} kind={e.kind} reason={e.message} probe={probe} />;
   }
 
   const { site, pageSlug, visibleMenus } = data;
