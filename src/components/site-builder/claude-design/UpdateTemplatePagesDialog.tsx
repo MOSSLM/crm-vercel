@@ -16,6 +16,8 @@ import {
   sharedJsFromBundle,
 } from "@/lib/site-builder/claude-design/build-import-pages";
 import { uploadBundleImages } from "@/lib/site-builder/claude-design/upload-bundle-images";
+import { buildTweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
+import { parseThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
 import {
   splitTemplateBundle,
   normalizeTemplateName,
@@ -139,11 +141,20 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
 
       const payload: Record<string, unknown> = { pages };
       if (updateShared) {
+        // The Tweaks schema (the panel's controls) and the theme sets (what a
+        // tweak VALUE means in CSS) belong to the incoming skin: a stale schema
+        // hides its options, stale sets apply the previous skin's typeface.
+        const pageTweaksBySlug: Record<string, string> = {};
+        for (const p of bundle.pages) {
+          if (p.tweaksFile && bundle.tweaksJsx[p.tweaksFile]) pageTweaksBySlug[p.slug] = bundle.tweaksJsx[p.tweaksFile];
+        }
         payload.updateShared = true;
         payload.sharedCss = rewriteAssets(bundle.sharedCss, urlByPath);
         payload.sharedJs = sharedJsFromBundle(bundle, urlByPath);
         payload.scriptLinks = bundle.scriptLinks;
         payload.fontLinks = bundle.fontLinks;
+        payload.tweaksSchema = buildTweaksSchema(bundle.tweaksJsx["theme-tweaks.jsx"] ?? "", pageTweaksBySlug);
+        payload.themeSets = parseThemeSets(bundle.themeApplyJs);
       }
 
       setProgress("Mise à jour du template…");
@@ -153,9 +164,12 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec de la mise à jour");
-      const { updated = 0, created = 0, keptOverrides = 0, droppedOverrides = [] } = (await res.json()) as {
-        updated?: number; created?: number; keptOverrides?: number;
-        droppedOverrides?: Array<{ slug: string; keys: string[] }>;
+      const {
+        updated = 0, created = 0, keptOverrides = 0, uncertainOverrides = 0,
+        droppedOverrides = [], unverifiedPages = [],
+      } = (await res.json()) as {
+        updated?: number; created?: number; keptOverrides?: number; uncertainOverrides?: number;
+        droppedOverrides?: Array<{ slug: string; keys: string[] }>; unverifiedPages?: string[];
       };
 
       const parts = [
@@ -168,11 +182,17 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
       // The markup moved under some edits: say which pages, so the operator knows
       // exactly where to look instead of hunting for a photo that vanished.
       const lost = droppedOverrides.reduce((n, d) => n + d.keys.length, 0);
+      if (uncertainOverrides > 0) {
+        toast.warning(`${uncertainOverrides} placement${uncertainOverrides > 1 ? "s" : ""} à vérifier — le markup a bougé à cet endroit.`, { duration: 10000 });
+      }
       if (lost > 0) {
-        toast.warning(
-          `${lost} réglage${lost > 1 ? "s" : ""} n’a pas pu être reporté (${droppedOverrides.map((d) => d.slug).join(", ")}) — le markup a changé à cet endroit.`,
-          { duration: 10000 },
+        toast.error(
+          `${lost} image${lost > 1 ? "s" : ""} n’a pas pu être replacée (${droppedOverrides.map((d) => d.slug).join(", ")}). Utilise « Restaurer les images » pour les récupérer.`,
+          { duration: 15000 },
         );
+      }
+      if (unverifiedPages.length > 0) {
+        toast.warning(`Version précédente inconnue sur ${unverifiedPages.length} page(s) — les images ont été conservées telles quelles, à vérifier.`, { duration: 10000 });
       }
       onDone?.();
       onClose();

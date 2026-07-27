@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
   Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
-  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff, FileArchive, Images,
+  Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff, FileArchive, Images, History as HistoryIcon,
 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import type { SitemapPage } from "@/types";
@@ -29,6 +29,7 @@ import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
 import { MissingImagesPanel } from "./MissingImagesPanel";
 import { UpdateTemplatePagesDialog } from "./UpdateTemplatePagesDialog";
 import { CopyImagesDialog } from "./CopyImagesDialog";
+import { RestoreImagesDialog } from "./RestoreImagesDialog";
 
 interface PageData {
   slug: string;
@@ -42,7 +43,7 @@ interface PageData {
 }
 interface BoardData {
   name: string;
-  sharedAssets: { css?: string; fonts?: string[]; js?: string; scriptLinks?: string[] };
+  sharedAssets: { css?: string; fonts?: string[]; js?: string; scriptLinks?: string[]; themeSets?: unknown };
   tweaks: Tweaks;
   tweaksSchema: TweaksSchema;
   sitemap: SitemapPage[];
@@ -82,6 +83,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   const [save, setSave] = React.useState<SaveState>("saved");
   const [importPagesOpen, setImportPagesOpen] = React.useState(false);
   const [copyImagesOpen, setCopyImagesOpen] = React.useState(false);
+  const [restoreOpen, setRestoreOpen] = React.useState(false);
   const [companies, setCompanies] = React.useState<Company[]>([]);
   const [company, setCompany] = React.useState<Company | null>(null);
   const [companyVars, setCompanyVars] = React.useState<Record<string, string> | null>(null);
@@ -485,6 +487,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               html={active.html}
               sharedCss={data.sharedAssets.css ?? ""}
               fontLinks={data.sharedAssets.fonts ?? []}
+              themeSets={data.sharedAssets.themeSets}
               js={data.sharedAssets.js ?? ""}
               pageJs={active.pageJs}
               scriptLinks={data.sharedAssets.scriptLinks ?? []}
@@ -518,6 +521,14 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               >
                 <ImageOff className="ico-sm" />Réinitialiser les images de cette page
               </button>
+              <button
+                className="cd-btn outline"
+                onClick={() => setRestoreOpen(true)}
+                style={{ width: "100%", justifyContent: "center", marginTop: 8 }}
+                title="Remettre les images sauvegardées avant un import"
+              >
+                <HistoryIcon className="ico-sm" />Restaurer les images
+              </button>
             </div>
           )}
           <VariableBrowser siteId={siteId} company={company} companyVars={companyVars} onRetokenised={load} />
@@ -535,6 +546,13 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
         siteId={siteId}
         pages={data.pages.map((p) => ({ slug: p.slug, title: p.title }))}
         onClose={() => setCopyImagesOpen(false)}
+        onDone={load}
+      />
+
+      <RestoreImagesDialog
+        open={restoreOpen}
+        siteId={siteId}
+        onClose={() => setRestoreOpen(false)}
         onDone={load}
       />
     </div>

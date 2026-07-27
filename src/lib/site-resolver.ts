@@ -11,7 +11,14 @@ import { selectDroppingMissingColumns } from "@/lib/schema-drift";
 export type { ReviewItem };
 
 /** shared_assets JSONB shape for a Claude design site. */
-type ClaudeSharedAssets = { css?: string; js?: string; scriptLinks?: string[]; fonts?: string[] };
+type ClaudeSharedAssets = {
+  css?: string;
+  js?: string;
+  scriptLinks?: string[];
+  fonts?: string[];
+  /** The design's own font/weight/corner tables (see parse-theme-sets.ts). */
+  themeSets?: unknown;
+};
 
 /** Builds the `claudeDesign` render payload from a site's shared_assets + tweaks. */
 function buildClaudeDesign(
@@ -24,6 +31,7 @@ function buildClaudeDesign(
     scriptLinks: Array.isArray(assets?.scriptLinks) ? assets.scriptLinks : [],
     fontLinks: Array.isArray(assets?.fonts) ? assets.fonts : [],
     tweaks: tweaks ?? {},
+    themeSets: assets?.themeSets ?? null,
   };
 }
 
@@ -141,6 +149,10 @@ export interface ResolvedSite {
     scriptLinks: string[];
     fontLinks: string[];
     tweaks: Record<string, unknown>;
+    /** The design's own font/weight/corner tables (see parse-theme-sets.ts).
+     *  Each skin defines its own, so a shared hardcoded table would apply the
+     *  wrong typeface to every skin but the first. */
+    themeSets?: unknown;
   } | null;
 }
 

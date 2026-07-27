@@ -76,6 +76,11 @@ export interface ParsedBundle {
   /** Deduped remote runtime `<script src>` hrefs across all pages (first-seen
    *  order); the tweak-panel toolchain is already excluded. */
   scriptLinks: string[];
+  /** Raw source of `theme-apply.js`. It is deliberately NOT executed (see
+   *  LOCAL_JS_DENYLIST), but it holds this skin's font/weight/corner tables —
+   *  the only place they exist. `parse-theme-sets.ts` reads them from here so a
+   *  variant's own typeface survives the import. */
+  themeApplyJs: string;
 }
 
 const IMAGE_EXT_MIME: Record<string, string> = {
@@ -243,6 +248,7 @@ export function parseTemplateBundle(files: BundleInputFile[]): ParsedBundle {
   const allScriptLinks = new Set<string>();
   const tweaksJsx: Record<string, string> = {};
   const jsByName: Record<string, string> = {};
+  let themeApplyJs = "";
 
   for (const file of files) {
     const e = ext(file.path);
@@ -275,9 +281,14 @@ export function parseTemplateBundle(files: BundleInputFile[]): ParsedBundle {
       editmodeBlocks.push(parseEditmode(src));
     } else if (e === "js") {
       // Keep the design's OWN runtime JS (site.js, service-*.js). theme-apply.js
-      // is excluded — apply-tweaks reproduces it, and running it would let
-      // localStorage defaults clobber the operator's tweaks.
-      if (!LOCAL_JS_DENYLIST.has(name)) jsByName[name] = decodeText(file.bytes);
+      // is excluded from EXECUTION — apply-tweaks reproduces it, and running it
+      // would let localStorage defaults clobber the operator's tweaks — but its
+      // source is kept so this skin's theme tables can be read out of it.
+      if (LOCAL_JS_DENYLIST.has(name)) {
+        if (name === "theme-apply.js") themeApplyJs = decodeText(file.bytes);
+      } else {
+        jsByName[name] = decodeText(file.bytes);
+      }
     } else if (IMAGE_EXT_MIME[e]) {
       images.push({ path: file.path, bytes: file.bytes, mime: file.mime || IMAGE_EXT_MIME[e] });
     }
@@ -307,5 +318,6 @@ export function parseTemplateBundle(files: BundleInputFile[]): ParsedBundle {
     tweaksJsx,
     jsByName,
     scriptLinks: Array.from(allScriptLinks),
+    themeApplyJs,
   };
 }

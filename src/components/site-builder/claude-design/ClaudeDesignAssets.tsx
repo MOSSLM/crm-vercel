@@ -16,11 +16,16 @@ import {
   tweaksExtrasScript,
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
+import { coerceThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
 
 export interface ClaudeDesignAssetsData {
   sharedCss: string;
   fontLinks: string[];
   tweaks: Tweaks;
+  /** This design's own font/weight/corner tables, parsed from its
+   *  `theme-apply.js` at import time. Without them a skin's typeface silently
+   *  falls back to the first design's. */
+  themeSets?: unknown;
   /** The design's own runtime JS (site.js …). Injected at the BOTTOM of the page
    *  by DynamicPageRenderer — NOT here — so it runs after the section DOM exists. */
   js: string;
@@ -28,10 +33,11 @@ export interface ClaudeDesignAssetsData {
   scriptLinks: string[];
 }
 
-export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesignAssetsData) {
-  const cssVars = tweaksToCssVars(tweaks);
-  const dataAttrs = tweaksDataAttrs(tweaks);
-  const fontHref = tweaksFontLinkHref(tweaks);
+export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks, themeSets }: ClaudeDesignAssetsData) {
+  const sets = coerceThemeSets(themeSets);
+  const cssVars = tweaksToCssVars(tweaks, sets);
+  const dataAttrs = tweaksDataAttrs(tweaks, sets);
+  const fontHref = tweaksFontLinkHref(tweaks, sets);
 
   // Base theme vars at :root so first paint is correct (no flash); the template
   // stylesheet derives the rest via color-mix from these. These MUST come AFTER
@@ -60,7 +66,7 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks }: ClaudeDesig
 
   return (
     <>
-      <link rel="stylesheet" href={fontHref} />
+      {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
       {fontLinks.map((href, i) => (
         <link key={i} rel="stylesheet" href={href} />
       ))}

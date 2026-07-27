@@ -6,8 +6,15 @@
  * Fonts link. Shared by the public renderer (server) and the Tweaks panel
  * (client live-preview).
  *
- * Keep the FONT/WEIGHT/CORNER tables in sync with the template's theme-apply.js.
+ * The FONT/WEIGHT/CORNER tables below are the ones the FIRST Claude design
+ * shipped. They are only a fallback: the export now ships several skins, each
+ * with its own sets ("Chantier" for Brut, "Agence" for Agency), so the real
+ * tables are parsed from the design's `theme-apply.js` at import time and stored
+ * in `shared_assets.themeSets` (see parse-theme-sets.ts). Every function here
+ * takes those `sets` as an optional argument and prefers them — without it, a
+ * skin's own typeface resolves to nothing and gets overwritten by Classique's.
  */
+import type { ThemeSets, FontSet, WeightSet, CornerSet } from "./parse-theme-sets";
 
 export interface Tweaks {
   fond?: string;
@@ -23,15 +30,6 @@ export interface Tweaks {
   [k: string]: unknown;
 }
 
-interface FontSet {
-  key: string;
-  serif?: boolean;
-  head: string;
-  body: string;
-  /** Google Fonts `family=` query payload. */
-  g: string;
-}
-
 export const FONT_SETS: Record<string, FontSet> = {
   "Éditorial": { key: "editorial", serif: true, head: '"Cormorant Garamond", Georgia, serif', body: '"DM Sans", system-ui, -apple-system, sans-serif', g: "Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700" },
   "Magazine": { key: "magazine", serif: true, head: '"Playfair Display", Georgia, serif', body: '"Source Sans 3", system-ui, sans-serif', g: "Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600&family=Source+Sans+3:wght@300;400;500;600;700" },
@@ -44,14 +42,14 @@ export const FONT_SETS: Record<string, FontSet> = {
   "Net": { key: "net", head: '"Space Grotesk", system-ui, sans-serif', body: '"DM Sans", system-ui, -apple-system, sans-serif', g: "Space+Grotesk:wght@300;400;500;600;700&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700" },
 };
 
-export const WEIGHT_SETS: Record<string, { key: string; head: string; body: string }> = {
+export const WEIGHT_SETS: Record<string, WeightSet> = {
   "Léger": { key: "leger", head: "300", body: "300" },
   "Normal": { key: "normal", head: "500", body: "400" },
   "Semi": { key: "semi", head: "600", body: "500" },
   "Gras": { key: "gras", head: "800", body: "600" },
 };
 
-export const CORNER_SETS: Record<string, [string, string, string]> = {
+export const CORNER_SETS: Record<string, CornerSet> = {
   "Zéro": ["0px", "0px", "0px"],
   "Net": ["4px", "5px", "8px"],
   "Doux": ["22px", "16px", "999px"],
@@ -60,13 +58,46 @@ export const CORNER_SETS: Record<string, [string, string, string]> = {
 
 const GOOGLE = "https://fonts.googleapis.com/css2?family=";
 
+/* ── set resolution ─────────────────────────────────────────────────────────
+ * A design's own tables win; the built-ins fill the gaps so a template imported
+ * before `themeSets` existed keeps working, and so a skin that only redefines
+ * some entries still resolves the shared ones. The final fallback is the first
+ * entry of the design's own table rather than a hardcoded name — "Éditorial"
+ * simply does not exist in the Agency skin.
+ */
+
+function pickSet<T>(
+  table: Record<string, T> | undefined,
+  builtin: Record<string, T>,
+  name: unknown,
+  builtinFallback: string,
+): T {
+  const merged = table && Object.keys(table).length > 0 ? { ...builtin, ...table } : builtin;
+  const hit = typeof name === "string" ? merged[name] : undefined;
+  if (hit) return hit;
+  if (table && Object.keys(table).length > 0) return Object.values(table)[0];
+  return merged[builtinFallback];
+}
+
+function fontSet(tweaks: Tweaks, sets?: ThemeSets | null): FontSet {
+  return pickSet(sets?.fontSets, FONT_SETS, (tweaks || {}).police, "Éditorial");
+}
+
+function weightSet(tweaks: Tweaks, sets?: ThemeSets | null): WeightSet {
+  return pickSet(sets?.weightSets, WEIGHT_SETS, (tweaks || {}).epaisseur, "Normal");
+}
+
+function cornerSet(tweaks: Tweaks, sets?: ThemeSets | null): CornerSet {
+  return pickSet(sets?.cornerSets, CORNER_SETS, (tweaks || {}).angles, "Doux");
+}
+
 /**
  * Builds the CSS custom properties for a tweaks object — mirrors
  * `theme-apply.js#applyTheme`. Color vars are only set when present (so a
  * partial theme doesn't clobber the stylesheet defaults); corner/weight/font
  * always resolve (with the same fallbacks as the template).
  */
-export function tweaksToCssVars(tweaks: Tweaks): Record<string, string> {
+export function tweaksToCssVars(tweaks: Tweaks, sets?: ThemeSets | null): Record<string, string> {
   const v = tweaks || {};
   const vars: Record<string, string> = {};
   if (v.fond) vars["--cream"] = v.fond;
@@ -76,16 +107,16 @@ export function tweaksToCssVars(tweaks: Tweaks): Record<string, string> {
   if (v.accent) vars["--azur"] = v.accent;
   if (v.accentChaud) vars["--terra"] = v.accentChaud;
 
-  const c = CORNER_SETS[v.angles as string] || CORNER_SETS["Doux"];
+  const c = cornerSet(v, sets);
   vars["--r-img"] = c[0];
   vars["--r-card"] = c[1];
   vars["--r-pill"] = c[2];
 
-  const w = WEIGHT_SETS[v.epaisseur as string] || WEIGHT_SETS["Normal"];
+  const w = weightSet(v, sets);
   vars["--w-head"] = w.head;
   vars["--w-body"] = w.body;
 
-  const f = FONT_SETS[v.police as string] || FONT_SETS["Éditorial"];
+  const f = fontSet(v, sets);
   vars["--serif"] = f.head;
   vars["--sans"] = f.body;
   return vars;
@@ -105,10 +136,10 @@ export function tweakEnabled(value: unknown): boolean {
  *  (`data-hide-certifs` / `data-hide-marques`, keyed by masquerCertifications /
  *  masquerMarques). Present-only: a flag is emitted only when ON, so the
  *  `html[data-hide-*]` CSS never matches while the section is shown. */
-export function tweaksDataAttrs(tweaks: Tweaks): Record<string, string> {
+export function tweaksDataAttrs(tweaks: Tweaks, sets?: ThemeSets | null): Record<string, string> {
   const v = tweaks || {};
-  const w = WEIGHT_SETS[v.epaisseur as string] || WEIGHT_SETS["Normal"];
-  const f = FONT_SETS[v.police as string] || FONT_SETS["Éditorial"];
+  const w = weightSet(v, sets);
+  const f = fontSet(v, sets);
   const attrs: Record<string, string> = {
     "data-weight": w.key,
     "data-font": f.key,
@@ -119,15 +150,16 @@ export function tweaksDataAttrs(tweaks: Tweaks): Record<string, string> {
   return attrs;
 }
 
-/** The Google Fonts stylesheet href for the tweaks' chosen typeface. */
-export function tweaksFontLinkHref(tweaks: Tweaks): string {
-  const f = FONT_SETS[(tweaks || {}).police as string] || FONT_SETS["Éditorial"];
-  return `${GOOGLE}${f.g}&display=swap`;
+/** The Google Fonts stylesheet href for the tweaks' chosen typeface, or "" when
+ *  the set carries no Google payload (a system stack needs no request). */
+export function tweaksFontLinkHref(tweaks: Tweaks, sets?: ThemeSets | null): string {
+  const f = fontSet(tweaks || {}, sets);
+  return f.g ? `${GOOGLE}${f.g}&display=swap` : "";
 }
 
 /** Serialises the CSS vars + data attrs into an inline `style=""`/attrs string. */
-export function tweaksInlineStyle(tweaks: Tweaks): string {
-  return Object.entries(tweaksToCssVars(tweaks))
+export function tweaksInlineStyle(tweaks: Tweaks, sets?: ThemeSets | null): string {
+  return Object.entries(tweaksToCssVars(tweaks, sets))
     .map(([k, v]) => `${k}:${v}`)
     .join(";");
 }
