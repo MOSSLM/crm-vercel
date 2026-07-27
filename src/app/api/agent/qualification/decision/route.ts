@@ -83,3 +83,66 @@ export const POST = withAuth<AgentQualificationDecisionPayload>(
     return json({ ok: true, decision_id: inserted?.id ?? null }, { headers: cors });
   },
 );
+
+/**
+ * DELETE /api/agent/qualification/decision?id=<decision_id>
+ *
+ * Annule une décision et remet l'entreprise dans la file à qualifier — le
+ * rattrapage d'un clic à côté.
+ *
+ * Deux garde-fous : la décision doit appartenir à l'agent, et être encore
+ * `pending`. Une fois que l'admin a tranché, l'effet réel est appliqué
+ * (qualification et son opportunité, blacklist, masquage, suppression) et
+ * l'agent n'a plus à revenir dessus — c'est à l'admin de le faire.
+ *
+ * Supprimer la ligne suffit à libérer l'entreprise : l'index unique partiel ne
+ * porte que sur les décisions `pending`, elle réapparaît donc dans la file de
+ * tous les agents. L'annulation reste tracée dans le journal d'activité.
+ */
+export const DELETE = withAuth(
+  { role: "freelance", capability: "qualify" },
+  async ({ req, user, cors }) => {
+    const decisionId = new URL(req.url).searchParams.get("id");
+    if (!decisionId) return jsonError("id requis", 400, {}, cors);
+
+    const sc = getServiceClient();
+
+    const { data: decision, error: readErr } = await sc
+      .from("agent_qualification_decisions")
+      .select("id, agent_id, entreprise_id, decision, review_status")
+      .eq("id", decisionId)
+      .maybeSingle();
+
+    if (readErr) {
+      if (readErr.code === "42P01" || readErr.code === "PGRST205") {
+        return jsonError("migration_non_appliquee", 503, {}, cors);
+      }
+      return jsonError(readErr.message, 500, {}, cors);
+    }
+    if (!decision) return jsonError("decision_introuvable", 404, {}, cors);
+    if (decision.agent_id !== user.id) return jsonError("decision_autre_agent", 403, {}, cors);
+    if (decision.review_status !== "pending") {
+      return jsonError("decision_deja_validee", 409, {}, cors);
+    }
+
+    const { error } = await sc
+      .from("agent_qualification_decisions")
+      .delete()
+      .eq("id", decisionId)
+      .eq("agent_id", user.id)
+      .eq("review_status", "pending");
+    if (error) return jsonError(error.message, 500, {}, cors);
+
+    await logAgentAction({
+      agentId: user.id,
+      entrepriseId: Number(decision.entreprise_id),
+      action: "undo",
+      metadata: { decision_id: decisionId, annulee: decision.decision },
+    });
+
+    return json(
+      { ok: true, entreprise_id: Number(decision.entreprise_id) },
+      { headers: cors },
+    );
+  },
+);

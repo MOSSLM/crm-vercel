@@ -1753,6 +1753,8 @@ export interface AgentQualificationDecision {
 export type AgentActivityAction =
   | 'qualify'
   | 'skip'
+  /** L'agent est revenu sur une décision encore en attente de revue. */
+  | 'undo'
   | 'enrich'
   | 'validate_enrich'
   | 'create_site'

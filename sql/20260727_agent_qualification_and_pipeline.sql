@@ -113,8 +113,8 @@ create table if not exists public.agent_activity_events (
   id            uuid primary key default gen_random_uuid(),
   agent_id      uuid not null references public.user_profiles(id) on delete cascade,
   entreprise_id bigint references public.entreprises(id) on delete set null,
-  -- qualify | skip | enrich | validate_enrich | create_site | validate_site |
-  -- create_audit | validate_audit
+  -- qualify | skip | undo | enrich | validate_enrich | create_site |
+  -- validate_site | create_audit | validate_audit
   action        text not null,
   metadata      jsonb not null default '{}'::jsonb,
   created_at    timestamptz not null default now()

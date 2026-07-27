@@ -41,6 +41,12 @@ const MAX_PASSES = 5;
  * Les doublons sont dédupliqués par domaine **à l'intérieur de la réponse**
  * seulement — deux entreprises d'un même domaine séparées par une page peuvent
  * encore apparaître toutes les deux. C'est un pré-tri : la revue admin tranche.
+ *
+ * `total` accompagne la page : c'est le nombre d'entreprises que la file
+ * contient au total pour ces filtres, pour que l'écran affiche la vraie taille
+ * de la file et pas seulement ce qui est chargé. Il est calculé en base, donc
+ * il ne déduit ni les blacklistées ni les doublons — d'où son caractère
+ * approximatif, signalé côté UI.
  */
 export const GET = withAuth(
   { role: "freelance", capability: "qualify" },
@@ -56,38 +62,59 @@ export const GET = withAuth(
     const sc = getServiceClient();
     const [blacklist, pending] = await Promise.all([loadBlacklist(), loadPendingEntrepriseIds()]);
 
+    /**
+     * Filtres exprimables en base, décrits une seule fois puis appliqués tels
+     * quels à la requête de page et à celle du total — les deux ne peuvent pas
+     * diverger. Exprimés en triplets `(colonne, opérateur, valeur)` pour passer
+     * par `.filter()`, la seule méthode non générique du client : les
+     * `.eq()/.is()/.not()` typés font exploser l'inférence de TypeScript quand
+     * on tente de les factoriser.
+     *
+     * `not.is true` sur `hidden_in_qualification` couvre à la fois `false` et
+     * `null` (colonne ajoutée après coup, les anciennes lignes sont à null) —
+     * c'est ce que fait le `!c.hidden` de la file admin.
+     */
+    const filters: Array<[string, string, unknown]> = [
+      ["qualifie", "eq", false],
+      ["hidden_in_qualification", "not.is", true],
+    ];
+
+    // `sources` est un tableau : `ov` = « au moins une des sources cochées ».
+    if (sources.length > 0) filters.push(["sources", "ov", `{${sources.join(",")}}`]);
+
+    // Le filtre URL se pose en base sur le null, puis se raffine en mémoire sur
+    // les chaînes vides (que la colonne autorise).
+    if (url_filter === "with-url") filters.push(["canonical_url", "not.is", null]);
+    else if (url_filter === "without-url") filters.push(["canonical_url", "is", null]);
+
+    const searchExpr = q
+      ? (() => {
+          const escaped = q.replace(/[%,()]/g, " ");
+          return `name.ilike.%${escaped}%,ville.ilike.%${escaped}%,adresse.ilike.%${escaped}%`;
+        })()
+      : null;
+
+    // Taille de la file. Les décisions en attente sont déduites : ce sont des
+    // entreprises du pool, donc bien comptées par la requête.
+    let countQuery = sc.from("entreprises").select("id", { count: "exact", head: true });
+    for (const [column, op, value] of filters) countQuery = countQuery.filter(column, op, value);
+    if (searchExpr) countQuery = countQuery.or(searchExpr);
+    const countPromise = countQuery;
+
     const picked: QueueCompany[] = [];
     const seenDomains = new Set<string>();
     let cursor = after_id ?? 0;
     let exhausted = false;
 
     for (let pass = 0; pass < MAX_PASSES && picked.length < limit && !exhausted; pass++) {
-      // `not is true` couvre à la fois `false` et `null` (colonne ajoutée après
-      // coup, les anciennes lignes sont à null) — c'est ce que fait le `!c.hidden`
-      // de la file admin.
-      let query = sc
-        .from("entreprises")
-        .select(QUEUE_COLUMNS)
-        .eq("qualifie", false)
-        .not("hidden_in_qualification", "is", true)
+      let query = sc.from("entreprises").select(QUEUE_COLUMNS);
+      for (const [column, op, value] of filters) query = query.filter(column, op, value);
+      if (searchExpr) query = query.or(searchExpr);
+
+      const { data, error } = await query
         .gt("id", cursor)
         .order("id", { ascending: true })
         .limit(WINDOW);
-
-      if (q) {
-        const escaped = q.replace(/[%,()]/g, " ");
-        query = query.or(`name.ilike.%${escaped}%,ville.ilike.%${escaped}%,adresse.ilike.%${escaped}%`);
-      }
-
-      // `sources` est un tableau : overlaps = « au moins une des sources cochées ».
-      if (sources.length > 0) query = query.overlaps("sources", sources);
-
-      // Le filtre URL se pose en base sur le null, puis se raffine en mémoire
-      // sur les chaînes vides (que la colonne autorise).
-      if (url_filter === "with-url") query = query.not("canonical_url", "is", null);
-      else if (url_filter === "without-url") query = query.is("canonical_url", null);
-
-      const { data, error } = await query;
       if (error) return jsonError(error.message, 500, {}, cors);
 
       const rows = (data ?? []) as unknown as QueueCompany[];
@@ -121,8 +148,11 @@ export const GET = withAuth(
     const nextAfterId =
       picked.length > 0 ? Number(picked[picked.length - 1].id) : exhausted ? null : cursor;
 
+    const { count } = await countPromise;
+    const total = Math.max(0, (count ?? 0) - pending.size);
+
     return json(
-      { companies: picked, next_after_id: nextAfterId, has_more: !exhausted },
+      { companies: picked, next_after_id: nextAfterId, has_more: !exhausted, total },
       { headers: cors },
     );
   },
