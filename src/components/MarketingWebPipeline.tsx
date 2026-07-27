@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/EnrichmentProgressModal";
 import { PipelineMatrix, STAGES, AGENT_STAGES } from "./marketing-pipeline/PipelineMatrix";
-import type { MatrixHandlers } from "./marketing-pipeline/types";
+import type { MatrixHandlers, BulkHandlers } from "./marketing-pipeline/types";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
 
@@ -524,25 +524,33 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
-  const assignAgentTo = async (item: BoardItem, agentIdArg: string) => {
+  const assignAgentTo = async (items: BoardItem[], agentIdArg: string) => {
     if (!agentIdArg) {
       toast.error("Choisis un agent");
       return;
     }
-    if (item.entreprise_id == null) {
+    const targets = items.filter((it) => it.entreprise_id != null);
+    if (targets.length === 0) {
       toast.error("Aucune entreprise à attribuer");
       return;
     }
     setWorking("assign");
     try {
-      const res = await authedFetch("/api/admin/assign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entreprise_id: item.entreprise_id, agent_id: agentIdArg }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+      const results = await Promise.allSettled(
+        targets.map(async (it) => {
+          const res = await authedFetch("/api/admin/assign", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ entreprise_id: it.entreprise_id, agent_id: agentIdArg }),
+          });
+          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+        }),
+      );
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const ko = results.length - ok;
       const agentName = board?.agents.find((a) => a.id === agentIdArg)?.name ?? "agent";
-      toast.success(`Attribué à ${agentName}`);
+      if (ok > 0) toast.success(`${ok} entreprise(s) attribuée(s) à ${agentName}`);
+      if (ko > 0) toast.error(`${ko} attribution(s) en échec`);
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de l'attribution");
@@ -588,12 +596,26 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onCreateAudit: (item) => createAudits([item]),
     onValidateAudit: (item) => validateAudits([item]),
     // Pas d'attribution en mode agent : la colonne et son menu n'existent pas.
-    onAssign: isAgent ? undefined : (item, aId) => assignAgentTo(item, aId),
+    onAssign: isAgent ? undefined : (item, aId) => assignAgentTo([item], aId),
     onMove: (item, pId) => movePipeline([item], pId),
     onDetails: (item) => {
       setSiteRequirement(false);
       setEditingItem(item);
     },
+  };
+
+  /* ── Actions de masse (barre de sélection) ────────────────────────────── */
+  // Mêmes fonctions que les cartes : elles ont toujours travaillé sur des
+  // tableaux, seule la sélection multiple avait disparu de l'écran.
+  const bulkHandlers: BulkHandlers = {
+    onEnrich: (items, overwrite) => runEnrich(items, overwrite),
+    onValidateEnrich: (items) => validateEnrichment(items),
+    onCreateSites: (items) => createSites(items),
+    onValidateSites: (items) => validateSites(items),
+    onCreateAudits: (items) => createAudits(items),
+    onValidateAudits: (items) => validateAudits(items),
+    onAssign: isAgent ? undefined : (items, aId) => assignAgentTo(items, aId),
+    onMove: (items, pId) => movePipeline(items, pId),
   };
 
   return (
@@ -609,6 +631,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
         working={working}
         onRefresh={load}
         handlers={matrixHandlers}
+        bulk={bulkHandlers}
         hasValidatedColumn={board?.has_validated_column ?? true}
         stages={isAgent ? AGENT_STAGES : STAGES}
         canAssign={!isAgent}
