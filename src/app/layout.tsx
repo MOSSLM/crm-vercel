@@ -10,11 +10,11 @@ export const metadata: Metadata = {
 };
 
 const fontSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans" });
-const fontMono = DM_Mono({ subsets: ["latin"], variable: "--font-dm-mono", weight: "400" });
+const fontMono = DM_Mono({ subsets: ["latin"], variable: "--font-dm-mono", weight: ["400", "500"] });
 const fontSerif = Cormorant_Garamond({
   subsets: ["latin"],
   variable: "--font-cormorant",
-  weight: ["300", "400"],
+  weight: ["300", "400", "500"],
   style: ["normal", "italic"],
 });
 
