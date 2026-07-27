@@ -32,7 +32,7 @@ const DENIED: Omit<AgentContext, "role" | "isAdmin"> = {
 };
 
 /** `true` quand la table n'existe pas encore (migration non appliquée). */
-const isMissingTable = (error: { code?: string; message?: string } | null): boolean => {
+export const isMissingTable = (error: { code?: string; message?: string } | null): boolean => {
   if (!error) return false;
   // 42P01 = undefined_table (Postgres), PGRST205 = table absente du cache PostgREST.
   return (
