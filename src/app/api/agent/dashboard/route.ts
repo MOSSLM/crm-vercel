@@ -20,10 +20,13 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   const stageName = new Map(agent.stages.map((s) => [s.id, s.nom]));
 
   const [oppsRes, poolRes, tasksRes] = await Promise.all([
+    // Same double scoping as /api/agent/pipeline: the company's owner_id has
+    // the last word, so the KPIs match the board card for card.
     sc
       .from("opportunites")
-      .select("id, stage_id, montant")
+      .select("id, stage_id, montant, entreprise:entreprises!inner(owner_id)")
       .eq("owner_id", user.id)
+      .eq("entreprise.owner_id", user.id)
       .eq("pipeline_id", agent.pipelineId),
     sc
       .from("entreprises")
