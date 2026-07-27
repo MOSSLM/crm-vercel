@@ -4,35 +4,12 @@ import { marketingEnrichPrepareSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { resolveAgentContext } from "@/app/api/_lib/require-capability";
+import { applyEnrichReset, enrichResetPayload, OVERWRITE_CLEARED_COLUMNS } from "../_enrich-reset";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const OPTIONS = (req: Request) => preflight(req);
-
-/** Statuses the enrichment edge function refuses to re-process (see
- *  `shouldProcess` in the edge function): a manual re-run must reset these
- *  back to `draft` first, otherwise the run is silently skipped. */
-const TERMINAL_STATUSES = new Set(["framer", "ready", "published"]);
-
-/** Columns the edge function fills during enrichment. Cleared on `overwrite`
- *  so the next run repopulates them from a clean slate. Manual reviews and the
- *  `entreprises` row are intentionally left untouched. */
-const OVERWRITE_CLEARED_COLUMNS = {
-  override_entreprise_name: null,
-  override_email: null,
-  override_address: null,
-  // Ville SEO (`override_city`) + son miroir historique : sans ce reset, un
-  // ré-enrichissement « overwrite » conserverait une ville SEO devenue fausse.
-  override_city: null,
-  override_location: null,
-  logo_url: null,
-  stat_years_experience: null,
-  stat_satisfied_clients: null,
-  stat_installations_completed: null,
-  stat_rge_count: null,
-  service_tags_snapshot: [] as string[],
-};
 
 type OppRow = { id: string; entreprise_id: number | null };
 type ProjectRow = {
@@ -44,14 +21,6 @@ type ProjectRow = {
 
 type Prepared = { opportunity_id: string; project_id: string; created: boolean; reset: boolean };
 type PrepError = { opportunity_id: string; error: string };
-
-/** Drops the enrichment-derived "villes autour" keys from a project's jsonb. */
-function stripSurroundingCities(variables: Record<string, unknown> | null): Record<string, unknown> {
-  const vars = { ...(variables ?? {}) };
-  delete vars.surrounding_cities;
-  delete vars.surrounding_cities_text;
-  return vars;
-}
 
 /**
  * POST /api/marketing-pipeline/enrich-prepare   { opportunity_ids, overwrite? }
@@ -151,20 +120,24 @@ export const POST = withAuth({ body: marketingEnrichPrepareSchema }, async ({ bo
       continue;
     }
 
-    const needsReset = overwrite || TERMINAL_STATUSES.has(existing.statut ?? "");
-    const payload: Record<string, unknown> = { pret_pour_lm: true, updated_at: now };
-    if (needsReset) payload.statut = "draft"; // `enrichment_error` is cleared by the edge function's lock.
-    if (overwrite) {
-      Object.assign(payload, OVERWRITE_CLEARED_COLUMNS);
-      payload.variables = stripSurroundingCities(existing.variables);
-    }
+    const payload = enrichResetPayload({
+      statut: existing.statut,
+      variables: existing.variables,
+      overwrite,
+      now,
+    });
 
-    const { error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", existing.id);
+    const error = await applyEnrichReset(supabase, existing.id, payload);
     if (error) {
-      errors.push({ opportunity_id: oppId, error: error.message });
+      errors.push({ opportunity_id: oppId, error });
       continue;
     }
-    prepared.push({ opportunity_id: oppId, project_id: existing.id, created: false, reset: needsReset });
+    prepared.push({
+      opportunity_id: oppId,
+      project_id: existing.id,
+      created: false,
+      reset: payload.statut === "draft",
+    });
   }
 
   return json({ prepared, errors }, { headers: cors });

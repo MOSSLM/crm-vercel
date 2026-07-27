@@ -12,7 +12,7 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import type { ProjectContext, LLMExtraction, GooglePlaceData, EnrichResult, LlmConfig, LlmProvider } from "./types.ts";
 import { extractLatLngFromUrl } from "./google.ts";
-import { pickSeoCity, type LatLng } from "./geo.ts";
+import { parisRegionFor, pickSeoCity, type LatLng } from "./geo.ts";
 import {
   loadBigCityCandidates,
   loadGeoSettings,
@@ -594,7 +594,7 @@ async function updateProject(
   return retry.error ? retry.error.message : null;
 }
 
-export type VilleSeoSource = "override" | "geo" | "llm" | "entreprise";
+export type VilleSeoSource = "override" | "paris_region" | "geo" | "llm" | "entreprise";
 
 export interface VilleSeoDecision {
   ville: string;
@@ -637,10 +637,13 @@ async function resolveOrigin(
 /**
  * Détermine la ville SEO, par ordre d'autorité :
  *   1. `ville_seo_overrides` — une correction manuelle gagne toujours
- *   2. le calcul géographique sur `communes_fr` (distance réelle + paliers)
- *   3. l'extraction du LLM — filet quand le référentiel n'est pas chargé ou
+ *   2. Île-de-France → « Région parisienne » (cf. `parisRegionFor`) : dans
+ *      l'agglomération, l'arbitrage par distance désigne une commune voisine
+ *      sans rapport (Évry → Montreuil)
+ *   3. le calcul géographique sur `communes_fr` (distance réelle + paliers)
+ *   4. l'extraction du LLM — filet quand le référentiel n'est pas chargé ou
  *      qu'aucune coordonnée n'est trouvable
- *   4. la ville de l'entreprise — dernier recours, toujours une vraie ville
+ *   5. la ville de l'entreprise — dernier recours, toujours une vraie ville
  *
  * Aucune étape ne peut faire échouer l'enrichissement : les lectures de
  * `communes.ts` dégradent en silence si la migration n'est pas appliquée.
@@ -657,6 +660,15 @@ export async function resolveVilleSeo(
     ctx.entreprise.ville,
   );
   if (override) return { ville: override, source: "override" };
+
+  const parisRegion = parisRegionFor(ctx.entreprise.code_postal);
+  if (parisRegion) {
+    return {
+      ville: parisRegion,
+      source: "paris_region",
+      detail: `département ${(ctx.entreprise.code_postal ?? "").slice(0, 2)}`,
+    };
+  }
 
   const origin = await resolveOrigin(sb, ctx, google);
   if (origin) {

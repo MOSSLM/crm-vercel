@@ -21,15 +21,32 @@ L'edge function `enrich-lead-magnet` (`resolveVilleSeo` dans `db.ts`) essaie dan
 cet ordre, et s'arrête à la première réponse :
 
 1. **`ville_seo_overrides`** — une correction manuelle gagne toujours.
-2. **Calcul géographique** — distance réelle sur `communes_fr` (voir ci-dessous).
-3. **Extraction du LLM** (`closest_big_city`) — filet quand le référentiel n'est
+2. **Île-de-France → « Région parisienne »** (voir ci-dessous).
+3. **Calcul géographique** — distance réelle sur `communes_fr` (voir ci-dessous).
+4. **Extraction du LLM** (`closest_big_city`) — filet quand le référentiel n'est
    pas chargé ou qu'aucune coordonnée n'est trouvable.
-4. **`entreprises.ville`** — dernier recours ; c'est toujours une vraie ville,
+5. **`entreprises.ville`** — dernier recours ; c'est toujours une vraie ville,
    jamais un placeholder.
 
 L'écriture est *fill-only* pendant l'enrichissement : une ville SEO déjà posée
 n'est jamais écrasée. Chaque décision est tracée dans les logs de la fonction
 avec sa source et, pour le calcul, le palier retenu, la distance et la population.
+
+## Île-de-France : « Région parisienne »
+
+Les codes postaux des huit départements franciliens (75, 77, 78, 91, 92, 93, 94,
+95) renvoient le libellé **« Région parisienne »**, sans passer par le calcul —
+`parisRegionFor` dans `geo.ts`.
+
+Pourquoi une exception à la règle de distance : dans l'agglomération, des dizaines
+de communes dépassent 100 000 habitants à des distances équivalentes, et aucune ne
+structure la zone. À Évry-Courcouronnes (91), Montreuil (93) est à 25,6 km et
+Paris à 26,0 km : le palier « métropole la plus proche » renvoyait donc Montreuil,
+qui n'a aucun rapport avec Évry pour un prospect. C'est le seul endroit de France
+où la distance ne dit rien d'utile.
+
+Pour retrouver une ville précise sur un code postal francilien (par exemple
+`75011 → Paris`), ajouter une correction manuelle : elle prime sur cette règle.
 
 ## Le calcul géographique
 
@@ -85,4 +102,10 @@ la chaîne retombe sur l'extraction du LLM.
   Paramètres › Ville SEO. Elle prime sur le calcul et vaut pour toutes les
   entreprises concernées, présentes et à venir.
 - **La règle elle-même** : ajuster les seuils, puis relancer le recalcul. Il ne
-  rescrape rien et n'appelle aucun modèle — il est gratuit et rejouable.
+  rescrape rien et n'appelle aucun modèle — il est gratuit et rejouable. Il
+  balaie le parc par lots avec un curseur (`after_id`) : l'écran rappelle la route
+  jusqu'au bout, ce qui évite le timeout d'un unique appel sur tout le parc.
+- **Tout reprendre à zéro** : Paramètres › Enrichissement › « Ré-enrichir en
+  masse » rejoue l'enrichissement complet (scraping + modèle, donc payant) sur un
+  périmètre — déjà enrichis, en échec, ou tout. À réserver aux cas où le recalcul
+  gratuit ne suffit pas, par exemple un changement de modèle.

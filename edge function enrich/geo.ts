@@ -49,6 +49,36 @@ export const DEFAULT_GEO_SETTINGS: GeoSettings = {
   maxRadiusKm: 60,
 };
 
+/**
+ * Île-de-France : la ville SEO est « Région parisienne », pas une commune.
+ *
+ * L'arbitrage par distance n'a pas de sens dans l'agglomération parisienne : à
+ * Évry-Courcouronnes (91), Montreuil (93) est à 25,6 km et Paris à 26,0 km, donc
+ * le palier « métropole la plus proche » renvoyait Montreuil — une ville qui n'a
+ * rien à voir avec Évry pour un prospect. Le même problème existe dans toute la
+ * couronne : des dizaines de communes de plus de 100 000 habitants à des
+ * distances équivalentes, dont aucune ne structure la zone.
+ *
+ * D'où une règle départementale, ici et seulement ici : les 8 départements
+ * franciliens (75, 77, 78, 91, 92, 93, 94, 95) renvoient un libellé de zone.
+ * Une correction manuelle dans `ville_seo_overrides` reste prioritaire, donc un
+ * code postal précis peut toujours retrouver une ville (« 75011 → Paris »).
+ */
+export const PARIS_REGION_LABEL = "Région parisienne";
+
+export const PARIS_REGION_DEPARTMENTS = ["75", "77", "78", "91", "92", "93", "94", "95"] as const;
+
+/**
+ * `PARIS_REGION_LABEL` si ce code postal est francilien, sinon null (l'arbitrage
+ * géographique normal reprend la main).
+ */
+export function parisRegionFor(codePostal: string | null | undefined): string | null {
+  const cp = (codePostal ?? "").trim();
+  if (!/^\d{5}$/.test(cp)) return null;
+  const dept = cp.slice(0, 2);
+  return (PARIS_REGION_DEPARTMENTS as readonly string[]).includes(dept) ? PARIS_REGION_LABEL : null;
+}
+
 export interface SeoCityPick {
   nom: string;
   distanceKm: number;

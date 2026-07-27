@@ -10,6 +10,9 @@ import {
   boundingBox,
   DEFAULT_GEO_SETTINGS,
   haversineKm,
+  parisRegionFor,
+  PARIS_REGION_DEPARTMENTS,
+  PARIS_REGION_LABEL,
   pickSeoCity,
   type CommuneCandidate,
 } from "../geo";
@@ -133,5 +136,39 @@ describe("pickSeoCity", () => {
     const pick = pickSeoCity(ORIGIN, [cityAt("Bourg", 6000, 70)], wide);
     expect(pick).toMatchObject({ nom: "Bourg", rule: "largest_nearby" });
     expect(pickSeoCity(ORIGIN, [cityAt("Bourg", 6000, 70)])).toBeNull();
+  });
+});
+
+describe("parisRegionFor", () => {
+  it("renvoie « Région parisienne » pour les 8 départements franciliens", () => {
+    for (const dept of PARIS_REGION_DEPARTMENTS) {
+      expect(parisRegionFor(`${dept}000`)).toBe(PARIS_REGION_LABEL);
+    }
+    // Le cas qui a motivé la règle : Évry-Courcouronnes, à 25,6 km de Montreuil
+    // et 26,0 km de Paris — l'arbitrage par distance renvoyait Montreuil.
+    expect(parisRegionFor("91000")).toBe(PARIS_REGION_LABEL);
+  });
+
+  it("laisse la main au calcul géographique hors Île-de-France", () => {
+    // 76 = Rouen/Le Havre, 21 = Dijon : c'est là que l'arbitrage par distance a
+    // du sens et doit continuer de décider.
+    expect(parisRegionFor("76000")).toBeNull();
+    expect(parisRegionFor("21800")).toBeNull();
+    // 60 (Oise) et 45 (Loiret) touchent l'Île-de-France mais n'en font pas partie.
+    expect(parisRegionFor("60100")).toBeNull();
+    expect(parisRegionFor("45000")).toBeNull();
+  });
+
+  it("ignore un code postal absent ou mal formé", () => {
+    expect(parisRegionFor(null)).toBeNull();
+    expect(parisRegionFor("")).toBeNull();
+    expect(parisRegionFor("75")).toBeNull();
+    expect(parisRegionFor("7501")).toBeNull();
+    expect(parisRegionFor("750011")).toBeNull();
+    expect(parisRegionFor("ABCDE")).toBeNull();
+  });
+
+  it("tolère les espaces autour du code postal", () => {
+    expect(parisRegionFor(" 93100 ")).toBe(PARIS_REGION_LABEL);
   });
 });
