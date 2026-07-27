@@ -28,6 +28,7 @@ import {
   fetchEnrichmentSlice,
 } from "./enrichment-variables";
 import { applyProjectEnrichment } from "./project-enrichment";
+import { applyCityVariables } from "./city-variables";
 import type { StatItem } from "./menu-overrides";
 
 export interface ReviewItem {
@@ -61,6 +62,7 @@ export async function resolveEnterpriseVariables(
 ): Promise<ResolvedVariables> {
   const vars: Record<string, string> = {};
   let companyName: string | undefined;
+  let companyVille: string | null = null;
   let logoUrl: string | undefined;
   let phone: string | undefined;
   let serviceTags: string[] = [];
@@ -98,7 +100,10 @@ export async function resolveEnterpriseVariables(
       vars["entreprise.telephone"] = company.telephone ?? "";
       vars["entreprise.email"] = company.email ?? "";
       vars["entreprise.adresse"] = company.adresse ?? "";
+      // La vraie ville. `entreprise.ville_seo` / `entreprise.location` sont
+      // résolues plus bas, une fois le projet lead magnet connu.
       vars["entreprise.ville"] = company.ville ?? "";
+      companyVille = company.ville ?? null;
       vars["entreprise.code_postal"] = company.code_postal ?? "";
       vars["entreprise.logo_url"] = company.logo_url ?? "";
       vars["entreprise.site_web_canonique"] = company.site_web_canonique ?? "";
@@ -179,8 +184,14 @@ export async function resolveEnterpriseVariables(
         vars["entreprise.nom"] = proj.override_entreprise_name;
         companyName = proj.override_entreprise_name;
       }
-      if (proj.override_city) vars["entreprise.ville_seo"] = proj.override_city;
-      if (proj.override_location) vars["entreprise.location"] = proj.override_location;
+      // ville / ville SEO / location — règle unique partagée avec l'aperçu éditeur.
+      // Placé AVANT la boucle `proj.variables` pour qu'une variable saisie à la
+      // main continue de primer.
+      applyCityVariables(vars, {
+        ville: companyVille,
+        overrideCity: proj.override_city,
+        overrideLocation: proj.override_location,
+      });
       if (proj.override_phone) {
         vars["entreprise.telephone"] = proj.override_phone;
         phone = proj.override_phone;
@@ -215,6 +226,12 @@ export async function resolveEnterpriseVariables(
     if (reviews.length > 0) {
       vars["__reviews"] = JSON.stringify(reviews);
     }
+  }
+
+  // Aucun projet lead magnet (ou projet introuvable) : la ville SEO retombe sur
+  // la vraie ville, pour que `{{ entreprise.ville_seo }}` ne rende jamais vide.
+  if (vars["entreprise.ville_seo"] === undefined) {
+    applyCityVariables(vars, { ville: companyVille, overrideCity: null, overrideLocation: null });
   }
 
   // Service tags of the active enterprise. Consumed by the renderers to

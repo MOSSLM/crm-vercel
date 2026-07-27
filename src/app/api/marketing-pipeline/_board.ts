@@ -45,16 +45,21 @@ type EntRow = {
 };
 
 /**
- * Variables that must be present on the company before a demo site can be
- * generated cleanly (the site templates render city, postal code, phone,
- * service tags and review stats). Returns the human-readable labels missing.
+ * Variables that must be present before a demo site can be generated cleanly
+ * (the site templates render city, SEO city, postal code, phone, service tags
+ * and review stats). Returns the human-readable labels missing.
+ *
+ * Must stay in sync with `SITE_REQUIRED` in MarketingWebPipeline.tsx — including
+ * the rule that the SEO city is only required once a lead magnet project exists
+ * (it lives on `lead_magnet_projects.override_city`).
  */
-function missingForSite(ent: EntRow | undefined): string[] {
+function missingForSite(ent: EntRow | undefined, project: ProjectRow | null | undefined): string[] {
   const miss: string[] = [];
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : v != null ? String(v).trim() : "");
   if (!ent) return ["Entreprise"];
   if (!str(ent.name)) miss.push("Nom");
   if (!str(ent.ville)) miss.push("Ville");
+  if (project && !str(project.override_city)) miss.push("Ville SEO");
   if (!str(ent.code_postal)) miss.push("Code postal");
   if (!str(ent.telephone)) miss.push("Téléphone");
   const tags = Array.isArray(ent.service_tags)
@@ -74,6 +79,8 @@ type ProjectRow = {
   entreprise_id: number | null;
   statut: string | null;
   pret_pour_lm: boolean | null;
+  /** Ville SEO — requise pour créer un site (voir `missingForSite`). */
+  override_city: string | null;
   enrichment_validated?: boolean | null;
 };
 
@@ -186,13 +193,13 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
   {
     const withCol = await supabase
       .from("lead_magnet_projects")
-      .select("id, opportunite_id, entreprise_id, statut, pret_pour_lm, enrichment_validated")
+      .select("id, opportunite_id, entreprise_id, statut, pret_pour_lm, override_city, enrichment_validated")
       .in("opportunite_id", oppIds);
     if (withCol.error) {
       hasValidatedColumn = false;
       const withoutCol = await supabase
         .from("lead_magnet_projects")
-        .select("id, opportunite_id, entreprise_id, statut, pret_pour_lm")
+        .select("id, opportunite_id, entreprise_id, statut, pret_pour_lm, override_city")
         .in("opportunite_id", oppIds);
       if (withoutCol.error) return { ok: false, error: withoutCol.error.message, status: 500 };
       projectRows = (withoutCol.data ?? []) as ProjectRow[];
@@ -360,7 +367,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
         : null,
       audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
       agent: owner ? { id: owner.id, name: owner.name } : null,
-      missing_for_site: missingForSite(ent),
+      missing_for_site: missingForSite(ent, project),
       column,
     };
   });

@@ -11,7 +11,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Phone, Mail, MapPin, Clock, Download, ExternalLink, Check } from 'lucide-react';
+import { Loader2, Phone, Mail, MapPin, Globe, Clock, Download, ExternalLink, Check } from 'lucide-react';
 
 type ProjectRecord = LeadMagnetProjectRecord;
 
@@ -306,11 +306,20 @@ export function LeadMagnetQuickViewModal({
                         <span className="break-all">{project.override_email}</span>
                       </div>
                     )}
-                    {(project.override_address || project.override_city) && (
+                    {/* `override_address` contient déjà l'adresse complète (n°, rue,
+                        code postal, vraie ville). `override_city` porte la ville SEO :
+                        elle a sa propre ligne, elle n'appartient pas à l'adresse. */}
+                    {project.override_address && (
                       <div className="flex items-start gap-2 text-sm">
                         <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                        <span>{project.override_address}</span>
+                      </div>
+                    )}
+                    {project.override_city && (
+                      <div className="flex items-start gap-2 text-sm">
+                        <Globe className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
                         <span>
-                          {[project.override_address, project.override_city].filter(Boolean).join(', ')}
+                          Ville SEO : <span className="font-medium">{project.override_city}</span>
                         </span>
                       </div>
                     )}

@@ -651,6 +651,9 @@ interface EditForm {
   // entreprises
   name: string;
   ville: string;
+  /** Ville SEO — stockée sur `lead_magnet_projects.override_city`, remontée ici
+   *  avec les champs entreprise parce qu'elle est obligatoire pour créer un site. */
+  lm_override_city: string;
   code_postal: string;
   adresse: string;
   telephone: string;
@@ -663,8 +666,6 @@ interface EditForm {
   horaires: string;
   // lead_magnet_projects — overrides & enrichissement (sortie de l'edge function)
   lm_override_name: string;
-  lm_override_city: string;
-  lm_override_location: string;
   lm_override_phone: string;
   lm_override_email: string;
   lm_override_address: string;
@@ -687,6 +688,7 @@ interface EditForm {
 const EMPTY_FORM: EditForm = {
   name: "",
   ville: "",
+  lm_override_city: "",
   code_postal: "",
   adresse: "",
   telephone: "",
@@ -698,8 +700,6 @@ const EMPTY_FORM: EditForm = {
   nombre_avis: "",
   horaires: "",
   lm_override_name: "",
-  lm_override_city: "",
-  lm_override_location: "",
   lm_override_phone: "",
   lm_override_email: "",
   lm_override_address: "",
@@ -745,7 +745,9 @@ const numStr = (v: unknown): string => (v == null || v === "" ? "" : String(v));
 
 // Variables required before a demo site can be created (must match the board's
 // missingForSite). Keyed by form field so the modal can outline them in red.
-const SITE_REQUIRED: Array<{ field: keyof EditForm; label: string; ok: (f: EditForm) => boolean }> = [
+type RequiredRule = { field: keyof EditForm; label: string; ok: (f: EditForm) => boolean };
+
+const SITE_REQUIRED: RequiredRule[] = [
   { field: "name", label: "Nom", ok: (f) => f.name.trim().length > 0 },
   { field: "ville", label: "Ville", ok: (f) => f.ville.trim().length > 0 },
   { field: "code_postal", label: "Code postal", ok: (f) => f.code_postal.trim().length > 0 },
@@ -754,6 +756,17 @@ const SITE_REQUIRED: Array<{ field: keyof EditForm; label: string; ok: (f: EditF
   { field: "note_moyenne", label: "Note moyenne", ok: (f) => Number(f.note_moyenne) > 0 },
   { field: "nombre_avis", label: "Nombre d'avis", ok: (f) => Number(f.nombre_avis) > 0 },
 ];
+
+// La ville SEO vit sur `lead_magnet_projects.override_city` : elle n'est exigée
+// que s'il y a un projet lead magnet, sinon la fiche d'une entreprise sans projet
+// serait impossible à valider (le champ n'a nulle part où être enregistré).
+const SITE_REQUIRED_WITH_PROJECT: RequiredRule[] = [
+  ...SITE_REQUIRED,
+  { field: "lm_override_city", label: "Ville SEO", ok: (f) => f.lm_override_city.trim().length > 0 },
+];
+
+const siteRequiredFor = (hasProject: boolean): RequiredRule[] =>
+  hasProject ? SITE_REQUIRED_WITH_PROJECT : SITE_REQUIRED;
 
 const OpportunityEditModal: React.FC<{
   item: BoardItem | null;
@@ -835,6 +848,7 @@ const OpportunityEditModal: React.FC<{
       setForm({
         name: (c.name as string) ?? "",
         ville: (c.ville as string) ?? "",
+        lm_override_city: (p.override_city as string) ?? "",
         code_postal: (c.code_postal as string) ?? "",
         adresse: (c.adresse as string) ?? "",
         telephone: (c.telephone as string) ?? "",
@@ -846,8 +860,6 @@ const OpportunityEditModal: React.FC<{
         nombre_avis: numStr(c.nombre_avis),
         horaires: (c.horaires as string) ?? "",
         lm_override_name: (p.override_entreprise_name as string) ?? "",
-        lm_override_city: (p.override_city as string) ?? "",
-        lm_override_location: (p.override_location as string) ?? "",
         lm_override_phone: (p.override_phone as string) ?? "",
         lm_override_email: (p.override_email as string) ?? "",
         lm_override_address: (p.override_address as string) ?? "",
@@ -886,8 +898,9 @@ const OpportunityEditModal: React.FC<{
       return rs.filter((_, i) => i !== idx);
     });
 
-  const missingRequired = SITE_REQUIRED.filter((r) => !r.ok(form)).map((r) => r.label);
-  const invalidFields = new Set(SITE_REQUIRED.filter((r) => !r.ok(form)).map((r) => r.field));
+  const requiredRules = siteRequiredFor(projectId != null);
+  const missingRequired = requiredRules.filter((r) => !r.ok(form)).map((r) => r.label);
+  const invalidFields = new Set(requiredRules.filter((r) => !r.ok(form)).map((r) => r.field));
   const showInvalid = (field: keyof EditForm) => siteRequirement && invalidFields.has(field);
 
   const persist = async (): Promise<boolean> => {
@@ -907,8 +920,11 @@ const OpportunityEditModal: React.FC<{
       }
       project = {
         override_entreprise_name: form.lm_override_name || null,
+        // Ville SEO. `override_location` en est le miroir historique : on le
+        // synchronise pour que les designs qui utilisent encore
+        // `{{ entreprise.location }}` restent alignés sur ce que la fiche affiche.
         override_city: form.lm_override_city || null,
-        override_location: form.lm_override_location || null,
+        override_location: form.lm_override_city || null,
         override_phone: form.lm_override_phone || null,
         override_email: form.lm_override_email || null,
         override_address: form.lm_override_address || null,
@@ -1052,6 +1068,23 @@ const OpportunityEditModal: React.FC<{
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Nom" required invalid={showInvalid("name")}><Input value={form.name} onChange={set("name")} /></Field>
                 <Field label="Ville" required invalid={showInvalid("ville")}><Input value={form.ville} onChange={set("ville")} /></Field>
+                <Field
+                  label="Ville SEO"
+                  required={projectId != null}
+                  invalid={showInvalid("lm_override_city")}
+                  hint={
+                    projectId != null
+                      ? "Grande ville la plus proche — celle mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, remets la même."
+                      : "Disponible une fois le projet lead magnet créé (lance l'enrichissement)."
+                  }
+                >
+                  <Input
+                    value={form.lm_override_city}
+                    onChange={set("lm_override_city")}
+                    disabled={projectId == null}
+                    placeholder={form.ville}
+                  />
+                </Field>
                 <Field label="Code postal" required invalid={showInvalid("code_postal")}><Input value={form.code_postal} onChange={set("code_postal")} /></Field>
                 <Field label="Téléphone" required invalid={showInvalid("telephone")}><Input value={form.telephone} onChange={set("telephone")} /></Field>
                 <Field label="Note moyenne" required invalid={showInvalid("note_moyenne")}>
@@ -1103,8 +1136,6 @@ const OpportunityEditModal: React.FC<{
                     <Field label="Logo (URL)"><Input value={form.lm_logo_url} onChange={set("lm_logo_url")} /></Field>
                     <Field label="Téléphone (override)"><Input value={form.lm_override_phone} onChange={set("lm_override_phone")} placeholder={form.telephone} /></Field>
                     <Field label="Email (override)"><Input value={form.lm_override_email} onChange={set("lm_override_email")} placeholder={form.email} /></Field>
-                    <Field label="Ville SEO (override)"><Input value={form.lm_override_city} onChange={set("lm_override_city")} placeholder={form.ville} /></Field>
-                    <Field label="Zone principale (grande ville proche)"><Input value={form.lm_override_location} onChange={set("lm_override_location")} /></Field>
                     <Field label="Horaires"><Input value={form.horaires} onChange={set("horaires")} placeholder="Lun–Ven 8h–18h" /></Field>
                     <div className="sm:col-span-2">
                       <Field label="Adresse (override)"><Input value={form.lm_override_address} onChange={set("lm_override_address")} placeholder={form.adresse} /></Field>
@@ -1198,12 +1229,13 @@ const OpportunityEditModal: React.FC<{
   );
 };
 
-const Field: React.FC<{ label: string; required?: boolean; invalid?: boolean; children: React.ReactNode }> = ({
-  label,
-  required,
-  invalid,
-  children,
-}) => (
+const Field: React.FC<{
+  label: string;
+  required?: boolean;
+  invalid?: boolean;
+  hint?: string;
+  children: React.ReactNode;
+}> = ({ label, required, invalid, hint, children }) => (
   <div className="space-y-1" data-invalid={invalid ? "true" : undefined}>
     <Label className="text-xs" style={{ color: invalid ? "var(--danger)" : "var(--text-3)" }}>
       {label}
@@ -1218,6 +1250,7 @@ const Field: React.FC<{ label: string; required?: boolean; invalid?: boolean; ch
     >
       {children}
     </div>
+    {hint && <p className="text-[11px] leading-snug text-muted-foreground">{hint}</p>}
   </div>
 );
 

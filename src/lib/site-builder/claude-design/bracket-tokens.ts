@@ -29,6 +29,10 @@ const SUGGESTION_MAP: Record<string, BracketSuggestion> = {
   "n° et rue": { token: "{{ entreprise.adresse }}", label: "Adresse" },
   "no et rue": { token: "{{ entreprise.adresse }}", label: "Adresse" },
   "ville": { token: "{{ entreprise.ville }}", label: "Ville" },
+  // Ville SEO : la grande ville la plus proche, mise en avant dans le texte
+  // marketing. `[Ville]` reste réservé à l'adresse postale.
+  "ville seo": { token: "{{ entreprise.ville_seo }}", label: "Ville SEO" },
+  "ville séo": { token: "{{ entreprise.ville_seo }}", label: "Ville SEO" },
   "code postal": { token: "{{ entreprise.code_postal }}", label: "Code postal" },
   "région": { token: "{{ entreprise.region }}", label: "Région" },
   "region": { token: "{{ entreprise.region }}", label: "Région" },

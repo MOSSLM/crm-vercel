@@ -68,7 +68,8 @@ export function LeadMagnetV2ListPage() {
 
     const filtered = rows.filter((item) => {
       const companyName = item.project.override_entreprise_name ?? item.company?.name ?? item.opportunity?.name ?? "";
-      const city = item.project.override_city ?? item.company?.ville ?? "";
+      // Recherche : on matche la vraie ville ET la ville SEO (`override_city`).
+      const city = [item.company?.ville, item.project.override_city].filter(Boolean).join(" ");
       const tags = item.opportunity?.tags ? item.opportunity.tags.split(",").map((tag) => tag.trim()) : [];
       const flags = item.opportunity?.flags ?? [];
       const status = normalizeStatus(item);
@@ -198,7 +199,8 @@ export function LeadMagnetV2ListPage() {
           {filteredRows.map((item) => {
             const companyName = item.project.override_entreprise_name ?? item.company?.name ?? item.opportunity?.name ?? "Entreprise inconnue";
             const opportunityName = item.opportunity?.name ?? "Opportunité inconnue";
-            const city = item.project.override_city ?? item.company?.ville ?? "Ville inconnue";
+            // La carte montre la VRAIE ville ; `override_city` porte la ville SEO.
+            const city = item.company?.ville ?? item.project.override_city ?? "Ville inconnue";
             const flags = item.opportunity?.flags ?? [];
             const tags = item.opportunity?.tags ? item.opportunity.tags.split(",").map((tag) => tag.trim()) : [];
             const status = normalizeStatus(item);

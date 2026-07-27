@@ -130,6 +130,16 @@ const DEPARTEMENTS: Record<string, GeoFr> = {
   "976": { departement: "Mayotte", region: "Mayotte" },
 };
 
+/**
+ * Codes de départements au format geo.api.gouv.fr, dérivés de la table
+ * ci-dessus. La Corse y est scindée en 2A / 2B (là où la table ci-dessus la
+ * traite via le préfixe postal « 20 », qui ne distingue pas les deux).
+ *
+ * Sert à piloter le chargement du référentiel des communes, département par
+ * département — voir `VilleSeoSettings` et /api/settings/communes-fr.
+ */
+export const DEPARTEMENT_CODES: string[] = [...Object.keys(DEPARTEMENTS), "2A", "2B"].sort();
+
 /** Looks up département + région from a French postal code, else null. */
 export function geoFromCodePostal(codePostal: string | null | undefined): GeoFr | null {
   const cp = (codePostal ?? "").trim();

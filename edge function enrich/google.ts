@@ -46,6 +46,9 @@ export async function fetchGooglePlace(
   const fieldMask = [
     "displayName",
     "formattedAddress",
+    // `location` sert à calculer la ville SEO sur la distance réelle. C'est le
+    // SKU Essentials (le moins cher), le coût du champ est négligeable.
+    "location",
     "userRatingCount",
     "reviews",
   ].join(",");
@@ -87,11 +90,18 @@ export async function fetchGooglePlace(
       });
     }
 
+    // Coordonnées du lieu : la source la plus précise pour la ville SEO.
+    const loc = data.location as { latitude?: number; longitude?: number } | undefined;
+    const lat = typeof loc?.latitude === "number" ? loc.latitude : null;
+    const lng = typeof loc?.longitude === "number" ? loc.longitude : null;
+
     return {
       formatted_address: typeof data.formattedAddress === "string" ? data.formattedAddress : null,
       total_reviews: typeof data.userRatingCount === "number" ? data.userRatingCount : null,
       reviews_5star,
       name: (data.displayName as { text?: string } | undefined)?.text ?? null,
+      lat,
+      lng,
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

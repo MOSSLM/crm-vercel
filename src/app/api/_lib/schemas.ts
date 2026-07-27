@@ -166,6 +166,53 @@ export const marketingEnrichPrepareSchema = z.object({
 export type MarketingEnrichPreparePayload = z.infer<typeof marketingEnrichPrepareSchema>;
 
 /**
+ * Chargement du référentiel des communes, un département à la fois (voir
+ * /api/settings/communes-fr). Le code est celui de geo.api.gouv.fr : deux
+ * chiffres en métropole, trois en outre-mer, "2A"/"2B" pour la Corse.
+ */
+export const communesFrSeedSchema = z.object({
+  departement: z.string().regex(/^(2[AB]|\d{2,3})$/, "code de département invalide"),
+});
+export type CommunesFrSeedPayload = z.infer<typeof communesFrSeedSchema>;
+
+/**
+ * Seuils de l'arbitrage de la ville SEO. Les deux invariants sont aussi des
+ * CHECK en base : l'edge function n'a jamais à se méfier de ce qu'elle relit.
+ */
+export const villeSeoSettingsSchema = z
+  .object({
+    metro_population: z.number().int().min(1),
+    metro_radius_km: z.number().int().min(1).max(300),
+    big_city_population: z.number().int().min(1),
+    preferred_radius_km: z.number().int().min(1).max(300),
+    max_radius_km: z.number().int().min(1).max(300),
+  })
+  .refine((s) => s.max_radius_km >= s.preferred_radius_km, {
+    message: "le rayon maximal doit être au moins égal au rayon confortable",
+    path: ["max_radius_km"],
+  })
+  .refine((s) => s.metro_population >= s.big_city_population, {
+    message: "le seuil métropole doit être au moins égal au seuil grande ville",
+    path: ["metro_population"],
+  });
+export type VilleSeoSettingsPayload = z.infer<typeof villeSeoSettingsSchema>;
+
+/** Correction manuelle : `commune` vide = règle par défaut du code postal. */
+export const villeSeoOverrideSchema = z.object({
+  code_postal: z.string().regex(/^\d{5}$/, "code postal invalide"),
+  commune: z.string().nullable().optional(),
+  ville_seo: z.string().trim().min(1).max(120),
+  note: z.string().nullable().optional(),
+});
+export type VilleSeoOverridePayload = z.infer<typeof villeSeoOverrideSchema>;
+
+/** Recalcul de la ville SEO. Sans `project_ids`, porte sur tout le parc. */
+export const villeSeoRecomputeSchema = z.object({
+  project_ids: z.array(z.string().uuid()).max(2000).optional(),
+});
+export type VilleSeoRecomputePayload = z.infer<typeof villeSeoRecomputeSchema>;
+
+/**
  * Moves a batch of opportunities to another CRM pipeline from the Marketing &
  * Web board (e.g. "Entreprises sans site web", "Streak mars/avril", "Général").
  */

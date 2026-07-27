@@ -389,8 +389,11 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
   const previewVars = useMemo<Record<string, string>>(() => {
     const name = asString(project?.override_entreprise_name) || opportunitySummary.companyName;
-    const city = asString(project?.override_city) || opportunitySummary.city;
-    const location = asString(project?.override_location) || city;
+    // Ville SEO : `override_city` fait foi, `override_location` n'en est que le
+    // miroir historique. `{{city}}` et `{{location}}` désignent donc la même ville.
+    const city =
+      asString(project?.override_city) || asString(project?.override_location) || opportunitySummary.city;
+    const location = city;
     const phone = asString(project?.override_phone);
     const email = asString(project?.override_email);
     const address = asString(project?.override_address);
@@ -511,8 +514,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
       const variables: Record<string, string> = {
         ...parseVariables(base.variables),
         name: asString(base.override_entreprise_name) || asString(company["name"]),
-        location: asString(base.override_location) || asString(base.override_city) || asString(company["ville"]),
-        city: asString(base.override_city) || asString(company["ville"]),
+        location: asString(base.override_city) || asString(base.override_location) || asString(company["ville"]),
+        city: asString(base.override_city) || asString(base.override_location) || asString(company["ville"]),
         phone: asString(base.override_phone) || asString(company["telephone"]),
         email: asString(base.override_email),
         address: asString(base.override_address) || asString(company["adresse"]),
@@ -538,7 +541,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
           normalizeExternalUrl(company["google_url"]) ||
           normalizeExternalUrl(company["google_maps_url"]),
         override_entreprise_name: asString(base.override_entreprise_name) || asString(company["name"]),
-        override_city: asString(base.override_city) || asString(company["ville"]),
+        override_city: asString(base.override_city) || asString(base.override_location) || asString(company["ville"]),
         override_location: asString(base.override_location) || asString(base.override_city) || asString(company["ville"]),
         override_phone: asString(base.override_phone) || asString(company["telephone"]),
         override_address: asString(base.override_address) || asString(company["adresse"]),
@@ -621,7 +624,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         setReviews(bundle.reviews);
         setOpportunitySummary({
           companyName: normalizedHydrated.override_entreprise_name ?? asString(company["name"]),
-          city: normalizedHydrated.override_location ?? normalizedHydrated.override_city ?? asString(company["ville"]),
+          city: normalizedHydrated.override_city ?? normalizedHydrated.override_location ?? asString(company["ville"]),
           opportunityName: bundle.opportunity?.name ?? "",
           pipeline: bundle.pipeline?.nom ?? "",
           stage: bundle.stage?.nom ?? "",
@@ -724,7 +727,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     const hasSetup =
       [
         project?.override_entreprise_name,
-        project?.override_location || project?.override_city,
+        project?.override_city || project?.override_location,
         project?.override_phone,
         project?.override_address,
       ].filter(isTruthyText).length >= 3;
@@ -845,8 +848,9 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
     );
 
     cleaned.name = asString(next.override_entreprise_name);
-    cleaned.location = asString(next.override_location);
-    cleaned.city = asString(next.override_city);
+    // Ville SEO : `{{city}}` et `{{location}}` pointent sur la même valeur.
+    cleaned.city = asString(next.override_city) || asString(next.override_location);
+    cleaned.location = cleaned.city;
     cleaned.phone = asString(next.override_phone);
     cleaned.email = asString(next.override_email);
     cleaned.address = asString(next.override_address);
@@ -1196,24 +1200,32 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                     </div>
 
                     <div className="space-y-1">
-                      <Label>Location SEO locale</Label>
-                      <Input
-                        value={asString(project.override_location)}
-                        onChange={(event) => updateProjectField("override_location", event.target.value)}
-                        onFocus={() => setFocusedField({ scope: "project", field: "override_location" })}
-                        placeholder="ex: La Rochelle"
-                      />
-                      <PreviewLine value={asString(project.override_location)} />
-                    </div>
-
-                    <div className="space-y-1">
-                      <Label>Ville</Label>
+                      <Label>Ville SEO</Label>
                       <Input
                         value={asString(project.override_city)}
                         onChange={(event) => updateProjectField("override_city", event.target.value)}
                         onFocus={() => setFocusedField({ scope: "project", field: "override_city" })}
+                        placeholder="ex: La Rochelle"
                       />
                       <PreviewLine value={asString(project.override_city)} />
+                      <p className="text-[11px] leading-snug text-muted-foreground">
+                        Grande ville la plus proche, mise en avant sur le site. Alimente
+                        <code className="mx-1">{"{{city}}"}</code>et<code className="mx-1">{"{{location}}"}</code>.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label>Zone principale (hérité)</Label>
+                      <Input
+                        value={asString(project.override_location)}
+                        onChange={(event) => updateProjectField("override_location", event.target.value)}
+                        onFocus={() => setFocusedField({ scope: "project", field: "override_location" })}
+                      />
+                      <PreviewLine value={asString(project.override_location)} />
+                      <p className="text-[11px] leading-snug text-muted-foreground">
+                        Miroir historique de la ville SEO, conservé pour les designs qui utilisent
+                        encore <code>{"{{ entreprise.location }}"}</code>.
+                      </p>
                     </div>
 
                     <div className="space-y-1">

@@ -30,7 +30,8 @@ export const TOKENIZABLE_VARIABLES: Array<{ token: string; label: string }> = [
   { token: "{{ entreprise.email }}", label: "Email" },
   { token: "{{ entreprise.email_domain }}", label: "Domaine email" },
   { token: "{{ entreprise.adresse }}", label: "Adresse" },
-  { token: "{{ entreprise.ville }}", label: "Ville" },
+  { token: "{{ entreprise.ville }}", label: "Ville (adresse)" },
+  { token: "{{ entreprise.ville_seo }}", label: "Ville SEO (grande ville)" },
   { token: "{{ entreprise.code_postal }}", label: "Code postal" },
   { token: "{{ entreprise.region }}", label: "Région" },
   { token: "{{ entreprise.departement }}", label: "Département" },
@@ -75,7 +76,8 @@ Tu dois retourner les chaînes EXACTES à remplacer par une variable, et rien d'
 - Numéro de téléphone → {{ entreprise.telephone }}
 - Email de contact → {{ entreprise.email }}
 - Adresse postale → {{ entreprise.adresse }}
-- Ville → {{ entreprise.ville }}
+- Ville dans une ADRESSE POSTALE (à côté du n°, de la rue, du code postal) → {{ entreprise.ville }}
+- Ville dans un TEXTE MARKETING (titre "Plombier à X", zone d'intervention, accroche, footer) → {{ entreprise.ville_seo }} (c'est la grande ville mise en avant, souvent différente de la ville de l'adresse)
 - Code postal → {{ entreprise.code_postal }}
 - URL du logo (valeur d'un src d'image de logo) → {{ entreprise.logo_url }}
 - URL du site web de l'entreprise → {{ entreprise.site_web_canonique }}
