@@ -295,3 +295,35 @@
 .mp-scope-pop-scrim{ position:fixed; inset:0; z-index:190; }
 .mp-scope .spin{ animation:mp-spin 1s linear infinite; }
 @keyframes mp-spin{ to{ transform:rotate(360deg); } }
+
+/* ── Tickets (notes agent ↔ admin) ────────────────────────────────────────
+ * Le panneau vit dans une modale : `mp-embed` neutralise le layout plein
+ * écran du scope (flex + height:100%) tout en gardant les tokens et les
+ * composants (btn, pill, mp-select). */
+.mp-scope.mp-embed{ display:block; height:auto; min-height:0; flex:none; background:transparent; }
+
+.mp-scope .notes-head{ display:flex; align-items:center; gap:8px; padding:2px 0 10px; }
+.mp-scope .note-form{ display:flex; flex-direction:column; gap:8px; border:1px solid var(--border-2); background:var(--surface-2); border-radius:10px; padding:11px; margin-bottom:12px; }
+.mp-scope .note-lb{ display:flex; flex-direction:column; gap:4px; font-size:10.5px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.07em; color:var(--text-3); }
+
+.mp-scope .note-list{ display:flex; flex-direction:column; gap:10px; }
+.mp-scope .note-card{ border:1px solid var(--border-2); border-radius:10px; padding:11px; background:var(--surface); box-shadow:var(--shadow-1); }
+.mp-scope .note-card.is-resolved{ opacity:.72; background:var(--surface-2); }
+.mp-scope .note-top{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.mp-scope .note-when{ margin-left:auto; font-size:10.5px; color:var(--text-3); font-family:var(--font-mono); }
+.mp-scope .note-title{ font-size:13px; font-weight:600; margin:7px 0 8px; }
+.mp-scope .note-thread{ display:flex; flex-direction:column; gap:7px; border-left:2px solid var(--border-2); padding-left:10px; margin-bottom:9px; }
+.mp-scope .note-msg .who{ display:flex; align-items:center; gap:6px; font-size:10.5px; color:var(--text-3); }
+.mp-scope .note-msg .who .role{ font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.06em; font-size:9.5px; background:var(--bg-3); border-radius:4px; padding:0 4px; }
+.mp-scope .note-msg .who .at{ margin-left:auto; font-family:var(--font-mono); }
+.mp-scope .note-msg .body{ font-size:12.5px; color:var(--text); white-space:pre-wrap; }
+.mp-scope .note-msg.mine .body{ color:var(--text); font-weight:500; }
+.mp-scope .note-actions{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.mp-scope .note-reply{ flex:1; min-width:150px; height:32px; border:1px solid var(--border-2); background:var(--surface); border-radius:8px; padding:0 10px; font-size:12.5px; outline:none; }
+.mp-scope .note-reply:focus{ border-color:var(--accent); }
+
+/* badge « tickets » sur la ligne et sur les cartes */
+.mp-scope .tk{ display:inline-flex; align-items:center; gap:4px; height:20px; padding:0 7px; border-radius:999px; font-size:10.5px; font-weight:600; border:1px solid transparent; background:var(--bg-3); color:var(--text-2); }
+.mp-scope .tk.on{ background:var(--danger-tint); color:var(--danger); }
+.mp-scope .tk:hover{ border-color:currentColor; }
+.mp-scope .note-company{ margin-top:7px; font-size:10.5px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); }

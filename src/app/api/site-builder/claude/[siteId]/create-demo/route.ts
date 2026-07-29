@@ -26,8 +26,10 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
 
   const supabase = getServiceClient();
 
-  // Resolve the company name + its lead-magnet project (reviews source).
-  const [{ data: company }, { data: project }] = await Promise.all([
+  // Resolve the company name + its lead-magnet project (reviews source), and
+  // the template's own name — echoed back so the caller can SHOW which template
+  // the demo was actually cloned from instead of trusting its own dropdown.
+  const [{ data: company }, { data: project }, { data: template }] = await Promise.all([
     supabase.from("entreprises").select("id, name").eq("id", companyId).single(),
     supabase
       .from("lead_magnet_projects")
@@ -35,6 +37,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
       .eq("entreprise_id", companyId)
       .limit(1)
       .maybeSingle(),
+    supabase.from("sites").select("name").eq("id", params.siteId).maybeSingle(),
   ]);
   if (!company) return jsonError("Entreprise introuvable", 404);
 
@@ -46,5 +49,12 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   });
   if (!clone.ok || !clone.siteId) return jsonError(clone.error ?? "Clonage échoué", 500);
 
-  return json({ siteId: clone.siteId }, { status: 201 });
+  return json(
+    {
+      siteId: clone.siteId,
+      templateId: params.siteId,
+      templateName: (template as { name?: string } | null)?.name ?? null,
+    },
+    { status: 201 },
+  );
 });

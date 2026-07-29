@@ -16,7 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/EnrichmentProgressModal";
 import { PipelineMatrix, STAGES, AGENT_STAGES } from "./marketing-pipeline/PipelineMatrix";
-import type { MatrixHandlers, BulkHandlers } from "./marketing-pipeline/types";
+import { NotesDialog } from "./marketing-pipeline/NotesDialog";
+import type { MatrixHandlers, BulkHandlers, NoteSubject } from "./marketing-pipeline/types";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
 
@@ -56,6 +57,7 @@ interface BoardItem {
   audit: { id: string; statut: string; pdf_url: string | null } | null;
   agent: { id: string; name: string } | null;
   missing_for_site: string[];
+  notes?: { open: number; total: number; open_subjects: NoteSubject[] } | null;
   column: number;
 }
 
@@ -88,6 +90,32 @@ function displayName(item: BoardItem): string {
   return getCompanyDisplayName(item.company_name || item.name, item.company_url) || item.name;
 }
 
+/**
+ * Template retenu pour créer les sites démo, mémorisé par variante (admin /
+ * agent). Sans ça, chaque retour sur la page repartait sur le premier template
+ * de la liste : on croyait créer avec celui choisi la veille, et la démo
+ * sortait d'un autre modèle.
+ */
+const templateStorageKey = (variant: MarketingPipelineVariant) => `mp:${variant}:templateId`;
+
+function readStoredTemplateId(variant: MarketingPipelineVariant): string {
+  if (typeof window === "undefined") return "";
+  try {
+    return window.localStorage.getItem(templateStorageKey(variant)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function storeTemplateId(variant: MarketingPipelineVariant, id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(templateStorageKey(variant), id);
+  } catch {
+    /* stockage indisponible (mode privé) : la sélection reste valable pour la session */
+  }
+}
+
 /* ── Component ────────────────────────────────────────────────────────────── */
 
 /**
@@ -114,6 +142,10 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   const [templateId, setTemplateId] = React.useState<string>("");
   const [working, setWorking] = React.useState<string | null>(null);
   const [editingItem, setEditingItem] = React.useState<BoardItem | null>(null);
+  // Panneau des tickets (notes agent ↔ admin) de la ligne.
+  const [notesItem, setNotesItem] = React.useState<BoardItem | null>(null);
+  const [notesSubject, setNotesSubject] = React.useState<NoteSubject | undefined>(undefined);
+  const [notesInbox, setNotesInbox] = React.useState(false);
   // When the edit modal is opened because a site can't be created yet, it shows
   // the missing required variables in red and gates the "create site" button.
   const [siteRequirement, setSiteRequirement] = React.useState(false);
@@ -129,13 +161,39 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       if (!res.ok) throw new Error();
       const data = (await res.json()) as BoardData;
       setBoard(data);
-      setTemplateId((prev) => prev || data.templates[0]?.id || "");
+      // Le template choisi survit au rechargement de la page (et à un
+      // rafraîchissement du board) : il n'a aucune raison de retomber sur le
+      // premier de la liste entre deux créations de site. On revalide toujours
+      // l'id contre la liste reçue — un template supprimé ne doit pas rester
+      // sélectionné en silence, sinon la création partirait sur un id mort.
+      setTemplateId((prev) => {
+        const known = (id: string) => data.templates.some((t) => t.id === id);
+        if (prev && known(prev)) return prev;
+        const stored = readStoredTemplateId(variant);
+        if (stored && known(stored)) return stored;
+        return data.templates[0]?.id ?? "";
+      });
     } catch {
       toast.error("Erreur lors du chargement du pipeline marketing");
     } finally {
       setLoading(false);
     }
-  }, [boardUrl]);
+  }, [boardUrl, variant]);
+
+  // Une seule source de vérité pour le template : tout passe par ici, donc la
+  // valeur affichée dans le menu est exactement celle qu'utilise la création.
+  const chooseTemplate = React.useCallback(
+    (id: string) => {
+      setTemplateId(id);
+      storeTemplateId(variant, id);
+    },
+    [variant],
+  );
+
+  const templateName = React.useMemo(
+    () => board?.templates.find((t) => t.id === templateId)?.name ?? null,
+    [board, templateId],
+  );
 
   React.useEffect(() => {
     load();
@@ -303,8 +361,8 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
 
   // Actually clone the template into a demo, assuming requirements are met.
   const createSiteDirect = async (items: BoardItem[]) => {
-    if (!templateId) {
-      toast.error("Choisis d'abord un template");
+    if (!templateId || !templateName) {
+      toast.error("Choisis d'abord un template en haut de page");
       return;
     }
     const targets = items.filter((it) => it.entreprise_id != null && !it.site);
@@ -324,10 +382,17 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
             entreprise_ids: targets.map((it) => it.entreprise_id),
           }),
         });
-        if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
-        const data = (await res.json()) as { created: number; failed: number };
-        if (data.created > 0) toast.success(`${data.created} site(s) démo créé(s)`);
-        if (data.failed > 0) toast.error(`${data.failed} création(s) en échec`);
+        const data = (await res.json().catch(() => ({}))) as {
+          created?: number;
+          failed?: number;
+          template_name?: string | null;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error || "Échec");
+        // Le nom vient du serveur : c'est le template réellement cloné.
+        const used = data.template_name || templateName;
+        if ((data.created ?? 0) > 0) toast.success(`${data.created} site(s) démo créé(s) depuis « ${used} »`);
+        if ((data.failed ?? 0) > 0) toast.error(`${data.failed} création(s) en échec`);
       } else {
         const results = await Promise.allSettled(
           targets.map(async (it) => {
@@ -336,12 +401,22 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ companyId: it.entreprise_id }),
             });
-            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
+            const data = (await res.json().catch(() => ({}))) as {
+              templateName?: string | null;
+              error?: string;
+            };
+            if (!res.ok) throw new Error(data.error || "Échec");
+            return data;
           }),
         );
         const ok = results.filter((r) => r.status === "fulfilled").length;
         const ko = results.length - ok;
-        if (ok > 0) toast.success(`${ok} site(s) démo créé(s)`);
+        // Le nom vient du serveur : c'est le template réellement cloné.
+        const used =
+          results.find((r): r is PromiseFulfilledResult<{ templateName?: string | null }> =>
+            r.status === "fulfilled",
+          )?.value.templateName || templateName;
+        if (ok > 0) toast.success(`${ok} site(s) démo créé(s) depuis « ${used} »`);
         if (ko > 0) toast.error(`${ko} création(s) en échec`);
       }
       await afterAction();
@@ -356,20 +431,38 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   // a fresh demo via create-demo even when a site already exists. Unlike
   // createSites it doesn't skip companies that already have a site.
   const regenerateSite = async (item: BoardItem) => {
-    if (!templateId) {
-      toast.error("Choisis d'abord un template");
+    if (!templateId || !templateName) {
+      toast.error("Choisis d'abord un template en haut de page");
       return;
     }
     if (item.entreprise_id == null) return;
     setWorking("create-site");
     try {
-      const res = await authedFetch(`/api/site-builder/claude/${templateId}/create-demo`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyId: item.entreprise_id }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
-      toast.success("Site régénéré — nouvelle démo créée");
+      // Côté agent la route générique du site builder n'est pas ouverte : on
+      // passe par la route agent, qui vérifie la propriété de l'entreprise.
+      const res = isAgent
+        ? await authedFetch("/api/agent/marketing-pipeline/site", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "create",
+              template_id: templateId,
+              entreprise_ids: [item.entreprise_id],
+            }),
+          })
+        : await authedFetch(`/api/site-builder/claude/${templateId}/create-demo`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ companyId: item.entreprise_id }),
+          });
+      const data = (await res.json().catch(() => ({}))) as {
+        templateName?: string | null;
+        template_name?: string | null;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(data.error || "Échec");
+      const used = data.templateName || data.template_name || templateName;
+      toast.success(`Site régénéré depuis « ${used} » — nouvelle démo créée`);
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la régénération du site");
@@ -382,8 +475,8 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   // Otherwise open the edit modal on the first incomplete company (requirement
   // mode) instead of creating anything.
   const createSites = async (items: BoardItem[]) => {
-    if (!templateId) {
-      toast.error("Choisis d'abord un template");
+    if (!templateId || !templateName) {
+      toast.error("Choisis d'abord un template en haut de page");
       return;
     }
     const targets = items.filter((it) => it.entreprise_id != null && !it.site);
@@ -602,6 +695,11 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       setSiteRequirement(false);
       setEditingItem(item);
     },
+    onNotes: (item, subject) => {
+      setNotesInbox(false);
+      setNotesSubject(subject);
+      setNotesItem(item);
+    },
   };
 
   /* ── Actions de masse (barre de sélection) ────────────────────────────── */
@@ -626,7 +724,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
         templates={board?.templates ?? []}
         pipelines={board?.pipelines ?? []}
         templateId={templateId}
-        onTemplateChange={setTemplateId}
+        onTemplateChange={chooseTemplate}
         loading={loading}
         working={working}
         onRefresh={load}
@@ -635,6 +733,26 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
         hasValidatedColumn={board?.has_validated_column ?? true}
         stages={isAgent ? AGENT_STAGES : STAGES}
         canAssign={!isAgent}
+        agentMode={isAgent}
+        onOpenTickets={() => {
+          setNotesSubject(undefined);
+          setNotesItem(null);
+          setNotesInbox(true);
+        }}
+      />
+
+      <NotesDialog
+        item={notesItem}
+        inbox={notesInbox}
+        apiBase={isAgent ? "/api/agent/marketing-pipeline/notes" : "/api/marketing-pipeline/notes"}
+        initialSubject={notesSubject}
+        role={isAgent ? "agent" : "admin"}
+        onClose={() => {
+          setNotesItem(null);
+          setNotesSubject(undefined);
+          setNotesInbox(false);
+        }}
+        onChanged={load}
       />
 
       <EnrichmentProgressModal

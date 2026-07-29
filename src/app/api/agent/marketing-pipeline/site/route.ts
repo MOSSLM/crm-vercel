@@ -49,6 +49,15 @@ export const POST = withAuth<Body>(
         return jsonError("entreprise_non_attribuee", 403, {}, cors);
       }
 
+      // Le nom du template est renvoyé au client : il affiche ainsi celui qui a
+      // RÉELLEMENT servi au clonage, au lieu de faire confiance à son menu.
+      const { data: template } = await sc
+        .from("sites")
+        .select("name, is_template")
+        .eq("id", body.template_id)
+        .maybeSingle();
+      if (!template) return jsonError("template_introuvable", 404, {}, cors);
+
       const entIds = owned.map((e) => Number(e.id));
       const { data: projects } = await sc
         .from("lead_magnet_projects")
@@ -82,7 +91,14 @@ export const POST = withAuth<Body>(
       }
 
       return json(
-        { ok: true, created, failed: failures.length, skipped: body.entreprise_ids.length - owned.length },
+        {
+          ok: true,
+          created,
+          failed: failures.length,
+          skipped: body.entreprise_ids.length - owned.length,
+          template_id: body.template_id,
+          template_name: (template as { name?: string | null }).name ?? null,
+        },
         { headers: cors },
       );
     }

@@ -27,12 +27,21 @@ import {
   FileText,
   Target,
   ChevronRight,
+  MessageSquare,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
-import type { BoardItem, AgentRef, TemplateRef, PipelineRef, MatrixHandlers, BulkHandlers } from "./types";
+import type {
+  BoardItem,
+  AgentRef,
+  TemplateRef,
+  PipelineRef,
+  MatrixHandlers,
+  BulkHandlers,
+  NoteSubject,
+} from "./types";
 import "./mp-skin.css";
 
 /* ── Stage model ──────────────────────────────────────────────────────────
@@ -143,6 +152,54 @@ function siteEditHref(site: NonNullable<BoardItem["site"]>): string {
   return site.is_claude_design ? `/site-builder/claude/${site.id}` : `/site-builder/${site.id}`;
 }
 
+/**
+ * L'éditeur d'audit admin (`/audits/[id]`) passe par `AppLayout`, qui renvoie
+ * tout non-admin sur son portail : un agent qui cliquait « Éditer l'audit »
+ * atterrissait sur son dashboard. Le portail agent a donc sa propre route, qui
+ * monte exactement le même éditeur.
+ */
+function auditEditHref(item: BoardItem, agentMode: boolean): string {
+  return agentMode ? `/espace-agent/audits/${item.id}` : `/audits/${item.id}`;
+}
+
+/** Nombre de tickets non résolus sur la ligne (0 si la ligne n'en a pas). */
+function openNotes(item: BoardItem): number {
+  return item.notes?.open ?? 0;
+}
+
+/** La ligne a-t-elle un ticket ouvert sur cette étape ? */
+function hasOpenNoteFor(item: BoardItem, subject: NoteSubject): boolean {
+  return (item.notes?.open_subjects ?? []).includes(subject);
+}
+
+/** Nombre de variables requises encore manquantes (tri « incomplets d'abord »). */
+function missingCount(item: BoardItem): number {
+  return item.missing_for_site?.length ?? 0;
+}
+
+/** Bouton « Signaler un problème » posé sur les cartes d'étape. */
+function NoteButton({
+  item,
+  subject,
+  handlers,
+}: {
+  item: BoardItem;
+  subject: NoteSubject;
+  handlers: MatrixHandlers;
+}) {
+  const flagged = hasOpenNoteFor(item, subject);
+  return (
+    <button
+      className={"btn ghost sm icon" + (flagged ? " danger-h" : "")}
+      title={flagged ? "Ticket ouvert sur cette étape — voir le fil" : "Signaler un problème (ticket)"}
+      style={flagged ? { color: "var(--danger)" } : undefined}
+      onClick={() => handlers.onNotes(item, subject)}
+    >
+      <MessageSquare className="ico-sm" />
+    </button>
+  );
+}
+
 /* ── Avatar ───────────────────────────────────────────────────────────── */
 function Avatar({ initials, color, size = 22 }: { initials: string; color?: string; size?: number }) {
   return (
@@ -240,6 +297,7 @@ function RowHead({
   onToggleSelect,
   onMenu,
   onAssignClick,
+  onNotes,
 }: {
   item: BoardItem;
   stages: StageDef[];
@@ -248,6 +306,7 @@ function RowHead({
   onToggleSelect: (item: BoardItem) => void;
   onMenu: (e: React.MouseEvent, item: BoardItem) => void;
   onAssignClick: (e: React.MouseEvent, item: BoardItem) => void;
+  onNotes: (item: BoardItem) => void;
 }) {
   const active = activeStageIndex(item, stages);
   const doneCount = Math.min(active, stages.length);
@@ -255,6 +314,9 @@ function RowHead({
   const name = displayName(item);
   const val = valueLabel(item);
   const website = normalizeUrl(item.company_url);
+  const missing = missingCount(item);
+  const notesOpen = openNotes(item);
+  const notesTotal = item.notes?.total ?? 0;
   const statusLabel = done
     ? canAssign
       ? "Attribué · transféré"
@@ -306,9 +368,16 @@ function RowHead({
             return <i key={s.id} className={cls} style={{ "--seg": s.color } as React.CSSProperties} />;
           })}
         </div>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 7 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 7, gap: 6 }}>
           <span className="rh-status">{statusLabel}</span>
-          {val && <span className="rh-status mono" style={{ color: "var(--text-2)", fontWeight: 600 }}>{val}</span>}
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {missing > 0 && (
+              <span className="pill danger" title={`Variables manquantes : ${item.missing_for_site.join(", ")}`}>
+                {missing} manquant{missing > 1 ? "s" : ""}
+              </span>
+            )}
+            {val && <span className="rh-status mono" style={{ color: "var(--text-2)", fontWeight: 600 }}>{val}</span>}
+          </span>
         </div>
       </div>
 
@@ -330,6 +399,23 @@ function RowHead({
           </button>
         )}
         <div className="rh-links">
+          <button
+            className={"tk" + (notesOpen > 0 ? " on" : "")}
+            title={
+              notesOpen > 0
+                ? `${notesOpen} ticket(s) en cours — ouvrir le fil`
+                : notesTotal > 0
+                  ? `${notesTotal} ticket(s) résolu(s) — ouvrir le fil`
+                  : "Signaler un problème / voir les tickets"
+            }
+            onClick={(e) => {
+              e.stopPropagation();
+              onNotes(item);
+            }}
+          >
+            <MessageSquare className="ico-xs" />
+            {notesOpen > 0 ? notesOpen : notesTotal > 0 ? notesTotal : ""}
+          </button>
           {website ? (
             <a href={website} target="_blank" rel="noopener noreferrer" title={item.company_url ?? undefined}>
               <Globe className="ico-sm" />
@@ -351,6 +437,10 @@ interface CellProps {
   status: CellStatus;
   working: string | null;
   templateId: string;
+  /** Nom du template sélectionné : rappelé dans les infobulles de création. */
+  templateName: string | null;
+  /** Mode agent : change la cible des liens qui ont un équivalent portail. */
+  agentMode: boolean;
   handlers: MatrixHandlers;
 }
 
@@ -433,7 +523,7 @@ function StageBody({ item, stage }: { item: BoardItem; stage: StageDef }) {
 /* Actions for a reached cell. "Valider" appears only while the stage is active;
  * everything else (Éditer, Régénérer, Voir, Fiche) stays available once done so
  * earlier stages remain fully actionable (e.g. regenerate the site from Audit). */
-function StageActions({ item, stage, done, busy, templateId, handlers }: { item: BoardItem; stage: StageDef; done: boolean; busy: boolean; templateId: string; handlers: MatrixHandlers }) {
+function StageActions({ item, stage, done, busy, templateId, templateName, agentMode, handlers }: { item: BoardItem; stage: StageDef; done: boolean; busy: boolean; templateId: string; templateName: string | null; agentMode: boolean; handlers: MatrixHandlers }) {
   switch (stage.id) {
     case "enrich": {
       const failed = item.project?.statut === "failed";
@@ -446,6 +536,7 @@ function StageActions({ item, stage, done, busy, templateId, handlers }: { item:
           <button className="btn ghost sm icon" disabled={busy} title="Voir / modifier la fiche" onClick={() => handlers.onDetails(item)}>
             <Pencil className="ico-sm" />
           </button>
+          <NoteButton item={item} subject="enrichment" handlers={handlers} />
         </div>
       );
     }
@@ -456,6 +547,7 @@ function StageActions({ item, stage, done, busy, templateId, handlers }: { item:
             <ClipboardCheck className="ico-sm" />
             Fiche
           </button>
+          <NoteButton item={item} subject="enrichment" handlers={handlers} />
           {!done && (
             <button className="btn ok sm icon" disabled={busy || !item.project} title="Valider les données" onClick={() => handlers.onValidateEnrich(item)}>
               <Check className="ico-sm" />
@@ -470,9 +562,19 @@ function StageActions({ item, stage, done, busy, templateId, handlers }: { item:
             <Link className="btn ghost sm icon" href={siteEditHref(item.site)} title="Éditer le site">
               <Pencil className="ico-sm" />
             </Link>
-            <button className="btn ghost sm icon" disabled={busy || item.entreprise_id == null || !templateId} title="Régénérer le site (nouvelle démo depuis les infos à jour)" onClick={() => handlers.onRegenerateSite(item)}>
+            <button
+              className="btn ghost sm icon"
+              disabled={busy || item.entreprise_id == null || !templateId}
+              title={
+                templateName
+                  ? `Régénérer le site depuis le template « ${templateName} » (nouvelle démo, infos à jour)`
+                  : "Choisis un template en haut de page"
+              }
+              onClick={() => handlers.onRegenerateSite(item)}
+            >
               <RefreshCw className="ico-sm" />
             </button>
+            <NoteButton item={item} subject="site" handlers={handlers} />
             {!done && (
               <button className="btn ok sm icon" disabled={busy} title="Valider le site" onClick={() => handlers.onValidateSite(item)}>
                 <Check className="ico-sm" />
@@ -483,20 +585,26 @@ function StageActions({ item, stage, done, busy, templateId, handlers }: { item:
       }
       return (
         <div className="c-foot">
-          <button className="btn sm" disabled={busy || item.entreprise_id == null || !templateId} title={templateId ? "Créer le site démo" : "Choisis un template"} onClick={() => handlers.onCreateSite(item)}>
+          <button
+            className="btn sm"
+            disabled={busy || item.entreprise_id == null || !templateId}
+            title={templateName ? `Créer le site démo depuis « ${templateName} »` : "Choisis un template en haut de page"}
+            onClick={() => handlers.onCreateSite(item)}
+          >
             <Globe className="ico-sm" />
             Créer
           </button>
           <button className="btn ghost sm icon" disabled={busy} title="Voir / modifier la fiche" onClick={() => handlers.onDetails(item)}>
             <Pencil className="ico-sm" />
           </button>
+          <NoteButton item={item} subject="site" handlers={handlers} />
         </div>
       );
     case "audit":
       if (item.audit) {
         return (
           <div className="c-foot">
-            <Link className="btn ghost sm icon" href={`/audits/${item.id}`} title="Éditer l'audit">
+            <Link className="btn ghost sm icon" href={auditEditHref(item, agentMode)} title="Éditer l'audit">
               <Pencil className="ico-sm" />
             </Link>
             {item.audit.pdf_url ? (
@@ -504,6 +612,7 @@ function StageActions({ item, stage, done, busy, templateId, handlers }: { item:
                 <Eye className="ico-sm" />
               </a>
             ) : null}
+            <NoteButton item={item} subject="audit" handlers={handlers} />
             {!done && (
               <button className="btn ok sm icon" disabled={busy} title="Valider l'audit" onClick={() => handlers.onValidateAudit(item)}>
                 <Check className="ico-sm" />
@@ -518,6 +627,7 @@ function StageActions({ item, stage, done, busy, templateId, handlers }: { item:
             <FileText className="ico-sm" />
             Créer l&apos;audit
           </button>
+          <NoteButton item={item} subject="audit" handlers={handlers} />
         </div>
       );
     default:
@@ -525,7 +635,7 @@ function StageActions({ item, stage, done, busy, templateId, handlers }: { item:
   }
 }
 
-function StageCell({ item, stage, status, working, templateId, handlers }: CellProps) {
+function StageCell({ item, stage, status, working, templateId, templateName, agentMode, handlers }: CellProps) {
   const seg = {
     "--seg": stage.color,
     "--seg-soft": rgba(stage.color, 0.22),
@@ -560,7 +670,16 @@ function StageCell({ item, stage, status, working, templateId, handlers }: CellP
           </span>
         </div>
         <StageBody item={item} stage={stage} />
-        <StageActions item={item} stage={stage} done={done} busy={busy} templateId={templateId} handlers={handlers} />
+        <StageActions
+          item={item}
+          stage={stage}
+          done={done}
+          busy={busy}
+          templateId={templateId}
+          templateName={templateName}
+          agentMode={agentMode}
+          handlers={handlers}
+        />
       </div>
     </div>
   );
@@ -753,7 +872,33 @@ type MenuState = { kind: "row" | "assign"; item: BoardItem; x: number; y: number
 type AttributionFilter = "all" | "assigned" | "unassigned";
 /** Filtre d'étape : « toutes », l'index d'une étape en cours, ou « terminées ». */
 type StageFilter = "all" | "done" | number;
-type SortMode = "recent" | "stage-asc" | "stage-desc";
+/**
+ * Tri des lignes. Au-delà de l'avancement, on trie sur ce qui décide vraiment
+ * du travail à faire : les variables encore manquantes (une ligne à 6 trous ne
+ * se traite pas comme une ligne à 1) et les tickets en attente.
+ */
+type SortMode =
+  | "recent"
+  | "stage-asc"
+  | "stage-desc"
+  | "missing-desc"
+  | "missing-asc"
+  | "notes"
+  | "name";
+/** Complétude des variables requises pour créer le site. */
+type DataFilter = "all" | "incomplete" | "complete";
+/** Présence de tickets (notes agent ↔ admin). */
+type TicketFilter = "all" | "open" | "none";
+
+const SORT_LABELS: Array<[SortMode, string]> = [
+  ["recent", "Trier : récentes"],
+  ["stage-asc", "Trier : moins avancées"],
+  ["stage-desc", "Trier : plus avancées"],
+  ["missing-desc", "Trier : plus de champs manquants"],
+  ["missing-asc", "Trier : moins de champs manquants"],
+  ["notes", "Trier : tickets en cours d'abord"],
+  ["name", "Trier : nom (A→Z)"],
+];
 
 interface PipelineMatrixProps {
   items: BoardItem[];
@@ -784,6 +929,14 @@ interface PipelineMatrixProps {
    * déjà eu lieu en amont.
    */
   canAssign?: boolean;
+  /**
+   * Board monté dans le portail agent : les liens qui ont un équivalent portail
+   * (l'éditeur d'audit) pointent vers celui-ci plutôt que vers la route admin,
+   * qui redirige un agent sur son dashboard.
+   */
+  agentMode?: boolean;
+  /** Ouvre la boîte de réception des tickets (toutes lignes confondues). */
+  onOpenTickets?: () => void;
 }
 
 export function PipelineMatrix({
@@ -801,6 +954,8 @@ export function PipelineMatrix({
   hasValidatedColumn = true,
   stages = STAGES,
   canAssign = true,
+  agentMode = false,
+  onOpenTickets,
 }: PipelineMatrixProps) {
   const [q, setQ] = React.useState("");
   const [attribution, setAttribution] = React.useState<AttributionFilter>("all");
@@ -808,6 +963,8 @@ export function PipelineMatrix({
   const [hideAttributed, setHideAttributed] = React.useState(false);
   const [pipelineFilter, setPipelineFilter] = React.useState("all");
   const [stageFilter, setStageFilter] = React.useState<StageFilter>("all");
+  const [dataFilter, setDataFilter] = React.useState<DataFilter>("all");
+  const [ticketFilter, setTicketFilter] = React.useState<TicketFilter>("all");
   const [sort, setSort] = React.useState<SortMode>("recent");
   const [hidden, setHidden] = React.useState<Set<string>>(new Set());
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
@@ -842,13 +999,17 @@ export function PipelineMatrix({
       if (attribution === "unassigned" && it.agent) return false;
       if (owner !== "all" && it.agent?.id !== owner) return false;
       if (pipelineFilter !== "all" && it.pipeline_id !== pipelineFilter) return false;
+      if (dataFilter === "incomplete" && missingCount(it) === 0) return false;
+      if (dataFilter === "complete" && missingCount(it) > 0) return false;
+      if (ticketFilter === "open" && openNotes(it) === 0) return false;
+      if (ticketFilter === "none" && openNotes(it) > 0) return false;
       if (nq) {
         const hay = [displayName(it), it.ville ?? "", it.company_url ?? "", it.tags ?? ""].join(" ").toLowerCase();
         if (!hay.includes(nq)) return false;
       }
       return true;
     });
-  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, hidden]);
+  }, [items, q, attribution, owner, hideAttributed, pipelineFilter, dataFilter, ticketFilter, hidden]);
 
   const visibleRows = React.useMemo(() => {
     const rows =
@@ -859,10 +1020,29 @@ export function PipelineMatrix({
             return stageFilter === "done" ? a >= stages.length : a === stageFilter;
           });
     if (sort === "recent") return rows;
-    const dir = sort === "stage-asc" ? 1 : -1;
+
     // Tri stable : `items` arrive déjà trié par `updated_at`, on ne réordonne
-    // qu'à avancement égal.
-    return [...rows].sort((a, b) => (activeStageIndex(a, stages) - activeStageIndex(b, stages)) * dir);
+    // qu'à égalité sur le critère demandé — l'ordre récent reste le départage.
+    const key = (it: BoardItem): number => {
+      switch (sort) {
+        case "stage-asc":
+          return activeStageIndex(it, stages);
+        case "stage-desc":
+          return -activeStageIndex(it, stages);
+        case "missing-desc":
+          return -missingCount(it);
+        case "missing-asc":
+          return missingCount(it);
+        case "notes":
+          return -openNotes(it);
+        default:
+          return 0;
+      }
+    };
+    if (sort === "name") {
+      return [...rows].sort((a, b) => displayName(a).localeCompare(displayName(b), "fr"));
+    }
+    return [...rows].sort((a, b) => key(a) - key(b));
   }, [baseRows, stageFilter, sort, stages]);
 
   const counts = React.useMemo(() => {
@@ -893,6 +1073,30 @@ export function PipelineMatrix({
       return n;
     });
 
+  const selectedTemplate = React.useMemo(
+    () => templates.find((t) => t.id === templateId) ?? null,
+    [templates, templateId],
+  );
+
+  /**
+   * Libellés du menu Template. Deux templates peuvent porter le même nom (un
+   * ZIP multi-templates les nomme d'après leurs pages) : on suffixe alors le
+   * début de l'id, sinon impossible de savoir lequel on a choisi. Les templates
+   * classiques (hors Claude Design) sont marqués — ils ne produisent pas le
+   * même site.
+   */
+  const templateOptions = React.useMemo(() => {
+    const byName = new Map<string, number>();
+    for (const t of templates) byName.set(t.name, (byName.get(t.name) ?? 0) + 1);
+    return templates.map((t) => ({
+      id: t.id,
+      label:
+        t.name +
+        ((byName.get(t.name) ?? 0) > 1 ? ` (${t.id.slice(0, 4)})` : "") +
+        (t.is_claude_design ? "" : " · classique"),
+    }));
+  }, [templates]);
+
   const stats = React.useMemo(() => {
     const total = items.length;
     const attribues = items.filter((it) => !!it.agent).length;
@@ -900,7 +1104,8 @@ export function PipelineMatrix({
       (it) => activeStageIndex(it, stages) < stages.length && (!canAssign || !it.agent),
     ).length;
     const termines = items.filter((it) => activeStageIndex(it, stages) >= stages.length).length;
-    return { total, attribues, enCours, termines };
+    const tickets = items.reduce((n, it) => n + openNotes(it), 0);
+    return { total, attribues, enCours, termines, tickets };
   }, [items, stages, canAssign]);
 
   const openMenu = (e: React.MouseEvent, item: BoardItem, kind: "row" | "assign" = "row") => {
@@ -949,6 +1154,17 @@ export function PipelineMatrix({
               Pipeline
             </button>
           </div>
+          {onOpenTickets && (
+            <button
+              className="btn subtle sm"
+              onClick={onOpenTickets}
+              title="Tous les tickets signalés sur le pipeline"
+            >
+              <MessageSquare className="ico-sm" />
+              Tickets
+              {stats.tickets > 0 && <span className="ct">{stats.tickets}</span>}
+            </button>
+          )}
           <button className="btn ghost sm" onClick={onRefresh} disabled={loading}>
             <RefreshCw className={"ico-sm" + (loading ? " spin" : "")} />
             Rafraîchir
@@ -1014,9 +1230,33 @@ export function PipelineMatrix({
           onChange={(e) => setSort(e.target.value as SortMode)}
           title="Ordre des lignes"
         >
-          <option value="recent">Trier : récentes</option>
-          <option value="stage-asc">Trier : moins avancées</option>
-          <option value="stage-desc">Trier : plus avancées</option>
+          {SORT_LABELS.map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="mp-select"
+          value={dataFilter}
+          onChange={(e) => setDataFilter(e.target.value as DataFilter)}
+          title="Complétude des variables requises pour créer le site"
+        >
+          <option value="all">Données : toutes</option>
+          <option value="incomplete">Données : incomplètes</option>
+          <option value="complete">Données : complètes</option>
+        </select>
+
+        <select
+          className="mp-select"
+          value={ticketFilter}
+          onChange={(e) => setTicketFilter(e.target.value as TicketFilter)}
+          title="Tickets signalés sur la ligne"
+        >
+          <option value="all">Tickets : tous</option>
+          <option value="open">Tickets : en cours</option>
+          <option value="none">Tickets : aucun</option>
         </select>
 
         {canAssign && (
@@ -1071,15 +1311,29 @@ export function PipelineMatrix({
 
         <div className="tb-div" />
         <span className="tb-lb">Template</span>
-        <select className="mp-select" value={templateId} onChange={(e) => onTemplateChange(e.target.value)} title="Template utilisé pour créer les sites démo">
+        <select
+          className="mp-select"
+          value={selectedTemplate ? templateId : ""}
+          onChange={(e) => onTemplateChange(e.target.value)}
+          title={
+            selectedTemplate
+              ? `Les sites démo seront créés depuis « ${selectedTemplate.name} »`
+              : "Template utilisé pour créer les sites démo"
+          }
+        >
           {templates.length === 0 ? (
             <option value="">Aucun template</option>
           ) : (
-            templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))
+            <>
+              {/* Sans template résolu, le menu afficherait la 1re entrée tout en
+                  n'ayant rien de sélectionné — d'où cette option explicite. */}
+              {!selectedTemplate && <option value="">Choisir un template…</option>}
+              {templateOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.label}
+                </option>
+              ))}
+            </>
           )}
         </select>
 
@@ -1107,6 +1361,17 @@ export function PipelineMatrix({
             <span className="v ok">{canAssign ? stats.attribues : stats.termines}</span>
             <span className="l">{canAssign ? "Attribués" : "Terminés"}</span>
           </div>
+          {stats.tickets > 0 && (
+            <button
+              className="stat"
+              title="N'afficher que les lignes avec un ticket en cours"
+              style={{ border: 0, background: "transparent", padding: 0, textAlign: "left" }}
+              onClick={() => setTicketFilter((f) => (f === "open" ? "all" : "open"))}
+            >
+              <span className="v" style={{ color: "var(--danger)" }}>{stats.tickets}</span>
+              <span className="l">Tickets</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1176,13 +1441,26 @@ export function PipelineMatrix({
                   onToggleSelect={(it) => toggleSelected(it.id)}
                   onMenu={(e, it) => openMenu(e, it, "row")}
                   onAssignClick={(e, it) => openMenu(e, it, "assign")}
+                  onNotes={(it) => handlers.onNotes(it)}
                 />
                 {stages.map((s, i) => {
                   const status = cellStatus(r, i, stages);
                   if (s.id === "attribution") {
                     return <AttributionCell key={s.id} item={r} stage={s} status={status} agents={agents} working={working} handlers={handlers} />;
                   }
-                  return <StageCell key={s.id} item={r} stage={s} status={status} working={working} templateId={templateId} handlers={handlers} />;
+                  return (
+                    <StageCell
+                      key={s.id}
+                      item={r}
+                      stage={s}
+                      status={status}
+                      working={working}
+                      templateId={templateId}
+                      templateName={selectedTemplate?.name ?? null}
+                      agentMode={agentMode}
+                      handlers={handlers}
+                    />
+                  );
                 })}
               </React.Fragment>
             ))
@@ -1245,6 +1523,21 @@ export function PipelineMatrix({
                 >
                   <Building2 className="ico-sm" />
                   Voir / modifier la fiche
+                </button>
+                <button
+                  className="pop-item"
+                  onClick={() => {
+                    handlers.onNotes(menu.item);
+                    setMenu(null);
+                  }}
+                >
+                  <MessageSquare className="ico-sm" />
+                  Tickets / signaler un problème
+                  {openNotes(menu.item) > 0 && (
+                    <span className="pill danger" style={{ marginLeft: "auto" }}>
+                      {openNotes(menu.item)}
+                    </span>
+                  )}
                 </button>
                 <button
                   className="pop-item"

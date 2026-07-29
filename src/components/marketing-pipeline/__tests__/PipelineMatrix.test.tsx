@@ -5,7 +5,12 @@ import type { BoardItem, BulkHandlers, MatrixHandlers } from "../types";
 
 jest.mock("next/link", () => ({
   __esModule: true,
-  default: ({ children, href }: { children: React.ReactNode; href: string }) => <a href={href}>{children}</a>,
+  // `title` compris : c'est par lui qu'on retrouve les liens des cartes.
+  default: ({ children, href, ...rest }: { children: React.ReactNode; href: string }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
 }));
 jest.mock("sonner", () => ({ toast: Object.assign(jest.fn(), { error: jest.fn(), success: jest.fn() }) }));
 
@@ -73,7 +78,50 @@ const noopHandlers: MatrixHandlers = {
   onAssign: jest.fn(),
   onMove: jest.fn(),
   onDetails: jest.fn(),
+  onNotes: jest.fn(),
 };
+
+/**
+ * Lignes portant des variables manquantes et des tickets — le matériel des
+ * tris/filtres « complétude » et « tickets ».
+ */
+const TRIAGE_ROWS: BoardItem[] = [
+  item({ id: "m0", name: "Zeta", missing_for_site: [] }),
+  item({ id: "m3", name: "Yota", missing_for_site: ["Ville", "Téléphone", "Note moyenne"] }),
+  item({
+    id: "m1",
+    name: "Xena",
+    missing_for_site: ["Ville"],
+    notes: { open: 2, total: 3, open_subjects: ["site"] },
+  }),
+];
+
+function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) {
+  render(
+    <PipelineMatrix
+      items={rows}
+      agents={[]}
+      templates={[{ id: "t1", name: "Template", is_claude_design: true }]}
+      pipelines={[]}
+      templateId="t1"
+      onTemplateChange={jest.fn()}
+      loading={false}
+      working={null}
+      onRefresh={jest.fn()}
+      handlers={handlers}
+      bulk={{
+        onEnrich: jest.fn(),
+        onValidateEnrich: jest.fn(),
+        onCreateSites: jest.fn(),
+        onValidateSites: jest.fn(),
+        onCreateAudits: jest.fn(),
+        onValidateAudits: jest.fn(),
+        onAssign: jest.fn(),
+        onMove: jest.fn(),
+      }}
+    />,
+  );
+}
 
 function renderMatrix(bulk: Partial<BulkHandlers> = {}) {
   const bulkHandlers: BulkHandlers = {
@@ -214,5 +262,100 @@ describe("PipelineMatrix — filtre et tri par étape", () => {
       "Sélectionner Beta",
       "Sélectionner Alpha",
     ]);
+  });
+});
+
+describe("PipelineMatrix — tri et filtre sur la complétude et les tickets", () => {
+  it("trie par nombre de variables manquantes, dans les deux sens", () => {
+    renderRows(TRIAGE_ROWS);
+    const sort = screen.getByTitle("Ordre des lignes");
+
+    fireEvent.change(sort, { target: { value: "missing-desc" } });
+    expect(rowNames()).toEqual(["Sélectionner Yota", "Sélectionner Xena", "Sélectionner Zeta"]);
+
+    fireEvent.change(sort, { target: { value: "missing-asc" } });
+    expect(rowNames()).toEqual(["Sélectionner Zeta", "Sélectionner Xena", "Sélectionner Yota"]);
+  });
+
+  it("remonte les lignes qui portent un ticket en cours", () => {
+    renderRows(TRIAGE_ROWS);
+    fireEvent.change(screen.getByTitle("Ordre des lignes"), { target: { value: "notes" } });
+    expect(rowNames()[0]).toBe("Sélectionner Xena");
+  });
+
+  it("filtre sur les fiches incomplètes puis complètes", () => {
+    renderRows(TRIAGE_ROWS);
+    const dataFilter = screen.getByTitle(/Complétude des variables/);
+
+    fireEvent.change(dataFilter, { target: { value: "incomplete" } });
+    expect(rowNames()).toEqual(["Sélectionner Yota", "Sélectionner Xena"]);
+
+    fireEvent.change(dataFilter, { target: { value: "complete" } });
+    expect(rowNames()).toEqual(["Sélectionner Zeta"]);
+  });
+
+  it("filtre sur les lignes qui ont un ticket en cours", () => {
+    renderRows(TRIAGE_ROWS);
+    fireEvent.change(screen.getByTitle(/Tickets signalés/), { target: { value: "open" } });
+    expect(rowNames()).toEqual(["Sélectionner Xena"]);
+  });
+
+  it("ouvre le fil des tickets depuis le badge de la ligne", () => {
+    const onNotes = jest.fn();
+    renderRows(TRIAGE_ROWS, { ...noopHandlers, onNotes });
+    fireEvent.click(screen.getByTitle("2 ticket(s) en cours — ouvrir le fil"));
+    expect(onNotes).toHaveBeenCalledWith(TRIAGE_ROWS[2]);
+  });
+
+  it("signale un problème depuis la carte de l'étape, avec le sujet pré-rempli", () => {
+    const onNotes = jest.fn();
+    renderRows([item({ id: "s", name: "Sigma" })], { ...noopHandlers, onNotes });
+    fireEvent.click(screen.getAllByTitle("Signaler un problème (ticket)")[0]);
+    expect(onNotes).toHaveBeenCalledWith(expect.objectContaining({ id: "s" }), "enrichment");
+  });
+});
+
+describe("PipelineMatrix — éditeur d'audit selon la coque", () => {
+  const withAudit = item({
+    id: "au",
+    name: "Omega",
+    enriched: true,
+    project: { id: "p1", pret_pour_lm: true, enrichment_validated: true, statut: "framer", enrichment_error: null, enrichment_attempts: null },
+    site: { id: "s1", name: "s", build_stage: "pret", is_published: false, url: null, is_claude_design: true },
+    audit: { id: "a1", statut: "draft", pdf_url: null },
+  });
+
+  it("pointe sur la route admin par défaut", () => {
+    renderRows([withAudit]);
+    expect(screen.getByTitle("Éditer l'audit")).toHaveAttribute("href", "/audits/au");
+  });
+
+  it("pointe sur le portail agent en mode agent — la route admin l'en éjecterait", () => {
+    render(
+      <PipelineMatrix
+        items={[withAudit]}
+        agents={[]}
+        templates={[{ id: "t1", name: "Template", is_claude_design: true }]}
+        pipelines={[]}
+        templateId="t1"
+        onTemplateChange={jest.fn()}
+        loading={false}
+        working={null}
+        onRefresh={jest.fn()}
+        handlers={noopHandlers}
+        bulk={{
+          onEnrich: jest.fn(),
+          onValidateEnrich: jest.fn(),
+          onCreateSites: jest.fn(),
+          onValidateSites: jest.fn(),
+          onCreateAudits: jest.fn(),
+          onValidateAudits: jest.fn(),
+          onMove: jest.fn(),
+        }}
+        canAssign={false}
+        agentMode
+      />,
+    );
+    expect(screen.getByTitle("Éditer l'audit")).toHaveAttribute("href", "/espace-agent/audits/au");
   });
 });
