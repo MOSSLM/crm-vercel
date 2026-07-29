@@ -6,6 +6,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { cloneTemplateSite } from "@/lib/site-builder/clone-template-site";
 import { rebuildSiteFromTemplate } from "@/lib/site-builder/rebuild-site-from-template";
+import { bestProjectIdByEnterprise } from "@/lib/site-builder/resolve-project-id";
 import { assertOwnsEntreprise, logPipelineStep } from "../_lib";
 
 export const runtime = "nodejs";
@@ -67,13 +68,10 @@ export const POST = withAuth<Body>(
       if (!template) return jsonError("template_introuvable", 404, {}, cors);
 
       const entIds = owned.map((e) => Number(e.id));
-      const { data: projects } = await sc
-        .from("lead_magnet_projects")
-        .select("id, entreprise_id")
-        .in("entreprise_id", entIds);
-      const projectByEnt = new Map(
-        (projects ?? []).map((p) => [Number(p.entreprise_id), p.id as string]),
-      );
+      // Une entreprise a un projet par opportunité : le résolveur partagé retient
+      // le plus avancé. La map précédente gardait le DERNIER rencontré, donc un
+      // projet différent d'une exécution à l'autre.
+      const projectByEnt = await bestProjectIdByEnterprise(sc, entIds);
 
       let created = 0;
       const failures: number[] = [];

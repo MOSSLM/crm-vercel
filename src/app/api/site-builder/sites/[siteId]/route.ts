@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { resolveLeadMagnetProjectId } from "@/lib/site-builder/resolve-project-id";
 import type { SiteConfig, StyleGuide, SitemapPage } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -57,17 +58,13 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
     patch.build_stage = build_stage;
   }
 
-  // When linking a company without an explicit project, auto-link that
-  // enterprise's lead-magnet project so its reviews (lead_magnet_reviews)
-  // resolve. (Each enterprise has at most one project.)
+  // En liant une entreprise sans projet explicite, on enregistre le projet
+  // retenu pour que ses avis et ses chiffres clés se résolvent. Une entreprise
+  // a UN projet par opportunité : on passe par le résolveur partagé, qui
+  // privilégie le projet validé plutôt qu'une ligne au hasard.
   if (enterprise_id != null && lead_magnet_project_id === undefined) {
-    const { data: proj } = await supabase
-      .from("lead_magnet_projects")
-      .select("id")
-      .eq("entreprise_id", enterprise_id)
-      .limit(1)
-      .maybeSingle();
-    if (proj && (proj as { id?: string }).id) patch.lead_magnet_project_id = (proj as { id: string }).id;
+    const { projectId } = await resolveLeadMagnetProjectId(supabase, { enterpriseId: enterprise_id });
+    if (projectId) patch.lead_magnet_project_id = projectId;
   }
 
   if (Object.keys(patch).length === 0) return jsonError("Aucun champ à mettre à jour", 400);
