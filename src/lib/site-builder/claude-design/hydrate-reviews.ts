@@ -17,6 +17,7 @@
  * Même pipeline que `stripTaggedRegions` (node-html-parser), côté serveur, pur.
  */
 import { parse } from "node-html-parser";
+import { stripDomPathStamps } from "./dom-paths";
 
 interface ReviewData {
   name?: string;
@@ -79,7 +80,12 @@ export function hydrateReviews(html: string, reviewsJson: string | undefined | n
     const template = grid.querySelector("[data-review-item]");
     if (!template) continue;
     const templateHtml = template.toString();
-    const cards = reviews.map((r) => fillCard(templateHtml, r)).join("");
+    // Seule la 1re carte garde les tampons `data-cdp` de la carte-modèle : deux
+    // nœuds ne peuvent pas porter le même chemin, sinon la résolution par
+    // tampon deviendrait ambiguë (cf. claude-design/dom-paths.ts).
+    const cards = reviews
+      .map((r, i) => (i === 0 ? fillCard(templateHtml, r) : stripDomPathStamps(fillCard(templateHtml, r))))
+      .join("");
     grid.set_content(cards);
   }
   return root.toString();

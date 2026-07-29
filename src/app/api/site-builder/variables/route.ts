@@ -8,6 +8,7 @@ import {
 } from "@/lib/site-builder/enrichment-variables";
 import { applyProjectEnrichment } from "@/lib/site-builder/project-enrichment";
 import { resolveCities } from "@/lib/site-builder/city-variables";
+import { finalizeEnterpriseVariables } from "@/lib/site-builder/build-enterprise-variables";
 import type { StatItem } from "@/lib/site-builder/menu-overrides";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +28,7 @@ type EnterpriseVariablesRow = {
   logo_url: string | null;
   site_web_canonique: string | null;
   canonical_url: string | null;
+  horaires: string | null;
 };
 
 type ProjectRow = {
@@ -90,7 +92,7 @@ export const GET = withAuth({}, async ({ req }) => {
       .select(
         "nom:name, ville, telephone, email, adresse, code_postal, pays, " +
         "service_tags, stats, note_moyenne, nombre_avis, logo_url, " +
-        "site_web_canonique, canonical_url"
+        "site_web_canonique, canonical_url, horaires"
       )
       .eq("id", enterpriseId)
       .single(),
@@ -168,19 +170,13 @@ export const GET = withAuth({}, async ({ req }) => {
     "entreprise.note_moyenne":String(ent.note_moyenne ?? ""),
     "entreprise.nombre_avis": String(ent.nombre_avis ?? ""),
     "entreprise.logo_url":    ent.logo_url ?? "",
-    "entreprise.site_web":    ent.site_web_canonique ?? ent.canonical_url ?? "",
     "entreprise.site_web_canonique": ent.site_web_canonique ?? ent.canonical_url ?? "",
-    "company.name":    nom,
-    "company.city":    ville,
-    "company.phone":   telephone,
-    "company.email":   email,
-    "company.address": [adresse, ville].filter(Boolean).join(", "),
-    "company.rating":  String(ent.note_moyenne ?? ""),
-    "company.reviews": String(ent.nombre_avis ?? ""),
-    "company.services":servicesList,
-    "company.logo":    ent.logo_url ?? "",
-    "company.website": ent.site_web_canonique ?? ent.canonical_url ?? "",
+    // `entreprise.horaires` : la colonne `entreprises` d'abord, comme le
+    // résolveur de publication (le repli automated_enrichment vient plus bas).
+    "entreprise.horaires":    ent.horaires ?? "",
   };
+  // `entreprise.site_web` et la famille `company.*` sont dérivés en fin de
+  // parcours par `finalizeEnterpriseVariables`, partagé avec la publication.
 
   if (proj?.variables && typeof proj.variables === "object") {
     for (const [k, v] of Object.entries(proj.variables)) {
@@ -200,7 +196,6 @@ export const GET = withAuth({}, async ({ req }) => {
     const projEnrichment = applyProjectEnrichment(variables, proj);
     projectServiceTags = projEnrichment.serviceTags;
     projectStats = projEnrichment.stats;
-    variables["company.logo"] = variables["entreprise.logo_url"] ?? "";
   }
 
   if (reviews.length > 0) {
@@ -219,7 +214,6 @@ export const GET = withAuth({}, async ({ req }) => {
   const effectiveServiceTags = projectServiceTags ?? serviceTags;
   const effectiveServicesList = effectiveServiceTags.join(", ");
   variables["entreprise.services"] = effectiveServicesList;
-  variables["company.services"] = effectiveServicesList;
   variables["__service_tags"] = JSON.stringify(effectiveServiceTags);
 
   // Stats : priorité aux stats du projet (enrichissement), puis overrides du
@@ -235,6 +229,11 @@ export const GET = withAuth({}, async ({ req }) => {
   const enrichment = await fetchEnrichmentSlice(supabase, enterpriseId);
   applyEnrichmentVariables(variables, enrichment);
   applyDerivedVariables(variables);
+
+  // Passe finale partagée avec la publication (build-enterprise-variables) : le
+  // moindre écart entre les deux se paie en « visible dans le builder, vide en
+  // ligne ».
+  finalizeEnterpriseVariables(variables, resolvedStats);
 
   return json(variables);
 });

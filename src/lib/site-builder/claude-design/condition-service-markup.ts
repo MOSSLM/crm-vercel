@@ -25,8 +25,13 @@
  * Running `filterServiceLinks` first removes the whole card; `stripTaggedRegions`
  * then only mops up link-less tagged regions.
  *
- * Both must run AFTER `applyOverridesToHTML` (removals shift the positional
- * child indices inline-edit overrides are keyed to). Pure + side-effect free.
+ * ORDRE ET RETRAITS : ces trois passes DÉTACHENT des nœuds, ce qui décale les
+ * indices positionnels auxquels les overrides d'édition inline sont attachés. Le
+ * rendu serveur applique donc les overrides avant d'appeler cette fonction, et
+ * les deux surfaces qui ne le peuvent pas (l'iframe de l'éditeur, l'hydrateur du
+ * site déployé) s'appuient sur le tampon `data-cdp` posé en amont par
+ * `stampDomPaths` — un nœud survivant garde son chemin d'origine.
+ * Voir `claude-design/dom-paths.ts`. Pure + side-effect free.
  */
 import { filterServiceLinks } from "./filter-service-links";
 import { stripTaggedRegions } from "./strip-tagged-regions";

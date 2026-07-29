@@ -13,8 +13,9 @@ import { renderSectionToHTML } from "@/lib/library-section/render-server";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
-import { fillEmptyPlaceholders, type CompanyImage } from "@/lib/site-builder/claude-design/fill-empty-placeholders";
+import { stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
 import type { StyleGuide } from "@/types";
@@ -37,13 +38,6 @@ interface Props {
    * removed so the deployed page only shows the company's services.
    */
   serviceTagBySlug?: Record<string, string>;
-  /**
-   * Claude Design only: the linked company's ranked library images. When
-   * provided (a real deployed/previewed company), any image placeholder still
-   * empty after overrides + set resolution is auto-filled with the best-matching
-   * one — a safety net so a deployed demo never shows an empty "Photo — …" box.
-   */
-  companyImages?: CompanyImage[];
 }
 
 /** Safely embeds an arbitrary value as inline JSON without breaking the HTML parser. */
@@ -62,7 +56,6 @@ export async function LibrarySectionInline({
   variables = {},
   unmanaged = false,
   serviceTagBySlug,
-  companyImages,
 }: Props) {
   let html = "";
   let compiledJs = "";
@@ -102,6 +95,11 @@ export async function LibrarySectionInline({
   let applied = 0;
   let failed = 0;
   if (html && Object.keys(overrides).length > 0) {
+    // Tamponner AVANT toute chose : le conditionnement par service retire des
+    // nœuds, ce qui décale les chemins positionnels. Le tampon voyage jusqu'au
+    // navigateur, donc l'hydrateur retrouve lui aussi le bon nœud. On ne
+    // tamponne que les chemins réellement ciblés — quelques dizaines d'octets.
+    html = stampDomPaths(html, { mode: "section-root", only: Object.keys(overrides) });
     const result = applyOverridesToHTML(html, overrides, variables);
     html = result.html;
     applied = result.applied;
@@ -135,18 +133,22 @@ export async function LibrarySectionInline({
     html = conditionServiceMarkup(html, serviceTagBySlug, enterpriseTags);
   }
 
-  // Safety net: fill any placeholder still empty with the best-matching library
-  // image for this company, so a deployed demo never ships an empty framed
-  // "Photo — …" box. Only runs when companyImages was provided (a real company).
-  if (companyImages && companyImages.length > 0 && html.includes("ph-label")) {
-    html = fillEmptyPlaceholders(html, companyImages, enterpriseTags);
-  }
+  // Aucun remplissage automatique d'image : un emplacement laissé vide dans le
+  // template le reste. Les photos sont posées à la main, et seule une image
+  // multi-candidats (`:image_set`) s'adapte aux services de l'entreprise.
 
   // Hydrate review cards ([data-reviews]) from lead_magnet_reviews. Runs after
   // service-tag conditioning; no-op when the design has no data-reviews grid or
   // the company has no reviews (static example cards are kept as a fallback).
   if (html.includes("data-reviews")) {
     html = hydrateReviews(html, variables?.["__reviews"]);
+  }
+
+  // Chiffres clés ([data-stats]) depuis `__stats`. Même contrat que les avis :
+  // sans stat disponible, les cartes d'exemple du design restent en place —
+  // jamais un chiffre vide à côté d'un libellé orphelin.
+  if (html.includes("data-stats")) {
+    html = hydrateStats(html, variables?.["__stats"]);
   }
   if (typeof console !== "undefined") {
     console.info("[SB:ssr]", {

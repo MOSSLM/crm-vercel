@@ -12,9 +12,10 @@ import {
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { coerceThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
-import { STAMP_PATHS } from "@/lib/site-builder/claude-design/stamp-paths";
+import { DOM_PATH_ATTR, stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
@@ -111,8 +112,10 @@ const CD_HELPERS = `
     if(!el) return;
     if(el.tagName==='IMG') el.setAttribute('src', url); else window.__cdApplyBg(el, url);
   };
-  // Normalise a tag the same way formatServiceTag does (strip accents, lower).
-  function fmt(t){ return String(t||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim(); }
+  // Normalise a tag the same way serviceTagKey does (strip accents, lower, then
+  // collapse every non-alphanumeric run to a single hyphen) — so a library image
+  // tagged "pompe-a-chaleur" matches a company tag "Pompe à chaleur".
+  function fmt(t){ return String(t||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
   // Pick the candidate best matching window.__enterpriseTags (mirrors pickCandidate):
   // most shared service tags win; else a universal ('all'/untagged) one; else the first.
   window.__cdPickCandidate = function(cands){
@@ -141,13 +144,22 @@ const CD_HELPERS = `
 /** Applies the saved __cdOverrides onto #cd-root. Runs BEFORE the design's own
  *  JS so positional paths aren't shifted by DOM the design injects (leaflet
  *  clones nodes, menus inject markup). Kept separate from EDIT_SCRIPT for that
- *  ordering. */
+ *  ordering.
+ *
+ *  Résolution par le tampon `data-cdp` d'abord : le body injecté est tamponné
+ *  côté parent AVANT le conditionnement par service, donc un nœud survivant
+ *  garde son chemin d'origine même quand des cartes ont été retirées autour de
+ *  lui. Sans ça, appliquer une entreprise décalait chaque image d'un cran. */
 const OVERRIDES_APPLY = `
 (function(){
   var root = document.getElementById('cd-root');
   if(!root) return;
   var OV = window.__cdOverrides || {};
-  function nodeAt(path){ var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n; }
+  function nodeAt(path){
+    var key = path.join('.');
+    try{ var stamped = root.querySelector('[${DOM_PATH_ATTR}="' + key + '"]'); if(stamped) return stamped; }catch(e){}
+    var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n;
+  }
   // Apply image_set overrides LAST so a resolved set wins over any stale
   // single-image override left on the same slot.
   var keys = Object.keys(OV).sort(function(a,b){ var ai=OV[a].kind==='image_set'?1:0, bi=OV[b].kind==='image_set'?1:0; return ai-bi; });
@@ -176,8 +188,9 @@ const EDIT_SCRIPT = `
   reportH(); setTimeout(reportH, 60); setTimeout(reportH, 350);
   window.addEventListener('load', reportH);
   if(window.ResizeObserver){ try{ new ResizeObserver(reportH).observe(document.body); }catch(e){} }
-  // Resolve/produce paths via the stable data-cdp stamp (see STAMP_PATHS) so a
-  // node the design JS moved is still found at its ORIGINAL static path — the
+  // Resolve/produce paths via the stable data-cdp stamp (posé par stampDomPaths
+  // sur le markup NON conditionné) so a node the design JS moved — or that a
+  // per-company strip shifted — is still found at its ORIGINAL static path, the
   // same key OVERRIDES_APPLY and the server-side apply use. Fall back to a live
   // positional walk for anything the design JS created after stamping.
   function nodeAt(path){
@@ -491,9 +504,17 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     // Entreprises tab: resolve with the company's real variables + filter the
     // service-tag regions it doesn't have. Otherwise use sample values (all shown).
     let body = resolveVars(html, variables ?? SAMPLE_VARIABLES);
+    // Tamponner les chemins AVANT tout retrait de nœud. Les overrides sont
+    // appliqués plus bas par OVERRIDES_APPLY, dans l'iframe, donc forcément sur
+    // un DOM déjà conditionné : sans ce tampon posé sur le markup complet,
+    // chaque image glisserait sur la carte précédente dès qu'une entreprise est
+    // appliquée — et `pathOf` enregistrerait les nouvelles éditions sous une
+    // clé décalée, fausse pour toutes les autres entreprises.
+    body = stampDomPaths(body);
     if (variables) {
       body = conditionServiceMarkup(body, serviceTagBySlug, enterpriseTagsOf(variables));
       body = hydrateReviews(body, variables["__reviews"]);
+      body = hydrateStats(body, variables["__stats"]);
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     // Enterprise tags drive image-set resolution in the iframe. Empty when
@@ -520,10 +541,11 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     const bootTag = designJs ? `<script>${designJs}</script>` : `<script>${CLAUDE_DESIGN_RUNTIME}</script>`;
     // Order: helpers, then apply overrides FIRST (before the design JS shifts
     // positional paths), then remote libs, then design JS, then per-page tweak
-    // extras, then the editor's own interaction script.
+    // extras, then the editor's own interaction script. Les tampons `data-cdp`
+    // sont déjà dans le body (posés côté parent, sur le markup non conditionné).
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script><script>${STAMP_PATHS}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, themeSets, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (

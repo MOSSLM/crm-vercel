@@ -136,7 +136,6 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
         preloadedInstances={site.publishedInstances}
         claudeDesign={site.claudeDesign}
         serviceTagBySlug={site.claudeDesign ? serviceTagMapFromSitemap(site.publishedSitemap) : undefined}
-        enterpriseId={site.enterpriseId}
       />
       {site.paywallEnabled && (
         <DemoPaywallBar

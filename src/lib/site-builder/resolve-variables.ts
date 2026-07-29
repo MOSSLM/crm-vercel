@@ -29,6 +29,7 @@ import {
 } from "./enrichment-variables";
 import { applyProjectEnrichment } from "./project-enrichment";
 import { applyCityVariables } from "./city-variables";
+import { finalizeEnterpriseVariables } from "./build-enterprise-variables";
 import type { StatItem } from "./menu-overrides";
 
 export interface ReviewItem {
@@ -72,7 +73,7 @@ export async function resolveEnterpriseVariables(
     const { data: companyRaw } = await supabase
       .from("entreprises")
       .select(
-        "id, name, telephone, email, adresse, ville, code_postal, logo_url, " +
+        "id, name, telephone, email, adresse, ville, code_postal, pays, logo_url, " +
         "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats, horaires"
       )
       .eq("id", site.enterprise_id)
@@ -86,6 +87,7 @@ export async function resolveEnterpriseVariables(
       adresse: string | null;
       ville: string | null;
       code_postal: string | null;
+      pays: string | null;
       logo_url: string | null;
       site_web_canonique: string | null;
       note_moyenne: number | string | null;
@@ -105,6 +107,7 @@ export async function resolveEnterpriseVariables(
       vars["entreprise.ville"] = company.ville ?? "";
       companyVille = company.ville ?? null;
       vars["entreprise.code_postal"] = company.code_postal ?? "";
+      vars["entreprise.pays"] = company.pays ?? "";
       vars["entreprise.logo_url"] = company.logo_url ?? "";
       vars["entreprise.site_web_canonique"] = company.site_web_canonique ?? "";
       vars["entreprise.note_moyenne"] = String(company.note_moyenne ?? "");
@@ -257,6 +260,12 @@ export async function resolveEnterpriseVariables(
     applyEnrichmentVariables(vars, enrichment);
   }
   applyDerivedVariables(vars);
+
+  // Passe finale partagée avec l'aperçu de l'éditeur : replis des chiffres clés
+  // depuis `__stats`, alias `company.*`, alias de tokens. Les deux résolveurs
+  // doivent produire exactement le même jeu de clés — sinon on retombe sur
+  // « ça marche dans le builder, c'est vide en ligne ».
+  finalizeEnterpriseVariables(vars, resolvedStats);
 
   return { variables: vars, reviews, companyName, logoUrl, phone };
 }

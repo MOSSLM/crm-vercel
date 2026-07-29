@@ -15,7 +15,7 @@
  * A set is stored inside the usual `content.__overrides` map under the key
  * `"<dotted-path>:image_set"`, with the JSON-encoded shape below as its `value`.
  */
-import { formatServiceTag } from "@/utils/serviceTags";
+import { serviceTagKey } from "@/utils/serviceTags";
 import { MEDIA_LIBRARY_UNIVERSAL_TAG } from "@/types";
 
 export interface ImageSetCandidate {
@@ -62,7 +62,7 @@ export function serializeImageSet(candidates: ImageSetCandidate[]): string {
 
 function isUniversal(c: ImageSetCandidate): boolean {
   if (!c.tags || c.tags.length === 0) return true;
-  return c.tags.map(formatServiceTag).includes(MEDIA_LIBRARY_UNIVERSAL_TAG);
+  return c.tags.map(serviceTagKey).includes(MEDIA_LIBRARY_UNIVERSAL_TAG);
 }
 
 /**
@@ -80,13 +80,13 @@ export function pickCandidate(
   enterpriseTags: string[],
 ): ImageSetCandidate | null {
   if (!candidates || candidates.length === 0) return null;
-  const companyTags = new Set(enterpriseTags.map(formatServiceTag).filter(Boolean));
+  const companyTags = new Set(enterpriseTags.map(serviceTagKey).filter(Boolean));
 
   let best: ImageSetCandidate | null = null;
   let bestScore = 0;
   for (const c of candidates) {
     const score = c.tags
-      .map(formatServiceTag)
+      .map(serviceTagKey)
       .filter((t) => t !== MEDIA_LIBRARY_UNIVERSAL_TAG && companyTags.has(t)).length;
     if (score > bestScore) {
       bestScore = score;

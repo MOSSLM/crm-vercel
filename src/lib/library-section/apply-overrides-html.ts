@@ -18,6 +18,13 @@ import "server-only";
 import { parse, type HTMLElement } from "node-html-parser";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
 import { interpolateVars } from "@/lib/site-builder/interpolate-vars";
+import {
+  elementChildren,
+  findSectionRoot,
+  parseDottedPath,
+  pathOfOverrideKey,
+  resolveNodeAtPath,
+} from "@/lib/site-builder/claude-design/dom-paths";
 
 export interface OverrideEntry {
   kind:
@@ -36,17 +43,6 @@ export interface OverrideEntry {
   meta?: { attrName?: string; style?: Record<string, string> };
 }
 
-function nodeAtPath(root: HTMLElement, path: number[]): HTMLElement | null {
-  let node: HTMLElement | null = root;
-  for (const idx of path) {
-    if (!node) return null;
-    const children = node.childNodes.filter((c) => c.nodeType === 1) as HTMLElement[];
-    if (!children[idx]) return null;
-    node = children[idx];
-  }
-  return node;
-}
-
 /** Reach through the synthesized mobile `<picture>` wrapper. An image_mobile
  *  override wraps the `<img>` in a `<picture>` at the img's original position,
  *  so a path that used to resolve to the `<img>` now lands on that wrapper.
@@ -57,22 +53,6 @@ function unwrapMobilePicture(el: HTMLElement): HTMLElement {
     if (img) return img as HTMLElement;
   }
   return el;
-}
-
-// React 19's react-dom/server emits resource hints (e.g. <link rel="preload">
-// for images detected in the render tree) BEFORE the component output. Editor
-// overrides reference DOM paths relative to the section's component root, so
-// we must skip these head-only tags when locating it — otherwise the walker
-// starts from <link>, finds no element children, and every override is silently
-// dropped on the deployed site.
-const HEAD_ONLY_TAGS = new Set(["link", "meta", "script", "style", "noscript", "title", "base"]);
-
-function findSectionRoot(elements: HTMLElement[]): HTMLElement | null {
-  for (const el of elements) {
-    const tag = (el.tagName ?? "").toLowerCase();
-    if (!HEAD_ONLY_TAGS.has(tag)) return el;
-  }
-  return null;
 }
 
 function setBackgroundImage(el: HTMLElement, url: string): void {
@@ -127,8 +107,7 @@ export function applyOverridesToHTML(
     // The HTML produced by renderToString for a section has the component's
     // root element as the first child — except React 19 may inject resource
     // hints (<link rel="preload">) ahead of it. findSectionRoot skips those.
-    const elementChildren = doc.childNodes.filter((c) => c.nodeType === 1) as HTMLElement[];
-    const root = findSectionRoot(elementChildren);
+    const root = findSectionRoot(elementChildren(doc as unknown as HTMLElement));
     if (!root) return { html, applied: 0, failed: 0 };
 
     for (const key of Object.keys(overrides)) {
@@ -137,10 +116,11 @@ export function applyOverridesToHTML(
         failed++;
         continue;
       }
-      const colonIdx = key.indexOf(":");
-      const pathStr = colonIdx === -1 ? key : key.slice(0, colonIdx);
-      const path = pathStr.split(".").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
-      const el = nodeAtPath(root, path);
+      const pathStr = pathOfOverrideKey(key);
+      const path = parseDottedPath(pathStr);
+      // Tampon `data-cdp` d'abord (posé sur le markup non conditionné), marche
+      // positionnelle en repli — cf. claude-design/dom-paths.ts.
+      const el = resolveNodeAtPath(root, path, pathStr);
       if (!el) {
         failed++;
         continue;

@@ -33,6 +33,16 @@ describe("pickCandidate", () => {
     expect(pickCandidate([pv, chauf], ["photovoltaique"])).toBe(pv);
   });
 
+  // Une image de médiathèque est taguée avec le slug du design ("pompe-a-chaleur")
+  // alors que l'entreprise porte "Pompe à chaleur" : les espaces doivent aussi
+  // être normalisés, pas seulement les accents et la casse.
+  it("matches across the hyphen/space vocabulary gap", () => {
+    const pac: ImageSetCandidate = { url: "https://x/pac.jpg", tags: ["pompe-a-chaleur"] };
+    expect(pickCandidate([chauf, pac], ["Pompe à chaleur"])).toBe(pac);
+    const irve: ImageSetCandidate = { url: "https://x/irve.jpg", tags: ["Bornes IRVE"] };
+    expect(pickCandidate([chauf, irve], ["bornes-irve"])).toBe(irve);
+  });
+
   it("prefers a real service match over a universal image", () => {
     expect(pickCandidate([universal, clim], ["climatisation"])).toBe(clim);
   });

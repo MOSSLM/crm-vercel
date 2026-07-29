@@ -28,14 +28,12 @@
  * inline-edit overrides are keyed to). Pure + side-effect free.
  */
 import { parse, type HTMLElement } from "node-html-parser";
-import { formatServiceTag } from "@/utils/serviceTags";
+import { serviceTagKey } from "@/utils/serviceTags";
 
-/** Canonical, comparable slug shared by form `data-svc` values and service tags. */
-export function slugifyServiceTag(value: string): string {
-  return formatServiceTag(value)
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
+/** Canonical, comparable slug shared by form `data-svc` values and service tags.
+ *  Réexport de `serviceTagKey` (utils/serviceTags), qui est désormais LA clé de
+ *  comparaison de tous les conditionneurs — gardé pour les imports existants. */
+export const slugifyServiceTag = serviceTagKey;
 
 /**
  * Removes lead-form service tiles (`[data-svc]`) the enterprise doesn't offer.

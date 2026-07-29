@@ -46,6 +46,16 @@ describe("conditionServiceMarkup", () => {
     expect(out).not.toContain("service-photovoltaique.html");
   });
 
+  // Le cas de production : tags d'entreprise en français lisible contre un
+  // markup slugifié. C'est ce qui vidait la grille « Nos services » de toutes
+  // ses cartes, ne laissant que les blocs sans tag (maintenance, dépannage).
+  it("keeps the right cards with real human service_tags", () => {
+    const out = conditionServiceMarkup(grid, tagBySlug, ["Climatisation", "Photovoltaïque"]);
+    expect(out).toContain("Climatisation réversible");
+    expect(out).toContain("Produisez votre électricité");
+    expect(out).not.toContain("Un confort homogène");
+  });
+
   it("keeps every card when the company offers all services", () => {
     const out = conditionServiceMarkup(grid, tagBySlug, [
       "climatisation",

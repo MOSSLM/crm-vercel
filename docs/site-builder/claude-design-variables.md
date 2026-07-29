@@ -174,6 +174,10 @@ visible, toujours le crochet `[XX XX XX XX XX]` (numéro formaté).
   à l'import.
 - Ces images sont **génériques au métier** (pas spécifiques à une entreprise) :
   pas de placeholder pour elles.
+- Le CRM ne remplit **jamais** une image tout seul : ce que tu places reste en
+  place pour toutes les entreprises, et un emplacement laissé vide reste vide.
+  L'adaptation d'une image aux services d'une entreprise se décide au cas par
+  cas dans le builder (mode « Plusieurs » du sélecteur d'image).
 
 ---
 
@@ -216,13 +220,53 @@ affiché que si l'entreprise propose ce service, et retiré proprement sinon.
 
 ## 8. Avis clients et chiffres clés
 
-- **Chiffres clés** : utilise les tokens d'enrichissement du §3
-  (`{{ entreprise.annee_experience }}`, `{{ entreprise.clients_count }}`,
-  `{{ entreprise.installations }}`, `{{ entreprise.qualifications }}`). Ils sont
-  alimentés par l'enrichissement automatique mais peuvent être vides : garde une
-  formulation qui tient sans le chiffre.
 - **Note globale** : les variables existent déjà —
   `Note {{ entreprise.note_moyenne }}/5 — {{ entreprise.nombre_avis }} avis Google`.
+
+### Chiffres clés — hydratation automatique (marqueurs `data-*`) — **recommandé**
+
+Comme pour les avis, le CRM duplique **une carte-modèle** et la remplit avec les
+chiffres réellement disponibles pour l'entreprise (années d'expérience, clients
+satisfaits, installations réalisées, qualifications). Tu n'écris donc **aucun
+token** dans ce bloc : tu marques les emplacements.
+
+| Attribut | Emplacement | Rempli avec |
+|---|---|---|
+| `data-stats` | conteneur de la grille | — |
+| `data-stat-item` | **une** carte-modèle (la 1re sert de gabarit) | dupliquée par chiffre disponible |
+| `data-stat-value` | élément du **chiffre** | la valeur (ex. `15`) |
+| `data-stat-label` | élément du **libellé** | le libellé (ex. `Années d'expérience`) |
+| `data-stat-suffix` | suffixe décoratif *(optionnel)* | **conservé tel quel** (`+`, `ans`, `%`) |
+
+```html
+<div class="stats-grid" data-stats>
+  <div class="stat-card" data-stat-item>
+    <span class="stat-value" data-stat-value>15</span><span class="stat-suffix" data-stat-suffix>+</span>
+    <span class="stat-label" data-stat-label>Années d'expérience</span>
+  </div>
+  <!-- Une seule carte suffit : le CRM la duplique par chiffre.
+       Tu peux en mettre 3 identiques pour visualiser la grille. -->
+</div>
+```
+
+Règles importantes :
+- Le **contenu** de `data-stat-value` et `data-stat-label` est **remplacé** :
+  mets-y des valeurs d'exemple réalistes, elles ne s'afficheront pas.
+- La grille doit rester correcte avec **2, 3 ou 4** cartes.
+- Si un **compteur animé** alimente le chiffre, fais-lui lire le **texte** de
+  `data-stat-value` plutôt qu'un attribut (`data-count`, `data-target`…) :
+  sinon il écrase la valeur injectée par sa valeur d'origine.
+- Aucune stat en base → tes cartes d'exemple restent affichées telles quelles
+  (repli), jamais un chiffre vide sous un libellé orphelin.
+
+### Variante token (designs existants)
+
+Les tokens du §3 restent supportés : `{{ entreprise.annee_experience }}`,
+`{{ entreprise.clients_count }}`, `{{ entreprise.installations }}`,
+`{{ entreprise.qualifications }}`. **Attention : l'orthographe doit être exacte**
+— un token inconnu est remplacé par du vide, sans message d'erreur. Le panneau
+« Diagnostic » du builder liste les tokens non reconnus d'une page. Si tu les
+utilises, garde une formulation qui tient sans le chiffre.
 
 ### Avis clients — hydratation automatique (marqueurs `data-*`)
 
@@ -298,3 +342,6 @@ d'**identité de l'entreprise** (§2 et §3) sont variables.
 - [ ] Grille d'avis marquée `data-reviews` avec une carte `data-review-item`
       portant `data-review-author`, `data-review-text` et
       `data-review-initials` (avatar = initiales, pas de `<img>`).
+- [ ] Grille de chiffres clés marquée `data-stats` avec une carte
+      `data-stat-item` portant `data-stat-value` et `data-stat-label`
+      (aucun token dans ce bloc).
