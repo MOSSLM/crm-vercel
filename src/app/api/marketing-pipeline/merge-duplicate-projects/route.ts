@@ -108,7 +108,11 @@ interface GroupReport {
   recovered: Record<string, string>;
   /** Drapeaux remontés (validation humaine portée par un doublon). */
   flags: string[];
+  /** Lignes enfants rattachées au survivant, par table. */
   moved: Record<string, number>;
+  /** Lignes enfants supprimées car le survivant avait déjà son équivalent
+   *  (avis auto, pages par défaut — régénérés par la base). */
+  dropped: Record<string, number>;
   deleted: string[];
   error?: string;
 }
@@ -118,10 +122,61 @@ interface GroupReport {
 const CHILD_TABLES: Array<{ table: string; column: string; optional?: boolean }> = [
   { table: "sites", column: "lead_magnet_project_id" },
   { table: "lead_magnet_reviews", column: "lead_magnet_project_id" },
+  { table: "lead_magnet_content", column: "lead_magnet_project_id", optional: true },
   { table: "lead_magnet_pages", column: "lead_magnet_project_id", optional: true },
   { table: "email_logs", column: "lead_magnet_project_id", optional: true },
   { table: "production_lead_magnets", column: "lead_magnet_project_id", optional: true },
 ];
+
+/** Une table absente (42P01) ou une colonne absente (42703) n'est pas une erreur. */
+function isUniqueViolation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "23505" || /duplicate key value violates unique constraint/i.test(error.message ?? "");
+}
+
+/**
+ * Fait suivre au survivant les lignes enfants d'un doublon, UNE PAR UNE.
+ *
+ * Le déplacement en bloc ne peut pas marcher : la base crée automatiquement des
+ * avis (`lm_sync_reviews_for_project`) et des pages par défaut
+ * (`lm_create_default_pages`) POUR CHAQUE projet, et ces tables portent un index
+ * unique par projet. Le survivant a donc déjà l'équivalent de ce que porte le
+ * doublon, et l'`UPDATE` global échouait sur `lead_magnet_reviews_auto_unique_idx`
+ * / `lead_magnet_pages_unique_project_key` — ce qui bloquait toute la fusion.
+ *
+ * Règle : on déplace ce qui peut l'être, et une ligne qui entre en collision est
+ * SUPPRIMÉE — le survivant possède déjà sa version, et ces lignes-là sont
+ * dérivées (la base les régénère). Rien d'unique n'est perdu.
+ */
+async function moveChildRows(
+  supabase: ServiceClient,
+  table: string,
+  column: string,
+  dupIds: string[],
+  survivorId: string,
+  optional: boolean,
+): Promise<{ moved: number; dropped: number }> {
+  const { data, error } = await supabase.from(table).select("id").in(column, dupIds);
+  if (error) {
+    if (optional && isMissingRelation(error)) return { moved: 0, dropped: 0 };
+    throw new Error(`${table}: ${error.message}`);
+  }
+
+  let moved = 0;
+  let dropped = 0;
+  for (const row of (data ?? []) as Array<{ id: string }>) {
+    const { error: mvErr } = await supabase.from(table).update({ [column]: survivorId }).eq("id", row.id);
+    if (!mvErr) {
+      moved++;
+      continue;
+    }
+    if (!isUniqueViolation(mvErr)) throw new Error(`${table}: ${mvErr.message}`);
+    const { error: delErr } = await supabase.from(table).delete().eq("id", row.id);
+    if (delErr) throw new Error(`${table} (suppression de la ligne en double): ${delErr.message}`);
+    dropped++;
+  }
+  return { moved, dropped };
+}
 
 /** Une table absente (42P01) ou une colonne absente (42703) n'est pas une erreur. */
 function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
@@ -162,6 +217,7 @@ export const POST = withAuth({ role: "admin" }, async ({ req }) => {
         recovered: {},
         flags: [],
         moved: {},
+        dropped: {},
         deleted: [],
         error: `lecture: ${error.message}`,
       });
@@ -190,6 +246,7 @@ export const POST = withAuth({ role: "admin" }, async ({ req }) => {
       recovered: plan.takenFrom,
       flags: Object.keys(flagsPatch),
       moved: {},
+      dropped: {},
       deleted: [],
     };
 
@@ -210,17 +267,12 @@ export const POST = withAuth({ role: "admin" }, async ({ req }) => {
 
         for (const child of CHILD_TABLES) {
           if ((report.moved[child.table] ?? 0) === 0) continue;
-          // `lead_magnet_content` est UNIQUE par projet : traité à part.
-          const { error: mvErr } = await supabase
-            .from(child.table)
-            .update({ [child.column]: survivorId })
-            .in(child.column, dupIds);
-          if (mvErr && !(child.optional && isMissingRelation(mvErr))) {
-            throw new Error(`${child.table}: ${mvErr.message}`);
-          }
+          const { moved, dropped } = await moveChildRows(
+            supabase, child.table, child.column, dupIds, survivorId, child.optional === true,
+          );
+          report.moved[child.table] = moved;
+          if (dropped > 0) report.dropped[child.table] = dropped;
         }
-
-        await moveUniqueContent(supabase, survivorId, dupIds, report);
 
         const { error: dErr } = await supabase.from("lead_magnet_projects").delete().in("id", dupIds);
         if (dErr) throw new Error(`suppression: ${dErr.message}`);
@@ -253,39 +305,6 @@ export const POST = withAuth({ role: "admin" }, async ({ req }) => {
     reports,
   });
 });
-
-/** `lead_magnet_content` porte une contrainte UNIQUE par projet : on ne déplace
- *  une ligne que si le survivant n'en a pas déjà une. */
-async function moveUniqueContent(
-  supabase: ServiceClient,
-  survivorId: string,
-  dupIds: string[],
-  report: GroupReport,
-): Promise<void> {
-  const onDuplicates = await countRows(supabase, "lead_magnet_content", "lead_magnet_project_id", dupIds);
-  report.moved["lead_magnet_content"] = onDuplicates;
-  if (onDuplicates === 0) return;
-
-  const survivorHas = await countRows(supabase, "lead_magnet_content", "lead_magnet_project_id", [survivorId]);
-  if (survivorHas > 0) {
-    report.moved["lead_magnet_content"] = 0; // le survivant avait déjà son contenu
-    return;
-  }
-  const { data: first } = await supabase
-    .from("lead_magnet_content")
-    .select("id")
-    .in("lead_magnet_project_id", dupIds)
-    .limit(1)
-    .maybeSingle();
-  const firstId = (first as { id?: string } | null)?.id;
-  if (!firstId) return;
-  const { error } = await supabase
-    .from("lead_magnet_content")
-    .update({ lead_magnet_project_id: survivorId })
-    .eq("id", firstId);
-  if (error && !isMissingRelation(error)) throw new Error(`lead_magnet_content: ${error.message}`);
-  report.moved["lead_magnet_content"] = 1;
-}
 
 async function countRows(
   supabase: ServiceClient,
