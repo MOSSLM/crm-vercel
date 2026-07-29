@@ -38,7 +38,50 @@ export interface BoardItem {
   audit: { id: string; statut: string; pdf_url: string | null } | null;
   agent: { id: string; name: string } | null;
   missing_for_site: string[];
+  /**
+   * Tickets (notes agent ↔ admin) de la ligne. Optionnel : une réponse d'API
+   * antérieure à la fonctionnalité ne le porte pas.
+   */
+  notes?: NoteSummary | null;
   column: number;
+}
+
+/** Étape visée par un ticket — sert à poser le badge sur la bonne carte. */
+export type NoteSubject = "enrichment" | "site" | "audit" | "other";
+export type NoteSeverity = "info" | "probleme" | "bloquant";
+export type NoteStatus = "open" | "in_progress" | "resolved";
+
+export interface NoteSummary {
+  open: number;
+  total: number;
+  open_subjects: NoteSubject[];
+}
+
+export interface NoteMessage {
+  id: string;
+  author_id: string | null;
+  author_name: string;
+  author_role: "agent" | "admin";
+  body: string;
+  created_at: string;
+}
+
+export interface Note {
+  id: string;
+  opportunite_id: string;
+  entreprise_id: number | null;
+  subject: NoteSubject;
+  severity: NoteSeverity;
+  title: string;
+  status: NoteStatus;
+  created_by: string | null;
+  created_by_name: string;
+  created_by_role: "agent" | "admin";
+  created_at: string;
+  updated_at: string;
+  resolved_at: string | null;
+  company_name: string | null;
+  messages: NoteMessage[];
 }
 
 export interface TemplateRef {
@@ -97,4 +140,9 @@ export interface MatrixHandlers {
   onAssign?: (item: BoardItem, agentId: string) => void;
   onMove: (item: BoardItem, pipelineId: string) => void;
   onDetails: (item: BoardItem) => void;
+  /**
+   * Ouvre le panneau des tickets de la ligne. `subject` pré-remplit l'étape
+   * concernée quand on arrive depuis une carte (site, audit…).
+   */
+  onNotes: (item: BoardItem, subject?: NoteSubject) => void;
 }

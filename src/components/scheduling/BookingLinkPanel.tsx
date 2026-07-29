@@ -20,12 +20,33 @@ import { getAppUrlClient } from "./rdv/shared";
 import "./rdv-skin.css";
 import "./rdv-embed.css";
 
+/** Jours affichés d'un coup dans la barre de pastilles (une semaine). */
 const DAY_COUNT = 7;
+/**
+ * Semaines chargées en une fois. On charge plusieurs semaines d'avance pour que
+ * la navigation soit instantanée (et que les compteurs « X libres » soient déjà
+ * là), puis on étend au besoin — l'API accepte une fenêtre de 62 jours max.
+ */
+const WEEKS_PER_FETCH = 4;
+const MAX_WEEKS_AHEAD = 8;
+
+/** Minuit du jour J + `days`, en heure locale. */
+const dayStart = (days: number): Date => {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + days);
+  return d;
+};
 
 const dateKey = (d: Date) =>
   new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
 const hhmm = (iso: string) =>
   new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+/** « mar. 12 août » — date complète du créneau retenu. */
+const slotLabel = (iso: string) =>
+  new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short" }).format(
+    new Date(iso),
+  );
 
 export interface BookingLinkPanelProps {
   prospectName?: string | null;
@@ -59,6 +80,9 @@ export default function BookingLinkPanel({
   const [slots, setSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [dayIdx, setDayIdx] = useState(0);
+  /** Semaine affichée (0 = celle en cours), et semaines déjà chargées. */
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [weeksLoaded, setWeeksLoaded] = useState(WEEKS_PER_FETCH);
   const [slot, setSlot] = useState<string | null>(null);
 
   const [name, setName] = useState(prospectName ?? "");
@@ -91,31 +115,41 @@ export default function BookingLinkPanel({
     })();
   }, []);
 
-  // Fenêtre glissante de 7 jours à partir d'aujourd'hui.
+  // Fenêtre glissante de 7 jours, décalée d'une semaine à chaque « suivant » :
+  // un prospect indisponible cette semaine se cale sur la suivante sans quitter
+  // le cockpit.
   const days = useMemo(
     () =>
       Array.from({ length: DAY_COUNT }, (_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() + i);
+        const offset = weekOffset * DAY_COUNT + i;
+        const d = dayStart(offset);
         return {
           key: dateKey(d),
           lb:
-            i === 0
+            offset === 0
               ? "Auj."
               : new Intl.DateTimeFormat("fr-FR", { weekday: "short" }).format(d).replace(".", ""),
           n: d.getDate(),
+          month: new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(d).replace(".", ""),
         };
       }),
-    [],
+    [weekOffset],
   );
+
+  const weekLabel = useMemo(() => {
+    if (weekOffset === 0) return "Cette semaine";
+    const first = dayStart(weekOffset * DAY_COUNT);
+    const last = dayStart(weekOffset * DAY_COUNT + DAY_COUNT - 1);
+    const fmt = new Intl.DateTimeFormat("fr-FR", { day: "2-digit", month: "short" });
+    return `${fmt.format(first)} – ${fmt.format(last)}`;
+  }, [weekOffset]);
 
   const loadSlots = useCallback(async () => {
     if (!tid) return;
     setLoadingSlots(true);
     try {
-      const from = new Date();
-      const to = new Date();
-      to.setDate(to.getDate() + DAY_COUNT);
+      const from = dayStart(0);
+      const to = dayStart(weeksLoaded * DAY_COUNT);
       const res = await authedFetch(
         `/api/scheduling/event-types/${tid}/slots?from=${from.toISOString()}&to=${to.toISOString()}`,
       );
@@ -127,12 +161,30 @@ export default function BookingLinkPanel({
     } finally {
       setLoadingSlots(false);
     }
-  }, [tid]);
+  }, [tid, weeksLoaded]);
 
   useEffect(() => {
     setSlot(null);
     void loadSlots();
   }, [loadSlots]);
+
+  // Changer de type d'évènement remet la navigation à cette semaine : les
+  // disponibilités affichées ne sont plus celles qu'on parcourait.
+  useEffect(() => {
+    setWeekOffset(0);
+    setWeeksLoaded(WEEKS_PER_FETCH);
+  }, [tid]);
+
+  /** Avance/recule d'une semaine, en chargeant plus loin quand on sort du lot. */
+  const shiftWeek = (delta: number) => {
+    const next = Math.min(Math.max(weekOffset + delta, 0), MAX_WEEKS_AHEAD - 1);
+    if (next === weekOffset) return;
+    setWeekOffset(next);
+    setDayIdx(0);
+    if (next >= weeksLoaded) {
+      setWeeksLoaded(Math.min(next + WEEKS_PER_FETCH, MAX_WEEKS_AHEAD));
+    }
+  };
 
   const byDay = useMemo(() => {
     const m = new Map<string, string[]>();
@@ -329,6 +381,30 @@ export default function BookingLinkPanel({
                   ))}
                 </select>
 
+                <div className="rv-weeknav">
+                  <button
+                    type="button"
+                    className="wk"
+                    onClick={() => shiftWeek(-1)}
+                    disabled={weekOffset === 0}
+                    title="Semaine précédente"
+                    aria-label="Semaine précédente"
+                  >
+                    <Icon name="chevleft" className="ico-sm" />
+                  </button>
+                  <span className="lb">{weekLabel}</span>
+                  <button
+                    type="button"
+                    className="wk"
+                    onClick={() => shiftWeek(1)}
+                    disabled={weekOffset >= MAX_WEEKS_AHEAD - 1}
+                    title="Semaine suivante"
+                    aria-label="Semaine suivante"
+                  >
+                    <Icon name="chevright" className="ico-sm" />
+                  </button>
+                </div>
+
                 <div className="rv-days">
                   {days.map((d, i) => {
                     const free = byDay.get(d.key)?.length ?? 0;
@@ -342,7 +418,7 @@ export default function BookingLinkPanel({
                           setSlot(null);
                         }}
                       >
-                        <span className="dl">{d.lb}</span>
+                        <span className="dl">{weekOffset === 0 ? d.lb : `${d.lb} ${d.month}`}</span>
                         <span className="dn">{d.n}</span>
                         <span className="n">{free} libres</span>
                       </button>
@@ -363,7 +439,9 @@ export default function BookingLinkPanel({
                   ))}
                 </div>
                 {!loadingSlots && !daySlots.length ? (
-                  <div className="rv-empty">Aucun créneau libre ce jour-là.</div>
+                  <div className="rv-empty">
+                    Aucun créneau libre ce jour-là — essayez un autre jour ou la semaine suivante.
+                  </div>
                 ) : null}
 
                 <Field label="Coordonnées du prospect">
@@ -395,9 +473,11 @@ export default function BookingLinkPanel({
                   <div className="rv-confirm">
                     <div className="rc">
                       <Icon name="calCheck" className="ico-sm" style={{ color: "var(--accent)" }} />
+                      {/* Le libellé suit le créneau, pas la pastille affichée :
+                          on peut réserver mardi prochain et continuer à
+                          feuilleter les semaines sans que la confirmation mente. */}
                       <b>
-                        {currentDay?.lb} {currentDay?.n} · {hhmm(slot)}–
-                        {addMin(hhmm(slot), type.duration_minutes)}
+                        {slotLabel(slot)} · {hhmm(slot)}–{addMin(hhmm(slot), type.duration_minutes)}
                       </b>
                     </div>
                     <div className="sub">

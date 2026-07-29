@@ -1,5 +1,6 @@
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import { noteSummaries } from "./_notes";
 
 /**
  * Construction du tableau d'avancement Marketing & Web.
@@ -181,6 +182,35 @@ function siteUrl(s: SiteRow | undefined): string | null {
   return null;
 }
 
+/** Entreprises interrogées par lot : `.in(...)` sur 1 000 ids ferait une URL énorme. */
+const ENT_CHUNK = 200;
+
+/**
+ * Sites de démo des entreprises du board, par lots.
+ *
+ * Le découpage n'est pas cosmétique : PostgREST plafonne une réponse à
+ * 1 000 lignes, et une seule requête pour toutes les entreprises pouvait donc
+ * rendre invisible le site d'une ligne — qui repartait alors « à créer ».
+ */
+async function fetchDemoSites(
+  supabase: ReturnType<typeof getServiceClient>,
+  entIds: number[],
+): Promise<{ data: SiteRow[]; error: { message: string } | null }> {
+  if (entIds.length === 0) return { data: [], error: null };
+  const rows: SiteRow[] = [];
+  for (let i = 0; i < entIds.length; i += ENT_CHUNK) {
+    const { data, error } = await supabase
+      .from("sites")
+      .select(
+        "id, name, enterprise_id, build_stage, is_published, published_subdomain, published_domain, is_template, is_claude_design",
+      )
+      .in("enterprise_id", entIds.slice(i, i + ENT_CHUNK));
+    if (error) return { data: [], error };
+    rows.push(...((data ?? []) as SiteRow[]));
+  }
+  return { data: rows, error: null };
+}
+
 export type BoardResult =
   | { ok: true; data: Record<string, unknown> }
   | { ok: false; error: string; status: number };
@@ -260,7 +290,11 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     }
   }
 
-  const [entsRes, enrichRes, sitesRes, auditsRes, agentsRes, pipelinesRes] = await Promise.all([
+  // Sites : deux requêtes ciblées plutôt qu'un `select` sur toute la table.
+  // PostgREST plafonne une réponse à 1 000 lignes : avec assez de démos, un
+  // « select all » finissait par tronquer la liste des templates (le template
+  // choisi disparaissait du menu) et par perdre des sites d'entreprises.
+  const [entsRes, enrichRes, templatesRes, sitesRes, auditsRes, agentsRes, pipelinesRes] = await Promise.all([
     supabase
       .from("entreprises")
       .select(
@@ -275,9 +309,10 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
       : Promise.resolve({ data: [] as EnrichRow[], error: null }),
     supabase
       .from("sites")
-      .select(
-        "id, name, enterprise_id, build_stage, is_published, published_subdomain, published_domain, is_template, is_claude_design",
-      ),
+      .select("id, name, is_template, is_claude_design, updated_at")
+      .eq("is_template", true)
+      .order("name", { ascending: true }),
+    fetchDemoSites(supabase, entIds),
     oppIds.length > 0
       ? supabase.from("audits").select("id, opportunite_id, statut, pdf_url").in("opportunite_id", oppIds)
       : Promise.resolve({ data: [] as AuditRow[], error: null }),
@@ -287,6 +322,10 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
 
   if (entsRes.error) return { ok: false, error: entsRes.error.message, status: 500 };
   if (sitesRes.error) return { ok: false, error: sitesRes.error.message, status: 500 };
+  if (templatesRes.error) return { ok: false, error: templatesRes.error.message, status: 500 };
+
+  // Tickets (notes agent ↔ admin) par opportunité, pour les badges du board.
+  const notesByOpp = await noteSummaries(oppIds);
 
   // Enrichment run metadata (statut/error/attempts written by the edge function).
   // These columns are optional: the board degrades gracefully if a DB predates
@@ -327,11 +366,30 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     if (!cur || (r.updated_at ?? "") > (cur.updated_at ?? "")) enrichByEnt.set(r.entreprise_id, r);
   }
 
+  // Templates : Claude Designs d'abord (ce sont eux qui produisent les démos du
+  // pipeline), puis les templates classiques, chacun trié par nom. Un ordre
+  // stable évite que le menu se réordonne d'un rafraîchissement à l'autre.
+  const templateRows = (templatesRes.data ?? []) as Array<{
+    id: string;
+    name: string | null;
+    is_claude_design: boolean | null;
+  }>;
+  const templates = templateRows
+    .map((s) => ({
+      id: s.id,
+      name: s.name?.trim() || "Template sans nom",
+      is_claude_design: s.is_claude_design === true,
+    }))
+    .sort((a, b) =>
+      a.is_claude_design === b.is_claude_design
+        ? a.name.localeCompare(b.name, "fr")
+        : a.is_claude_design
+          ? -1
+          : 1,
+    );
+
   // Best demo site per company (published > pret > other), templates excluded.
   const allSites = (sitesRes.data ?? []) as SiteRow[];
-  const templates = allSites
-    .filter((s) => s.is_template === true)
-    .map((s) => ({ id: s.id, name: s.name ?? "Template", is_claude_design: s.is_claude_design === true }));
   const rank = (s: SiteRow) => (s.is_published ? 2 : s.build_stage === "pret" ? 1 : 0);
   const siteByEnt = new Map<number, SiteRow>();
   for (const s of allSites) {
@@ -423,6 +481,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
       audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
       agent: owner ? { id: owner.id, name: owner.name } : null,
       missing_for_site: missingForSite(ent, project),
+      notes: notesByOpp.get(o.id) ?? { open: 0, total: 0, open_subjects: [] },
       column,
     };
   });
