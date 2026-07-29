@@ -4,6 +4,7 @@ import { marketingEnrichPrepareSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { resolveAgentContext } from "@/app/api/_lib/require-capability";
+import { pickBestProject } from "@/lib/site-builder/resolve-project-id";
 import { applyEnrichReset, enrichResetPayload, OVERWRITE_CLEARED_COLUMNS } from "../_enrich-reset";
 
 export const runtime = "nodejs";
@@ -59,22 +60,34 @@ export const POST = withAuth({ body: marketingEnrichPrepareSchema }, async ({ bo
     if (ids.length === 0) return jsonError("entreprise_non_attribuee", 403, {}, cors);
   }
 
-  const [oppsRes, projectsRes] = await Promise.all([
-    supabase.from("opportunites").select("id, entreprise_id").in("id", ids),
-    // `opportunite_id` is UNIQUE on lead_magnet_projects (a DB trigger creates one
-    // per opportunity with `on conflict (opportunite_id)`), so there is at most one
-    // row per opportunity — no ordering/dedup needed. We intentionally avoid
-    // ordering by an optional column so a schema quirk can't blank this whole map
-    // and push every opportunity down the insert path into a unique-violation.
-    supabase.from("lead_magnet_projects").select("id, opportunite_id, statut, variables").in("opportunite_id", ids),
-  ]);
-
+  const { data: oppsData } = await supabase.from("opportunites").select("id, entreprise_id").in("id", ids);
   const oppById = new Map<string, OppRow>();
-  for (const o of (oppsRes.data ?? []) as OppRow[]) oppById.set(o.id, o);
+  for (const o of (oppsData ?? []) as OppRow[]) oppById.set(o.id, o);
 
-  const projectByOpp = new Map<string, ProjectRow>();
+  // Le dossier lead magnet est par ENTREPRISE : on le cherche donc par
+  // entreprise, pas par opportunité. Chercher par `opportunite_id` faisait
+  // manquer le dossier dès que l'entreprise avait un second deal — et créait
+  // alors un doublon vide, celui-là même qui a coupé les chiffres clés en deux.
+  const entIds = [...new Set((oppsData ?? []).map((o) => o.entreprise_id).filter((v): v is number => v != null))];
+  const projectsRes = entIds.length > 0
+    ? await supabase
+        .from("lead_magnet_projects")
+        .select("id, opportunite_id, entreprise_id, statut, variables, enrichment_validated, pret_pour_lm, updated_at, created_at")
+        .in("entreprise_id", entIds)
+    : { data: [] as ProjectRow[] };
+
+  const projectsByEnt = new Map<number, ProjectRow[]>();
   for (const p of (projectsRes.data ?? []) as ProjectRow[]) {
-    if (p.opportunite_id) projectByOpp.set(p.opportunite_id, p);
+    const entId = (p as { entreprise_id?: number | null }).entreprise_id;
+    if (entId == null) continue;
+    const list = projectsByEnt.get(entId);
+    if (list) list.push(p);
+    else projectsByEnt.set(entId, [p]);
+  }
+  const projectByEnt = new Map<number, ProjectRow>();
+  for (const [entId, rows] of projectsByEnt) {
+    const best = pickBestProject(rows as Array<{ id: string }>);
+    if (best) projectByEnt.set(entId, best as ProjectRow);
   }
 
   const prepared: Prepared[] = [];
@@ -92,7 +105,7 @@ export const POST = withAuth({ body: marketingEnrichPrepareSchema }, async ({ bo
       continue;
     }
 
-    const existing = projectByOpp.get(oppId);
+    const existing = projectByEnt.get(opp.entreprise_id);
 
     if (!existing) {
       // Upsert on the unique `opportunite_id`: if the trigger already created a

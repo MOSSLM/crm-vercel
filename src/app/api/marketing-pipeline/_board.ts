@@ -313,16 +313,21 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     const PROJECT_COLUMNS =
       "id, opportunite_id, entreprise_id, statut, pret_pour_lm, override_city, logo_url, " +
       "stat_years_experience, stat_satisfied_clients, stat_installations_completed, stat_rge_count";
+    // Recherche par ENTREPRISE, pas par opportunité : le dossier lead magnet est
+    // par entreprise (chiffres clés, logo, ville SEO, avis, site démo le sont
+    // tous). Interroger par `opportunite_id` laissait sans dossier la carte du
+    // deal qui n'avait pas créé la ligne — et en affichait un différent sur
+    // chaque deal quand l'entreprise en avait deux.
     const withCol = await supabase
       .from("lead_magnet_projects")
       .select(`${PROJECT_COLUMNS}, enrichment_validated`)
-      .in("opportunite_id", oppIds);
+      .in("entreprise_id", entIds);
     if (withCol.error) {
       hasValidatedColumn = false;
       const withoutCol = await supabase
         .from("lead_magnet_projects")
         .select(PROJECT_COLUMNS)
-        .in("opportunite_id", oppIds);
+        .in("entreprise_id", entIds);
       if (withoutCol.error) return { ok: false, error: withoutCol.error.message, status: 500 };
       projectRows = (withoutCol.data ?? []) as unknown as ProjectRow[];
     } else {
@@ -390,12 +395,15 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
   const entById = new Map<number, EntRow>();
   for (const e of (entsRes.data ?? []) as EntRow[]) entById.set(e.id, e);
 
-  // One lead-magnet project per opportunity (keep the validated one if any).
-  const projectByOpp = new Map<string, ProjectRow>();
+  // Un dossier lead magnet par ENTREPRISE (on garde le validé s'il y en a un).
+  // Tant que d'anciens doublons subsistent en base, cette règle fait converger
+  // toutes les cartes d'une entreprise sur le même dossier — celui que lit
+  // aussi le site.
+  const projectByEnt = new Map<number, ProjectRow>();
   for (const p of projectRows) {
-    if (!p.opportunite_id) continue;
-    const cur = projectByOpp.get(p.opportunite_id);
-    if (!cur || (isValidated(p) && !isValidated(cur))) projectByOpp.set(p.opportunite_id, p);
+    if (p.entreprise_id == null) continue;
+    const cur = projectByEnt.get(p.entreprise_id);
+    if (!cur || (isValidated(p) && !isValidated(cur))) projectByEnt.set(p.entreprise_id, p);
   }
 
   // Latest enrichment per company.
@@ -457,7 +465,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
 
   const items = opps.map((o) => {
     const ent = o.entreprise_id != null ? entById.get(o.entreprise_id) : undefined;
-    const project = projectByOpp.get(o.id) ?? null;
+    const project = o.entreprise_id != null ? (projectByEnt.get(o.entreprise_id) ?? null) : null;
     const enrich = o.entreprise_id != null ? enrichByEnt.get(o.entreprise_id) : undefined;
     const site = o.entreprise_id != null ? siteByEnt.get(o.entreprise_id) : undefined;
     const audit = auditByOpp.get(o.id) ?? null;
@@ -535,6 +543,33 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     };
   });
 
+  // UNE carte par entreprise. Ce board suit un workflow d'ENTREPRISE
+  // (enrichissement → site démo → audit) : tout ce qu'il affiche est par
+  // entreprise sauf l'audit. Une carte par opportunité faisait apparaître deux
+  // fois la même entreprise dès qu'elle avait un deal dans deux pipelines — ce
+  // qui arrive à chaque attribution à un agent, d'où « 21 entreprises
+  // attribuées, 42 cartes ».
+  // On garde l'opportunité la plus avancée (colonne la plus haute), et à égalité
+  // la plus récemment mise à jour — `opps` est déjà trié en ce sens.
+  const bestByEnterprise = new Map<number, (typeof items)[number]>();
+  const otherOpportunities = new Map<number, number>();
+  for (const item of items) {
+    if (item.entreprise_id == null) continue;
+    const cur = bestByEnterprise.get(item.entreprise_id);
+    if (!cur) {
+      bestByEnterprise.set(item.entreprise_id, item);
+      continue;
+    }
+    otherOpportunities.set(item.entreprise_id, (otherOpportunities.get(item.entreprise_id) ?? 0) + 1);
+    if (item.column > cur.column) bestByEnterprise.set(item.entreprise_id, item);
+  }
+  // `other_opportunities` : on ne masque pas l'existence des autres deals, on
+  // arrête juste d'en faire des cartes séparées.
+  const dedupedItems = [...bestByEnterprise.values()].map((item) => ({
+    ...item,
+    other_opportunities: item.entreprise_id != null ? (otherOpportunities.get(item.entreprise_id) ?? 0) : 0,
+  }));
+
   const pipelines = (
     (pipelinesRes.data ?? []) as Array<{
       id: string;
@@ -547,7 +582,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
   return {
     ok: true,
     data: {
-      items,
+      items: dedupedItems,
       templates,
       // Le board agent n'attribue pas : la liste des agents ne lui sert à rien.
       agents: opts.ownerId ? [] : agents,
