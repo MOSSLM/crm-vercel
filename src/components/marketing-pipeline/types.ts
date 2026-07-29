@@ -34,6 +34,11 @@ export interface BoardItem {
     is_published: boolean;
     url: string | null;
     is_claude_design: boolean;
+    /** Template dont le site est issu — absent tant que la migration
+     *  `20260730_sites_source_template.sql` n'est pas appliquée, ou pour un
+     *  site créé avant elle. */
+    template_id?: string | null;
+    template_name?: string | null;
   } | null;
   audit: { id: string; statut: string; pdf_url: string | null } | null;
   agent: { id: string; name: string } | null;

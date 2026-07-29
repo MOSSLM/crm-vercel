@@ -1,5 +1,6 @@
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import { isMissingColumn } from "@/lib/site-builder/clone-template-site";
 import { noteSummaries } from "./_notes";
 
 /**
@@ -46,15 +47,29 @@ type EntRow = {
 };
 
 /**
- * Variables that must be present before a demo site can be generated cleanly
- * (the site templates render city, SEO city, postal code, phone, service tags
- * and review stats). Returns the human-readable labels missing.
+ * Une valeur de stat vide, au sens du rendu : le site n'affiche ni "", ni "0",
+ * ni un tiret. Même règle que `isEmptyStat` dans `project-enrichment.ts`, qui
+ * décide ce qui finit réellement dans le bloc « chiffres clés ».
+ */
+function hasStat(v: unknown): boolean {
+  const t = typeof v === "string" ? v.trim() : v != null ? String(v).trim() : "";
+  return t !== "" && t !== "0" && t !== "-" && t !== "—";
+}
+
+/**
+ * Variables that must be present before a demo site can be generated cleanly.
+ * Returns the human-readable labels missing.
+ *
+ * Le principe : tout ce que le site AFFICHE est obligatoire. D'où le logo et les
+ * quatre chiffres clés, en plus de l'identité (nom, ville, ville SEO, code
+ * postal, téléphone), des services et des avis — un site généré sans eux sort
+ * avec des blocs vides qu'il faut ensuite rattraper à la main.
  *
  * Must stay in sync with `SITE_REQUIRED` in MarketingWebPipeline.tsx — including
- * the rule that the SEO city is only required once a lead magnet project exists
- * (it lives on `lead_magnet_projects.override_city`).
+ * the rule that everything living on `lead_magnet_projects` (SEO city, logo,
+ * stats) is only required once that project exists.
  */
-function missingForSite(ent: EntRow | undefined, project: ProjectRow | null | undefined): string[] {
+export function missingForSite(ent: EntRow | undefined, project: ProjectRow | null | undefined): string[] {
   const miss: string[] = [];
   const str = (v: unknown) => (typeof v === "string" ? v.trim() : v != null ? String(v).trim() : "");
   if (!ent) return ["Entreprise"];
@@ -71,6 +86,14 @@ function missingForSite(ent: EntRow | undefined, project: ProjectRow | null | un
   if (tags.length === 0) miss.push("Service tags");
   if (!(Number(ent.note_moyenne) > 0)) miss.push("Note moyenne");
   if (!(Number(ent.nombre_avis) > 0)) miss.push("Nombre d'avis");
+  // Logo : celui du projet prime au rendu, celui de l'entreprise sert de repli.
+  if (!str(project?.logo_url) && !str(ent.logo_url)) miss.push("Logo");
+  if (project) {
+    if (!hasStat(project.stat_years_experience)) miss.push("Années d'expérience");
+    if (!hasStat(project.stat_satisfied_clients)) miss.push("Clients satisfaits");
+    if (!hasStat(project.stat_installations_completed)) miss.push("Installations");
+    if (!hasStat(project.stat_rge_count)) miss.push("Qualifications (RGE)");
+  }
   return miss;
 }
 
@@ -82,6 +105,12 @@ type ProjectRow = {
   pret_pour_lm: boolean | null;
   /** Ville SEO — requise pour créer un site (voir `missingForSite`). */
   override_city: string | null;
+  /** Logo + chiffres clés : affichés par le site, donc requis eux aussi. */
+  logo_url: string | null;
+  stat_years_experience: string | null;
+  stat_satisfied_clients: string | null;
+  stat_installations_completed: string | null;
+  stat_rge_count: string | null;
   enrichment_validated?: boolean | null;
 };
 
@@ -108,6 +137,8 @@ type SiteRow = {
   published_domain: string | null;
   is_template: boolean | null;
   is_claude_design: boolean | null;
+  /** Template dont ce site est le clone (migration 20260730, optionnelle). */
+  source_template_id?: string | null;
 };
 
 type AuditRow = {
@@ -192,21 +223,27 @@ const ENT_CHUNK = 200;
  * 1 000 lignes, et une seule requête pour toutes les entreprises pouvait donc
  * rendre invisible le site d'une ligne — qui repartait alors « à créer ».
  */
+const DEMO_SITE_COLUMNS =
+  "id, name, enterprise_id, build_stage, is_published, published_subdomain, published_domain, is_template, is_claude_design";
+
 async function fetchDemoSites(
   supabase: ReturnType<typeof getServiceClient>,
   entIds: number[],
 ): Promise<{ data: SiteRow[]; error: { message: string } | null }> {
   if (entIds.length === 0) return { data: [], error: null };
+  // `source_template_id` vient d'une migration tardive : on retente sans elle
+  // plutôt que de faire tomber le board (même parti pris qu'ailleurs ici).
+  let columns = `${DEMO_SITE_COLUMNS}, source_template_id`;
   const rows: SiteRow[] = [];
   for (let i = 0; i < entIds.length; i += ENT_CHUNK) {
-    const { data, error } = await supabase
-      .from("sites")
-      .select(
-        "id, name, enterprise_id, build_stage, is_published, published_subdomain, published_domain, is_template, is_claude_design",
-      )
-      .in("enterprise_id", entIds.slice(i, i + ENT_CHUNK));
-    if (error) return { data: [], error };
-    rows.push(...((data ?? []) as SiteRow[]));
+    const chunk = entIds.slice(i, i + ENT_CHUNK);
+    let res = await supabase.from("sites").select(columns).in("enterprise_id", chunk);
+    if (res.error && isMissingColumn(res.error)) {
+      columns = DEMO_SITE_COLUMNS;
+      res = await supabase.from("sites").select(columns).in("enterprise_id", chunk);
+    }
+    if (res.error) return { data: [], error: res.error };
+    rows.push(...((res.data ?? []) as unknown as SiteRow[]));
   }
   return { data: rows, error: null };
 }
@@ -273,18 +310,21 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
   let hasValidatedColumn = true;
   let projectRows: ProjectRow[] = [];
   {
+    const PROJECT_COLUMNS =
+      "id, opportunite_id, entreprise_id, statut, pret_pour_lm, override_city, logo_url, " +
+      "stat_years_experience, stat_satisfied_clients, stat_installations_completed, stat_rge_count";
     const withCol = await supabase
       .from("lead_magnet_projects")
-      .select("id, opportunite_id, entreprise_id, statut, pret_pour_lm, override_city, enrichment_validated")
+      .select(`${PROJECT_COLUMNS}, enrichment_validated`)
       .in("opportunite_id", oppIds);
     if (withCol.error) {
       hasValidatedColumn = false;
       const withoutCol = await supabase
         .from("lead_magnet_projects")
-        .select("id, opportunite_id, entreprise_id, statut, pret_pour_lm, override_city")
+        .select(PROJECT_COLUMNS)
         .in("opportunite_id", oppIds);
       if (withoutCol.error) return { ok: false, error: withoutCol.error.message, status: 500 };
-      projectRows = (withoutCol.data ?? []) as ProjectRow[];
+      projectRows = (withoutCol.data ?? []) as unknown as ProjectRow[];
     } else {
       projectRows = (withCol.data ?? []) as ProjectRow[];
     }
@@ -388,6 +428,8 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
           : 1,
     );
 
+  const templateNameById = new Map(templates.map((t) => [t.id, t.name]));
+
   // Best demo site per company (published > pret > other), templates excluded.
   const allSites = (sitesRes.data ?? []) as SiteRow[];
   const rank = (s: SiteRow) => (s.is_published ? 2 : s.build_stage === "pret" ? 1 : 0);
@@ -476,6 +518,13 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
             is_published: site.is_published === true,
             url: siteUrl(site),
             is_claude_design: site.is_claude_design === true,
+            // Template d'origine : la carte peut ainsi dire d'où vient le site,
+            // et signaler qu'il ne vient pas du template sélectionné en haut.
+            template_id: site.source_template_id ?? null,
+            template_name:
+              site.source_template_id != null
+                ? templateNameById.get(site.source_template_id) ?? null
+                : null,
           }
         : null,
       audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
