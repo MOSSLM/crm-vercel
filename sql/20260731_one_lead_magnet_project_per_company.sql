@@ -18,11 +18,23 @@
 --   2. un index unique sur `entreprise_id` rend le doublon impossible.
 --
 -- ORDRE D'APPLICATION — IMPORTANT
--- Lancer d'abord la fusion des doublons existants :
---   POST /api/marketing-pipeline/merge-duplicate-projects   (dryRun d'abord)
--- L'index unique de l'étape 2 ÉCHOUERA tant qu'il reste deux lignes pour une
--- même entreprise. C'est voulu : mieux vaut refuser l'index que perdre des
--- données en douce.
+--   1. GET  /api/marketing-pipeline/merge-duplicate-projects        (état des lieux)
+--   2. POST /api/marketing-pipeline/merge-duplicate-projects  {}     (simulation)
+--   3. POST /api/marketing-pipeline/merge-duplicate-projects  {"dryRun": false}
+--   4. cette migration.
+--
+-- L'index unique de l'étape 2 ÉCHOUE tant qu'il reste deux lignes pour une même
+-- entreprise (`ERROR: 23505 … Key (entreprise_id)=(2743) is duplicated`). C'est
+-- voulu : mieux vaut refuser l'index que perdre des données en douce.
+--
+-- Pour voir quelles entreprises bloquent, sans rien modifier :
+--
+--   select entreprise_id, count(*) as dossiers, array_agg(id) as project_ids
+--     from public.lead_magnet_projects
+--    where entreprise_id is not null
+--    group by entreprise_id
+--   having count(*) > 1
+--    order by count(*) desc;
 
 -- ---------------------------------------------------------------------------
 -- 1. Le trigger réutilise le dossier existant de l'entreprise

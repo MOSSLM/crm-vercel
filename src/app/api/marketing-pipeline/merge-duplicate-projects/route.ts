@@ -12,25 +12,94 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+type ServiceClient = ReturnType<typeof getServiceClient>;
+
 /**
- * POST /api/marketing-pipeline/merge-duplicate-projects
- * Body : { dryRun?: boolean }  — simulation par DÉFAUT.
+ * Doublons de `lead_magnet_projects` : diagnostic (GET) et fusion (POST).
  *
- * Une entreprise peut porter plusieurs `lead_magnet_projects` : le trigger en
- * crée un par opportunité, et attribuer un prospect à un agent ouvre un second
- * deal quand l'entreprise n'en avait que dans un autre pipeline. L'information
- * se répartit alors entre les deux lignes — les chiffres clés sur l'une, le logo
- * sur l'autre — pendant que le site n'en lit qu'une seule.
+ * Une entreprise peut porter plusieurs dossiers : le trigger en crée un par
+ * opportunité, et attribuer un prospect à un agent ouvre un second deal quand
+ * l'entreprise n'en avait que dans un autre pipeline. L'information se répartit
+ * alors entre les deux lignes — les chiffres clés sur l'une, le logo sur
+ * l'autre — pendant que le site n'en lit qu'une seule.
  *
- * Cette route ramène chaque entreprise à UN dossier :
- *   1. survivant = le projet le plus avancé (même classement que partout ailleurs) ;
- *   2. il récupère des doublons tout ce qui lui manque (jamais d'écrasement) ;
- *   3. avis, contenu et sites sont repointés sur lui ;
- *   4. les doublons vidés sont supprimés — uniquement hors `dryRun`.
+ * GET  → la liste des entreprises encore en doublon. À passer AVANT la migration
+ *        `20260731_one_lead_magnet_project_per_company.sql` : son index unique
+ *        échoue tant qu'il en reste un.
+ * POST → la fusion. `dryRun` par défaut ; `{ "dryRun": false }` pour écrire.
+ *        `entrepriseIds` restreint à quelques entreprises (mise au point).
  *
- * `dryRun` (défaut) n'écrit RIEN et renvoie le rapport complet : c'est la
- * lecture avant décision, pas une formalité.
+ * Le balayage est PAGINÉ : PostgREST plafonne une réponse à 1 000 lignes, et une
+ * fusion qui ne voit qu'une partie de la table laisse des doublons derrière elle
+ * — exactement ce qui fait échouer l'index unique ensuite.
  */
+const PAGE = 1000;
+
+interface IdRow {
+  id: string;
+  entreprise_id: number | null;
+}
+
+/** Toutes les paires (id, entreprise_id), par pages de 1 000. */
+async function scanAllProjects(
+  supabase: ServiceClient,
+  entrepriseIds?: number[],
+): Promise<{ rows: IdRow[]; error?: string }> {
+  const rows: IdRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let query = supabase
+      .from("lead_magnet_projects")
+      .select("id, entreprise_id")
+      .not("entreprise_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (entrepriseIds && entrepriseIds.length > 0) query = query.in("entreprise_id", entrepriseIds);
+
+    const { data, error } = await query;
+    if (error) return { rows, error: error.message };
+    const page = (data ?? []) as IdRow[];
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return { rows };
+}
+
+/** entreprise_id → ids de ses dossiers, pour les entreprises qui en ont > 1. */
+function duplicateGroups(rows: IdRow[]): Map<number, string[]> {
+  const byEnterprise = new Map<number, string[]>();
+  for (const row of rows) {
+    const entrepriseId = Number(row.entreprise_id);
+    if (!Number.isFinite(entrepriseId)) continue;
+    const list = byEnterprise.get(entrepriseId);
+    if (list) list.push(row.id);
+    else byEnterprise.set(entrepriseId, [row.id]);
+  }
+  for (const [entrepriseId, ids] of byEnterprise) {
+    if (ids.length < 2) byEnterprise.delete(entrepriseId);
+  }
+  return byEnterprise;
+}
+
+/**
+ * GET → état des doublons. Réponse volontairement courte : un compteur et la
+ * liste des entreprises concernées, à recouper avec l'erreur de l'index unique
+ * (`Key (entreprise_id)=(…) is duplicated`).
+ */
+export const GET = withAuth({ role: "admin" }, async () => {
+  const supabase = getServiceClient();
+  const { rows, error } = await scanAllProjects(supabase);
+  if (error) return jsonError(error, 500);
+
+  const groups = duplicateGroups(rows);
+  return json({
+    ok: true,
+    projectsScanned: rows.length,
+    duplicateGroups: groups.size,
+    duplicateRows: [...groups.values()].reduce((n, ids) => n + ids.length - 1, 0),
+    entreprises: [...groups.entries()].map(([entrepriseId, ids]) => ({ entrepriseId, projectIds: ids })),
+  });
+});
+
 interface GroupReport {
   entrepriseId: number;
   survivorId: string;
@@ -39,42 +108,67 @@ interface GroupReport {
   recovered: Record<string, string>;
   /** Drapeaux remontés (validation humaine portée par un doublon). */
   flags: string[];
-  movedReviews: number;
-  movedSites: number;
-  movedContent: number;
+  moved: Record<string, number>;
   deleted: string[];
   error?: string;
 }
 
-/** Colonnes lues pour la fusion : tout ce qui est fusionnable + l'identité. */
-const SELECT_COLUMNS = "*";
+/** Tables enfants à faire suivre le survivant. `optional` : la table peut ne pas
+ *  exister selon l'âge de la base — on l'ignore alors au lieu de tout arrêter. */
+const CHILD_TABLES: Array<{ table: string; column: string; optional?: boolean }> = [
+  { table: "sites", column: "lead_magnet_project_id" },
+  { table: "lead_magnet_reviews", column: "lead_magnet_project_id" },
+  { table: "lead_magnet_pages", column: "lead_magnet_project_id", optional: true },
+  { table: "email_logs", column: "lead_magnet_project_id", optional: true },
+  { table: "production_lead_magnets", column: "lead_magnet_project_id", optional: true },
+];
+
+/** Une table absente (42P01) ou une colonne absente (42703) n'est pas une erreur. */
+function isMissingRelation(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return (
+    error.code === "42P01" ||
+    error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /does not exist|could not find/i.test(error.message ?? "")
+  );
+}
 
 export const POST = withAuth({ role: "admin" }, async ({ req }) => {
-  const body = (await req.json().catch(() => ({}))) as { dryRun?: boolean };
+  const body = (await req.json().catch(() => ({}))) as { dryRun?: boolean; entrepriseIds?: number[] };
   // Simulation par défaut : il faut demander explicitement l'écriture.
   const dryRun = body.dryRun !== false;
+  const targeted = Array.isArray(body.entrepriseIds)
+    ? body.entrepriseIds.map(Number).filter(Number.isFinite)
+    : undefined;
 
   const supabase = getServiceClient();
 
-  const { data, error } = await supabase
-    .from("lead_magnet_projects")
-    .select(SELECT_COLUMNS)
-    .not("entreprise_id", "is", null);
-  if (error) return jsonError(error.message, 500);
+  const scan = await scanAllProjects(supabase, targeted);
+  if (scan.error) return jsonError(scan.error, 500);
+  const groups = duplicateGroups(scan.rows);
 
-  const byEnterprise = new Map<number, ProjectRecord[]>();
-  for (const row of (data ?? []) as ProjectRecord[]) {
-    const entrepriseId = Number(row.entreprise_id);
-    if (!Number.isFinite(entrepriseId)) continue;
-    const list = byEnterprise.get(entrepriseId);
-    if (list) list.push(row);
-    else byEnterprise.set(entrepriseId, [row]);
-  }
-
-  const groups = [...byEnterprise.entries()].filter(([, rows]) => rows.length > 1);
   const reports: GroupReport[] = [];
 
-  for (const [entrepriseId, rows] of groups) {
+  for (const [entrepriseId, ids] of groups) {
+    // Les lignes complètes ne sont chargées que pour les groupes concernés :
+    // quelques dizaines de lignes au lieu de toute la table.
+    const { data, error } = await supabase.from("lead_magnet_projects").select("*").in("id", ids);
+    if (error) {
+      reports.push({
+        entrepriseId,
+        survivorId: "",
+        duplicateIds: ids,
+        recovered: {},
+        flags: [],
+        moved: {},
+        deleted: [],
+        error: `lecture: ${error.message}`,
+      });
+      continue;
+    }
+
+    const rows = (data ?? []) as ProjectRecord[];
     const survivor = pickBestProject(rows) as ProjectRecord | null;
     if (!survivor) continue;
     const survivorId = String(survivor.id);
@@ -88,26 +182,21 @@ export const POST = withAuth({ role: "admin" }, async ({ req }) => {
 
     const plan = buildMergePlan(survivor, ordered);
     const flagsPatch = buildFlagsPatch(survivor, ordered);
+    const dupIds = duplicates.map((d) => String(d.id));
     const report: GroupReport = {
       entrepriseId,
       survivorId,
-      duplicateIds: duplicates.map((d) => String(d.id)),
+      duplicateIds: dupIds,
       recovered: plan.takenFrom,
       flags: Object.keys(flagsPatch),
-      movedReviews: 0,
-      movedSites: 0,
-      movedContent: 0,
+      moved: {},
       deleted: [],
     };
 
     try {
-      const dupIds = report.duplicateIds;
-
-      // Comptages : en simulation ils constituent le rapport, en réel ils
-      // servent à vérifier ce qui a bougé.
-      report.movedReviews = await countRows(supabase, "lead_magnet_reviews", "lead_magnet_project_id", dupIds);
-      report.movedContent = await countRows(supabase, "lead_magnet_content", "lead_magnet_project_id", dupIds);
-      report.movedSites = await countRows(supabase, "sites", "lead_magnet_project_id", dupIds);
+      for (const child of CHILD_TABLES) {
+        report.moved[child.table] = await countRows(supabase, child.table, child.column, dupIds);
+      }
 
       if (!dryRun) {
         const patch = { ...plan.patch, ...flagsPatch };
@@ -119,49 +208,19 @@ export const POST = withAuth({ role: "admin" }, async ({ req }) => {
           if (upErr) throw new Error(`fusion: ${upErr.message}`);
         }
 
-        // Les sites suivent le survivant, sinon ils continueraient de lire une
-        // ligne sur le point d'être supprimée.
-        if (report.movedSites > 0) {
-          const { error: sErr } = await supabase
-            .from("sites")
-            .update({ lead_magnet_project_id: survivorId })
-            .in("lead_magnet_project_id", dupIds);
-          if (sErr) throw new Error(`sites: ${sErr.message}`);
-        }
-
-        // Les avis se déplacent ; `lead_magnet_content` est UNIQUE par projet,
-        // donc on ne déplace que si le survivant n'en a pas déjà.
-        if (report.movedReviews > 0) {
-          const { error: rErr } = await supabase
-            .from("lead_magnet_reviews")
-            .update({ lead_magnet_project_id: survivorId })
-            .in("lead_magnet_project_id", dupIds);
-          if (rErr) throw new Error(`avis: ${rErr.message}`);
-        }
-        if (report.movedContent > 0) {
-          const survivorHasContent =
-            (await countRows(supabase, "lead_magnet_content", "lead_magnet_project_id", [survivorId])) > 0;
-          if (!survivorHasContent) {
-            // Une seule ligne peut passer : on prend la première, les autres
-            // partiront avec leur projet.
-            const { data: first } = await supabase
-              .from("lead_magnet_content")
-              .select("id")
-              .in("lead_magnet_project_id", dupIds)
-              .limit(1)
-              .maybeSingle();
-            const firstId = (first as { id?: string } | null)?.id;
-            if (firstId) {
-              const { error: cErr } = await supabase
-                .from("lead_magnet_content")
-                .update({ lead_magnet_project_id: survivorId })
-                .eq("id", firstId);
-              if (cErr) throw new Error(`contenu: ${cErr.message}`);
-            }
-          } else {
-            report.movedContent = 0; // le survivant avait déjà son contenu
+        for (const child of CHILD_TABLES) {
+          if ((report.moved[child.table] ?? 0) === 0) continue;
+          // `lead_magnet_content` est UNIQUE par projet : traité à part.
+          const { error: mvErr } = await supabase
+            .from(child.table)
+            .update({ [child.column]: survivorId })
+            .in(child.column, dupIds);
+          if (mvErr && !(child.optional && isMissingRelation(mvErr))) {
+            throw new Error(`${child.table}: ${mvErr.message}`);
           }
         }
+
+        await moveUniqueContent(supabase, survivorId, dupIds, report);
 
         const { error: dErr } = await supabase.from("lead_magnet_projects").delete().in("id", dupIds);
         if (dErr) throw new Error(`suppression: ${dErr.message}`);
@@ -174,20 +233,62 @@ export const POST = withAuth({ role: "admin" }, async ({ req }) => {
     reports.push(report);
   }
 
+  // Vérification finale : ce qui reste après coup, pour ne pas envoyer
+  // l'opérateur lancer une migration qui échouera.
+  let remaining = groups.size;
+  if (!dryRun) {
+    const after = await scanAllProjects(supabase, targeted);
+    remaining = after.error ? -1 : duplicateGroups(after.rows).size;
+  }
+
   return json({
     ok: true,
     dryRun,
-    enterprisesScanned: byEnterprise.size,
-    duplicateGroups: groups.length,
-    duplicateRows: groups.reduce((n, [, rows]) => n + rows.length - 1, 0),
+    projectsScanned: scan.rows.length,
+    duplicateGroups: groups.size,
+    duplicateRows: [...groups.values()].reduce((n, ids) => n + ids.length - 1, 0),
     recoveredFields: reports.reduce((n, r) => n + Object.keys(r.recovered).length, 0),
     errors: reports.filter((r) => r.error).length,
+    remainingDuplicateGroups: remaining,
     reports,
   });
 });
 
+/** `lead_magnet_content` porte une contrainte UNIQUE par projet : on ne déplace
+ *  une ligne que si le survivant n'en a pas déjà une. */
+async function moveUniqueContent(
+  supabase: ServiceClient,
+  survivorId: string,
+  dupIds: string[],
+  report: GroupReport,
+): Promise<void> {
+  const onDuplicates = await countRows(supabase, "lead_magnet_content", "lead_magnet_project_id", dupIds);
+  report.moved["lead_magnet_content"] = onDuplicates;
+  if (onDuplicates === 0) return;
+
+  const survivorHas = await countRows(supabase, "lead_magnet_content", "lead_magnet_project_id", [survivorId]);
+  if (survivorHas > 0) {
+    report.moved["lead_magnet_content"] = 0; // le survivant avait déjà son contenu
+    return;
+  }
+  const { data: first } = await supabase
+    .from("lead_magnet_content")
+    .select("id")
+    .in("lead_magnet_project_id", dupIds)
+    .limit(1)
+    .maybeSingle();
+  const firstId = (first as { id?: string } | null)?.id;
+  if (!firstId) return;
+  const { error } = await supabase
+    .from("lead_magnet_content")
+    .update({ lead_magnet_project_id: survivorId })
+    .eq("id", firstId);
+  if (error && !isMissingRelation(error)) throw new Error(`lead_magnet_content: ${error.message}`);
+  report.moved["lead_magnet_content"] = 1;
+}
+
 async function countRows(
-  supabase: ReturnType<typeof getServiceClient>,
+  supabase: ServiceClient,
   table: string,
   column: string,
   ids: string[],
