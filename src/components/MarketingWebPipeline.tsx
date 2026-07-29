@@ -53,6 +53,8 @@ interface BoardItem {
     is_published: boolean;
     url: string | null;
     is_claude_design: boolean;
+    template_id?: string | null;
+    template_name?: string | null;
   } | null;
   audit: { id: string; statut: string; pdf_url: string | null } | null;
   agent: { id: string; name: string } | null;
@@ -427,42 +429,61 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
-  // Regenerate a demo site from the company's (possibly updated) info — creates
-  // a fresh demo via create-demo even when a site already exists. Unlike
-  // createSites it doesn't skip companies that already have a site.
+  /**
+   * Refait le site existant à partir du template sélectionné en haut de page —
+   * le même (rafraîchissement) ou un autre (changement de modèle).
+   *
+   * C'est le MÊME site qui est reconstruit : il garde son id, donc son URL
+   * publiée, son audit et son avancement. Avant, l'action créait une démo de
+   * plus et le board continuait d'afficher l'ancienne — changer de template
+   * semblait sans effet. Les infos de la fiche (ville, stats, logo, avis) sont
+   * reprises au passage, et un site déjà publié est republié pour que le rendu
+   * public suive.
+   */
   const regenerateSite = async (item: BoardItem) => {
     if (!templateId || !templateName) {
       toast.error("Choisis d'abord un template en haut de page");
       return;
     }
-    if (item.entreprise_id == null) return;
+    if (!item.site) {
+      toast.error("Aucun site à refaire pour cette entreprise");
+      return;
+    }
+    const from = item.site.template_name;
+    const swapping = !!from && from !== templateName;
+    const question = swapping
+      ? `Refaire le site de ${displayName(item)} avec « ${templateName} » à la place de « ${from} » ?\n\nLes retouches faites dans l'éditeur sur ce site seront perdues.`
+      : `Refaire le site de ${displayName(item)} depuis « ${templateName} » et reprendre les infos à jour de la fiche ?\n\nLes retouches faites dans l'éditeur sur ce site seront perdues.`;
+    if (typeof window !== "undefined" && !window.confirm(question)) return;
+
     setWorking("create-site");
     try {
-      // Côté agent la route générique du site builder n'est pas ouverte : on
-      // passe par la route agent, qui vérifie la propriété de l'entreprise.
-      const res = isAgent
-        ? await authedFetch("/api/agent/marketing-pipeline/site", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              action: "create",
-              template_id: templateId,
-              entreprise_ids: [item.entreprise_id],
-            }),
-          })
-        : await authedFetch(`/api/site-builder/claude/${templateId}/create-demo`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ companyId: item.entreprise_id }),
-          });
+      // Côté agent, la route dédiée revérifie que l'entreprise lui est attribuée.
+      const url = isAgent
+        ? "/api/agent/marketing-pipeline/site"
+        : "/api/marketing-pipeline/regenerate-site";
+      const res = await authedFetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          isAgent
+            ? { action: "regenerate", site_id: item.site.id, template_id: templateId }
+            : { site_id: item.site.id, template_id: templateId },
+        ),
+      });
       const data = (await res.json().catch(() => ({}))) as {
-        templateName?: string | null;
         template_name?: string | null;
+        template_changed?: boolean;
+        republished?: boolean;
         error?: string;
       };
       if (!res.ok) throw new Error(data.error || "Échec");
-      const used = data.templateName || data.template_name || templateName;
-      toast.success(`Site régénéré depuis « ${used} » — nouvelle démo créée`);
+      const used = data.template_name || templateName;
+      toast.success(
+        data.template_changed
+          ? `Site refait avec « ${used} »${data.republished ? " et republié" : ""}`
+          : `Site refait depuis « ${used} » — infos à jour${data.republished ? ", republié" : ""}`,
+      );
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la régénération du site");
@@ -902,12 +923,25 @@ const SITE_REQUIRED: RequiredRule[] = [
   { field: "nombre_avis", label: "Nombre d'avis", ok: (f) => Number(f.nombre_avis) > 0 },
 ];
 
-// La ville SEO vit sur `lead_magnet_projects.override_city` : elle n'est exigée
-// que s'il y a un projet lead magnet, sinon la fiche d'une entreprise sans projet
-// serait impossible à valider (le champ n'a nulle part où être enregistré).
+/** Une stat vide au sens du rendu : "", "0", "-" et "—" n'affichent rien. */
+const filledStat = (v: string): boolean => {
+  const t = v.trim();
+  return t !== "" && t !== "0" && t !== "-" && t !== "—";
+};
+
+// Ville SEO, logo et chiffres clés vivent sur `lead_magnet_projects` : ils ne
+// sont exigés que s'il y a un projet lead magnet, sinon la fiche d'une
+// entreprise sans projet serait impossible à valider (ces champs n'ont nulle
+// part où être enregistrés). Tout ce que le site affiche est obligatoire — un
+// site généré sans logo ni chiffres clés sort avec des blocs vides.
 const SITE_REQUIRED_WITH_PROJECT: RequiredRule[] = [
   ...SITE_REQUIRED,
   { field: "lm_override_city", label: "Ville SEO", ok: (f) => f.lm_override_city.trim().length > 0 },
+  { field: "lm_logo_url", label: "Logo", ok: (f) => f.lm_logo_url.trim().length > 0 },
+  { field: "lm_stat_years", label: "Années d'expérience", ok: (f) => filledStat(f.lm_stat_years) },
+  { field: "lm_stat_clients", label: "Clients satisfaits", ok: (f) => filledStat(f.lm_stat_clients) },
+  { field: "lm_stat_installations", label: "Installations", ok: (f) => filledStat(f.lm_stat_installations) },
+  { field: "lm_stat_rge", label: "Qualifications (RGE)", ok: (f) => filledStat(f.lm_stat_rge) },
 ];
 
 const siteRequiredFor = (hasProject: boolean): RequiredRule[] =>
@@ -1278,7 +1312,14 @@ const OpportunityEditModal: React.FC<{
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Nom affiché (override)"><Input value={form.lm_override_name} onChange={set("lm_override_name")} placeholder={form.name} /></Field>
-                    <Field label="Logo (URL)"><Input value={form.lm_logo_url} onChange={set("lm_logo_url")} /></Field>
+                    <Field
+                      label="Logo (URL)"
+                      required
+                      invalid={showInvalid("lm_logo_url")}
+                      hint="Affiché en en-tête du site : sans lui, la démo sort sans identité."
+                    >
+                      <Input value={form.lm_logo_url} onChange={set("lm_logo_url")} />
+                    </Field>
                     <Field label="Téléphone (override)"><Input value={form.lm_override_phone} onChange={set("lm_override_phone")} placeholder={form.telephone} /></Field>
                     <Field label="Email (override)"><Input value={form.lm_override_email} onChange={set("lm_override_email")} placeholder={form.email} /></Field>
                     <Field label="Horaires"><Input value={form.horaires} onChange={set("horaires")} placeholder="Lun–Ven 8h–18h" /></Field>
@@ -1296,11 +1337,23 @@ const OpportunityEditModal: React.FC<{
 
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Chiffres clés (stats)</h4>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Le bloc « chiffres clés » du site les affiche tous : une valeur vide ou à 0
+                    laisse un trou dans la page, donc les quatre sont requis.
+                  </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <Field label="Années d'expérience"><Input type="number" value={form.lm_stat_years} onChange={set("lm_stat_years")} /></Field>
-                    <Field label="Clients satisfaits"><Input type="number" value={form.lm_stat_clients} onChange={set("lm_stat_clients")} /></Field>
-                    <Field label="Installations"><Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} /></Field>
-                    <Field label="Qualifications (RGE)"><Input type="number" value={form.lm_stat_rge} onChange={set("lm_stat_rge")} /></Field>
+                    <Field label="Années d'expérience" required invalid={showInvalid("lm_stat_years")}>
+                      <Input type="number" value={form.lm_stat_years} onChange={set("lm_stat_years")} />
+                    </Field>
+                    <Field label="Clients satisfaits" required invalid={showInvalid("lm_stat_clients")}>
+                      <Input type="number" value={form.lm_stat_clients} onChange={set("lm_stat_clients")} />
+                    </Field>
+                    <Field label="Installations" required invalid={showInvalid("lm_stat_installations")}>
+                      <Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} />
+                    </Field>
+                    <Field label="Qualifications (RGE)" required invalid={showInvalid("lm_stat_rge")}>
+                      <Input type="number" value={form.lm_stat_rge} onChange={set("lm_stat_rge")} />
+                    </Field>
                   </div>
                 </div>
 

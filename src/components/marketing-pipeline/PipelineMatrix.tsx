@@ -172,6 +172,16 @@ function hasOpenNoteFor(item: BoardItem, subject: NoteSubject): boolean {
   return (item.notes?.open_subjects ?? []).includes(subject);
 }
 
+/**
+ * Le site affiché vient-il d'un AUTRE template que celui sélectionné en haut ?
+ * On ne conclut que si le site porte son template d'origine — sans la migration
+ * `source_template_id`, on ne sait pas, et on ne crie pas au loup.
+ */
+function templateMismatch(item: BoardItem, templateId: string): boolean {
+  const from = item.site?.template_id;
+  return !!from && !!templateId && from !== templateId;
+}
+
 /** Nombre de variables requises encore manquantes (tri « incomplets d'abord »). */
 function missingCount(item: BoardItem): number {
   return item.missing_for_site?.length ?? 0;
@@ -488,7 +498,9 @@ function StageBody({ item, stage }: { item: BoardItem; stage: StageDef }) {
     case "site":
       return (
         <div className="c-body" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <div className="prev"><span>{item.site ? "maquette" : "à créer"}</span></div>
+          <div className="prev">
+            <span>{item.site ? item.site.template_name ?? "maquette" : "à créer"}</span>
+          </div>
           {item.site?.url ? (
             <a className="kv" href={item.site.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
               <Globe className="ico-sm" />
@@ -563,12 +575,15 @@ function StageActions({ item, stage, done, busy, templateId, templateName, agent
               <Pencil className="ico-sm" />
             </Link>
             <button
-              className="btn ghost sm icon"
+              className={"btn ghost sm icon" + (templateMismatch(item, templateId) ? " danger-h" : "")}
               disabled={busy || item.entreprise_id == null || !templateId}
+              style={templateMismatch(item, templateId) ? { color: "var(--accent-2)" } : undefined}
               title={
-                templateName
-                  ? `Régénérer le site depuis le template « ${templateName} » (nouvelle démo, infos à jour)`
-                  : "Choisis un template en haut de page"
+                !templateName
+                  ? "Choisis un template en haut de page"
+                  : templateMismatch(item, templateId)
+                    ? `Refaire ce site avec « ${templateName} » (il vient de « ${item.site?.template_name} »)`
+                    : `Refaire ce site depuis « ${templateName} » et reprendre les infos à jour de la fiche`
               }
               onClick={() => handlers.onRegenerateSite(item)}
             >

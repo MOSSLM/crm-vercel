@@ -359,3 +359,42 @@ describe("PipelineMatrix — éditeur d'audit selon la coque", () => {
     expect(screen.getByTitle("Éditer l'audit")).toHaveAttribute("href", "/espace-agent/audits/au");
   });
 });
+
+describe("PipelineMatrix — refaire le site avec un autre template", () => {
+  const withSite = (templateId: string | null, templateName: string | null) =>
+    item({
+      id: "s",
+      name: "Sigma",
+      enriched: true,
+      project: project(true),
+      site: {
+        id: "site-1",
+        name: "Sigma",
+        build_stage: "a_faire",
+        is_published: false,
+        url: null,
+        is_claude_design: true,
+        template_id: templateId,
+        template_name: templateName,
+      },
+    });
+
+  it("annonce le remplacement quand le site vient d'un autre template", () => {
+    renderRows([withSite("t2", "Chantier")]);
+    expect(
+      screen.getByTitle('Refaire ce site avec « Template » (il vient de « Chantier »)'),
+    ).toBeInTheDocument();
+  });
+
+  it("parle de rafraîchissement quand c'est déjà le bon template", () => {
+    renderRows([withSite("t1", "Template")]);
+    expect(
+      screen.getByTitle('Refaire ce site depuis « Template » et reprendre les infos à jour de la fiche'),
+    ).toBeInTheDocument();
+  });
+
+  it("affiche le template d'origine sur la carte du site", () => {
+    renderRows([withSite("t2", "Chantier")]);
+    expect(screen.getByText("Chantier")).toBeInTheDocument();
+  });
+});

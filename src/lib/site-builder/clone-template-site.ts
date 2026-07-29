@@ -31,10 +31,21 @@ export interface TemplateInstance {
   is_hidden: boolean | null;
 }
 
-const TEMPLATE_COLUMNS =
+export const TEMPLATE_COLUMNS =
   "style_guide, sitemap, site_config, content_overrides, shared_assets, tweaks, is_claude_design";
-const INSTANCE_COLUMNS =
+export const INSTANCE_COLUMNS =
   "section_id, page_slug, sort_order, content, blocks, custom_style, is_hidden";
+
+/**
+ * `true` quand la colonne n'existe pas encore (migration non appliquée).
+ * `source_template_id` vient d'une migration tardive : son absence ne doit pas
+ * empêcher de créer un site.
+ */
+export const isMissingColumn = (error: { code?: string; message?: string } | null): boolean =>
+  !!error &&
+  (error.code === "42703" ||
+    error.code === "PGRST204" ||
+    /column .* does not exist|could not find the .* column/i.test(error.message ?? ""));
 
 export interface CloneTemplateOptions {
   /** Linked company for a demo site; null/0 when duplicating as a template. */
@@ -74,26 +85,32 @@ export async function cloneTemplateSite(
     instances = (inst ?? []) as TemplateInstance[];
   }
 
-  const { data: newSite, error: insErr } = await supabase
-    .from("sites")
-    .insert({
-      name: opts.name,
-      enterprise_id: opts.asTemplate ? null : (opts.enterpriseId ?? null),
-      lead_magnet_project_id: opts.asTemplate ? null : (opts.leadMagnetProjectId ?? null),
-      is_template: opts.asTemplate ?? false,
-      is_claude_design: template.is_claude_design ?? false,
-      build_stage: opts.buildStage ?? "a_faire",
-      style_guide: template.style_guide ?? null,
-      sitemap: template.sitemap ?? null,
-      site_config: template.site_config ?? null,
-      content_overrides: template.content_overrides ?? null,
-      shared_assets: template.shared_assets ?? {},
-      tweaks: template.tweaks ?? {},
-    })
-    .select("id")
-    .single();
-  if (insErr || !newSite) return { ok: false, error: insErr?.message ?? "Création du site échouée" };
-  const newSiteId = (newSite as { id: string }).id;
+  const row: Record<string, unknown> = {
+    name: opts.name,
+    enterprise_id: opts.asTemplate ? null : (opts.enterpriseId ?? null),
+    lead_magnet_project_id: opts.asTemplate ? null : (opts.leadMagnetProjectId ?? null),
+    is_template: opts.asTemplate ?? false,
+    is_claude_design: template.is_claude_design ?? false,
+    build_stage: opts.buildStage ?? "a_faire",
+    style_guide: template.style_guide ?? null,
+    sitemap: template.sitemap ?? null,
+    site_config: template.site_config ?? null,
+    content_overrides: template.content_overrides ?? null,
+    shared_assets: template.shared_assets ?? {},
+    tweaks: template.tweaks ?? {},
+    // Trace du modèle utilisé : c'est ce qui permet d'afficher « ce site vient
+    // du template X » et de proposer de le refaire avec un autre.
+    source_template_id: templateId,
+  };
+
+  let ins = await supabase.from("sites").insert(row).select("id").single();
+  if (isMissingColumn(ins.error)) {
+    const { source_template_id: _dropped, ...withoutSource } = row;
+    void _dropped;
+    ins = await supabase.from("sites").insert(withoutSource).select("id").single();
+  }
+  if (ins.error || !ins.data) return { ok: false, error: ins.error?.message ?? "Création du site échouée" };
+  const newSiteId = (ins.data as { id: string }).id;
 
   if (instances.length > 0) {
     const cloned = instances.map((inst) => ({

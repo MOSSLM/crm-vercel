@@ -1,10 +1,12 @@
+import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { cloneTemplateSite } from "@/lib/site-builder/clone-template-site";
-import { logPipelineStep } from "../_lib";
+import { rebuildSiteFromTemplate } from "@/lib/site-builder/rebuild-site-from-template";
+import { assertOwnsEntreprise, logPipelineStep } from "../_lib";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +17,12 @@ const bodySchema = z.discriminatedUnion("action", [
     action: z.literal("create"),
     template_id: z.string().uuid(),
     entreprise_ids: z.array(z.coerce.number().int().positive()).min(1).max(50),
+  }),
+  z.object({
+    // Refait un site existant depuis le template choisi (même site, même URL).
+    action: z.literal("regenerate"),
+    site_id: z.string().uuid(),
+    template_id: z.string().uuid(),
   }),
   z.object({
     action: z.literal("validate"),
@@ -98,6 +106,55 @@ export const POST = withAuth<Body>(
           skipped: body.entreprise_ids.length - owned.length,
           template_id: body.template_id,
           template_name: (template as { name?: string | null }).name ?? null,
+        },
+        { headers: cors },
+      );
+    }
+
+    if (body.action === "regenerate") {
+      const { data: target } = await sc
+        .from("sites")
+        .select("id, enterprise_id")
+        .eq("id", body.site_id)
+        .maybeSingle();
+      if (!target) return jsonError("site_introuvable", 404, {}, cors);
+
+      const entId = Number((target as { enterprise_id: number | null }).enterprise_id);
+      const owned = await assertOwnsEntreprise(user.id, entId);
+      if (!owned.ok) return jsonError(owned.error, owned.status, {}, cors);
+
+      const rebuilt = await rebuildSiteFromTemplate(sc, body.site_id, body.template_id);
+      if (!rebuilt.ok) {
+        return jsonError(rebuilt.error ?? "regeneration_echouee", rebuilt.status ?? 500, {}, cors);
+      }
+
+      if (rebuilt.publishedSubdomain) {
+        try {
+          revalidatePath(`/site/${rebuilt.publishedSubdomain}`, "layout");
+        } catch {
+          /* best effort */
+        }
+      }
+
+      await logPipelineStep({
+        agentId: user.id,
+        entrepriseId: entId,
+        action: "regenerate_site",
+        metadata: {
+          site_id: body.site_id,
+          template_id: body.template_id,
+          template_changed: rebuilt.templateChanged ?? false,
+        },
+      });
+
+      return json(
+        {
+          ok: true,
+          site_id: body.site_id,
+          template_id: body.template_id,
+          template_name: rebuilt.templateName ?? null,
+          template_changed: rebuilt.templateChanged ?? false,
+          republished: rebuilt.republished ?? false,
         },
         { headers: cors },
       );
