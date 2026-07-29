@@ -15,6 +15,7 @@ import { hydrateRoot, createRoot, type Root } from "react-dom/client";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { sanitizeRichText } from "@/lib/site-builder/sanitize-html";
 import { parseImageSet, pickCandidate } from "@/lib/site-builder/claude-design/image-set";
+import { DOM_PATH_ATTR } from "@/lib/site-builder/claude-design/dom-paths";
 import { FormBlockSection } from "./FormBlockSection";
 
 interface OverrideEntry {
@@ -61,6 +62,7 @@ function interpolateVariables(text: string, variables: Record<string, string>): 
   });
 }
 
+/** Marche positionnelle pure — le repli quand aucun tampon n'est présent. */
 function nodeAtPath(root: Element, path: number[]): Element | null {
   let node: Element | null = root;
   for (const idx of path) {
@@ -68,6 +70,26 @@ function nodeAtPath(root: Element, path: number[]): Element | null {
     node = node.children[idx];
   }
   return node;
+}
+
+/**
+ * Résout un chemin d'override sur le DOM livré : tampon `data-cdp` d'abord,
+ * marche positionnelle en repli.
+ *
+ * Indispensable ici : le HTML rendu par le serveur est DÉJÀ conditionné pour
+ * l'entreprise (cartes des services absents retirées). Une marche positionnelle
+ * y décale chaque override situé après une carte retirée — et comme un
+ * MutationObserver ré-applique en boucle, elle écrasait quelques millisecondes
+ * après le premier paint le placement correct calculé côté serveur.
+ */
+function resolveNode(root: Element, path: number[], dotted: string): Element | null {
+  if (dotted) {
+    try {
+      const stamped = root.querySelector(`[${DOM_PATH_ATTR}="${CSS.escape(dotted)}"]`);
+      if (stamped) return stamped;
+    } catch { /* selector API indisponible → repli positionnel */ }
+  }
+  return nodeAtPath(root, path);
 }
 
 /** Reach through the synthesized mobile `<picture>` wrapper. An image_mobile
@@ -116,7 +138,7 @@ function applyOverridesToContainer(
     const colonIdx = key.indexOf(":");
     const pathStr = colonIdx === -1 ? key : key.slice(0, colonIdx);
     const path = pathStr.split(".").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
-    const el = nodeAtPath(root, path);
+    const el = resolveNode(root, path, pathStr);
     if (!el) continue;
     const value = interpolateVariables(entry.value, variables);
     try {

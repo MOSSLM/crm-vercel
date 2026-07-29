@@ -5,6 +5,7 @@ import { enrichLeadMagnetSchema } from "@/app/api/_lib/schemas";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { resolveAgentContext, spentCentsForAgent } from "@/app/api/_lib/require-capability";
+import { republishSitesForProjects } from "@/lib/site-builder/republish-after-enrichment";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -151,6 +152,11 @@ export const POST = withAuth({ body: enrichLeadMagnetSchema }, async ({ body, us
       if (usageErr) console.warn("agent_usage_events insert failed:", usageErr.message);
       if (logErr) console.warn("agent_activity_events insert failed:", logErr.message);
     }
+
+    // Les variables d'un site publié sont figées à la publication : sans
+    // republication, le site en ligne garderait les chiffres d'avant
+    // l'enrichissement alors que la fiche les affiche. Best-effort.
+    await republishSitesForProjects(getServiceClient(), [project_id]);
 
     return json(parsedBody ?? {}, { headers: cors });
   } catch (error) {

@@ -7,8 +7,10 @@ import {
   ChevronLeft, ChevronDown, Check, Play, Monitor, Smartphone, CopyPlus,
   Minus, Plus, Maximize2, Sparkles, Tags, Variable, Building2,
   Wand2, AlertTriangle, Eye, EyeOff, Rocket, Globe, Undo2, Redo2, Save, ImageOff, FileArchive, Images, History as HistoryIcon,
+  Stethoscope,
 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
+import { serviceTagKey, serviceTagKeySet } from "@/utils/serviceTags";
 import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { tweakEnabled } from "@/lib/site-builder/claude-design/apply-tweaks";
@@ -18,6 +20,7 @@ import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { isImageOverrideKey } from "@/lib/site-builder/claude-design/image-override-keys";
+import { buildHydrationReport, mergeHydrationReports } from "@/lib/site-builder/claude-design/hydration-report";
 import {
   initHistory, pushSnapshot, undo as undoHistory, redo as redoHistory,
   canUndo as histCanUndo, canRedo as histCanRedo, currentSnapshot,
@@ -531,7 +534,13 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
               </button>
             </div>
           )}
-          <VariableBrowser siteId={siteId} company={company} companyVars={companyVars} onRetokenised={load} />
+          <VariableBrowser
+            siteId={siteId}
+            company={company}
+            companyVars={companyVars}
+            pages={data.pages.map((p) => ({ slug: p.slug, title: p.title, html: p.html }))}
+            onRetokenised={load}
+          />
         </aside>
       </div>
 
@@ -743,9 +752,12 @@ function PageTags({ sitemap, company, companyVars, onChange }: {
   companyVars: Record<string, string> | null;
   onChange: (slug: string, serviceTag: string | null) => void;
 }) {
-  const companyTags = React.useMemo<string[]>(() => {
-    try { const t = JSON.parse(companyVars?.["__service_tags"] ?? "[]"); return Array.isArray(t) ? t.map(String) : []; }
-    catch { return []; }
+  // Clés canoniques : le tag d'une page est un slug ASCII ("pompe-a-chaleur"),
+  // celui de l'entreprise du français lisible ("Pompe à chaleur"). Comparer les
+  // deux bruts affichait « Masquée » sur des pages en réalité visibles.
+  const companyTagKeys = React.useMemo<Set<string>>(() => {
+    try { const t = JSON.parse(companyVars?.["__service_tags"] ?? "[]"); return serviceTagKeySet(Array.isArray(t) ? t.map(String) : []); }
+    catch { return new Set<string>(); }
   }, [companyVars]);
 
   return (
@@ -756,7 +768,7 @@ function PageTags({ sitemap, company, companyVars, onChange }: {
       </div>
       {sitemap.map((p) => {
         const tag = p.service_tag ?? "";
-        const state = tag && company ? (companyTags.includes(tag) ? "on" : "off") : null;
+        const state = tag && company ? (companyTagKeys.has(serviceTagKey(tag)) ? "on" : "off") : null;
         return (
           <div className="cd-dtweak" key={p.slug}>
             <div className="cd-dtweak-lab">{p.title || p.slug}</div>
@@ -781,12 +793,91 @@ function PageTags({ sitemap, company, companyVars, onChange }: {
   );
 }
 
+/* ════════════════ Diagnostic d'hydratation (right · inspector) ════════════════
+ *
+ * Un token mal orthographié ou une donnée manquante ne laissent AUCUNE trace :
+ * la substitution rend une chaîne vide, et l'aperçu sans entreprise masque le
+ * problème avec des valeurs d'exemple. Ce panneau met la classe entière sous les
+ * yeux de l'opérateur, page par page, pour l'entreprise réellement testée.
+ */
+function HydrationDiagnostic({ pages, companyVars }: {
+  pages: Array<{ slug: string; title: string; html: string }>;
+  companyVars: Record<string, string> | null;
+}) {
+  const [open, setOpen] = React.useState(false);
+
+  const reports = React.useMemo(
+    () => pages.map((p) => ({ slug: p.slug, title: p.title, report: buildHydrationReport(p.html, companyVars) })),
+    [pages, companyVars],
+  );
+  const totals = React.useMemo(() => mergeHydrationReports(reports), [reports]);
+  const issues = totals.unknown + totals.brackets + totals.empty;
+
+  // Les entrées « OK » n'apprennent rien : on ne liste que ce qui cloche.
+  const problemPages = reports
+    .map((r) => ({ ...r, findings: r.report.findings.filter((f) => f.severity !== "ok") }))
+    .filter((r) => r.findings.length > 0);
+
+  const dotColor = (severity: string) =>
+    severity === "unknown" ? "var(--danger, #c0392b)" : severity === "empty" ? "var(--warn, #c8881f)" : "var(--info, #2a6fdb)";
+
+  return (
+    <div className="cd-vb-group">
+      <button
+        className="cd-vb-group-hd"
+        onClick={() => setOpen((v) => !v)}
+        style={{ width: "100%", background: "none", border: 0, cursor: "pointer", textAlign: "left" }}
+      >
+        <Stethoscope className="ico-sm" style={{ color: issues > 0 ? "var(--warn, #c8881f)" : "var(--ok, #1f8a5b)" }} />
+        <span>Diagnostic</span>
+        <span className="cd-vb-count">{issues > 0 ? issues : "OK"}</span>
+      </button>
+
+      {open && (
+        <div className="cd-vb-vars" style={{ display: "block" }}>
+          {!companyVars && (
+            <p style={{ fontSize: 11, color: "var(--text-3)", padding: "6px 8px", margin: 0 }}>
+              Choisis une entreprise pour vérifier aussi les valeurs manquantes. Sans
+              entreprise, seules l&apos;orthographe des tokens et les crochets non
+              convertis sont contrôlés.
+            </p>
+          )}
+          {issues === 0 ? (
+            <p style={{ fontSize: 11, color: "var(--text-3)", padding: "6px 8px", margin: 0 }}>
+              Aucun problème d&apos;hydratation détecté sur les {pages.length} page(s).
+            </p>
+          ) : (
+            problemPages.map(({ slug, title, findings }) => (
+              <div key={slug} style={{ padding: "6px 8px" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 4 }}>{title || slug}</div>
+                {findings.map((f) => (
+                  <div key={f.severity + f.name} className="cd-vb-var" title={f.hint}>
+                    <span className="cd-var-dot" style={{ background: dotColor(f.severity) }} />
+                    <span className="cd-vb-var-lab" style={{ fontFamily: "var(--font-mono, monospace)", fontSize: 10 }}>
+                      {f.name}
+                    </span>
+                    <span className="cd-vb-var-kind">
+                      {f.severity === "unknown" ? "inconnu" : f.severity === "empty" ? "vide" : "crochet"}
+                      {f.count > 1 ? ` ×${f.count}` : ""}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ════════════════ Variable browser (right · inspector) ════════════════ */
 const VAR_GROUP_ICON = Building2;
-function VariableBrowser({ siteId, company, companyVars, onRetokenised }: {
+function VariableBrowser({ siteId, company, companyVars, pages, onRetokenised }: {
   siteId: string;
   company: Company | null;
   companyVars: Record<string, string> | null;
+  pages: Array<{ slug: string; title: string; html: string }>;
   onRetokenised: () => void;
 }) {
   const [busy, setBusy] = React.useState(false);
@@ -831,6 +922,8 @@ function VariableBrowser({ siteId, company, companyVars, onRetokenised }: {
       <div className="cd-vb-actions">
         <button className="cd-btn outline" onClick={retokenise} disabled={busy}><Wand2 className="ico-sm" />{busy ? "Détection…" : "Re-détecter (IA)"}</button>
       </div>
+
+      <HydrationDiagnostic pages={pages} companyVars={companyVars} />
 
       <div className="cd-vb-hd">Variables disponibles</div>
       <div className="cd-vb-group">

@@ -1,4 +1,5 @@
 import type { SectionBlockInstance, SiteMenuItem, SiteMenus, SitemapPage } from "@/types";
+import { serviceTagKey, serviceTagKeySet } from "@/utils/serviceTags";
 import { getParentSlug } from "./sitemap-tree";
 
 /**
@@ -75,9 +76,17 @@ function parseEnterpriseTags(variables: Record<string, string> | undefined): Set
   return new Set();
 }
 
-/** The active enterprise's service tags as an ordered array. */
+/** The active enterprise's service tags as an ordered array (libellés bruts,
+ *  destinés à l'affichage — pour comparer, passer par `serviceTagKeysOf`). */
 export function parseServiceTags(variables: Record<string, string> | undefined): string[] {
   return Array.from(parseEnterpriseTags(variables));
+}
+
+/** Les tags de l'entreprise sous leur clé canonique de comparaison. Un tag posé
+ *  sur un bloc / une page vient souvent d'un slug ASCII ("pompe-a-chaleur") alors
+ *  que l'entreprise porte "Pompe à chaleur" : sans cette clé, rien ne matche. */
+function serviceTagKeysOf(variables: Record<string, string> | undefined): Set<string> {
+  return serviceTagKeySet(Array.from(parseEnterpriseTags(variables)));
 }
 
 /**
@@ -92,11 +101,11 @@ export function filterBlocksByEnterpriseTags(
   variables: Record<string, string> | undefined,
 ): SectionBlockInstance[] {
   if (!Array.isArray(blocks) || blocks.length === 0) return [];
-  const tagSet = parseEnterpriseTags(variables);
+  const tagSet = serviceTagKeysOf(variables);
   return blocks.filter((b) => {
     const tag = b.service_tag;
     if (!tag) return true;
-    return tagSet.has(tag);
+    return tagSet.has(serviceTagKey(tag));
   });
 }
 
@@ -111,7 +120,7 @@ export function isInstanceVisibleForTags(
 ): boolean {
   const tag = content?.["__service_tag"];
   if (typeof tag !== "string" || tag === "") return true;
-  return parseEnterpriseTags(variables).has(tag);
+  return serviceTagKeysOf(variables).has(serviceTagKey(tag));
 }
 
 /**
@@ -125,10 +134,10 @@ export function filterSitemapByEnterpriseTags(
   enterpriseTags: string[] | undefined | null,
 ): SitemapPage[] {
   if (!Array.isArray(sitemap)) return [];
-  const tagSet = new Set(enterpriseTags ?? []);
+  const tagSet = serviceTagKeySet(enterpriseTags);
   return sitemap.filter((p) => {
     if (!p.service_tag) return true;
-    return tagSet.has(p.service_tag);
+    return tagSet.has(serviceTagKey(p.service_tag));
   });
 }
 

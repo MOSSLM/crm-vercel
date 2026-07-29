@@ -21,6 +21,7 @@
  * (removals shift positional child indices). Pure + side-effect free.
  */
 import { parse, type HTMLElement } from "node-html-parser";
+import { serviceTagKey, serviceTagKeySet } from "@/utils/serviceTags";
 import type { SitemapPage } from "@/types";
 
 /** slug → service_tag for every service page in the sitemap (tagged pages only). */
@@ -62,7 +63,10 @@ export function filterServiceLinks(
   enterpriseTags: string[],
 ): string {
   if (!html || !tagBySlug || Object.keys(tagBySlug).length === 0) return html;
-  const have = new Set((enterpriseTags ?? []).map((t) => t.trim()).filter(Boolean));
+  // Le tag d'une page vient de son nom de fichier ("pompe-a-chaleur"), celui de
+  // l'entreprise est du français lisible ("Pompe à chaleur") : les deux ne se
+  // rencontrent que via `serviceTagKey`.
+  const have = serviceTagKeySet(enterpriseTags);
 
   const root = parse(html);
   const slugOf = (a: HTMLElement) => hrefToSlug(a.getAttribute("href") ?? "");
@@ -81,7 +85,7 @@ export function filterServiceLinks(
     if (slug == null) continue;
     const tag = tagBySlug[slug];
     if (tag === undefined) continue; // not a service-page link
-    if (have.has(tag)) continue; // company offers this service → keep
+    if (have.has(serviceTagKey(tag))) continue; // company offers this service → keep
 
     let target: HTMLElement = a;
     let parent = a.parentNode as HTMLElement | null;

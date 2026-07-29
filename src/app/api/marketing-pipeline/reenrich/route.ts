@@ -4,6 +4,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { marketingReenrichSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { republishSitesForProjects } from "@/lib/site-builder/republish-after-enrichment";
 import { applyEnrichReset, enrichResetPayload, TERMINAL_STATUSES } from "../_enrich-reset";
 
 export const runtime = "nodejs";
@@ -94,7 +95,7 @@ export const POST = withAuth({ role: "admin", body: marketingReenrichSchema }, a
     total = countRes.count ?? 0;
   }
 
-  const summary = { processed: 0, success: 0, failed: 0, no_website: 0, skipped: 0 };
+  const summary = { processed: 0, success: 0, failed: 0, no_website: 0, skipped: 0, republished: 0 };
   const outcomes: Outcome[] = [];
   let cursor = body.after_id ?? null;
   let done = false;
@@ -170,15 +171,24 @@ export const POST = withAuth({ role: "admin", body: marketingReenrichSchema }, a
       const byId = new Map<string, EdgeResult>();
       for (const r of payload.results ?? []) if (r.project_id) byId.set(r.project_id, r);
 
+      const enriched: string[] = [];
       for (const id of ready) {
         const r = byId.get(id);
         const status = r?.status ?? "unknown";
         summary.processed += 1;
-        if (status === "success") summary.success += 1;
+        if (status === "success") { summary.success += 1; enriched.push(id); }
         else if (status === "no_website") summary.no_website += 1;
         else if (status === "skipped") summary.skipped += 1;
         else summary.failed += 1;
         outcomes.push({ project_id: id, status, error: r?.error });
+      }
+
+      // Les variables d'un site publié sont figées à la publication : sans
+      // republication, un site en ligne garderait les chiffres d'avant
+      // l'enrichissement. Best-effort, jamais bloquant.
+      if (enriched.length > 0) {
+        const { republished } = await republishSitesForProjects(supabase, enriched);
+        summary.republished += republished.length;
       }
     } catch (e) {
       // Fonction injoignable : on s'arrête là et on rend le curseur, plutôt que

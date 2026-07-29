@@ -38,9 +38,11 @@ interface Progress {
   failed: number;
   no_website: number;
   skipped: number;
+  /** Sites publiés republiés dans la foulée (instantané de variables rafraîchi). */
+  republished: number;
 }
 
-const EMPTY: Progress = { total: 0, processed: 0, success: 0, failed: 0, no_website: 0, skipped: 0 };
+const EMPTY: Progress = { total: 0, processed: 0, success: 0, failed: 0, no_website: 0, skipped: 0, republished: 0 };
 
 const euros = (cents: number) => (cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
 
@@ -153,6 +155,7 @@ export function EnrichmentReenrichSettings() {
         totals.failed += s.failed ?? 0;
         totals.no_website += s.no_website ?? 0;
         totals.skipped += s.skipped ?? 0;
+        totals.republished += s.republished ?? 0;
         if (typeof payload.total === "number") totals.total = payload.total;
         setProgress({ ...totals });
         // Le curseur est enregistré même quand l'appel échoue : ce qui a été
@@ -170,7 +173,8 @@ export function EnrichmentReenrichSettings() {
       }
       toast.success(
         `${totals.success} enrichi(s) · ${totals.no_website} sans site · ${totals.failed} en échec` +
-          (totals.skipped > 0 ? ` · ${totals.skipped} ignorés` : ""),
+          (totals.skipped > 0 ? ` · ${totals.skipped} ignorés` : "") +
+          (totals.republished > 0 ? ` · ${totals.republished} site(s) republié(s)` : ""),
       );
     } catch (e) {
       toast.error(
@@ -273,6 +277,7 @@ export function EnrichmentReenrichSettings() {
               {progress.total > 0 ? ` / ${progress.total}` : ""} traités · {progress.success} enrichis ·{" "}
               {progress.no_website} sans site · {progress.failed} en échec
               {progress.skipped > 0 ? ` · ${progress.skipped} ignorés` : ""}
+              {progress.republished > 0 ? ` · ${progress.republished} site(s) republié(s)` : ""}
             </p>
           </div>
         )}

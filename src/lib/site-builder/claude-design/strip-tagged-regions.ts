@@ -9,17 +9,21 @@
  * A region may carry several tags, comma/space separated
  * (`data-service-tag="clim chauffage"`): it is kept if ANY of them match.
  *
- * IMPORTANT (DOM-path stability): run this AFTER `applyOverridesToHTML`, since
- * inline-edit overrides are keyed to positional child indices and stripping a
- * region shifts them. Pure + side-effect free.
+ * IMPORTANT (DOM-path stability): stripping a region shifts the positional child
+ * indices inline-edit overrides are keyed to. Le rendu serveur applique donc les
+ * overrides avant ; ailleurs, le tampon `data-cdp` (`claude-design/dom-paths.ts`)
+ * garde chaque nœud survivant sur son chemin d'origine. Pure + side-effect free.
  */
 import { parse, type HTMLElement } from "node-html-parser";
+import { serviceTagKey, serviceTagKeySet } from "@/utils/serviceTags";
 
+/** Clés canoniques portées par la région (`serviceTagKey` des deux côtés : le
+ *  design écrit "pompe-a-chaleur", l'entreprise porte "Pompe à chaleur"). */
 function tagsOf(el: HTMLElement): string[] {
   const raw = el.getAttribute("data-service-tag") ?? "";
   return raw
     .split(/[\s,]+/)
-    .map((t) => t.trim())
+    .map((t) => serviceTagKey(t))
     .filter(Boolean);
 }
 
@@ -31,7 +35,7 @@ function tagsOf(el: HTMLElement): string[] {
  */
 export function stripTaggedRegions(html: string, enterpriseTags: string[]): string {
   if (!html.includes("data-service-tag")) return html;
-  const set = new Set((enterpriseTags ?? []).map((t) => t.trim()).filter(Boolean));
+  const set = serviceTagKeySet(enterpriseTags);
 
   const root = parse(html);
   const tagged = root.querySelectorAll("[data-service-tag]");

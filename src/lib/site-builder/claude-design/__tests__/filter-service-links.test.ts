@@ -67,6 +67,30 @@ describe("filterServiceLinks", () => {
     expect(out).toContain("/service-chauffage");
   });
 
+  // Le cas réel : le tag d'une page vient du nom de fichier
+  // (service-pompe-a-chaleur.html → "pompe-a-chaleur") tandis que
+  // `entreprises.service_tags` porte du français lisible ("Pompe à chaleur").
+  // Comparés bruts, AUCUN ne matchait : toutes les cartes services et tous les
+  // liens de nav disparaissaient dès qu'une entreprise réelle était appliquée.
+  it("matches a human service_tag against the design's ASCII slug", () => {
+    const realSitemap = [
+      { id: "1", slug: "/", title: "Accueil", service_tag: null },
+      { id: "2", slug: "/service-pompe-a-chaleur", title: "PAC", service_tag: "pompe-a-chaleur" },
+      { id: "3", slug: "/service-bornes-irve", title: "IRVE", service_tag: "bornes-irve" },
+      { id: "4", slug: "/service-electricite", title: "Élec", service_tag: "electricite" },
+    ] as SitemapPage[];
+    const map = serviceTagMapFromSitemap(realSitemap);
+    const html = `<div class="services-grid">
+      <article class="svc-card"><h3>PAC</h3><a href="/service-pompe-a-chaleur">En savoir plus</a></article>
+      <article class="svc-card"><h3>IRVE</h3><a href="/service-bornes-irve">En savoir plus</a></article>
+      <article class="svc-card"><h3>Elec</h3><a href="/service-electricite">En savoir plus</a></article>
+    </div>`;
+    const out = filterServiceLinks(html, map, ["Pompe à chaleur", "Bornes IRVE"]);
+    expect(out).toContain("/service-pompe-a-chaleur");
+    expect(out).toContain("/service-bornes-irve");
+    expect(out).not.toContain("/service-electricite");
+  });
+
   it("leaves non-service links (anchors, external, home) untouched", () => {
     const html = `<a href="/">Accueil</a><a href="#contact">Contact</a><a href="https://x.com">X</a>`;
     const out = filterServiceLinks(html, tagBySlug, []);

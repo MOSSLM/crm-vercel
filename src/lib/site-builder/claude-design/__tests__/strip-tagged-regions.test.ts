@@ -27,6 +27,20 @@ describe("stripTaggedRegions", () => {
     expect(out).toContain("ALWAYS");
   });
 
+  // Vocabulaire réel : le design écrit des slugs ASCII, l'entreprise porte du
+  // français accentué. Sans clé canonique, la région était toujours supprimée.
+  it("matches a human service_tag against the design's ASCII slug", () => {
+    const real = `
+      <section data-service-tag="pompe-a-chaleur">PAC</section>
+      <section data-service-tag="bornes-irve">IRVE</section>
+      <section data-service-tag="electricite">ELEC</section>
+    `;
+    const out = stripTaggedRegions(real, ["Pompe à chaleur", "Bornes IRVE"]);
+    expect(out).toContain("PAC");
+    expect(out).toContain("IRVE");
+    expect(out).not.toContain("ELEC");
+  });
+
   it("is a no-op when there are no tagged regions", () => {
     const plain = "<section>hello</section>";
     expect(stripTaggedRegions(plain, ["x"])).toBe(plain);

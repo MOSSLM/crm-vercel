@@ -17,27 +17,12 @@
 import "server-only";
 import { parse, type HTMLElement } from "node-html-parser";
 import { parseImageSet, pickCandidate } from "./image-set";
-
-const HEAD_ONLY_TAGS = new Set(["link", "meta", "script", "style", "noscript", "title", "base"]);
-
-function findSectionRoot(elements: HTMLElement[]): HTMLElement | null {
-  for (const el of elements) {
-    const tag = (el.tagName ?? "").toLowerCase();
-    if (!HEAD_ONLY_TAGS.has(tag)) return el;
-  }
-  return null;
-}
-
-function nodeAtPath(root: HTMLElement, path: number[]): HTMLElement | null {
-  let node: HTMLElement | null = root;
-  for (const idx of path) {
-    if (!node) return null;
-    const children = node.childNodes.filter((c) => c.nodeType === 1) as HTMLElement[];
-    if (!children[idx]) return null;
-    node = children[idx];
-  }
-  return node;
-}
+import {
+  elementChildren,
+  findSectionRoot,
+  parseDottedPath,
+  resolveNodeAtPath,
+} from "./dom-paths";
 
 /** Sets a cover/centered background image and marks a `.ph` placeholder filled
  *  (hide its dashed frame + waiting label). Mirrors `setBackgroundImage` in
@@ -90,16 +75,15 @@ export function resolveImageSets(
 
   try {
     const doc = parse(html);
-    const elementChildren = doc.childNodes.filter((c) => c.nodeType === 1) as HTMLElement[];
-    const root = findSectionRoot(elementChildren);
+    const root = findSectionRoot(elementChildren(doc as unknown as HTMLElement));
     if (!root) return html;
 
     for (const key of setKeys) {
       const entry = overrides[key];
       if (!entry || typeof entry.value !== "string") continue;
       const pathStr = key.slice(0, key.indexOf(":"));
-      const path = pathStr.split(".").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
-      const el = nodeAtPath(root, path);
+      const path = parseDottedPath(pathStr);
+      const el = resolveNodeAtPath(root, path, pathStr);
       if (!el) continue;
       const { candidates } = parseImageSet(entry.value);
       const chosen = pickCandidate(candidates, enterpriseTags);
