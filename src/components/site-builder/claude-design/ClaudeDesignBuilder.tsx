@@ -21,6 +21,8 @@ import { SITE_DOMAIN } from "@/lib/site-domain";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { isImageOverrideKey } from "@/lib/site-builder/claude-design/image-override-keys";
 import { buildHydrationReport, mergeHydrationReports } from "@/lib/site-builder/claude-design/hydration-report";
+import { variableDisplay } from "@/lib/site-builder/claude-design/variable-display";
+import { describeProjectSource, describeStatsSource, parseVariablesSource } from "@/lib/site-builder/variables-source";
 import {
   initHistory, pushSnapshot, undo as undoHistory, redo as redoHistory,
   canUndo as histCanUndo, canRedo as histCanRedo, currentSnapshot,
@@ -54,6 +56,8 @@ interface BoardData {
   isTemplate: boolean;
   enterpriseId: number | null;
   enterpriseName?: string | null;
+  /** Projet lead magnet du site — transmis tel quel au résolveur de variables. */
+  leadMagnetProjectId?: string | null;
   publishedSubdomain: string | null;
 }
 interface Company { id: number; nom: string; pret_pour_lm?: boolean }
@@ -122,11 +126,17 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
       .catch(() => toast.error("Liste des entreprises indisponible"));
   }, [companies.length]);
 
-  const selectCompany = React.useCallback(async (c: Company | null) => {
+  // `project` est décisif : une entreprise a un projet lead magnet par
+  // opportunité, et c'est celui du site qui porte ses chiffres clés. Sans ce
+  // paramètre la route en choisissait un au hasard — la fiche montrait de vrais
+  // chiffres, la section restait vide. Même forme que RelumeEditor.fetchVariables.
+  const selectCompany = React.useCallback(async (c: Company | null, projectId?: string | null) => {
     setCompany(c);
     if (!c) { setCompanyVars(null); return; }
     try {
-      const res = await authedFetch(`/api/site-builder/variables?enterprise=${c.id}&site=${siteId}`);
+      const params = new URLSearchParams({ enterprise: String(c.id), site: siteId });
+      if (projectId) params.set("project", projectId);
+      const res = await authedFetch(`/api/site-builder/variables?${params.toString()}`);
       setCompanyVars(res.ok ? ((await res.json()) as Record<string, string>) : null);
     } catch { setCompanyVars(null); }
   }, [siteId]);
@@ -136,10 +146,11 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
   // risk of previewing the wrong company. The picker is hidden in this mode.
   const linkedEnterpriseId = data && !data.isTemplate ? data.enterpriseId : null;
   const linkedEnterpriseName = data?.enterpriseName ?? data?.name ?? "";
+  const linkedProjectId = data?.leadMagnetProjectId ?? null;
   React.useEffect(() => {
     if (linkedEnterpriseId == null) return;
-    void selectCompany({ id: linkedEnterpriseId, nom: linkedEnterpriseName });
-  }, [linkedEnterpriseId, linkedEnterpriseName, selectCompany]);
+    void selectCompany({ id: linkedEnterpriseId, nom: linkedEnterpriseName }, linkedProjectId);
+  }, [linkedEnterpriseId, linkedEnterpriseName, linkedProjectId, selectCompany]);
 
   const runPending = React.useCallback(async (key: string) => {
     const fn = pendingFns.current.get(key);
@@ -812,6 +823,7 @@ function HydrationDiagnostic({ pages, companyVars }: {
   );
   const totals = React.useMemo(() => mergeHydrationReports(reports), [reports]);
   const issues = totals.unknown + totals.brackets + totals.empty;
+  const source = React.useMemo(() => parseVariablesSource(companyVars), [companyVars]);
 
   // Les entrées « OK » n'apprennent rien : on ne liste que ce qui cloche.
   const problemPages = reports
@@ -835,6 +847,24 @@ function HydrationDiagnostic({ pages, companyVars }: {
 
       {open && (
         <div className="cd-vb-vars" style={{ display: "block" }}>
+          {/* Provenance : sans elle, un chiffre « vide » ne dit pas s'il manque
+              en base ou si c'est le mauvais projet qui a été lu. */}
+          {source && (
+            <div style={{ padding: "6px 8px", borderBottom: "1px solid var(--cd-border)", marginBottom: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 2 }}>Source des données</div>
+              <div style={{ fontSize: 10, color: "var(--text-3)", lineHeight: 1.5 }}>
+                {describeProjectSource(source)}
+                <br />
+                {describeStatsSource(source)}
+                {source.projectId ? (
+                  <>
+                    <br />
+                    <code style={{ fontSize: 9 }}>{source.projectId}</code>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          )}
           {!companyVars && (
             <p style={{ fontSize: 11, color: "var(--text-3)", padding: "6px 8px", margin: 0 }}>
               Choisis une entreprise pour vérifier aussi les valeurs manquantes. Sans
@@ -925,7 +955,10 @@ function VariableBrowser({ siteId, company, companyVars, pages, onRetokenised }:
 
       <HydrationDiagnostic pages={pages} companyVars={companyVars} />
 
-      <div className="cd-vb-hd">Variables disponibles</div>
+      <div className="cd-vb-hd">
+        Variables disponibles
+        {company ? null : <span style={{ marginLeft: 6, fontWeight: 400, color: "var(--text-3)" }}>(valeurs d’exemple)</span>}
+      </div>
       <div className="cd-vb-group">
         <div className="cd-vb-group-hd">
           <VAR_GROUP_ICON className="ico-sm" style={{ color: "var(--cd-accent)" }} />
@@ -934,12 +967,23 @@ function VariableBrowser({ siteId, company, companyVars, pages, onRetokenised }:
         <div className="cd-vb-vars">
           {CLAUDE_DESIGN_VARIABLES.map((v) => {
             const key = v.token.replace(/\{\{\s*|\s*\}\}/g, "");
-            const resolved = company ? companyVars?.[key] : undefined;
+            // Avec une entreprise appliquée, on montre SA donnée — ou « vide ».
+            // Afficher l'échantillon à la place d'une valeur manquante faisait
+            // passer une variable non renseignée pour une variable remplie.
+            const shown = variableDisplay(companyVars?.[key], v.sample, !!company);
             return (
               <div className="cd-vb-var" key={v.token} title={v.token}>
-                <span className="cd-var-dot" style={{ background: "var(--cd-accent)" }} />
+                <span
+                  className="cd-var-dot"
+                  style={{ background: shown.kind === "empty" ? "var(--warn, #c8881f)" : "var(--cd-accent)" }}
+                />
                 <span className="cd-vb-var-lab">{v.label}</span>
-                <span className="cd-vb-var-kind">{resolved || v.sample || "—"}</span>
+                <span
+                  className="cd-vb-var-kind"
+                  style={shown.kind === "empty" ? { color: "var(--warn, #c8881f)", fontStyle: "italic" } : undefined}
+                >
+                  {shown.text}
+                </span>
               </div>
             );
           })}

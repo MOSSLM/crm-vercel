@@ -19,7 +19,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
 
   const [{ data: site, error: sErr }, { data: instances, error: iErr }] = await Promise.all([
-    supabase.from("sites").select("sitemap, shared_assets, tweaks, name, is_template, enterprise_id, published_subdomain").eq("id", params.siteId).single(),
+    supabase.from("sites").select("sitemap, shared_assets, tweaks, name, is_template, enterprise_id, lead_magnet_project_id, published_subdomain").eq("id", params.siteId).single(),
     supabase
       .from("site_section_instances")
       .select("id, page_slug, content")
@@ -101,6 +101,12 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
     isTemplate: (site as { is_template?: boolean | null } | null)?.is_template ?? false,
     enterpriseId,
     enterpriseName,
+    // Le projet lead magnet auquel la démo appartient. Le builder le renvoie à
+    // /api/site-builder/variables : sans lui, la route retombait sur un projet
+    // de l'entreprise choisi au hasard (il y en a un par opportunité), et les
+    // chiffres clés saisis sur la fiche ne remontaient pas.
+    leadMagnetProjectId:
+      (site as { lead_magnet_project_id?: string | null } | null)?.lead_magnet_project_id ?? null,
     publishedSubdomain: (site as { published_subdomain?: string | null } | null)?.published_subdomain ?? null,
   });
 });

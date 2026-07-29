@@ -2,6 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { cloneTemplateSite } from "@/lib/site-builder/clone-template-site";
+import { resolveLeadMagnetProjectId } from "@/lib/site-builder/resolve-project-id";
 
 export const dynamic = "force-dynamic";
 
@@ -29,14 +30,11 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   // Resolve the company name + its lead-magnet project (reviews source), and
   // the template's own name — echoed back so the caller can SHOW which template
   // the demo was actually cloned from instead of trusting its own dropdown.
-  const [{ data: company }, { data: project }, { data: template }] = await Promise.all([
+  const [{ data: company }, project, { data: template }] = await Promise.all([
     supabase.from("entreprises").select("id, name").eq("id", companyId).single(),
-    supabase
-      .from("lead_magnet_projects")
-      .select("id")
-      .eq("entreprise_id", companyId)
-      .limit(1)
-      .maybeSingle(),
+    // Résolveur partagé : une entreprise a un projet par opportunité, et c'est
+    // ce lien qui décidera plus tard des chiffres clés affichés sur la démo.
+    resolveLeadMagnetProjectId(supabase, { enterpriseId: companyId }),
     supabase.from("sites").select("name").eq("id", params.siteId).maybeSingle(),
   ]);
   if (!company) return jsonError("Entreprise introuvable", 404);
@@ -44,7 +42,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const clone = await cloneTemplateSite(supabase, params.siteId, {
     enterpriseId: companyId,
     name: (company as { name?: string }).name || `Site ${companyId}`,
-    leadMagnetProjectId: (project as { id?: string } | null)?.id ?? null,
+    leadMagnetProjectId: project.projectId,
     buildStage: "a_faire",
   });
   if (!clone.ok || !clone.siteId) return jsonError(clone.error ?? "Clonage échoué", 500);

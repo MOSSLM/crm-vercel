@@ -30,6 +30,7 @@ import {
 import { applyProjectEnrichment } from "./project-enrichment";
 import { applyCityVariables } from "./city-variables";
 import { finalizeEnterpriseVariables } from "./build-enterprise-variables";
+import { resolveLeadMagnetProjectId } from "./resolve-project-id";
 import type { StatItem } from "./menu-overrides";
 
 export interface ReviewItem {
@@ -126,21 +127,16 @@ export async function resolveEnterpriseVariables(
     }
   }
 
-  // Effective lead-magnet project: the explicit site link, else the linked
-  // enterprise's own project. This fallback makes company reviews resolve from
-  // lead_magnet_reviews everywhere (editor preview, publish snapshot, deployed
-  // site) even when the site has no explicit project link. Purely additive —
-  // when site.lead_magnet_project_id is set the behaviour is unchanged.
-  let projectId = site.lead_magnet_project_id;
-  if (!projectId && site.enterprise_id) {
-    const { data: proj } = await supabase
-      .from("lead_magnet_projects")
-      .select("id")
-      .eq("entreprise_id", site.enterprise_id)
-      .limit(1)
-      .maybeSingle();
-    projectId = (proj as { id?: string } | null)?.id ?? null;
-  }
+  // Projet lead magnet effectif : le lien du site d'abord, sinon le mieux classé
+  // des projets de l'entreprise (il y en a un par OPPORTUNITÉ). Règle unique
+  // partagée avec l'aperçu de l'éditeur — quand les deux divergent, un site
+  // publié n'affiche pas les mêmes chiffres que ce que montre le builder.
+  const projectId = (
+    await resolveLeadMagnetProjectId(supabase, {
+      explicitProjectId: site.lead_magnet_project_id,
+      enterpriseId: site.enterprise_id,
+    })
+  ).projectId;
 
   let reviews: ReviewItem[] = [];
   // Enrichissement issu du projet (sortie edge function). Null tant qu'aucun

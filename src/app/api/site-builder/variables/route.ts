@@ -9,6 +9,12 @@ import {
 import { applyProjectEnrichment } from "@/lib/site-builder/project-enrichment";
 import { resolveCities } from "@/lib/site-builder/city-variables";
 import { finalizeEnterpriseVariables } from "@/lib/site-builder/build-enterprise-variables";
+import { resolveLeadMagnetProjectId } from "@/lib/site-builder/resolve-project-id";
+import {
+  VARIABLES_SOURCE_KEY,
+  type StatsSource,
+  type VariablesSource,
+} from "@/lib/site-builder/variables-source";
 import type { StatItem } from "@/lib/site-builder/menu-overrides";
 
 export const dynamic = "force-dynamic";
@@ -72,19 +78,17 @@ export const GET = withAuth({}, async ({ req }) => {
 
   const supabase = getServiceClient();
 
-  // Effective lead-magnet project: the explicit ?project param, else the
-  // enterprise's own project — so reviews (lead_magnet_reviews) show in the
-  // editor preview even before the site is explicitly linked to a project.
-  let effectiveProjectId = projectId;
-  if (!effectiveProjectId) {
-    const { data: proj } = await supabase
-      .from("lead_magnet_projects")
-      .select("id")
-      .eq("entreprise_id", enterpriseId)
-      .limit(1)
-      .maybeSingle();
-    effectiveProjectId = (proj as { id?: string } | null)?.id ?? null;
-  }
+  // Projet lead magnet effectif : `?project`, sinon le lien enregistré du site,
+  // sinon le mieux classé des projets de l'entreprise. Une entreprise a une
+  // ligne par OPPORTUNITÉ : sans cette règle unique, l'aperçu lisait un projet
+  // au hasard pendant que la fiche écrivait sur un autre — d'où des chiffres
+  // clés vides alors qu'ils étaient bien saisis.
+  const projectResolution = await resolveLeadMagnetProjectId(supabase, {
+    explicitProjectId: projectId,
+    siteId,
+    enterpriseId,
+  });
+  const effectiveProjectId = projectResolution.projectId;
 
   const [entResult, projectResult, reviewsResult, siteResult] = await Promise.all([
     supabase
@@ -220,9 +224,16 @@ export const GET = withAuth({}, async ({ req }) => {
   // site, puis stats de l'entreprise.
   const siteStats = siteOverrides?.stats;
   const entStats = Array.isArray(ent.stats) ? ent.stats : [];
-  const resolvedStats = projectStats
-    ?? (Array.isArray(siteStats) && siteStats.length > 0 ? siteStats : entStats);
+  const hasSiteStats = Array.isArray(siteStats) && siteStats.length > 0;
+  const resolvedStats = projectStats ?? (hasSiteStats ? siteStats : entStats);
   variables["__stats"] = JSON.stringify(resolvedStats);
+  const statsSource: StatsSource = projectStats
+    ? "project"
+    : hasSiteStats
+      ? "site_overrides"
+      : entStats.length > 0
+        ? "entreprise"
+        : "none";
 
   // Enrichment + derived variables (fill-only), same complements as the
   // publish-time resolver so the editor preview matches the deployed site.
@@ -234,6 +245,17 @@ export const GET = withAuth({}, async ({ req }) => {
   // moindre écart entre les deux se paie en « visible dans le builder, vide en
   // ligne ».
   finalizeEnterpriseVariables(variables, resolvedStats);
+
+  // Provenance, pour le panneau « Diagnostic » du builder. Préfixe `__` : la
+  // convention des valeurs structurées, donc aucune collision avec un token.
+  // Un chiffre vide doit pouvoir s'expliquer sans ouvrir la base — quel projet
+  // a été lu, comment il a été choisi, et d'où viennent les stats.
+  variables[VARIABLES_SOURCE_KEY] = JSON.stringify({
+    projectId: projectResolution.projectId,
+    projectSource: projectResolution.source,
+    candidates: projectResolution.candidates,
+    statsSource,
+  } satisfies VariablesSource);
 
   return json(variables);
 });

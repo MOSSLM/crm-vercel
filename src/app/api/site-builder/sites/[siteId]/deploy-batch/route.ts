@@ -5,6 +5,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { publishSite } from "@/lib/site-builder/publish-site";
 import { deriveSubdomainLabel, uniqueSubdomain } from "@/lib/site-builder/derive-subdomain";
 import { cloneTemplateSite, type TemplateSlice, type TemplateInstance } from "@/lib/site-builder/clone-template-site";
+import { bestProjectIdByEnterprise } from "@/lib/site-builder/resolve-project-id";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 
 export const dynamic = "force-dynamic";
@@ -54,9 +55,11 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   if (iErr) return jsonError(iErr.message, 500);
 
   // 2) Resolve companies + their enriched lead-magnet projects in bulk.
-  const [{ data: companies }, { data: projects }, { data: existing }] = await Promise.all([
+  const [{ data: companies }, projectByCompany, { data: existing }] = await Promise.all([
     supabase.from("entreprises").select("id, nom:name, canonical_url, site_web_canonique").in("id", companyIds),
-    supabase.from("lead_magnet_projects").select("id, entreprise_id").eq("pret_pour_lm", true).in("entreprise_id", companyIds),
+    // Une entreprise a un projet par opportunité : le résolveur partagé retient
+    // le plus avancé, au lieu du premier que Postgres renvoie.
+    bestProjectIdByEnterprise(supabase, companyIds, { onlyReady: true }),
     supabase.from("sites").select("published_subdomain").not("published_subdomain", "is", null),
   ]);
 
@@ -67,12 +70,6 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
       canonical_url: (c.canonical_url as string | null) ?? null,
       site_web_canonique: (c.site_web_canonique as string | null) ?? null,
     });
-  }
-  const projectByCompany = new Map<number, string>();
-  for (const p of projects ?? []) {
-    if (p.entreprise_id != null && !projectByCompany.has(p.entreprise_id as number)) {
-      projectByCompany.set(p.entreprise_id as number, p.id as string);
-    }
   }
   const takenSubdomains = new Set<string>(
     (existing ?? []).map((s) => (s.published_subdomain as string)).filter(Boolean),
