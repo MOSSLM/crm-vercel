@@ -6,6 +6,13 @@ import { getServiceClient } from '@/app/api/_lib/service-client'
 import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
+import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
+import {
+  loadRegulatorSettings,
+  loadTaskLoads,
+  loadUnavailableAgents,
+  resolveAdminId,
+} from '@/lib/automations/regulator-db'
 import type {
   Automation,
   WorkflowNode,
@@ -168,6 +175,9 @@ export async function sendEngineEmail(
     entrepriseId?: number | null
     opportuniteId?: string | null
     type?: string
+    /** Séquence à l'origine de l'envoi — sert aux plafonds et aux stats par séquence. */
+    automationId?: string | null
+    enrollmentId?: string | null
     /** Pièces jointes récupérées par URL (ex : PDF d'audit). */
     attachmentUrls?: { filename: string; url: string }[]
   },
@@ -236,6 +246,8 @@ export async function sendEngineEmail(
       contact_id: opts.contactId ?? null,
       entreprise_id: opts.entrepriseId ?? null,
       opportunite_id: opts.opportuniteId ?? null,
+      automation_id: opts.automationId ?? null,
+      enrollment_id: opts.enrollmentId ?? null,
       to_email: opts.to,
       to_name: opts.toName ?? null,
       from_email: fromEmail,
@@ -504,18 +516,46 @@ export async function runWorkflowAutomation(
   return { runId }
 }
 
-// ── Espacement des envois de séquence ──────────────────────────────────────
-/** Écart aléatoire entre deux emails de séquence : 2 à 7 minutes. */
-export function randomSendGapMs(): number {
-  return 120_000 + Math.random() * 300_000
-}
-
+// ── Tâches manuelles : à qui elles reviennent ──────────────────────────────
 /**
- * Créneau d'envoi partagé par tous les enrollments d'un même tick :
- * garantit que les emails d'un batch ne partent jamais en même temps.
+ * WhatsApp, LinkedIn et appel ne partent jamais tout seuls : la séquence
+ * prépare le message, le CRM le pose dans la file de la bonne personne. La
+ * règle (propriétaire de préférence / strictement le propriétaire / tout à
+ * l'admin) est réglée une fois pour toutes dans le régulateur, et l'admin sert
+ * toujours de filet de sécurité.
  */
-export interface SendThrottle {
-  nextSlot: number
+export async function assignManualTask(
+  sb: SupabaseClient,
+  target: { entrepriseId: number | null; opportuniteId: string | null; createdBy: string | null },
+): Promise<RoutingDecision> {
+  const settings = await loadRegulatorSettings(sb)
+  const [adminId, loads, unavailable] = await Promise.all([
+    resolveAdminId(sb, settings),
+    loadTaskLoads(sb),
+    loadUnavailableAgents(sb),
+  ])
+
+  let ownerId: string | null = null
+  if (target.entrepriseId != null) {
+    const { data } = await sb.from('entreprises').select('owner_id').eq('id', target.entrepriseId).maybeSingle()
+    ownerId = (data?.owner_id as string | null) ?? null
+  }
+  let opportunityOwnerId: string | null = null
+  if (target.opportuniteId) {
+    const { data } = await sb.from('opportunites').select('owner_id').eq('id', target.opportuniteId).maybeSingle()
+    opportunityOwnerId = (data?.owner_id as string | null) ?? null
+  }
+
+  return routeTask(
+    { ownerId, createdBy: target.createdBy, opportunityOwnerId },
+    {
+      mode: settings.taskRoutingMode,
+      maxPerAgent: settings.taskMaxPerAgent,
+      adminId,
+      loads,
+      unavailable,
+    },
+  )
 }
 
 // ── Séquences : inscription + avancement ───────────────────────────────────
@@ -559,15 +599,25 @@ export async function enrollInSequence(
   return { enrolled: true, enrollmentId: inserted?.id ?? null }
 }
 
-export async function processSequenceEnrollment(
-  enrollment: SequenceEnrollment,
-  throttle?: SendThrottle,
-): Promise<void> {
+/**
+ * Exécute l'étape courante d'une inscription.
+ *
+ * L'HEURE n'est plus décidée ici : pour un email, c'est le régulateur qui
+ * choisit le créneau (cf. `regulator.ts`) et le ticker n'appelle cette fonction
+ * que lorsque l'heure retenue est atteinte. Les étapes manuelles, elles, ne
+ * passent pas par la file : elles créent une tâche tout de suite.
+ */
+export async function processSequenceEnrollment(enrollment: SequenceEnrollment): Promise<void> {
   const sb = getServiceClient()
   const { data: autoRow } = await sb.from('automations').select('*').eq('id', enrollment.automation_id).maybeSingle()
   const automation = autoRow as Automation | null
   if (!automation || automation.status !== 'on') {
-    await sb.from('sequence_enrollments').update({ next_run_at: null }).eq('id', enrollment.id)
+    // La séquence est en pause : on gèle l'inscription sans rien perdre, et on
+    // dit pourquoi — la file l'affiche au lieu de la faire disparaître.
+    await sb
+      .from('sequence_enrollments')
+      .update({ send_at: null, hold_reason: automation ? 'sequence_paused' : null })
+      .eq('id', enrollment.id)
     return
   }
   const def = (automation.definition as SequenceDefinition) || { steps: [] }
@@ -591,22 +641,12 @@ export async function processSequenceEnrollment(
   const ent = await resolveEntities(sb, ctx)
 
   if (step.kind === 'email') {
+    let sentAt: string | null = null
     if (ent.contactEmail && step.template) {
-      // Créneau pas encore atteint : on repousse l'envoi sans avancer l'étape
-      // et on réserve le créneau suivant pour le prochain enrollment du batch.
-      if (throttle && Date.now() < throttle.nextSlot) {
-        const slot = throttle.nextSlot
-        throttle.nextSlot += randomSendGapMs()
-        await sb
-          .from('sequence_enrollments')
-          .update({ next_run_at: new Date(slot).toISOString() })
-          .eq('id', enrollment.id)
-        return
-      }
       const { data: tpl } = await sb.from('email_templates').select('subject,body').eq('id', step.template).maybeSingle()
       if (tpl) {
         const text = interpolate(tpl.body, ent.vars)
-        await sendEngineEmail(sb, {
+        const result = await sendEngineEmail(sb, {
           to: ent.contactEmail,
           toName: ent.contactName,
           subject: interpolate(tpl.subject, ent.vars),
@@ -615,12 +655,18 @@ export async function processSequenceEnrollment(
           entrepriseId: ent.entrepriseId,
           opportuniteId: enrollment.opportunite_id,
           type: 'sequence',
+          automationId: automation.id,
+          enrollmentId: enrollment.id,
           attachmentUrls:
             step.attachAudit && ent.auditUrl ? [{ filename: 'audit.pdf', url: ent.auditUrl }] : undefined,
         })
-        if (throttle) throttle.nextSlot = Date.now() + randomSendGapMs()
+        if (result.ok) sentAt = new Date().toISOString()
       }
     }
+    await sb
+      .from('sequence_enrollments')
+      .update({ send_at: null, hold_reason: null, ...(sentAt ? { last_email_at: sentAt } : {}) })
+      .eq('id', enrollment.id)
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
   } else if (step.kind === 'wait') {
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
@@ -636,6 +682,13 @@ export async function processSequenceEnrollment(
       scriptName = sc?.name
       message = sc?.body ?? message
     }
+    // À qui revient la tâche : propriétaire du contact, celui qui a lancé la
+    // séquence, puis l'admin — selon la règle d'attribution du régulateur.
+    const routing = await assignManualTask(sb, {
+      entrepriseId: ent.entrepriseId,
+      opportuniteId: enrollment.opportunite_id,
+      createdBy: enrollment.created_by ?? null,
+    })
     await sb.from('prospection_tasks').insert({
       kind: step.kind === 'task' ? 'linkedin' : step.kind,
       contact_id: ent.contactId,
@@ -645,8 +698,8 @@ export async function processSequenceEnrollment(
       enrollment_id: enrollment.id,
       step_id: step.id,
       title: `${automation.name} — étape ${idx + 1}`,
-      // Une séquence lancée par un agent lui assigne ses tâches manuelles.
-      assignee_id: enrollment.created_by ?? null,
+      assignee_id: routing.assigneeId,
+      routing_reason: routing.reason,
       payload: {
         message,
         script: message,
@@ -657,11 +710,41 @@ export async function processSequenceEnrollment(
         demo_url: ent.demoUrl,
       },
     })
-    // l'inscription se met en pause jusqu'à la complétion de la tâche
-    await sb.from('sequence_enrollments').update({ next_run_at: null }).eq('id', enrollment.id)
+    // l'inscription attend que l'humain ait fait le geste
+    await sb
+      .from('sequence_enrollments')
+      .update({ next_run_at: null, send_at: null, hold_reason: null })
+      .eq('id', enrollment.id)
   } else {
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
   }
+}
+
+/**
+ * Annule ce qui est encore en vol pour une inscription : jobs planifiés et
+ * tâches manuelles en attente.
+ *
+ * C'est la partie critique de « le prospect a réagi » : retirer l'entreprise de
+ * la séquence ne suffit pas — sans ça un email part quand même après que le
+ * prospect a pris rendez-vous.
+ */
+export async function cancelEnrollmentWork(
+  sb: SupabaseClient,
+  enrollmentId: string,
+): Promise<{ jobs: number; tasks: number }> {
+  const { data: jobs } = await sb
+    .from('automation_jobs')
+    .update({ status: 'canceled' })
+    .eq('enrollment_id', enrollmentId)
+    .in('status', ['pending', 'processing'])
+    .select('id')
+  const { data: tasks } = await sb
+    .from('prospection_tasks')
+    .update({ status: 'skipped' })
+    .eq('enrollment_id', enrollmentId)
+    .eq('status', 'pending')
+    .select('id')
+  return { jobs: (jobs ?? []).length, tasks: (tasks ?? []).length }
 }
 
 async function scheduleNextStep(
@@ -673,7 +756,14 @@ async function scheduleNextStep(
   if (nextIdx >= steps.length) {
     await sb
       .from('sequence_enrollments')
-      .update({ current_step: nextIdx, status: 'finished', next_run_at: null, finished_at: new Date().toISOString() })
+      .update({
+        current_step: nextIdx,
+        status: 'finished',
+        next_run_at: null,
+        send_at: null,
+        hold_reason: null,
+        finished_at: new Date().toISOString(),
+      })
       .eq('id', enrollment.id)
     return
   }
@@ -681,9 +771,11 @@ async function scheduleNextStep(
   const entered = new Date(enrollment.entered_at).getTime()
   let runAt = entered + (next.day ?? 0) * 86400000
   if (runAt < Date.now()) runAt = Date.now()
+  // `next_run_at` reste « pas avant cette date » ; le créneau exact d'un email
+  // sera reposé par le régulateur au tick suivant.
   await sb
     .from('sequence_enrollments')
-    .update({ current_step: nextIdx, next_run_at: new Date(runAt).toISOString() })
+    .update({ current_step: nextIdx, next_run_at: new Date(runAt).toISOString(), send_at: null, hold_reason: null })
     .eq('id', enrollment.id)
 }
 

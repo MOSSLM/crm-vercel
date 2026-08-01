@@ -443,6 +443,97 @@ export const agentPipelineStepSchema = z.object({
 });
 export type AgentPipelineStepPayload = z.infer<typeof agentPipelineStepSchema>;
 
+/* ── Régulateur d'envoi ──────────────────────────────────────────────────── */
+
+/** Une plage d'envoi : [début, fin] en minutes depuis minuit. */
+const sendWindowSchema = z.tuple([
+  z.coerce.number().int().min(0).max(1440),
+  z.coerce.number().int().min(0).max(1440),
+]);
+
+/**
+ * Réglages globaux du régulateur. Tout est optionnel : l'interface envoie
+ * seulement ce que l'utilisateur vient de changer.
+ */
+export const regulatorSettingsSchema = z
+  .object({
+    gap_min_minutes: z.coerce.number().int().min(1).max(600).optional(),
+    gap_max_minutes: z.coerce.number().int().min(1).max(600).optional(),
+    daily_cap: z.coerce.number().int().min(0).max(10000).optional(),
+    company_gap_minutes: z.coerce.number().int().min(0).max(1440).optional(),
+    paused: z.boolean().optional(),
+    count_all_sequences: z.boolean().optional(),
+    one_per_day_per_contact: z.boolean().optional(),
+    exit_on_reply: z.boolean().optional(),
+    business_days_only: z.boolean().optional(),
+    default_windows: z.array(sendWindowSchema).max(8).optional(),
+    timezone: z.string().min(1).max(64).optional(),
+    task_routing_mode: z.enum(["pref", "strict", "admin"]).optional(),
+    task_max_per_agent: z.coerce.number().int().min(1).max(200).optional(),
+    admin_user_id: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+export type RegulatorSettingsPayload = z.infer<typeof regulatorSettingsSchema>;
+
+/** Surcharges d'une séquence : ses plages, sa priorité de file, son plafond. */
+export const sequenceRegulatorSchema = z
+  .object({
+    automation_id: z.string().uuid(),
+    send_windows: z.array(sendWindowSchema).max(8).optional(),
+    queue_priority: z.coerce.number().int().min(1).max(9).optional(),
+    daily_cap: z.coerce.number().int().min(0).max(10000).nullable().optional(),
+    status: z.enum(["on", "paused"]).optional(),
+  })
+  .strict();
+export type SequenceRegulatorPayload = z.infer<typeof sequenceRegulatorSchema>;
+
+/* ── Pipeline commercial ─────────────────────────────────────────────────── */
+
+export const SALES_STAGES = ["seq", "email", "wa", "call", "rdv", "propo", "nego", "signe"] as const;
+
+/**
+ * Les cinq issues du bouton « le prospect a réagi ». C'est le seul endroit où
+ * l'utilisateur court-circuite le pipeline, donc le seul endroit où l'on annule
+ * des envois déjà planifiés.
+ */
+export const salesReactionSchema = z.object({
+  opportunite_id: z.string().uuid(),
+  reaction: z.enum(["rdv", "reply", "later", "no", "bad"]),
+  reason: z.string().trim().max(500).optional(),
+  /** Date de relance, obligatoire côté UI pour « intéressé, mais plus tard ». */
+  nurture_at: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "nurture_at doit être une date YYYY-MM-DD")
+    .optional(),
+});
+export type SalesReactionPayload = z.infer<typeof salesReactionSchema>;
+
+/** Validation manuelle d'une étape du pipeline commercial. */
+export const salesAdvanceSchema = z.object({
+  opportunite_id: z.string().uuid(),
+  stage: z.enum(SALES_STAGES),
+  /** Montant saisi sur la carte Proposition. */
+  amount: z.coerce.number().min(0).max(100_000_000).optional(),
+  objection: z.string().trim().max(500).optional(),
+  rdv_at: z.string().datetime().optional(),
+});
+export type SalesAdvancePayload = z.infer<typeof salesAdvanceSchema>;
+
+/** Réouverture d'une étape sautée, ou réactivation d'une ligne close. */
+export const salesReviveSchema = z.object({
+  opportunite_id: z.string().uuid(),
+  /** Absent = réactiver la ligne entière ; sinon, rouvrir cette étape. */
+  stage: z.enum(SALES_STAGES).optional(),
+});
+export type SalesRevivePayload = z.infer<typeof salesReviveSchema>;
+
+/** Mise en séquence depuis le pipeline commercial (lot possible). */
+export const salesEnrollSchema = z.object({
+  automation_id: z.string().uuid(),
+  opportunite_ids: z.array(z.string().uuid()).min(1).max(100),
+});
+export type SalesEnrollPayload = z.infer<typeof salesEnrollSchema>;
+
 /**
  * Reads JSON from the request and validates it.
  *
