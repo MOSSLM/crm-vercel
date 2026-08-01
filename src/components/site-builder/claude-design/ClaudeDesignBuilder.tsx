@@ -472,7 +472,12 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
           </button>
         ))}
         <div className="cd-grow" />
-        <span className="cd-tpl-hint"><Sparkles className="ico-xs" />Clique un texte pour l’éditer, une image pour changer son URL</span>
+        {/* Sans ce mot, l'éditeur « sans animations » passe pour un bug quand on
+            le compare à l'Aperçu — c'était exactement le symptôme rapporté. */}
+        <span className="cd-tpl-hint" title="Les apparitions au scroll sont neutralisées dans l’éditeur : tout est affiché d’emblée pour pouvoir être modifié. L’Aperçu et le site publié gardent les animations.">
+          <Sparkles className="ico-xs" />
+          Clique un texte pour l’éditer, une image pour changer son URL · animations neutralisées
+        </span>
       </div>
 
       {/* ── BODY ─────────────────────────────────────────────── */}

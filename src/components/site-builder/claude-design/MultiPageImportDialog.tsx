@@ -19,9 +19,14 @@ import { buildTweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks
 import { parseThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
 import {
   splitTemplateBundle,
-  normalizeTemplateName,
   type DetectedTemplate,
 } from "@/lib/site-builder/claude-design/split-template-bundle";
+import {
+  rankTemplateMatches,
+  targetOptions,
+  type MatchReason,
+  type TemplateMatch,
+} from "@/lib/site-builder/claude-design/match-templates";
 
 interface Props {
   open: boolean;
@@ -30,6 +35,13 @@ interface Props {
 }
 
 interface ExistingTemplate { id: string; name: string }
+
+/** Comment le menu « Cible » présente un candidat. */
+const REASON_LABEL: Record<MatchReason, string> = {
+  exact: "correspond",
+  proche: "nom proche",
+  variante: "même famille",
+};
 
 /** What an import row does to the CRM.
  *  - create: a brand new template (the default, always safe)
@@ -54,6 +66,10 @@ interface RowConfig {
   updateShared: boolean;
   /** Update only: also reset the colours/typography to the ZIP's defaults. */
   resetTweaks: boolean;
+  /** Ouvre la cible à TOUS les templates au lieu des seuls correspondants.
+   *  Filet de sécurité quand un template a été renommé — jamais le défaut :
+   *  on ne réimporte pas « Classique » par-dessus « Brut » par inadvertance. */
+  showAllTargets: boolean;
 }
 
 /** What `import-pages` reports about the photos it carried over. */
@@ -118,8 +134,9 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
   };
   const handleOpenChange = (next: boolean) => { if (!next) reset(); onOpenChange(next); };
 
-  // The Claude Design templates already in the CRM: update targets, and photo
-  // sources for a freshly imported skin.
+  // Les TEMPLATES Claude Design déjà en base : cibles de mise à jour et sources
+  // de photos. Les sites démo sont exclus — on réimporte un modèle, jamais le
+  // site d'un client, et les mélanger noyait la vraie cible dans la liste.
   React.useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -129,7 +146,7 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
         if (!alive) return;
         setExisting(
           (Array.isArray(list) ? list : [])
-            .filter((s) => s.is_claude_design)
+            .filter((s) => s.is_claude_design && s.is_template)
             .map((s) => ({ id: s.id, name: s.name || "Sans nom" })),
         );
       })
@@ -162,7 +179,7 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
         t.key,
         {
           selected: true, name: t.name, mode: "create" as RowMode, targetId: "",
-          imagesFromId: "", updateShared: true, resetTweaks: false,
+          imagesFromId: "", updateShared: true, resetTweaks: false, showAllTargets: false,
         },
       ])));
     } catch (e) {
@@ -173,10 +190,19 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
     }
   };
 
-  /** The existing template a ZIP folder looks like. */
-  const suggestionFor = React.useCallback(
-    (name: string) => existing.find((e) => normalizeTemplateName(e.name) === normalizeTemplateName(name)) ?? null,
+  /** Les templates que ce dossier du ZIP peut viser, du plus proche au plus lointain. */
+  const rankedFor = React.useCallback(
+    (name: string): Array<TemplateMatch<ExistingTemplate>> => rankTemplateMatches(name, existing),
     [existing],
+  );
+
+  /** Le template visé sans ambiguïté : un seul candidat de même nom. */
+  const suggestionFor = React.useCallback(
+    (name: string): ExistingTemplate | null => {
+      const exact = rankedFor(name).filter((m) => m.reason === "exact");
+      return exact.length === 1 ? exact[0].template : null;
+    },
+    [rankedFor],
   );
 
   // A folder matching an existing template defaults to repairing that template's
@@ -200,6 +226,40 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
 
   const setRow = (key: string, patch: Partial<RowConfig>) =>
     setRows((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+
+  /**
+   * Applique un mode à TOUTES les lignes cochées, chacune sur SON template
+   * correspondant. Réimporter six habillages d'un coup demandait sinon six fois
+   * les mêmes trois clics.
+   */
+  const setModeForAll = (mode: RowMode) => {
+    let applied = 0;
+    const orphans: string[] = [];
+    setRows((prev) => {
+      const next = { ...prev };
+      for (const t of detected) {
+        const row = next[t.key];
+        if (!row?.selected) continue;
+        if (mode === "create") {
+          next[t.key] = { ...row, mode: "create", targetId: "" };
+          applied++;
+          continue;
+        }
+        const match = suggestionFor(row.name) ?? (rankedFor(row.name)[0]?.template ?? null);
+        if (!match) { orphans.push(row.name || t.name); continue; }
+        next[t.key] = { ...row, mode, targetId: match.id };
+        applied++;
+      }
+      return next;
+    });
+    if (orphans.length > 0) {
+      toast.warning(
+        `Aucun template correspondant pour ${orphans.map((n) => `« ${n} »`).join(", ")} — à choisir à la main.`,
+      );
+    } else if (applied > 0) {
+      toast.success(`Appliqué à ${applied} ligne${applied > 1 ? "s" : ""}.`);
+    }
+  };
 
   /** Imports one detected template; returns the site it created or updated. */
   const importOne = async (tpl: DetectedTemplate, row: RowConfig): Promise<string> => {
@@ -398,11 +458,13 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      {/* Six variantes dans un ZIP dépassent la hauteur d'un portable : le corps
+          défile, l'en-tête et le bouton Importer restent atteignables. */}
+      <DialogContent className="max-w-2xl max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Importer un template Claude (multi-pages)</DialogTitle>
         </DialogHeader>
-        <div className="flex flex-col gap-4 py-2">
+        <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-2">
           <p className="text-sm text-muted-foreground">
             Importe le <strong>.zip</strong> exporté depuis Claude Design. Un ZIP peut contenir
             plusieurs variantes (Classique, Brut, Agence…) : coche celles à importer.
@@ -421,6 +483,24 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                 onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
             </div>
           ) : (
+            <>
+            {detected.length > 1 && existing.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+                <span className="text-xs font-medium">Appliquer à toutes les lignes cochées :</span>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy}
+                  onClick={() => setModeForAll("create")}>
+                  <Plus className="h-3 w-3" />Créer
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy}
+                  onClick={() => setModeForAll("theme")}>
+                  <Palette className="h-3 w-3" />Réparer le thème
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 gap-1 text-xs" disabled={busy}
+                  onClick={() => setModeForAll("update")}>
+                  <RefreshCw className="h-3 w-3" />Mettre à jour
+                </Button>
+              </div>
+            )}
             <div className="flex flex-col divide-y rounded-lg border">
               {detected.map((t) => {
                 const row = rows[t.key];
@@ -428,6 +508,16 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                 const isUpdate = row.mode === "update";
                 const isTheme = row.mode === "theme";
                 const suggestion = suggestionFor(row.name);
+                // Cibles proposées : uniquement les templates que CE dossier peut
+                // raisonnablement viser. Sans ce filtrage, réimporter « Classique »
+                // demandait de le retrouver parmi tous les templates et tous les
+                // sites démo — et rien n'empêchait de viser « Brut » par erreur.
+                const scoped = rankedFor(row.name).map((m) => m.template);
+                const { targets, reasonById, hiddenCount, opened: mustOpen } = targetOptions(
+                  row.name,
+                  existing,
+                  { showAll: row.showAllTargets, currentTargetId: row.targetId },
+                );
                 const badge = isUpdate
                   ? { cls: "bg-amber-100 text-amber-800", icon: <RefreshCw className="h-3 w-3" />, text: "Met à jour" }
                   : isTheme
@@ -461,17 +551,23 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                           }}
                         >
                           <option value="create">Créer un nouveau template</option>
-                          {existing.length > 0 && (
+                          {targets.length > 0 && (
                             <optgroup label="Réparer le thème (pages et photos intactes)">
-                              {existing.map((s) => (
-                                <option key={s.id} value={`theme:${s.id}`}>Polices et Tweaks de « {s.name} »</option>
+                              {targets.map((s) => (
+                                <option key={s.id} value={`theme:${s.id}`}>
+                                  Polices et Tweaks de « {s.name} »
+                                  {reasonById[s.id] ? ` · ${REASON_LABEL[reasonById[s.id]]}` : ""}
+                                </option>
                               ))}
                             </optgroup>
                           )}
-                          {existing.length > 0 && (
+                          {targets.length > 0 && (
                             <optgroup label="Remplacer les pages">
-                              {existing.map((s) => (
-                                <option key={s.id} value={`update:${s.id}`}>Mettre à jour « {s.name} »</option>
+                              {targets.map((s) => (
+                                <option key={s.id} value={`update:${s.id}`}>
+                                  Mettre à jour « {s.name} »
+                                  {reasonById[s.id] ? ` · ${REASON_LABEL[reasonById[s.id]]}` : ""}
+                                </option>
                               ))}
                             </optgroup>
                           )}
@@ -486,13 +582,48 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                             onChange={(e) => setRow(t.key, { imagesFromId: e.target.value })}
                           >
                             <option value="">Aucun</option>
-                            {existing.filter((s) => s.id !== row.targetId).map((s) => (
-                              <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
+                            {scoped.filter((s) => s.id !== row.targetId).length > 0 && (
+                              <optgroup label="Même famille">
+                                {scoped.filter((s) => s.id !== row.targetId).map((s) => (
+                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {existing.filter((s) => s.id !== row.targetId && !scoped.some((c) => c.id === s.id)).length > 0 && (
+                              <optgroup label="Autres templates">
+                                {existing
+                                  .filter((s) => s.id !== row.targetId && !scoped.some((c) => c.id === s.id))
+                                  .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                              </optgroup>
+                            )}
                           </select>
                         </label>
                       )}
                     </div>
+
+                    {existing.length > 0 && (
+                      <p className="pl-7 text-xs text-muted-foreground">
+                        {mustOpen && scoped.length === 0
+                          ? "Aucun template ne correspond à ce nom — la liste complète est proposée."
+                          : mustOpen
+                            ? <>
+                                Tous les templates sont proposés.{" "}
+                                <button type="button" className="underline underline-offset-2" disabled={busy}
+                                  onClick={() => setRow(t.key, { showAllTargets: false, targetId: row.mode === "create" ? "" : row.targetId })}>
+                                  Revenir aux correspondants
+                                </button>
+                              </>
+                            : hiddenCount > 0
+                              ? <>
+                                  Seuls les templates correspondant à « {row.name || t.name} » sont proposés.{" "}
+                                  <button type="button" className="underline underline-offset-2" disabled={busy}
+                                    onClick={() => setRow(t.key, { showAllTargets: true })}>
+                                    Afficher les {hiddenCount} autre{hiddenCount > 1 ? "s" : ""}
+                                  </button>
+                                </>
+                              : null}
+                      </p>
+                    )}
 
                     {isTheme && (
                       <p className="pl-7 text-xs text-muted-foreground">
@@ -536,6 +667,7 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
                 );
               })}
             </div>
+            </>
           )}
 
           {detected.length > 0 && (
@@ -546,9 +678,11 @@ export function MultiPageImportDialog({ open, onOpenChange, onImported }: Props)
               sauvegardé et restaurable depuis l’éditeur.
             </p>
           )}
-          {busy && progress && <p className="text-sm text-muted-foreground">{progress}</p>}
         </div>
-        <DialogFooter>
+        <DialogFooter className="shrink-0 sm:items-center">
+          {busy && progress && (
+            <p className="mr-auto truncate text-sm text-muted-foreground sm:max-w-[60%]">{progress}</p>
+          )}
           <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={busy}>Annuler</Button>
           <Button onClick={handleImport} disabled={busy || chosen.length === 0} className="gap-2">
             {busy ? "Import…" : (<><Wand2 className="h-4 w-4" />Importer {chosen.length > 1 ? `(${chosen.length})` : ""}</>)}
