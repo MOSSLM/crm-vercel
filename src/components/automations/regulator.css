@@ -1,0 +1,325 @@
+/* ─────────────────────────────────────────────────────────────────────────
+ * Régulateur d'envoi — styles propres à l'onglet, posés sur le skin
+ * Automatisations (`.au-skin`), dont ils réutilisent tous les tokens.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+.au-skin .rg-page {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 22px 40px;
+  background: var(--bg);
+}
+.au-skin .rg-wrap { max-width: 1360px; margin: 0 auto; }
+
+/* ── hero ── */
+.au-skin .rg-hero {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  border-radius: 13px;
+  padding: 16px 18px;
+  box-shadow: var(--shadow-1);
+}
+.au-skin .rg-hero-top { display: flex; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.au-skin .rg-kick {
+  display: flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+  letter-spacing: .13em; color: var(--text-3); margin-bottom: 8px;
+}
+.au-skin .rg-kick .rule { width: 26px; height: 1px; background: var(--border-2); }
+.au-skin .rg-title { font-size: 21px; font-weight: 600; letter-spacing: -.02em; margin: 0; line-height: 1.2; }
+.au-skin .rg-title em { font-style: normal; color: var(--accent-2); }
+.au-skin .rg-hero-acts { display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap; }
+
+.au-skin .rg-metrics {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px; margin-top: 16px;
+}
+.au-skin .rg-metric {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 12px;
+}
+.au-skin .rg-metric.big { background: var(--text); border-color: var(--text); color: var(--bg); }
+.au-skin .rg-metric .l {
+  font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: .1em; color: var(--text-3);
+}
+.au-skin .rg-metric.big .l { color: rgba(255,255,255,.6); }
+.au-skin .rg-metric .v {
+  font-size: 23px; font-weight: 600; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 2px;
+}
+.au-skin .rg-metric .v small { font-size: 12px; font-weight: 500; color: var(--text-3); }
+.au-skin .rg-metric.big .v small { color: rgba(255,255,255,.55); }
+.au-skin .rg-metric .d { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+.au-skin .rg-metric.big .d { color: rgba(255,255,255,.62); }
+.au-skin .rg-mini { height: 3px; border-radius: 2px; background: var(--bg-3); overflow: hidden; margin-top: 6px; }
+.au-skin .rg-mini i { display: block; height: 100%; background: var(--info); }
+
+/* ── colonnes ── */
+.au-skin .rg-cols {
+  display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, .9fr);
+  gap: 14px; margin-top: 14px; align-items: start;
+}
+@media (max-width: 1180px) { .au-skin .rg-cols { grid-template-columns: minmax(0, 1fr); } }
+.au-skin .rg-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.au-skin .rg-card {
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: 11px; box-shadow: var(--shadow-1); overflow: hidden;
+}
+.au-skin .rg-card-hd {
+  display: flex; align-items: center; gap: 9px;
+  padding: 11px 13px; border-bottom: 1px solid var(--border);
+}
+.au-skin .rg-card-hd .ic {
+  width: 24px; height: 24px; border-radius: 7px; display: flex;
+  align-items: center; justify-content: center;
+  background: var(--accent-tint); color: var(--accent-2); flex-shrink: 0;
+}
+.au-skin .rg-card-hd .t { font-size: 12.5px; font-weight: 600; letter-spacing: -.01em; }
+.au-skin .rg-card-hd .s { font-size: 11px; color: var(--text-3); margin-top: 1px; }
+.au-skin .rg-card-hd .r { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.au-skin .rg-card-body { padding: 12px 13px; }
+
+/* ── frise de la journée ── */
+.au-skin .rg-strip { padding: 10px 13px 12px; }
+.au-skin .rg-strip-ax {
+  display: flex; justify-content: space-between; margin-left: 108px;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--text-4); margin-bottom: 5px;
+}
+.au-skin .rg-strip-grid { position: relative; }
+.au-skin .rg-now {
+  position: absolute; top: 0; bottom: 0; width: 1px; background: var(--info);
+  left: calc(108px + (100% - 108px) * var(--x)); z-index: 3; pointer-events: none;
+}
+.au-skin .rg-now::before {
+  content: ''; position: absolute; top: -3px; left: -2.5px;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--info);
+}
+.au-skin .rg-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+.au-skin .rg-row.off { opacity: .45; }
+.au-skin .rg-row .nm {
+  width: 100px; flex-shrink: 0; display: flex; align-items: center; gap: 6px;
+  font-size: 11px; color: var(--text-2); min-width: 0;
+}
+.au-skin .rg-row .nm i { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
+.au-skin .rg-row .nm span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-skin .rg-track {
+  position: relative; flex: 1; height: 20px; border-radius: 5px;
+  background: var(--bg-2); border: 1px solid var(--border); overflow: hidden;
+}
+.au-skin .rg-band { position: absolute; top: 0; bottom: 0; background: var(--accent-tint); }
+.au-skin .rg-pt {
+  position: absolute; top: 50%; width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%; background: var(--accent);
+}
+.au-skin .rg-pt.done { background: var(--ok); }
+.au-skin .rg-pt.wa { border-radius: 1px; background: var(--ok); width: 4px; height: 9px; margin-top: -4.5px; }
+.au-skin .rg-legend {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 9px;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--text-3);
+}
+.au-skin .rg-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.au-skin .rg-legend i { width: 7px; height: 7px; border-radius: 50%; }
+
+/* ── file d'attente ── */
+.au-skin .rg-qhead,
+.au-skin .rg-qrow {
+  display: grid; grid-template-columns: 68px 20px minmax(0, 1fr) 168px 74px 30px;
+  gap: 9px; align-items: center;
+}
+.au-skin .rg-qhead {
+  padding: 8px 13px; border-bottom: 1px solid var(--border); background: var(--bg-2);
+  font-family: var(--font-mono); font-size: 9px; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--text-4);
+}
+.au-skin .rg-qrow { padding: 8px 13px; border-bottom: 1px solid var(--border); }
+.au-skin .rg-qrow.next { background: var(--accent-tint); }
+.au-skin .rg-qrow.blk { opacity: .62; }
+.au-skin .rg-qrow .at {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  display: flex; flex-direction: column; line-height: 1.2;
+}
+.au-skin .rg-qrow .at small {
+  font-size: 8.5px; font-weight: 400; color: var(--text-4);
+  text-transform: uppercase; letter-spacing: .07em;
+}
+.au-skin .rg-qrow .n { display: block; font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-skin .rg-qrow .s { display: block; font-size: 10.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-skin .rg-why {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 2px;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--warn);
+}
+.au-skin .rg-why .ico { flex-shrink: 0; }
+.au-skin .rg-seqn { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-2); min-width: 0; }
+.au-skin .rg-seqn i { width: 6px; height: 6px; border-radius: 2px; flex-shrink: 0; }
+.au-skin .rg-seqn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-skin .rg-gap {
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-3);
+  background: var(--bg-2); border-radius: 5px; padding: 2px 6px; white-space: nowrap;
+}
+.au-skin .rg-gap.hot { background: var(--accent); color: #fff; }
+.au-skin .rg-sep {
+  display: flex; align-items: center; gap: 7px; padding: 7px 13px;
+  font-family: var(--font-mono); font-size: 9.5px; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-3); background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+.au-skin .rg-sep.warn { color: var(--warn); background: var(--warn-tint); }
+.au-skin .rg-sep .rule { flex: 1; height: 1px; background: var(--border-2); }
+.au-skin .rg-empty { padding: 34px 16px; text-align: center; color: var(--text-3); font-size: 12.5px; }
+
+/* ── avatars ── */
+.au-skin .rg-av {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%; color: #fff;
+  font-size: 9px; font-weight: 600; flex-shrink: 0;
+}
+.au-skin .rg-av.none { background: var(--bg-3); color: var(--text-3); }
+
+/* ── réglages ── */
+.au-skin .rg-set { padding: 12px 13px; border-bottom: 1px solid var(--border); }
+.au-skin .rg-set:last-child { border-bottom: 0; }
+.au-skin .rg-set-h {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 9px;
+  font-size: 11.5px; font-weight: 600;
+}
+.au-skin .rg-set-h .ico { color: var(--text-3); }
+.au-skin .rg-set-h .x {
+  margin-left: auto; font-family: var(--font-mono); font-size: 9.5px;
+  color: var(--text-4); text-transform: uppercase; letter-spacing: .07em;
+}
+.au-skin .rg-dual { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.au-skin .rg-num {
+  width: 60px; height: 28px; border: 1px solid var(--border-2); background: var(--surface);
+  border-radius: 7px; text-align: center; font-family: var(--font-mono);
+  font-size: 12px; color: var(--text); outline: none;
+}
+.au-skin .rg-num:focus { border-color: var(--accent); }
+.au-skin .rg-lb { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); }
+.au-skin .rg-hint { font-size: 11px; color: var(--text-3); line-height: 1.5; margin: 8px 0 0; }
+.au-skin .rg-hint b { color: var(--text); font-weight: 600; }
+
+.au-skin .rg-presets { display: flex; gap: 6px; margin-top: 9px; }
+.au-skin .rg-presets button {
+  flex: 1; border: 1px solid var(--border-2); background: var(--surface);
+  border-radius: 8px; padding: 6px 4px; display: flex; flex-direction: column;
+  align-items: center; gap: 1px; cursor: pointer;
+}
+.au-skin .rg-presets button b { font-size: 11.5px; font-weight: 600; }
+.au-skin .rg-presets button span { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-3); }
+.au-skin .rg-presets button.on { border-color: var(--accent); background: var(--accent-tint); }
+
+.au-skin .rg-trow {
+  display: flex; align-items: center; gap: 10px; padding: 7px 0;
+  border-top: 1px dashed var(--border);
+}
+.au-skin .rg-trow:first-child { border-top: 0; }
+.au-skin .rg-trow .tx { flex: 1; min-width: 0; }
+.au-skin .rg-trow .tx b { display: block; font-size: 11.5px; font-weight: 500; }
+.au-skin .rg-trow .tx span { display: block; font-size: 10.5px; color: var(--text-3); line-height: 1.4; margin-top: 1px; }
+
+.au-skin .rg-bar { height: 4px; background: var(--bg-3); border-radius: 3px; overflow: hidden; margin-top: 8px; }
+.au-skin .rg-bar i { display: block; height: 100%; background: var(--info); }
+
+/* ── éditeur de plages ── */
+.au-skin .rg-wbar {
+  position: relative; height: 26px; border-radius: 7px;
+  background: var(--bg-2); border: 1px solid var(--border); overflow: hidden;
+}
+.au-skin .rg-wbar .b { position: absolute; top: 0; bottom: 0; background: var(--accent-tint-2); }
+.au-skin .rg-wbar .b.bad { background: var(--danger-tint); }
+.au-skin .rg-wbar .ax {
+  position: absolute; inset: 0; display: flex; justify-content: space-between;
+  align-items: flex-end; padding: 0 3px 1px;
+  font-family: var(--font-mono); font-size: 8.5px; color: var(--text-4); pointer-events: none;
+}
+.au-skin .rg-wrow { display: flex; align-items: center; gap: 7px; padding: 5px 0; }
+.au-skin .rg-wrow.bad input { border-color: var(--danger); color: var(--danger); }
+.au-skin .rg-wrow input[type='time'] {
+  height: 28px; border: 1px solid var(--border-2); background: var(--surface);
+  border-radius: 7px; padding: 0 7px; font-family: var(--font-mono);
+  font-size: 11.5px; color: var(--text); outline: none;
+}
+.au-skin .rg-wrow input[type='time']:focus { border-color: var(--accent); }
+.au-skin .rg-wrow .dash { color: var(--text-4); }
+.au-skin .rg-wrow .del {
+  margin-left: auto; border: 0; background: transparent; color: var(--text-4);
+  padding: 3px; border-radius: 6px; cursor: pointer;
+}
+.au-skin .rg-wrow .del:hover { background: var(--danger-tint); color: var(--danger); }
+.au-skin .rg-werr {
+  display: flex; align-items: center; gap: 6px; margin-top: 6px;
+  font-size: 11px; color: var(--danger); background: var(--danger-tint);
+  border-radius: 7px; padding: 6px 8px;
+}
+.au-skin .rg-miniwin {
+  position: relative; height: 8px; border-radius: 4px;
+  background: var(--bg-3); overflow: hidden;
+}
+.au-skin .rg-miniwin i { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: .55; }
+.au-skin .rg-miniwin.off i { background: var(--text-4); }
+
+/* ── règles d'attribution ── */
+.au-skin .rg-radio { display: flex; flex-direction: column; gap: 6px; }
+.au-skin .rg-ropt {
+  display: flex; align-items: flex-start; gap: 9px; text-align: left;
+  border: 1px solid var(--border); background: var(--surface-2);
+  border-radius: 9px; padding: 9px 10px; width: 100%; cursor: pointer;
+}
+.au-skin .rg-ropt:hover { border-color: var(--border-2); background: var(--surface); }
+.au-skin .rg-ropt.on { border-color: var(--accent); background: var(--accent-tint); }
+.au-skin .rg-ropt .rad {
+  width: 14px; height: 14px; border-radius: 50%; border: 1.5px solid var(--border-strong);
+  flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; justify-content: center;
+}
+.au-skin .rg-ropt.on .rad { border-color: var(--accent); }
+.au-skin .rg-ropt .rad i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.au-skin .rg-ropt .t { font-size: 12px; font-weight: 600; }
+.au-skin .rg-ropt .d { font-size: 10.5px; color: var(--text-3); line-height: 1.45; margin-top: 2px; }
+
+.au-skin .rg-flow {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 11px;
+  font-family: var(--font-mono); font-size: 10px; color: var(--text-3);
+}
+.au-skin .rg-flow .n {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid var(--border-2); background: var(--surface);
+  border-radius: 7px; padding: 4px 8px; color: var(--text-2);
+}
+.au-skin .rg-flow .n.acc { border-color: var(--accent); color: var(--accent-2); background: var(--accent-tint); }
+.au-skin .rg-flow .n.adm { background: var(--text); border-color: var(--text); color: var(--bg); }
+
+.au-skin .rg-load { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
+.au-skin .rg-load .who { font-size: 11.5px; min-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-skin .rg-load .who small { color: var(--text-4); }
+.au-skin .rg-load .track { flex: 1; height: 5px; border-radius: 3px; background: var(--bg-3); overflow: hidden; }
+.au-skin .rg-load .track i { display: block; height: 100%; }
+.au-skin .rg-load .n { font-family: var(--font-mono); font-size: 11px; width: 20px; text-align: right; }
+
+/* ── liste des séquences ── */
+.au-skin .rg-seq { padding: 11px 13px; border-bottom: 1px solid var(--border); }
+.au-skin .rg-seq:last-child { border-bottom: 0; }
+.au-skin .rg-seq-h { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.au-skin .rg-seq-h i { width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
+.au-skin .rg-seq-h .t {
+  flex: 1; min-width: 0; text-align: left; border: 0; background: transparent;
+  font-size: 12px; font-weight: 600; color: var(--text); cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0;
+}
+.au-skin .rg-seq-h .t:hover { color: var(--accent-2); }
+.au-skin .rg-seq-meta {
+  display: flex; align-items: center; gap: 8px; margin-top: 7px; flex-wrap: wrap;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--text-3);
+}
+.au-skin .rg-seq-meta .ok { color: var(--ok); margin-left: auto; }
+.au-skin .rg-seq-meta .warn { color: var(--warn); margin-left: auto; }
+
+/* ── derniers envois ── */
+.au-skin .rg-sent { display: flex; align-items: center; gap: 9px; padding: 6px 13px; border-bottom: 1px solid var(--border); }
+.au-skin .rg-sent:last-child { border-bottom: 0; }
+.au-skin .rg-sent .h { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); width: 38px; flex-shrink: 0; }
+.au-skin .rg-sent .b { flex: 1; min-width: 0; }
+.au-skin .rg-sent .b .n { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.au-skin .rg-sent .b .s { display: block; font-size: 10px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

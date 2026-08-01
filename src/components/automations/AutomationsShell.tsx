@@ -12,12 +12,14 @@ import { RefDataProvider } from './ref-data'
 import { createAutomation } from './automations-db'
 import { emptyWorkflow } from './workflow-graph'
 
-type TopTab = 'automations' | 'sequences' | 'prospection' | 'connections'
-type View = 'list' | 'builder' | 'prospection' | 'connections'
+type TopTab = 'automations' | 'sequences' | 'regulateur' | 'prospection' | 'connections'
+type View = 'list' | 'builder' | 'regulateur' | 'prospection' | 'connections'
 
 interface ShellCounts {
   workflows?: number
   sequences?: number
+  /** Emails en attente dans la file du régulateur. */
+  queued?: number
   prospection?: number
   activeWorkflows?: number
   runs7d?: number
@@ -32,6 +34,7 @@ function resolveRoute(pathname: string): { tab: TopTab; view: View; inBuilder: b
     return segs.length > 1
       ? { tab: 'sequences', view: 'builder', inBuilder: true, automationId: segs[1] }
       : { tab: 'sequences', view: 'list', inBuilder: false, automationId: null }
+  if (segs[0] === 'regulateur') return { tab: 'regulateur', view: 'regulateur', inBuilder: false, automationId: null }
   if (segs[0] === 'prospection') return { tab: 'prospection', view: 'prospection', inBuilder: false, automationId: null }
   if (segs[0] === 'connections') return { tab: 'connections', view: 'connections', inBuilder: false, automationId: null }
   if (segs[0] === 'journal') return { tab: 'automations', view: 'list', inBuilder: false, automationId: null }
@@ -41,6 +44,7 @@ function resolveRoute(pathname: string): { tab: TopTab; view: View; inBuilder: b
 const TAB_HREF: Record<TopTab, string> = {
   automations: '/automations',
   sequences: '/automations/sequences',
+  regulateur: '/automations/regulateur',
   prospection: '/automations/prospection',
   connections: '/automations/connections',
 }
@@ -57,7 +61,7 @@ export function AutomationsShell({ children }: { children: React.ReactNode }) {
     ;(async () => {
       try {
         const since = new Date(Date.now() - 7 * 86400000).toISOString()
-        const [wf, seq, tasks, activeWf, runs] = await Promise.all([
+        const [wf, seq, tasks, activeWf, runs, queued] = await Promise.all([
           supabase.from('automations').select('id', { count: 'exact', head: true }).eq('kind', 'workflow'),
           supabase.from('automations').select('id', { count: 'exact', head: true }).eq('kind', 'sequence'),
           supabase.from('prospection_tasks').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
@@ -67,11 +71,18 @@ export function AutomationsShell({ children }: { children: React.ReactNode }) {
             .eq('kind', 'workflow')
             .eq('status', 'on'),
           supabase.from('automation_runs').select('id', { count: 'exact', head: true }).gte('started_at', since),
+          // Emails qui attendent leur créneau — le badge de l'onglet Régulateur.
+          supabase
+            .from('sequence_enrollments')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'active')
+            .not('next_run_at', 'is', null),
         ])
         if (cancelled) return
         setCounts({
           workflows: wf.count ?? 0,
           sequences: seq.count ?? 0,
+          queued: queued.count ?? 0,
           prospection: tasks.count ?? 0,
           manualTasks: tasks.count ?? 0,
           activeWorkflows: activeWf.count ?? 0,
@@ -195,6 +206,7 @@ function TopBar({
       <div className="tabs" role="tablist">
         <TabLink tab="automations" current={tab} icon="bolt" label="Workflows" count={counts.workflows} />
         <TabLink tab="sequences" current={tab} icon="flame" label="Séquences" count={counts.sequences} />
+        <TabLink tab="regulateur" current={tab} icon="randomize" label="Régulateur" count={counts.queued} accentCount />
         <TabLink tab="prospection" current={tab} icon="inbox" label="Démarchage" count={counts.prospection} accentCount />
         <TabLink tab="connections" current={tab} icon="webhook" label="Connexions" />
       </div>

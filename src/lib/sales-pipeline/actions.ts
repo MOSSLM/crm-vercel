@@ -70,15 +70,20 @@ const uniqueStages = (values: (string | undefined | null)[]): SalesStageId[] =>
   [...new Set(values.filter((v): v is string => !!v && stageIndex(v) >= 0))] as SalesStageId[]
 
 /**
- * Toutes les inscriptions vivantes d'une opportunité, avec les envois et tâches
- * qui vont avec.
+ * Inscriptions encore vivantes d'une opportunité. `statuses` restreint au
+ * besoin : une reprise après tâche ne concerne que les inscriptions actives,
+ * une annulation touche aussi celles en pause.
  */
-async function liveEnrollments(sb: SupabaseClient, opportuniteId: string): Promise<string[]> {
+async function liveEnrollments(
+  sb: SupabaseClient,
+  opportuniteId: string,
+  statuses: string[] = ['active', 'paused'],
+): Promise<string[]> {
   const { data } = await sb
     .from('sequence_enrollments')
     .select('id')
     .eq('opportunite_id', opportuniteId)
-    .in('status', ['active', 'paused'])
+    .in('status', statuses)
   return ((data ?? []) as { id: string }[]).map((e) => e.id)
 }
 
@@ -309,7 +314,9 @@ export async function advanceStage(
   const isManual = stage === 'wa' || stage === 'call'
   let resumed = false
   if (isManual) {
-    const ids = await liveEnrollments(sb, opportuniteId)
+    // Seule une inscription ACTIVE reprend la main : une séquence en pause ne
+    // repart pas toute seule, sinon la ligne resterait bloquée sur sa cellule.
+    const ids = await liveEnrollments(sb, opportuniteId, ['active'])
     for (const id of ids) {
       const { advanceEnrollmentAfterTask } = await import('@/lib/automations/engine')
       await advanceEnrollmentAfterTask(id).catch(() => {})

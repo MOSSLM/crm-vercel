@@ -213,12 +213,14 @@ export function deriveReached(state: SalesStateRow, sequence: SalesSequenceInfo 
   if (stageIndex(state.reached) >= stageIndex('rdv')) return state
 
   if (!sequence) {
-    // Aucune séquence en cours : soit on n'a jamais démarré, soit elle est finie.
+    // Séquence terminée : le commercial reprend la main au RDV. Sans séquence
+    // du tout, on garde ce que dit l'état — une étape validée à la main ne doit
+    // pas être annulée par la dérivation.
     if (state.passed.includes('seq')) {
       const target: SalesStageId = 'rdv'
       return stageIndex(state.reached) >= stageIndex(target) ? state : { ...state, reached: target }
     }
-    return { ...state, reached: 'seq' }
+    return state
   }
 
   if (sequence.status === 'finished' || sequence.status === 'exited') {
@@ -301,7 +303,14 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
             .in('enterprise_id', entIds)
         : Promise.resolve({ data: [] as unknown[] }),
       sb.from('etapes_pipeline').select('id, nom'),
-      sb.from('contacts').select('id, first_name, last_name, email, tel, role_title, entreprise_id, is_decision_maker'),
+      // Les contacts sont chargés par entreprise, jamais en entier : la table
+      // porte tout le CRM et un `select *` la ferait grossir avec le carnet.
+      entIds.length > 0
+        ? sb
+            .from('contacts')
+            .select('id, first_name, last_name, email, tel, role_title, entreprise_id, is_decision_maker')
+            .in('entreprise_id', entIds)
+        : Promise.resolve({ data: [] as unknown[] }),
     ])
 
   const entById = new Map(
@@ -326,7 +335,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   )
 
   // Contact d'une opportunité : celui rattaché, sinon le décideur de l'entreprise.
-  const contacts = (contactsRes.data ?? []) as {
+  type ContactRow = {
     id: string
     first_name: string | null
     last_name: string | null
@@ -335,7 +344,22 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     role_title: string | null
     entreprise_id: number | null
     is_decision_maker: boolean | null
-  }[]
+  }
+  const contacts = (contactsRes.data ?? []) as ContactRow[]
+
+  // Un contact rattaché à l'opportunité mais pas à l'entreprise (rare, mais ça
+  // existe après une fusion de doublons) ne serait pas dans le lot ci-dessus.
+  const known = new Set(contacts.map((c) => c.id))
+  const orphanIds = opps
+    .map((o) => o.contact_id)
+    .filter((id): id is string => !!id && !known.has(id))
+  if (orphanIds.length > 0) {
+    const { data: extra } = await sb
+      .from('contacts')
+      .select('id, first_name, last_name, email, tel, role_title, entreprise_id, is_decision_maker')
+      .in('id', [...new Set(orphanIds)])
+    contacts.push(...((extra ?? []) as ContactRow[]))
+  }
   const contactById = new Map(contacts.map((c) => [c.id, c]))
   const contactByEnt = new Map<number, (typeof contacts)[number]>()
   for (const c of contacts) {
