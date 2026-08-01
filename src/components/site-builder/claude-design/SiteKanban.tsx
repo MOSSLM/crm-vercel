@@ -5,7 +5,7 @@ import Link from "next/link";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { toast } from "sonner";
-import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen } from "lucide-react";
+import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import { SITE_DOMAIN } from "@/lib/site-domain";
@@ -18,9 +18,12 @@ interface Demo {
   enterprise_id: number | null;
   company_name: string | null;
   paywall_enabled: boolean;
+  /** Template dont la démo est le clone (null avant la migration / template supprimé). */
+  source_template_id?: string | null;
+  template_name?: string | null;
 }
 interface ReadyCompany { id: number; name: string }
-interface TemplateRef { id: string; name: string }
+interface TemplateRef { id: string; name: string; demo_count?: number }
 
 interface BoardData {
   templates: TemplateRef[];
@@ -118,6 +121,18 @@ function DemoCard({
       ) : (
         <div className="text-xs text-muted-foreground">Non déployé</div>
       )}
+
+      {/* Le modèle d'origine : sans lui, deux démos côte à côte ne disent pas
+          laquelle est partie du mauvais template. */}
+      <div
+        className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground"
+        title={demo.template_name ? `Cloné depuis le template « ${demo.template_name} »` : undefined}
+      >
+        <Layers className="h-3 w-3 shrink-0" />
+        <span className="truncate">
+          {demo.template_name ?? (demo.source_template_id ? "Template supprimé" : "Origine inconnue")}
+        </span>
+      </div>
 
       <button
         type="button"
@@ -310,7 +325,12 @@ function Board() {
           onChange={(e) => setTemplateId(e.target.value)}
         >
           {data.templates.length === 0 && <option value="">Aucun template</option>}
-          {data.templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          {data.templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+              {t.demo_count != null ? ` (${t.demo_count} site${t.demo_count > 1 ? "s" : ""})` : ""}
+            </option>
+          ))}
         </select>
         <span className="text-xs text-muted-foreground">Glisse une société « Prêt pour LM » dans « À faire » pour générer son site.</span>
       </div>
