@@ -205,12 +205,12 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
 
   return (
     <Dialog open={!!template} onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
+      <DialogContent className="max-w-lg max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Importer des pages dans « {template?.name} »</DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-1">
+        <div className="-mx-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1 py-1">
           <p className="text-sm text-muted-foreground">
             Importe un <strong>.zip</strong> Claude Design puis choisis les pages à remplacer. Seules les pages
             cochées sont mises à jour — les autres pages du template restent intactes. Les photos déjà posées
@@ -244,7 +244,26 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
                 </label>
               )}
 
-              <div className="max-h-64 overflow-y-auto rounded-lg border">
+              {/* Cocher 12 pages une par une était le gros du temps passé ici. */}
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">
+                  {selected.size} / {bundle.pages.length} page{bundle.pages.length > 1 ? "s" : ""}
+                </span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy}
+                  onClick={() => setSelected(new Set(bundle.pages.map((p) => p.slug)))}>
+                  Tout cocher
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={busy}
+                  onClick={() => setSelected(new Set(bundle.pages.filter((p) => !existingSlugs.has(p.slug)).map((p) => p.slug)))}>
+                  Seulement les nouvelles
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" disabled={busy || selected.size === 0}
+                  onClick={() => setSelected(new Set())}>
+                  Tout décocher
+                </Button>
+              </div>
+
+              <div className="rounded-lg border">
                 {bundle.pages.map((p) => {
                   const isExisting = existingSlugs.has(p.slug);
                   return (
@@ -270,13 +289,14 @@ export function UpdateTemplatePagesDialog({ template, onClose, onDone }: Props) 
                   <span className="block text-xs text-muted-foreground">À cocher seulement si le style a changé — s’applique à toutes les pages.</span>
                 </span>
               </label>
-
-              {busy && progress && <p className="text-sm text-muted-foreground">{progress}</p>}
             </>
           )}
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 sm:items-center">
+          {busy && progress && (
+            <p className="mr-auto truncate text-sm text-muted-foreground sm:max-w-[55%]">{progress}</p>
+          )}
           <Button variant="outline" onClick={onClose} disabled={busy}>Annuler</Button>
           {bundle && (
             <Button onClick={handleImport} disabled={busy || selected.size === 0} className="gap-2">

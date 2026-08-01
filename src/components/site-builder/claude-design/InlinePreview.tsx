@@ -17,6 +17,7 @@ import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/conditi
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
 import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
+import { EDIT_REVEAL_CSS, EDIT_REVEAL_SCRIPT } from "@/lib/site-builder/claude-design/edit-reveal";
 import { SAMPLE_VARIABLES } from "./VariablesPanel";
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 import { parseImageSet, serializeImageSet, type ImageSetCandidate } from "@/lib/site-builder/claude-design/image-set";
@@ -545,7 +546,10 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     // sont déjà dans le body (posés côté parent, sur le markup non conditionné).
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_SCRIPT}</script></body></html>`;
+    // EDIT_REVEAL_CSS en dernier : l'éditeur ne défile pas, donc les blocs qui
+    // n'apparaissent qu'au scroll resteraient invisibles (voir edit-reveal.ts).
+    // EDIT_REVEAL_SCRIPT passe après le JS du design, pour repasser derrière lui.
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}\n${EDIT_REVEAL_CSS}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_REVEAL_SCRIPT}</script><script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, themeSets, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (
