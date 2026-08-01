@@ -5,15 +5,13 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, FileArchive, Pencil, Plus, LayoutGrid, Layers, Upload } from "lucide-react";
 import AppLayout from "@/components/layout/AppLayout";
-import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { authedFetch } from "@/utils/authedFetch";
 import { SiteKanban } from "@/components/site-builder/claude-design/SiteKanban";
 import { MultiPageImportDialog } from "@/components/site-builder/claude-design/MultiPageImportDialog";
 import { ClaudeDesignTheme } from "@/components/site-builder/claude-design/ClaudeDesignTheme";
+import { CreateDemoSiteDialog } from "@/components/site-builder/claude-design/CreateDemoSiteDialog";
 
-interface TemplateRef { id: string; name: string }
-interface Company { id: number; nom: string; pret_pour_lm?: boolean }
+interface TemplateRef { id: string; name: string; demo_count?: number }
 
 type Tab = "templates" | "projets";
 
@@ -105,7 +103,14 @@ export default function ClaudeDesignHubPage() {
                       </Link>
                       <div className="cd-design-meta">
                         <div className="cd-design-name">{t.name}</div>
-                        <div className="cd-design-file"><Upload className="ico-xs" />claude-design</div>
+                        {/* Ce qui sépare le modèle des sites qui en sortent : le
+                            compte de démos déjà produites depuis ce template. */}
+                        <div className="cd-design-file">
+                          <Upload className="ico-xs" />
+                          {(t.demo_count ?? 0) > 0
+                            ? `${t.demo_count} site${t.demo_count! > 1 ? "s" : ""} démo`
+                            : "Aucun site démo"}
+                        </div>
                         <div className="cd-design-actions">
                           <Link href={`/site-builder/claude/${t.id}`} style={{ flex: 1 }}>
                             <button className="cd-btn outline"><Pencil className="ico-xs" />Éditeur</button>
@@ -126,66 +131,11 @@ export default function ClaudeDesignHubPage() {
       {tab === "projets" ? <div className="p-6"><SiteKanban /></div> : null}
 
       <MultiPageImportDialog open={importOpen} onOpenChange={setImportOpen} onImported={loadTemplates} />
-      <CreateSiteDialog
+      <CreateDemoSiteDialog
         template={createFor}
         onClose={() => setCreateFor(null)}
-        onCreated={() => { setCreateFor(null); setTab("projets"); }}
+        onCreated={() => { setCreateFor(null); loadTemplates(); setTab("projets"); }}
       />
     </AppLayout>
-  );
-}
-
-function CreateSiteDialog({ template, onClose, onCreated }: {
-  template: TemplateRef | null;
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [companies, setCompanies] = React.useState<Company[]>([]);
-  const [companyId, setCompanyId] = React.useState<number | null>(null);
-  const [busy, setBusy] = React.useState(false);
-
-  React.useEffect(() => {
-    if (!template) return;
-    authedFetch("/api/site-builder/entreprises")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => setCompanies(Array.isArray(list) ? list : []))
-      .catch(() => {});
-  }, [template]);
-
-  const create = async () => {
-    if (!template || !companyId) { toast.error("Choisis une entreprise"); return; }
-    setBusy(true);
-    try {
-      const res = await authedFetch(`/api/site-builder/claude/${template.id}/create-demo`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ companyId }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Échec");
-      toast.success("Site démo créé (À faire)");
-      onCreated();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Création impossible");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Dialog open={!!template} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Créer un site à partir de « {template?.name} »</DialogTitle></DialogHeader>
-        <div className="py-2">
-          <label className="text-sm text-muted-foreground">Entreprise</label>
-          <select className="mt-1 w-full rounded-md border bg-background px-2 py-2 text-sm"
-            value={companyId ?? ""} onChange={(e) => setCompanyId(e.target.value ? Number(e.target.value) : null)}>
-            <option value="">— Choisir —</option>
-            {companies.map((c) => <option key={c.id} value={c.id}>{c.nom}{c.pret_pour_lm ? " · LM" : ""}</option>)}
-          </select>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Annuler</Button>
-          <Button onClick={create} disabled={busy || !companyId}>{busy ? "Création…" : "Créer le site"}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
