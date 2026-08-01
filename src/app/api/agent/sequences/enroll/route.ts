@@ -42,6 +42,9 @@ export const POST = withAuth(
     }
     if (automation.status !== "on") return jsonError("sequence_inactive", 409, {}, cors);
 
+    const firstStep = (automation.definition as { steps?: { kind?: string }[] } | null)?.steps?.[0];
+    const firstStepKind = firstStep?.kind ?? null;
+
     // Batch-load ownership + contact validity + the agent's opportunities.
     const entIds = [...new Set(body.items.map((i) => i.entreprise_id))];
     const contactIds = [...new Set(body.items.map((i) => i.contact_id))];
@@ -89,9 +92,12 @@ export const POST = withAuth(
           results.push({ entreprise_id: item.entreprise_id, status: "deja_inscrit" });
           continue;
         }
-        // Process the first step right away so a day-0 manual task shows up
-        // without waiting for the next cron tick.
-        if (enrollmentId) {
+        // Une étape manuelle du jour 0 (WhatsApp, appel) est exécutée tout de
+        // suite : la tâche doit apparaître sans attendre le prochain tick.
+        // Un email, lui, N'EST PAS envoyé ici — il entre dans la file du
+        // régulateur, qui décidera de l'heure exacte. Sans cette réserve, une
+        // mise en séquence en lot ferait partir 30 emails d'un coup.
+        if (enrollmentId && firstStepKind !== "email") {
           const { data: enr } = await sc
             .from("sequence_enrollments")
             .select("*")

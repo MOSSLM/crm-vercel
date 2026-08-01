@@ -82,6 +82,7 @@ export const AGENT_SPACES: AgentSpace[] = [
     tools: [
       { title: "Dashboard", href: "/espace-agent/dashboard", icon: LayoutDashboard },
       { title: "Pipeline", href: "/espace-agent/pipeline", icon: KanbanSquare },
+      { title: "Pipeline commercial", href: "/espace-agent/pipeline-commercial", icon: Target },
       {
         title: "Marketing pipeline",
         href: "/espace-agent/marketing-pipeline",
@@ -172,6 +173,7 @@ export function getAgentSpaceById(id: AgentSpaceId): AgentSpace {
 const PATH_TO_SPACE: Array<[string, AgentSpaceId]> = [
   ["/espace-agent/dashboard", "pilotage"],
   ["/espace-agent/marketing-pipeline", "pilotage"],
+  ["/espace-agent/pipeline-commercial", "pilotage"],
   ["/espace-agent/pipeline", "pilotage"],
   ["/espace-agent/calendrier", "pilotage"],
   ["/espace-agent/rendez-vous", "pilotage"],

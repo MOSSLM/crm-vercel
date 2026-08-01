@@ -27,8 +27,6 @@ jest.mock('@/lib/automations/dispatch', () => ({
 jest.mock('@/lib/automations/engine', () => ({
   runWorkflowAutomation: (...args: unknown[]) => mockRunWorkflowAutomation(...args),
   processSequenceEnrollment: (...args: unknown[]) => mockProcessSequenceEnrollment(...args),
-  // Deterministic gap for throttle assertions (real impl: 2-7 min random).
-  randomSendGapMs: () => 120_000,
 }));
 
 const ORIGINAL_ENV = { ...process.env };
@@ -39,6 +37,8 @@ const cronRequest = (headers: Record<string, string> = {}) =>
 const buildSelectChain = (result: { data: unknown; error?: unknown }) => ({
   select: jest.fn().mockReturnThis(),
   eq: jest.fn().mockReturnThis(),
+  gte: jest.fn().mockReturnThis(),
+  in: jest.fn().mockResolvedValue(result),
   not: jest.fn().mockReturnThis(),
   lte: jest.fn().mockReturnThis(),
   order: jest.fn().mockReturnThis(),
@@ -62,18 +62,21 @@ const buildUpdateChain = () => {
   return chain;
 };
 
-// Empty result for the 3 fetch queries (event jobs, wf jobs, enrollments).
-const emptyAll = () => {
-  mockFrom
-    .mockReturnValueOnce(buildSelectChain({ data: [], error: null }))   // event jobs fetch
-    .mockReturnValueOnce(buildSelectChain({ data: [], error: null }))   // wf jobs fetch
-    .mockReturnValueOnce(buildSelectChain({ data: [], error: null }));  // enrollments fetch
-};
+/**
+ * Rien à faire : le fallback de `mockFrom` (posé dans beforeEach) rend déjà une
+ * chaîne vide pour n'importe quelle table. Conservé pour la lisibilité des
+ * tests qui veulent dire explicitement « le CRM est au repos ».
+ */
+const emptyAll = () => {};
 
 describe('GET /api/automations/tick', () => {
   beforeEach(() => {
     __resetServiceClientForTests();
     mockFrom.mockReset();
+    // Fallback : toute table non explicitement mockée rend un résultat vide.
+    // Les tests ci-dessous n'ont donc à décrire QUE les requêtes qui les
+    // concernent — les lectures du régulateur ne les font pas dérailler.
+    mockFrom.mockImplementation(() => buildSelectChain({ data: [], error: null }));
     mockDispatchEvent.mockReset();
     mockRunWorkflowAutomation.mockReset();
     mockProcessSequenceEnrollment.mockReset();
@@ -246,40 +249,163 @@ describe('GET /api/automations/tick', () => {
     });
   });
 
-  describe('sequence throttling', () => {
-    it('shares one throttle (seeded from email_logs) across all due enrollments', async () => {
-      const lastSent = new Date(Date.now() - 60_000).toISOString();
-      const enrollments = [
-        { id: 'enr-1', status: 'active', current_step: 0 },
-        { id: 'enr-2', status: 'active', current_step: 1 },
-      ];
+  /**
+   * Le ticker n'envoie plus « dès que next_run_at est passé » : les emails
+   * passent par la file du régulateur. On vérifie les trois issues possibles —
+   * ça part, c'est planifié pour plus tard, c'est bloqué — ainsi que le
+   * court-circuit des étapes manuelles, qui ne passent jamais par la file.
+   */
+  describe('file du régulateur', () => {
+    /** Plages ouvertes 24 h/24 et week-end autorisé : le test ne dépend pas de l'heure. */
+    const openRegulator = (over: Record<string, unknown> = {}) => ({
+      id: 'global',
+      gap_min_minutes: 7,
+      gap_max_minutes: 14,
+      daily_cap: 120,
+      company_gap_minutes: 0,
+      paused: false,
+      count_all_sequences: true,
+      one_per_day_per_contact: false,
+      exit_on_reply: true,
+      business_days_only: false,
+      default_windows: [[0, 1440]],
+      timezone: 'Europe/Paris',
+      task_routing_mode: 'pref',
+      task_max_per_agent: 8,
+      admin_user_id: null,
+      ...over,
+    });
 
-      mockFrom
-        .mockReturnValueOnce(buildSelectChain({ data: [], error: null }))           // event jobs fetch
-        .mockReturnValueOnce(buildSelectChain({ data: [], error: null }))           // wf jobs fetch
-        .mockReturnValueOnce(buildSelectChain({ data: enrollments, error: null }))  // enrollments fetch
-        .mockReturnValueOnce(buildSelectChain({ data: [{ sent_at: lastSent }], error: null })); // last sequence email
+    const enrollment = (over: Record<string, unknown> = {}) => ({
+      id: 'enr-1',
+      automation_id: 'auto-1',
+      contact_id: 'c-1',
+      entreprise_id: 7,
+      opportunite_id: null,
+      current_step: 0,
+      status: 'active',
+      next_run_at: new Date(Date.now() - 60_000).toISOString(),
+      entered_at: new Date(Date.now() - 3_600_000).toISOString(),
+      vars: {},
+      ...over,
+    });
 
+    const sequence = (kind: string) => ({
+      id: 'auto-1',
+      kind: 'sequence',
+      name: 'Artisans — première approche',
+      status: 'on',
+      definition: { steps: [{ id: 'st-1', kind, day: 0, template: 'tpl-1' }] },
+      settings: { sendWindows: [[0, 1440]], queuePriority: 1 },
+    });
+
+    /** Chaîne qui sait à la fois lire et capturer les update() d'une table. */
+    const rwChain = (result: { data: unknown; error?: unknown }) => {
+      const captured: Record<string, unknown>[] = [];
+      const chain = buildSelectChain(result) as Record<string, unknown> & { captured: Record<string, unknown>[] };
+      chain.captured = captured;
+      chain.update = jest.fn((u: Record<string, unknown>) => {
+        captured.push(u);
+        return { eq: jest.fn().mockResolvedValue({ error: null }) };
+      });
+      return chain;
+    };
+
+    const wire = (opts: {
+      regulator?: Record<string, unknown>;
+      enrollments: Record<string, unknown>[];
+      automations: Record<string, unknown>[];
+      emailLogs?: Record<string, unknown>[];
+    }) => {
+      const enrollmentsChain = rwChain({ data: opts.enrollments, error: null });
+      mockFrom.mockImplementation((table: string) => {
+        if (table === 'regulator_settings') {
+          return buildSelectChain({ data: opts.regulator ?? openRegulator(), error: null });
+        }
+        if (table === 'sequence_enrollments') return enrollmentsChain;
+        if (table === 'automations') return buildSelectChain({ data: opts.automations, error: null });
+        if (table === 'email_logs') return buildSelectChain({ data: opts.emailLogs ?? [], error: null });
+        return buildSelectChain({ data: [], error: null });
+      });
+      return enrollmentsChain;
+    };
+
+    it('envoie l’email dû quand la file lui donne le feu vert', async () => {
+      wire({ enrollments: [enrollment()], automations: [sequence('email')] });
       mockProcessSequenceEnrollment.mockResolvedValue(undefined);
 
       const { GET } = await importRoute();
       const res = await GET(cronRequest());
+      const body = await res.json();
 
       expect(res.status).toBe(200);
-      expect(mockFrom.mock.calls.map((c) => c[0])).toContain('email_logs');
-      expect(mockProcessSequenceEnrollment).toHaveBeenCalledTimes(2);
-
-      const [, throttle1] = mockProcessSequenceEnrollment.mock.calls[0];
-      const [, throttle2] = mockProcessSequenceEnrollment.mock.calls[1];
-      expect(throttle1).toBeDefined();
-      expect(throttle1).toBe(throttle2); // same shared object → cumulative slots
-      // Seeded at least one gap after the last sent sequence email.
-      expect((throttle1 as { nextSlot: number }).nextSlot).toBeGreaterThanOrEqual(
-        new Date(lastSent).getTime() + 120_000,
-      );
+      expect(mockProcessSequenceEnrollment).toHaveBeenCalledTimes(1);
+      expect(mockProcessSequenceEnrollment.mock.calls[0]).toHaveLength(1); // plus de throttle
+      expect(body.emailsSent).toBe(1);
     });
 
-    it('does not query email_logs when no enrollment is due', async () => {
+    it('planifie sans envoyer quand le créneau n’est pas encore atteint', async () => {
+      // Un email vient de partir : le suivant doit attendre l'écart minimum.
+      const chain = wire({
+        enrollments: [enrollment()],
+        automations: [sequence('email')],
+        emailLogs: [
+          {
+            id: 'log-1',
+            sent_at: new Date().toISOString(),
+            contact_id: 'other',
+            entreprise_id: 99,
+            automation_id: 'auto-1',
+            to_name: null,
+            subject: 'x',
+            type: 'sequence',
+          },
+        ],
+      });
+
+      const { GET } = await importRoute();
+      const body = await (await GET(cronRequest())).json();
+
+      expect(mockProcessSequenceEnrollment).not.toHaveBeenCalled();
+      expect(body.emailsQueued).toBe(1);
+      expect(chain.captured[0]).toEqual(expect.objectContaining({ send_at: expect.any(String) }));
+    });
+
+    it('gèle la file et journalise le motif quand le régulateur est en pause', async () => {
+      const chain = wire({
+        regulator: openRegulator({ paused: true }),
+        enrollments: [enrollment()],
+        automations: [sequence('email')],
+      });
+
+      const { GET } = await importRoute();
+      const body = await (await GET(cronRequest())).json();
+
+      expect(mockProcessSequenceEnrollment).not.toHaveBeenCalled();
+      expect(body.emailsBlocked).toBe(1);
+      expect(body.regulatorPaused).toBe(true);
+      expect(chain.captured[0]).toEqual({ send_at: null, hold_reason: 'global_pause' });
+    });
+
+    it('exécute les étapes manuelles sans passer par la file', async () => {
+      wire({
+        regulator: openRegulator({ paused: true }),
+        enrollments: [enrollment()],
+        automations: [sequence('whatsapp')],
+      });
+      mockProcessSequenceEnrollment.mockResolvedValue(undefined);
+
+      const { GET } = await importRoute();
+      const body = await (await GET(cronRequest())).json();
+
+      // Le régulateur est en pause, et pourtant la tâche WhatsApp est créée :
+      // la pause ne concerne que les envois automatiques.
+      expect(mockProcessSequenceEnrollment).toHaveBeenCalledTimes(1);
+      expect(body.sequenceSteps).toBe(1);
+      expect(body.emailsBlocked).toBe(0);
+    });
+
+    it('ne consulte pas l’historique d’envoi quand aucune inscription n’est due', async () => {
       emptyAll();
       const { GET } = await importRoute();
       await GET(cronRequest());

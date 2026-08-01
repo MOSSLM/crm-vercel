@@ -58,6 +58,16 @@ export interface SequenceSettings {
   timezone?: string
   ownerRR?: string[]
   oncePerDay?: boolean
+  /**
+   * Réglages de file — consommés par le régulateur (`src/lib/automations/regulator.ts`).
+   * `sendWindows` : plages d'envoi [début, fin] en minutes depuis minuit, sans
+   * chevauchement. Vide → les plages par défaut du régulateur s'appliquent.
+   */
+  sendWindows?: [number, number][]
+  /** Qui passe devant quand deux séquences veulent envoyer au même moment (1 = prioritaire). */
+  queuePriority?: number
+  /** Plafond d'emails par jour pour cette séquence seule. `null` = pas de limite dédiée. */
+  dailyCap?: number | null
 }
 
 export interface SequenceDefinition {

@@ -3,6 +3,7 @@
 // Porté depuis claude design/automations-sequences.jsx.
 import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { XI } from './icons'
@@ -10,7 +11,10 @@ import { Section, Field, ToggleRow, SegFull } from './atoms'
 import { SupaSelect } from './SupaSelect'
 import { useRefData } from './ref-data'
 import { getAutomation, updateAutomation } from './automations-db'
+import { WindowEditor } from './regulator/parts'
+import { normalizeWindows } from '@/lib/automations/regulator'
 import type { Automation, SequenceDefinition, SequenceStep, SeqStepKind, SequenceSettings } from './types'
+import './regulator.css'
 
 const VARIABLES = [
   { v: '{{contact.first_name}}', desc: 'Prénom du contact' },
@@ -146,6 +150,8 @@ export function SequenceBuilder({ id }: { id: string }) {
   }
 
   const selectedStep = steps.find((s) => s.id === selectedId)
+  // Plages d'envoi de la séquence. Vide = celles du régulateur s'appliquent.
+  const windows = normalizeWindows(settings.sendWindows)
 
   return (
     <>
@@ -202,19 +208,65 @@ export function SequenceBuilder({ id }: { id: string }) {
           </Section>
 
           <Section label="Règles d'envoi">
-            <Field label="Cadence">
-              <select
-                className="select"
-                value={settings.cadence || 'bizday'}
+            <Field
+              label="Plages d'envoi"
+              hint={
+                windows.length === 0
+                  ? 'vide = plages par défaut du régulateur'
+                  : `${windows.length} plage${windows.length > 1 ? 's' : ''}`
+              }
+            >
+              <WindowEditor
+                windows={windows}
+                onChange={(w) => {
+                  touch()
+                  setSettings((s) => ({ ...s, sendWindows: w as [number, number][] }))
+                }}
+              />
+              <p className="rg-hint">
+                Hors de ces créneaux, la séquence se met en pause d’elle-même : rien n’est perdu, tout reprend à
+                l’ouverture suivante. Les plages ne peuvent pas se chevaucher.
+              </p>
+            </Field>
+
+            <Field label="Priorité dans la file" hint="1 passe devant 9">
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={9}
+                value={settings.queuePriority ?? 2}
                 onChange={(e) => {
                   touch()
-                  setSettings((s) => ({ ...s, cadence: e.target.value }))
+                  const v = Math.min(9, Math.max(1, Number(e.target.value) || 2))
+                  setSettings((s) => ({ ...s, queuePriority: v }))
                 }}
-              >
-                <option value="bizday">Lun-Ven · 8h–19h</option>
-                <option value="all">7j/7 · 8h–19h</option>
-              </select>
+              />
             </Field>
+
+            <Field label="Plafond de cette séquence" hint="emails / jour · 0 = pas de limite">
+              <input
+                className="input"
+                type="number"
+                min={0}
+                step={5}
+                value={settings.dailyCap ?? 0}
+                onChange={(e) => {
+                  touch()
+                  const v = Math.max(0, Number(e.target.value) || 0)
+                  setSettings((s) => ({ ...s, dailyCap: v > 0 ? v : null }))
+                }}
+              />
+            </Field>
+
+            <div className="rg-hint" style={{ marginBottom: 8 }}>
+              L’heure exacte de chaque email est décidée par le{' '}
+              <Link href="/automations/regulateur" style={{ color: 'var(--accent-2)' }}>
+                régulateur
+              </Link>{' '}
+              — une seule file pour tout le CRM, avec un écart aléatoire entre deux départs.
+            </div>
+
             <Field label="Fuseau horaire">
               <select
                 className="select"
