@@ -1,11 +1,14 @@
 // _board.ts — le tableau du pipeline commercial.
 //
-// Une ligne = une opportunité. Huit colonnes = les huit étapes de la vente.
-// L'état de chaque cellule vient de trois sources qu'on recoud ici :
-//   • `sequence_enrollments` — où en est la séquence (quoi, quelle étape) ;
-//   • le RÉGULATEUR — quand le prochain email part, et pourquoi il attend ;
-//   • `sales_pipeline_state` — ce que seul le commercial sait (RDV calé,
-//     proposition envoyée, perdu / nurturing / blacklist, étapes sautées).
+// Une ligne = une opportunité. Les colonnes viennent de deux sources réelles :
+// les étapes de la SÉQUENCE choisie, puis les étapes du PIPELINE à partir de
+// l'étape de reprise. Rien n'est inventé, tout suit ce qui est configuré.
+//
+// La position d'une ligne est DÉRIVÉE, jamais stockée :
+//   • inscription vivante sur la séquence choisie → son étape courante ;
+//   • sinon → l'étape de pipeline de l'opportunité.
+// `sales_pipeline_state` ne garde que ce qui n'est pas déductible : perdu /
+// nurturing / blacklist, étapes sautées, et les jalons commerciaux.
 //
 // Partagé entre le board admin (tout le CRM) et le board agent (`ownerId` posé).
 
@@ -14,13 +17,16 @@ import { SITE_DOMAIN } from '@/lib/site-domain'
 import type { Automation, SequenceDefinition } from '@/components/automations/types'
 import {
   EMPTY_STATE,
-  SALES_STAGES,
+  buildColumns,
   cellStatuses,
+  defaultHandoffOrdre,
+  isLostStage,
   isPendingTask,
-  stageForStepKind,
-  stageIndex,
+  stageColumnId,
+  stepColumnId,
   type CellStatus,
-  type SalesStageId,
+  type PipelineStageRef,
+  type SalesColumn,
   type SalesStateRow,
 } from '@/lib/sales-pipeline/stages'
 import { buildRegulatorView, type RegulatorQueueRow } from '@/app/api/automations/regulator/_view'
@@ -35,13 +41,15 @@ export interface SalesBoardQuery {
   /** Agent : restreint aux prospects qui lui appartiennent. */
   ownerId?: string | null
   q?: string
-  /** Filtre « vue » côté admin : un agent en particulier. */
   view?: string
   status?: SalesStatusFilter
-  sequence?: string
   todoOnly?: boolean
   page?: number
   perPage?: number
+  /** Pipeline dont les colonnes de droite sont issues. */
+  pipelineId?: string | null
+  /** Séquence dont les colonnes de gauche sont issues. */
+  automationId?: string | null
 }
 
 export interface SalesSequenceInfo {
@@ -53,10 +61,8 @@ export interface SalesSequenceInfo {
   totalSteps: number
   stepKind: string | null
   stepLabel: string
-  /** Heure retenue par le régulateur pour le prochain email. */
   sendAt: string | null
   holdReason: HoldReason | null
-  /** Rang dans la file globale (0 = prochain départ du CRM). */
   rank: number | null
   gapMinutes: number | null
 }
@@ -88,6 +94,7 @@ export interface SalesBoardRow {
   mrr: number | null
   contact: { id: string; name: string; role: string | null; email: string | null; phone: string | null } | null
   owner: { id: string; name: string } | null
+  /** Étape de pipeline réelle — affichée en badge, même pendant la séquence. */
   stageName: string | null
   sequence: SalesSequenceInfo | null
   tasks: SalesTaskInfo[]
@@ -96,8 +103,9 @@ export interface SalesBoardRow {
   auditReady: boolean
   demoUrl: string | null
   state: SalesStateRow
-  cells: Record<SalesStageId, CellStatus>
-  /** La ligne attend une action humaine aujourd'hui. */
+  /** Colonne où se trouve la ligne. */
+  position: string | null
+  cells: Record<string, CellStatus>
   hasTodo: boolean
 }
 
@@ -115,19 +123,25 @@ export interface SalesBoardData {
   page: number
   perPage: number
   counts: SalesBoardCounts
-  /** Compteurs par colonne, calculés sur l'ensemble filtré (pas sur la page). */
-  columns: Record<SalesStageId, { active: number; done: number }>
+  /** Les colonnes de la matrice, séquence puis pipeline. */
+  columns: SalesColumn[]
+  /** Compteurs par colonne, sur l'ensemble filtré (pas sur la page). */
+  columnCounts: Record<string, { active: number; done: number }>
+  pipelines: { id: string; nom: string; isDefault: boolean }[]
+  selectedPipelineId: string | null
+  selectedSequenceId: string | null
   agents: { id: string; name: string; isAdmin: boolean }[]
   sequences: {
     id: string
     name: string
     status: string
-    steps: { kind: string; day: number; label: string }[]
+    steps: { id: string; kind: string; day: number; label: string }[]
     windows: SendWindow[]
     activeEnrollments: number
   }[]
   regulator: {
     paused: boolean
+    testMode: boolean
     gapMinMinutes: number
     gapMaxMinutes: number
     dailyCap: number
@@ -138,7 +152,6 @@ export interface SalesBoardData {
     blocked: number
     nextSendAt: string | null
   }
-  /** La file complète, pour le tiroir « voir la file d'envoi ». */
   queue: RegulatorQueueRow[]
 }
 
@@ -159,8 +172,6 @@ type OppRow = {
 
 type StateRow = {
   opportunite_id: string
-  reached: string
-  passed: string[] | null
   skipped: string[] | null
   skip_reason: string | null
   state: string
@@ -173,19 +184,11 @@ type StateRow = {
   stage_dates: Record<string, string> | null
 }
 
-const asStage = (value: string | null | undefined): SalesStageId =>
-  (stageIndex(value ?? '') >= 0 ? value : 'seq') as SalesStageId
-
-const asStages = (values: string[] | null | undefined): SalesStageId[] =>
-  (values ?? []).filter((v) => stageIndex(v) >= 0) as SalesStageId[]
-
 export function toStateRow(row: StateRow | undefined): SalesStateRow {
-  if (!row) return { ...EMPTY_STATE, passed: [], skipped: [], stageDates: {} }
+  if (!row) return { ...EMPTY_STATE, skipped: [], stageDates: {} }
   const amount = row.propo_amount == null ? null : Number(row.propo_amount)
   return {
-    reached: asStage(row.reached),
-    passed: asStages(row.passed),
-    skipped: asStages(row.skipped),
+    skipped: (row.skipped ?? []).filter(Boolean),
     skipReason: row.skip_reason,
     state: (['progress', 'nurt', 'lost', 'black', 'won'].includes(row.state)
       ? row.state
@@ -196,44 +199,49 @@ export function toStateRow(row: StateRow | undefined): SalesStateRow {
     rdvAt: row.rdv_at,
     propoAmount: Number.isFinite(amount) ? amount : null,
     objection: row.objection,
-    stageDates: (row.stage_dates ?? {}) as SalesStateRow['stageDates'],
+    stageDates: (row.stage_dates ?? {}) as Record<string, string>,
   }
 }
 
 /**
- * Étape réellement atteinte : on part de ce qui est enregistré, et on avance
- * (jamais en arrière) selon ce que dit la séquence. Un prospect ne recule
- * jamais d'étape — sauf réactivation explicite depuis Perdu / Nurturing.
+ * Où se trouve la ligne dans la matrice.
+ *
+ * Une inscription vivante sur la séquence affichée prime : c'est elle qui
+ * pilote le prospect. Sinon on retombe sur l'étape de pipeline de
+ * l'opportunité. Une opportunité qui n'est pas encore arrivée à l'étape de
+ * reprise se place sur la première colonne : il faut la mettre en séquence.
  */
-export function deriveReached(state: SalesStateRow, sequence: SalesSequenceInfo | null): SalesStateRow {
-  if (state.state === 'won') return { ...state, reached: 'signe' }
-  if (state.state !== 'progress') return state
+export function derivePosition(opts: {
+  columns: SalesColumn[]
+  sequence: SalesSequenceInfo | null
+  steps: { id: string }[]
+  stageId: number | null
+}): string | null {
+  const { columns, sequence, steps, stageId } = opts
+  if (columns.length === 0) return null
 
-  // Phase commerciale : la séquence n'a plus son mot à dire.
-  if (stageIndex(state.reached) >= stageIndex('rdv')) return state
-
-  if (!sequence) {
-    // Séquence terminée : le commercial reprend la main au RDV. Sans séquence
-    // du tout, on garde ce que dit l'état — une étape validée à la main ne doit
-    // pas être annulée par la dérivation.
-    if (state.passed.includes('seq')) {
-      const target: SalesStageId = 'rdv'
-      return stageIndex(state.reached) >= stageIndex(target) ? state : { ...state, reached: target }
+  if (sequence && (sequence.status === 'active' || sequence.status === 'paused')) {
+    const step = steps[sequence.currentStep - 1]
+    if (step) {
+      const id = stepColumnId(step.id)
+      if (columns.some((c) => c.id === id)) return id
     }
-    return state
   }
 
-  if (sequence.status === 'finished' || sequence.status === 'exited') {
-    return stageIndex(state.reached) >= stageIndex('rdv') ? state : { ...state, reached: 'rdv' }
+  if (stageId != null) {
+    const id = stageColumnId(stageId)
+    if (columns.some((c) => c.id === id)) return id
   }
 
-  const target = stageForStepKind(sequence.stepKind)
-  if (!target) return state
-  // Le prospect a déjà réagi : on ne le renvoie pas vers un WhatsApp ou un appel.
-  if (state.replied && (target === 'wa' || target === 'call')) {
-    return stageIndex(state.reached) >= stageIndex('rdv') ? state : { ...state, reached: 'rdv' }
+  // Séquence terminée mais pas encore d'étape de pipeline atteinte : on pose la
+  // ligne sur la première colonne du groupe pipeline, là où le commercial
+  // reprend la main.
+  if (sequence && (sequence.status === 'finished' || sequence.status === 'exited')) {
+    const firstDeal = columns.find((c) => c.group === 'pipeline')
+    if (firstDeal) return firstDeal.id
   }
-  return { ...state, reached: target }
+
+  return columns[0].id
 }
 
 export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
@@ -243,10 +251,79 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const perPage = Math.min(50, Math.max(1, query.perPage ?? 8))
   const page = Math.max(0, query.page ?? 0)
 
-  // ── 1. Opportunités ──────────────────────────────────────────────────────
+  // ── 1. Pipelines, étapes, séquences ──────────────────────────────────────
+  const [pipelinesRes, stagesRes, sequencesRes] = await Promise.all([
+    sb.from('pipelines').select('id, nom, ordre, is_default').eq('visible', true).order('ordre', { ascending: true }),
+    sb.from('etapes_pipeline').select('id, nom, ordre, pipeline_id').eq('visible', true).order('ordre', { ascending: true }),
+    sb.from('automations').select('id, name, status, definition, settings').eq('kind', 'sequence').order('name'),
+  ])
+
+  const pipelines = ((pipelinesRes.data ?? []) as { id: string; nom: string; is_default: boolean }[]).map((p) => ({
+    id: p.id,
+    nom: p.nom,
+    isDefault: !!p.is_default,
+  }))
+  if (pipelines.length === 0) return { ok: false, error: 'aucun_pipeline', status: 404 }
+
+  // Le pipeline demandé, sinon « Agent SAMA » (celui du démarchage), sinon le
+  // pipeline par défaut du CRM.
+  const selectedPipeline =
+    pipelines.find((p) => p.id === query.pipelineId) ??
+    pipelines.find((p) => /agent sama/i.test(p.nom)) ??
+    pipelines.find((p) => p.isDefault) ??
+    pipelines[0]
+
+  const allStages = (stagesRes.data ?? []) as (PipelineStageRef & { pipeline_id: string })[]
+  const stages = allStages.filter((s) => s.pipeline_id === selectedPipeline.id)
+  const lostStage = stages.find((s) => isLostStage(s.nom)) ?? null
+
+  const sequenceRows = (sequencesRes.data ?? []) as Automation[]
+
+  // ── 2. Quelle séquence pilote les colonnes ? ─────────────────────────────
+  const { data: activeCounts } = await sb
+    .from('sequence_enrollments')
+    .select('automation_id')
+    .eq('status', 'active')
+    .limit(5000)
+  const activeByAutomation = new Map<string, number>()
+  for (const row of (activeCounts ?? []) as { automation_id: string }[]) {
+    activeByAutomation.set(row.automation_id, (activeByAutomation.get(row.automation_id) ?? 0) + 1)
+  }
+
+  const selectedSequence =
+    sequenceRows.find((s) => s.id === query.automationId) ??
+    // À défaut : la séquence active qui travaille le plus.
+    [...sequenceRows]
+      .filter((s) => s.status === 'on')
+      .sort((a, b) => (activeByAutomation.get(b.id) ?? 0) - (activeByAutomation.get(a.id) ?? 0))[0] ??
+    sequenceRows[0] ??
+    null
+
+  const selectedSteps = (() => {
+    const def = (selectedSequence?.definition as SequenceDefinition) ?? { steps: [] }
+    const steps = Array.isArray(def.steps) ? def.steps : []
+    // Une étape « attente » n'a rien à montrer : elle n'occupe pas de colonne.
+    return steps.filter((s) => s.kind !== 'wait')
+  })()
+
+  const settings = (selectedSequence?.settings ?? {}) as Record<string, unknown>
+  const handoffStageId = settings.handoffStage != null ? Number(settings.handoffStage) : null
+  const handoffOrdre =
+    (handoffStageId != null ? stages.find((s) => s.id === handoffStageId)?.ordre : undefined) ??
+    defaultHandoffOrdre(stages, (selectedSequence?.trigger_stage_id as number | null) ?? null)
+
+  const columns = buildColumns({
+    steps: selectedSteps.map((s) => ({ id: s.id, kind: s.kind, day: s.day ?? 0, label: s.label ?? null })),
+    sequenceName: selectedSequence?.name ?? null,
+    stages,
+    handoffOrdre,
+  })
+
+  // ── 3. Opportunités du pipeline choisi ───────────────────────────────────
   let oppQuery = sb
     .from('opportunites')
     .select('id, entreprise_id, contact_id, pipeline_id, stage_id, name, montant, type, mrr, owner_id, created_at, updated_at')
+    .eq('pipeline_id', selectedPipeline.id)
     .order('updated_at', { ascending: false })
     .limit(OPPORTUNITY_LIMIT)
   if (query.ownerId) oppQuery = oppQuery.eq('owner_id', query.ownerId)
@@ -258,60 +335,55 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const oppIds = opps.map((o) => o.id)
   const entIds = [...new Set(opps.map((o) => o.entreprise_id).filter((v) => v != null))] as number[]
 
-  // ── 2. Tout ce qui décore une ligne, en lots ─────────────────────────────
-  const [entsRes, statesRes, enrollRes, tasksRes, logsRes, auditsRes, sitesRes, stagesRes, contactsRes] =
-    await Promise.all([
-      entIds.length > 0
-        ? sb
-            .from('entreprises')
-            .select('id, name, ville, telephone, site_web_canonique, canonical_url, logo_url, owner_id, service_tags')
-            .in('id', entIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-      oppIds.length > 0
-        ? sb.from('sales_pipeline_state').select('*').in('opportunite_id', oppIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-      oppIds.length > 0
-        ? sb
-            .from('sequence_enrollments')
-            .select('id, automation_id, opportunite_id, entreprise_id, current_step, status, send_at, hold_reason')
-            .in('opportunite_id', oppIds)
-            .in('status', ['active', 'paused', 'finished', 'replied', 'exited'])
-        : Promise.resolve({ data: [] as unknown[] }),
-      oppIds.length > 0
-        ? sb
-            .from('prospection_tasks')
-            .select('id, kind, status, due_at, payload, opportunite_id, assignee_id, routing_reason')
-            .in('opportunite_id', oppIds)
-            .eq('status', 'pending')
-        : Promise.resolve({ data: [] as unknown[] }),
-      oppIds.length > 0
-        ? sb
-            .from('email_logs')
-            .select('opportunite_id, sent_at, channel, type, status')
-            .in('opportunite_id', oppIds)
-            .eq('status', 'sent')
-            .order('sent_at', { ascending: false })
-            .limit(5000)
-        : Promise.resolve({ data: [] as unknown[] }),
-      oppIds.length > 0
-        ? sb.from('audits').select('opportunite_id, statut, pdf_url, demo_site_url').in('opportunite_id', oppIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-      entIds.length > 0
-        ? sb
-            .from('sites')
-            .select('enterprise_id, is_published, published_subdomain, published_domain, build_stage, is_template')
-            .in('enterprise_id', entIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-      sb.from('etapes_pipeline').select('id, nom'),
-      // Les contacts sont chargés par entreprise, jamais en entier : la table
-      // porte tout le CRM et un `select *` la ferait grossir avec le carnet.
-      entIds.length > 0
-        ? sb
-            .from('contacts')
-            .select('id, first_name, last_name, email, tel, role_title, entreprise_id, is_decision_maker')
-            .in('entreprise_id', entIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-    ])
+  // ── 4. Tout ce qui décore une ligne, en lots ─────────────────────────────
+  const [entsRes, statesRes, enrollRes, tasksRes, logsRes, auditsRes, sitesRes, contactsRes] = await Promise.all([
+    entIds.length > 0
+      ? sb
+          .from('entreprises')
+          .select('id, name, ville, telephone, site_web_canonique, canonical_url, logo_url, owner_id, service_tags')
+          .in('id', entIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    oppIds.length > 0
+      ? sb.from('sales_pipeline_state').select('*').in('opportunite_id', oppIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    oppIds.length > 0
+      ? sb
+          .from('sequence_enrollments')
+          .select('id, automation_id, opportunite_id, current_step, status, send_at, hold_reason')
+          .in('opportunite_id', oppIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    oppIds.length > 0
+      ? sb
+          .from('prospection_tasks')
+          .select('id, kind, status, due_at, payload, opportunite_id, assignee_id, routing_reason')
+          .in('opportunite_id', oppIds)
+          .eq('status', 'pending')
+      : Promise.resolve({ data: [] as unknown[] }),
+    oppIds.length > 0
+      ? sb
+          .from('email_logs')
+          .select('opportunite_id, sent_at, channel, type, status')
+          .in('opportunite_id', oppIds)
+          .eq('status', 'sent')
+          .order('sent_at', { ascending: false })
+          .limit(5000)
+      : Promise.resolve({ data: [] as unknown[] }),
+    oppIds.length > 0
+      ? sb.from('audits').select('opportunite_id, statut, pdf_url, demo_site_url').in('opportunite_id', oppIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    entIds.length > 0
+      ? sb
+          .from('sites')
+          .select('enterprise_id, is_published, published_subdomain, published_domain, build_stage, is_template')
+          .in('enterprise_id', entIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+    entIds.length > 0
+      ? sb
+          .from('contacts')
+          .select('id, first_name, last_name, email, tel, role_title, entreprise_id, is_decision_maker')
+          .in('entreprise_id', entIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+  ])
 
   const entById = new Map(
     (
@@ -330,11 +402,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   )
 
   const stateByOpp = new Map(((statesRes.data ?? []) as StateRow[]).map((s) => [s.opportunite_id, s]))
-  const stageNameById = new Map(
-    ((stagesRes.data ?? []) as { id: number; nom: string }[]).map((s) => [s.id, s.nom]),
-  )
+  const stageById = new Map(stages.map((s) => [s.id, s]))
 
-  // Contact d'une opportunité : celui rattaché, sinon le décideur de l'entreprise.
   type ContactRow = {
     id: string
     first_name: string | null
@@ -346,13 +415,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     is_decision_maker: boolean | null
   }
   const contacts = (contactsRes.data ?? []) as ContactRow[]
-
-  // Un contact rattaché à l'opportunité mais pas à l'entreprise (rare, mais ça
-  // existe après une fusion de doublons) ne serait pas dans le lot ci-dessus.
   const known = new Set(contacts.map((c) => c.id))
-  const orphanIds = opps
-    .map((o) => o.contact_id)
-    .filter((id): id is string => !!id && !known.has(id))
+  const orphanIds = opps.map((o) => o.contact_id).filter((id): id is string => !!id && !known.has(id))
   if (orphanIds.length > 0) {
     const { data: extra } = await sb
       .from('contacts')
@@ -361,14 +425,15 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     contacts.push(...((extra ?? []) as ContactRow[]))
   }
   const contactById = new Map(contacts.map((c) => [c.id, c]))
-  const contactByEnt = new Map<number, (typeof contacts)[number]>()
+  const contactByEnt = new Map<number, ContactRow>()
   for (const c of contacts) {
     if (c.entreprise_id == null) continue
     const current = contactByEnt.get(c.entreprise_id)
     if (!current || (c.is_decision_maker && !current.is_decision_maker)) contactByEnt.set(c.entreprise_id, c)
   }
 
-  // Inscription retenue par opportunité : d'abord une active, sinon la dernière connue.
+  // Inscription retenue : celle de la séquence affichée en priorité, car c'est
+  // elle qui pilote les colonnes. Sinon la plus vivante.
   type EnrollRow = {
     id: string
     automation_id: string
@@ -380,18 +445,18 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   }
   const enrollments = (enrollRes.data ?? []) as EnrollRow[]
   const enrollByOpp = new Map<string, EnrollRow>()
+  const rank = (e: EnrollRow) => {
+    const onSelected = selectedSequence && e.automation_id === selectedSequence.id ? 0 : 10
+    const byStatus = e.status === 'active' ? 0 : e.status === 'paused' ? 1 : 2
+    return onSelected + byStatus
+  }
   for (const e of enrollments) {
     if (!e.opportunite_id) continue
     const current = enrollByOpp.get(e.opportunite_id)
-    const rank = (s: string) => (s === 'active' ? 0 : s === 'paused' ? 1 : 2)
-    if (!current || rank(e.status) < rank(current.status)) enrollByOpp.set(e.opportunite_id, e)
+    if (!current || rank(e) < rank(current)) enrollByOpp.set(e.opportunite_id, e)
   }
 
-  const automationIds = [...new Set(enrollments.map((e) => e.automation_id))]
-  const { data: autoRows } = automationIds.length
-    ? await sb.from('automations').select('id, name, status, definition, settings').in('id', automationIds)
-    : { data: [] as unknown[] }
-  const automationById = new Map(((autoRows ?? []) as Automation[]).map((a) => [a.id, a]))
+  const automationById = new Map(sequenceRows.map((a) => [a.id, a]))
 
   const tasksByOpp = new Map<string, SalesTaskInfo[]>()
   for (const t of (tasksRes.data ?? []) as {
@@ -426,7 +491,6 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     opportunite_id: string | null
     sent_at: string
     channel: string | null
-    type: string | null
   }[]) {
     if (!log.opportunite_id) continue
     const channel = log.channel ?? 'email'
@@ -459,15 +523,13 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     if (url && (s.is_published || !siteByEnt.has(s.enterprise_id))) siteByEnt.set(s.enterprise_id, url)
   }
 
-  // ── 3. Le régulateur : quand part le prochain email de chaque ligne ──────
+  // ── 5. Le régulateur : quand part le prochain email de chaque ligne ──────
   const regulatorView = await buildRegulatorView()
   const slotByEnrollment = new Map(regulatorView.queue.map((q) => [q.id, q]))
-
-  // ── 4. Agents ────────────────────────────────────────────────────────────
   const agents = regulatorView.agents.map((a) => ({ id: a.id, name: a.name, isAdmin: a.isAdmin }))
   const agentNameById = new Map(agents.map((a) => [a.id, a.name]))
 
-  // ── 5. Montage des lignes ────────────────────────────────────────────────
+  // ── 6. Montage des lignes ────────────────────────────────────────────────
   const rows: SalesBoardRow[] = opps.map((opp) => {
     const ent = opp.entreprise_id != null ? entById.get(opp.entreprise_id) : undefined
     const contact =
@@ -476,20 +538,22 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
 
     const enrollment = enrollByOpp.get(opp.id)
     let sequence: SalesSequenceInfo | null = null
+    let stepsOfEnrollment: { id: string }[] = []
     if (enrollment) {
       const automation = automationById.get(enrollment.automation_id)
       const def = (automation?.definition as SequenceDefinition) ?? { steps: [] }
-      const steps = Array.isArray(def.steps) ? def.steps : []
-      const step = steps[enrollment.current_step]
+      const allSteps = (Array.isArray(def.steps) ? def.steps : []).filter((s) => s.kind !== 'wait')
+      stepsOfEnrollment = allSteps
+      const step = allSteps[enrollment.current_step]
       const slot = slotByEnrollment.get(enrollment.id)
       sequence = {
         enrollmentId: enrollment.id,
         automationId: enrollment.automation_id,
         name: automation?.name ?? 'Séquence',
-        // Une séquence mise en pause par l'admin gèle ses inscriptions.
-        status: automation && automation.status !== 'on' && enrollment.status === 'active' ? 'paused' : enrollment.status,
+        status:
+          automation && automation.status !== 'on' && enrollment.status === 'active' ? 'paused' : enrollment.status,
         currentStep: enrollment.current_step + 1,
-        totalSteps: steps.length,
+        totalSteps: allSteps.length,
         stepKind: step?.kind ?? null,
         stepLabel: step?.label || step?.template || `Étape ${enrollment.current_step + 1}`,
         sendAt: slot?.sendAt ?? enrollment.send_at,
@@ -499,8 +563,20 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       }
     }
 
-    const state = deriveReached(toStateRow(stateByOpp.get(opp.id)), sequence)
-    const cells = cellStatuses(state)
+    let state = toStateRow(stateByOpp.get(opp.id))
+    // Une opportunité posée sur l'étape « Perdu » du pipeline est perdue, même
+    // si personne n'a cliqué dans le pipeline commercial.
+    if (state.state === 'progress' && lostStage && opp.stage_id === lostStage.id) {
+      state = { ...state, state: 'lost', stateReason: state.stateReason ?? 'Étape « Perdu » du pipeline' }
+    }
+
+    const position = derivePosition({
+      columns,
+      sequence,
+      steps: sequence && selectedSequence && sequence.automationId === selectedSequence.id ? selectedSteps : stepsOfEnrollment,
+      stageId: opp.stage_id,
+    })
+    const cells = cellStatuses(columns, position, state)
     const ownerId = opp.owner_id ?? ent?.owner_id ?? null
     const audit = auditByOpp.get(opp.id)
     const tags = Array.isArray(ent?.service_tags)
@@ -532,7 +608,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
           }
         : null,
       owner: ownerId ? { id: ownerId, name: agentNameById.get(ownerId) ?? 'Agent' } : null,
-      stageName: opp.stage_id != null ? (stageNameById.get(opp.stage_id) ?? null) : null,
+      stageName: opp.stage_id != null ? (stageById.get(opp.stage_id)?.nom ?? null) : null,
       sequence,
       tasks: tasksByOpp.get(opp.id) ?? [],
       emailsSent: emailCount.get(opp.id) ?? 0,
@@ -540,13 +616,17 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       auditReady: audit?.statut === 'ready',
       demoUrl: (opp.entreprise_id != null ? siteByEnt.get(opp.entreprise_id) : undefined) ?? audit?.demo_site_url ?? null,
       state,
+      position,
       cells,
-      hasTodo: SALES_STAGES.some((s) => isPendingTask(state, s.id)),
+      hasTodo: columns.some((c) => isPendingTask(columns, position, state, c.id)),
     }
   })
 
-  // ── 6. Filtres ───────────────────────────────────────────────────────────
+  // ── 7. Filtres ───────────────────────────────────────────────────────────
+  const indexOf = (id: string | null) => columns.findIndex((c) => c.id === id)
+  const firstDealIndex = columns.findIndex((c) => c.group === 'pipeline')
   const needle = (query.q ?? '').trim().toLowerCase()
+
   const filtered = rows.filter((row) => {
     if (needle) {
       const hay = `${row.companyName} ${row.name} ${row.ville ?? ''} ${row.sector ?? ''} ${row.contact?.name ?? ''}`
@@ -555,33 +635,31 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     if (query.view && query.view !== 'all') {
       if (query.view === 'none' ? row.owner != null : row.owner?.id !== query.view) return false
     }
-    if (query.sequence && query.sequence !== 'all') {
-      if (query.sequence === 'none' ? row.sequence != null : row.sequence?.automationId !== query.sequence) return false
-    }
     const status = query.status ?? 'actifs'
     if (status === 'actifs' && row.state.state !== 'progress') return false
-    if (status === 'rdv' && stageIndex(row.state.reached) < stageIndex('rdv')) return false
+    // « RDV et + » = la ligne est passée dans le groupe pipeline.
+    if (status === 'rdv' && (firstDealIndex < 0 || indexOf(row.position) < firstDealIndex)) return false
     if (status === 'won' && row.state.state !== 'won') return false
     if (status === 'closed' && row.state.state === 'progress') return false
     if (query.todoOnly && !row.hasTodo) return false
     return true
   })
 
-  // ── 7. Compteurs et pagination ───────────────────────────────────────────
-  const columns = {} as SalesBoardData['columns']
-  for (const stage of SALES_STAGES) columns[stage.id] = { active: 0, done: 0 }
+  // ── 8. Compteurs et pagination ───────────────────────────────────────────
+  const columnCounts: SalesBoardData['columnCounts'] = {}
+  for (const column of columns) columnCounts[column.id] = { active: 0, done: 0 }
   for (const row of filtered) {
-    for (const stage of SALES_STAGES) {
-      const status = row.cells[stage.id]
-      if (status === 'active') columns[stage.id].active++
-      else if (status === 'done') columns[stage.id].done++
+    for (const column of columns) {
+      const status = row.cells[column.id]
+      if (status === 'active') columnCounts[column.id].active++
+      else if (status === 'done') columnCounts[column.id].done++
     }
   }
 
   const active = rows.filter((r) => r.state.state === 'progress')
   const counts: SalesBoardCounts = {
     actifs: active.length,
-    rdvPlus: active.filter((r) => stageIndex(r.state.reached) >= stageIndex('rdv')).length,
+    rdvPlus: firstDealIndex >= 0 ? active.filter((r) => indexOf(r.position) >= firstDealIndex).length : 0,
     won: rows.filter((r) => r.state.state === 'won').length,
     todo: rows.filter((r) => r.hasTodo).length,
     value: active.reduce((sum, r) => sum + (r.montant ?? 0), 0),
@@ -592,45 +670,28 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   const safePage = Math.min(page, maxPage)
   const pageRows = filtered.slice(safePage * perPage, safePage * perPage + perPage)
 
-  // ── 8. Séquences proposables + état du régulateur ────────────────────────
-  const sequences = regulatorView.sequences.map((s) => {
-    const automation = automationById.get(s.id)
-    const def = (automation?.definition as SequenceDefinition) ?? { steps: [] }
+  // ── 9. Séquences proposables + état du régulateur ────────────────────────
+  const sequences = sequenceRows.map((a) => {
+    const def = (a.definition as SequenceDefinition) ?? { steps: [] }
+    const conf = regulatorView.sequences.find((s) => s.id === a.id)
     return {
-      id: s.id,
-      name: s.name,
-      status: s.status,
+      id: a.id,
+      name: a.name,
+      status: a.status,
       steps: (Array.isArray(def.steps) ? def.steps : []).map((step) => ({
+        id: step.id,
         kind: step.kind,
         day: step.day ?? 0,
         label: step.label || step.template || step.kind,
       })),
-      windows: s.windows,
-      activeEnrollments: s.activeEnrollments,
+      windows: conf?.windows ?? regulatorView.settings.defaultWindows,
+      activeEnrollments: activeByAutomation.get(a.id) ?? 0,
     }
   })
-
-  // Les définitions d'étapes ne sont chargées que pour les séquences déjà
-  // utilisées ; on complète pour celles qui n'ont encore aucune inscription.
-  const missing = regulatorView.sequences.filter((s) => !automationById.has(s.id)).map((s) => s.id)
-  if (missing.length > 0) {
-    const { data: extra } = await sb.from('automations').select('id, definition').in('id', missing)
-    const defById = new Map(((extra ?? []) as { id: string; definition: unknown }[]).map((a) => [a.id, a.definition]))
-    for (const seq of sequences) {
-      if (seq.steps.length > 0) continue
-      const def = (defById.get(seq.id) as SequenceDefinition | undefined) ?? { steps: [] }
-      seq.steps = (Array.isArray(def.steps) ? def.steps : []).map((step) => ({
-        kind: step.kind,
-        day: step.day ?? 0,
-        label: step.label || step.template || step.kind,
-      }))
-    }
-  }
 
   const scopedQueue = query.ownerId
     ? regulatorView.queue.filter((q) => q.ownerId === query.ownerId)
     : regulatorView.queue
-
   const nextSend = scopedQueue.find((q) => q.sendAt != null)
 
   return {
@@ -642,10 +703,15 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       perPage,
       counts,
       columns,
+      columnCounts,
+      pipelines,
+      selectedPipelineId: selectedPipeline.id,
+      selectedSequenceId: selectedSequence?.id ?? null,
       agents,
       sequences,
       regulator: {
         paused: regulatorView.settings.paused,
+        testMode: regulatorView.settings.testMode,
         gapMinMinutes: regulatorView.settings.gapMinMinutes,
         gapMaxMinutes: regulatorView.settings.gapMaxMinutes,
         dailyCap: regulatorView.settings.dailyCap,

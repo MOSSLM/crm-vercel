@@ -15,7 +15,6 @@ import type {
   SalesReactionPayload,
   SalesRevivePayload,
 } from '@/app/api/_lib/schemas'
-import type { SalesStageId } from '@/lib/sales-pipeline/stages'
 
 type Scope = { ownerId: string | null; userId: string }
 
@@ -68,6 +67,7 @@ export async function handleReaction(
     reason: body.reason,
     nurtureAt: body.nurture_at,
     userId: scope.userId,
+    skipColumns: body.skip_columns,
   })
   return json({ ok: true, ...result }, { headers: cors })
 }
@@ -80,7 +80,7 @@ export async function handleAdvance(
   const access = await assertAccess([body.opportunite_id], scope)
   if (!access.ok) return jsonError(access.error, access.status, {}, cors)
 
-  const result = await advanceStage(getServiceClient(), body.opportunite_id, body.stage as SalesStageId, {
+  const result = await advanceStage(getServiceClient(), body.opportunite_id, body.stage, {
     amount: body.amount,
     objection: body.objection,
     rdvAt: body.rdv_at,
@@ -96,7 +96,7 @@ export async function handleRevive(
   const access = await assertAccess([body.opportunite_id], scope)
   if (!access.ok) return jsonError(access.error, access.status, {}, cors)
 
-  await reviveRow(getServiceClient(), body.opportunite_id, body.stage as SalesStageId | undefined)
+  await reviveRow(getServiceClient(), body.opportunite_id, body.stage)
   return json({ ok: true }, { headers: cors })
 }
 
@@ -191,15 +191,11 @@ export async function handleEnroll(
         continue
       }
 
-      // La colonne « Séquence » passe en faite, la ligne entre dans la file.
+      // La position de la ligne est DÉRIVÉE de l'inscription : rien à écrire
+      // ici. On s'assure seulement que la ligne repart d'un état propre — une
+      // remise en séquence après un « pas intéressé » doit redevenir active.
       await sc.from('sales_pipeline_state').upsert(
-        {
-          opportunite_id: opp.id,
-          reached: firstStepKind === 'email' ? 'email' : firstStepKind === 'call' ? 'call' : 'wa',
-          passed: ['seq'],
-          state: 'progress',
-          stage_dates: { seq: new Date().toISOString().slice(0, 10) },
-        },
+        { opportunite_id: opp.id, state: 'progress', state_reason: null, nurture_at: null },
         { onConflict: 'opportunite_id' },
       )
 

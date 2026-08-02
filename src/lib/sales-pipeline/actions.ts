@@ -9,18 +9,10 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cancelEnrollmentWork } from '@/lib/automations/engine'
-import {
-  SALES_STAGE_IDS,
-  stageIndex,
-  type SalesReactionId,
-  type SalesStageId,
-  type SalesRowState,
-} from './stages'
+import { isLostStage, parseColumnId, type SalesReactionId, type SalesRowState } from './stages'
 
 type StatePatch = {
-  reached?: SalesStageId
-  passed?: SalesStageId[]
-  skipped?: SalesStageId[]
+  skipped?: string[]
   skip_reason?: string | null
   state?: SalesRowState
   state_reason?: string | null
@@ -34,8 +26,6 @@ type StatePatch = {
 
 type StoredState = {
   opportunite_id: string
-  reached: string
-  passed: string[] | null
   skipped: string[] | null
   state: string
   stage_dates: Record<string, string> | null
@@ -45,7 +35,7 @@ type StoredState = {
 async function readState(sb: SupabaseClient, opportuniteId: string): Promise<StoredState | null> {
   const { data } = await sb
     .from('sales_pipeline_state')
-    .select('opportunite_id, reached, passed, skipped, state, stage_dates, replied')
+    .select('opportunite_id, skipped, state, stage_dates, replied')
     .eq('opportunite_id', opportuniteId)
     .maybeSingle()
   return (data as StoredState | null) ?? null
@@ -53,21 +43,69 @@ async function readState(sb: SupabaseClient, opportuniteId: string): Promise<Sto
 
 /** Écrit l'état de la ligne, en créant la ligne si elle n'existe pas encore. */
 async function writeState(sb: SupabaseClient, opportuniteId: string, patch: StatePatch): Promise<void> {
-  await sb.from('sales_pipeline_state').upsert(
-    { opportunite_id: opportuniteId, ...patch },
-    { onConflict: 'opportunite_id' },
-  )
+  await sb
+    .from('sales_pipeline_state')
+    .upsert({ opportunite_id: opportuniteId, ...patch }, { onConflict: 'opportunite_id' })
 }
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-const withDate = (dates: Record<string, string> | null | undefined, stage: SalesStageId) => ({
+const withDate = (dates: Record<string, string> | null | undefined, columnId: string) => ({
   ...(dates ?? {}),
-  [stage]: today(),
+  [columnId]: today(),
 })
 
-const uniqueStages = (values: (string | undefined | null)[]): SalesStageId[] =>
-  [...new Set(values.filter((v): v is string => !!v && stageIndex(v) >= 0))] as SalesStageId[]
+/** Les étapes du pipeline choisi, triées, sans l'étape « Perdu ». */
+async function pipelineStages(
+  sb: SupabaseClient,
+  opportuniteId: string,
+): Promise<{ pipelineId: string | null; stageId: number | null; stages: { id: number; nom: string; ordre: number }[] }> {
+  const { data: opp } = await sb
+    .from('opportunites')
+    .select('id, stage_id, pipeline_id')
+    .eq('id', opportuniteId)
+    .maybeSingle()
+  if (!opp?.pipeline_id) return { pipelineId: null, stageId: (opp?.stage_id as number | null) ?? null, stages: [] }
+
+  const { data } = await sb
+    .from('etapes_pipeline')
+    .select('id, nom, ordre')
+    .eq('pipeline_id', opp.pipeline_id)
+    .order('ordre', { ascending: true })
+  return {
+    pipelineId: opp.pipeline_id as string,
+    stageId: (opp.stage_id as number | null) ?? null,
+    stages: (data ?? []) as { id: number; nom: string; ordre: number }[],
+  }
+}
+
+/**
+ * Déplace l'opportunité sur une étape, en avant seulement — un prospect ne
+ * recule jamais. « Perdu » fait exception : c'est un état terminal, on l'accepte
+ * même s'il est en arrière.
+ */
+async function moveToStage(sb: SupabaseClient, opportuniteId: string, targetId: number): Promise<void> {
+  const { stageId, stages } = await pipelineStages(sb, opportuniteId)
+  const target = stages.find((s) => s.id === targetId)
+  if (!target) return
+  const current = stages.find((s) => s.id === stageId)
+  if (!isLostStage(target.nom) && current && current.ordre >= target.ordre) return
+  await sb.from('opportunites').update({ stage_id: target.id }).eq('id', opportuniteId)
+}
+
+/** Étape du pipeline dont le nom correspond, la première qui matche. */
+async function stageMatching(
+  sb: SupabaseClient,
+  opportuniteId: string,
+  patterns: RegExp[],
+): Promise<number | null> {
+  const { stages } = await pipelineStages(sb, opportuniteId)
+  for (const pattern of patterns) {
+    const found = stages.find((s) => pattern.test(s.nom))
+    if (found) return found.id
+  }
+  return null
+}
 
 /**
  * Inscriptions encore vivantes d'une opportunité. `statuses` restreint au
@@ -121,41 +159,8 @@ export async function stopOutreach(
   return { enrollments: ids.length, jobs, tasks }
 }
 
-/**
- * Avancement d'étape du deal sous-jacent, en avant seulement. Le pipeline
- * « Agent SAMA » garde ses propres étapes : on ne les remplace pas, on les
- * synchronise sur les jalons commerciaux qui ont un équivalent.
- */
-async function syncOpportunityStage(sb: SupabaseClient, opportuniteId: string, wanted: string[]): Promise<void> {
-  const { data: opp } = await sb
-    .from('opportunites')
-    .select('id, stage_id, pipeline_id')
-    .eq('id', opportuniteId)
-    .maybeSingle()
-  if (!opp?.pipeline_id) return
-
-  const { data: stages } = await sb
-    .from('etapes_pipeline')
-    .select('id, nom, ordre')
-    .eq('pipeline_id', opp.pipeline_id)
-    .order('ordre', { ascending: true })
-  const list = (stages ?? []) as { id: number; nom: string; ordre: number }[]
-  if (list.length === 0) return
-
-  const target = list.find((s) => wanted.some((w) => s.nom.toLowerCase().includes(w.toLowerCase())))
-  if (!target) return
-
-  const current = list.find((s) => s.id === opp.stage_id)
-  // « Perdu » est un état terminal : on l'accepte même s'il est en arrière.
-  const terminal = /perdu/i.test(target.nom)
-  if (!terminal && current && current.ordre >= target.ordre) return
-
-  await sb.from('opportunites').update({ stage_id: target.id }).eq('id', opportuniteId)
-}
-
 export interface ReactionResult {
   state: SalesRowState
-  reached: SalesStageId
   cancelled: { enrollments: number; jobs: number; tasks: number }
 }
 
@@ -168,54 +173,40 @@ export async function applyReaction(
   sb: SupabaseClient,
   opportuniteId: string,
   reaction: SalesReactionId,
-  opts: { reason?: string; nurtureAt?: string; userId?: string | null } = {},
+  opts: { reason?: string; nurtureAt?: string; userId?: string | null; skipColumns?: string[] } = {},
 ): Promise<ReactionResult> {
   const stored = await readState(sb, opportuniteId)
-  const reached = (stored?.reached ?? 'seq') as SalesStageId
-  const reachedIdx = stageIndex(reached)
-
-  // Les étapes non faites avant le point d'arrivée sont marquées « sautées » —
-  // elles ne disparaissent pas, on garde la trace de ce qui n'a pas été fait.
-  const skipUpTo = (target: SalesStageId, reason: string) => {
-    const targetIdx = stageIndex(target)
-    const skipped = uniqueStages([
-      ...(stored?.skipped ?? []),
-      ...SALES_STAGE_IDS.filter((id, i) => i >= reachedIdx && i < targetIdx),
-    ])
-    return { skipped, skip_reason: reason }
-  }
 
   // « Paused » reste reprenable, « exited » est définitif.
   const mode: 'exited' | 'paused' = reaction === 'reply' ? 'paused' : 'exited'
   const cancelled = await stopOutreach(sb, opportuniteId, mode)
 
+  // Les colonnes non faites que le raccourci fait sauter — l'appelant les
+  // connaît (il a les colonnes affichées), on ne les devine pas ici.
+  const skipped = [...new Set([...(stored?.skipped ?? []), ...(opts.skipColumns ?? [])])]
+
   let patch: StatePatch
-  let stageWords: string[] = []
+  let targetStage: number | null = null
 
   switch (reaction) {
     case 'rdv': {
       patch = {
-        reached: 'rdv',
-        passed: uniqueStages([...(stored?.passed ?? []), 'seq', 'email']),
-        ...skipUpTo('rdv', opts.reason || 'a pris RDV lui-même'),
+        skipped,
+        skip_reason: opts.reason || 'a pris RDV lui-même',
         state: 'progress',
         replied: true,
-        stage_dates: withDate(stored?.stage_dates, 'rdv'),
       }
-      stageWords = ['RDV']
+      targetStage = await stageMatching(sb, opportuniteId, [/rdv|rendez/i])
       break
     }
     case 'reply': {
       patch = {
-        reached: 'rdv',
-        // Il a rappelé : l'étape Appel compte comme faite.
-        passed: uniqueStages([...(stored?.passed ?? []), 'seq', 'email', 'call']),
-        ...skipUpTo('call', opts.reason || 'a rappelé de lui-même'),
+        skipped,
+        skip_reason: opts.reason || 'a rappelé de lui-même',
         state: 'progress',
         replied: true,
-        stage_dates: withDate(stored?.stage_dates, 'call'),
       }
-      stageWords = ['RDV']
+      targetStage = await stageMatching(sb, opportuniteId, [/rdv|rendez/i, /contact/i])
       break
     }
     case 'later': {
@@ -228,21 +219,14 @@ export async function applyReaction(
       break
     }
     case 'no': {
-      patch = {
-        state: 'lost',
-        state_reason: opts.reason || 'Pas intéressé',
-        replied: true,
-      }
-      stageWords = ['Perdu']
+      patch = { state: 'lost', state_reason: opts.reason || 'Pas intéressé', replied: true }
+      targetStage = await stageMatching(sb, opportuniteId, [/perdu|abandon/i])
       break
     }
     case 'bad':
     default: {
-      patch = {
-        state: 'black',
-        state_reason: opts.reason || 'Mauvais numéro / établissement fermé',
-      }
-      stageWords = ['Perdu']
+      patch = { state: 'black', state_reason: opts.reason || 'Mauvais numéro / établissement fermé' }
+      targetStage = await stageMatching(sb, opportuniteId, [/perdu|abandon/i])
       // Le numéro part en blacklist téléphonie : on ne rappellera plus.
       const { data: opp } = await sb
         .from('opportunites')
@@ -257,16 +241,18 @@ export async function applyReaction(
           .maybeSingle()
         const phone = (ent?.telephone as string | null)?.replace(/[^\d+]/g, '')
         if (phone) {
-          await sb
-            .from('phone_blacklist')
-            .upsert(
-              { e164: phone, reason: opts.reason || 'Pipeline commercial — mauvais numéro / fermé', created_by: opts.userId ?? null },
+          try {
+            await sb.from('phone_blacklist').upsert(
+              {
+                e164: phone,
+                reason: opts.reason || 'Pipeline commercial — mauvais numéro / fermé',
+                created_by: opts.userId ?? null,
+              },
               { onConflict: 'e164' },
             )
-            .then(
-              () => undefined,
-              () => undefined,
-            )
+          } catch {
+            /* la blacklist ne doit pas faire échouer la réaction */
+          }
         }
       }
       break
@@ -274,102 +260,77 @@ export async function applyReaction(
   }
 
   await writeState(sb, opportuniteId, patch)
-  if (stageWords.length > 0) await syncOpportunityStage(sb, opportuniteId, stageWords).catch(() => {})
+  if (targetStage != null) await moveToStage(sb, opportuniteId, targetStage).catch(() => {})
 
-  return {
-    state: patch.state ?? 'progress',
-    reached: patch.reached ?? reached,
-    cancelled,
-  }
+  return { state: patch.state ?? 'progress', cancelled }
 }
 
 /**
- * Validation manuelle d'une étape (« Fait », « Étape faite », « Signé »).
- * L'étape passe en « faite », la ligne avance d'un cran. Une tâche manuelle
- * validée rend la main à la séquence, qui reprend là où elle en était.
+ * Validation manuelle d'une colonne (« Fait », « Étape faite », « Signé »).
+ *
+ * Une colonne de SÉQUENCE rend la main à la séquence : la tâche est close et
+ * l'inscription avance d'une étape. Une colonne de PIPELINE déplace
+ * l'opportunité à l'étape suivante, en avant seulement.
  */
 export async function advanceStage(
   sb: SupabaseClient,
   opportuniteId: string,
-  stage: SalesStageId,
-  extra: { amount?: number; objection?: string; rdvAt?: string } = {},
-): Promise<{ reached: SalesStageId; state: SalesRowState }> {
+  columnId: string,
+  extra: { amount?: number; objection?: string; rdvAt?: string; nextColumnId?: string } = {},
+): Promise<{ state: SalesRowState }> {
+  const parsed = parseColumnId(columnId)
   const stored = await readState(sb, opportuniteId)
-  const passed = uniqueStages([...(stored?.passed ?? []), stage])
-  const stageDates = withDate(stored?.stage_dates, stage)
 
-  if (stage === 'signe') {
-    await writeState(sb, opportuniteId, { reached: 'signe', passed, state: 'won', stage_dates: stageDates })
-    await syncOpportunityStage(sb, opportuniteId, ['signé', 'gagn']).catch(() => {})
-    return { reached: 'signe', state: 'won' }
-  }
-
-  const patch: StatePatch = { passed, stage_dates: stageDates }
+  const patch: StatePatch = { stage_dates: withDate(stored?.stage_dates, columnId) }
   if (extra.amount != null) patch.propo_amount = extra.amount
   if (extra.objection != null) patch.objection = extra.objection
   if (extra.rdvAt != null) patch.rdv_at = extra.rdvAt
 
-  // Une étape manuelle terminée relance la séquence : le pointeur avance et
-  // l'étape suivante est planifiée (l'email repassera par le régulateur).
-  const isManual = stage === 'wa' || stage === 'call'
-  let resumed = false
-  if (isManual) {
-    // Seule une inscription ACTIVE reprend la main : une séquence en pause ne
-    // repart pas toute seule, sinon la ligne resterait bloquée sur sa cellule.
-    const ids = await liveEnrollments(sb, opportuniteId, ['active'])
-    for (const id of ids) {
-      const { advanceEnrollmentAfterTask } = await import('@/lib/automations/engine')
-      await advanceEnrollmentAfterTask(id).catch(() => {})
-      resumed = true
-    }
-    // Les tâches encore ouvertes de cette étape sont closes.
+  if (parsed?.group === 'sequence') {
+    // Clore les tâches encore ouvertes de cette étape, puis rendre la main.
     await sb
       .from('prospection_tasks')
       .update({ status: 'done', done_at: new Date().toISOString() })
       .eq('opportunite_id', opportuniteId)
       .eq('status', 'pending')
-      .in('kind', stage === 'wa' ? ['whatsapp', 'linkedin'] : ['call'])
-  }
+      .eq('step_id', parsed.ref)
 
-  // Sans séquence pour prendre le relais, on avance nous-mêmes d'un cran.
-  const currentIdx = stageIndex(stored?.reached ?? 'seq')
-  const stageIdx = stageIndex(stage)
-  if (!resumed && stageIdx >= currentIdx) {
-    patch.reached = SALES_STAGE_IDS[Math.min(stageIdx + 1, SALES_STAGE_IDS.length - 1)]
+    const ids = await liveEnrollments(sb, opportuniteId, ['active'])
+    const { advanceEnrollmentAfterTask } = await import('@/lib/automations/engine')
+    for (const id of ids) await advanceEnrollmentAfterTask(id).catch(() => {})
+  } else if (parsed?.group === 'pipeline') {
+    const stageId = Number(parsed.ref)
+    const { stages } = await pipelineStages(sb, opportuniteId)
+    const usable = stages.filter((s) => !isLostStage(s.nom))
+    const at = usable.findIndex((s) => s.id === stageId)
+
+    // Valider la dernière étape du pipeline, c'est signer.
+    if (at >= 0 && at === usable.length - 1) {
+      await writeState(sb, opportuniteId, { ...patch, state: 'won' })
+      await moveToStage(sb, opportuniteId, usable[at].id).catch(() => {})
+      return { state: 'won' }
+    }
+    const next = at >= 0 ? usable[at + 1] : null
+    if (next) await moveToStage(sb, opportuniteId, next.id).catch(() => {})
   }
 
   await writeState(sb, opportuniteId, patch)
-  if (stage === 'rdv') await syncOpportunityStage(sb, opportuniteId, ['RDV']).catch(() => {})
-  if (stage === 'call') await syncOpportunityStage(sb, opportuniteId, ['Contacté']).catch(() => {})
-
-  return {
-    reached: (patch.reached ?? stored?.reached ?? 'seq') as SalesStageId,
-    state: (stored?.state ?? 'progress') as SalesRowState,
-  }
+  return { state: (stored?.state ?? 'progress') as SalesRowState }
 }
 
 /**
- * Réactivation : soit on rouvre une étape sautée (elle redevient l'étape en
- * cours), soit on remet toute la ligne en jeu depuis Perdu / Nurturing.
+ * Réactivation : soit on rouvre une étape sautée (elle cesse d'être barrée),
+ * soit on remet toute la ligne en jeu depuis Perdu / Nurturing.
  */
-export async function reviveRow(
-  sb: SupabaseClient,
-  opportuniteId: string,
-  stage?: SalesStageId,
-): Promise<void> {
+export async function reviveRow(sb: SupabaseClient, opportuniteId: string, columnId?: string): Promise<void> {
   const stored = await readState(sb, opportuniteId)
-  if (stage) {
-    const skipped = (stored?.skipped ?? []).filter((s) => s !== stage) as SalesStageId[]
+  if (columnId) {
+    const skipped = (stored?.skipped ?? []).filter((s) => s !== columnId)
     await writeState(sb, opportuniteId, {
       skipped,
-      reached: stage,
       skip_reason: skipped.length > 0 ? undefined : null,
     })
     return
   }
-  await writeState(sb, opportuniteId, {
-    state: 'progress',
-    state_reason: null,
-    nurture_at: null,
-  })
+  await writeState(sb, opportuniteId, { state: 'progress', state_reason: null, nurture_at: null })
 }

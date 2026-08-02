@@ -19,10 +19,12 @@ export function parseBoardQuery(url: URL, ownerId: string | null) {
     q: url.searchParams.get('q') ?? undefined,
     view: url.searchParams.get('view') ?? undefined,
     status: status && STATUSES.includes(status) ? status : 'actifs',
-    sequence: url.searchParams.get('sequence') ?? undefined,
     todoOnly: url.searchParams.get('todo') === '1',
     page: Number(url.searchParams.get('page') ?? 0) || 0,
     perPage: Number(url.searchParams.get('per_page') ?? 8) || 8,
+    // Les deux sources des colonnes : la séquence à gauche, le pipeline à droite.
+    pipelineId: url.searchParams.get('pipeline') ?? undefined,
+    automationId: url.searchParams.get('sequence') ?? undefined,
   }
 }
 

@@ -30,8 +30,7 @@ const client = (opts: { testMode?: boolean | 'missing'; addresses?: string[] }) 
       }
       throw new Error(`table inattendue: ${table}`)
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any
+  } as unknown as Parameters<typeof allowRecipient>[0] & { calls: typeof calls }
 }
 
 describe('garde-fou de la phase de test', () => {

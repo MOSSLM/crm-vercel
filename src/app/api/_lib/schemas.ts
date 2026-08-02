@@ -491,7 +491,16 @@ export type SequenceRegulatorPayload = z.infer<typeof sequenceRegulatorSchema>;
 
 /* ── Pipeline commercial ─────────────────────────────────────────────────── */
 
-export const SALES_STAGES = ["seq", "email", "wa", "call", "rdv", "propo", "nego", "signe"] as const;
+/**
+ * Identifiant de colonne du pipeline commercial. Les colonnes ne sont plus une
+ * liste figée : elles viennent des étapes de la séquence choisie (`step:<id>`)
+ * puis des étapes du pipeline (`stage:<id>`). On valide donc la FORME, pas une
+ * énumération — sinon ajouter une étape à une séquence casserait l'API.
+ */
+const salesColumnId = z
+  .string()
+  .regex(/^(step|stage):.+$/, "stage doit être de la forme step:<id> ou stage:<id>")
+  .max(120);
 
 /**
  * Les cinq issues du bouton « le prospect a réagi ». C'est le seul endroit où
@@ -507,13 +516,18 @@ export const salesReactionSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "nurture_at doit être une date YYYY-MM-DD")
     .optional(),
+  /**
+   * Colonnes que le raccourci fait sauter. C'est le client qui les connaît :
+   * il a les colonnes affichées sous les yeux, le serveur ne les devine pas.
+   */
+  skip_columns: z.array(salesColumnId).max(40).optional(),
 });
 export type SalesReactionPayload = z.infer<typeof salesReactionSchema>;
 
 /** Validation manuelle d'une étape du pipeline commercial. */
 export const salesAdvanceSchema = z.object({
   opportunite_id: z.string().uuid(),
-  stage: z.enum(SALES_STAGES),
+  stage: salesColumnId,
   /** Montant saisi sur la carte Proposition. */
   amount: z.coerce.number().min(0).max(100_000_000).optional(),
   objection: z.string().trim().max(500).optional(),
@@ -525,7 +539,7 @@ export type SalesAdvancePayload = z.infer<typeof salesAdvanceSchema>;
 export const salesReviveSchema = z.object({
   opportunite_id: z.string().uuid(),
   /** Absent = réactiver la ligne entière ; sinon, rouvrir cette étape. */
-  stage: z.enum(SALES_STAGES).optional(),
+  stage: salesColumnId.optional(),
 });
 export type SalesRevivePayload = z.infer<typeof salesReviveSchema>;
 

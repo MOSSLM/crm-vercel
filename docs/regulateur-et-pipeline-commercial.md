@@ -124,34 +124,54 @@ Une absence se déclare dans `agent_settings.unavailable_until`.
 
 ## 3. Le pipeline commercial
 
-Une ligne = une opportunité. Huit colonnes :
+Une ligne = une opportunité. Les colonnes ne sont **pas** une liste figée :
+elles viennent de deux sources réelles, mises bout à bout.
 
-| # | Colonne | Piloté par | CTA |
-|---|---|---|---|
-| 01 | Séquence | manuel | Mettre en séquence |
-| 02 | Email | **auto** | Voir la file d'envoi |
-| 03 | WhatsApp | tâche | Ouvrir WhatsApp |
-| 04 | Appel | tâche | Ouvrir le cockpit d'appel |
-| 05 | RDV | manuel | Caler le RDV |
-| 06 | Proposition | manuel | Envoyer la proposition |
-| 07 | Négociation | manuel | Relancer la négociation |
-| 08 | Signature | manuel | Marquer comme signé |
+```
+╔═══ SÉQUENCE · Artisans ════════════════════╗  ┌─── PIPELINE · Agent SAMA ───┐
+║ J+0 Email │ J+1 WhatsApp │ J+5 Appel       ║  │ RDV calé │ Client signé     │
+╚════════════════════════════════════════════╝  └─────────────────────────────┘
+        automatisé, teinté violet                     le commercial reprend
+```
+
+- **Groupe séquence** — une colonne par étape de la séquence choisie, avec son
+  `J+n`, son canal et son CTA (Ouvrir WhatsApp, cockpit d'appel, file d'envoi).
+  Encadré et teinté pour qu'on voie d'un coup d'œil ce qui tourne tout seul.
+- **Groupe pipeline** — les étapes réelles de `etapes_pipeline`, à partir de
+  l'**étape de reprise** (« RDV calé » par défaut, réglable par séquence dans
+  `settings.handoffStage`).
+- Sur chaque ligne, un badge rappelle **l'étape de pipeline courante**, même
+  pendant la séquence.
+
+Deux sélecteurs en barre d'outils pilotent tout ça : **Pipeline** (le tableau
+n'affiche que ses opportunités, donc les colonnes correspondent toujours aux
+lignes) et **Séquence**. Les deux choix sont mémorisés en `localStorage`.
 
 **Règle d'or : on n'intervient que quand le prospect réagit.** Le reste avance
 seul.
 
-### Pointeur monotone
+### La position est dérivée, pas stockée
 
-`sales_pipeline_state.passed` mémorise les étapes franchies, en plus de
-`reached`. Une séquence qui repasse par un email après un WhatsApp ne
-re-verrouille donc pas la colonne WhatsApp — elle reste « faite ».
+- inscription vivante sur la séquence affichée → `step:<id de l'étape courante>` ;
+- sinon → `stage:<opportunites.stage_id>`.
+
+Les colonnes portent donc des ids préfixés (`step:` / `stage:`) et le pointeur
+est naturellement **monotone** : les index croissent avec les étapes de
+séquence, puis avec l'`ordre` du pipeline. Une séquence qui repasse par un email
+après un WhatsApp ne re-verrouille rien — c'est une colonne différente.
+
+`sales_pipeline_state` ne garde que ce qui n'est pas déductible : `state`,
+`state_reason`, `nurture_at`, `replied`, `skipped` + `skip_reason`, et les
+jalons commerciaux (`rdv_at`, `propo_amount`, `objection`, `stage_dates`).
 
 Les étapes sautées ne disparaissent pas : elles s'affichent en « Sauté ·
-*motif* » avec un bouton « Rouvrir ».
+*motif* » avec un bouton « Rouvrir ». Le client envoie la liste des colonnes
+concernées (`skip_columns`) — c'est lui qui a les colonnes sous les yeux, le
+serveur ne les devine pas.
 
 `Perdu`, `Nurturing` et `Blacklist` ne sont **pas** des colonnes mais des états
-de ligne (`sales_pipeline_state.state`) : sinon trois colonnes resteraient vides
-à 95 %.
+de ligne : une étape de pipeline nommée « Perdu » est donc exclue des colonnes,
+et une opportunité posée dessus est lue comme perdue.
 
 ### « Le prospect a réagi »
 
@@ -182,18 +202,43 @@ Pagination serveur (8 lignes par page), recherche plein texte, filtres statut /
 séquence / « à faire aujourd'hui », sélection multiple pour la mise en séquence
 en lot.
 
-### Étapes du pipeline « Agent SAMA »
+### Validation d'une colonne
 
-Elles ne sont **pas** remplacées. Les huit colonnes vivent dans
-`sales_pipeline_state` ; les jalons qui ont un équivalent (RDV calé, Contacté,
-Client signé, Perdu) sont synchronisés en avant seulement sur
-`opportunites.stage_id`, sans jamais faire reculer une affaire.
+- colonne de **séquence** → la tâche est close et l'inscription avance d'une
+  étape (`advanceEnrollmentAfterTask`) ;
+- colonne de **pipeline** → `opportunites.stage_id` passe à l'étape suivante,
+  en avant seulement. Valider la dernière colonne, c'est signer.
 
 ---
 
-## 4. Migration
+## 4. Phase de test
 
-`sql/20260801_sending_regulator_and_sales_pipeline.sql`, idempotente :
+Interrupteur dans les réglages du régulateur (`regulator_settings.test_mode`).
+Quand il est actif, seules les adresses de `test_email_addresses` reçoivent
+réellement ; tout autre destinataire est retenu **avant** l'appel à Resend,
+journalisé dans `email_logs` avec `blocked_reason = 'mode_test'`, et la séquence
+**avance quand même** — c'est ce qui permet de voir le régulateur tourner de
+bout en bout sans qu'un email ne sorte.
+
+Le garde vit dans `src/lib/email/test-guard.ts` (`allowRecipient`) et couvre les
+deux chemins de prospection : `sendEngineEmail` (séquences, workflows) et
+`POST /api/email/send` (envoi manuel, qui répond 409 `mode_test`).
+
+Les confirmations de rendez-vous (`src/lib/scheduling/emails.ts`) en sont
+**volontairement exclues** : transactionnelles, déclenchées par quelqu'un qui
+vient de réserver — les bloquer casserait la réservation.
+
+Rien n'est décompté du plafond du jour : un envoi retenu n'est pas un envoi.
+La liste d'adresses se gère depuis **Opportunités › Mode test**
+(`TestModeDialog`), déjà en place.
+
+---
+
+## 5. Migrations
+
+Les deux sont idempotentes et doivent être appliquées dans l'ordre.
+
+`sql/20260801_sending_regulator_and_sales_pipeline.sql` :
 
 - table `regulator_settings` (+ ligne `global`) ;
 - `sequence_enrollments` : `send_at`, `hold_reason`, `last_email_at` ;
@@ -202,3 +247,11 @@ Client signé, Perdu) sont synchronisés en avant seulement sur
   compter le plafond d'une séquence ni afficher sa part de la file ;
 - table `sales_pipeline_state` ;
 - plages par défaut posées sur les séquences existantes.
+
+`sql/20260802_test_phase_guard.sql` :
+
+- `regulator_settings.test_mode`, `email_logs.blocked_reason` ;
+- les six adresses de la phase de test ;
+- remise à zéro de `sales_pipeline_state.reached/passed/skipped` : ces colonnes
+  portaient des identifiants figés (`seq`, `email`, `wa`…) qui n'ont plus cours
+  depuis que les colonnes viennent de la séquence et du pipeline.

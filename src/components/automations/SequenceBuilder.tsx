@@ -205,6 +205,23 @@ export function SequenceBuilder({ id }: { id: string }) {
                 }}
               />
             </Field>
+            <Field label="Étape de reprise du pipeline" hint="vide = première étape « RDV »">
+              <SupaSelect
+                table="stages"
+                icon="kanban"
+                disabled={!settings.pipeline}
+                filterFK={settings.pipeline ? { pipeline_id: settings.pipeline } : null}
+                value={settings.handoffStage as unknown as number}
+                onChange={(v) => {
+                  touch()
+                  setSettings((s) => ({ ...s, handoffStage: v == null ? null : Number(v) }))
+                }}
+              />
+              <p className="rg-hint">
+                Dans le pipeline commercial, les colonnes de gauche sont les étapes de cette séquence ; celles du
+                pipeline commencent à partir d’ici, quand le commercial reprend la main.
+              </p>
+            </Field>
           </Section>
 
           <Section label="Règles d'envoi">

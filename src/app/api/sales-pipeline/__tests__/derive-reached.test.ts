@@ -4,17 +4,24 @@
 jest.mock('@/app/api/_lib/service-client', () => ({ getServiceClient: () => ({}) }))
 jest.mock('@/app/api/automations/regulator/_view', () => ({ buildRegulatorView: jest.fn() }))
 
-import { deriveReached, toStateRow } from '../_board'
-import { EMPTY_STATE, type SalesStateRow } from '@/lib/sales-pipeline/stages'
+import { derivePosition, toStateRow } from '../_board'
+import { buildColumns, type PipelineStageRef } from '@/lib/sales-pipeline/stages'
 import type { SalesSequenceInfo } from '../_board'
+import type { SeqStepKind } from '@/components/automations/types'
 
-const state = (over: Partial<SalesStateRow> = {}): SalesStateRow => ({
-  ...EMPTY_STATE,
-  passed: [],
-  skipped: [],
-  stageDates: {},
-  ...over,
-})
+const STAGES: PipelineStageRef[] = [
+  { id: 1, nom: 'Nouveau lead', ordre: 10 },
+  { id: 6, nom: 'RDV calé', ordre: 50 },
+  { id: 7, nom: 'Client signé', ordre: 60 },
+  { id: 8, nom: 'Perdu', ordre: 70 },
+]
+
+const STEPS = [
+  { id: 's1', kind: 'email' as SeqStepKind, day: 0, label: null },
+  { id: 's2', kind: 'whatsapp' as SeqStepKind, day: 1, label: null },
+]
+
+const columns = buildColumns({ steps: STEPS, sequenceName: 'Artisans', stages: STAGES, handoffOrdre: 50 })
 
 const sequence = (over: Partial<SalesSequenceInfo> = {}): SalesSequenceInfo => ({
   enrollmentId: 'e1',
@@ -22,7 +29,7 @@ const sequence = (over: Partial<SalesSequenceInfo> = {}): SalesSequenceInfo => (
   name: 'Artisans',
   status: 'active',
   currentStep: 1,
-  totalSteps: 5,
+  totalSteps: 2,
   stepKind: 'email',
   stepLabel: 'Email 1',
   sendAt: null,
@@ -35,18 +42,16 @@ const sequence = (over: Partial<SalesSequenceInfo> = {}): SalesSequenceInfo => (
 describe('toStateRow', () => {
   it('rend un état neutre quand la ligne n’a pas encore d’historique', () => {
     const s = toStateRow(undefined)
-    expect(s.reached).toBe('seq')
     expect(s.state).toBe('progress')
-    expect(s.passed).toEqual([])
+    expect(s.skipped).toEqual([])
+    expect(s.replied).toBe(false)
   })
 
-  it('ignore les étapes inconnues plutôt que de casser le rendu', () => {
+  it('nettoie ce qui vient de la base', () => {
     const s = toStateRow({
       opportunite_id: 'o1',
-      reached: 'nawak',
-      passed: ['seq', 'inconnue'],
-      skipped: null,
-      skip_reason: null,
+      skipped: ['step:s2', ''],
+      skip_reason: 'a répondu',
       state: 'bizarre',
       state_reason: null,
       nurture_at: null,
@@ -56,50 +61,53 @@ describe('toStateRow', () => {
       objection: null,
       stage_dates: null,
     })
-    expect(s.reached).toBe('seq')
-    expect(s.passed).toEqual(['seq'])
-    expect(s.state).toBe('progress')
+    expect(s.skipped).toEqual(['step:s2'])
+    expect(s.state).toBe('progress') // valeur inconnue → on ne casse pas le rendu
     expect(s.propoAmount).toBe(1200.5)
+    expect(s.stageDates).toEqual({})
   })
 })
 
-describe('deriveReached', () => {
-  it('reste sur la colonne Séquence tant que rien n’est lancé', () => {
-    expect(deriveReached(state(), null).reached).toBe('seq')
-  })
-
+describe('derivePosition', () => {
   it('suit l’étape courante de la séquence', () => {
-    expect(deriveReached(state(), sequence({ stepKind: 'email' })).reached).toBe('email')
-    expect(deriveReached(state(), sequence({ stepKind: 'whatsapp' })).reached).toBe('wa')
-    expect(deriveReached(state(), sequence({ stepKind: 'call' })).reached).toBe('call')
+    expect(derivePosition({ columns, sequence: sequence({ currentStep: 1 }), steps: STEPS, stageId: 1 })).toBe('step:s1')
+    expect(derivePosition({ columns, sequence: sequence({ currentStep: 2 }), steps: STEPS, stageId: 1 })).toBe('step:s2')
   })
 
-  it('passe la main au commercial quand la séquence est terminée', () => {
-    expect(deriveReached(state({ passed: ['seq'] }), sequence({ status: 'finished' })).reached).toBe('rdv')
-    expect(deriveReached(state({ passed: ['seq'] }), null).reached).toBe('rdv')
+  it('vaut aussi pour une séquence en pause — la ligne ne bouge pas', () => {
+    expect(
+      derivePosition({ columns, sequence: sequence({ status: 'paused', currentStep: 2 }), steps: STEPS, stageId: 1 }),
+    ).toBe('step:s2')
   })
 
-  it('ne renvoie jamais un prospect qui a réagi vers un WhatsApp ou un appel', () => {
-    const s = state({ replied: true })
-    expect(deriveReached(s, sequence({ stepKind: 'whatsapp' })).reached).toBe('rdv')
-    expect(deriveReached(s, sequence({ stepKind: 'call' })).reached).toBe('rdv')
+  it('passe la main au pipeline quand la séquence est finie', () => {
+    expect(derivePosition({ columns, sequence: sequence({ status: 'finished' }), steps: STEPS, stageId: 6 })).toBe(
+      'stage:6',
+    )
   })
 
-  it('laisse la phase commerciale à l’abri de la séquence', () => {
-    // Une séquence de relance qui repart sur un email ne ramène pas une ligne
-    // en négociation vers la colonne Email.
-    const s = state({ reached: 'nego' })
-    expect(deriveReached(s, sequence({ stepKind: 'email' })).reached).toBe('nego')
+  it('sans étape atteinte, la séquence finie dépose la ligne à la reprise', () => {
+    expect(derivePosition({ columns, sequence: sequence({ status: 'exited' }), steps: STEPS, stageId: 1 })).toBe(
+      'stage:6',
+    )
   })
 
-  it('force la signature sur une affaire gagnée', () => {
-    expect(deriveReached(state({ state: 'won', reached: 'propo' }), null).reached).toBe('signe')
+  it('sans séquence, suit l’étape de pipeline de l’opportunité', () => {
+    expect(derivePosition({ columns, sequence: null, steps: [], stageId: 7 })).toBe('stage:7')
   })
 
-  it('gèle la ligne sur son état quand elle est perdue ou en nurturing', () => {
-    const lost = state({ state: 'lost', reached: 'call' })
-    expect(deriveReached(lost, sequence({ stepKind: 'email' }))).toEqual(lost)
-    const nurt = state({ state: 'nurt', reached: 'email' })
-    expect(deriveReached(nurt, null)).toEqual(nurt)
+  it('une étape trop en amont ramène en tête : il faut mettre en séquence', () => {
+    // « Nouveau lead » n'a pas de colonne (elle est avant la reprise).
+    expect(derivePosition({ columns, sequence: null, steps: [], stageId: 1 })).toBe('step:s1')
+  })
+
+  it('ne plante pas sans colonnes', () => {
+    expect(derivePosition({ columns: [], sequence: null, steps: [], stageId: 1 })).toBeNull()
+  })
+
+  it('ignore une étape de séquence qui n’est plus dans les colonnes affichées', () => {
+    // La séquence affichée a changé : l'inscription pointe une étape inconnue.
+    const other = sequence({ currentStep: 1 })
+    expect(derivePosition({ columns, sequence: other, steps: [{ id: 'autre' }], stageId: 7 })).toBe('stage:7')
   })
 })

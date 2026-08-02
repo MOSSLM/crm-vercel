@@ -1,10 +1,14 @@
 'use client'
-// SalesPipeline — le pipeline commercial : une ligne par prospect, huit colonnes.
+// SalesPipeline — le pipeline commercial : une ligne par prospect, deux groupes
+// de colonnes.
 //
-// Le modèle mental tient en trois moteurs qui avancent en parallèle et se lisent
-// sur une seule ligne : la SÉQUENCE décide quoi envoyer, le RÉGULATEUR décide
-// quand l'email part, le COMMERCIAL prend la main dès que le prospect est en
-// face. Règle d'or : on n'intervient que quand le prospect réagit.
+//   ╔═══ SÉQUENCE · Artisans ════════════════╗  ┌─── PIPELINE · Agent SAMA ───┐
+//   ║ J+0 Email │ J+1 WhatsApp │ J+5 Appel   ║  │ RDV calé │ Client signé     │
+//   ╚════════════════════════════════════════╝  └─────────────────────────────┘
+//
+// La séquence pousse le prospect toute seule jusqu'à sa dernière étape ; le
+// commercial reprend la main à l'étape de reprise du pipeline. Règle d'or : on
+// n'intervient que quand le prospect réagit.
 import React from 'react'
 import Link from 'next/link'
 import { createPortal } from 'react-dom'
@@ -29,22 +33,21 @@ import {
   Search,
   Slash,
   User,
-  UserPlus,
   X,
 } from 'lucide-react'
 import { authedFetch } from '@/utils/authedFetch'
 import { getCompanyDisplayName } from '@/utils/displayHelpers'
 import {
   SALES_REACTIONS,
-  SALES_STAGES,
+  SEQUENCE_TINT,
+  channelOf,
+  type SalesColumn,
   type SalesReactionId,
-  type SalesStageDef,
-  type SalesStageId,
 } from '@/lib/sales-pipeline/stages'
-import { formatHM, windowsUnion } from '@/lib/automations/regulator'
+import { formatHM } from '@/lib/automations/regulator'
 import { QueueRows } from '@/components/automations/regulator/RegulatorPage'
 import { Avatar, colorForId, eta, hm, hmd, initialsOf } from '@/components/automations/regulator/parts'
-import { SalesCell, STAGE_ICON, eur, rgba, type SalesHandlers } from './SalesCells'
+import { KIND_ICON, SalesCell, columnIcon, eur, rgba, type SalesHandlers } from './SalesCells'
 import type { SalesBoardData, SalesBoardRow, SalesFilters } from './types'
 import './sp-skin.css'
 
@@ -52,42 +55,38 @@ export type SalesPipelineVariant = 'admin' | 'agent'
 
 const STATUS_TABS: { id: SalesFilters['status']; label: string }[] = [
   { id: 'actifs', label: 'Actifs' },
-  { id: 'rdv', label: 'RDV et +' },
+  { id: 'rdv', label: 'Phase commerciale' },
   { id: 'won', label: 'Signés' },
   { id: 'closed', label: 'Clos' },
   { id: 'tous', label: 'Tous' },
 ]
 
-const KIND_COLOR: Record<string, string> = {
-  email: '#2A6FDB',
-  whatsapp: '#1F8A5B',
-  call: '#C8881F',
-  linkedin: '#C8881F',
-  wait: '#8A877F',
-  task: '#8A877F',
-}
-const KIND_LABEL: Record<string, string> = {
-  email: 'Email',
-  whatsapp: 'WhatsApp',
-  call: 'Appel',
-  linkedin: 'LinkedIn',
-  wait: 'Attente',
-  task: 'Tâche',
-}
-const KIND_ICON: Record<string, typeof Mail> = {
-  email: Mail,
-  whatsapp: MessageCircle,
-  call: Phone,
-  linkedin: MessageCircle,
-  wait: Clock,
-  task: Inbox,
-}
-
 const displayName = (row: SalesBoardRow) =>
   getCompanyDisplayName(row.companyName || row.name, row.companyUrl) || row.companyName
 
-/** Séquence : la couleur est dérivée de son id, comme dans le régulateur. */
-const seqColor = (id: string | null | undefined) => (id ? colorForId(id) : 'var(--text-4)')
+/* ── Mémorisation des sélecteurs ─────────────────────────────────────────── */
+// Même principe que le template du Marketing Pipeline : sans ça, chaque retour
+// sur la page repartait sur le premier choix de la liste.
+const storageKey = (variant: SalesPipelineVariant, what: string) => `sp:${variant}:${what}`
+
+function readStored(variant: SalesPipelineVariant, what: string): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage.getItem(storageKey(variant, what))
+  } catch {
+    return null
+  }
+}
+
+function store(variant: SalesPipelineVariant, what: string, value: string | null): void {
+  if (typeof window === 'undefined') return
+  try {
+    if (value) window.localStorage.setItem(storageKey(variant, what), value)
+    else window.localStorage.removeItem(storageKey(variant, what))
+  } catch {
+    /* stockage indisponible (mode privé) : la sélection tient pour la session */
+  }
+}
 
 export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVariant }) {
   const isAgent = variant === 'agent'
@@ -98,20 +97,20 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const [busy, setBusy] = React.useState<string | null>(null)
   const [now, setNow] = React.useState(() => Date.now())
   const [selection, setSelection] = React.useState<Set<string>>(new Set())
-  const [filters, setFilters] = React.useState<SalesFilters>({
+  const [filters, setFilters] = React.useState<SalesFilters>(() => ({
     q: '',
     view: 'all',
     status: 'actifs',
-    sequence: 'all',
     todoOnly: false,
     page: 0,
-  })
+    pipelineId: readStored(variant, 'pipeline'),
+    sequenceId: readStored(variant, 'sequence'),
+  }))
   const [search, setSearch] = React.useState('')
   const [modal, setModal] = React.useState<{ type: 'seq'; rows: SalesBoardRow[] } | { type: 'queue' } | null>(null)
   const [popover, setPopover] = React.useState<{ row: SalesBoardRow; x: number; y: number } | null>(null)
   const [reaction, setReaction] = React.useState<{ row: SalesBoardRow; id: SalesReactionId } | null>(null)
 
-  // La recherche ne repart pas au serveur à chaque frappe.
   React.useEffect(() => {
     const t = setTimeout(() => setFilters((f) => (f.q === search ? f : { ...f, q: search, page: 0 })), 320)
     return () => clearTimeout(t)
@@ -122,8 +121,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     if (filters.q) p.set('q', filters.q)
     if (filters.view !== 'all') p.set('view', filters.view)
     p.set('status', filters.status)
-    if (filters.sequence !== 'all') p.set('sequence', filters.sequence)
     if (filters.todoOnly) p.set('todo', '1')
+    if (filters.pipelineId) p.set('pipeline', filters.pipelineId)
+    if (filters.sequenceId) p.set('sequence', filters.sequenceId)
     p.set('page', String(filters.page))
     return p.toString()
   }, [filters])
@@ -134,22 +134,25 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       try {
         const res = await authedFetch(`${base}/board?${query}`)
         if (!res.ok) throw new Error()
-        setBoard((await res.json()) as SalesBoardData)
+        const data = (await res.json()) as SalesBoardData
+        setBoard(data)
+        // Le serveur tranche le choix par défaut ; on le mémorise pour que la
+        // page rouvre sur la même combinaison.
+        store(variant, 'pipeline', data.selectedPipelineId)
+        store(variant, 'sequence', data.selectedSequenceId)
       } catch {
         if (!silent) toast.error('Chargement du pipeline impossible')
       } finally {
         setLoading(false)
       }
     },
-    [base, query],
+    [base, query, variant],
   )
 
   React.useEffect(() => {
     void load()
   }, [load])
 
-  // L'horloge locale fait descendre les comptes à rebours ; le serveur reste la
-  // source de vérité et se resynchronise toutes les 45 s.
   React.useEffect(() => {
     const clock = setInterval(() => setNow(Date.now()), 1000)
     const refresh = setInterval(() => void load(true), 45_000)
@@ -197,85 +200,106 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     [base, load],
   )
 
+  const columns = board?.columns ?? []
   const tz = board?.regulator.timezone ?? 'Europe/Paris'
+  const sequenceColumns = columns.filter((c) => c.group === 'sequence')
+  const pipelineColumns = columns.filter((c) => c.group === 'pipeline')
+  const sequenceName = board?.sequences.find((s) => s.id === board?.selectedSequenceId)?.name ?? 'Séquence'
+  const pipelineName = board?.pipelines.find((p) => p.id === board?.selectedPipelineId)?.nom ?? 'Pipeline'
+
+  /** Colonnes de séquence pas encore faites — celles qu'un raccourci fait sauter. */
+  const pendingSequenceColumns = React.useCallback(
+    (row: SalesBoardRow) =>
+      sequenceColumns.filter((c) => row.cells[c.id] === 'active' || row.cells[c.id] === 'locked').map((c) => c.id),
+    [sequenceColumns],
+  )
 
   /* ── Actions de carte ──────────────────────────────────────────────────── */
   const handlers: SalesHandlers = {
     busy,
     onEnroll: (rows) => setModal({ type: 'seq', rows }),
     onQueue: () => setModal({ type: 'queue' }),
-    onWork: (stage, row) => void work(stage, row),
-    onValidate: (row, stage) =>
-      void post('advance', { opportunite_id: row.id, stage }, row.id, `${stageName(stage)} validé`),
+    onWork: (column, row) => void work(column, row),
+    onValidate: (row, columnId) =>
+      void post(
+        'advance',
+        { opportunite_id: row.id, stage: columnId },
+        row.id,
+        `${columns.find((c) => c.id === columnId)?.label ?? 'Étape'} validé`,
+      ),
     onReact: (event, row) => {
       const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
       setPopover({ row, x: Math.min(rect.left, window.innerWidth - 280), y: rect.bottom + 6 })
     },
-    onRevive: (row, stage) => void post('revive', { opportunite_id: row.id, stage }, row.id, 'Étape rouverte'),
-    onSkipToRdv: (row) =>
+    onRevive: (row, columnId) =>
+      void post('revive', { opportunite_id: row.id, stage: columnId }, row.id, 'Étape rouverte'),
+    onSkipToDeal: (row) =>
       void post(
         'react',
-        { opportunite_id: row.id, reaction: 'reply', reason: 'a déjà réagi — passage direct au RDV' },
+        {
+          opportunite_id: row.id,
+          reaction: 'reply',
+          reason: 'a déjà réagi — passage direct à la phase commerciale',
+          skip_columns: pendingSequenceColumns(row),
+        },
         row.id,
-        'Envoyé en RDV',
+        'Envoyé en phase commerciale',
       ),
   }
 
-  async function work(stage: SalesStageDef, row: SalesBoardRow) {
-    switch (stage.id) {
-      case 'seq':
-        setModal({ type: 'seq', rows: [row] })
-        return
-      case 'email':
+  async function work(column: SalesColumn, row: SalesBoardRow) {
+    if (column.group === 'sequence') {
+      if (column.kind === 'email') {
         setModal({ type: 'queue' })
         return
-      case 'wa': {
-        const task = row.tasks.find((t) => t.kind === 'whatsapp' || t.kind === 'linkedin')
-        const phone = task?.phone ?? row.contact?.phone ?? row.phone
-        const digits = (phone ?? '').replace(/\D/g, '')
-        if (!digits) {
-          toast.error('Aucun numéro pour ce contact')
-          return
-        }
-        window.open(`https://wa.me/${digits}?text=${encodeURIComponent(task?.message ?? '')}`, '_blank')
-        // wa.me n'a pas d'API d'envoi : on journalise au clic pour que l'échange
-        // apparaisse dans l'historique du contact.
-        await authedFetch('/api/messages/log', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            channel: 'whatsapp',
-            contact_id: row.contact?.id,
-            entreprise_id: row.entrepriseId,
-            opportunite_id: row.id,
-            to_email: phone,
-            to_name: row.contact?.name,
-            subject: 'Message WhatsApp',
-            body_text: task?.message ?? '',
-          }),
-        }).catch(() => {})
-        return
       }
-      case 'call': {
+      if (column.kind === 'call') {
         window.location.href = isAgent ? '/espace-agent/telephonie/cockpit' : '/telephonie/softphone'
         return
       }
-      case 'rdv': {
-        window.location.href = isAgent ? '/espace-agent/rendez-vous' : '/rendez-vous'
+      if (column.kind === 'linkedin') {
+        const task = row.tasks.find((t) => t.kind === 'linkedin')
+        if (task?.linkedin) window.open(task.linkedin, '_blank')
+        else toast.error('Aucun profil LinkedIn connu')
         return
       }
-      case 'propo':
-      case 'nego': {
-        if (row.entrepriseId != null) {
-          window.location.href = isAgent
-            ? `/espace-agent/entreprises/${row.entrepriseId}`
-            : `/companies/${row.entrepriseId}`
-        }
+      // WhatsApp : wa.me n'a pas d'API d'envoi, on ouvre le message pré-rempli
+      // et on journalise au clic pour que l'échange existe dans l'historique.
+      const task = row.tasks.find((t) => t.kind === 'whatsapp') ?? row.tasks[0]
+      const phone = task?.phone ?? row.contact?.phone ?? row.phone
+      const digits = (phone ?? '').replace(/\D/g, '')
+      if (!digits) {
+        toast.error('Aucun numéro pour ce contact')
         return
       }
-      case 'signe':
-        await post('advance', { opportunite_id: row.id, stage: 'signe' }, row.id, 'Opportunité gagnée')
-        return
+      window.open(`https://wa.me/${digits}?text=${encodeURIComponent(task?.message ?? '')}`, '_blank')
+      await authedFetch('/api/messages/log', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          channel: 'whatsapp',
+          contact_id: row.contact?.id,
+          entreprise_id: row.entrepriseId,
+          opportunite_id: row.id,
+          to_email: phone,
+          to_name: row.contact?.name,
+          subject: 'Message WhatsApp',
+          body_text: task?.message ?? '',
+        }),
+      }).catch(() => {})
+      return
+    }
+
+    // Colonnes de pipeline : on renvoie vers l'outil qui fait le travail.
+    const name = column.label.toLowerCase()
+    if (name.includes('rdv') || name.includes('rendez')) {
+      window.location.href = isAgent ? '/espace-agent/rendez-vous' : '/rendez-vous'
+      return
+    }
+    if (row.entrepriseId != null) {
+      window.location.href = isAgent
+        ? `/espace-agent/entreprises/${row.entrepriseId}`
+        : `/companies/${row.entrepriseId}`
     }
   }
 
@@ -284,7 +308,6 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
   const pages = board ? Math.max(1, Math.ceil(board.total / board.perPage)) : 1
   const nextSendIn = board?.regulator.nextSendAt ? Date.parse(board.regulator.nextSendAt) - now : null
   const selected = rows.filter((r) => selection.has(r.id))
-  const openWindows = board ? windowsUnion(board.regulator.openWindows.map((w) => [w])) : []
 
   return (
     <div className="mp-scope sp-scope">
@@ -301,8 +324,8 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           </div>
           <h1 className="disp">Du premier email à la signature.</h1>
           <div className="sub">
-            Chaque ligne est un prospect, chaque colonne une étape. La séquence pousse les cartes vers la droite toute
-            seule — <em>vous n’intervenez que quand le prospect réagit</em>.
+            À gauche, ce que <em>la séquence</em> fait toute seule. À droite, ce que <em>vous</em> faites une fois le
+            prospect en face. Vous n’intervenez que quand il réagit.
           </div>
         </div>
         <div className="topbar-actions">
@@ -331,7 +354,12 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
             <Bolt className="ico-sm" />
             Régulateur
           </span>
-          {board.regulator.paused ? (
+          {board.regulator.testMode ? (
+            <span className="rb-main warn">
+              <Bolt className="ico-sm" />
+              Phase de test — rien ne part vers un vrai prospect
+            </span>
+          ) : board.regulator.paused ? (
             <span className="rb-main warn">
               <Pause className="ico-sm" />
               En pause — rien ne part
@@ -354,9 +382,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           <span className="rb-s">
             <b>{board.counts.todo}</b> tâches à la main
           </span>
-          {openWindows.length > 0 && (
+          {board.regulator.openWindows.length > 0 && (
             <span className="rb-s g">
-              plages {openWindows.map((w) => `${formatHM(w[0])}–${formatHM(w[1])}`).join(' · ')}
+              plages {board.regulator.openWindows.map((w) => `${formatHM(w[0])}–${formatHM(w[1])}`).join(' · ')}
             </span>
           )}
           <span className="rb-now mono">{hm(now, tz)}</span>
@@ -367,12 +395,38 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       <div className="toolbar">
         <div className="search">
           <Search className="ico-sm" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Entreprise, contact, ville…"
-          />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Entreprise, contact, ville…" />
         </div>
+
+        {/* Les deux sources des colonnes. */}
+        <span className="tb-lb">Pipeline</span>
+        <select
+          className="mp-select"
+          value={board?.selectedPipelineId ?? ''}
+          onChange={(e) => setFilters((f) => ({ ...f, pipelineId: e.target.value, page: 0 }))}
+        >
+          {(board?.pipelines ?? []).map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nom}
+            </option>
+          ))}
+        </select>
+
+        <span className="tb-lb">Séquence</span>
+        <select
+          className="mp-select"
+          value={board?.selectedSequenceId ?? ''}
+          onChange={(e) => setFilters((f) => ({ ...f, sequenceId: e.target.value, page: 0 }))}
+        >
+          {(board?.sequences ?? []).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+              {s.status !== 'on' ? ' (en pause)' : ''}
+            </option>
+          ))}
+        </select>
+
+        <div className="tb-div" />
         <div className="seg">
           {STATUS_TABS.map((tab) => (
             <button
@@ -391,26 +445,10 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           <Inbox className="ico-sm" />À faire aujourd’hui
           <span className="ct">{board?.counts.todo ?? 0}</span>
         </button>
-        <div className="tb-div" />
-        <span className="tb-lb">Séquence</span>
-        <select
-          className="mp-select"
-          value={filters.sequence}
-          onChange={(e) => setFilters((f) => ({ ...f, sequence: e.target.value, page: 0 }))}
-        >
-          <option value="all">Toutes</option>
-          {(board?.sequences ?? []).map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-          <option value="none">Sans séquence</option>
-        </select>
 
         {!isAgent && (board?.agents.length ?? 0) > 0 && (
           <>
             <div className="tb-div" />
-            <span className="tb-lb">Vue</span>
             <div className="own-filter">
               <button
                 className={'btn xs subtle' + (filters.view === 'all' ? ' on' : '')}
@@ -422,13 +460,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
               {(board?.agents ?? []).map((agent) => (
                 <button
                   key={agent.id}
-                  className={
-                    'av-btn' + (filters.view === agent.id ? ' sel' : filters.view !== 'all' ? ' dim' : '')
-                  }
+                  className={'av-btn' + (filters.view === agent.id ? ' sel' : filters.view !== 'all' ? ' dim' : '')}
                   title={agent.name}
-                  onClick={() =>
-                    setFilters((f) => ({ ...f, view: f.view === agent.id ? 'all' : agent.id, page: 0 }))
-                  }
+                  onClick={() => setFilters((f) => ({ ...f, view: f.view === agent.id ? 'all' : agent.id, page: 0 }))}
                 >
                   <Avatar id={agent.id} name={agent.name} size={26} />
                 </button>
@@ -444,7 +478,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           </div>
           <div className="stat">
             <span className="v acc">{board?.counts.rdvPlus ?? 0}</span>
-            <span className="l">rdv+</span>
+            <span className="l">en négo</span>
           </div>
           <div className="stat">
             <span className="v ok">{board?.counts.won ?? 0}</span>
@@ -474,7 +508,28 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
 
       {/* ── Matrice ─────────────────────────────────────────────────────── */}
       <div className="mx-scroll">
-        <div className="matrix" style={{ ['--ncol' as string]: SALES_STAGES.length }}>
+        <div className="matrix" style={{ ['--ncol' as string]: Math.max(1, columns.length) }}>
+          {/* Bandeaux de groupe : on voit d'un coup d'œil ce qui est piloté par
+              l'automatisation et ce qui relève du commercial. */}
+          <div className="mx-gcorner" />
+          {sequenceColumns.length > 0 && (
+            <div
+              className="mx-group seq"
+              style={{ gridColumn: `span ${sequenceColumns.length}`, ['--gc' as string]: SEQUENCE_TINT }}
+            >
+              <Layers className="ico-xs" />
+              Séquence · {sequenceName}
+              <span className="n">{sequenceColumns.length} étapes automatisées</span>
+            </div>
+          )}
+          {pipelineColumns.length > 0 && (
+            <div className="mx-group" style={{ gridColumn: `span ${pipelineColumns.length}` }}>
+              <Building2 className="ico-xs" />
+              Pipeline · {pipelineName}
+              <span className="n">reprise du commercial</span>
+            </div>
+          )}
+
           <div className="mx-corner">
             <div className="t">
               {board?.total ?? 0} prospect{(board?.total ?? 0) > 1 ? 's' : ''}
@@ -483,14 +538,15 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
               page {(board?.page ?? 0) + 1}/{pages}
             </div>
           </div>
-          {SALES_STAGES.map((stage, i) => (
-            <ColumnHead key={stage.id} stage={stage} index={i} counts={board?.columns[stage.id]} />
+          {columns.map((column, i) => (
+            <ColumnHead key={column.id} column={column} index={i} counts={board?.columnCounts[column.id]} />
           ))}
 
           {rows.map((row) => (
             <React.Fragment key={row.id}>
               <RowHead
                 row={row}
+                columns={columns}
                 selected={selection.has(row.id)}
                 agentMode={isAgent}
                 now={now}
@@ -505,8 +561,8 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
                 }
                 onReact={(e) => handlers.onReact(e, row)}
               />
-              {SALES_STAGES.map((stage) => (
-                <SalesCell key={stage.id} row={row} stage={stage} now={now} timezone={tz} handlers={handlers} />
+              {columns.map((column) => (
+                <SalesCell key={column.id} row={row} column={column} now={now} timezone={tz} handlers={handlers} />
               ))}
             </React.Fragment>
           ))}
@@ -515,7 +571,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
             <div className="empty">
               <Search />
               <div className="t">{loading ? 'Chargement…' : 'Aucun prospect'}</div>
-              <div className="s">Changez de vue ou videz la recherche.</div>
+              <div className="s">Changez de pipeline, de vue, ou videz la recherche.</div>
             </div>
           )}
         </div>
@@ -587,12 +643,16 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
                   onClick={() => {
                     const row = popover.row
                     setPopover(null)
-                    // Deux issues demandent une saisie : la date de relance et le motif.
                     if (r.id === 'later' || r.id === 'no' || r.id === 'bad') {
                       setReaction({ row, id: r.id })
                       return
                     }
-                    void post('react', { opportunite_id: row.id, reaction: r.id }, row.id, r.note)
+                    void post(
+                      'react',
+                      { opportunite_id: row.id, reaction: r.id, skip_columns: pendingSequenceColumns(row) },
+                      row.id,
+                      r.note,
+                    )
                   }}
                 >
                   <span className={`ri ${r.tone}`}>
@@ -617,7 +677,12 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           busy={busy === reaction.row.id}
           onClose={() => setReaction(null)}
           onSubmit={async (body) => {
-            const ok = await post('react', { opportunite_id: reaction.row.id, ...body }, reaction.row.id, 'Enregistré')
+            const ok = await post(
+              'react',
+              { opportunite_id: reaction.row.id, skip_columns: pendingSequenceColumns(reaction.row), ...body },
+              reaction.row.id,
+              'Enregistré',
+            )
             if (ok) setReaction(null)
           }}
         />
@@ -645,9 +710,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
                 return
               }
               const enrolled = payload.enrolled ?? 0
-              const skipped = (payload.results ?? []).filter(
-                (r: { status: string }) => r.status !== 'enrolled',
-              ).length
+              const skipped = (payload.results ?? []).filter((r: { status: string }) => r.status !== 'enrolled').length
               toast.success(
                 `${enrolled} prospect${enrolled > 1 ? 's' : ''} mis en séquence` +
                   (skipped > 0 ? ` · ${skipped} ignoré${skipped > 1 ? 's' : ''}` : ''),
@@ -672,26 +735,28 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
 /* ── En-tête de colonne ────────────────────────────────────────────────── */
 
 function ColumnHead({
-  stage,
+  column,
   index,
   counts,
 }: {
-  stage: SalesStageDef
+  column: SalesColumn
   index: number
   counts?: { active: number; done: number }
 }) {
-  const Icon = STAGE_ICON[stage.id]
+  const Icon = columnIcon(column)
+  const inSequence = column.group === 'sequence'
   return (
-    <div className="mx-colhead">
+    <div className={'mx-colhead' + (inSequence ? ' in-seq' : '')}>
       <div className="hd">
-        <span className="sw" style={{ background: rgba(stage.color, 0.12), color: stage.color }}>
+        <span className="sw" style={{ background: rgba(column.color, 0.12), color: column.color }}>
           <Icon className="ico" />
         </span>
-        <span className="nm">{stage.name}</span>
-        <span className="idx">{String(index + 1).padStart(2, '0')}</span>
+        <span className="nm">{column.label}</span>
+        <span className="idx">{column.hint ?? String(index + 1).padStart(2, '0')}</span>
       </div>
       <div className="meta">
-        <b style={{ color: stage.color }}>{counts?.active ?? 0}</b> en cours · {counts?.done ?? 0} faites
+        <b style={{ color: column.color }}>{counts?.active ?? 0}</b> en cours · {counts?.done ?? 0} faites
+        <span className="mode">{column.mode === 'auto' ? 'auto' : column.mode === 'manual' ? 'tâche' : 'manuel'}</span>
       </div>
     </div>
   )
@@ -701,6 +766,7 @@ function ColumnHead({
 
 function RowHead({
   row,
+  columns,
   selected,
   agentMode,
   now,
@@ -709,6 +775,7 @@ function RowHead({
   onReact,
 }: {
   row: SalesBoardRow
+  columns: SalesColumn[]
   selected: boolean
   agentMode: boolean
   now: number
@@ -716,7 +783,7 @@ function RowHead({
   onToggle: () => void
   onReact: (e: React.MouseEvent) => void
 }) {
-  const doneCount = SALES_STAGES.filter((s) => row.cells[s.id] === 'done').length
+  const doneCount = columns.filter((c) => row.cells[c.id] === 'done').length
   const statusLabel =
     row.state.state === 'won'
       ? 'Signé'
@@ -726,7 +793,7 @@ function RowHead({
           ? 'Blacklisté'
           : row.state.state === 'nurt'
             ? `À recontacter${row.state.nurtureAt ? ` ${new Date(row.state.nurtureAt).toLocaleDateString('fr-FR')}` : ''}`
-            : `${doneCount}/${SALES_STAGES.length} étapes`
+            : `${doneCount}/${columns.length} étapes`
   const value = row.type === 'mrr' && row.mrr ? `${eur(row.mrr)}/m` : eur(row.montant)
   const name = displayName(row)
   const closed = row.state.state === 'won' || row.state.state === 'black'
@@ -774,8 +841,8 @@ function RowHead({
 
       <div>
         <div className="rail">
-          {SALES_STAGES.map((stage) => {
-            const status = row.cells[stage.id]
+          {columns.map((column) => {
+            const status = row.cells[column.id]
             const cls =
               status === 'done'
                 ? 'done'
@@ -788,7 +855,7 @@ function RowHead({
                       : status === 'nurt'
                         ? 'nrt'
                         : ''
-            return <i key={stage.id} className={cls} style={{ ['--seg' as string]: stage.color }} />
+            return <i key={column.id} className={cls} style={{ ['--seg' as string]: column.color }} />
           })}
         </div>
         <div className="rh-line">
@@ -801,8 +868,16 @@ function RowHead({
         </div>
       </div>
 
+      {/* L'étape réelle du pipeline, visible même pendant la séquence. */}
+      {row.stageName && (
+        <div className="rh-stage" title="Étape actuelle dans le pipeline">
+          <Building2 className="ico-xs" />
+          {row.stageName}
+        </div>
+      )}
+
       {row.sequence ? (
-        <div className="rh-seq" style={{ ['--sc' as string]: seqColor(row.sequence.automationId) }}>
+        <div className="rh-seq" style={{ ['--sc' as string]: colorForId(row.sequence.automationId) }}>
           <i />
           <span className="nm">{row.sequence.name}</span>
           <span className="st">
@@ -892,11 +967,14 @@ function SequenceDialog({
   onLaunch: (automationId: string) => void
 }) {
   const live = board.sequences.filter((s) => s.status === 'on')
-  const [picked, setPicked] = React.useState<string | null>(live[0]?.id ?? null)
+  const [picked, setPicked] = React.useState<string | null>(
+    board.selectedSequenceId && live.some((s) => s.id === board.selectedSequenceId)
+      ? board.selectedSequenceId
+      : (live[0]?.id ?? null),
+  )
   const sequence = board.sequences.find((s) => s.id === picked) ?? null
 
   const manualSteps = sequence?.steps.filter((s) => s.kind !== 'email' && s.kind !== 'wait').length ?? 0
-  // Heure estimée du premier départ : après le dernier créneau déjà réservé.
   const lastSlot = board.queue.filter((q) => q.sendAt).slice(-1)[0]
   const firstEta = lastSlot?.sendAt ?? board.regulator.nextSendAt
 
@@ -904,7 +982,7 @@ function SequenceDialog({
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-hd">
-          <span className="sw" style={{ background: rgba('#7A5AE0', 0.12), color: '#7A5AE0' }}>
+          <span className="sw" style={{ background: rgba(SEQUENCE_TINT, 0.12), color: SEQUENCE_TINT }}>
             <Layers className="ico" />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -935,7 +1013,7 @@ function SequenceDialog({
                 <span className="rad">{picked === s.id && <i />}</span>
                 <span style={{ minWidth: 0, flex: 1 }}>
                   <span className="n">
-                    <i style={{ background: seqColor(s.id) }} />
+                    <i style={{ background: colorForId(s.id) }} />
                     {s.name}
                   </span>
                   <span className="s">
@@ -954,19 +1032,19 @@ function SequenceDialog({
                 <div className="sd-h">Déroulé — {sequence.name}</div>
                 <div>
                   {sequence.steps.map((step, i) => {
+                    const channel = channelOf(step.kind)
                     const Icon = KIND_ICON[step.kind] ?? Mail
-                    const color = KIND_COLOR[step.kind] ?? '#8A877F'
                     const auto = step.kind === 'email' || step.kind === 'wait'
                     return (
-                      <div key={i} className="step">
-                        <span className="d">J+{step.day}</span>
-                        <span className="ki" style={{ background: rgba(color, 0.12), color }}>
+                      <div key={`${step.id}-${i}`} className="step">
+                        <span className="d">{step.day > 0 ? `J+${step.day}` : 'J+0'}</span>
+                        <span className="ki" style={{ background: rgba(channel.color, 0.12), color: channel.color }}>
                           <Icon className="ico-sm" />
                         </span>
                         <span style={{ minWidth: 0, flex: 1 }}>
                           <span className="n">{step.label}</span>
                           <span className="s" style={{ color: 'var(--text-3)', fontSize: 10.5 }}>
-                            {KIND_LABEL[step.kind] ?? step.kind}
+                            {channel.label}
                           </span>
                         </span>
                         <span className={'md ' + (auto ? 'auto' : 'manuel')}>{auto ? 'auto' : 'manuel'}</span>
@@ -980,16 +1058,25 @@ function SequenceDialog({
                   )}
                 </div>
 
-                {/* Les trois conséquences annoncées AVANT de valider : c'est ce
-                    qui remplace la confiance aveugle dans l'automatisation. */}
+                {/* Les conséquences annoncées AVANT de valider : c'est ce qui
+                    remplace la confiance aveugle dans l'automatisation. */}
                 <div className="sd-note">
                   <div>
                     <Bolt className="ico-sm" />
                     <span>
-                      1<sup>er</sup> email placé en file — départ estimé <b>{hmd(firstEta, now, timezone)}</b>
-                      {rows.length > 1
-                        ? `, puis les suivants espacés de ${board.regulator.gapMinMinutes} à ${board.regulator.gapMaxMinutes} min.`
-                        : '.'}
+                      {board.regulator.testMode ? (
+                        <>
+                          <b>Phase de test active</b> — les emails seront retenus et journalisés, sauf vers les adresses
+                          de test.
+                        </>
+                      ) : (
+                        <>
+                          1<sup>er</sup> email placé en file — départ estimé <b>{hmd(firstEta, now, timezone)}</b>
+                          {rows.length > 1
+                            ? `, puis les suivants espacés de ${board.regulator.gapMinMinutes} à ${board.regulator.gapMaxMinutes} min.`
+                            : '.'}
+                        </>
+                      )}
                     </span>
                   </div>
                   <div>
@@ -1068,6 +1155,16 @@ function QueueDrawer({
         </div>
 
         <div className="dr-set">
+          {board.regulator.testMode && (
+            <div className="dr-row" style={{ color: 'var(--warn)', fontWeight: 500 }}>
+              <span className="k" style={{ color: 'inherit' }}>
+                Phase de test
+              </span>
+              <span className="v" style={{ color: 'inherit' }}>
+                seules les adresses de test reçoivent
+              </span>
+            </div>
+          )}
           <div className="dr-row">
             <span className="k">Écart entre deux emails</span>
             <span className="v">
@@ -1178,7 +1275,8 @@ function ReactionDialog({
             />
           </label>
           <p className="muted" style={{ fontSize: 11.5 }}>
-            Les emails encore planifiés pour ce prospect seront annulés, et ses tâches en attente marquées comme sautées.
+            Les emails encore planifiés pour ce prospect seront annulés, et ses tâches en attente marquées comme
+            sautées.
           </p>
         </div>
 
@@ -1222,12 +1320,10 @@ function ReactionIcon({ id }: { id: SalesReactionId }) {
 
 /* ── Divers ────────────────────────────────────────────────────────────── */
 
-const stageName = (id: SalesStageId) => SALES_STAGES.find((s) => s.id === id)?.name ?? id
-
-/** « aujourd'hui », « hier », « il y a 4 j ». */
+/** « auj. », « hier », « il y a 4 j ». */
 function relativeDay(iso: string, now: number): string {
   const days = Math.floor((now - Date.parse(iso)) / 86_400_000)
-  if (days <= 0) return "auj."
+  if (days <= 0) return 'auj.'
   if (days === 1) return 'hier'
   return `il y a ${days} j`
 }
@@ -1239,9 +1335,7 @@ const ERROR_LABELS: Record<string, string> = {
   sequence_non_assignee: 'Cette séquence ne vous a pas été attribuée.',
   sequence_inactive: 'Cette séquence est en pause.',
   sequence_introuvable: 'Séquence introuvable.',
+  aucun_pipeline: 'Aucun pipeline configuré.',
   introuvable: 'Introuvable.',
 }
-const errorLabel = (code: unknown) =>
-  (typeof code === 'string' && ERROR_LABELS[code]) || 'Action impossible'
-
-export { UserPlus }
+const errorLabel = (code: unknown) => (typeof code === 'string' && ERROR_LABELS[code]) || 'Action impossible'

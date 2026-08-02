@@ -45,7 +45,57 @@
 .mp-scope .rb-s.g { color: var(--text-4); font-family: var(--font-mono); font-size: 10.5px; }
 .mp-scope .rb-now { margin-left: auto; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 
+/* ── bandeaux de groupe ──
+   Une rangée au-dessus des en-têtes, qui dit d'où viennent les colonnes :
+   la séquence (automatisé) à gauche, le pipeline (commercial) à droite. */
+.mp-scope .mx-gcorner {
+  position: sticky; top: 0; left: 0; z-index: 45;
+  background: var(--bg-2); min-height: 30px;
+}
+.mp-scope .mx-group {
+  position: sticky; top: 0; z-index: 36;
+  display: flex; align-items: center; gap: 6px;
+  min-height: 30px; padding: 0 12px;
+  background: var(--bg-2); color: var(--text-3);
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: .1em;
+  white-space: nowrap; overflow: hidden;
+  box-shadow: inset 0 -1px 0 var(--border-2);
+}
+.mp-scope .mx-group .n {
+  margin-left: auto; text-transform: none; letter-spacing: 0;
+  font-size: 10px; color: var(--text-4);
+}
+/* Le groupe séquence est « remarquable » : teinte dédiée + liseré haut. */
+.mp-scope .mx-group.seq {
+  background: color-mix(in srgb, var(--gc) 9%, var(--bg-2));
+  color: var(--gc);
+  box-shadow: inset 0 2px 0 var(--gc), inset 0 -1px 0 var(--border-2);
+}
+.mp-scope .mx-group.seq .n { color: var(--gc); opacity: .7; }
+
+/* Les en-têtes descendent sous le bandeau. */
+.mp-scope .mx-colhead { top: 30px; }
+.mp-scope .mx-corner { top: 30px; }
+
+/* Colonnes de séquence : fond légèrement teinté sur toute la hauteur, pour que
+   l'encadrement se lise jusqu'en bas du tableau. */
+.mp-scope .mx-colhead.in-seq { background: rgba(122,90,224,.055); }
+.mp-scope .mx-cell.in-seq { background: rgba(122,90,224,.035); }
+.mp-scope .mx-cell.in-seq.done { background: rgba(122,90,224,.07); }
+.mp-scope .mx-cell.locked.in-seq { background: rgba(122,90,224,.025); }
+
 /* ── ligne prospect ── */
+/* Étape réelle du pipeline, visible même pendant la séquence. */
+.mp-scope .rh-stage {
+  display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+  font-size: 11px; font-weight: 500; color: var(--text-2);
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 999px; padding: 2px 9px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-scope .rh-stage .ico { color: var(--text-4); flex-shrink: 0; }
+
 .mp-scope .mx-rowhead { gap: 8px; }
 .mp-scope .rh-line { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
 .mp-scope .rh-seq {
