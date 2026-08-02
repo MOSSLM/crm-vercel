@@ -64,4 +64,6 @@ export interface RegulatorView {
   agents: RegulatorAgentRow[]
   pendingTasks: number
   unassignedTasks: number
+  testAddresses: { id: string; label: string; email: string }[]
+  blockedToday: number
 }

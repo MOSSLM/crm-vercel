@@ -90,6 +90,10 @@ export interface RegulatorView {
   /** Tâches manuelles en attente, tous agents confondus. */
   pendingTasks: number
   unassignedTasks: number
+  /** Adresses qui reçoivent réellement pendant la phase de test. */
+  testAddresses: { id: string; label: string; email: string }[]
+  /** Envois retenus aujourd'hui par la phase de test. */
+  blockedToday: number
 }
 
 const iso = (ms: number | null | undefined): string | null =>
@@ -260,6 +264,22 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     sequences.filter((s) => s.status === 'on').map((s) => s.windows),
   )
 
+  // ── Phase de test ─────────────────────────────────────────────────────────
+  const dayStart = new Date(localDayBounds(nowMs, settings.timezone).start).toISOString()
+  const [{ data: testRows }, { count: blockedCount }] = await Promise.all([
+    sb.from('test_email_addresses').select('id, label, email').order('created_at', { ascending: true }),
+    sb
+      .from('email_logs')
+      .select('id', { count: 'exact', head: true })
+      .not('blocked_reason', 'is', null)
+      .gte('sent_at', dayStart),
+  ])
+  const testAddresses = ((testRows ?? []) as { id: string; label: string | null; email: string }[]).map((r) => ({
+    id: r.id,
+    label: r.label || r.email.split('@')[0],
+    email: r.email,
+  }))
+
   return {
     now: new Date(nowMs).toISOString(),
     settings,
@@ -272,6 +292,8 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     agents,
     pendingTasks: tasks.length,
     unassignedTasks,
+    testAddresses,
+    blockedToday: blockedCount ?? 0,
   }
 }
 

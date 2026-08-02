@@ -471,6 +471,8 @@ export const regulatorSettingsSchema = z
     task_routing_mode: z.enum(["pref", "strict", "admin"]).optional(),
     task_max_per_agent: z.coerce.number().int().min(1).max(200).optional(),
     admin_user_id: z.string().uuid().nullable().optional(),
+    /** Phase de test : seules les adresses de test_email_addresses reçoivent. */
+    test_mode: z.boolean().optional(),
   })
   .strict();
 export type RegulatorSettingsPayload = z.infer<typeof regulatorSettingsSchema>;

@@ -13,6 +13,7 @@ jest.mock('@/app/api/_lib/service-client', () => ({
 }));
 
 import { processSequenceEnrollment } from '../engine';
+import { resetTestGuardCache } from '@/lib/email/test-guard';
 import type { SequenceEnrollment } from '@/components/automations/types';
 
 type ChainResult = { data: unknown; error?: unknown };
@@ -26,6 +27,10 @@ const tableChain = (result: ChainResult = { data: null, error: null }) => {
   }
   c.limit = jest.fn(() => Promise.resolve(result));
   c.in = jest.fn(() => Promise.resolve(result));
+  // Comme PostgrestBuilder, la chaîne est « thenable » : un `await` sans
+  // terminateur explicite (`.select('email')` seul) doit rendre le résultat.
+  c.then = (resolve: (v: ChainResult) => unknown, reject?: (e: unknown) => unknown) =>
+    Promise.resolve(result).then(resolve, reject);
   c.maybeSingle = jest.fn().mockResolvedValue(result);
   c.single = jest.fn().mockResolvedValue(result);
   c.update = jest.fn((u: unknown) => {
@@ -115,6 +120,9 @@ describe('processSequenceEnrollment', () => {
   beforeEach(() => {
     mockFrom.mockReset();
     mockSend.mockReset();
+    // Le garde-fou met les réglages en cache : sans reset, un test hériterait
+    // de la phase de test du précédent.
+    resetTestGuardCache();
     process.env = { ...ORIGINAL_ENV, RESEND_API_KEY: 'test-key' };
   });
 
@@ -158,6 +166,60 @@ describe('processSequenceEnrollment', () => {
 
     const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
     expect(updates[0]).toEqual({ send_at: null, hold_reason: null });
+  });
+
+  describe('phase de test', () => {
+    const inTestPhase = (allowed: string[]) => ({
+      regulator_settings: tableChain({
+        data: { id: 'global', task_routing_mode: 'pref', task_max_per_agent: 8, test_mode: true },
+        error: null,
+      }),
+      test_email_addresses: tableChain({ data: allowed.map((email) => ({ email })), error: null }),
+    });
+
+    it('ne contacte jamais Resend pour un vrai prospect', async () => {
+      wire(sequenceWith('email'), inTestPhase(['codingmos@gmail.com']));
+
+      await processSequenceEnrollment(enrollment); // le contact est jean@test.fr
+
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it('journalise l’envoi retenu avec son motif', async () => {
+      wire(sequenceWith('email'), inTestPhase(['codingmos@gmail.com']));
+
+      await processSequenceEnrollment(enrollment);
+
+      const logged = (tables.email_logs.captured.inserts as Record<string, unknown>[])[0];
+      expect(logged).toEqual(
+        expect.objectContaining({
+          to_email: 'jean@test.fr',
+          status: 'failed',
+          blocked_reason: 'mode_test',
+        }),
+      );
+    });
+
+    it('fait quand même avancer la séquence — on veut voir le régulateur tourner', async () => {
+      wire(sequenceWith('email'), inTestPhase(['codingmos@gmail.com']));
+
+      await processSequenceEnrollment(enrollment);
+
+      const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+      // Rien n'est sorti : pas de date de dernier envoi…
+      expect(updates[0]).toEqual({ send_at: null, hold_reason: null });
+      // …mais l'étape avance.
+      expect(updates[1]).toEqual(expect.objectContaining({ current_step: 1, status: 'finished' }));
+    });
+
+    it('laisse partir un email vers une adresse de test', async () => {
+      wire(sequenceWith('email'), inTestPhase(['jean@test.fr']));
+      mockSend.mockResolvedValue({ data: { id: 're-ok' }, error: null });
+
+      await processSequenceEnrollment(enrollment);
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('gèle l’inscription et dit pourquoi quand la séquence est en pause', async () => {
