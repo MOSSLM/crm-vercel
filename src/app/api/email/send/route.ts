@@ -5,6 +5,7 @@ import { sendEmailSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { advanceToFirstApproach } from "@/app/api/agent/_lib";
+import { BLOCK_LABEL, allowRecipient } from "@/lib/email/test-guard";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -14,6 +15,35 @@ export const POST = withAuth({ body: sendEmailSchema }, async ({ body: payload, 
   if (!apiKey) return jsonError("RESEND_API_KEY non configuré", 503, {}, cors);
 
   const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
+
+  // Phase de test : un envoi manuel vers un vrai prospect est retenu comme le
+  // sont ceux des séquences. On le journalise avec son motif et on répond 409
+  // en rappelant qui reçoit encore — sinon l'utilisateur croit à une panne.
+  const verdict = await allowRecipient(getServiceClient(), payload.to_email);
+  if (!verdict.allowed) {
+    try {
+      await getServiceClient().from("email_logs").insert({
+        contact_id: payload.contact_id ?? null,
+        entreprise_id: payload.entreprise_id ?? null,
+        opportunite_id: payload.opportunite_id ?? null,
+        lead_magnet_project_id: payload.lead_magnet_project_id ?? null,
+        to_email: payload.to_email,
+        to_name: payload.to_name ?? null,
+        from_email: fromEmail,
+        subject: payload.subject,
+        body_html: payload.body_html,
+        body_text: payload.body_text ?? null,
+        type: payload.type ?? null,
+        status: "failed",
+        blocked_reason: verdict.reason,
+        error_message: BLOCK_LABEL[verdict.reason ?? "mode_test"],
+      });
+    } catch (logErr) {
+      console.error("[email/send] log error:", logErr);
+    }
+    return jsonError("mode_test", 409, { allowlist: verdict.allowlist ?? [] }, cors);
+  }
+
   const resend = new Resend(apiKey);
 
   let resendId: string | undefined;

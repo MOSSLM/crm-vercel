@@ -1,77 +1,200 @@
-// stages.ts — le modèle des huit colonnes du pipeline commercial.
+// stages.ts — le modèle de colonnes du pipeline commercial.
 //
-// Trois moteurs avancent en parallèle et se lisent sur une seule ligne :
-//   • la SÉQUENCE décide quoi envoyer et dans quel ordre  → colonnes 1 à 4
-//   • le RÉGULATEUR décide quand l'email part réellement  → colonne 2
-//   • le COMMERCIAL prend la main une fois le prospect en face → colonnes 5 à 8
+// Les colonnes ne sont plus inventées : elles viennent de deux sources réelles,
+// mises bout à bout sur une seule ligne.
 //
-// Partagé serveur/client : l'API en dérive l'état des cellules, l'interface s'en
+//   ╔═══ SÉQUENCE · Artisans ═══════════════════════╗  ┌── PIPELINE · Agent SAMA ──┐
+//   ║ J+0 Email │ J+1 WhatsApp │ J+3 Email │ J+5 Appel ║  │ RDV calé │ Client signé │
+//   ╚═══════════════════════════════════════════════╝  └───────────────────────────┘
+//
+// La séquence pousse le prospect jusqu'à sa dernière étape, puis le PIPELINE
+// reprend la main à l'étape de reprise (« RDV calé » par défaut). Le groupe
+// séquence est encadré et teinté pour qu'on voie d'un coup d'œil ce qui est
+// piloté par l'automatisation et ce qui relève du commercial.
+//
+// Partagé serveur/client : l'API dérive l'état des cellules, l'interface s'en
 // sert pour le rendu. Une seule définition, donc pas de dérive entre les deux.
 
-export const SALES_STAGE_IDS = ['seq', 'email', 'wa', 'call', 'rdv', 'propo', 'nego', 'signe'] as const
-export type SalesStageId = (typeof SALES_STAGE_IDS)[number]
+import type { SeqStepKind } from '@/components/automations/types'
+
+/** Ce qui pilote une colonne. */
+export type ColumnGroup = 'sequence' | 'pipeline'
 
 /**
- * `auto`   : le moteur agit seul (le régulateur envoie).
+ * `auto`   : le moteur agit seul (le régulateur envoie l'email).
  * `manual` : la séquence crée une tâche, un humain la fait.
  * `deal`   : décision commerciale, jamais automatisée.
  */
-export type SalesStageMode = 'auto' | 'manual' | 'deal'
+export type ColumnMode = 'auto' | 'manual' | 'deal'
 
-export interface SalesStageDef {
-  id: SalesStageId
-  name: string
-  short: string
+export interface SalesColumn {
+  /** `step:<id d'étape>` ou `stage:<id d'étape de pipeline>`. */
+  id: string
+  group: ColumnGroup
+  /** Libellé affiché en en-tête. */
+  label: string
+  /** Sous-titre : « J+3 » pour une étape de séquence, rien pour un stage. */
+  hint: string | null
+  mode: ColumnMode
   color: string
-  mode: SalesStageMode
+  /** Canal, pour les colonnes de séquence uniquement. */
+  kind: SeqStepKind | null
+  /** Libellé du bouton d'action de la carte active. */
   cta: string
+  /** Rang absolu dans la matrice — sert au pointeur monotone. */
+  index: number
 }
 
-export const SALES_STAGES: SalesStageDef[] = [
-  { id: 'seq', name: 'Séquence', short: 'En séquence', color: '#7A5AE0', mode: 'deal', cta: 'Mettre en séquence' },
-  { id: 'email', name: 'Email', short: 'Email', color: '#2A6FDB', mode: 'auto', cta: 'Voir la file d’envoi' },
-  { id: 'wa', name: 'WhatsApp', short: 'WhatsApp', color: '#1F8A5B', mode: 'manual', cta: 'Ouvrir WhatsApp' },
-  { id: 'call', name: 'Appel', short: 'Appelé', color: '#C8881F', mode: 'manual', cta: 'Ouvrir le cockpit d’appel' },
-  { id: 'rdv', name: 'RDV', short: 'RDV', color: '#E2552B', mode: 'deal', cta: 'Caler le RDV' },
-  { id: 'propo', name: 'Proposition', short: 'Proposition', color: '#2B7FB8', mode: 'deal', cta: 'Envoyer la proposition' },
-  { id: 'nego', name: 'Négociation', short: 'Négo', color: '#A24E86', mode: 'deal', cta: 'Relancer la négociation' },
-  { id: 'signe', name: 'Signature', short: 'Signé', color: '#1F8A5B', mode: 'deal', cta: 'Marquer comme signé' },
-]
+/* ── Identifiants de colonne ─────────────────────────────────────────────── */
 
-export const stageById = (id: string): SalesStageDef | undefined => SALES_STAGES.find((s) => s.id === id)
-export const stageIndex = (id: string): number => SALES_STAGE_IDS.indexOf(id as SalesStageId)
+export const stepColumnId = (stepId: string) => `step:${stepId}`
+export const stageColumnId = (stageId: number | string) => `stage:${stageId}`
 
-/** Étape suivante, sans jamais dépasser la dernière. */
-export function nextStage(id: string): SalesStageId {
-  const i = stageIndex(id)
-  return SALES_STAGE_IDS[Math.min(Math.max(i, 0) + 1, SALES_STAGE_IDS.length - 1)]
+export function parseColumnId(id: string): { group: ColumnGroup; ref: string } | null {
+  const i = id.indexOf(':')
+  if (i < 0) return null
+  const prefix = id.slice(0, i)
+  const ref = id.slice(i + 1)
+  if (!ref) return null
+  if (prefix === 'step') return { group: 'sequence', ref }
+  if (prefix === 'stage') return { group: 'pipeline', ref }
+  return null
 }
 
-/** Colonne visée par une étape de séquence. LinkedIn partage la colonne « message manuel ». */
-export function stageForStepKind(kind: string | null | undefined): SalesStageId | null {
-  switch (kind) {
-    case 'email':
-      return 'email'
-    case 'whatsapp':
-    case 'linkedin':
-    case 'task':
-      return 'wa'
-    case 'call':
-      return 'call'
-    default:
-      return null
+/* ── Canaux ──────────────────────────────────────────────────────────────── */
+
+const CHANNEL: Record<string, { label: string; color: string; mode: ColumnMode; cta: string }> = {
+  email: { label: 'Email', color: '#2A6FDB', mode: 'auto', cta: 'Voir la file d’envoi' },
+  whatsapp: { label: 'WhatsApp', color: '#1F8A5B', mode: 'manual', cta: 'Ouvrir WhatsApp' },
+  linkedin: { label: 'LinkedIn', color: '#0A66C2', mode: 'manual', cta: 'Ouvrir LinkedIn' },
+  call: { label: 'Appel', color: '#C8881F', mode: 'manual', cta: 'Ouvrir le cockpit d’appel' },
+  task: { label: 'Tâche', color: '#8A877F', mode: 'manual', cta: 'Traiter la tâche' },
+  wait: { label: 'Attente', color: '#8A877F', mode: 'auto', cta: 'Voir la file d’envoi' },
+}
+
+export const channelOf = (kind: string | null | undefined) => CHANNEL[kind ?? ''] ?? CHANNEL.task
+
+/** Teinte du groupe séquence — la même partout (bandeau, en-têtes, encadré). */
+export const SEQUENCE_TINT = '#7A5AE0'
+
+/**
+ * Couleur d'une étape de pipeline. `etapes_pipeline` n'a pas de colonne
+ * couleur : on en dérive une stable à partir du rang, dans la palette du
+ * Marketing Pipeline, pour que deux étapes voisines restent distinguables.
+ */
+const STAGE_PALETTE = ['#E2552B', '#2B7FB8', '#A24E86', '#1F8A5B', '#C8881F', '#2A6FDB', '#B5322F', '#5C5953']
+export const stageColor = (rank: number) => STAGE_PALETTE[rank % STAGE_PALETTE.length]
+
+/** CTA d'une étape de pipeline, deviné d'après son nom. */
+export function stageCta(name: string): string {
+  const n = name.toLowerCase()
+  if (n.includes('rdv') || n.includes('rendez')) return 'Caler le RDV'
+  if (n.includes('propo') || n.includes('devis')) return 'Envoyer la proposition'
+  if (n.includes('nego') || n.includes('négo')) return 'Relancer la négociation'
+  if (n.includes('sign') || n.includes('gagn') || n.includes('client')) return 'Marquer comme signé'
+  if (n.includes('échange') || n.includes('echange')) return 'Reprendre l’échange'
+  return 'Faire avancer'
+}
+
+/** Une étape « Perdu » n'est pas une colonne : c'est un état de ligne. */
+export const isLostStage = (name: string) => /perdu|abandon/i.test(name)
+
+/* ── Construction des colonnes ───────────────────────────────────────────── */
+
+export interface SequenceStepRef {
+  id: string
+  kind: SeqStepKind
+  day: number
+  label: string | null
+}
+
+export interface PipelineStageRef {
+  id: number
+  nom: string
+  ordre: number
+}
+
+/**
+ * Les colonnes de la matrice : les étapes de la séquence choisie, puis les
+ * étapes du pipeline à partir de l'étape de reprise.
+ *
+ * `handoffOrdre` est l'`ordre` de l'étape où la séquence rend la main. Les
+ * étapes de pipeline situées avant sont traversées PENDANT la séquence — elles
+ * n'ont pas leur propre colonne, elles s'affichent en badge sur la ligne.
+ */
+export function buildColumns(opts: {
+  steps: SequenceStepRef[]
+  sequenceName: string | null
+  stages: PipelineStageRef[]
+  handoffOrdre: number
+}): SalesColumn[] {
+  const columns: SalesColumn[] = []
+
+  for (const step of opts.steps) {
+    const channel = channelOf(step.kind)
+    columns.push({
+      id: stepColumnId(step.id),
+      group: 'sequence',
+      label: step.label?.trim() || channel.label,
+      hint: step.day > 0 ? `J+${step.day}` : 'immédiat',
+      mode: channel.mode,
+      color: channel.color,
+      kind: step.kind,
+      cta: channel.cta,
+      index: columns.length,
+    })
   }
+
+  const tail = opts.stages
+    .filter((s) => s.ordre >= opts.handoffOrdre && !isLostStage(s.nom))
+    .sort((a, b) => a.ordre - b.ordre)
+
+  tail.forEach((stage, rank) => {
+    columns.push({
+      id: stageColumnId(stage.id),
+      group: 'pipeline',
+      label: stage.nom,
+      hint: null,
+      mode: 'deal',
+      color: stageColor(rank),
+      kind: null,
+      cta: stageCta(stage.nom),
+      index: columns.length,
+    })
+  })
+
+  return columns
 }
+
+/**
+ * Étape de reprise par défaut : celle qui parle de rendez-vous. À défaut, celle
+ * qui suit immédiatement l'étape d'entrée de la séquence. À défaut, la seconde
+ * moitié du pipeline.
+ */
+export function defaultHandoffOrdre(stages: PipelineStageRef[], entryStageId?: number | null): number {
+  const usable = stages.filter((s) => !isLostStage(s.nom)).sort((a, b) => a.ordre - b.ordre)
+  if (usable.length === 0) return 0
+
+  const rdv = usable.find((s) => /rdv|rendez/i.test(s.nom))
+  if (rdv) return rdv.ordre
+
+  if (entryStageId != null) {
+    const i = usable.findIndex((s) => s.id === entryStageId)
+    if (i >= 0 && i + 1 < usable.length) return usable[i + 1].ordre
+  }
+
+  return usable[Math.floor(usable.length / 2)].ordre
+}
+
+/* ── État d'une ligne ────────────────────────────────────────────────────── */
 
 export type SalesRowState = 'progress' | 'nurt' | 'lost' | 'black' | 'won'
 
-/** État d'une cellule de la matrice. */
 export type CellStatus = 'done' | 'active' | 'locked' | 'skip' | 'lost' | 'black' | 'nurt'
 
 export interface SalesStateRow {
-  reached: SalesStageId
-  passed: SalesStageId[]
-  skipped: SalesStageId[]
+  /** Étapes explicitement sautées, par id de colonne. */
+  skipped: string[]
   skipReason: string | null
   state: SalesRowState
   stateReason: string | null
@@ -80,12 +203,10 @@ export interface SalesStateRow {
   rdvAt: string | null
   propoAmount: number | null
   objection: string | null
-  stageDates: Partial<Record<SalesStageId, string>>
+  stageDates: Record<string, string>
 }
 
 export const EMPTY_STATE: SalesStateRow = {
-  reached: 'seq',
-  passed: [],
   skipped: [],
   skipReason: null,
   state: 'progress',
@@ -101,48 +222,59 @@ export const EMPTY_STATE: SalesStateRow = {
 /**
  * Statut de chaque cellule d'une ligne.
  *
- * Le pointeur est MONOTONE : `passed` mémorise ce qui a été franchi, si bien
- * qu'une séquence repassant par un email après un WhatsApp ne re-verrouille pas
- * la colonne WhatsApp — elle reste « faite ».
+ * Le pointeur est naturellement MONOTONE : la position est l'index de colonne
+ * atteint, et les index croissent avec les étapes de séquence puis avec
+ * l'`ordre` du pipeline. Une séquence qui repasse par un email après un
+ * WhatsApp ne re-verrouille donc rien — c'est une colonne différente.
  */
-export function cellStatuses(state: SalesStateRow): Record<SalesStageId, CellStatus> {
-  const reachedIdx = stageIndex(state.reached)
-  const out = {} as Record<SalesStageId, CellStatus>
+export function cellStatuses(
+  columns: SalesColumn[],
+  positionId: string | null,
+  state: SalesStateRow,
+): Record<string, CellStatus> {
+  const out: Record<string, CellStatus> = {}
+  const position = columns.findIndex((c) => c.id === positionId)
+  const reachedIdx = position >= 0 ? position : 0
 
-  for (let i = 0; i < SALES_STAGE_IDS.length; i++) {
-    const id = SALES_STAGE_IDS[i]
-    if (state.skipped.includes(id)) {
-      out[id] = 'skip'
+  for (const column of columns) {
+    if (state.skipped.includes(column.id)) {
+      out[column.id] = 'skip'
       continue
     }
     if (state.state === 'won') {
-      out[id] = 'done'
+      out[column.id] = 'done'
       continue
     }
-    if (i < reachedIdx || (state.passed.includes(id) && i !== reachedIdx)) {
-      out[id] = 'done'
+    if (column.index < reachedIdx) {
+      out[column.id] = 'done'
       continue
     }
-    if (i === reachedIdx) {
-      out[id] = state.state === 'progress' ? 'active' : state.state
+    if (column.index === reachedIdx) {
+      out[column.id] = state.state === 'progress' ? 'active' : state.state
       continue
     }
-    out[id] = 'locked'
+    out[column.id] = 'locked'
   }
   return out
 }
 
 /**
  * Le prospect a déjà montré un signe de vie : insister par WhatsApp ou par
- * téléphone n'a plus de sens, on passe au rendez-vous.
+ * téléphone n'a plus de sens, on passe à la suite.
  */
 export const hasInterest = (state: SalesStateRow): boolean => state.replied
 
 /** La cellule attend une action humaine aujourd'hui. */
-export function isPendingTask(state: SalesStateRow, stage: SalesStageId): boolean {
-  if (stage !== 'wa' && stage !== 'call') return false
+export function isPendingTask(
+  columns: SalesColumn[],
+  positionId: string | null,
+  state: SalesStateRow,
+  columnId: string,
+): boolean {
+  const column = columns.find((c) => c.id === columnId)
+  if (!column || column.mode !== 'manual') return false
   if (state.state !== 'progress') return false
-  return cellStatuses(state)[stage] === 'active' && !hasInterest(state)
+  return cellStatuses(columns, positionId, state)[columnId] === 'active' && !hasInterest(state)
 }
 
 /** Les cinq issues du bouton « le prospect a réagi ». */

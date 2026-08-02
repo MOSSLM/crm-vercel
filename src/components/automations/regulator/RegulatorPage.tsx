@@ -171,6 +171,31 @@ export function RegulatorPage() {
   return (
     <div className="rg-page">
       <div className="rg-wrap">
+        {/* Phase de test : impossible de la rater. Un envoi retenu n'est pas
+            une panne, et l'ignorer ferait croire à une séquence cassée. */}
+        {s.testMode && (
+          <div className="rg-testbar">
+            <XI name="warning" className="ico-sm" />
+            <span className="t">Phase de test active</span>
+            <span className="d">
+              {view.testAddresses.length > 0
+                ? `Seules ${view.testAddresses.length} adresses reçoivent réellement. Tout autre destinataire est retenu et journalisé.`
+                : 'Aucune adresse autorisée : plus aucun email ne part.'}
+            </span>
+            {view.blockedToday > 0 && (
+              <span className="pill warn">{view.blockedToday} retenus aujourd’hui</span>
+            )}
+            <button
+              type="button"
+              className="btn sm"
+              disabled={saving}
+              onClick={() => void patch({ test_mode: false }, 'Phase de test coupée — les envois repartent')}
+            >
+              Couper la phase de test
+            </button>
+          </div>
+        )}
+
         {/* ── Hero ─────────────────────────────────────────────────────── */}
         <div className="rg-hero">
           <div className="rg-hero-top">
@@ -469,7 +494,14 @@ export function RegulatorPage() {
 
           {/* ── Colonne droite ─────────────────────────────────────────── */}
           <div className="rg-stack">
-            <SettingsCard settings={s} sentToday={view.sentToday} saving={saving} onPatch={patch} />
+            <SettingsCard
+              settings={s}
+              sentToday={view.sentToday}
+              testAddresses={view.testAddresses}
+              blockedToday={view.blockedToday}
+              saving={saving}
+              onPatch={patch}
+            />
 
             <div className="rg-card">
               <CardHead
@@ -809,11 +841,15 @@ export function QueueRows({
 function SettingsCard({
   settings: s,
   sentToday,
+  testAddresses,
+  blockedToday,
   saving,
   onPatch,
 }: {
   settings: RegulatorSettings
   sentToday: number
+  testAddresses: { id: string; label: string; email: string }[]
+  blockedToday: number
   saving: boolean
   onPatch: (body: Record<string, unknown>, message?: string) => Promise<boolean>
 }) {
@@ -832,6 +868,50 @@ function SettingsCard({
         sub="Une seule cadence pour tous les emails"
         right={<span className={'pill ' + (s.paused ? 'warn' : 'ok')}>{s.paused ? 'en pause' : 'actif'}</span>}
       />
+
+      <SetBlock
+        icon="warning"
+        title="Phase de test"
+        extra={s.testMode ? `${testAddresses.length} adresses` : 'inactive'}
+      >
+        <ToggleRow
+          label="Ne servir que les adresses de test"
+          desc="Tout autre destinataire est retenu et journalisé — la séquence avance quand même, pour qu’on voie le régulateur tourner sans qu’un email ne sorte."
+          checked={s.testMode}
+          onChange={(v) =>
+            void onPatch(
+              { test_mode: v },
+              v ? 'Phase de test activée — plus rien ne part vers un prospect' : 'Phase de test coupée',
+            )
+          }
+          accent
+        />
+        {s.testMode && (
+          <div style={{ marginTop: 8 }}>
+            {testAddresses.length === 0 ? (
+              <p className="rg-hint" style={{ color: 'var(--danger)' }}>
+                Aucune adresse enregistrée : <b>plus aucun email ne part</b>. Ajoutez-en depuis Opportunités › Mode
+                test.
+              </p>
+            ) : (
+              <div className="rg-testlist">
+                {testAddresses.map((a) => (
+                  <span key={a.id} className="rg-testmail" title={a.label}>
+                    <XI name="check" className="ico-xs" />
+                    {a.email}
+                  </span>
+                ))}
+              </div>
+            )}
+            <p className="rg-hint">
+              {blockedToday > 0
+                ? `${blockedToday} envoi${blockedToday > 1 ? 's' : ''} retenu${blockedToday > 1 ? 's' : ''} aujourd’hui.`
+                : 'Aucun envoi retenu aujourd’hui.'}{' '}
+              La liste se gère depuis <b>Opportunités › Mode test</b>.
+            </p>
+          </div>
+        )}
+      </SetBlock>
 
       <SetBlock icon="clock" title="Écart entre deux emails" extra="toutes séquences">
         <div className="rg-dual">

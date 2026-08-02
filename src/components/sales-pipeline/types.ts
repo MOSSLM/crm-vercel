@@ -1,9 +1,9 @@
 // types.ts — miroir de /api/sales-pipeline/board (et de son pendant agent).
 import type { HoldReason, SendWindow } from '@/lib/automations/regulator'
-import type { CellStatus, SalesStageId, SalesStateRow } from '@/lib/sales-pipeline/stages'
+import type { CellStatus, SalesColumn, SalesStateRow } from '@/lib/sales-pipeline/stages'
 import type { RegulatorQueueRow } from '@/components/automations/regulator/types'
 
-export type { HoldReason, SendWindow, CellStatus, SalesStageId, SalesStateRow, RegulatorQueueRow }
+export type { HoldReason, SendWindow, CellStatus, SalesColumn, SalesStateRow, RegulatorQueueRow }
 
 export interface SalesSequenceInfo {
   enrollmentId: string
@@ -55,8 +55,18 @@ export interface SalesBoardRow {
   auditReady: boolean
   demoUrl: string | null
   state: SalesStateRow
-  cells: Record<SalesStageId, CellStatus>
+  position: string | null
+  cells: Record<string, CellStatus>
   hasTodo: boolean
+}
+
+export interface SalesSequenceOption {
+  id: string
+  name: string
+  status: string
+  steps: { id: string; kind: string; day: number; label: string }[]
+  windows: SendWindow[]
+  activeEnrollments: number
 }
 
 export interface SalesBoardData {
@@ -65,18 +75,16 @@ export interface SalesBoardData {
   page: number
   perPage: number
   counts: { actifs: number; rdvPlus: number; won: number; todo: number; value: number }
-  columns: Record<SalesStageId, { active: number; done: number }>
+  columns: SalesColumn[]
+  columnCounts: Record<string, { active: number; done: number }>
+  pipelines: { id: string; nom: string; isDefault: boolean }[]
+  selectedPipelineId: string | null
+  selectedSequenceId: string | null
   agents: { id: string; name: string; isAdmin: boolean }[]
-  sequences: {
-    id: string
-    name: string
-    status: string
-    steps: { kind: string; day: number; label: string }[]
-    windows: SendWindow[]
-    activeEnrollments: number
-  }[]
+  sequences: SalesSequenceOption[]
   regulator: {
     paused: boolean
+    testMode: boolean
     gapMinMinutes: number
     gapMaxMinutes: number
     dailyCap: number
@@ -94,7 +102,8 @@ export type SalesFilters = {
   q: string
   view: string
   status: 'actifs' | 'rdv' | 'won' | 'closed' | 'tous'
-  sequence: string
   todoOnly: boolean
   page: number
+  pipelineId: string | null
+  sequenceId: string | null
 }

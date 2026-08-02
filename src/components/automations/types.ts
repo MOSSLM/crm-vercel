@@ -68,6 +68,13 @@ export interface SequenceSettings {
   queuePriority?: number
   /** Plafond d'emails par jour pour cette séquence seule. `null` = pas de limite dédiée. */
   dailyCap?: number | null
+  /**
+   * Étape du pipeline où la séquence rend la main au commercial. Dans le
+   * pipeline commercial, les colonnes de gauche sont les étapes de la séquence
+   * et celles de droite commencent ici. Vide → première étape parlant de
+   * rendez-vous (cf. `defaultHandoffOrdre`).
+   */
+  handoffStage?: number | null
 }
 
 export interface SequenceDefinition {

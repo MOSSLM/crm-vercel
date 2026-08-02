@@ -45,6 +45,12 @@ export interface RegulatorSettings {
   taskRoutingMode: TaskRoutingMode
   taskMaxPerAgent: number
   adminUserId: string | null
+  /**
+   * Phase de test : seules les adresses de `test_email_addresses` reçoivent
+   * réellement. Tout autre destinataire est retenu et journalisé, mais la
+   * séquence avance quand même — cf. `src/lib/email/test-guard.ts`.
+   */
+  testMode: boolean
 }
 
 export const DEFAULT_REGULATOR: RegulatorSettings = {
@@ -62,6 +68,7 @@ export const DEFAULT_REGULATOR: RegulatorSettings = {
   taskRoutingMode: 'pref',
   taskMaxPerAgent: 8,
   adminUserId: null,
+  testMode: false,
 }
 
 /**
@@ -472,6 +479,7 @@ export function toRegulatorSettings(row: RegulatorRow | null | undefined): Regul
       mode === 'strict' || mode === 'admin' || mode === 'pref' ? mode : DEFAULT_REGULATOR.taskRoutingMode,
     taskMaxPerAgent: Math.max(1, int(row.task_max_per_agent, DEFAULT_REGULATOR.taskMaxPerAgent)),
     adminUserId: typeof row.admin_user_id === 'string' ? row.admin_user_id : null,
+    testMode: bool(row.test_mode, DEFAULT_REGULATOR.testMode),
   }
 }
 

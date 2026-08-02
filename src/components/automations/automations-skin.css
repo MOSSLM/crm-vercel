@@ -318,8 +318,12 @@
 }
 .au-skin[data-density="compact"] .au-body { grid-template-columns: 240px 1fr 280px; }
 .au-skin[data-density="cozy"] .au-body { grid-template-columns: 300px 1fr 340px; }
+/* Vues pleine largeur : la page possède sa propre mise en page interne. Sans
+   cette ligne, elles retombent sur la grille 3 panneaux de l'éditeur et se
+   retrouvent tassées dans la première colonne de 280px. */
 .au-skin[data-view="list"] .au-body,
 .au-skin[data-view="prospection"] .au-body,
+.au-skin[data-view="regulateur"] .au-body,
 .au-skin[data-view="connections"] .au-body { grid-template-columns: 1fr; }
 
 .au-skin .pane {

@@ -9,6 +9,7 @@ import { withAuth } from '@/app/api/_lib/with-auth'
 import { preflight } from '@/app/api/_lib/cors'
 import { regulatorSettingsSchema, type RegulatorSettingsPayload } from '@/app/api/_lib/schemas'
 import { normalizeWindows, overlappingWindows } from '@/lib/automations/regulator'
+import { resetTestGuardCache } from '@/lib/email/test-guard'
 import { buildRegulatorView } from './_view'
 
 export const runtime = 'nodejs'
@@ -46,6 +47,7 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
     if (body.task_routing_mode != null) patch.task_routing_mode = body.task_routing_mode
     if (body.task_max_per_agent != null) patch.task_max_per_agent = body.task_max_per_agent
     if (body.admin_user_id !== undefined) patch.admin_user_id = body.admin_user_id
+    if (body.test_mode != null) patch.test_mode = body.test_mode
 
     if (body.default_windows != null) {
       const windows = normalizeWindows(body.default_windows)
@@ -66,6 +68,10 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
       .from('regulator_settings')
       .upsert({ id: 'global', ...patch }, { onConflict: 'id' })
     if (error) return jsonError(error.message, 500, {}, cors)
+
+    // Le garde-fou d'envoi met les réglages en cache quelques secondes :
+    // activer ou couper la phase de test doit prendre effet immédiatement.
+    resetTestGuardCache()
 
     const view = await buildRegulatorView()
     return json(view, { headers: cors })

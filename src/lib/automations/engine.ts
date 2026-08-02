@@ -7,6 +7,7 @@ import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
+import { BLOCK_LABEL, allowRecipient } from '@/lib/email/test-guard'
 import {
   loadRegulatorSettings,
   loadTaskLoads,
@@ -181,9 +182,36 @@ export async function sendEngineEmail(
     /** Pièces jointes récupérées par URL (ex : PDF d'audit). */
     attachmentUrls?: { filename: string; url: string }[]
   },
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; blocked?: boolean }> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) return { ok: false, error: 'RESEND_API_KEY non configuré' }
+
+  // Phase de test : on n'appelle même pas Resend pour un destinataire hors
+  // liste blanche. L'envoi est tout de même journalisé — avec son motif — pour
+  // qu'on voie exactement ce qui SERAIT parti.
+  const verdict = await allowRecipient(sb, opts.to)
+  if (!verdict.allowed) {
+    try {
+      await sb.from('email_logs').insert({
+        contact_id: opts.contactId ?? null,
+        entreprise_id: opts.entrepriseId ?? null,
+        opportunite_id: opts.opportuniteId ?? null,
+        automation_id: opts.automationId ?? null,
+        enrollment_id: opts.enrollmentId ?? null,
+        to_email: opts.to,
+        to_name: opts.toName ?? null,
+        subject: opts.subject,
+        body_text: opts.text,
+        type: opts.type ?? 'automation',
+        status: 'failed',
+        blocked_reason: verdict.reason,
+        error_message: BLOCK_LABEL[verdict.reason ?? 'mode_test'],
+      })
+    } catch {
+      /* le log ne doit pas bloquer */
+    }
+    return { ok: false, blocked: true, error: verdict.reason }
+  }
 
   // Rendu identique aux envois manuels : HTML minimal + signature simple.
   const signature = await getEngineSignature(sb)
@@ -660,6 +688,11 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
           attachmentUrls:
             step.attachAudit && ent.auditUrl ? [{ filename: 'audit.pdf', url: ent.auditUrl }] : undefined,
         })
+        // Un envoi retenu par la phase de test ne fige PAS l'inscription :
+        // l'étape avance comme si l'email était parti, pour qu'on voie la
+        // séquence et le régulateur tourner de bout en bout. Seul
+        // `last_email_at` reste vide — rien n'est réellement sorti, donc rien
+        // ne doit peser sur l'espacement ni sur le plafond du jour.
         if (result.ok) sentAt = new Date().toISOString()
       }
     }
