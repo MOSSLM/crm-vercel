@@ -354,7 +354,6 @@ export function LibrarySectionHydrator() {
       }
 
       const { js, renderName, data, variables, tokens } = payload;
-      if (!js || !renderName) return;
 
       const container = document.querySelector<HTMLElement>(`[data-lsi="${instanceId}"]`);
       if (!container) return;
@@ -362,55 +361,64 @@ export function LibrarySectionHydrator() {
       const overrides = (data?.__overrides as Record<string, OverrideEntry> | undefined) ?? {};
       const hasOverrides = Object.keys(overrides).length > 0;
 
-      try {
-        // Re-evaluate the pre-compiled JS in the same scope as the server.
-        // React hooks are passed as scope args so they resolve correctly.
-        const factory = new Function(
-          "React",
-          "useState",
-          "useEffect",
-          "useRef",
-          "useMemo",
-          "useCallback",
-          "useId",
-          "useContext",
-          "useReducer",
-          "useLayoutEffect",
-          `"use strict";\n${js}\nreturn ${renderName};`
-        );
+      // Extracted so its early exits skip hydration ONLY. A section can legitimately
+      // have no compiled component — a whole-page Claude design is static HTML whose
+      // interactivity comes from the design's own site.js — and it still needs its
+      // overrides applied and its form slots mounted below. Bailing out of the whole
+      // callback here, as this used to, dropped both without a trace.
+      const hydrateComponent = () => {
+        if (!js || !renderName) return;
+        try {
+          // Re-evaluate the pre-compiled JS in the same scope as the server.
+          // React hooks are passed as scope args so they resolve correctly.
+          const factory = new Function(
+            "React",
+            "useState",
+            "useEffect",
+            "useRef",
+            "useMemo",
+            "useCallback",
+            "useId",
+            "useContext",
+            "useReducer",
+            "useLayoutEffect",
+            `"use strict";\n${js}\nreturn ${renderName};`
+          );
 
-        const Component = factory(
-          React,
-          React.useState,
-          React.useEffect,
-          React.useRef,
-          React.useMemo,
-          React.useCallback,
-          React.useId,
-          React.useContext,
-          React.useReducer,
-          React.useLayoutEffect,
-        ) as React.ComponentType<{
-          tokens: typeof tokens;
-          data: Record<string, unknown>;
-          variables: Record<string, string>;
-        }>;
+          const Component = factory(
+            React,
+            React.useState,
+            React.useEffect,
+            React.useRef,
+            React.useMemo,
+            React.useCallback,
+            React.useId,
+            React.useContext,
+            React.useReducer,
+            React.useLayoutEffect,
+          ) as React.ComponentType<{
+            tokens: typeof tokens;
+            data: Record<string, unknown>;
+            variables: Record<string, string>;
+          }>;
 
-        if (typeof Component !== "function") return;
+          if (typeof Component !== "function") return;
 
-        // Mirror SSR's pre-interpolation so React's hydrated tree matches
-        // the HTML the server emitted (no token-revert flash).
-        const interpolatedData = interpolateData(data, variables);
-        hydrateRoot(
-          container,
-          React.createElement(Component, { tokens, data: interpolatedData, variables })
-        );
-      } catch (err) {
-        console.warn(
-          `[LibrarySectionHydrator] Hydration failed for section ${instanceId}:`,
-          err
-        );
-      }
+          // Mirror SSR's pre-interpolation so React's hydrated tree matches
+          // the HTML the server emitted (no token-revert flash).
+          const interpolatedData = interpolateData(data, variables);
+          hydrateRoot(
+            container,
+            React.createElement(Component, { tokens, data: interpolatedData, variables })
+          );
+        } catch (err) {
+          console.warn(
+            `[LibrarySectionHydrator] Hydration failed for section ${instanceId}:`,
+            err
+          );
+        }
+      };
+      hydrateComponent();
 
       // Mount FormBlockSection into any `<div data-form-slot />` markers
       // declared by the section code. The form_id is read from the section

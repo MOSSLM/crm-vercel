@@ -10,6 +10,7 @@
 import React from "react";
 import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
+import { renderRawSection, unwrapRawHtml } from "@/lib/site-builder/render-raw-section";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
@@ -71,22 +72,36 @@ export async function LibrarySectionInline({
   // renders the resolved text directly (matches the iframe behaviour).
   const interpolatedData = interpolateData(content, variables);
 
-  try {
-    const compiled = await compileSection(code);
-    compiledJs = compiled.js;
-    renderName = compiled.renderName;
+  // A whole-page Claude design is a constant HTML string plus {{ token }}
+  // substitution — see render-raw-section.ts. Compiling that with Babel and
+  // round-tripping it through renderToString just to get the string back costs
+  // a few hundred ms per request on a ~200 KB source, with a cache that is cold
+  // on every new serverless instance. `unwrapRawHtml` returns null for anything
+  // that isn't exactly that shape, so everything else compiles as before.
+  const rawHtml = unwrapRawHtml(code);
+  if (rawHtml !== null) {
+    html = renderRawSection(rawHtml, variables);
+    // No compiled component, so nothing to hydrate: the design's interactivity
+    // comes from its own site.js, injected by DynamicPageRenderer. The client
+    // still receives the overrides and form slots — see LibrarySectionHydrator.
+  } else {
+    try {
+      const compiled = await compileSection(code);
+      compiledJs = compiled.js;
+      renderName = compiled.renderName;
 
-    const result = renderSectionToHTML({
-      js: compiledJs,
-      renderName,
-      data: interpolatedData,
-      variables,
-      styleGuide,
-    });
-    html = result.html;
-    errorMsg = result.error;
-  } catch (err) {
-    errorMsg = err instanceof Error ? err.message : String(err);
+      const result = renderSectionToHTML({
+        js: compiledJs,
+        renderName,
+        data: interpolatedData,
+        variables,
+        styleGuide,
+      });
+      html = result.html;
+      errorMsg = result.error;
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
   }
 
   // Apply DOM-path overrides server-side so the deployed HTML reflects user
@@ -150,33 +165,42 @@ export async function LibrarySectionInline({
   if (html.includes("data-stats")) {
     html = hydrateStats(html, variables?.["__stats"]);
   }
-  if (typeof console !== "undefined") {
-    console.info("[SB:ssr]", {
+  // One line per section per request, on every published page — noise in the
+  // platform logs, and billed there. Keep it for the cases worth knowing about:
+  // a render error, or overrides that resolved to no node (a design edit whose
+  // target disappeared, which is exactly what you want to find in the logs).
+  if (errorMsg || failed > 0) {
+    console.warn("[SB:ssr]", {
       instanceId,
       overrideCount: Object.keys(overrides).length,
       applied,
       failed,
-      hasError: !!errorMsg,
+      error: errorMsg,
     });
   }
 
-  const tokens = styleGuide
-    ? {
-        primary: styleGuide.colors.primary,
-        secondary: styleGuide.colors.secondary,
-        accent: styleGuide.colors.accent,
-        background: styleGuide.colors.background,
-        backgroundAlt: styleGuide.colors.backgroundAlt,
-        text: styleGuide.colors.text,
-        textMuted: styleGuide.colors.textMuted,
-        fontHeading: styleGuide.fonts.heading,
-        fontBody: styleGuide.fonts.body,
-        baseSize: styleGuide.fonts.baseSize,
-        primaryShades: generateColorShades(styleGuide.colors.primary),
-        secondaryShades: generateColorShades(styleGuide.colors.secondary),
-        accentShades: generateColorShades(styleGuide.colors.accent),
-      }
-    : {};
+  // `tokens` are style-guide props for the hydrated React component, and the
+  // three shade tables are computed. Without a component to hydrate they are
+  // dead weight in the payload, so they are only built when they'll be used.
+  const willHydrate = Boolean(compiledJs && renderName);
+  const tokens =
+    willHydrate && styleGuide
+      ? {
+          primary: styleGuide.colors.primary,
+          secondary: styleGuide.colors.secondary,
+          accent: styleGuide.colors.accent,
+          background: styleGuide.colors.background,
+          backgroundAlt: styleGuide.colors.backgroundAlt,
+          text: styleGuide.colors.text,
+          textMuted: styleGuide.colors.textMuted,
+          fontHeading: styleGuide.fonts.heading,
+          fontBody: styleGuide.fonts.body,
+          baseSize: styleGuide.fonts.baseSize,
+          primaryShades: generateColorShades(styleGuide.colors.primary),
+          secondaryShades: generateColorShades(styleGuide.colors.secondary),
+          accentShades: generateColorShades(styleGuide.colors.accent),
+        }
+      : {};
 
   const payload = safeJson({
     instanceId,
