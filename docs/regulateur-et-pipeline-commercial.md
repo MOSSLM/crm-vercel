@@ -238,6 +238,36 @@ Rien n'est décompté du plafond du jour : un envoi retenu n'est pas un envoi.
 La liste d'adresses se gère depuis **Opportunités › Mode test**
 (`TestModeDialog`), déjà en place.
 
+### Un prospect retenu est GELÉ, pas franchi
+
+C'est le point qui décide si la phase de test protège vraiment. Un envoi retenu
+faisait auparavant avancer l'inscription « pour qu'on voie le régulateur tourner
+de bout en bout » : le prospect perdait un email qui n'était jamais parti, et sa
+carte changeait de colonne dans le pipeline commercial sans qu'il se soit rien
+passé.
+
+Désormais le tri se fait **sur l'adresse, à l'entrée de la file**
+(`loadDueEnrollments`), avant que le moindre envoi ne soit préparé :
+
+- destinataire hors liste blanche → l'inscription part dans `testHeld`, n'entre
+  pas dans la file, n'occupe aucun créneau et n'avance pas. `hold_reason` passe
+  à `test_hold` et le régulateur la liste sous « Gelés par la phase de test » ;
+- destinataire de test → la séquence se déroule normalement, de bout en bout.
+  C'est ce qui permet encore de voir le régulateur tourner ;
+- `next_run_at` n'est **pas** repoussé. Couper la phase de test, ou ajouter
+  l'adresse à la liste, suffit : le tick suivant envoie, sans réveil manuel.
+
+Le journal reste écrit **une seule fois** par prospect et par étape : la
+première tentative prépare l'envoi et l'enregistre avec `blocked_reason`, les
+tours suivants ne préparent plus rien (`enrollment.hold_reason === 'test_hold'`).
+Sans ce garde, le régulateur repassant toutes les minutes remplirait
+`email_logs` d'une ligne par tick et par prospect.
+
+Le garde-fou existe à deux niveaux, et c'est voulu : le tri de file couvre le
+ticker, et le contrôle dans `processSequenceEnrollment` couvre les trois autres
+chemins qui exécutent une étape (lancement par un agent, reprise depuis le
+pipeline commercial, action « relancer »).
+
 ---
 
 ## 5. Migrations

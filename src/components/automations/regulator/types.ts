@@ -75,6 +75,8 @@ export interface RegulatorView {
   sentToday: number
   queue: RegulatorQueueRow[]
   missingEmail: RegulatorMissingEmailRow[]
+  /** Prospects gelés par la phase de test : rien envoyé, rien avancé. */
+  testHeld?: RegulatorMissingEmailRow[]
   sent: RegulatorSentRow[]
   sequences: RegulatorSequenceRow[]
   agents: RegulatorAgentRow[]

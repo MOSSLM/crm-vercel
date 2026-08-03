@@ -189,11 +189,11 @@ export function RegulatorPage() {
             <span className="t">Phase de test active</span>
             <span className="d">
               {view.testAddresses.length > 0
-                ? `Seules ${view.testAddresses.length} adresses reçoivent réellement. Tout autre destinataire est retenu et journalisé.`
-                : 'Aucune adresse autorisée : plus aucun email ne part.'}
+                ? `Seules ${view.testAddresses.length} adresses reçoivent. Les autres prospects sont gelés : rien ne part, et leur séquence n’avance pas.`
+                : 'Aucune adresse autorisée : plus aucun email ne part, toutes les séquences sont gelées.'}
             </span>
-            {view.blockedToday > 0 && (
-              <span className="pill warn">{view.blockedToday} retenus aujourd’hui</span>
+            {(view.testHeld?.length ?? 0) > 0 && (
+              <span className="pill warn">{view.testHeld?.length} prospects gelés</span>
             )}
             <button
               type="button"
@@ -383,6 +383,42 @@ export function RegulatorPage() {
               </div>
               <QueueRows rows={view.queue} now={now} tz={tz} paused={s.paused} />
             </div>
+
+            {/* Gelés par la phase de test. Sans cette liste, ces prospects
+                disparaîtraient de la file sans explication — et on croirait la
+                séquence cassée plutôt que volontairement retenue. */}
+            {(view.testHeld?.length ?? 0) > 0 && (
+              <div className="rg-card">
+                <CardHead
+                  icon="warning"
+                  title="Gelés par la phase de test"
+                  sub="Aucun email n’est parti pour eux et leur séquence n’a pas avancé : ils repartiront exactement là où ils en sont dès que vous couperez la phase de test."
+                  right={<span className="pill warn">{view.testHeld?.length}</span>}
+                />
+                <div className="rg-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {view.testHeld?.slice(0, 40).map((row) => (
+                    <div key={row.enrollmentId} className="rg-load">
+                      <span className="who" style={{ fontWeight: 600 }}>
+                        {row.companyName}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', minWidth: 0, flex: 1 }}>
+                        {row.contactName} · {row.sequenceName} · étape {row.step}
+                      </span>
+                      {row.entrepriseId != null && (
+                        <Link className="btn ghost xs" href={`/companies/${row.entrepriseId}`}>
+                          Fiche
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                  {(view.testHeld?.length ?? 0) > 40 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                      … et {(view.testHeld?.length ?? 0) - 40} autre{(view.testHeld?.length ?? 0) - 40 > 1 ? 's' : ''}.
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Hors file, mais bien réels : les prospects qu'aucune adresse ne
                 permet d'atteindre. Sans cette liste, la séquence semblerait
@@ -971,7 +1007,7 @@ function SettingsCard({
       >
         <ToggleRow
           label="Ne servir que les adresses de test"
-          desc="Tout autre destinataire est retenu et journalisé — la séquence avance quand même, pour qu’on voie le régulateur tourner sans qu’un email ne sorte."
+          desc="Tout autre prospect est gelé à son étape : aucun email ne part, la séquence n’avance pas et sa carte ne bouge pas dans le pipeline commercial. Vos opportunités de test, elles, se déroulent normalement."
           checked={s.testMode}
           disabled={!testGuardReady || saving}
           onChange={(v) =>

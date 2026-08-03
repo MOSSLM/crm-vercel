@@ -17,6 +17,7 @@ import {
   type QueueItem,
   type RegulatorSettings,
 } from './regulator'
+import { loadTestPhase, recipientAllowed } from '@/lib/email/test-guard'
 
 /** La table n'existe pas encore (migration non appliquée) → défauts. */
 const isMissingTable = (error: { code?: string; message?: string } | null | undefined): boolean => {
@@ -233,6 +234,14 @@ export interface QueueBuild {
    * l'email ou qu'on saute l'étape.
    */
   noEmail: DueEnrollment[]
+  /**
+   * Phase de test active, destinataire hors liste blanche. Comme `noEmail`, ces
+   * inscriptions n'entrent PAS dans la file : on ne prépare rien, donc l'étape
+   * ne se franchit pas et la carte du pipeline commercial ne bouge pas. Les
+   * écarter ici plutôt que d'échouer à l'envoi est la seule façon de garantir
+   * qu'un vrai prospect ne « consomme » pas sa séquence pendant qu'on teste.
+   */
+  testHeld: DueEnrollment[]
   /** Les autres (WhatsApp, appel, attente…) : traitées tout de suite, sans régulateur. */
   others: DueEnrollment[]
 }
@@ -297,7 +306,7 @@ export async function loadDueEnrollments(
     .limit(limit)
 
   const enrollments = (data ?? []) as SequenceEnrollment[]
-  if (enrollments.length === 0) return { emails: [], noEmail: [], others: [] }
+  if (enrollments.length === 0) return { emails: [], noEmail: [], testHeld: [], others: [] }
 
   const ids = [...new Set(enrollments.map((e) => e.automation_id))]
   const { data: autos } = await sb.from('automations').select('*').in('id', ids)
@@ -315,24 +324,31 @@ export async function loadDueEnrollments(
   }
 
   // Les emails sans destinataire sortent de la file AVANT toute planification.
-  if (emails.length === 0) return { emails, noEmail: [], others }
+  if (emails.length === 0) return { emails, noEmail: [], testHeld: [], others }
   const { byContact, byCompany } = await loadRecipientEmails(
     sb,
     emails.map((e) => e.enrollment.contact_id).filter((v): v is string => !!v),
     emails.map((e) => e.enrollment.entreprise_id).filter((v): v is number => v != null),
   )
+  // Phase de test : on trie sur l'ADRESSE, avant que quoi que ce soit ne soit
+  // préparé. Un envoi qui échouerait plus tard aurait déjà fait avancer
+  // l'inscription — c'est précisément ce qu'on veut éviter sur un vrai prospect.
+  const testPhase = await loadTestPhase(sb)
+
   const sendable: DueEnrollment[] = []
   const noEmail: DueEnrollment[] = []
+  const testHeld: DueEnrollment[] = []
   for (const entry of emails) {
     const { contact_id, entreprise_id } = entry.enrollment
     const address =
       (contact_id ? byContact.get(contact_id) : undefined) ??
       (entreprise_id != null ? byCompany.get(entreprise_id) : undefined) ??
       null
-    if (address) sendable.push(entry)
-    else noEmail.push(entry)
+    if (!address) noEmail.push(entry)
+    else if (!recipientAllowed(testPhase, address)) testHeld.push(entry)
+    else sendable.push(entry)
   }
-  return { emails: sendable, noEmail, others }
+  return { emails: sendable, noEmail, testHeld, others }
 }
 
 export interface QueueContext {

@@ -200,16 +200,42 @@ describe('processSequenceEnrollment', () => {
       );
     });
 
-    it('fait quand même avancer la séquence — on veut voir le régulateur tourner', async () => {
+    it('gèle l’inscription au lieu de la faire avancer', async () => {
+      // Le point qui compte pour un vrai prospect : rien n'est parti, donc rien
+      // ne doit être consommé. Avancer d'une étape lui ferait perdre un email
+      // pour de bon, et sa carte changerait de colonne dans le pipeline
+      // commercial sans qu'il se soit rien passé.
       wire(sequenceWith('email'), inTestPhase(['codingmos@gmail.com']));
 
       await processSequenceEnrollment(enrollment);
 
       const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
-      // Rien n'est sorti : pas de date de dernier envoi…
-      expect(updates[0]).toEqual({ send_at: null, hold_reason: null });
-      // …mais l'étape avance.
-      expect(updates[1]).toEqual(expect.objectContaining({ current_step: 1, status: 'finished' }));
+      expect(updates).toEqual([{ send_at: null, hold_reason: 'test_hold' }]);
+      expect(updates.some((u) => 'current_step' in u)).toBe(false);
+    });
+
+    it('ne re-journalise pas une inscription déjà gelée', async () => {
+      // Le régulateur repasse toutes les minutes : sans ce garde, le journal se
+      // remplirait d'une ligne par tick et par prospect.
+      wire(sequenceWith('email'), inTestPhase(['codingmos@gmail.com']));
+
+      await processSequenceEnrollment({ ...enrollment, hold_reason: 'test_hold' });
+
+      expect(tables.email_logs.captured.inserts).toHaveLength(0);
+      expect(tables.sequence_enrollments.captured.updates).toHaveLength(0);
+    });
+
+    it('repart tout seul dès que l’adresse entre dans la liste de test', async () => {
+      // Aucun réveil manuel : `next_run_at` n'a jamais été repoussé, donc le
+      // tick suivant envoie normalement.
+      wire(sequenceWith('email'), inTestPhase(['jean@test.fr']));
+      mockSend.mockResolvedValue({ data: { id: 're-ok' }, error: null });
+
+      await processSequenceEnrollment({ ...enrollment, hold_reason: 'test_hold' });
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+      expect(updates.some((u) => u.current_step === 1)).toBe(true);
     });
 
     it('laisse partir un email vers une adresse de test', async () => {
