@@ -1185,8 +1185,8 @@ function SequenceDialog({
                     <span>
                       {board.regulator.testMode ? (
                         <>
-                          <b>Phase de test active</b> — les emails seront retenus et journalisés, sauf vers les adresses
-                          de test.
+                          <b>Phase de test active</b> — sauf vers une adresse de test, rien ne part et la séquence
+                          reste gelée à son étape : ces prospects ne bougeront pas de colonne.
                         </>
                       ) : (
                         <>
@@ -1292,7 +1292,7 @@ function QueueDrawer({
                 Phase de test
               </span>
               <span className="v" style={{ color: 'inherit' }}>
-                seules les adresses de test reçoivent
+                seules les adresses de test reçoivent · les autres sont gelés
               </span>
             </div>
           )}

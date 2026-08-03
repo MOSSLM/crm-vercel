@@ -69,6 +69,8 @@ async function handle(req: Request): Promise<Response> {
     emailsQueued: 0,
     emailsBlocked: 0,
     emailsNoAddress: 0,
+    /** Retenus par la phase de test : rien préparé, rien avancé. */
+    emailsTestHeld: 0,
     errors: 0,
   }
 
@@ -140,7 +142,7 @@ async function handle(req: Request): Promise<Response> {
   // 3. Étapes de séquence dues
   const nowMs = Date.parse(now)
   const settings = await loadRegulatorSettings(sb)
-  const { emails, noEmail, others } = await loadDueEnrollments(sb, nowMs)
+  const { emails, noEmail, testHeld, others } = await loadDueEnrollments(sb, nowMs)
 
   // 3a. Les étapes non-email (WhatsApp, appel, LinkedIn, attente) ne passent pas
   //     par la file : elles créent une tâche ou avancent le pointeur tout de suite.
@@ -160,6 +162,28 @@ async function handle(req: Request): Promise<Response> {
     try {
       await holdForMissingEmail(sb, enrollment.id)
       result.emailsNoAddress++
+    } catch {
+      result.errors++
+    }
+  }
+
+  // 3a ter. Phase de test, destinataire hors liste blanche : on ne prépare rien
+  //         et l'inscription n'avance pas. `next_run_at` reste tel quel — dès
+  //         qu'on coupe la phase de test ou qu'on ajoute l'adresse à la liste,
+  //         le tick suivant envoie sans qu'on ait à réveiller quoi que ce soit.
+  for (const { enrollment } of testHeld) {
+    try {
+      if (enrollment.hold_reason === 'test_hold') {
+        // Déjà gelée : rien à préparer, rien à re-journaliser.
+        if (enrollment.send_at) {
+          await sb.from('sequence_enrollments').update({ send_at: null }).eq('id', enrollment.id)
+        }
+      } else {
+        // Premier passage : le moteur prépare l'envoi, le journalise avec son
+        // motif — on veut lire ce qui SERAIT parti — puis gèle l'inscription.
+        await processSequenceEnrollment(enrollment)
+      }
+      result.emailsTestHeld++
     } catch {
       result.errors++
     }

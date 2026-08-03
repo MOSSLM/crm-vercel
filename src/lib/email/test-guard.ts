@@ -89,6 +89,25 @@ export async function isTestPhaseActive(sb: SupabaseClient): Promise<boolean> {
   return (await loadState(sb)).testMode
 }
 
+/**
+ * État de la phase de test, pour les appelants qui doivent trier une LISTE de
+ * destinataires d'un coup — la file du régulateur, notamment.
+ *
+ * Le régulateur ne peut pas se contenter de tenter puis d'échouer : un envoi
+ * retenu doit être écarté de la file AVANT d'être préparé, sinon l'inscription
+ * franchit l'étape et le prospect « passe » un email qui n'est jamais parti.
+ */
+export async function loadTestPhase(sb: SupabaseClient): Promise<{ active: boolean; allowlist: Set<string> }> {
+  const state = await loadState(sb)
+  return { active: state.testMode, allowlist: state.allowlist }
+}
+
+/** Ce destinataire recevrait-il, dans l'état courant du garde-fou ? */
+export const recipientAllowed = (
+  phase: { active: boolean; allowlist: Set<string> },
+  to: string | null | undefined,
+): boolean => !phase.active || (!!to && phase.allowlist.has(normalize(to)))
+
 export const BLOCK_LABEL: Record<BlockReason, string> = {
   mode_test: 'Phase de test — destinataire hors liste blanche',
 }

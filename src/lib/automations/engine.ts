@@ -698,6 +698,15 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       await holdForMissingEmail(sb, enrollment.id)
       return
     }
+
+    // Phase de test : la première tentative prépare l'envoi et le journalise —
+    // on veut pouvoir lire ce qui SERAIT parti — puis gèle l'inscription. Aux
+    // tours suivants on ne prépare plus rien : elle est déjà retenue, et la
+    // re-journaliser à chaque tick noierait le journal.
+    if (enrollment.hold_reason === 'test_hold' && !(await allowRecipient(sb, ent.contactEmail)).allowed) {
+      return
+    }
+
     let sentAt: string | null = null
     if (ent.contactEmail && step.template) {
       const { data: tpl } = await sb.from('email_templates').select('subject,body').eq('id', step.template).maybeSingle()
@@ -717,11 +726,14 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
           attachmentUrls:
             step.attachAudit && ent.auditUrl ? [{ filename: 'audit.pdf', url: ent.auditUrl }] : undefined,
         })
-        // Un envoi retenu par la phase de test ne fige PAS l'inscription :
-        // l'étape avance comme si l'email était parti, pour qu'on voie la
-        // séquence et le régulateur tourner de bout en bout. Seul
-        // `last_email_at` reste vide — rien n'est réellement sorti, donc rien
-        // ne doit peser sur l'espacement ni sur le plafond du jour.
+        // Retenu par la phase de test : l'inscription est GELÉE, pas franchie.
+        // Sur un vrai prospect, avancer d'une étape sans avoir rien envoyé lui
+        // ferait perdre un email pour de bon — et sa carte changerait de
+        // colonne dans le pipeline commercial sans qu'il se soit rien passé.
+        if (result.blocked) {
+          await holdForTestPhase(sb, enrollment.id)
+          return
+        }
         if (result.ok) sentAt = new Date().toISOString()
       }
     }
@@ -788,6 +800,21 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
  * finirait par affamer les inscriptions réellement envoyables.
  */
 export const NO_EMAIL_RETRY_MS = 2 * 3_600_000
+
+/**
+ * Gèle l'étape email pendant la phase de test, sans faire avancer l'inscription.
+ *
+ * `next_run_at` n'est PAS repoussé : l'inscription reste due, donc visible dans
+ * le régulateur et dans le pipeline commercial avec son motif. Couper la phase
+ * de test — ou ajouter l'adresse à la liste — la fait repartir au tick suivant,
+ * sans réveil manuel.
+ */
+export async function holdForTestPhase(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({ send_at: null, hold_reason: 'test_hold' })
+    .eq('id', enrollmentId)
+}
 
 /** Gèle l'étape email d'une inscription faute de destinataire, sans la faire avancer. */
 export async function holdForMissingEmail(sb: SupabaseClient, enrollmentId: string): Promise<void> {

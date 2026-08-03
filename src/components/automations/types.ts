@@ -153,6 +153,12 @@ export interface SequenceEnrollment {
   current_step: number
   status: EnrollmentStatus
   next_run_at: string | null
+  /** Heure retenue par le régulateur pour l'envoi en cours. */
+  send_at?: string | null
+  /** Pourquoi l'inscription n'avance pas (cf. `HoldReason`). */
+  hold_reason?: string | null
+  /** Dernier email réellement sorti — vide si l'envoi a été retenu. */
+  last_email_at?: string | null
   vars: Record<string, unknown>
   created_by: string | null
   entered_at: string

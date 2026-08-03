@@ -106,6 +106,12 @@ export interface RegulatorView {
   queue: RegulatorQueueRow[]
   /** Prospects arrêtés à l'étape email faute d'adresse — hors file, mais à traiter. */
   missingEmail: RegulatorMissingEmailRow[]
+  /**
+   * Prospects retenus par la phase de test : leur séquence est gelée à l'étape
+   * courante, rien n'a été envoyé et rien n'a avancé. Ils repartent seuls dès
+   * qu'on coupe la phase de test.
+   */
+  testHeld: RegulatorMissingEmailRow[]
   sent: RegulatorSentRow[]
   sequences: RegulatorSequenceRow[]
   agents: RegulatorAgentRow[]
@@ -139,19 +145,19 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
   const history = await loadSendHistory(sb, settings, nowMs)
   const ctx = { settings, history, now: nowMs }
 
-  const { emails, noEmail } = await loadDueEnrollments(sb, nowMs, 400)
+  const { emails, noEmail, testHeld: testHeldDue } = await loadDueEnrollments(sb, nowMs, 400)
 
-  // Les inscriptions déjà marquées « sans email » par le ticker : elles ne sont
-  // plus « dues » (leur relecture est reportée) mais restent à traiter, donc
-  // elles doivent apparaître dans l'alerte. On les fusionne avec celles que ce
-  // tour vient de détecter.
+  // Les inscriptions déjà marquées retenues par le ticker : elles ne sont plus
+  // forcément « dues » mais restent à traiter, donc elles doivent apparaître
+  // dans l'alerte. On les fusionne avec celles que ce tour vient de détecter.
   const { data: heldRows } = await sb
     .from('sequence_enrollments')
-    .select('id, automation_id, contact_id, entreprise_id, opportunite_id, current_step')
+    .select('id, automation_id, contact_id, entreprise_id, opportunite_id, current_step, hold_reason')
     .eq('status', 'active')
-    .eq('hold_reason', 'no_email')
+    .in('hold_reason', ['no_email', 'test_hold'])
     .limit(500)
 
+  type HeldReasonKey = 'no_email' | 'test_hold'
   type HeldRow = {
     id: string
     automation_id: string
@@ -159,19 +165,27 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     entreprise_id: number | null
     opportunite_id: string | null
     current_step: number
+    hold_reason: HeldReasonKey
   }
   const held = new Map<string, HeldRow>()
   for (const row of (heldRows ?? []) as HeldRow[]) held.set(row.id, row)
-  for (const entry of noEmail) {
-    held.set(entry.enrollment.id, {
-      id: entry.enrollment.id,
-      automation_id: entry.enrollment.automation_id,
-      contact_id: entry.enrollment.contact_id,
-      entreprise_id: entry.enrollment.entreprise_id,
-      opportunite_id: entry.enrollment.opportunite_id,
-      current_step: entry.enrollment.current_step,
-    })
+  const remember = (list: typeof noEmail, reason: HeldReasonKey) => {
+    for (const entry of list) {
+      held.set(entry.enrollment.id, {
+        id: entry.enrollment.id,
+        automation_id: entry.enrollment.automation_id,
+        contact_id: entry.enrollment.contact_id,
+        entreprise_id: entry.enrollment.entreprise_id,
+        opportunite_id: entry.enrollment.opportunite_id,
+        current_step: entry.enrollment.current_step,
+        hold_reason: reason,
+      })
+    }
   }
+  // Le tri du tour courant fait foi : une inscription débloquée depuis la
+  // dernière écriture ne doit pas rester dans l'ancienne catégorie.
+  remember(noEmail, 'no_email')
+  remember(testHeldDue, 'test_hold')
   const heldList = [...held.values()]
 
   // Décoration : nom du contact, entreprise, propriétaire. Deux requêtes en lot
@@ -245,8 +259,8 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
   const sequencesRaw = (seqRows ?? []) as Automation[]
   const automationById = new Map(sequencesRaw.map((a) => [a.id, a]))
 
-  // ── Sans email ────────────────────────────────────────────────────────────
-  let missingEmail: RegulatorMissingEmailRow[] = heldList.map((row) => {
+  // ── Retenus hors file : sans email, ou hors liste de la phase de test ─────
+  const decorateHeld = (row: HeldRow): RegulatorMissingEmailRow => {
     const automation = automationById.get(row.automation_id)
     const def = (automation?.definition as SequenceDefinition) || { steps: [] }
     const steps = Array.isArray(def.steps) ? def.steps : []
@@ -265,9 +279,20 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
       step: row.current_step + 1,
       stepLabel: step?.label || step?.template || `Étape ${row.current_step + 1}`,
     }
-  })
-  if (opts.ownerId) missingEmail = missingEmail.filter((m) => m.ownerId === opts.ownerId)
-  missingEmail.sort((a, b) => a.companyName.localeCompare(b.companyName))
+  }
+  const byCompany = (a: RegulatorMissingEmailRow, b: RegulatorMissingEmailRow) =>
+    a.companyName.localeCompare(b.companyName)
+  const ownedByCaller = (row: HeldRow) =>
+    !opts.ownerId || (row.entreprise_id != null ? entById.get(row.entreprise_id)?.owner_id : null) === opts.ownerId
+
+  const missingEmail = heldList
+    .filter((row) => row.hold_reason === 'no_email' && ownedByCaller(row))
+    .map(decorateHeld)
+    .sort(byCompany)
+  const testHeld = heldList
+    .filter((row) => row.hold_reason === 'test_hold' && ownedByCaller(row))
+    .map(decorateHeld)
+    .sort(byCompany)
 
   const { data: activeCounts } = await sb
     .from('sequence_enrollments')
@@ -387,6 +412,7 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     sentToday: history.sentToday,
     queue,
     missingEmail,
+    testHeld,
     sent,
     sequences,
     agents,

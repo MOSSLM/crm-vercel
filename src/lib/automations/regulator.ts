@@ -85,6 +85,7 @@ export type HoldReason =
   | 'global_pause' // le régulateur est en pause
   | 'one_per_day' // le contact a déjà reçu un email aujourd'hui
   | 'no_email' // aucune adresse connue — l'envoi n'entre même pas dans la file
+  | 'test_hold' // phase de test : le destinataire n'est pas une adresse de test
 
 /** Une entrée de la file, telle qu'elle sort de la base. */
 export interface QueueItem {
@@ -524,6 +525,8 @@ export function holdReasonLabel(reason: HoldReason | null, at?: number | null, t
       return 'déjà un email aujourd’hui'
     case 'no_email':
       return 'aucun email connu'
+    case 'test_hold':
+      return 'phase de test — retenu, la séquence n’avance pas'
     default:
       return ''
   }
