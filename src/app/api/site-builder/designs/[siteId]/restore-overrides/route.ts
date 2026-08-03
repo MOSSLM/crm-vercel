@@ -5,6 +5,7 @@ import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-desig
 import { remapOverrides } from "@/lib/site-builder/claude-design/remap-overrides";
 import { pushBackup, readBackups, previousTokenHtml, type OverrideBackup } from "@/lib/site-builder/claude-design/override-backups";
 import { assetPathMap } from "@/lib/site-builder/claude-design/asset-path-map";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -182,6 +183,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     if (updErr) return jsonError(updErr.message, 500);
   }
 
+  if (!dryRun) invalidateSiteCache(siteId);
   return json({
     ok: true,
     dryRun,

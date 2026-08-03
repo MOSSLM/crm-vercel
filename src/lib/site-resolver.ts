@@ -1,4 +1,6 @@
-import { createClient } from "@supabase/supabase-js";
+import { cache } from "react";
+import { unstable_cache } from "next/cache";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus, SitemapPage, SeoMeta } from "@/types";
 import {
   deriveLayoutFieldsFromVariables,
@@ -7,6 +9,7 @@ import {
 } from "@/lib/site-builder/resolve-variables";
 import { SAMPLE_VARIABLES } from "@/lib/site-builder/claude-design/sample-variables";
 import { selectDroppingMissingColumns } from "@/lib/schema-drift";
+import { siteCacheTag, SITE_CACHE_REVALIDATE_SECONDS } from "@/lib/site-builder/site-cache";
 
 export type { ReviewItem };
 
@@ -47,11 +50,18 @@ export function supabaseProjectRef(): string | null {
   return /^https?:\/\/([^.]+)\./.exec(url)?.[1] ?? null;
 }
 
+// One client per process rather than one per resolve. Every page render calls a
+// resolver at least once, and a fresh client re-creates its own fetch plumbing
+// for no benefit — the credentials never change within a process.
+let cachedServiceClient: SupabaseClient | null = null;
+
 function getServiceClient() {
+  if (cachedServiceClient) return cachedServiceClient;
   const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(url, key, { auth: { persistSession: false } });
+  cachedServiceClient = createClient(url, key, { auth: { persistSession: false } });
+  return cachedServiceClient;
 }
 
 /**
@@ -156,8 +166,19 @@ export interface ResolvedSite {
   } | null;
 }
 
-// Resolve a site by subdomain or custom domain
-export async function resolveSite(
+/**
+ * Resolve a site by subdomain or custom domain.
+ *
+ * Wrapped in React's `cache()` because a single published page render calls
+ * this three times — from `generateMetadata`, from the site layout, and from
+ * SitePageView — each paying two round trips plus a parse of the published
+ * snapshot (instances + ~75 KB of shared assets). Within one request the three
+ * calls now share one result; outside a request scope `cache()` is a no-op, so
+ * API routes keep their existing behaviour.
+ */
+export const resolveSite = cache(resolveSiteUncached);
+
+async function resolveSiteUncached(
   subdomain: string,
   host?: string
 ): Promise<ResolvedSite | null> {
@@ -319,14 +340,42 @@ export type DraftSiteResult =
   | { ok: true; site: ResolvedSite }
   | { ok: false; kind: DraftFailureKind; reason: string };
 
-export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult> {
+/**
+ * Cached entry point. The preview route stays `force-dynamic` — only the data
+ * is cached, not the rendered route — so the paywall bar and the diagnosis page
+ * keep behaving as before. Invalidated by `invalidateSiteCache(siteId)` from
+ * every write route, with a short `revalidate` as a backstop; see site-cache.ts.
+ *
+ * Errors are cached too, deliberately: a missing site is a stable answer, and
+ * the 30 s window means a freshly-created site appears almost immediately.
+ */
+export function resolveDraftSite(siteId: string): Promise<DraftSiteResult> {
+  return unstable_cache(
+    () => resolveDraftSiteUncached(siteId),
+    ["resolveDraftSite", siteId],
+    { tags: [siteCacheTag(siteId)], revalidate: SITE_CACHE_REVALIDATE_SECONDS },
+  )();
+}
+
+async function resolveDraftSiteUncached(siteId: string): Promise<DraftSiteResult> {
   const supabase = getServiceClient();
 
-  const { data: siteRow, error, dropped } = await selectDroppingMissingColumns<SiteRowLike>(
-    DRAFT_SITE_COLUMNS,
-    (select) =>
+  // Both reads are keyed on siteId alone, so neither needs the other's result.
+  // Issued together they cost one round trip instead of two — on the preview
+  // path, where nothing is cached, that latency is paid on every single hit.
+  const [siteResult, instancesResult] = await Promise.all([
+    selectDroppingMissingColumns<SiteRowLike>(DRAFT_SITE_COLUMNS, (select) =>
       supabase.from("sites").select(select).eq("id", siteId).single(),
-  );
+    ),
+    // Live section instances (no published snapshot) + their defs for native sections.
+    supabase
+      .from("site_section_instances")
+      .select("*, section_def:site_sections(*)")
+      .eq("site_id", siteId)
+      .order("sort_order"),
+  ]);
+
+  const { data: siteRow, error, dropped } = siteResult;
   warnDroppedColumns(`resolveDraftSite(${siteId})`, dropped);
   // Never fail silently: this used to become a bare 404 on the preview
   // subdomain. Same lesson as api/site-builder/claude/[siteId]/pages/route.ts.
@@ -340,12 +389,7 @@ export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult>
     return { ok: false, kind: queryFailed ? "query-failed" : "site-missing", reason };
   }
 
-  // Live section instances (no published snapshot) + their defs for native sections.
-  const { data: instanceRows, error: instancesError } = await supabase
-    .from("site_section_instances")
-    .select("*, section_def:site_sections(*)")
-    .eq("site_id", siteId)
-    .order("sort_order");
+  const { data: instanceRows, error: instancesError } = instancesResult;
   if (instancesError) {
     // Swallowed, this would degrade to an empty page set and a 404 blaming the
     // design ("no sections") for what is really a failed query.

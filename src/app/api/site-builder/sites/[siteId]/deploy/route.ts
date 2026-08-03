@@ -5,6 +5,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { publishSite } from "@/lib/site-builder/publish-site";
 import { deriveSubdomainLabel, uniqueSubdomain } from "@/lib/site-builder/derive-subdomain";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ params }) => {
   const pub = await publishSite(supabase, siteId, { subdomain: label });
   if (!pub.ok) return jsonError(pub.error ?? "Publication échouée", pub.status ?? 500);
   try { revalidatePath(`/site/${label}`, "layout"); } catch { /* best effort */ }
+  invalidateSiteCache(siteId);
 
   return json({ ok: true, subdomain: label, url: `https://${label}.${SITE_DOMAIN}` });
 });

@@ -11,6 +11,7 @@ import {
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { coerceThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
+import { resolveFontLinkTags } from "@/lib/site-builder/claude-design/font-links";
 import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime";
 import { DOM_PATH_ATTR, stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
@@ -499,9 +500,16 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     const htmlStyle = tweaksInlineStyle(tweaks, sets).replace(/'/g, "&#39;");
     const dataAttrs = tweaksDataAttrs(tweaks, sets);
     const attrStr = Object.entries(dataAttrs).map(([k, v]) => `${k}="${v}"`).join(" ");
-    const fonts = [tweaksFontLinkHref(tweaks, sets), ...fontLinks]
-      .filter(Boolean)
-      .map((h) => `<link rel="stylesheet" href="${h}">`).join("");
+    // Same `rel` recovery as the deployed page (see font-links.ts) so the editor
+    // preview doesn't fire the two bare-origin 404s the public site used to.
+    const tweakFontHref = tweaksFontLinkHref(tweaks, sets);
+    const fonts = [
+      ...(tweakFontHref ? [`<link rel="stylesheet" href="${tweakFontHref}">`] : []),
+      ...resolveFontLinkTags(fontLinks).map(
+        (t) =>
+          `<link rel="${t.rel}" href="${t.href}"${t.crossOrigin ? ` crossorigin="${t.crossOrigin}"` : ""}>`,
+      ),
+    ].join("");
     // Entreprises tab: resolve with the company's real variables + filter the
     // service-tag regions it doesn't have. Otherwise use sample values (all shown).
     let body = resolveVars(html, variables ?? SAMPLE_VARIABLES);

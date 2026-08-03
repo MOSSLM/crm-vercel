@@ -3,6 +3,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { publishSite } from "@/lib/site-builder/publish-site";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     try { revalidatePath(`/site/${sub}`, "layout"); } catch {}
   }
 
+  invalidateSiteCache(siteId);
   return json({ ok: true, site: result.site });
 });
 
@@ -46,5 +48,6 @@ export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
     try { revalidatePath(`/site/${publishedSub}`, "layout"); } catch {}
   }
 
+  invalidateSiteCache(siteId);
   return json({ ok: true, site: data });
 });

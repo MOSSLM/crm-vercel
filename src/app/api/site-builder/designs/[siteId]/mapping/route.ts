@@ -6,6 +6,7 @@ import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-desig
 import { applyBracketTokens, type BracketMappingEntry } from "@/lib/site-builder/claude-design/bracket-tokens";
 import { addImageLoadingHints } from "@/lib/site-builder/claude-design/add-image-loading-hints";
 import { nextExampleData } from "@/lib/site-builder/claude-design/override-backups";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -95,5 +96,6 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     if (updErr) return jsonError(updErr.message, 500);
   }
 
+  invalidateSiteCache(params.siteId);
   return json({ ok: true, sections: (sections ?? []).length, replaced: totalApplied });
 });

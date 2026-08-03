@@ -18,7 +18,7 @@ import { parseImageSet, pickCandidate } from "@/lib/site-builder/claude-design/i
 import { DOM_PATH_ATTR } from "@/lib/site-builder/claude-design/dom-paths";
 import { FormBlockSection } from "./FormBlockSection";
 
-interface OverrideEntry {
+export interface OverrideEntry {
   kind:
     | "text"
     | "rich_text"
@@ -121,7 +121,74 @@ function findSectionRoot(container: Element): Element | null {
   return child;
 }
 
-function applyOverridesToContainer(
+/**
+ * Write a style property only when it would actually change.
+ *
+ * `setProperty` re-serialises the `style` attribute whether or not the value
+ * differs, and that counts as an attribute mutation. Since these writes happen
+ * inside a MutationObserver callback, an unconditional write is enough to keep
+ * the observer re-firing forever — and every restyle restarts (then cancels)
+ * any CSS transition on the element. A profile of a live demo page caught this:
+ * 676 setTimeout callbacks and 1 846 `transitioncancel` events on a page that
+ * should have been idle.
+ */
+function setStyleIfChanged(el: HTMLElement, prop: string, value: string, priority = ""): void {
+  if (
+    el.style.getPropertyValue(prop) === normalizeStyleValue(prop, value) &&
+    el.style.getPropertyPriority(prop) === priority
+  ) {
+    return;
+  }
+  el.style.setProperty(prop, value, priority);
+}
+
+/**
+ * The value CSSOM reads back is the engine's serialisation, not the string we
+ * wrote: `url("x")` comes back as `url(x)`, `#fff` as `rgb(255, 255, 255)`.
+ * Comparing raw input against a serialised value therefore never matches, and
+ * every "unchanged" write goes through anyway. Round-tripping through a
+ * detached scratch declaration borrows the engine's own serialiser — and the
+ * scratch element is observed by nobody, so writing to it is free.
+ */
+let scratchStyle: CSSStyleDeclaration | null = null;
+
+function normalizeStyleValue(prop: string, value: string): string {
+  if (typeof document === "undefined") return value;
+  scratchStyle ??= document.createElement("div").style;
+  scratchStyle.setProperty(prop, value);
+  const normalized = scratchStyle.getPropertyValue(prop);
+  scratchStyle.removeProperty(prop);
+  // An empty read-back means the engine rejected the declaration; fall back to
+  // the raw value so a genuinely invalid override still gets written once.
+  return normalized || value;
+}
+
+/** Same contract as `setStyleIfChanged`, for attributes. */
+function setAttrIfChanged(el: Element, name: string, value: string): void {
+  if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+}
+
+/** Background sizing applied alongside every image-ish override. */
+function applyCoverBackground(el: HTMLElement): void {
+  setStyleIfChanged(el, "background-size", "cover");
+  setStyleIfChanged(el, "background-position", "center");
+  setStyleIfChanged(el, "background-repeat", "no-repeat");
+  // Claude `.ph` placeholder → mark filled + hide the waiting label.
+  if (/(^|\s)ph(\s|$)/.test(el.className)) {
+    // `classList.add` still rewrites the class attribute when the token is
+    // already present, which counts as a mutation — check first.
+    if (!el.classList.contains("has-img")) el.classList.add("has-img");
+    const label = el.querySelector<HTMLElement>(".ph-label");
+    if (label) setStyleIfChanged(label, "display", "none");
+  }
+}
+
+/**
+ * Exported for its regression test: re-applying the same overrides must not
+ * touch the DOM. That property is what keeps the observer above from feeding
+ * itself, so it is asserted rather than assumed.
+ */
+export function applyOverridesToContainer(
   container: Element,
   overrides: Record<string, OverrideEntry>,
   variables: Record<string, string>,
@@ -203,18 +270,8 @@ function applyOverridesToContainer(
         case "bg_image": {
           const bg = value ? `url("${value.replace(/"/g, '\\"')}")` : "none";
           if (el instanceof HTMLElement) {
-            if (el.style.backgroundImage !== bg) el.style.backgroundImage = bg;
-            if (value) {
-              el.style.backgroundSize = "cover";
-              el.style.backgroundPosition = "center";
-              el.style.backgroundRepeat = "no-repeat";
-              // Claude `.ph` placeholder → mark filled + hide the waiting label.
-              if (/(^|\s)ph(\s|$)/.test(el.className)) {
-                el.classList.add("has-img");
-                const label = el.querySelector<HTMLElement>(".ph-label");
-                if (label) label.style.display = "none";
-              }
-            }
+            setStyleIfChanged(el, "background-image", bg);
+            if (value) applyCoverBackground(el);
           }
           break;
         }
@@ -225,18 +282,10 @@ function applyOverridesToContainer(
           const url = chosen?.url;
           if (url) {
             if (el instanceof HTMLImageElement) {
-              if (el.getAttribute("src") !== url) el.setAttribute("src", url);
+              setAttrIfChanged(el, "src", url);
             } else if (el instanceof HTMLElement) {
-              const bg = `url("${url.replace(/"/g, '\\"')}")`;
-              if (el.style.backgroundImage !== bg) el.style.backgroundImage = bg;
-              el.style.backgroundSize = "cover";
-              el.style.backgroundPosition = "center";
-              el.style.backgroundRepeat = "no-repeat";
-              if (/(^|\s)ph(\s|$)/.test(el.className)) {
-                el.classList.add("has-img");
-                const label = el.querySelector<HTMLElement>(".ph-label");
-                if (label) label.style.display = "none";
-              }
+              setStyleIfChanged(el, "background-image", `url("${url.replace(/"/g, '\\"')}")`);
+              applyCoverBackground(el);
             }
           }
           break;
@@ -246,7 +295,7 @@ function applyOverridesToContainer(
           if (el.getAttribute("href") !== value) el.setAttribute("href", value);
           break;
         case "attr":
-          if (entry.meta?.attrName) el.setAttribute(entry.meta.attrName, value);
+          if (entry.meta?.attrName) setAttrIfChanged(el, entry.meta.attrName, value);
           break;
         case "style": {
           const styleMap = entry.meta?.style;
@@ -254,19 +303,20 @@ function applyOverridesToContainer(
           const target = unwrapMobilePicture(el);
           if (!(target instanceof HTMLElement)) break;
           for (const [k, v] of Object.entries(styleMap)) {
+            const prop = camelToKebab(k);
             if (typeof v !== "string" || !v) {
-              target.style.removeProperty(camelToKebab(k));
+              if (target.style.getPropertyValue(prop)) target.style.removeProperty(prop);
               continue;
             }
             // "important" so per-element overrides win over the style-guide
             // CTA rules (.cta-primary/.cta-secondary use !important) and
             // hardcoded Tailwind utilities.
-            target.style.setProperty(camelToKebab(k), v, "important");
+            setStyleIfChanged(target, prop, v, "important");
           }
           break;
         }
         case "remove":
-          if (el instanceof HTMLElement) el.style.setProperty("display", "none", "important");
+          if (el instanceof HTMLElement) setStyleIfChanged(el, "display", "none", "important");
           break;
       }
     } catch {
@@ -274,6 +324,13 @@ function applyOverridesToContainer(
     }
   }
 }
+
+/** Only the tree shape matters — see the comment at the observer's call site. */
+const OVERRIDE_OBSERVE_OPTIONS: MutationObserverInit = { childList: true, subtree: true };
+
+/** Safety valve: a design whose own JS keeps rewriting the DOM must not make
+ *  the override re-application loop indefinitely. */
+const MAX_OVERRIDE_REAPPLIES = 20;
 
 export function LibrarySectionHydrator() {
   useEffect(() => {
@@ -297,7 +354,6 @@ export function LibrarySectionHydrator() {
       }
 
       const { js, renderName, data, variables, tokens } = payload;
-      if (!js || !renderName) return;
 
       const container = document.querySelector<HTMLElement>(`[data-lsi="${instanceId}"]`);
       if (!container) return;
@@ -305,55 +361,64 @@ export function LibrarySectionHydrator() {
       const overrides = (data?.__overrides as Record<string, OverrideEntry> | undefined) ?? {};
       const hasOverrides = Object.keys(overrides).length > 0;
 
-      try {
-        // Re-evaluate the pre-compiled JS in the same scope as the server.
-        // React hooks are passed as scope args so they resolve correctly.
-        const factory = new Function(
-          "React",
-          "useState",
-          "useEffect",
-          "useRef",
-          "useMemo",
-          "useCallback",
-          "useId",
-          "useContext",
-          "useReducer",
-          "useLayoutEffect",
-          `"use strict";\n${js}\nreturn ${renderName};`
-        );
+      // Extracted so its early exits skip hydration ONLY. A section can legitimately
+      // have no compiled component — a whole-page Claude design is static HTML whose
+      // interactivity comes from the design's own site.js — and it still needs its
+      // overrides applied and its form slots mounted below. Bailing out of the whole
+      // callback here, as this used to, dropped both without a trace.
+      const hydrateComponent = () => {
+        if (!js || !renderName) return;
+        try {
+          // Re-evaluate the pre-compiled JS in the same scope as the server.
+          // React hooks are passed as scope args so they resolve correctly.
+          const factory = new Function(
+            "React",
+            "useState",
+            "useEffect",
+            "useRef",
+            "useMemo",
+            "useCallback",
+            "useId",
+            "useContext",
+            "useReducer",
+            "useLayoutEffect",
+            `"use strict";\n${js}\nreturn ${renderName};`
+          );
 
-        const Component = factory(
-          React,
-          React.useState,
-          React.useEffect,
-          React.useRef,
-          React.useMemo,
-          React.useCallback,
-          React.useId,
-          React.useContext,
-          React.useReducer,
-          React.useLayoutEffect,
-        ) as React.ComponentType<{
-          tokens: typeof tokens;
-          data: Record<string, unknown>;
-          variables: Record<string, string>;
-        }>;
+          const Component = factory(
+            React,
+            React.useState,
+            React.useEffect,
+            React.useRef,
+            React.useMemo,
+            React.useCallback,
+            React.useId,
+            React.useContext,
+            React.useReducer,
+            React.useLayoutEffect,
+          ) as React.ComponentType<{
+            tokens: typeof tokens;
+            data: Record<string, unknown>;
+            variables: Record<string, string>;
+          }>;
 
-        if (typeof Component !== "function") return;
+          if (typeof Component !== "function") return;
 
-        // Mirror SSR's pre-interpolation so React's hydrated tree matches
-        // the HTML the server emitted (no token-revert flash).
-        const interpolatedData = interpolateData(data, variables);
-        hydrateRoot(
-          container,
-          React.createElement(Component, { tokens, data: interpolatedData, variables })
-        );
-      } catch (err) {
-        console.warn(
-          `[LibrarySectionHydrator] Hydration failed for section ${instanceId}:`,
-          err
-        );
-      }
+          // Mirror SSR's pre-interpolation so React's hydrated tree matches
+          // the HTML the server emitted (no token-revert flash).
+          const interpolatedData = interpolateData(data, variables);
+          hydrateRoot(
+            container,
+            React.createElement(Component, { tokens, data: interpolatedData, variables })
+          );
+        } catch (err) {
+          console.warn(
+            `[LibrarySectionHydrator] Hydration failed for section ${instanceId}:`,
+            err
+          );
+        }
+      };
+      hydrateComponent();
 
       // Mount FormBlockSection into any `<div data-form-slot />` markers
       // declared by the section code. The form_id is read from the section
@@ -397,7 +462,28 @@ export function LibrarySectionHydrator() {
       // doesn't wipe them out. Then watch the container so any later
       // re-render re-applies them.
       if (hasOverrides) {
-        const apply = () => applyOverridesToContainer(container, overrides, variables);
+        // The observer exists for one reason: a React re-render can replace the
+        // nodes the overrides were written onto. So it watches the tree shape —
+        // NOT attributes or text. Watching those made the callback observe its
+        // own writes: apply → attribute mutation → callback → apply, forever at
+        // ~60 Hz, restarting and cancelling every CSS transition on the page.
+        let observer: MutationObserver | null = null;
+        // Re-attaching after a re-render is bounded work; a page that keeps
+        // mutating its own DOM (an animation loop, a carousel) must not turn
+        // this into an unbounded rewrite loop.
+        let remaining = MAX_OVERRIDE_REAPPLIES;
+
+        const apply = () => {
+          // Disconnect around our own writes: `disconnect()` also empties the
+          // queue, so mutations we cause never reach the callback.
+          observer?.disconnect();
+          try {
+            applyOverridesToContainer(container, overrides, variables);
+          } finally {
+            if (remaining > 0) observer?.observe(container, OVERRIDE_OBSERVE_OPTIONS);
+          }
+        };
+
         apply();
         if (typeof console !== "undefined") {
           console.debug("[SB:public]", {
@@ -407,12 +493,16 @@ export function LibrarySectionHydrator() {
         }
         if (typeof MutationObserver !== "undefined") {
           let scheduled = false;
-          const observer = new MutationObserver(() => {
-            if (scheduled) return;
+          observer = new MutationObserver(() => {
+            if (scheduled || remaining <= 0) return;
             scheduled = true;
-            setTimeout(() => { scheduled = false; apply(); }, 16);
+            setTimeout(() => {
+              scheduled = false;
+              remaining -= 1;
+              apply();
+            }, 16);
           });
-          observer.observe(container, { childList: true, subtree: true, characterData: true, attributes: true });
+          observer.observe(container, OVERRIDE_OBSERVE_OPTIONS);
           observers.push(observer);
         }
       }

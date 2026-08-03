@@ -7,6 +7,7 @@ import { remapOverrides, splitOverrideKey } from "@/lib/site-builder/claude-desi
 import { clearImageKeys, imageSlotPaths, isImageOverrideKey, kindForElement } from "@/lib/site-builder/claude-design/image-override-keys";
 import { pushBackup } from "@/lib/site-builder/claude-design/override-backups";
 import { assetPathMap } from "@/lib/site-builder/claude-design/asset-path-map";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -221,6 +222,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     if (updErr) return jsonError(updErr.message, 500);
   }
 
+  if (!dryRun) invalidateSiteCache(siteId);
   return json({
     pages: results,
     commonSlugs,
