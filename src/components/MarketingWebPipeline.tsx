@@ -3,11 +3,12 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Check, Loader2, Globe, Plus, Trash2 } from "lucide-react";
+import { Check, Loader2, Globe, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { createAudit } from "@/utils/auditApi";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
+import { serviceTagKey } from "@/utils/serviceTags";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -963,8 +964,27 @@ const OpportunityEditModal: React.FC<{
   const [saving, setSaving] = React.useState(false);
   const [enrichmentId, setEnrichmentId] = React.useState<string | null>(null);
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
+  const [tagCatalog, setTagCatalog] = React.useState<string[]>([]);
   const deletedReviewIds = React.useRef<string[]>([]);
   const variablesRef = React.useRef<Record<string, unknown>>({});
+
+  // Catalogue des service tags autorisés (allowlist globale comprise), chargé
+  // une fois pour toute la page : la fiche les propose au lieu de les faire
+  // retaper. La modale est montée en permanence, d'où l'absence de dépendance.
+  React.useEffect(() => {
+    let cancelled = false;
+    authedFetch("/api/site-builder/service-tags")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { tags?: string[] } | null) => {
+        if (!cancelled && Array.isArray(data?.tags)) setTagCatalog(data.tags);
+      })
+      .catch(() => {
+        /* catalogue indisponible : la saisie libre reste possible */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const entrepriseId = item?.entreprise_id ?? null;
   const projectId = item?.project?.id ?? null;
@@ -1279,8 +1299,18 @@ const OpportunityEditModal: React.FC<{
                 <Field label="LinkedIn"><Input value={form.linkedin_url} onChange={set("linkedin_url")} /></Field>
                 <Field label="Adresse"><Input value={form.adresse} onChange={set("adresse")} /></Field>
                 <div className="sm:col-span-2">
-                  <Field label="Service tags (séparés par des virgules)" required invalid={showInvalid("service_tags")}>
-                    <Input value={form.service_tags} onChange={set("service_tags")} placeholder="plomberie, chauffage, dépannage" />
+                  <Field
+                    label="Service tags"
+                    required
+                    invalid={showInvalid("service_tags")}
+                    hint="Choisis-les dans la liste des tags autorisés : ce sont eux qui commandent les pages et les visuels du site. Un métier absent de la liste se saisit dans le champ à côté."
+                  >
+                    <ServiceTagsField
+                      value={form.service_tags}
+                      catalog={tagCatalog}
+                      onChange={(v) => setForm((f) => ({ ...f, service_tags: v }))}
+                      placeholder="autre tag…"
+                    />
                   </Field>
                 </div>
               </div>
@@ -1338,7 +1368,14 @@ const OpportunityEditModal: React.FC<{
                       <Field label="Zones desservies (villes autour, séparées par des virgules)"><Input value={form.lm_zones} onChange={set("lm_zones")} placeholder="Annecy, Seynod, Cran-Gevrier" /></Field>
                     </div>
                     <div className="sm:col-span-2">
-                      <Field label="Service tags du lead magnet (virgules)"><Input value={form.lm_service_tags_snapshot} onChange={set("lm_service_tags_snapshot")} placeholder="climatisation, chauffage" /></Field>
+                      <Field label="Service tags du lead magnet">
+                        <ServiceTagsField
+                          value={form.lm_service_tags_snapshot}
+                          catalog={tagCatalog}
+                          onChange={(v) => setForm((f) => ({ ...f, lm_service_tags_snapshot: v }))}
+                          placeholder="autre tag…"
+                        />
+                      </Field>
                     </div>
                   </div>
                 </div>
@@ -1360,7 +1397,7 @@ const OpportunityEditModal: React.FC<{
                     <Field label="Installations" required invalid={showInvalid("lm_stat_installations")}>
                       <Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} />
                     </Field>
-                    <Field label="Qualifications (RGE)" hint="facultatif">
+                    <Field label="Qualifications (RGE)" hint="facultatif — 0 ou vide n'empêche pas d'enregistrer">
                       <Input type="number" value={form.lm_stat_rge} onChange={set("lm_stat_rge")} />
                     </Field>
                   </div>
@@ -1427,6 +1464,116 @@ const OpportunityEditModal: React.FC<{
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+};
+
+/**
+ * Saisie des service tags : les tags autorisés se piochent dans une liste
+ * déroulante (catalogue global `/api/site-builder/service-tags`, allowlist
+ * `enrichment_tag_settings` déjà appliquée) plutôt que d'être retapés. Une
+ * faute de frappe créait jusqu'ici un tag jumeau — « climatisation » vs
+ * « climatisaton » — qu'aucune page, section ni image de la médiathèque ne
+ * reconnaissait, et le site sortait amputé sans rien signaler.
+ *
+ * La saisie libre reste ouverte à côté : le catalogue est bâti sur les tags
+ * DÉJÀ utilisés, il ne peut donc pas contenir celui d'un métier rencontré pour
+ * la première fois.
+ *
+ * La valeur reste la chaîne « a, b, c » du formulaire — le reste de la modale
+ * (et `toArr` à l'enregistrement) n'a pas à savoir d'où viennent les tags.
+ */
+const ServiceTagsField: React.FC<{
+  value: string;
+  catalog: string[];
+  onChange: (next: string) => void;
+  placeholder?: string;
+}> = ({ value, catalog, onChange, placeholder }) => {
+  const selected = React.useMemo(() => toArr(value), [value]);
+  // Comparaison par clé canonique (accents, casse, tirets) : « Pompe à chaleur »
+  // et « pompe-a-chaleur » sont le même tag, il ne faut pas l'ajouter deux fois.
+  const selectedKeys = React.useMemo(
+    () => new Set(selected.map((t) => serviceTagKey(t))),
+    [selected],
+  );
+  const available = React.useMemo(
+    () => catalog.filter((t) => !selectedKeys.has(serviceTagKey(t))),
+    [catalog, selectedKeys],
+  );
+  const [draft, setDraft] = React.useState("");
+
+  const add = (tag: string) => {
+    const t = tag.trim();
+    if (!t || selectedKeys.has(serviceTagKey(t))) return;
+    onChange([...selected, t].join(", "));
+  };
+  const remove = (tag: string) => onChange(selected.filter((t) => t !== tag).join(", "));
+  const addDraft = () => {
+    add(draft);
+    setDraft("");
+  };
+
+  return (
+    <div className="flex flex-col gap-2">
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {selected.map((tag, i) => (
+            <span
+              key={`${tag}-${i}`}
+              className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+            >
+              {tag}
+              <button
+                type="button"
+                onClick={() => remove(tag)}
+                aria-label={`Retirer ${tag}`}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <Select value="" onValueChange={add} disabled={available.length === 0}>
+            <SelectTrigger size="sm" className="w-full">
+              <SelectValue
+                placeholder={
+                  catalog.length === 0
+                    ? "Catalogue indisponible"
+                    : available.length === 0
+                      ? "Tous les tags autorisés sont déjà là"
+                      : "Ajouter un tag autorisé…"
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {available.map((tag) => (
+                <SelectItem key={tag} value={tag}>
+                  {tag}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Input
+          className="flex-1 min-w-0 h-8"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addDraft();
+            }
+          }}
+          placeholder={placeholder ?? "autre tag…"}
+        />
+        <button type="button" className="btn ghost sm" onClick={addDraft} disabled={!draft.trim()}>
+          <Plus className="ico-sm" />
+        </button>
+      </div>
+    </div>
   );
 };
 

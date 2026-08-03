@@ -3,18 +3,12 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { marketingCompanyDetailsSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { writeProjectDetails } from "../_project-write";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export const OPTIONS = (req: Request) => preflight(req);
-
-/** `true` quand la colonne n'existe pas encore (migration non appliquée). */
-const isMissingColumn = (error: { code?: string; message?: string } | null): boolean =>
-  !!error &&
-  (error.code === "42703" ||
-    error.code === "PGRST204" ||
-    /column .* does not exist|could not find the .* column/i.test(error.message ?? ""));
 
 /**
  * POST /api/marketing-pipeline/company-details
@@ -172,15 +166,16 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
     if (project.variables != null) payload.variables = project.variables;
     if (cityChanged) payload.override_city_source = nextCity ? "manual" : null;
 
-    let { error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", targetProjectId);
-    // `override_city_source` vient de la migration 20260727_ville_seo_geo,
-    // appliquée à la main : tant qu'elle ne l'est pas, on enregistre sans elle
-    // plutôt que de faire échouer la fiche entière.
-    if (error && isMissingColumn(error)) {
-      delete payload.override_city_source;
-      ({ error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", targetProjectId));
-    }
-    if (error) return jsonError(error.message, 500, {}, cors);
+    // `writeProjectDetails` dégrade le payload plutôt que de perdre la fiche :
+    // colonne pas encore migrée (`override_city_source`), et surtout chiffres
+    // clés que la base refuse à vide — une entreprise sans qualification RGE ne
+    // doit jamais rester impossible à enregistrer.
+    const projectRowId = targetProjectId;
+    const error = await writeProjectDetails(
+      async (p) => (await supabase.from("lead_magnet_projects").update(p).eq("id", projectRowId)).error,
+      payload,
+    );
+    if (error) return jsonError(error.message ?? "enregistrement du dossier impossible", 500, {}, cors);
   }
 
   // 4) Reviews: deletions first, then updates (existing) / inserts (new).
