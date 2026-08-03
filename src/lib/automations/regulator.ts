@@ -51,6 +51,29 @@ export interface RegulatorSettings {
    * séquence avance quand même — cf. `src/lib/email/test-guard.ts`.
    */
   testMode: boolean
+
+  // ── Vérification des adresses (cf. src/lib/email/verify/) ────────────────
+  /** Aucun email de prospection vers une adresse sans verdict frais. */
+  verifyBeforeSend: boolean
+  /** Fraîcheur exigée d'une adresse vérifiée, en jours. */
+  verifyTtlDays: number
+  /**
+   * Part du plafond quotidien réservée aux adresses à SIGNAL NÉGATIF concret
+   * (rebond dur sur le même domaine d'entreprise, domaine sans MX, rebonds doux
+   * répétés). Ce n'est pas « les adresses non prouvées » : le premier jour,
+   * aucune adresse n'a jamais reçu, ce découpage-là ne dirait rien.
+   */
+  riskyDailyShare: number
+  /**
+   * Première touche par domaine : sur un domaine d'entreprise vers lequel rien
+   * n'est jamais parti, une seule adresse s'en va et les autres attendent son
+   * verdict. Un domaine mort gèle ses adresses avant qu'elles ne partent.
+   */
+  domainFirstTouch: boolean
+  /** Disjoncteur : pause automatique quand le taux de rebond dérape. */
+  bounceGuard: boolean
+  /** Seuil du disjoncteur, en % de rebonds durs sur 24 h glissantes. */
+  bounceGuardThreshold: number
 }
 
 export const DEFAULT_REGULATOR: RegulatorSettings = {
@@ -69,6 +92,12 @@ export const DEFAULT_REGULATOR: RegulatorSettings = {
   taskMaxPerAgent: 8,
   adminUserId: null,
   testMode: false,
+  verifyBeforeSend: true,
+  verifyTtlDays: 120,
+  riskyDailyShare: 20,
+  domainFirstTouch: true,
+  bounceGuard: true,
+  bounceGuardThreshold: 4,
 }
 
 /**
@@ -86,6 +115,10 @@ export type HoldReason =
   | 'one_per_day' // le contact a déjà reçu un email aujourd'hui
   | 'no_email' // aucune adresse connue — l'envoi n'entre même pas dans la file
   | 'test_hold' // phase de test : le destinataire n'est pas une adresse de test
+  | 'email_invalid' // l'adresse ne recevra pas — la séquence attend une correction
+  | 'email_pending' // pas de verdict frais — la vérification passe d'abord
+  | 'risky_cap' // quota du jour atteint pour les adresses à signal négatif
+  | 'domain_probe' // domaine jamais éprouvé : une adresse part, les autres attendent
 
 /** Une entrée de la file, telle qu'elle sort de la base. */
 export interface QueueItem {
@@ -118,6 +151,18 @@ export interface QueueItem {
   lastEmailAt: number
   /** Le contact a-t-il déjà reçu un email aujourd'hui ? */
   emailedToday: boolean
+  /**
+   * L'adresse porte-t-elle un signal négatif concret ? Ces envois passent, mais
+   * sous un quota propre (`riskyDailyShare`).
+   */
+  riskyEmail?: boolean
+  /**
+   * Domaine à éprouver avant d'y envoyer en nombre — `null` quand la question
+   * ne se pose pas (provider grand public, ou domaine déjà éprouvé). Deux items
+   * portant la même clé ne partent pas le même jour tant qu'aucun verdict n'est
+   * revenu.
+   */
+  probeDomain?: string | null
 }
 
 export interface PlannedItem extends QueueItem {
@@ -141,6 +186,23 @@ export interface PlanOptions {
   settings: RegulatorSettings
   /** Places restantes sous le plafond quotidien global. */
   capLeft: number
+  /**
+   * Adresses à signal négatif déjà parties aujourd'hui. Le quota des douteuses
+   * se compte sur la journée entière, pas sur le tick.
+   */
+  riskySentToday?: number
+}
+
+/**
+ * Combien d'adresses à signal négatif peuvent partir aujourd'hui.
+ *
+ * Une part du plafond, jamais moins d'une : à quota nul sur un petit plafond,
+ * une adresse douteuse ne serait jamais tranchée, et elle resterait douteuse
+ * pour toujours. Une par jour suffit à faire avancer le verdict.
+ */
+export function riskyCapFor(settings: RegulatorSettings): number {
+  if (settings.riskyDailyShare <= 0) return 0
+  return Math.max(1, Math.floor((settings.dailyCap * settings.riskyDailyShare) / 100))
 }
 
 /* ── Plages horaires ─────────────────────────────────────────────────────── */
@@ -390,6 +452,16 @@ export function planQueue(items: QueueItem[], options: PlanOptions): PlannedItem
   const lastByCompany = new Map<string, number>()
   const sequenceUsed = new Map<string, number>()
 
+  // Quota propre aux adresses à signal négatif : elles partent, mais jamais en
+  // masse. C'est ce qui permet de les trancher par l'envoi sans exposer la
+  // réputation du domaine à un lot entier de rebonds.
+  const riskyCap = riskyCapFor(settings)
+  let riskyPlaced = options.riskySentToday ?? 0
+
+  // Première touche : un seul envoi par domaine d'entreprise non éprouvé et par
+  // passage. Les suivants attendent le verdict Resend du premier.
+  const probedDomains = new Set<string>()
+
   for (const item of sorted) {
     if (!item.sequenceActive) {
       out.push(blocked(item, 'sequence_paused'))
@@ -401,6 +473,14 @@ export function planQueue(items: QueueItem[], options: PlanOptions): PlannedItem
     }
     if (placed >= options.capLeft) {
       out.push(blocked(item, 'daily_cap'))
+      continue
+    }
+    if (item.riskyEmail && riskyPlaced >= riskyCap) {
+      out.push(blocked(item, 'risky_cap'))
+      continue
+    }
+    if (settings.domainFirstTouch && item.probeDomain && probedDomains.has(item.probeDomain)) {
+      out.push(blocked(item, 'domain_probe'))
       continue
     }
     if (item.sequenceDailyCap != null) {
@@ -437,6 +517,8 @@ export function planQueue(items: QueueItem[], options: PlanOptions): PlannedItem
     out.push({ ...item, at: snapped.at, gapMinutes: gap, reason, rank: placed })
     lastByCompany.set(item.companyKey, snapped.at)
     sequenceUsed.set(item.automationId, (sequenceUsed.get(item.automationId) ?? 0) + 1)
+    if (item.riskyEmail) riskyPlaced++
+    if (settings.domainFirstTouch && item.probeDomain) probedDomains.add(item.probeDomain)
     cursor = snapped.at
     placed++
   }
@@ -482,6 +564,18 @@ export function toRegulatorSettings(row: RegulatorRow | null | undefined): Regul
     taskMaxPerAgent: Math.max(1, int(row.task_max_per_agent, DEFAULT_REGULATOR.taskMaxPerAgent)),
     adminUserId: typeof row.admin_user_id === 'string' ? row.admin_user_id : null,
     testMode: bool(row.test_mode, DEFAULT_REGULATOR.testMode),
+    // La colonne peut manquer (migration non appliquée) : on retombe alors sur
+    // le comportement d'avant, pas sur un garde qui bloquerait tout.
+    verifyBeforeSend:
+      row.verify_before_send === undefined ? false : bool(row.verify_before_send, DEFAULT_REGULATOR.verifyBeforeSend),
+    verifyTtlDays: Math.max(1, int(row.verify_ttl_days, DEFAULT_REGULATOR.verifyTtlDays)),
+    riskyDailyShare: Math.max(0, Math.min(100, int(row.risky_daily_share, DEFAULT_REGULATOR.riskyDailyShare))),
+    domainFirstTouch: bool(row.domain_first_touch, DEFAULT_REGULATOR.domainFirstTouch),
+    bounceGuard: bool(row.bounce_guard, DEFAULT_REGULATOR.bounceGuard),
+    bounceGuardThreshold: (() => {
+      const value = Number(row.bounce_guard_threshold)
+      return Number.isFinite(value) && value > 0 ? value : DEFAULT_REGULATOR.bounceGuardThreshold
+    })(),
   }
 }
 
@@ -527,6 +621,14 @@ export function holdReasonLabel(reason: HoldReason | null, at?: number | null, t
       return 'aucun email connu'
     case 'test_hold':
       return 'phase de test — retenu, la séquence n’avance pas'
+    case 'email_invalid':
+      return 'adresse invalide — à corriger'
+    case 'email_pending':
+      return 'vérification de l’adresse en cours'
+    case 'risky_cap':
+      return 'quota du jour atteint pour les adresses douteuses'
+    case 'domain_probe':
+      return 'domaine à éprouver — une adresse part, les autres suivent'
     default:
       return ''
   }

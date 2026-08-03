@@ -40,6 +40,8 @@ import {
 } from 'lucide-react';
 
 import logger from '../utils/logger';
+import { EmailVerdictBadge } from '@/components/email/EmailVerdictBadge';
+
 interface ContactDetailPageProps {
   contactId: string;
   onBack: () => void;
@@ -358,15 +360,20 @@ export const ContactDetailPage: React.FC<ContactDetailPageProps> = ({
                       placeholder="contact@entreprise.fr"
                     />
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-col gap-1">
                       {currentData.email ? (
-                        <a 
-                          href={`mailto:${currentData.email}`}
-                          className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                        >
-                          <Mail className="h-3 w-3" />
-                          {currentData.email}
-                        </a>
+                        <>
+                          <a
+                            href={`mailto:${currentData.email}`}
+                            className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                          >
+                            <Mail className="h-3 w-3" />
+                            {currentData.email}
+                          </a>
+                          {/* Savoir ici qu'une adresse est morte évite de lancer
+                              une séquence qui gèlera à la première étape. */}
+                          <EmailVerdictBadge email={currentData.email} />
+                        </>
                       ) : (
                         <p className="text-sm text-muted-foreground">Non renseigné</p>
                       )}

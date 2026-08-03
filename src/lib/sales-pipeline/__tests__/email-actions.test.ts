@@ -168,7 +168,15 @@ describe('setProspectEmail', () => {
     // Le contact garde son adresse : on n'écrase jamais une fiche personne.
     expect(result).toEqual({
       ok: true,
-      result: { email: 'Contact@Garage.fr', target: 'entreprise', resumed: 1 },
+      result: {
+        email: 'Contact@Garage.fr',
+        target: 'entreprise',
+        resumed: 1,
+        // L'adresse est vérifiée dans la foulée. Sans réseau dans les tests, le
+        // verdict est « indéterminé » — ce qui est le comportement voulu : on
+        // n'invente pas un verdict quand le DNS ne répond pas.
+        verification: { status: 'unknown', reason: expect.any(String), suggestion: null },
+      },
     })
     expect(enrollments.captured.updates[0]).toEqual(
       expect.objectContaining({ hold_reason: null, next_run_at: expect.any(String) }),
@@ -206,6 +214,14 @@ describe('setProspectEmail', () => {
     const result = await setProspectEmail(sb, { opportuniteId: 'opp-1' }, 'jean@garage.fr')
 
     expect(contacts.captured.updates[0]).toEqual({ email: 'jean@garage.fr' })
-    expect(result).toEqual({ ok: true, result: { email: 'jean@garage.fr', target: 'contact', resumed: 0 } })
+    expect(result).toEqual({
+      ok: true,
+      result: {
+        email: 'jean@garage.fr',
+        target: 'contact',
+        resumed: 0,
+        verification: { status: 'unknown', reason: expect.any(String), suggestion: null },
+      },
+    })
   })
 })

@@ -409,3 +409,44 @@
   background: var(--surface); border: 1px solid var(--border-2);
   border-radius: 5px; padding: 2px 5px; align-self: flex-start;
 }
+
+/* ── Qualité des adresses ──────────────────────────────────────────────────
+   Quatre tuiles pour l'état de la base, un encart pour la réalité mesurée.
+   L'encart passe en rouge quand le seuil du disjoncteur est franchi : c'est le
+   seul chiffre de la page qui ne suppose rien, il doit se voir en premier. */
+.au-skin .rg-vgrid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 10px;
+}
+.au-skin .rg-vtile {
+  display: flex; flex-direction: column; gap: 1px; align-items: center; text-align: center;
+  border: 1px solid var(--border-2); border-radius: 8px; padding: 7px 4px;
+  background: var(--surface);
+}
+.au-skin .rg-vtile b { font-family: var(--font-mono); font-size: 15px; line-height: 1.1; }
+.au-skin .rg-vtile span { font-size: 10.5px; font-weight: 600; color: var(--text-2); }
+.au-skin .rg-vtile small { font-size: 9.5px; color: var(--text-4); }
+.au-skin .rg-vtile.ok   { border-color: var(--ok); background: var(--ok-tint); }
+.au-skin .rg-vtile.ok b { color: var(--ok); }
+.au-skin .rg-vtile.warn   { border-color: var(--warn); background: var(--warn-tint); }
+.au-skin .rg-vtile.warn b { color: var(--warn); }
+.au-skin .rg-vtile.bad   { border-color: var(--danger); background: var(--danger-tint); }
+.au-skin .rg-vtile.bad b { color: var(--danger); }
+.au-skin .rg-vtile.mute b { color: var(--text-3); }
+
+.au-skin .rg-bounce {
+  margin-top: 10px; padding: 9px 10px; border-radius: 9px;
+  border: 1px solid var(--border-2); background: var(--surface);
+}
+.au-skin .rg-bounce .v {
+  display: flex; align-items: baseline; gap: 7px;
+  font-family: var(--font-mono); font-size: 19px; line-height: 1.1; color: var(--text);
+}
+.au-skin .rg-bounce .v small {
+  font-family: inherit; font-size: 11px; font-weight: 500; color: var(--text-3);
+}
+.au-skin .rg-bounce.over { border-color: var(--danger); background: var(--danger-tint); }
+.au-skin .rg-bounce.over .v { color: var(--danger); }
+
+@media (max-width: 640px) {
+  .au-skin .rg-vgrid { grid-template-columns: repeat(2, 1fr); }
+}

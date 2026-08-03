@@ -480,6 +480,20 @@ export const regulatorSettingsSchema = z
     admin_user_id: z.string().uuid().nullable().optional(),
     /** Phase de test : seules les adresses de test_email_addresses reçoivent. */
     test_mode: z.boolean().optional(),
+
+    // ── Vérification des adresses ──────────────────────────────────────────
+    /** Aucun email de prospection vers une adresse sans verdict frais. */
+    verify_before_send: z.boolean().optional(),
+    /** Fraîcheur exigée d'une adresse vérifiée, en jours (120 par défaut). */
+    verify_ttl_days: z.coerce.number().int().min(1).max(3650).optional(),
+    /** Part (%) du plafond quotidien réservée aux adresses à signal négatif. */
+    risky_daily_share: z.coerce.number().int().min(0).max(100).optional(),
+    /** Première touche par domaine d'entreprise : une adresse à la fois. */
+    domain_first_touch: z.boolean().optional(),
+    /** Disjoncteur : pause automatique quand le rebond dérape. */
+    bounce_guard: z.boolean().optional(),
+    /** Seuil du disjoncteur, en % de rebonds durs sur 24 h. */
+    bounce_guard_threshold: z.coerce.number().min(0.1).max(100).optional(),
   })
   .strict();
 export type RegulatorSettingsPayload = z.infer<typeof regulatorSettingsSchema>;

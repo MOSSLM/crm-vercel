@@ -58,6 +58,9 @@ plage `08:30–11:30` reste 08:30–11:30 en heure d'été comme en heure d'hive
 | `src/app/api/automations/tick/route.ts` | le ticker consomme le plan, envoie ce qui est dû, inscrit le reste |
 | `src/app/api/automations/regulator/` | lecture + réglages (`GET`/`PATCH`), surcharges par séquence |
 | `src/components/automations/regulator/` | la page Régulateur |
+| `src/lib/email/send-guard.ts` | le garde d'envoi : qui a le droit de recevoir |
+| `src/lib/email/verify/` | le vérificateur d'adresses (`docs/verificateur-emails.md`) |
+| `src/lib/email/bounce-guard.ts` | le disjoncteur : pause automatique si le rebond dérape |
 
 ### Réglages
 
@@ -89,7 +92,13 @@ dans la file **et** dans la colonne Email du pipeline. C'est ce qui rend le
 système lisible plutôt que magique :
 
 `out_of_window` · `next_day` · `company_gap` · `daily_cap` · `sequence_paused`
-· `global_pause` · `one_per_day`
+· `global_pause` · `one_per_day` · `no_email` · `test_hold` · `email_invalid` ·
+`email_pending` · `risky_cap` · `domain_probe`
+
+Les quatre derniers viennent du vérificateur d'adresses
+(`docs/verificateur-emails.md`) : une adresse qui ne recevra pas, une adresse
+pas encore contrôlée, le quota quotidien des adresses douteuses, et le domaine
+d'entreprise qu'on éprouve avec un seul email avant d'y envoyer en nombre.
 
 ### Ce qui n'a pas changé
 

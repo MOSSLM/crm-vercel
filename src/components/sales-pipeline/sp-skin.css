@@ -424,3 +424,22 @@
 .mp-scope .react-form input:focus,
 .mp-scope .react-form textarea:focus { border-color: var(--accent); }
 .mp-scope .react-form textarea { min-height: 66px; resize: vertical; }
+
+/* ── Verdict d'une adresse pendant la saisie ───────────────────────────────
+   Affiché sous le champ, avant l'enregistrement. Une adresse jugée morte reste
+   enregistrable : on prévient, on n'interdit pas — notre verdict peut se
+   tromper, l'utilisateur a le dernier mot. */
+.mp-scope .sp-verdict {
+  display: flex; flex-direction: column; gap: 4px; align-items: flex-start;
+  border: 1px solid var(--border-2); background: var(--surface);
+  border-radius: 8px; padding: 8px 10px; margin-top: 2px;
+}
+.mp-scope .sp-verdict .t { font-size: 11.5px; font-weight: 600; }
+.mp-scope .sp-verdict .d { font-size: 11px; color: var(--text-2); line-height: 1.45; }
+.mp-scope .sp-verdict.ok   { border-color: var(--ok); background: var(--ok-tint); }
+.mp-scope .sp-verdict.ok .t { color: var(--ok); }
+.mp-scope .sp-verdict.warn { border-color: var(--warn); background: var(--warn-tint); }
+.mp-scope .sp-verdict.warn .t { color: var(--warn); }
+.mp-scope .sp-verdict.bad  { border-color: var(--danger); background: var(--danger-tint); }
+.mp-scope .sp-verdict.bad .t { color: var(--danger); }
+.mp-scope .sp-verdict.mute .t { color: var(--text-3); }

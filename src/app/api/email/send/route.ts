@@ -5,7 +5,7 @@ import { sendEmailSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { advanceToFirstApproach } from "@/app/api/agent/_lib";
-import { BLOCK_LABEL, allowRecipient } from "@/lib/email/test-guard";
+import { BLOCK_LABEL, allowRecipient } from "@/lib/email/send-guard";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -16,9 +16,10 @@ export const POST = withAuth({ body: sendEmailSchema }, async ({ body: payload, 
 
   const fromEmail = process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev";
 
-  // Phase de test : un envoi manuel vers un vrai prospect est retenu comme le
-  // sont ceux des séquences. On le journalise avec son motif et on répond 409
-  // en rappelant qui reçoit encore — sinon l'utilisateur croit à une panne.
+  // Un envoi manuel vers un vrai prospect est retenu comme le sont ceux des
+  // séquences : phase de test, adresse supprimée, adresse invalide ou pas encore
+  // vérifiée. On le journalise avec son motif et on répond 409 en disant lequel
+  // — sinon l'utilisateur croit à une panne.
   const verdict = await allowRecipient(getServiceClient(), payload.to_email);
   if (!verdict.allowed) {
     try {
@@ -41,7 +42,16 @@ export const POST = withAuth({ body: sendEmailSchema }, async ({ body: payload, 
     } catch (logErr) {
       console.error("[email/send] log error:", logErr);
     }
-    return jsonError("mode_test", 409, { allowlist: verdict.allowlist ?? [] }, cors);
+    return jsonError(
+      verdict.reason ?? "mode_test",
+      409,
+      {
+        message: BLOCK_LABEL[verdict.reason ?? "mode_test"],
+        detail: verdict.detail,
+        allowlist: verdict.allowlist ?? [],
+      },
+      cors,
+    );
   }
 
   const resend = new Resend(apiKey);

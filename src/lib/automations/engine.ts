@@ -7,7 +7,8 @@ import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
-import { BLOCK_LABEL, allowRecipient } from '@/lib/email/test-guard'
+import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
+import { recordSend } from '@/lib/email/verify/service'
 import {
   cleanEmail,
   loadRegulatorSettings,
@@ -309,6 +310,17 @@ export async function sendEngineEmail(
     })
   } catch {
     /* le log ne doit pas bloquer */
+  }
+
+  // L'envoi a réellement eu lieu : on l'inscrit au compteur de l'adresse ET de
+  // son domaine. C'est ce qui ouvre la voie aux autres adresses du domaine
+  // (première touche) et ce qui donne son dénominateur au taux de rebond.
+  if (status === 'sent') {
+    try {
+      await recordSend(sb, opts.to)
+    } catch {
+      /* un compteur manqué ne doit pas faire échouer un envoi réussi */
+    }
   }
 
   return status === 'sent' ? { ok: true } : { ok: false, error: errorMessage }
@@ -699,12 +711,13 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
       return
     }
 
-    // Phase de test : la première tentative prépare l'envoi et le journalise —
-    // on veut pouvoir lire ce qui SERAIT parti — puis gèle l'inscription. Aux
-    // tours suivants on ne prépare plus rien : elle est déjà retenue, et la
-    // re-journaliser à chaque tick noierait le journal.
-    if (enrollment.hold_reason === 'test_hold' && !(await allowRecipient(sb, ent.contactEmail)).allowed) {
-      return
+    // Déjà retenue : on ne prépare plus rien tant que le motif tient. La
+    // première tentative a préparé l'envoi et l'a journalisé — on veut pouvoir
+    // lire ce qui SERAIT parti — mais la re-journaliser à chaque tick noierait
+    // le journal.
+    if (HELD_REASONS.has(enrollment.hold_reason ?? '')) {
+      const verdict = await allowRecipient(sb, ent.contactEmail)
+      if (!verdict.allowed) return
     }
 
     let sentAt: string | null = null
@@ -726,12 +739,18 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
           attachmentUrls:
             step.attachAudit && ent.auditUrl ? [{ filename: 'audit.pdf', url: ent.auditUrl }] : undefined,
         })
-        // Retenu par la phase de test : l'inscription est GELÉE, pas franchie.
-        // Sur un vrai prospect, avancer d'une étape sans avoir rien envoyé lui
-        // ferait perdre un email pour de bon — et sa carte changerait de
-        // colonne dans le pipeline commercial sans qu'il se soit rien passé.
+        // Retenu par un garde : l'inscription est GELÉE, pas franchie. Sur un
+        // vrai prospect, avancer d'une étape sans avoir rien envoyé lui ferait
+        // perdre un email pour de bon — et sa carte changerait de colonne dans
+        // le pipeline commercial sans qu'il se soit rien passé.
         if (result.blocked) {
-          await holdForTestPhase(sb, enrollment.id)
+          if (result.error === 'email_invalid' || result.error === 'email_suppressed') {
+            await holdForInvalidEmail(sb, enrollment.id)
+          } else if (result.error === 'email_unverified') {
+            await holdForPendingVerification(sb, enrollment.id)
+          } else {
+            await holdForTestPhase(sb, enrollment.id)
+          }
           return
         }
         if (result.ok) sentAt = new Date().toISOString()
@@ -802,6 +821,16 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
 export const NO_EMAIL_RETRY_MS = 2 * 3_600_000
 
 /**
+ * Motifs qui gèlent une étape email. Tant que l'un d'eux tient, l'inscription
+ * repasse dans le ticker sans qu'on prépare quoi que ce soit.
+ */
+const HELD_REASONS: ReadonlySet<string> = new Set([
+  'test_hold',
+  'email_invalid',
+  'email_pending',
+])
+
+/**
  * Gèle l'étape email pendant la phase de test, sans faire avancer l'inscription.
  *
  * `next_run_at` n'est PAS repoussé : l'inscription reste due, donc visible dans
@@ -825,6 +854,41 @@ export async function holdForMissingEmail(sb: SupabaseClient, enrollmentId: stri
       hold_reason: 'no_email',
       next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
     })
+    .eq('id', enrollmentId)
+}
+
+/**
+ * Gèle l'étape email quand l'adresse ne recevra pas (domaine mort, syntaxe
+ * cassée, rebond dur déjà encaissé).
+ *
+ * Même mécanique que « sans email », et pour la même raison : l'inscription
+ * n'est pas perdue, elle attend une correction. Saisir une nouvelle adresse
+ * (`setProspectEmail`) la dégèle toute seule. On repousse `next_run_at` de deux
+ * heures pour ne pas repasser dessus à chaque minute — rien ne changera d'ici là
+ * sans intervention humaine.
+ */
+export async function holdForInvalidEmail(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'email_invalid',
+      next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
+    })
+    .eq('id', enrollmentId)
+}
+
+/**
+ * Gèle l'étape email le temps que l'adresse soit vérifiée.
+ *
+ * Contrairement aux deux gels précédents, `next_run_at` n'est PAS repoussé : le
+ * blocage est provisoire et le tick de vérification le lève tout seul en
+ * quelques minutes. Repousser ferait attendre le prospect pour rien.
+ */
+export async function holdForPendingVerification(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({ send_at: null, hold_reason: 'email_pending' })
     .eq('id', enrollmentId)
 }
 

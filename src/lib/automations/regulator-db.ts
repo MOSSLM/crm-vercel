@@ -17,7 +17,11 @@ import {
   type QueueItem,
   type RegulatorSettings,
 } from './regulator'
+import { eligibilityFor, loadSendPolicy } from '@/lib/email/send-guard'
 import { loadTestPhase, recipientAllowed } from '@/lib/email/test-guard'
+import { isFreeProvider } from '@/lib/email/verify/domains'
+import { domainPart, normalizeEmail } from '@/lib/email/verify/normalize'
+import { loadDomainSendState } from '@/lib/email/verify/service'
 
 /** La table n'existe pas encore (migration non appliquée) → défauts. */
 const isMissingTable = (error: { code?: string; message?: string } | null | undefined): boolean => {
@@ -120,6 +124,8 @@ export interface SendHistory {
   lastByCompany: Map<string, number>
   /** Dernier envoi tous confondus, en ms (0 = aucun). */
   lastSentAt: number
+  /** Adresses servies aujourd'hui — sert au quota des adresses douteuses. */
+  emailsToday: Set<string>
 }
 
 const EMPTY_HISTORY: SendHistory = {
@@ -130,6 +136,7 @@ const EMPTY_HISTORY: SendHistory = {
   contactsToday: new Set(),
   lastByCompany: new Map(),
   lastSentAt: 0,
+  emailsToday: new Set(),
 }
 
 /**
@@ -141,7 +148,7 @@ export async function loadSendHistory(sb: SupabaseClient, settings: RegulatorSet
   try {
     let query = sb
       .from('email_logs')
-      .select('id, sent_at, contact_id, entreprise_id, automation_id, to_name, subject, type, status')
+      .select('id, sent_at, contact_id, entreprise_id, automation_id, to_email, to_name, subject, type, status')
       .eq('status', 'sent')
       .gte('sent_at', new Date(start).toISOString())
       .order('sent_at', { ascending: false })
@@ -151,7 +158,7 @@ export async function loadSendHistory(sb: SupabaseClient, settings: RegulatorSet
     if (!settings.countAllSequences) query = query.eq('type', 'sequence')
 
     const { data, error } = await query
-    if (error) return { ...EMPTY_HISTORY, today: [], byAutomation: new Map(), lastByContact: new Map(), contactsToday: new Set(), lastByCompany: new Map() }
+    if (error) return { ...EMPTY_HISTORY, today: [], byAutomation: new Map(), lastByContact: new Map(), contactsToday: new Set(), lastByCompany: new Map(), emailsToday: new Set() }
 
     const rows = (data ?? []) as Array<{
       id: string
@@ -159,6 +166,7 @@ export async function loadSendHistory(sb: SupabaseClient, settings: RegulatorSet
       contact_id: string | null
       entreprise_id: number | null
       automation_id: string | null
+      to_email: string | null
       to_name: string | null
       subject: string | null
       type: string | null
@@ -172,6 +180,7 @@ export async function loadSendHistory(sb: SupabaseClient, settings: RegulatorSet
       contactsToday: new Set(),
       lastByCompany: new Map(),
       lastSentAt: 0,
+      emailsToday: new Set(),
     }
 
     for (const row of rows) {
@@ -193,6 +202,8 @@ export async function loadSendHistory(sb: SupabaseClient, settings: RegulatorSet
           history.byAutomation.set(row.automation_id, (history.byAutomation.get(row.automation_id) ?? 0) + 1)
         }
         history.lastSentAt = Math.max(history.lastSentAt, at)
+        const address = normalizeEmail(row.to_email)
+        if (address) history.emailsToday.add(address)
       }
       if (row.contact_id) {
         history.contactsToday.add(row.contact_id)
@@ -206,7 +217,7 @@ export async function loadSendHistory(sb: SupabaseClient, settings: RegulatorSet
     history.today.sort((a, b) => b.at - a.at)
     return history
   } catch {
-    return { ...EMPTY_HISTORY, today: [], byAutomation: new Map(), lastByContact: new Map(), contactsToday: new Set(), lastByCompany: new Map() }
+    return { ...EMPTY_HISTORY, today: [], byAutomation: new Map(), lastByContact: new Map(), contactsToday: new Set(), lastByCompany: new Map(), emailsToday: new Set() }
   }
 }
 
@@ -242,8 +253,24 @@ export interface QueueBuild {
    * qu'un vrai prospect ne « consomme » pas sa séquence pendant qu'on teste.
    */
   testHeld: DueEnrollment[]
+  /**
+   * L'adresse ne recevra pas : syntaxe cassée, domaine inexistant, aucun serveur
+   * mail, adresse jetable, ou rebond dur déjà encaissé. Même traitement que
+   * `noEmail` — l'inscription gèle avec son motif et attend une correction, elle
+   * n'est pas perdue. Saisir une nouvelle adresse la dégèle toute seule.
+   */
+  invalidEmail: DueEnrollment[]
+  /**
+   * Pas de verdict frais pour cette adresse. Blocage PROVISOIRE : le tick de
+   * vérification passe toutes les cinq minutes et lève l'attente tout seul. On
+   * ne prépare rien entretemps, sinon l'inscription franchirait une étape sur un
+   * envoi qui n'a pas eu lieu.
+   */
+  unverified: DueEnrollment[]
   /** Les autres (WhatsApp, appel, attente…) : traitées tout de suite, sans régulateur. */
   others: DueEnrollment[]
+  /** Adresse retenue pour chaque inscription de la file — évite de la relire. */
+  addressOf: Map<string, string>
 }
 
 /** Une adresse exploitable, ou `null` — « — », « n/a » et compagnie ne comptent pas. */
@@ -305,8 +332,18 @@ export async function loadDueEnrollments(
     .order('next_run_at', { ascending: true })
     .limit(limit)
 
+  const empty = (): QueueBuild => ({
+    emails: [],
+    noEmail: [],
+    testHeld: [],
+    invalidEmail: [],
+    unverified: [],
+    others: [],
+    addressOf: new Map(),
+  })
+
   const enrollments = (data ?? []) as SequenceEnrollment[]
-  if (enrollments.length === 0) return { emails: [], noEmail: [], testHeld: [], others: [] }
+  if (enrollments.length === 0) return empty()
 
   const ids = [...new Set(enrollments.map((e) => e.automation_id))]
   const { data: autos } = await sb.from('automations').select('*').in('id', ids)
@@ -324,37 +361,150 @@ export async function loadDueEnrollments(
   }
 
   // Les emails sans destinataire sortent de la file AVANT toute planification.
-  if (emails.length === 0) return { emails, noEmail: [], testHeld: [], others }
+  if (emails.length === 0) return { ...empty(), others }
   const { byContact, byCompany } = await loadRecipientEmails(
     sb,
     emails.map((e) => e.enrollment.contact_id).filter((v): v is string => !!v),
     emails.map((e) => e.enrollment.entreprise_id).filter((v): v is number => v != null),
   )
-  // Phase de test : on trie sur l'ADRESSE, avant que quoi que ce soit ne soit
-  // préparé. Un envoi qui échouerait plus tard aurait déjà fait avancer
-  // l'inscription — c'est précisément ce qu'on veut éviter sur un vrai prospect.
-  const testPhase = await loadTestPhase(sb)
+
+  const addressFor = (entry: DueEnrollment): string | null => {
+    const { contact_id, entreprise_id } = entry.enrollment
+    return (
+      (contact_id ? byContact.get(contact_id) : undefined) ??
+      (entreprise_id != null ? byCompany.get(entreprise_id) : undefined) ??
+      null
+    )
+  }
+
+  // On trie sur l'ADRESSE, avant que quoi que ce soit ne soit préparé. Un envoi
+  // qui échouerait plus tard aurait déjà fait avancer l'inscription — c'est
+  // précisément ce qu'on veut éviter sur un vrai prospect.
+  const addresses = emails.map(addressFor).filter((a): a is string => !!a)
+  const [testPhase, policy] = await Promise.all([loadTestPhase(sb), loadSendPolicy(sb, addresses)])
 
   const sendable: DueEnrollment[] = []
   const noEmail: DueEnrollment[] = []
   const testHeld: DueEnrollment[] = []
+  const invalidEmail: DueEnrollment[] = []
+  const unverified: DueEnrollment[] = []
+  const addressOf = new Map<string, string>()
+
   for (const entry of emails) {
-    const { contact_id, entreprise_id } = entry.enrollment
-    const address =
-      (contact_id ? byContact.get(contact_id) : undefined) ??
-      (entreprise_id != null ? byCompany.get(entreprise_id) : undefined) ??
-      null
-    if (!address) noEmail.push(entry)
-    else if (!recipientAllowed(testPhase, address)) testHeld.push(entry)
-    else sendable.push(entry)
+    const address = addressFor(entry)
+    if (!address) {
+      noEmail.push(entry)
+      continue
+    }
+    addressOf.set(entry.enrollment.id, address)
+
+    // La phase de test passe avant la vérification : quand elle est active, on
+    // ne veut surtout pas geler des inscriptions pour une raison de
+    // délivrabilité qui ne se posera qu'en vrai.
+    if (!recipientAllowed(testPhase, address)) {
+      testHeld.push(entry)
+      continue
+    }
+
+    switch (eligibilityFor(policy, address)) {
+      case 'blocked':
+        invalidEmail.push(entry)
+        break
+      case 'pending':
+        unverified.push(entry)
+        break
+      default:
+        // `ok` et `risky` entrent tous deux dans la file ; le régulateur
+        // appliquera son quota aux seconds.
+        sendable.push(entry)
+    }
   }
-  return { emails: sendable, noEmail, testHeld, others }
+
+  return { emails: sendable, noEmail, testHeld, invalidEmail, unverified, others, addressOf }
 }
 
 export interface QueueContext {
   settings: RegulatorSettings
   history: SendHistory
   now: number
+  /**
+   * Ce que la vérification sait des destinataires de la file. Absent = on ne
+   * sait rien, et le régulateur se comporte comme avant : aucun quota, aucune
+   * première touche. C'est ce qui fait que la file continue de tourner tant que
+   * la migration n'est pas appliquée.
+   */
+  emailContext?: QueueEmailContext
+}
+
+/** Ce que la file doit savoir des adresses, au-delà de « elle peut recevoir ». */
+export interface QueueEmailContext {
+  /** Inscriptions dont l'adresse porte un signal négatif concret. */
+  risky: Set<string>
+  /**
+   * Inscriptions dont le domaine d'entreprise n'a jamais rien reçu de notre
+   * part : une seule part, les autres attendent son verdict. La valeur est le
+   * domaine, qui sert de clé de regroupement.
+   */
+  probeDomain: Map<string, string>
+  /**
+   * Combien d'adresses à signal négatif sont DÉJÀ parties aujourd'hui. Le quota
+   * se compte sur la journée, pas sur le tick : sans ce report, chaque minute
+   * rouvrirait le quota entier.
+   */
+  riskySentToday: number
+}
+
+export const EMPTY_EMAIL_CONTEXT: QueueEmailContext = {
+  risky: new Set(),
+  probeDomain: new Map(),
+  riskySentToday: 0,
+}
+
+/**
+ * Croise les adresses de la file avec ce qu'on sait d'elles et de leurs
+ * domaines. Une seule lecture pour toute la file — le ticker tourne à la minute.
+ */
+export async function loadQueueEmailContext(
+  sb: SupabaseClient,
+  addressOf: Map<string, string>,
+  settings: RegulatorSettings,
+  sentToday: ReadonlySet<string> = new Set(),
+): Promise<QueueEmailContext> {
+  if (!settings.verifyBeforeSend || addressOf.size === 0) return EMPTY_EMAIL_CONTEXT
+
+  const addresses = [...addressOf.values()]
+  // Le quota se compte sur la journée : il faut donc savoir combien d'adresses
+  // douteuses sont DÉJÀ parties, pas seulement lesquelles attendent.
+  const lookup = [...new Set([...addresses, ...sentToday])]
+  const [policy, domainState] = await Promise.all([
+    loadSendPolicy(sb, lookup),
+    settings.domainFirstTouch
+      ? loadDomainSendState(sb, addresses.map((a) => domainPart(normalizeEmail(a) ?? a)))
+      : Promise.resolve(new Map()),
+  ])
+
+  const risky = new Set<string>()
+  const probeDomain = new Map<string, string>()
+  let riskySentToday = 0
+  for (const address of sentToday) {
+    if (eligibilityFor(policy, address) === 'risky') riskySentToday++
+  }
+
+  for (const [enrollmentId, address] of addressOf) {
+    if (eligibilityFor(policy, address) === 'risky') risky.add(enrollmentId)
+
+    if (!settings.domainFirstTouch) continue
+    const domain = domainPart(normalizeEmail(address) ?? address)
+    const state = domainState.get(domain)
+    // Un provider grand public héberge des milliers de boîtes indépendantes :
+    // éprouver `gmail.com` n'aurait aucun sens. Un domaine déjà éprouvé non plus.
+    // Le repli sur la liste couvre le cas où le cache n'a pas encore de ligne.
+    if (!domain || state?.everSent) continue
+    if (state ? state.freeProvider : isFreeProvider(domain)) continue
+    probeDomain.set(enrollmentId, domain)
+  }
+
+  return { risky, probeDomain, riskySentToday }
 }
 
 /** Métadonnées d'affichage jointes aux entrées de file (nom du contact, entreprise…). */
@@ -404,6 +554,8 @@ export function buildQueueItems(
       eligibleAt: enrollment.next_run_at ? Date.parse(enrollment.next_run_at) : ctx.now,
       lastEmailAt: Math.max(lastForContact, lastForCompany),
       emailedToday: enrollment.contact_id ? ctx.history.contactsToday.has(enrollment.contact_id) : false,
+      riskyEmail: ctx.emailContext?.risky.has(enrollment.id) ?? false,
+      probeDomain: ctx.emailContext?.probeDomain.get(enrollment.id) ?? null,
     }
   })
 }
@@ -422,5 +574,6 @@ export function planFromContext(items: QueueItem[], ctx: QueueContext): PlannedI
     cursor,
     settings,
     capLeft: Math.max(0, settings.dailyCap - history.sentToday),
+    riskySentToday: ctx.emailContext?.riskySentToday ?? 0,
   })
 }
