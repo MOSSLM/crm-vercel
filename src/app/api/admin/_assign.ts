@@ -1,5 +1,6 @@
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { getAgentPipeline, type AgentStage } from "@/app/api/agent/_lib";
+import { isRealDeal, pickSurvivor, type DealRecord } from "@/lib/opportunites/one-per-company";
 
 type ServiceClient = ReturnType<typeof getServiceClient>;
 
@@ -61,55 +62,95 @@ export type AssignResult =
   | { ok: false; error: string };
 
 /**
- * Assign a pool company to an agent (admin-driven). Takes ownership of the
- * company, opens an opportunity in the "Agent SAMA" pipeline if one doesn't
- * exist yet, and seeds the first "Appel à froid" task so the prospect shows up
- * in the agent's Démarchage queue. Safe to call twice — it won't duplicate the
- * opportunity or the seed task.
+ * Attribue une entreprise du pool à un agent (action admin).
+ *
+ * UNE ENTREPRISE = UNE AFFAIRE. Attribuer, c'est poser `owner_id` sur l'affaire
+ * qui existe déjà — quel que soit son pipeline et quel que soit son propriétaire
+ * actuel. On ne crée une affaire que si l'entreprise n'en a strictement aucune.
+ *
+ * L'ancienne version ne cherchait un candidat que dans le pipeline « Agent
+ * SAMA », et seulement s'il appartenait à l'agent ou à personne : une entreprise
+ * dont l'affaire vivait dans « Streak Mars/Avril » n'avait aucun candidat, donc
+ * l'attribution ouvrait une seconde affaire. Un lot de 47 entreprises a produit
+ * 47 doublons — chacun déclenchant en plus `opportunity_created` et ses
+ * automatisations.
+ *
+ * L'affaire réutilisée NE CHANGE PAS de pipeline : on n'écrit que `owner_id`,
+ * jamais `stage_id` ni `pipeline_id`. Toucher `stage_id` déclencherait
+ * `trg_sync_opportunity_pipeline_from_stage`, qui dérive `pipeline_id` de
+ * l'étape et déplacerait l'affaire (cf. `sql/20260326_multi_pipeline_support.sql`).
+ *
+ * Sème la première tâche « Appel à froid » pour que le prospect apparaisse dans
+ * la file Démarchage. Rejouable sans dommage : ni l'affaire ni la tâche ne sont
+ * dupliquées.
  *
  * `pipeline` laisse une attribution en masse résoudre le pipeline agent une
- * seule fois pour tout le lot au lieu d'une fois par entreprise.
+ * seule fois pour tout le lot. Il n'est nécessaire QUE pour créer une affaire :
+ * une attribution sur affaire existante réussit même sans lui.
  */
 export async function assignProspectToAgent(
   entrepriseId: number,
   agentId: string,
-  pipeline?: AgentPipelineRef,
+  pipeline?: AgentPipelineRef | null,
 ): Promise<AssignResult> {
   const sc = getServiceClient();
-  const agent = pipeline ?? (await getAgentPipeline());
-  if (!agent || agent.stages.length === 0) {
-    return { ok: false, error: "pipeline_introuvable" };
-  }
 
+  // L'entreprise est lue AVANT d'être réattribuée. Le trigger
+  // `entreprises_sync_opportunite_owner` propage `owner_id` sur toutes ses
+  // affaires dès l'update : après coup, elles appartiennent déjà à l'agent et
+  // plus rien ne distingue une première attribution d'une réattribution. C'est
+  // l'ancien propriétaire de l'ENTREPRISE qui fait foi.
   const { data: ent, error: entErr } = await sc
     .from("entreprises")
-    .update({ owner_id: agentId })
+    .select("id, name, telephone, owner_id")
     .eq("id", entrepriseId)
-    .select("id, name, telephone")
     .maybeSingle();
   if (entErr) return { ok: false, error: entErr.message };
   if (!ent) return { ok: false, error: "entreprise_introuvable" };
 
-  // Reuse an existing opportunity for this prospect: the agent's own, or one
-  // released by a previous unassignment (owner_id null) so re-attributing a
-  // prospect picks its history back up instead of forking a second deal.
-  const { data: candidates } = await sc
+  const alreadyOwned = (ent.owner_id as string | null) === agentId;
+
+  // Toutes les affaires de l'entreprise, tous pipelines confondus et quel que
+  // soit leur propriétaire : l'attribution admin est autoritaire, elle reprend
+  // l'affaire d'un autre agent au lieu d'en forger une seconde.
+  const { data: deals, error: dealsErr } = await sc
     .from("opportunites")
-    .select("id, owner_id")
+    .select("id, owner_id, pipeline_id, stage_id, created_at, is_test")
     .eq("entreprise_id", entrepriseId)
-    .eq("pipeline_id", agent.pipelineId)
-    .limit(20);
+    .order("created_at", { ascending: true })
+    .limit(50);
+  if (dealsErr) return { ok: false, error: dealsErr.message };
 
-  const reusable = (candidates ?? []).filter((o) => o.owner_id === agentId || o.owner_id == null);
-  const existing = reusable.find((o) => o.owner_id === agentId) ?? reusable[0] ?? null;
+  const real = ((deals ?? []) as DealRecord[]).filter(isRealDeal);
+  const existing = pickSurvivor(real);
 
-  const alreadyOwned = existing?.id != null && existing.owner_id === agentId;
+  if (real.length > 1) {
+    // Doublon résiduel : l'invariant n'est pas encore tenu sur cette entreprise.
+    // On attribue quand même (l'admin ne doit pas être bloqué), mais on le dit —
+    // c'est ce que `/api/admin/merge-duplicate-opportunites` est là pour réparer.
+    console.warn(
+      `[assign] entreprise ${entrepriseId} porte ${real.length} affaires : ` +
+        `attribution sur ${existing?.id}, doublons à fusionner.`,
+    );
+  }
+
+  const { error: ownErr } = await sc
+    .from("entreprises")
+    .update({ owner_id: agentId })
+    .eq("id", entrepriseId);
+  if (ownErr) return { ok: false, error: ownErr.message };
 
   let opportuniteId: string;
-  if (existing?.id) {
-    // The agent's own deal, or one released by a previous unassignment.
-    opportuniteId = existing.id as string;
+  if (existing) {
+    // L'affaire existe : elle change de main, pas de pipeline.
+    opportuniteId = String(existing.id);
   } else {
+    // Aucune affaire : c'est le seul cas où l'attribution en crée une, dans le
+    // pipeline agent, à sa première étape.
+    const agent = pipeline ?? (await getAgentPipeline());
+    if (!agent || agent.stages.length === 0) {
+      return { ok: false, error: "pipeline_introuvable" };
+    }
     const { data: opp, error: oppErr } = await sc
       .from("opportunites")
       .insert({
@@ -251,12 +292,13 @@ export async function assignProspectsToAgent(
   const ids = uniqueIds(entrepriseIds);
   if (ids.length === 0) return { ok: true, assigned: [], failed: [] };
 
+  // Résolu une fois pour le lot, mais plus bloquant : il ne sert qu'à créer
+  // l'affaire des entreprises qui n'en ont aucune. Un lot d'entreprises qui ont
+  // déjà leur affaire s'attribue même si le pipeline agent a disparu.
   const pipeline = await getAgentPipeline();
-  if (!pipeline || pipeline.stages.length === 0) {
-    return { ok: false, error: "pipeline_introuvable" };
-  }
+  const usable = pipeline && pipeline.stages.length > 0 ? pipeline : null;
 
-  const results = await mapLimit(ids, 4, (id) => assignProspectToAgent(id, agentId, pipeline));
+  const results = await mapLimit(ids, 4, (id) => assignProspectToAgent(id, agentId, usable));
 
   const assigned: { entreprise_id: number; opportunite_id: string }[] = [];
   const failed: BatchFailure[] = [];

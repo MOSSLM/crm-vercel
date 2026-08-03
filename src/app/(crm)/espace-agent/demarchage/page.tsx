@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { authedFetch } from "@/utils/authedFetch";
 import { toast } from "sonner";
@@ -18,8 +18,8 @@ import {
   X,
 } from "lucide-react";
 import { one } from "@/components/agent-portal/format";
+import type { StageRole } from "@/lib/opportunites/stage-roles";
 
-type Stage = { id: number; nom: string; ordre: number };
 type Contact = { first_name: string | null; last_name: string | null; tel: string | null; email: string | null };
 type Entreprise = { id: number; name: string | null; ville: string | null; telephone: string | null };
 type Task = {
@@ -42,24 +42,16 @@ const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
 
 export default function AgentDemarchagePage() {
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [stages, setStages] = useState<Stage[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const [tasksRes, pipeRes] = await Promise.all([
-          authedFetch("/api/agent/tasks"),
-          authedFetch("/api/agent/pipeline"),
-        ]);
+        const tasksRes = await authedFetch("/api/agent/tasks");
         if (tasksRes.ok) {
           const all = (await tasksRes.json()) as Task[];
           setTasks(all.filter((t) => t.status === "pending"));
-        }
-        if (pipeRes.ok) {
-          const data = await pipeRes.json();
-          setStages((data.stages ?? []) as Stage[]);
         }
       } finally {
         setLoading(false);
@@ -68,20 +60,26 @@ export default function AgentDemarchagePage() {
     void load();
   }, []);
 
-  const stageId = useMemo(() => {
-    const map: Record<string, number | undefined> = {};
-    for (const s of stages) map[s.nom] = s.id;
-    return map;
-  }, [stages]);
-
+  /**
+   * L'issue de l'appel est envoyée comme INTENTION (`outcome`), pas comme
+   * `stage_id`.
+   *
+   * L'ancienne version résolvait l'étape côté client en cherchant le libellé
+   * (« RDV calé », « Intéressé », « Perdu ») dans les étapes renvoyées par
+   * /api/agent/pipeline. Ces noms n'existant que dans « Agent SAMA », l'id
+   * trouvé était toujours une étape d'Agent SAMA : l'appliquer à une affaire
+   * vivant dans « Streak Mars/Avril » déclenchait
+   * `trg_sync_opportunity_pipeline_from_stage` et aspirait l'affaire dans le
+   * pipeline agent au premier clic. Le serveur résout maintenant l'étape dans le
+   * pipeline de l'affaire concernée.
+   */
   const resolve = async (
     task: Task,
     status: string,
-    stageName: string | null,
+    outcome: StageRole | null,
     label: string,
   ) => {
     setBusy(task.id);
-    const targetStage = stageName ? stageId[stageName] : undefined;
     try {
       const res = await authedFetch("/api/agent/tasks", {
         method: "PATCH",
@@ -90,7 +88,7 @@ export default function AgentDemarchagePage() {
           id: task.id,
           status,
           opportunite_id: task.opportunite_id ?? undefined,
-          stage_id: targetStage,
+          outcome: outcome ?? undefined,
         }),
       });
       if (!res.ok) throw new Error();
@@ -169,7 +167,7 @@ export default function AgentDemarchagePage() {
                   <Button
                     size="sm"
                     disabled={disabled}
-                    onClick={() => resolve(task, "done", "RDV calé", "RDV calé !")}
+                    onClick={() => resolve(task, "done", "rdv", "RDV calé !")}
                   >
                     <CalendarCheck className="mr-1 h-4 w-4" /> RDV calé
                   </Button>
@@ -177,7 +175,7 @@ export default function AgentDemarchagePage() {
                     size="sm"
                     variant="secondary"
                     disabled={disabled}
-                    onClick={() => resolve(task, "done", "Intéressé", "Marqué intéressé.")}
+                    onClick={() => resolve(task, "done", "interesse", "Marqué intéressé.")}
                   >
                     <ThumbsUp className="mr-1 h-4 w-4" /> Intéressé
                   </Button>
@@ -194,7 +192,7 @@ export default function AgentDemarchagePage() {
                     variant="ghost"
                     disabled={disabled}
                     className="text-destructive"
-                    onClick={() => resolve(task, "done", "Perdu", "Marqué perdu.")}
+                    onClick={() => resolve(task, "done", "perdu", "Marqué perdu.")}
                   >
                     <X className="mr-1 h-4 w-4" /> Pas intéressé
                   </Button>

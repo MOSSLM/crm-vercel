@@ -17,8 +17,10 @@ type DashboardData = {
   signes: number;
   perdus: number;
   pipelineValue: number;
-  byStage: Record<string, number>;
-  stages: { id: number; nom: string; ordre: number }[];
+  // Indexé par `stage_id` : deux pipelines ont chacun leur « Perdu », une clé
+  // par nom fusionnait leurs compteurs.
+  byStage: Record<number, number>;
+  stages: { id: number; nom: string; ordre: number; pipeline_id: string; pipeline_nom: string }[];
   poolDisponible: number;
   tachesEnAttente: number;
 };
@@ -107,7 +109,7 @@ export default function AgentDashboardPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {data.stages.map((s) => {
-                  const count = data.byStage[s.nom] ?? 0;
+                  const count = data.byStage[s.id] ?? 0;
                   const pct = data.total > 0 ? Math.round((count / data.total) * 100) : 0;
                   return (
                     <div key={s.id} className="flex items-center gap-3">
@@ -115,7 +117,9 @@ export default function AgentDashboardPage() {
                         className="h-2.5 w-2.5 shrink-0 rounded-full"
                         style={{ background: stageTint(s.nom) }}
                       />
-                      <span className="w-28 shrink-0 text-sm">{s.nom}</span>
+                      <span className="w-28 shrink-0 truncate text-sm" title={`${s.pipeline_nom} · ${s.nom}`}>
+                        {s.nom}
+                      </span>
                       <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                         <div
                           className="h-full rounded-full"

@@ -128,34 +128,149 @@ describe('unassignProspectFromAgent', () => {
   });
 });
 
+/** L'entreprise telle que la lit `assignProspectToAgent`, avant réattribution. */
+const entreprise = (ownerId: string | null) => ({
+  data: { id: ENT, name: 'ACME', telephone: null, owner_id: ownerId },
+});
+
+const insertsOn = (table: string) =>
+  calls.filter((c) => c.table === table && c.op === 'insert').map((c) => c.payload);
+
 describe('assignProspectToAgent', () => {
-  it('recolle les affaires sur le nouveau propriétaire', async () => {
-    results['entreprises.update'] = { data: { id: ENT, name: 'ACME', telephone: null } };
-    results['opportunites.select'] = { data: [{ id: 'opp-1', owner_id: null }] };
+  // LA régression : l'entreprise avait déjà une affaire, mais dans un autre
+  // pipeline que « Agent SAMA ». L'ancienne recherche, bornée à ce pipeline, ne
+  // trouvait rien et ouvrait une SECONDE affaire. 47 entreprises attribuées le
+  // 3 août ont produit 47 doublons de cette façon.
+  it("reprend l'affaire d'un autre pipeline au lieu d'en créer une seconde", async () => {
+    results['entreprises.select'] = entreprise(null);
+    results['opportunites.select'] = {
+      data: [
+        {
+          id: 'opp-streak',
+          owner_id: null,
+          pipeline_id: 'p-streak',
+          stage_id: 42,
+          created_at: '2026-03-06T01:07:30Z',
+          is_test: false,
+        },
+      ],
+    };
+
+    const res = await assignProspectToAgent(ENT, AGENT);
+
+    expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-streak' });
+    expect(insertsOn('opportunites')).toEqual([]);
+  });
+
+  // « L'affaire ne change pas de pipeline » : l'attribution n'écrit QUE
+  // `owner_id`. Écrire `stage_id` déclencherait
+  // `trg_sync_opportunity_pipeline_from_stage`, qui dérive `pipeline_id` de
+  // l'étape et déplacerait l'affaire.
+  it("n'écrit jamais ni pipeline_id ni stage_id sur l'affaire reprise", async () => {
+    results['entreprises.select'] = entreprise(null);
+    results['opportunites.select'] = {
+      data: [{ id: 'opp-streak', owner_id: null, pipeline_id: 'p-streak', stage_id: 42, is_test: false }],
+    };
+
+    await assignProspectToAgent(ENT, AGENT);
+
+    for (const patch of updatesOn('opportunites')) {
+      expect(patch).not.toHaveProperty('pipeline_id');
+      expect(patch).not.toHaveProperty('stage_id');
+    }
+  });
+
+  // Réattribuer de l'agent B à l'agent A reprend l'affaire de B : l'attribution
+  // admin est autoritaire. L'ancien filtre `owner_id === agent || null` l'écartait
+  // et forgeait un doublon, que `syncOpportuniteOwners` donnait ensuite à A —
+  // deux affaires pour A sur la même entreprise.
+  it("reprend l'affaire d'un autre agent au lieu d'en créer une seconde", async () => {
+    results['entreprises.select'] = entreprise('agent-2');
+    results['opportunites.select'] = {
+      data: [{ id: 'opp-1', owner_id: 'agent-2', pipeline_id: 'p-streak', is_test: false }],
+    };
 
     const res = await assignProspectToAgent(ENT, AGENT);
 
     expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-1' });
+    expect(insertsOn('opportunites')).toEqual([]);
     expect(updatesOn('opportunites')).toEqual([{ owner_id: AGENT }]);
-    // Affaire récupérée du pool → l'appel à froid est réamorcé.
+  });
+
+  it("ne crée une affaire que si l'entreprise n'en a aucune", async () => {
+    results['entreprises.select'] = entreprise(null);
+    results['opportunites.select'] = { data: [] };
+    results['opportunites.insert'] = { data: { id: 'opp-neuve' } };
+
+    const res = await assignProspectToAgent(ENT, AGENT);
+
+    expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-neuve' });
+    expect(insertsOn('opportunites')).toEqual([
+      {
+        entreprise_id: ENT,
+        owner_id: AGENT,
+        pipeline_id: 'pipe-1',
+        stage_id: 1,
+        name: 'ACME',
+      },
+    ]);
+  });
+
+  // Une affaire de test porte sa propre entreprise fictive : elle ne compte pas
+  // comme « cette entreprise a déjà une affaire ».
+  it('ignore les affaires de test', async () => {
+    results['entreprises.select'] = entreprise(null);
+    results['opportunites.select'] = { data: [{ id: 'opp-test', owner_id: null, is_test: true }] };
+    results['opportunites.insert'] = { data: { id: 'opp-neuve' } };
+
+    const res = await assignProspectToAgent(ENT, AGENT);
+
+    expect(res.ok && res.opportuniteId).toBe('opp-neuve');
+  });
+
+  // Le trigger `entreprises_sync_opportunite_owner` propage `owner_id` sur les
+  // affaires dès que l'entreprise change de main. Si on jugeait « déjà attribué »
+  // d'après l'affaire, il serait toujours vrai et l'appel à froid ne serait
+  // jamais semé. C'est l'ancien propriétaire de l'ENTREPRISE qui fait foi.
+  it("sème l'appel à froid même si l'affaire porte déjà le bon propriétaire", async () => {
+    results['entreprises.select'] = entreprise(null);
+    results['opportunites.select'] = {
+      data: [{ id: 'opp-1', owner_id: AGENT, pipeline_id: 'p-streak', is_test: false }],
+    };
+
+    await assignProspectToAgent(ENT, AGENT);
+
     expect(calls.some((c) => c.table === 'prospection_tasks' && c.op === 'insert')).toBe(true);
   });
 
-  it("ne réamorce pas l'appel à froid quand l'agent a déjà l'affaire", async () => {
-    results['entreprises.update'] = { data: { id: ENT, name: 'ACME', telephone: null } };
-    results['opportunites.select'] = { data: [{ id: 'opp-1', owner_id: AGENT }] };
+  it("ne réamorce pas l'appel à froid quand l'agent avait déjà l'entreprise", async () => {
+    results['entreprises.select'] = entreprise(AGENT);
+    results['opportunites.select'] = {
+      data: [{ id: 'opp-1', owner_id: AGENT, pipeline_id: 'p-streak', is_test: false }],
+    };
 
     const res = await assignProspectToAgent(ENT, AGENT);
 
     expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-1' });
     expect(calls.some((c) => c.table === 'prospection_tasks' && c.op === 'insert')).toBe(false);
   });
+
+  it("échoue proprement sur une entreprise inconnue", async () => {
+    results['entreprises.select'] = { data: null };
+
+    expect(await assignProspectToAgent(ENT, AGENT)).toEqual({
+      ok: false,
+      error: 'entreprise_introuvable',
+    });
+  });
 });
 
 describe('attributions en masse', () => {
   it('attribue tout le lot en ne résolvant le pipeline agent qu\'une fois', async () => {
-    results['entreprises.update'] = { data: { id: ENT, name: 'ACME', telephone: null } };
-    results['opportunites.select'] = { data: [{ id: 'opp-1', owner_id: null }] };
+    results['entreprises.select'] = { data: { id: ENT, name: 'ACME', telephone: null, owner_id: null } };
+    results['opportunites.select'] = {
+      data: [{ id: 'opp-1', owner_id: null, pipeline_id: 'p-streak', is_test: false }],
+    };
 
     const res = await assignProspectsToAgent([ENT, ENT + 1, ENT], AGENT);
 
