@@ -374,6 +374,45 @@ export function RegulatorPage() {
               <QueueRows rows={view.queue} now={now} tz={tz} paused={s.paused} />
             </div>
 
+            {/* Hors file, mais bien réels : les prospects qu'aucune adresse ne
+                permet d'atteindre. Sans cette liste, la séquence semblerait
+                simplement « ne rien faire » pour eux. */}
+            {view.missingEmail.length > 0 && (
+              <div className="rg-card">
+                <CardHead
+                  icon="mail"
+                  title="Sans email — hors file"
+                  sub="Aucun envoi n’est préparé pour ces entreprises. Saisissez l’adresse sur leur fiche, ou sautez l’étape email depuis le pipeline commercial."
+                  right={<span className="pill warn">{view.missingEmail.length}</span>}
+                />
+                <div className="rg-card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {view.missingEmail.slice(0, 40).map((row) => (
+                    <div key={row.enrollmentId} className="rg-load">
+                      <span className="who" style={{ fontWeight: 600 }}>
+                        {row.companyName}
+                      </span>
+                      <span style={{ fontSize: 11, color: 'var(--text-3)', minWidth: 0, flex: 1 }}>
+                        {row.contactName} · {row.sequenceName} · étape {row.step}
+                      </span>
+                      {row.entrepriseId != null && (
+                        <Link className="btn ghost xs" href={`/companies/${row.entrepriseId}`}>
+                          Fiche
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                  {view.missingEmail.length > 40 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                      … et {view.missingEmail.length - 40} autre{view.missingEmail.length - 40 > 1 ? 's' : ''}.
+                    </div>
+                  )}
+                  <Link className="btn sm" href="/pipeline-commercial" style={{ alignSelf: 'flex-start' }}>
+                    Traiter dans le pipeline commercial
+                  </Link>
+                </div>
+              </div>
+            )}
+
             <div className="rg-card">
               <CardHead
                 icon="users"

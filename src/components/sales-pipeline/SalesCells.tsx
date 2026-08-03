@@ -82,6 +82,10 @@ export interface SalesHandlers {
   onReact: (event: React.MouseEvent, row: SalesBoardRow) => void
   onRevive: (row: SalesBoardRow, columnId?: string) => void
   onSkipToDeal: (row: SalesBoardRow) => void
+  /** Saisir à la main l'adresse manquante d'un prospect. */
+  onAddEmail: (row: SalesBoardRow) => void
+  /** Sauter l'étape email et enchaîner sur le canal suivant (WhatsApp). */
+  onSkipEmail: (row: SalesBoardRow) => void
   busy: string | null
 }
 
@@ -182,6 +186,14 @@ function ActiveBody({
               Sans démo
             </span>
           )}
+          {/* Le drapeau tombe dès le stock de départ : on sait avant de lancer
+              la séquence que l'étape email sera impossible pour ce prospect. */}
+          {row.emailMissing && (
+            <span className="chip danger">
+              <Mail className="ico-sm" />
+              Sans email
+            </span>
+          )}
         </div>
         {row.contact ? (
           <div className="muted">
@@ -209,6 +221,24 @@ function ActiveBody({
   if (column.group === 'sequence') {
     if (column.kind === 'email') {
       const seq = row.sequence
+      // Sans adresse, rien n'est préparé : ni créneau, ni compte à rebours. La
+      // cellule dit ce qui manque et propose les deux seules sorties possibles
+      // (saisir l'adresse, ou passer au canal suivant) — cf. le pied de carte.
+      if (row.emailMissing) {
+        return (
+          <div className="c-body col">
+            <div className="hold danger">
+              <AlertTriangle className="ico-sm" />
+              Aucun email connu
+            </div>
+            <div className="why">
+              <Slash className="ico-xs" />
+              hors file d’envoi — rien n’est préparé
+            </div>
+            {seq && <div className="stepn">{seq.stepLabel}</div>}
+          </div>
+        )
+      }
       if (!seq) {
         return (
           <div className="c-body col">
@@ -576,6 +606,53 @@ export function SalesCell({
   // Sans contact identifiable, la mise en séquence échouerait côté serveur :
   // autant le dire tout de suite plutôt que d'offrir un bouton qui rate.
   const canEnroll = isEntry && !!row.contact
+  // Étape email impossible : la carte change de verbe. Plutôt qu'un lien vers
+  // une file où ce prospect ne figure pas, elle propose de saisir l'adresse — et
+  // le pied de carte offre la sortie : passer au canal suivant.
+  const emailBlocked = column.kind === 'email' && row.emailMissing
+
+  if (emailBlocked) {
+    return (
+      <div className={'mx-cell active-cell' + groupClass} style={seg}>
+        <div className="card active is-blocked">
+          <div className="c-hd">
+            <span className="c-dot" />
+            <span className="c-ttl">{column.label}</span>
+            <span className="c-tag">
+              <span className="pill danger">Sans email</span>
+            </span>
+          </div>
+
+          {row.sequence && (
+            <div className="seqline">
+              <i style={{ background: 'var(--seg)' }} />
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.sequence.name}</span>
+              <span className="st">
+                {row.sequence.currentStep}/{row.sequence.totalSteps}
+              </span>
+            </div>
+          )}
+
+          <ActiveBody column={column} row={row} now={now} timezone={timezone} />
+
+          <button className="cta" disabled={busy} onClick={() => handlers.onAddEmail(row)}>
+            <Mail className="ico-sm" />
+            Ajouter l’email
+          </button>
+
+          <div className="c-foot">
+            <button className="btn sm" disabled={busy} onClick={() => handlers.onSkipEmail(row)}>
+              <ChevronsRight className="ico-sm" />
+              Passer à WhatsApp
+            </button>
+            <button className="btn ghost sm icon" title="Le prospect a réagi" onClick={(e) => handlers.onReact(e, row)}>
+              <Bolt className="ico-sm" />
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={'mx-cell active-cell' + groupClass} style={seg}>

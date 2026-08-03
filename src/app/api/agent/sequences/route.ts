@@ -50,8 +50,8 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     sc
       .from("sequence_enrollments")
       .select(
-        "id, automation_id, current_step, status, next_run_at, entered_at, " +
-          "entreprise:entreprises(id, name), contact:contacts(id, first_name, last_name)",
+        "id, automation_id, current_step, status, next_run_at, hold_reason, entered_at, " +
+          "entreprise:entreprises(id, name, email), contact:contacts(id, first_name, last_name, email)",
       )
       .eq("created_by", user.id)
       .order("entered_at", { ascending: false })

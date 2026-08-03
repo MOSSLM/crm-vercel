@@ -14,16 +14,19 @@ import Link from 'next/link'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import {
+  AlertTriangle,
   Bolt,
   Building2,
   Calendar,
   ChevronDown,
   ChevronRight,
+  ChevronsRight,
   Clock,
   Globe,
   Inbox,
   Layers,
   Mail,
+  MailPlus,
   MapPin,
   MessageCircle,
   MoreVertical,
@@ -48,10 +51,13 @@ import { formatHM } from '@/lib/automations/regulator'
 import { QueueRows } from '@/components/automations/regulator/RegulatorPage'
 import { Avatar, colorForId, eta, hm, hmd, initialsOf } from '@/components/automations/regulator/parts'
 import { KIND_ICON, SalesCell, columnIcon, eur, rgba, type SalesHandlers } from './SalesCells'
-import type { SalesBoardData, SalesBoardRow, SalesFilters } from './types'
+import type { SalesBoardData, SalesBoardRow, SalesFilters, SalesMissingEmailRow } from './types'
 import './sp-skin.css'
 
 export type SalesPipelineVariant = 'admin' | 'agent'
+
+/** Ce que la modale de saisie d'adresse a besoin de savoir. */
+type EmailTarget = { id: string; name: string; current: string | null }
 
 const STATUS_TABS: { id: SalesFilters['status']; label: string }[] = [
   { id: 'actifs', label: 'Actifs' },
@@ -107,9 +113,12 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     sequenceId: readStored(variant, 'sequence'),
   }))
   const [search, setSearch] = React.useState('')
-  const [modal, setModal] = React.useState<{ type: 'seq'; rows: SalesBoardRow[] } | { type: 'queue' } | null>(null)
+  const [modal, setModal] = React.useState<
+    { type: 'seq'; rows: SalesBoardRow[] } | { type: 'queue' } | { type: 'missing' } | null
+  >(null)
   const [popover, setPopover] = React.useState<{ row: SalesBoardRow; x: number; y: number } | null>(null)
   const [reaction, setReaction] = React.useState<{ row: SalesBoardRow; id: SalesReactionId } | null>(null)
+  const [emailTarget, setEmailTarget] = React.useState<EmailTarget | null>(null)
 
   React.useEffect(() => {
     const t = setTimeout(() => setFilters((f) => (f.q === search ? f : { ...f, q: search, page: 0 })), 320)
@@ -168,6 +177,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       setPopover(null)
       setModal(null)
       setReaction(null)
+      setEmailTarget(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -215,6 +225,39 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     [sequenceColumns],
   )
 
+  /** Les seules colonnes email encore à venir — celles que « passer à WhatsApp » barre. */
+  const pendingEmailColumns = React.useCallback(
+    (row: SalesBoardRow) =>
+      sequenceColumns
+        .filter((c) => c.kind === 'email' && (row.cells[c.id] === 'active' || row.cells[c.id] === 'locked'))
+        .map((c) => c.id),
+    [sequenceColumns],
+  )
+
+  const skipEmail = React.useCallback(
+    async (row: SalesBoardRow) => {
+      const ok = await post(
+        'skip-email',
+        { opportunite_id: row.id, skip_columns: pendingEmailColumns(row) },
+        row.id,
+      )
+      if (ok) toast.success('Étape email sautée — au tour de WhatsApp.')
+    },
+    [post, pendingEmailColumns],
+  )
+
+  const saveEmail = React.useCallback(
+    async (target: EmailTarget, email: string) => {
+      const ok = await post('email', { opportunite_id: target.id, email }, target.id)
+      if (ok) {
+        toast.success(`Email enregistré sur la fiche de ${target.name}.`)
+        setEmailTarget(null)
+      }
+      return ok
+    },
+    [post],
+  )
+
   /* ── Actions de carte ──────────────────────────────────────────────────── */
   const handlers: SalesHandlers = {
     busy,
@@ -246,6 +289,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
         row.id,
         'Envoyé en phase commerciale',
       ),
+    onAddEmail: (row) =>
+      setEmailTarget({ id: row.id, name: displayName(row), current: row.companyEmail ?? row.contact?.email ?? null }),
+    onSkipEmail: (row) => void skipEmail(row),
   }
 
   async function work(column: SalesColumn, row: SalesBoardRow) {
@@ -390,6 +436,28 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           )}
           <span className="rb-now mono">{hm(now, tz)}</span>
         </button>
+      )}
+
+      {/* ── Alerte « sans email » ────────────────────────────────────────
+          Une entreprise sans adresse ne reçoit rien et n'entre pas dans la
+          file : mieux vaut le savoir avant de compter sur l'étape email. */}
+      {board && board.counts.missingEmail > 0 && (
+        <div className="mailalert">
+          <AlertTriangle className="ico-sm" />
+          <span>
+            <b>{board.counts.missingEmail}</b> entreprise{board.counts.missingEmail > 1 ? 's' : ''} sans email
+          </span>
+          <span className="txt">
+            {board.sequenceHasEmailStep
+              ? 'aucun envoi n’est préparé pour elles — saisissez l’adresse, ou sautez l’étape email.'
+              : 'la séquence affichée n’a pas d’étape email : elles ne sont pas bloquées.'}
+          </span>
+          <button className="btn sm" onClick={() => setModal({ type: 'missing' })}>
+            <MailPlus className="ico-sm" />
+            Traiter
+            <span className="ct">{board.counts.missingEmail}</span>
+          </button>
+        </div>
       )}
 
       {/* ── Barre d'outils ──────────────────────────────────────────────── */}
@@ -566,6 +634,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
                   })
                 }
                 onReact={(e) => handlers.onReact(e, row)}
+                onAddEmail={() => handlers.onAddEmail(row)}
               />
               {columns.map((column) => (
                 <SalesCell key={column.id} row={row} column={column} now={now} timezone={tz} handlers={handlers} />
@@ -734,6 +803,32 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
       {modal?.type === 'queue' && board && (
         <QueueDrawer board={board} now={now} timezone={tz} isAgent={isAgent} onClose={() => setModal(null)} />
       )}
+
+      {modal?.type === 'missing' && board && (
+        <MissingEmailDrawer
+          rows={board.missingEmail}
+          total={board.counts.missingEmail}
+          hasEmailStep={board.sequenceHasEmailStep}
+          agentMode={isAgent}
+          busy={busy}
+          onClose={() => setModal(null)}
+          onAddEmail={(entry) => setEmailTarget({ id: entry.id, name: entry.companyName, current: null })}
+          onSkipEmail={(entry) => {
+            const row = rows.find((r) => r.id === entry.id)
+            if (row) void skipEmail(row)
+            else void post('skip-email', { opportunite_id: entry.id }, entry.id, 'Étape email sautée')
+          }}
+        />
+      )}
+
+      {emailTarget && (
+        <EmailDialog
+          target={emailTarget}
+          busy={busy === emailTarget.id}
+          onClose={() => setEmailTarget(null)}
+          onSubmit={(email) => saveEmail(emailTarget, email)}
+        />
+      )}
     </div>
   )
 }
@@ -783,6 +878,7 @@ function RowHead({
   timezone,
   onToggle,
   onReact,
+  onAddEmail,
 }: {
   row: SalesBoardRow
   columns: SalesColumn[]
@@ -792,6 +888,7 @@ function RowHead({
   timezone: string
   onToggle: () => void
   onReact: (e: React.MouseEvent) => void
+  onAddEmail: () => void
 }) {
   const doneCount = columns.filter((c) => row.cells[c.id] === 'done').length
   const statusLabel =
@@ -884,6 +981,15 @@ function RowHead({
           <Building2 className="ico-xs" />
           {row.stageName}
         </div>
+      )}
+
+      {/* Le drapeau « sans email » vit sur la ligne, pas seulement sur la
+          cellule email : on le voit quelle que soit l'étape atteinte. */}
+      {row.emailMissing && (
+        <button className="rh-flag" onClick={onAddEmail} title="Ajouter l’email de cette entreprise">
+          <Mail className="ico-xs" />
+          Sans email — ajouter
+        </button>
       )}
 
       {row.sequence ? (
@@ -987,6 +1093,9 @@ function SequenceDialog({
   const manualSteps = sequence?.steps.filter((s) => s.kind !== 'email' && s.kind !== 'wait').length ?? 0
   const lastSlot = board.queue.filter((q) => q.sendAt).slice(-1)[0]
   const firstEta = lastSlot?.sendAt ?? board.regulator.nextSendAt
+  // Ce que la séquence ne pourra pas faire, dit AVANT de la lancer.
+  const noEmail = rows.filter((r) => r.emailMissing).length
+  const sequenceEmails = sequence?.steps.filter((s) => s.kind === 'email').length ?? 0
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -1100,6 +1209,18 @@ function SequenceDialog({
                     <Calendar className="ico-sm" />
                     <span>Sortie immédiate si le prospect répond ou prend rendez-vous.</span>
                   </div>
+                  {noEmail > 0 && sequenceEmails > 0 && (
+                    <div style={{ color: 'var(--danger)' }}>
+                      <AlertTriangle className="ico-sm" />
+                      <span>
+                        <b>
+                          {noEmail} entreprise{noEmail > 1 ? 's' : ''} sans email
+                        </b>{' '}
+                        — aucun envoi ne sera préparé pour {noEmail > 1 ? 'elles' : 'elle'} : la séquence s’arrêtera à
+                        l’étape email tant que l’adresse manque.
+                      </span>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
@@ -1215,6 +1336,206 @@ function QueueDrawer({
         <div className="dr-queue au-skin">
           <QueueRows rows={board.queue} now={now} tz={timezone} paused={board.regulator.paused} compact />
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Tiroir « sans email » ─────────────────────────────────────────────── */
+
+/**
+ * La liste complète des prospects qu'aucun email ne peut atteindre, avec les
+ * deux seules sorties : saisir l'adresse, ou sauter l'étape pour enchaîner sur
+ * WhatsApp. Elle porte sur tout le périmètre filtré, pas sur la page courante —
+ * c'est un compteur qu'on veut voir tomber à zéro.
+ */
+function MissingEmailDrawer({
+  rows,
+  total,
+  hasEmailStep,
+  agentMode,
+  busy,
+  onClose,
+  onAddEmail,
+  onSkipEmail,
+}: {
+  rows: SalesMissingEmailRow[]
+  total: number
+  hasEmailStep: boolean
+  agentMode: boolean
+  busy: string | null
+  onClose: () => void
+  onAddEmail: (entry: SalesMissingEmailRow) => void
+  onSkipEmail: (entry: SalesMissingEmailRow) => void
+}) {
+  const blocked = rows.filter((r) => r.onEmailStep).length
+
+  return (
+    <div className="modal-scrim right" onClick={onClose}>
+      <div className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd">
+          <span className="sw" style={{ background: rgba('#B5322F', 0.12), color: '#B5322F' }}>
+            <AlertTriangle className="ico" />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mt">Entreprises sans email</div>
+            <div className="ms">
+              {total} au total{blocked > 0 ? ` · ${blocked} arrêtée${blocked > 1 ? 's' : ''} sur l’étape email` : ''}
+            </div>
+          </div>
+          <button className="rh-more" onClick={onClose} aria-label="Fermer">
+            <X className="ico-sm" />
+          </button>
+        </div>
+
+        <div className="dr-set">
+          <div className="dr-row">
+            <span className="k">Dans la file d’envoi</span>
+            <span className="v">aucune — rien n’est préparé pour elles</span>
+          </div>
+          <div className="dr-row">
+            <span className="k">Où va l’adresse saisie</span>
+            <span className="v">fiche entreprise, comme toutes les autres</span>
+          </div>
+          {!hasEmailStep && (
+            <div className="dr-row" style={{ color: 'var(--text-3)' }}>
+              <span className="k" style={{ color: 'inherit' }}>
+                Séquence affichée
+              </span>
+              <span className="v" style={{ color: 'inherit' }}>
+                sans étape email — rien n’est bloqué
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="dr-queue">
+          {rows.length === 0 ? (
+            <div className="empty" style={{ padding: 24 }}>
+              <div className="t">Rien à corriger</div>
+              <div className="s">Tous les prospects du filtre ont une adresse.</div>
+            </div>
+          ) : (
+            rows.map((entry) => (
+              <div className="me-row" key={entry.id}>
+                <span className="rh-logo" style={{ background: colorForId(entry.id) }}>
+                  {initialsOf(entry.companyName)}
+                </span>
+                <span className="who">
+                  <span className="nm">{entry.companyName}</span>
+                  <span className="sn">
+                    {entry.contactName || 'Sans contact'}
+                    {entry.sequenceName ? ` · ${entry.sequenceName}` : ' · pas en séquence'}
+                    {entry.onEmailStep ? ' · bloquée' : ''}
+                  </span>
+                </span>
+                <span className="acts">
+                  <button className="btn accent sm" disabled={busy === entry.id} onClick={() => onAddEmail(entry)}>
+                    <MailPlus className="ico-sm" />
+                    Email
+                  </button>
+                  {entry.sequenceName && (
+                    <button
+                      className="btn sm"
+                      disabled={busy === entry.id}
+                      title="Sauter l’étape email et passer à WhatsApp"
+                      onClick={() => onSkipEmail(entry)}
+                    >
+                      <ChevronsRight className="ico-sm" />
+                      WhatsApp
+                    </button>
+                  )}
+                  {entry.entrepriseId != null && (
+                    <Link
+                      className="btn ghost sm icon"
+                      href={
+                        agentMode
+                          ? `/espace-agent/entreprises/${entry.entrepriseId}`
+                          : `/companies/${entry.entrepriseId}`
+                      }
+                      title="Ouvrir la fiche entreprise"
+                    >
+                      <Building2 className="ico-sm" />
+                    </Link>
+                  )}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── Saisie manuelle de l'adresse ──────────────────────────────────────── */
+
+/**
+ * L'adresse saisie ici part sur `entreprises.email` — la colonne où vivent déjà
+ * toutes les autres adresses d'entreprise du CRM. Le moteur de séquence s'en
+ * sert comme destinataire dès que le contact n'en a pas, donc l'envoi redevient
+ * possible sans autre manipulation.
+ */
+function EmailDialog({
+  target,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  target: EmailTarget
+  busy: boolean
+  onClose: () => void
+  onSubmit: (email: string) => void
+}) {
+  const [email, setEmail] = React.useState(target.current ?? '')
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="modal" style={{ width: 460 }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-hd">
+          <span className="sw" style={{ background: rgba('#2A6FDB', 0.12), color: '#2A6FDB' }}>
+            <MailPlus className="ico" />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="mt">Email de l’entreprise</div>
+            <div className="ms">{target.name}</div>
+          </div>
+          <button className="rh-more" onClick={onClose} aria-label="Fermer">
+            <X className="ico-sm" />
+          </button>
+        </div>
+
+        <form
+          className="react-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (valid && !busy) onSubmit(email.trim())
+          }}
+        >
+          <label>
+            Adresse
+            <input
+              type="email"
+              value={email}
+              autoFocus
+              placeholder="contact@entreprise.fr"
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </label>
+          <p className="muted" style={{ fontSize: 11.5 }}>
+            Enregistrée sur la fiche entreprise, au même endroit que toutes les autres adresses du CRM. La séquence
+            reprend aussitôt : l’étape email repasse dans la file d’envoi.
+          </p>
+          <div className="modal-foot" style={{ margin: '0 -16px -14px', padding: '10px 16px' }}>
+            <button className="btn ghost sm" type="button" onClick={onClose}>
+              Annuler
+            </button>
+            <button className="btn accent sm" type="submit" disabled={!valid || busy}>
+              Enregistrer
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   )
@@ -1347,5 +1668,7 @@ const ERROR_LABELS: Record<string, string> = {
   sequence_introuvable: 'Séquence introuvable.',
   aucun_pipeline: 'Aucun pipeline configuré.',
   introuvable: 'Introuvable.',
+  email_invalide: 'Cette adresse email n’est pas valide.',
+  aucune_fiche: 'Ce prospect n’a ni entreprise ni contact où enregistrer l’adresse.',
 }
 const errorLabel = (code: unknown) => (typeof code === 'string' && ERROR_LABELS[code]) || 'Action impossible'

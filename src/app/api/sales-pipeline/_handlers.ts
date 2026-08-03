@@ -6,7 +6,7 @@
 
 import { json, jsonError } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
-import { advanceStage, applyReaction, reviveRow } from '@/lib/sales-pipeline/actions'
+import { advanceStage, applyReaction, reviveRow, setProspectEmail, skipEmailStep } from '@/lib/sales-pipeline/actions'
 import { enrollInSequence, processSequenceEnrollment } from '@/lib/automations/engine'
 import type { Automation, SequenceEnrollment } from '@/components/automations/types'
 import type {
@@ -14,6 +14,8 @@ import type {
   SalesEnrollPayload,
   SalesReactionPayload,
   SalesRevivePayload,
+  SalesSetEmailPayload,
+  SalesSkipEmailPayload,
 } from '@/app/api/_lib/schemas'
 
 type Scope = { ownerId: string | null; userId: string }
@@ -98,6 +100,70 @@ export async function handleRevive(
 
   await reviveRow(getServiceClient(), body.opportunite_id, body.stage)
   return json({ ok: true }, { headers: cors })
+}
+
+/**
+ * « Pas d'email — passer à WhatsApp ». L'étape email est barrée et l'inscription
+ * enchaîne sur le canal suivant, tâche créée dans la foulée.
+ */
+export async function handleSkipEmail(
+  body: SalesSkipEmailPayload,
+  scope: Scope,
+  cors: Record<string, string>,
+): Promise<Response> {
+  const access = await assertAccess([body.opportunite_id], scope)
+  if (!access.ok) return jsonError(access.error, access.status, {}, cors)
+
+  const result = await skipEmailStep(getServiceClient(), body.opportunite_id, body.skip_columns ?? [])
+  return json({ ok: true, ...result }, { headers: cors })
+}
+
+/**
+ * Une entreprise appartient-elle au caller ? Le pendant de `assertAccess` pour
+ * les surfaces qui raisonnent en entreprises (page Séquences) plutôt qu'en
+ * opportunités (pipeline commercial).
+ */
+async function assertCompanyAccess(
+  entrepriseId: number,
+  scope: Scope,
+): Promise<{ ok: true } | { ok: false; error: string; status: number }> {
+  const sc = getServiceClient()
+  const { data, error } = await sc.from('entreprises').select('id, owner_id').eq('id', entrepriseId).maybeSingle()
+  if (error) return { ok: false, error: error.message, status: 500 }
+  if (!data) return { ok: false, error: 'introuvable', status: 404 }
+  if (!scope.ownerId) return { ok: true }
+  if ((data.owner_id as string | null) !== scope.ownerId) {
+    return { ok: false, error: 'prospect_non_attribue', status: 403 }
+  }
+  return { ok: true }
+}
+
+/**
+ * Saisie manuelle de l'adresse d'un prospect. Elle atterrit sur la fiche
+ * entreprise, au même endroit que toutes les autres adresses du CRM.
+ */
+export async function handleSetEmail(
+  body: SalesSetEmailPayload,
+  scope: Scope,
+  cors: Record<string, string>,
+): Promise<Response> {
+  if (body.opportunite_id) {
+    const access = await assertAccess([body.opportunite_id], scope)
+    if (!access.ok) return jsonError(access.error, access.status, {}, cors)
+  } else if (body.entreprise_id != null) {
+    const access = await assertCompanyAccess(body.entreprise_id, scope)
+    if (!access.ok) return jsonError(access.error, access.status, {}, cors)
+  } else {
+    return jsonError('cible_manquante', 400, {}, cors)
+  }
+
+  const result = await setProspectEmail(
+    getServiceClient(),
+    { opportuniteId: body.opportunite_id ?? null, entrepriseId: body.entreprise_id ?? null },
+    body.email,
+  )
+  if (!result.ok) return jsonError(result.error, result.error === 'email_invalide' ? 400 : 404, {}, cors)
+  return json({ ok: true, ...result.result }, { headers: cors })
 }
 
 export type EnrollOutcome = {

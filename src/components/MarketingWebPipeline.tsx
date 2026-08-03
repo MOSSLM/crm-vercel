@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/EnrichmentProgressModal";
+import { LogoField } from "./marketing-pipeline/LogoField";
 import { PipelineMatrix, STAGES, AGENT_STAGES } from "./marketing-pipeline/PipelineMatrix";
 import { NotesDialog } from "./marketing-pipeline/NotesDialog";
 import type { MatrixHandlers, BulkHandlers, NoteSubject } from "./marketing-pipeline/types";
@@ -941,7 +942,9 @@ const SITE_REQUIRED_WITH_PROJECT: RequiredRule[] = [
   { field: "lm_stat_years", label: "Années d'expérience", ok: (f) => filledStat(f.lm_stat_years) },
   { field: "lm_stat_clients", label: "Clients satisfaits", ok: (f) => filledStat(f.lm_stat_clients) },
   { field: "lm_stat_installations", label: "Installations", ok: (f) => filledStat(f.lm_stat_installations) },
-  { field: "lm_stat_rge", label: "Qualifications (RGE)", ok: (f) => filledStat(f.lm_stat_rge) },
+  // Pas de règle sur `lm_stat_rge` : une entreprise sans qualification RGE est
+  // parfaitement valide, le bloc « chiffres clés » se limite alors à trois
+  // colonnes. Doit rester aligné sur `missingForSite` côté API.
 ];
 
 const siteRequiredFor = (hasProject: boolean): RequiredRule[] =>
@@ -1312,14 +1315,15 @@ const OpportunityEditModal: React.FC<{
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Nom affiché (override)"><Input value={form.lm_override_name} onChange={set("lm_override_name")} placeholder={form.name} /></Field>
-                    <Field
-                      label="Logo (URL)"
+                    <LogoField
+                      label="Logo"
                       required
                       invalid={showInvalid("lm_logo_url")}
                       hint="Affiché en en-tête du site : sans lui, la démo sort sans identité."
-                    >
-                      <Input value={form.lm_logo_url} onChange={set("lm_logo_url")} />
-                    </Field>
+                      value={form.lm_logo_url}
+                      entrepriseId={item?.entreprise_id ?? null}
+                      onChange={(url) => setForm((f) => ({ ...f, lm_logo_url: url }))}
+                    />
                     <Field label="Téléphone (override)"><Input value={form.lm_override_phone} onChange={set("lm_override_phone")} placeholder={form.telephone} /></Field>
                     <Field label="Email (override)"><Input value={form.lm_override_email} onChange={set("lm_override_email")} placeholder={form.email} /></Field>
                     <Field label="Horaires"><Input value={form.horaires} onChange={set("horaires")} placeholder="Lun–Ven 8h–18h" /></Field>
@@ -1338,8 +1342,9 @@ const OpportunityEditModal: React.FC<{
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Chiffres clés (stats)</h4>
                   <p className="text-xs text-muted-foreground mb-2">
-                    Le bloc « chiffres clés » du site les affiche tous : une valeur vide ou à 0
-                    laisse un trou dans la page, donc les quatre sont requis.
+                    Le bloc « chiffres clés » du site affiche ce qui est renseigné : une valeur vide
+                    ou à 0 laisse un trou dans la page, donc les trois premiers sont requis. Les
+                    qualifications RGE restent facultatives — toutes les entreprises n&apos;en ont pas.
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <Field label="Années d'expérience" required invalid={showInvalid("lm_stat_years")}>
@@ -1351,7 +1356,7 @@ const OpportunityEditModal: React.FC<{
                     <Field label="Installations" required invalid={showInvalid("lm_stat_installations")}>
                       <Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} />
                     </Field>
-                    <Field label="Qualifications (RGE)" required invalid={showInvalid("lm_stat_rge")}>
+                    <Field label="Qualifications (RGE)" hint="facultatif">
                       <Input type="number" value={form.lm_stat_rge} onChange={set("lm_stat_rge")} />
                     </Field>
                   </div>

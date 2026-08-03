@@ -7,6 +7,7 @@ const mockFrom = jest.fn();
 const mockDispatchEvent = jest.fn();
 const mockRunWorkflowAutomation = jest.fn();
 const mockProcessSequenceEnrollment = jest.fn();
+const mockHoldForMissingEmail = jest.fn();
 
 jest.mock('@/env', () => ({
   SUPABASE_URL: 'http://localhost',
@@ -27,6 +28,7 @@ jest.mock('@/lib/automations/dispatch', () => ({
 jest.mock('@/lib/automations/engine', () => ({
   runWorkflowAutomation: (...args: unknown[]) => mockRunWorkflowAutomation(...args),
   processSequenceEnrollment: (...args: unknown[]) => mockProcessSequenceEnrollment(...args),
+  holdForMissingEmail: (...args: unknown[]) => mockHoldForMissingEmail(...args),
 }));
 
 const ORIGINAL_ENV = { ...process.env };
@@ -80,6 +82,8 @@ describe('GET /api/automations/tick', () => {
     mockDispatchEvent.mockReset();
     mockRunWorkflowAutomation.mockReset();
     mockProcessSequenceEnrollment.mockReset();
+    mockHoldForMissingEmail.mockReset();
+    mockHoldForMissingEmail.mockResolvedValue(undefined);
     process.env = { ...ORIGINAL_ENV };
     delete process.env.CRON_SECRET;
     delete process.env.PG_CRON_SECRET;
@@ -316,8 +320,15 @@ describe('GET /api/automations/tick', () => {
       enrollments: Record<string, unknown>[];
       automations: Record<string, unknown>[];
       emailLogs?: Record<string, unknown>[];
+      /** Adresses connues du contact / de l'entreprise. `null` = aucune. */
+      contacts?: Record<string, unknown>[] | null;
+      entreprises?: Record<string, unknown>[] | null;
     }) => {
       const enrollmentsChain = rwChain({ data: opts.enrollments, error: null });
+      // Par défaut le contact a une adresse : sans elle, le régulateur écarte
+      // l'inscription de la file au lieu de la planifier.
+      const contacts = opts.contacts === undefined ? [{ id: 'c-1', email: 'jean@garage.fr' }] : (opts.contacts ?? []);
+      const entreprises = opts.entreprises ?? [];
       mockFrom.mockImplementation((table: string) => {
         if (table === 'regulator_settings') {
           return buildSelectChain({ data: opts.regulator ?? openRegulator(), error: null });
@@ -325,6 +336,8 @@ describe('GET /api/automations/tick', () => {
         if (table === 'sequence_enrollments') return enrollmentsChain;
         if (table === 'automations') return buildSelectChain({ data: opts.automations, error: null });
         if (table === 'email_logs') return buildSelectChain({ data: opts.emailLogs ?? [], error: null });
+        if (table === 'contacts') return buildSelectChain({ data: contacts, error: null });
+        if (table === 'entreprises') return buildSelectChain({ data: entreprises, error: null });
         return buildSelectChain({ data: [], error: null });
       });
       return enrollmentsChain;
@@ -385,6 +398,40 @@ describe('GET /api/automations/tick', () => {
       expect(body.emailsBlocked).toBe(1);
       expect(body.regulatorPaused).toBe(true);
       expect(chain.captured[0]).toEqual({ send_at: null, hold_reason: 'global_pause' });
+    });
+
+    it('n’entre pas dans la file quand aucune adresse n’est connue', async () => {
+      wire({
+        enrollments: [enrollment()],
+        automations: [sequence('email')],
+        contacts: [{ id: 'c-1', email: null }],
+        entreprises: [{ id: 7, email: '' }],
+      });
+
+      const { GET } = await importRoute();
+      const body = await (await GET(cronRequest())).json();
+
+      expect(mockProcessSequenceEnrollment).not.toHaveBeenCalled();
+      expect(mockHoldForMissingEmail).toHaveBeenCalledWith(expect.anything(), 'enr-1');
+      expect(body.emailsNoAddress).toBe(1);
+      expect(body.emailsQueued).toBe(0);
+      expect(body.emailsSent).toBe(0);
+    });
+
+    it('accepte l’adresse de la fiche entreprise comme destinataire de repli', async () => {
+      wire({
+        enrollments: [enrollment()],
+        automations: [sequence('email')],
+        contacts: [{ id: 'c-1', email: null }],
+        entreprises: [{ id: 7, email: 'contact@garage.fr' }],
+      });
+      mockProcessSequenceEnrollment.mockResolvedValue(undefined);
+
+      const { GET } = await importRoute();
+      const body = await (await GET(cronRequest())).json();
+
+      expect(mockHoldForMissingEmail).not.toHaveBeenCalled();
+      expect(body.emailsSent).toBe(1);
     });
 
     it('exécute les étapes manuelles sans passer par la file', async () => {

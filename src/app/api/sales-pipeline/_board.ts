@@ -30,6 +30,7 @@ import {
   type SalesStateRow,
 } from '@/lib/sales-pipeline/stages'
 import { buildRegulatorView, type RegulatorQueueRow } from '@/app/api/automations/regulator/_view'
+import { cleanEmail } from '@/lib/automations/regulator-db'
 import type { HoldReason, SendWindow } from '@/lib/automations/regulator'
 
 /** Combien d'opportunités on remonte au maximum avant filtrage. */
@@ -94,6 +95,14 @@ export interface SalesBoardRow {
   mrr: number | null
   contact: { id: string; name: string; role: string | null; email: string | null; phone: string | null } | null
   owner: { id: string; name: string } | null
+  /** Adresse de repli portée par la fiche entreprise (`entreprises.email`). */
+  companyEmail: string | null
+  /**
+   * Ni le contact ni l'entreprise n'ont d'adresse : l'étape email ne peut pas
+   * partir. Le drapeau est posé dès la première ligne du tableau, avant même la
+   * mise en séquence — c'est ce qui évite d'inscrire un prospect injoignable.
+   */
+  emailMissing: boolean
   /** Étape de pipeline réelle — affichée en badge, même pendant la séquence. */
   stageName: string | null
   sequence: SalesSequenceInfo | null
@@ -115,6 +124,20 @@ export interface SalesBoardCounts {
   won: number
   todo: number
   value: number
+  /** Prospects actifs sans aucune adresse email — l'étape email leur est impossible. */
+  missingEmail: number
+}
+
+/** Une ligne de l'alerte « sans email », indépendante de la pagination. */
+export interface SalesMissingEmailRow {
+  id: string
+  companyName: string
+  contactName: string | null
+  contactId: string | null
+  entrepriseId: number | null
+  /** Déjà en séquence : l'étape email est gelée en attendant une adresse. */
+  sequenceName: string | null
+  onEmailStep: boolean
 }
 
 export interface SalesBoardData {
@@ -127,6 +150,10 @@ export interface SalesBoardData {
   columns: SalesColumn[]
   /** Compteurs par colonne, sur l'ensemble filtré (pas sur la page). */
   columnCounts: Record<string, { active: number; done: number }>
+  /** Toutes les lignes sans email du périmètre filtré — pas seulement la page. */
+  missingEmail: SalesMissingEmailRow[]
+  /** La séquence affichée comporte-t-elle au moins une étape email ? */
+  sequenceHasEmailStep: boolean
   pipelines: { id: string; nom: string; isDefault: boolean }[]
   selectedPipelineId: string | null
   selectedSequenceId: string | null
@@ -342,7 +369,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     entIds.length > 0
       ? sb
           .from('entreprises')
-          .select('id, name, ville, telephone, site_web_canonique, canonical_url, logo_url, owner_id, service_tags')
+          .select('id, name, ville, telephone, email, site_web_canonique, canonical_url, logo_url, owner_id, service_tags')
           .in('id', entIds)
       : Promise.resolve({ data: [] as unknown[] }),
     oppIds.length > 0
@@ -394,6 +421,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
         name: string | null
         ville: string | null
         telephone: string | null
+        email: string | null
         site_web_canonique: string | null
         canonical_url: string | null
         logo_url: string | null
@@ -581,6 +609,10 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     const cells = cellStatuses(columns, position, state)
     const ownerId = opp.owner_id ?? ent?.owner_id ?? null
     const audit = auditByOpp.get(opp.id)
+    // Même règle que le régulateur : l'adresse du contact d'abord, celle de la
+    // fiche entreprise ensuite. Les deux vides = prospect injoignable par email.
+    const companyEmail = cleanEmail(ent?.email)
+    const emailMissing = !cleanEmail(contact?.email) && !companyEmail
     const tags = Array.isArray(ent?.service_tags)
       ? ent?.service_tags.filter(Boolean).join(' · ')
       : typeof ent?.service_tags === 'string'
@@ -610,6 +642,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
           }
         : null,
       owner: ownerId ? { id: ownerId, name: agentNameById.get(ownerId) ?? 'Agent' } : null,
+      companyEmail,
+      emailMissing,
       stageName: opp.stage_id != null ? (stageById.get(opp.stage_id)?.nom ?? null) : null,
       sequence,
       tasks: tasksByOpp.get(opp.id) ?? [],
@@ -658,6 +692,24 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     }
   }
 
+  // ── L'alerte « sans email » ──────────────────────────────────────────────
+  // Elle porte sur TOUT le périmètre filtré, jamais sur la seule page : c'est
+  // un compte qu'on veut voir tomber à zéro, pas un aperçu.
+  const emailColumnIds = new Set(columns.filter((c) => c.kind === 'email').map((c) => c.id))
+  const sequenceHasEmailStep = emailColumnIds.size > 0
+  const missingEmail: SalesMissingEmailRow[] = filtered
+    .filter((row) => row.emailMissing && row.state.state === 'progress')
+    .slice(0, 300)
+    .map((row) => ({
+      id: row.id,
+      companyName: row.companyName,
+      contactName: row.contact?.name ?? null,
+      contactId: row.contact?.id ?? null,
+      entrepriseId: row.entrepriseId,
+      sequenceName: row.sequence?.name ?? null,
+      onEmailStep: row.position != null && emailColumnIds.has(row.position),
+    }))
+
   const active = rows.filter((r) => r.state.state === 'progress')
   const counts: SalesBoardCounts = {
     actifs: active.length,
@@ -665,6 +717,7 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
     won: rows.filter((r) => r.state.state === 'won').length,
     todo: rows.filter((r) => r.hasTodo).length,
     value: active.reduce((sum, r) => sum + (r.montant ?? 0), 0),
+    missingEmail: filtered.filter((r) => r.emailMissing && r.state.state === 'progress').length,
   }
 
   const total = filtered.length
@@ -706,6 +759,8 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       counts,
       columns,
       columnCounts,
+      missingEmail,
+      sequenceHasEmailStep,
       pipelines,
       selectedPipelineId: selectedPipeline.id,
       selectedSequenceId: selectedSequence?.id ?? null,

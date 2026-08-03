@@ -13,7 +13,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
 
   const { data: ents, error: entErr } = await sc
     .from("entreprises")
-    .select("id, name")
+    .select("id, name, email")
     .eq("owner_id", user.id);
   if (entErr) return jsonError(entErr.message, 500, {}, cors);
 
@@ -21,6 +21,9 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   if (ids.length === 0) return json([], { headers: cors });
 
   const nameById = new Map((ents ?? []).map((e) => [e.id, e.name]));
+  // L'adresse de l'entreprise sert de destinataire de repli aux séquences :
+  // sans elle ni celle du contact, l'étape email est impossible.
+  const emailById = new Map((ents ?? []).map((e) => [e.id, e.email]));
 
   const { data, error } = await sc
     .from("contacts")
@@ -33,6 +36,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
   const enriched = (data ?? []).map((c) => ({
     ...c,
     entreprise_nom: nameById.get(c.entreprise_id) ?? null,
+    entreprise_email: emailById.get(c.entreprise_id) ?? null,
   }));
 
   return json(enriched, { headers: cors });

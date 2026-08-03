@@ -10,7 +10,7 @@
 import { json } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { dispatchEvent } from '@/lib/automations/dispatch'
-import { runWorkflowAutomation, processSequenceEnrollment } from '@/lib/automations/engine'
+import { runWorkflowAutomation, processSequenceEnrollment, holdForMissingEmail } from '@/lib/automations/engine'
 import {
   buildQueueItems,
   loadDueEnrollments,
@@ -68,6 +68,7 @@ async function handle(req: Request): Promise<Response> {
     emailsSent: 0,
     emailsQueued: 0,
     emailsBlocked: 0,
+    emailsNoAddress: 0,
     errors: 0,
   }
 
@@ -139,7 +140,7 @@ async function handle(req: Request): Promise<Response> {
   // 3. Étapes de séquence dues
   const nowMs = Date.parse(now)
   const settings = await loadRegulatorSettings(sb)
-  const { emails, others } = await loadDueEnrollments(sb, nowMs)
+  const { emails, noEmail, others } = await loadDueEnrollments(sb, nowMs)
 
   // 3a. Les étapes non-email (WhatsApp, appel, LinkedIn, attente) ne passent pas
   //     par la file : elles créent une tâche ou avancent le pointeur tout de suite.
@@ -147,6 +148,18 @@ async function handle(req: Request): Promise<Response> {
     try {
       await processSequenceEnrollment(enrollment)
       result.sequenceSteps++
+    } catch {
+      result.errors++
+    }
+  }
+
+  // 3a bis. Étape email sans destinataire : on ne prépare aucun envoi et la
+  //         séquence n'avance pas. Le motif est écrit dans l'inscription pour
+  //         que le pipeline commercial affiche le drapeau « sans email ».
+  for (const { enrollment } of noEmail) {
+    try {
+      await holdForMissingEmail(sb, enrollment.id)
+      result.emailsNoAddress++
     } catch {
       result.errors++
     }

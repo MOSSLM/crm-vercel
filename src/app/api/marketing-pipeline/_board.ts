@@ -92,7 +92,10 @@ export function missingForSite(ent: EntRow | undefined, project: ProjectRow | nu
     if (!hasStat(project.stat_years_experience)) miss.push("Années d'expérience");
     if (!hasStat(project.stat_satisfied_clients)) miss.push("Clients satisfaits");
     if (!hasStat(project.stat_installations_completed)) miss.push("Installations");
-    if (!hasStat(project.stat_rge_count)) miss.push("Qualifications (RGE)");
+    // Les qualifications RGE ne sont PAS requises : beaucoup d'entreprises n'en
+    // ont aucune, et le bloc « chiffres clés » se contente alors de trois
+    // colonnes. L'exiger faisait remonter une variable manquante impossible à
+    // combler autrement qu'en inventant un chiffre.
   }
   return miss;
 }
@@ -178,10 +181,14 @@ const PROJECT_ENRICHED_STATUSES = new Set(["framer", "ready", "published"]);
  * @param project Projet lead magnet de l'opportunité (statut + validation
  *   humaine déjà résolue), `null` s'il n'y en a pas encore.
  * @param legacy Dernière ligne `automated_enrichment` de l'entreprise.
+ * @param complete La fiche ne réclame plus aucune variable (`missingForSite`
+ *   vide). C'est ce qui rattrape un enrichissement automatique en échec :
+ *   rempli à la main, le dossier est enrichi, quoi qu'en dise le run.
  */
 export function isEnrichmentDone(
   project: { statut: string | null; validated: boolean } | null,
   legacy: { status: string | null } | null,
+  complete = false,
 ): boolean {
   // Déjà validé par un humain : l'étape ne régresse plus, même pendant un
   // ré-enrichissement (qui repasse le statut à `draft` le temps du run).
@@ -189,6 +196,13 @@ export function isEnrichmentDone(
 
   const statut = project?.statut ?? null;
   if (statut != null && PROJECT_ENRICHED_STATUSES.has(statut)) return true;
+
+  // Saisi à la main : ce qui compte est le RÉSULTAT, pas le chemin. Quand le
+  // dossier ne réclame plus aucune variable, l'étape est franchie même si
+  // l'enrichissement automatique n'a jamais abouti (site introuvable, page
+  // illisible…). Sans ça, une fiche complétée à la main restait collée sur la
+  // carte « Enrichir » et la validation demeurait « à débloquer ».
+  if (project && complete) return true;
 
   // Run en échec : la carte « Enrichir » reste active pour porter le bouton
   // « Relancer » et le message d'erreur, quoi qu'en dise l'ancien pipeline.
@@ -471,9 +485,15 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     const audit = auditByOpp.get(o.id) ?? null;
     const owner = ent?.owner_id ? agentById.get(ent.owner_id) : undefined;
 
+    // Ce qui manque encore pour générer le site. Calculé une fois : il sert à
+    // la fois d'indicateur sur la carte et de preuve qu'un enrichissement fait
+    // à la main est terminé.
+    const missing = missingForSite(ent, project);
+
     const enriched = isEnrichmentDone(
       project ? { statut: project.statut, validated: isValidated(project) } : null,
       enrich ? { status: enrich.status } : null,
+      missing.length === 0,
     );
 
     // Milestones (linear).
@@ -537,7 +557,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
         : null,
       audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
       agent: owner ? { id: owner.id, name: owner.name } : null,
-      missing_for_site: missingForSite(ent, project),
+      missing_for_site: missing,
       notes: notesByOpp.get(o.id) ?? { open: 0, total: 0, open_subjects: [] },
       column,
     };
