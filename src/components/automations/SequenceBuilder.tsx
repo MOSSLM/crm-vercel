@@ -11,7 +11,8 @@ import { Section, Field, ToggleRow, SegFull } from './atoms'
 import { SupaSelect } from './SupaSelect'
 import { useRefData } from './ref-data'
 import { getAutomation, updateAutomation } from './automations-db'
-import { WindowEditor } from './regulator/parts'
+import { RangeSlider, Segmented, WindowEditor } from './regulator/parts'
+import { moveStep } from './sequence-steps'
 import { normalizeWindows } from '@/lib/automations/regulator'
 import type { Automation, SequenceDefinition, SequenceStep, SeqStepKind, SequenceSettings } from './types'
 import './regulator.css'
@@ -99,6 +100,21 @@ export function SequenceBuilder({ id }: { id: string }) {
     [touch],
   )
 
+  /**
+   * Déplacer une étape. Sans ce geste, la seule façon d'intercaler un appel
+   * entre deux emails était de supprimer et tout refaire.
+   */
+  const reorder = useCallback(
+    (sid: string, dir: -1 | 1) => {
+      setSteps((prev) => {
+        const next = moveStep(prev, sid, dir)
+        if (next !== prev) touch()
+        return next
+      })
+    },
+    [touch],
+  )
+
   const addStep = useCallback(
     (kind: SeqStepKind) => {
       touch()
@@ -111,7 +127,8 @@ export function SequenceBuilder({ id }: { id: string }) {
           kind,
           mode: kind === 'email' ? 'auto' : kind === 'wait' ? undefined : 'manual',
           day: prev.length === 0 ? 0 : lastDay + 2,
-          ...(kind === 'email' ? { sendAt: '09:30', trackOpens: true, trackClicks: true } : {}),
+          // Pas de `sendAt` : l'heure d'un email appartient au régulateur.
+          ...(kind === 'email' ? { trackOpens: true, trackClicks: true } : {}),
         }
         setSelectedId(step.id)
         return [...prev, step]
@@ -246,34 +263,42 @@ export function SequenceBuilder({ id }: { id: string }) {
               </p>
             </Field>
 
-            <Field label="Priorité dans la file" hint="1 passe devant 9">
-              <input
-                className="input"
-                type="number"
-                min={1}
-                max={9}
-                value={settings.queuePriority ?? 2}
-                onChange={(e) => {
+            <Field label="Priorité dans la file" hint="1 passe devant 5">
+              <Segmented
+                value={Math.min(5, Math.max(1, settings.queuePriority ?? 2))}
+                ariaLabel="Priorité de cette séquence dans la file"
+                options={[1, 2, 3, 4, 5].map((n) => ({
+                  value: n,
+                  label: String(n),
+                  title: n === 1 ? 'passe devant tout le reste' : n === 5 ? 'passe en dernier' : undefined,
+                }))}
+                onChange={(v) => {
                   touch()
-                  const v = Math.min(9, Math.max(1, Number(e.target.value) || 2))
                   setSettings((s) => ({ ...s, queuePriority: v }))
                 }}
               />
             </Field>
 
-            <Field label="Plafond de cette séquence" hint="emails / jour · 0 = pas de limite">
-              <input
-                className="input"
-                type="number"
+            <Field
+              label="Plafond de cette séquence"
+              hint={settings.dailyCap ? `${settings.dailyCap} emails / jour` : 'pas de limite dédiée'}
+            >
+              <RangeSlider
+                value={Math.min(200, settings.dailyCap ?? 0)}
                 min={0}
+                max={200}
                 step={5}
-                value={settings.dailyCap ?? 0}
-                onChange={(e) => {
+                ariaLabel="Plafond d’emails par jour pour cette séquence"
+                onPreview={(v) => setSettings((s) => ({ ...s, dailyCap: v > 0 ? v : null }))}
+                onCommit={(v) => {
                   touch()
-                  const v = Math.max(0, Number(e.target.value) || 0)
                   setSettings((s) => ({ ...s, dailyCap: v > 0 ? v : null }))
                 }}
               />
+              <div className="rg-rnglb">
+                <span>0 = pas de limite</span>
+                <span>200</span>
+              </div>
             </Field>
 
             <div className="rg-hint" style={{ marginBottom: 8 }}>
@@ -409,16 +434,36 @@ export function SequenceBuilder({ id }: { id: string }) {
 
             {steps.map((step, i) => (
               <Fragment key={step.id}>
+                {/* Ce que la maquette dit sur chaque liaison : le délai, qui
+                    décide l'heure, et si l'étape attend un humain. */}
                 <div className="seq-conn">
-                  {step.day > 0 && (
-                    <span className="wait-chip">
-                      <XI name="clock" className="ico-xs" />
-                      J+{step.day}
-                      {step.sendAt && ` · ${step.sendAt}`}
+                  <span className="wait-chip">
+                    <XI name="clock" className="ico-xs" />
+                    {step.day > 0 ? `J+${step.day}` : 'immédiat'}
+                  </span>
+                  {step.kind === 'email' && (
+                    <span className="wait-chip accent">
+                      <XI name="settings" className="ico-xs" />
+                      heure décidée par le régulateur
+                    </span>
+                  )}
+                  {step.mode === 'manual' && (
+                    <span className="wait-chip manual">
+                      <XI name="user" className="ico-xs" />
+                      tâche à un humain
                     </span>
                   )}
                 </div>
-                <SeqStep step={step} index={i + 1} selected={selectedId === step.id} onSelect={() => setSelectedId(step.id)} onDelete={() => removeStep(step.id)} />
+                <SeqStep
+                  step={step}
+                  index={i + 1}
+                  selected={selectedId === step.id}
+                  canMoveUp={i > 0}
+                  canMoveDown={i < steps.length - 1}
+                  onSelect={() => setSelectedId(step.id)}
+                  onDelete={() => removeStep(step.id)}
+                  onMove={(dir) => reorder(step.id, dir)}
+                />
               </Fragment>
             ))}
 
@@ -440,7 +485,11 @@ export function SequenceBuilder({ id }: { id: string }) {
 
       {/* RIGHT — inspecteur d'étape */}
       <div className="pane">
-        <SeqStepInspector step={selectedStep} onUpdate={(p) => selectedStep && updateStep(selectedStep.id, p)} />
+        <SeqStepInspector
+          step={selectedStep}
+          settings={settings}
+          onUpdate={(p) => selectedStep && updateStep(selectedStep.id, p)}
+        />
       </div>
 
       {picker && <SeqStepPickerModal onClose={() => setPicker(false)} onPick={addStep} />}
@@ -515,14 +564,20 @@ function SeqStep({
   step,
   index,
   selected,
+  canMoveUp,
+  canMoveDown,
   onSelect,
   onDelete,
+  onMove,
 }: {
   step: SequenceStep
   index: number
   selected: boolean
+  canMoveUp: boolean
+  canMoveDown: boolean
   onSelect: () => void
   onDelete: () => void
+  onMove: (dir: -1 | 1) => void
 }) {
   const meta = useStepMeta(step)
   return (
@@ -553,6 +608,28 @@ function SeqStep({
         <div className="tools">
           <button
             type="button"
+            title="Monter l’étape"
+            disabled={!canMoveUp}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(-1)
+            }}
+          >
+            <XI name="chevup" className="ico-sm" />
+          </button>
+          <button
+            type="button"
+            title="Descendre l’étape"
+            disabled={!canMoveDown}
+            onClick={(e) => {
+              e.stopPropagation()
+              onMove(1)
+            }}
+          >
+            <XI name="chevdown" className="ico-sm" />
+          </button>
+          <button
+            type="button"
             title="Supprimer"
             onClick={(e) => {
               e.stopPropagation()
@@ -567,7 +644,15 @@ function SeqStep({
   )
 }
 
-function SeqStepInspector({ step, onUpdate }: { step: SequenceStep | undefined; onUpdate: (p: Partial<SequenceStep>) => void }) {
+function SeqStepInspector({
+  step,
+  settings,
+  onUpdate,
+}: {
+  step: SequenceStep | undefined
+  settings: SequenceSettings
+  onUpdate: (p: Partial<SequenceStep>) => void
+}) {
   if (!step) {
     return (
       <div className="pane-body" style={{ padding: 24, color: 'var(--text-3)', textAlign: 'center' }}>
@@ -595,8 +680,28 @@ function SeqStepInspector({ step, onUpdate }: { step: SequenceStep | undefined; 
             />
           </Field>
           {step.kind === 'email' && (
-            <Field label="Heure d'envoi" hint="HH:MM">
-              <input className="input mono" value={step.sendAt || '09:30'} onChange={(e) => onUpdate({ sendAt: e.target.value })} />
+            // L'heure n'est plus un réglage d'étape : c'est le régulateur qui
+            // la choisit au moment du départ. Un champ modifiable ici mentait —
+            // rien ne le lisait.
+            <Field label="Heure d'envoi" hint="hors de vos mains">
+              <div className="seq-regchip">
+                <XI name="settings" className="ico-sm" />
+                <span>
+                  Décidée par le <Link href="/automations/regulateur">régulateur</Link> — premier créneau libre des
+                  plages ci-contre, avec l’écart aléatoire du CRM.
+                </span>
+              </div>
+            </Field>
+          )}
+          {step.mode === 'manual' && (
+            <Field label="Heure" hint="à l'ouverture">
+              <div className="seq-regchip manual">
+                <XI name="user" className="ico-sm" />
+                <span>
+                  Une tâche est posée dans la file de la personne qui suit le contact. La séquence attend qu’elle soit
+                  faite avant l’étape suivante.
+                </span>
+              </div>
             </Field>
           )}
         </Section>
@@ -628,8 +733,23 @@ function SeqStepInspector({ step, onUpdate }: { step: SequenceStep | undefined; 
         )}
         {step.kind === 'whatsapp' && (
           <Section label="WhatsApp manuel">
-            <Field label="Template" required>
+            <Field label="Template" hint="vide = message ci-dessous">
               <SupaSelect table="whatsapp_templates" icon="whatsapp" value={step.template} onChange={(v) => onUpdate({ template: v as string })} />
+            </Field>
+            <Field label="Message pré-rédigé" hint="variables acceptées">
+              <textarea
+                className="textarea"
+                rows={4}
+                placeholder="Bonjour {{contact.first_name}}, je vous ai envoyé l'audit de {{company.name}} — vous avez pu y jeter un œil ?"
+                value={step.message || ''}
+                onChange={(e) => onUpdate({ message: e.target.value })}
+                disabled={!!step.template}
+              />
+              <p className="rg-hint">
+                {step.template
+                  ? 'Le template choisi prend le dessus : videz-le pour écrire un message propre à cette étape.'
+                  : 'WhatsApp n’est jamais envoyé par le CRM : le message est préparé, prêt à coller, dans la file de la bonne personne.'}
+              </p>
             </Field>
           </Section>
         )}
@@ -655,6 +775,45 @@ function SeqStepInspector({ step, onUpdate }: { step: SequenceStep | undefined; 
             <div className="empty-row">Le délai est défini par le champ « Jour » ci-dessus.</div>
           </Section>
         )}
+
+        {/* Ce qui s'applique déjà à cette étape sans qu'on ait à le cocher :
+            l'afficher évite de recréer, étape par étape, des interrupteurs que
+            le régulateur tient globalement. */}
+        <Section label="Garde-fous appliqués">
+          <ul className="seq-guards">
+            <li data-on={settings.exitOnReply !== false}>
+              <XI name={settings.exitOnReply !== false ? 'check' : 'x'} className="ico-xs" />
+              {settings.exitOnReply !== false
+                ? 'Le contact sort de la séquence dès qu’il répond — cette étape ne partira pas.'
+                : 'La séquence continue même si le contact répond.'}
+            </li>
+            <li data-on={settings.oncePerDay !== false}>
+              <XI name={settings.oncePerDay !== false ? 'check' : 'x'} className="ico-xs" />
+              {settings.oncePerDay !== false
+                ? 'Un seul email par jour et par contact, toutes séquences confondues.'
+                : 'Plusieurs emails le même jour sont autorisés.'}
+            </li>
+            {step.kind === 'email' && (
+              <li data-on>
+                <XI name="check" className="ico-xs" />
+                Sans adresse email, l’étape ne s’exécute pas : le prospect attend dans « Sans email — hors file ».
+              </li>
+            )}
+            {step.mode === 'manual' && (
+              <li data-on>
+                <XI name="check" className="ico-xs" />
+                L’étape suivante attend que la tâche soit marquée faite.
+              </li>
+            )}
+          </ul>
+          <p className="rg-hint">
+            Ces règles se règlent au niveau de la séquence (à gauche) et du{' '}
+            <Link href="/automations/regulateur" style={{ color: 'var(--accent-2)' }}>
+              régulateur
+            </Link>
+            , pas étape par étape.
+          </p>
+        </Section>
       </div>
     </div>
   )

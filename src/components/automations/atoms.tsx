@@ -90,12 +90,15 @@ export function ToggleRow({
   checked,
   onChange,
   accent = false,
+  disabled = false,
 }: {
   label: React.ReactNode
   desc?: React.ReactNode
   checked?: boolean
   onChange?: (v: boolean) => void
   accent?: boolean
+  /** Réglage indisponible (enregistrement en cours, ou absent de la base). */
+  disabled?: boolean
 }) {
   // `label` is a ReactNode, so it can't go in aria-label (string only) —
   // point at the rendered label instead, which also keeps the two in sync.
@@ -112,6 +115,7 @@ export function ToggleRow({
         aria-labelledby={labelId}
         className={cx('toggle', accent && 'accent')}
         aria-checked={!!checked}
+        disabled={disabled}
         onClick={() => onChange?.(!checked)}
       />
     </div>

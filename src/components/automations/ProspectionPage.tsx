@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { XI } from './icons'
+import { useRefData } from './ref-data'
 import {
   listProspectionTasks,
   completeProspectionTask,
@@ -43,9 +44,11 @@ function kindLabel(kind: string) {
 }
 
 export function ProspectionPage() {
+  const ref = useRefData()
   const [tasks, setTasks] = useState<ProspectionTaskFull[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('today')
+  const [owner, setOwner] = useState<string>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<'action' | 'context' | 'history'>('action')
 
@@ -62,10 +65,26 @@ export function ProspectionPage() {
 
   useEffect(reload, [])
 
+  /**
+   * Qui a quoi. Le régulateur distribue les tâches manuelles ; sans ce filtre,
+   * un admin qui reçoit tout le surplus ne voit qu'une file indistincte.
+   */
+  const owners = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of tasks) counts.set(t.assignee_id ?? '', (counts.get(t.assignee_id ?? '') ?? 0) + 1)
+    return [...counts.entries()]
+      .map(([id, count]) => ({
+        id,
+        count,
+        name: id ? (ref.users.find((u) => u.id === id)?.name ?? 'Agent') : 'Sans destinataire',
+      }))
+      .sort((a, b) => b.count - a.count)
+  }, [tasks, ref.users])
+
   const filtered = useMemo(() => {
     const m = TABS.find((t) => t.id === activeTab)?.match ?? (() => true)
-    return tasks.filter(m)
-  }, [tasks, activeTab])
+    return tasks.filter((t) => m(t) && (owner === 'all' || (t.assignee_id ?? '') === owner))
+  }, [tasks, activeTab, owner])
 
   const selected = tasks.find((t) => t.id === selectedId) || filtered[0] || null
   const overdueCount = tasks.filter((t) => new Date(t.due_at).getTime() < Date.now()).length
@@ -120,6 +139,19 @@ export function ProspectionPage() {
             )
           })}
         </div>
+        {owners.length > 1 && (
+          <div className="pros-owner">
+            <label htmlFor="pros-owner">Destinataire</label>
+            <select id="pros-owner" className="select" value={owner} onChange={(e) => setOwner(e.target.value)}>
+              <option value="all">Tout le monde ({tasks.length})</option>
+              {owners.map((o) => (
+                <option key={o.id || 'none'} value={o.id}>
+                  {o.name} ({o.count})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="pros-list">
           {loading && <div className="empty-row" style={{ padding: 30 }}>Chargement…</div>}
           {!loading &&

@@ -261,3 +261,62 @@ Les deux sont idempotentes et doivent être appliquées dans l'ordre.
 - remise à zéro de `sales_pipeline_state.reached/passed/skipped` : ces colonnes
   portaient des identifiants figés (`seq`, `email`, `wa`…) qui n'ont plus cours
   depuis que les colonnes viennent de la séquence et du pipeline.
+
+### Si l'interface refuse d'enregistrer
+
+Cocher **Phase de test** répondait « Enregistrement impossible » sur une base où
+`20260802` n'avait pas été joué : la colonne `test_mode` n'existait pas, le
+`upsert` renvoyait un 500 sans texte, et l'interface affichait le même message
+d'échec que pour n'importe quelle panne.
+
+Le régulateur nomme désormais la cause :
+
+- la page détecte le trou de schéma au chargement (`testGuardReady` dans
+  `/api/automations/regulator`), grise l'interrupteur et affiche le fichier SQL
+  à jouer plutôt que d'attendre un clic pour échouer ;
+- le `PATCH` renvoie `503 migration_non_appliquee` avec `sql_file` quand une
+  colonne manque, et le message Postgres exact pour toute autre erreur ;
+- les autres échecs sont traduits par statut (session expirée, réglage réservé
+  aux administrateurs, valeur refusée) au lieu d'un texte unique.
+
+Le reste de la page continue de fonctionner sans la migration : seule la phase
+de test est indisponible.
+
+---
+
+## 6. Les commandes de l'interface
+
+La maquette `08 Séquences` promettait des réglages qu'on manipule, pas qu'on
+saisit. Ce qui existe désormais, et où :
+
+**Régulateur** (`/automations/regulateur`)
+
+- deux **curseurs** pour la fourchette d'écart, plus un pour le plafond du jour.
+  Glisser prévisualise (l'aperçu de l'aléatoire et le débit estimé suivent le
+  doigt) ; relâcher enregistre. Sans cette séparation, chaque pixel parcouru
+  déclencherait un aller-retour serveur ;
+- l'**aperçu de l'aléatoire** dessine des écarts tirés par `gapForItem`, la
+  fonction qu'utilise réellement la file — pas une décoration ; « Re-tirer
+  l'aléatoire » rejoue une série sans rien modifier en base ;
+- la **priorité de séquence** est un segmenté 1→5, et chaque séquence affiche
+  sa **part de la file** — « 12 en file » ne dit pas si c'est beaucoup.
+
+**Séquences** (`/automations/sequences`)
+
+- la liste montre les **canaux** de chaque séquence, ses **plages d'envoi**, sa
+  file et son prochain envoi ;
+- l'éditeur permet de **déplacer une étape** (les jours restent croissants,
+  sinon le moteur planifierait une étape avant celle qui la précède) ;
+- l'heure d'un email n'est plus un champ modifiable : elle est décidée par le
+  régulateur, et l'éditeur le dit au lieu d'offrir un réglage que personne ne
+  lisait ;
+- une étape WhatsApp accepte un **message pré-rédigé** quand aucun template
+  n'est choisi ;
+- le bloc « garde-fous appliqués » récapitule ce qui vaut déjà pour l'étape
+  (sortie sur réponse, un email par jour, attente de l'humain) au lieu de
+  dupliquer des interrupteurs que le régulateur tient globalement.
+
+**Démarchage** (`/automations/prospection`)
+
+- filtre **par destinataire** : la file distribuée redevient lisible quand
+  l'admin récupère le surplus de plusieurs agents.

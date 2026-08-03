@@ -8,9 +8,10 @@ import { getServiceClient } from '@/app/api/_lib/service-client'
 import { withAuth } from '@/app/api/_lib/with-auth'
 import { preflight } from '@/app/api/_lib/cors'
 import { regulatorSettingsSchema, type RegulatorSettingsPayload } from '@/app/api/_lib/schemas'
+import { isSchemaGap, migrationMessage } from '@/app/api/_lib/schema-gap'
 import { normalizeWindows, overlappingWindows } from '@/lib/automations/regulator'
 import { resetTestGuardCache } from '@/lib/email/test-guard'
-import { buildRegulatorView } from './_view'
+import { TEST_GUARD_MIGRATION, buildRegulatorView } from './_view'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -67,7 +68,25 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
     const { error } = await sc
       .from('regulator_settings')
       .upsert({ id: 'global', ...patch }, { onConflict: 'id' })
-    if (error) return jsonError(error.message, 500, {}, cors)
+    if (error) {
+      // Une colonne absente n'est pas une panne : c'est une migration qu'on n'a
+      // pas jouée. Le dire, plutôt que renvoyer un 500 muet que l'interface
+      // traduisait en « Enregistrement impossible ».
+      if (isSchemaGap(error)) {
+        const file = 'test_mode' in patch ? TEST_GUARD_MIGRATION : 'la migration du dossier sql/ correspondante'
+        return jsonError(
+          'migration_non_appliquee',
+          503,
+          {
+            sql_file: file,
+            detail: error.message,
+            message: migrationMessage(file, 'Ce réglage n’existe pas encore en base'),
+          },
+          cors,
+        )
+      }
+      return jsonError(error.message, 500, { message: error.message }, cors)
+    }
 
     // Le garde-fou d'envoi met les réglages en cache quelques secondes :
     // activer ou couper la phase de test doit prendre effet immédiatement.
