@@ -3,6 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { resolveLeadMagnetProjectId } from "@/lib/site-builder/resolve-project-id";
 import type { SiteConfig, StyleGuide, SitemapPage } from "@/types";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,7 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
     .single();
 
   if (error) return jsonError(error.message, 500);
+  invalidateSiteCache(params.siteId);
   return json(data);
 });
 
@@ -84,5 +86,6 @@ export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {
   const supabase = getServiceClient();
   const { error } = await supabase.from("sites").delete().eq("id", params.siteId);
   if (error) return jsonError(error.message, 500);
+  invalidateSiteCache(params.siteId);
   return json({ ok: true });
 });

@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -49,5 +50,6 @@ export const POST = withAuth<undefined, Params>({}, async ({ params }) => {
 
   await supabase.from("sites").update(updates).eq("id", siteId);
 
+  invalidateSiteCache(siteId);
   return json({ version: restored, message: `Restauré depuis v${source.version_number}` });
 });

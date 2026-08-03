@@ -4,6 +4,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { wrapRawHtml } from "@/lib/site-builder/wrap-raw-html";
 import { tokenizeDesign, type DesignReplacement } from "@/lib/ai/tokenize-design";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -80,5 +81,6 @@ export const POST = withAuth<undefined, Params>({}, async ({ params }) => {
     aggregated.push(...result.mapping);
   }
 
+  invalidateSiteCache(params.siteId);
   return json({ mapping: aggregated, sections: (sections ?? []).length });
 });

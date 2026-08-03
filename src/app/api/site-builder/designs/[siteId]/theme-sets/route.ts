@@ -2,6 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { coerceThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -79,5 +80,6 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const { error: upErr } = await supabase.from("sites").update({ shared_assets: merged }).eq("id", siteId);
   if (upErr) return jsonError(upErr.message, 500);
 
+  invalidateSiteCache(siteId);
   return json({ ok: true, updated });
 });

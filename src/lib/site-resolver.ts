@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { SiteConfig, SiteSection, BlogPost, StyleGuide, SiteMenus, SitemapPage, SeoMeta } from "@/types";
 import {
@@ -8,6 +9,7 @@ import {
 } from "@/lib/site-builder/resolve-variables";
 import { SAMPLE_VARIABLES } from "@/lib/site-builder/claude-design/sample-variables";
 import { selectDroppingMissingColumns } from "@/lib/schema-drift";
+import { siteCacheTag, SITE_CACHE_REVALIDATE_SECONDS } from "@/lib/site-builder/site-cache";
 
 export type { ReviewItem };
 
@@ -338,7 +340,24 @@ export type DraftSiteResult =
   | { ok: true; site: ResolvedSite }
   | { ok: false; kind: DraftFailureKind; reason: string };
 
-export async function resolveDraftSite(siteId: string): Promise<DraftSiteResult> {
+/**
+ * Cached entry point. The preview route stays `force-dynamic` — only the data
+ * is cached, not the rendered route — so the paywall bar and the diagnosis page
+ * keep behaving as before. Invalidated by `invalidateSiteCache(siteId)` from
+ * every write route, with a short `revalidate` as a backstop; see site-cache.ts.
+ *
+ * Errors are cached too, deliberately: a missing site is a stable answer, and
+ * the 30 s window means a freshly-created site appears almost immediately.
+ */
+export function resolveDraftSite(siteId: string): Promise<DraftSiteResult> {
+  return unstable_cache(
+    () => resolveDraftSiteUncached(siteId),
+    ["resolveDraftSite", siteId],
+    { tags: [siteCacheTag(siteId)], revalidate: SITE_CACHE_REVALIDATE_SECONDS },
+  )();
+}
+
+async function resolveDraftSiteUncached(siteId: string): Promise<DraftSiteResult> {
   const supabase = getServiceClient();
 
   // Both reads are keyed on siteId alone, so neither needs the other's result.

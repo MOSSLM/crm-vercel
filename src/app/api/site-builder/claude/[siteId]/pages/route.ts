@@ -3,6 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
 import type { SitemapPage } from "@/types";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -115,7 +116,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
  * PATCH → saves inline __overrides for one page instance.
  * Body: { instanceId, overrides }
  */
-export const PATCH = withAuth<undefined, Params>({}, async ({ req }) => {
+export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const body = await req.json().catch(() => ({}));
   const instanceId = (body as { instanceId?: string }).instanceId;
   const overrides = (body as { overrides?: Record<string, unknown> }).overrides;
@@ -136,5 +137,6 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req }) => {
     .eq("id", instanceId);
   if (updErr) return jsonError(updErr.message, 500);
 
+  invalidateSiteCache(params.siteId);
   return json({ ok: true });
 });

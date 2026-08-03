@@ -9,6 +9,7 @@ import { pushBackup, nextExampleData } from "@/lib/site-builder/claude-design/ov
 import { assetPathMap } from "@/lib/site-builder/claude-design/asset-path-map";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
 import type { SitemapPage } from "@/types";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -294,5 +295,6 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     if (upErr) return jsonError(upErr.message, 500);
   }
 
+  if (!dryRun) invalidateSiteCache(siteId);
   return json({ ok: true, ...summary });
 });

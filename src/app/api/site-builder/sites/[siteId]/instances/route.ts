@@ -1,6 +1,7 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
+import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +110,10 @@ export const PUT = withAuth<undefined, Params>({}, async ({ req, params }) => {
 
   if (deleteError) return jsonError(deleteError.message, 500);
 
-  if (instances.length === 0) return json({ count: 0 });
+  if (instances.length === 0) {
+    invalidateSiteCache(params.siteId);
+    return json({ count: 0 });
+  }
 
   const toInsert = instances.map((inst) => ({
     id: inst.id,
@@ -129,6 +133,7 @@ export const PUT = withAuth<undefined, Params>({}, async ({ req, params }) => {
 
   if (insertError) return jsonError(insertError.message, 500);
 
+  invalidateSiteCache(params.siteId);
   return json({ count: toInsert.length });
 });
 
@@ -154,5 +159,6 @@ export const PATCH = withAuth<undefined, Params>({}, async ({ req, params }) => 
     .single();
 
   if (error) return jsonError(error.message, 500);
+  invalidateSiteCache(params.siteId);
   return json(data);
 });
