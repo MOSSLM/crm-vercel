@@ -74,11 +74,13 @@ as $function$
 declare
   g               record;
   fk              record;
-  child           record;
+  v_ctids         tid[];
+  v_ctid          tid;
   v_survivor      uuid;
   v_losers        uuid[];
   v_moved         bigint;
   v_dropped       bigint;
+  v_count         bigint;
   v_agent_pipe    uuid;
   v_agent_stage   integer;
   v_owner         uuid;
@@ -127,8 +129,19 @@ begin
              offre_nom_snapshot      = coalesce(s.offre_nom_snapshot, d.offre_nom_snapshot),
              offre_prix_ht_snapshot  = coalesce(s.offre_prix_ht_snapshot, d.offre_prix_ht_snapshot),
              offre_devise_snapshot   = coalesce(s.offre_devise_snapshot, d.offre_devise_snapshot),
-             tags                    = coalesce(s.tags, d.tags),
-             flags                   = coalesce(s.flags, d.flags),
+             -- `tags` et `flags` passent par une sous-requête scalaire, pas par
+             -- `array_agg(...)[1]` : agréger une colonne TABLEAU (`tags` est un
+             -- `text[]`) donne un tableau à deux dimensions, dont l'indice `[1]`
+             -- rend un `text` — d'où « COALESCE types text[] and text cannot be
+             -- matched ». Le type de la colonne est ici préservé quel qu'il soit.
+             tags = coalesce(s.tags, (
+               select o2.tags from public.opportunites o2
+                where o2.id = any(v_losers) and o2.tags is not null
+                order by o2.created_at asc, o2.id asc limit 1)),
+             flags = coalesce(s.flags, (
+               select o2.flags from public.opportunites o2
+                where o2.id = any(v_losers) and o2.flags is not null
+                order by o2.created_at asc, o2.id asc limit 1)),
              -- Un drapeau d'avancement ne redescend jamais.
              lead_magnet             = coalesce(s.lead_magnet, false) or coalesce(d.lead_magnet, false)
         from (
@@ -145,8 +158,6 @@ begin
                  (array_agg(offre_nom_snapshot)     filter (where offre_nom_snapshot is not null))[1]     as offre_nom_snapshot,
                  (array_agg(offre_prix_ht_snapshot) filter (where offre_prix_ht_snapshot is not null))[1] as offre_prix_ht_snapshot,
                  (array_agg(offre_devise_snapshot)  filter (where offre_devise_snapshot is not null))[1]  as offre_devise_snapshot,
-                 (array_agg(tags)                   filter (where tags is not null))[1]                   as tags,
-                 (array_agg(flags)                  filter (where flags is not null))[1]                  as flags,
                  bool_or(coalesce(lead_magnet, false))                                                    as lead_magnet
             from public.opportunites
            where id = any(v_losers)
@@ -183,22 +194,29 @@ begin
         -- Ligne par ligne, par `ctid` : le nom de la clé primaire de la table
         -- fille est inconnu, et un UPDATE en bloc échouerait entièrement sur la
         -- première collision d'index unique — ce qui bloquerait toute la fusion.
-        for child in
-          execute format('select ctid from %s where %I = any($1)', fk.child_table, fk.child_column)
-          using v_losers
+        --
+        -- Les `ctid` sont FIGÉS AVANT la moindre écriture : on modifie la table
+        -- qu'on parcourt, et un `ctid` change à chaque UPDATE. Boucler sur un
+        -- curseur ouvert sur cette même table reviendrait à scier la branche.
+        execute format(
+          'select coalesce(array_agg(ctid), ''{}''::tid[]) from %s where %I = any($1)',
+          fk.child_table, fk.child_column
+        ) into v_ctids using v_losers;
+
+        foreach v_ctid in array v_ctids
         loop
           begin
             execute format(
               'update %s set %I = $1 where ctid = $2',
               fk.child_table, fk.child_column
-            ) using v_survivor, child.ctid;
+            ) using v_survivor, v_ctid;
             v_moved := v_moved + 1;
           exception when unique_violation then
             -- Le survivant possède déjà son équivalent (état de pipeline, dossier
             -- lead magnet, page par défaut…). La ligne du doublon est dérivée :
             -- la supprimer ne perd rien d'unique.
             execute format('delete from %s where ctid = $1', fk.child_table)
-              using child.ctid;
+              using v_ctid;
             v_dropped := v_dropped + 1;
           end;
         end loop;
