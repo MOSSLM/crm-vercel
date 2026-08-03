@@ -1,7 +1,30 @@
 import { getServiceClient } from "@/app/api/_lib/service-client";
-import { getAgentPipeline } from "@/app/api/agent/_lib";
+import { getAgentPipeline, type AgentStage } from "@/app/api/agent/_lib";
 
 type ServiceClient = ReturnType<typeof getServiceClient>;
+
+/** Pipeline « Agent SAMA » déjà résolu, pour ne pas le relire à chaque prospect. */
+export type AgentPipelineRef = { pipelineId: string; stages: AgentStage[] };
+
+/**
+ * `Promise.all` borné : les attributions en masse partent par petits paquets
+ * plutôt que toutes d'un coup. Chaque prospect coûte une poignée de requêtes —
+ * lâcher 200 attributions en parallèle saturerait le pool Postgres.
+ */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (let i = cursor++; i < items.length; i = cursor++) {
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+/** Ids uniques, dans l'ordre d'arrivée. */
+const uniqueIds = (ids: number[]): number[] => [...new Set(ids.filter((n) => Number.isFinite(n)))];
 
 /**
  * `entreprises.owner_id` is the single source of truth for who works a
@@ -43,13 +66,17 @@ export type AssignResult =
  * exist yet, and seeds the first "Appel à froid" task so the prospect shows up
  * in the agent's Démarchage queue. Safe to call twice — it won't duplicate the
  * opportunity or the seed task.
+ *
+ * `pipeline` laisse une attribution en masse résoudre le pipeline agent une
+ * seule fois pour tout le lot au lieu d'une fois par entreprise.
  */
 export async function assignProspectToAgent(
   entrepriseId: number,
   agentId: string,
+  pipeline?: AgentPipelineRef,
 ): Promise<AssignResult> {
   const sc = getServiceClient();
-  const agent = await getAgentPipeline();
+  const agent = pipeline ?? (await getAgentPipeline());
   if (!agent || agent.stages.length === 0) {
     return { ok: false, error: "pipeline_introuvable" };
   }
@@ -198,4 +225,65 @@ export async function unassignProspectFromAgent(
   if (enrollErr) return { ok: false, error: enrollErr.message };
 
   return { ok: true, entrepriseId, agentId: ownerId };
+}
+
+export type BatchFailure = { entreprise_id: number; error: string };
+
+export type BatchAssignResult =
+  | {
+      ok: true;
+      assigned: { entreprise_id: number; opportunite_id: string }[];
+      failed: BatchFailure[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Attribue un lot d'entreprises au même agent — ce que fait « Attribuer la
+ * sélection » côté admin. Le pipeline agent est résolu une fois pour tout le
+ * lot, et un échec isolé n'annule pas les autres : l'appelant reçoit le détail
+ * pour le remonter, plutôt qu'un tout-ou-rien qui laisserait l'admin sans
+ * savoir ce qui est passé.
+ */
+export async function assignProspectsToAgent(
+  entrepriseIds: number[],
+  agentId: string,
+): Promise<BatchAssignResult> {
+  const ids = uniqueIds(entrepriseIds);
+  if (ids.length === 0) return { ok: true, assigned: [], failed: [] };
+
+  const pipeline = await getAgentPipeline();
+  if (!pipeline || pipeline.stages.length === 0) {
+    return { ok: false, error: "pipeline_introuvable" };
+  }
+
+  const results = await mapLimit(ids, 4, (id) => assignProspectToAgent(id, agentId, pipeline));
+
+  const assigned: { entreprise_id: number; opportunite_id: string }[] = [];
+  const failed: BatchFailure[] = [];
+  results.forEach((res, i) => {
+    if (res.ok) assigned.push({ entreprise_id: res.entrepriseId, opportunite_id: res.opportuniteId });
+    else failed.push({ entreprise_id: ids[i], error: res.error });
+  });
+
+  return { ok: true, assigned, failed };
+}
+
+export type BatchUnassignResult = { released: number[]; failed: BatchFailure[] };
+
+/** Retire un lot d'entreprises, même contrat que `assignProspectsToAgent`. */
+export async function unassignProspectsFromAgent(
+  entrepriseIds: number[],
+  expectedAgentId?: string | null,
+): Promise<BatchUnassignResult> {
+  const ids = uniqueIds(entrepriseIds);
+  const results = await mapLimit(ids, 4, (id) => unassignProspectFromAgent(id, expectedAgentId));
+
+  const released: number[] = [];
+  const failed: BatchFailure[] = [];
+  results.forEach((res, i) => {
+    if (res.ok) released.push(ids[i]);
+    else failed.push({ entreprise_id: ids[i], error: res.error });
+  });
+
+  return { released, failed };
 }

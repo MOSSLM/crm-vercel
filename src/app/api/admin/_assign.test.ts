@@ -12,7 +12,12 @@ jest.mock('@supabase/supabase-js', () => ({
   createClient: jest.fn(() => ({ from: (...args: unknown[]) => mockFrom(...args) })),
 }));
 
-import { assignProspectToAgent, unassignProspectFromAgent } from './_assign';
+import {
+  assignProspectToAgent,
+  assignProspectsToAgent,
+  unassignProspectFromAgent,
+  unassignProspectsFromAgent,
+} from './_assign';
 import { __resetServiceClientForTests } from '@/app/api/_lib/service-client';
 
 type Op = 'select' | 'insert' | 'update' | 'delete';
@@ -20,14 +25,18 @@ type Result = { data?: unknown; error?: unknown };
 
 /** Requêtes émises, dans l'ordre, pour pouvoir assertion sur les écritures. */
 let calls: { table: string; op: Op; payload?: unknown }[] = [];
-/** Réponses par `table` ou `table.op`, défaut `{ data: null, error: null }`. */
-let results: Record<string, Result> = {};
+/**
+ * Réponses par `table` ou `table.op`, défaut `{ data: null, error: null }`.
+ * Un tableau est consommé requête après requête : c'est ce qui permet de
+ * donner un sort différent à chaque entreprise d'un même lot.
+ */
+let results: Record<string, Result | Result[]> = {};
 
-const resultFor = (table: string, op: Op): Result => ({
-  data: null,
-  error: null,
-  ...(results[`${table}.${op}`] ?? results[table] ?? {}),
-});
+const resultFor = (table: string, op: Op): Result => {
+  const entry = results[`${table}.${op}`] ?? results[table];
+  const value = Array.isArray(entry) ? (entry.shift() ?? {}) : (entry ?? {});
+  return { data: null, error: null, ...value };
+};
 
 /** Chaîne Supabase minimale : tous les filtres renvoient la chaîne elle-même. */
 const makeChain = (table: string) => {
@@ -140,5 +149,42 @@ describe('assignProspectToAgent', () => {
 
     expect(res).toEqual({ ok: true, entrepriseId: ENT, agentId: AGENT, opportuniteId: 'opp-1' });
     expect(calls.some((c) => c.table === 'prospection_tasks' && c.op === 'insert')).toBe(false);
+  });
+});
+
+describe('attributions en masse', () => {
+  it('attribue tout le lot en ne résolvant le pipeline agent qu\'une fois', async () => {
+    results['entreprises.update'] = { data: { id: ENT, name: 'ACME', telephone: null } };
+    results['opportunites.select'] = { data: [{ id: 'opp-1', owner_id: null }] };
+
+    const res = await assignProspectsToAgent([ENT, ENT + 1, ENT], AGENT);
+
+    // Le doublon est écarté avant l'écriture.
+    expect(res).toEqual({
+      ok: true,
+      assigned: [
+        { entreprise_id: ENT, opportunite_id: 'opp-1' },
+        { entreprise_id: ENT + 1, opportunite_id: 'opp-1' },
+      ],
+      failed: [],
+    });
+    const pipelineLookups = mockFrom.mock.calls.filter(([table]) => table === 'pipelines');
+    expect(pipelineLookups).toHaveLength(1);
+  });
+
+  it("retire le lot et rend compte des échecs entreprise par entreprise", async () => {
+    // La 2e appartient à un autre agent : elle doit échouer seule.
+    results['entreprises.select'] = [
+      { data: { id: ENT, owner_id: AGENT } },
+      { data: { id: ENT + 1, owner_id: 'agent-2' } },
+    ];
+    results['opportunites.select'] = { data: [{ id: 'opp-1', owner_id: AGENT }] };
+
+    const res = await unassignProspectsFromAgent([ENT, ENT + 1], AGENT);
+
+    expect(res).toEqual({
+      released: [ENT],
+      failed: [{ entreprise_id: ENT + 1, error: 'entreprise_attribuee_a_un_autre_agent' }],
+    });
   });
 });

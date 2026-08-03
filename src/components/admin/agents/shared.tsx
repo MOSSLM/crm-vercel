@@ -34,7 +34,12 @@ export function formatCents(cents: number): string {
   return (cents / 100).toLocaleString("fr-FR", { style: "currency", currency: "EUR" });
 }
 
-/** Fixed-height panel with its own scrollbar, so the page never grows with the list. */
+/**
+ * Fixed-height panel with its own scrollbar, so the page never grows with the
+ * list. `filters` s'empile sous la recherche ; `banner` reste collé entre
+ * l'en-tête et la liste — c'est là que vivent les actions de masse, qui
+ * doivent rester visibles quand on fait défiler cent lignes.
+ */
 export function ListPanel({
   title,
   icon,
@@ -44,6 +49,9 @@ export function ListPanel({
   onSearch,
   searchPlaceholder,
   actions,
+  filters,
+  banner,
+  className,
   children,
 }: {
   title: string;
@@ -54,10 +62,13 @@ export function ListPanel({
   onSearch?: (v: string) => void;
   searchPlaceholder?: string;
   actions?: React.ReactNode;
+  filters?: React.ReactNode;
+  banner?: React.ReactNode;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <section className="flex h-[32rem] flex-col rounded-xl border bg-card">
+    <section className={`flex flex-col rounded-xl border bg-card ${className ?? "h-[32rem]"}`}>
       <div className="shrink-0 space-y-2 border-b px-4 py-3">
         <div className="flex items-start justify-between gap-2">
           <h2 className="flex items-center gap-2 text-base font-semibold">
@@ -77,9 +88,35 @@ export function ListPanel({
             />
           </div>
         )}
+        {filters}
       </div>
+      {banner && <div className="shrink-0 border-b bg-muted/40 px-3 py-2">{banner}</div>}
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">{children}</div>
     </section>
+  );
+}
+
+/** Menu déroulant compact, homogène entre les filtres des deux panneaux. */
+export function FilterSelect({
+  value,
+  onChange,
+  title,
+  children,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  title?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <select
+      value={value}
+      title={title}
+      onChange={(e) => onChange(e.target.value)}
+      className="h-8 max-w-full rounded-md border bg-background px-2 text-xs"
+    >
+      {children}
+    </select>
   );
 }
 
