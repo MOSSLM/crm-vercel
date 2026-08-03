@@ -240,6 +240,8 @@
 .mp-scope .locked-ph{ width:100%; border:1px dashed var(--border-2); border-radius:var(--radius); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; color:var(--text-4); opacity:.85; }
 .mp-scope .locked-ph .ico{ width:16px; height:16px; }
 .mp-scope .locked-ph .t{ font-size:10.5px; font-family:var(--font-mono); letter-spacing:.04em; text-transform:uppercase; }
+/* Ce qui retient la carte fermée — sinon on cherche pourquoi elle ne s'ouvre pas. */
+.mp-scope .locked-ph .s{ font-size:10.5px; color:var(--danger); text-align:center; padding:0 8px; }
 
 /* row-level tints */
 .mp-scope .row-done .mx-rowhead{ background:linear-gradient(90deg,var(--ok-tint),var(--surface) 60%); }

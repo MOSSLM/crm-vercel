@@ -658,11 +658,19 @@ function StageCell({ item, stage, status, working, templateId, templateName, age
   } as React.CSSProperties;
 
   if (status === "locked") {
+    // La validation s'ouvre d'elle-même dès que la fiche est complète : dire
+    // CE QUI manque évite de chercher pourquoi la carte reste fermée.
+    const blocking = stage.id === "validation" ? (item.missing_for_site ?? []) : [];
     return (
       <div className="mx-cell locked">
         <div className="locked-ph">
           <Lock className="ico-sm" />
           <span className="t">À débloquer</span>
+          {stage.id === "validation" && blocking.length > 0 && (
+            <span className="s" title={`Variables manquantes : ${blocking.join(", ")}`}>
+              {blocking.length} variable{blocking.length > 1 ? "s" : ""} à remplir
+            </span>
+          )}
         </div>
       </div>
     );

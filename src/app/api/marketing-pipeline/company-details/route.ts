@@ -35,7 +35,7 @@ const isMissingColumn = (error: { code?: string; message?: string } | null): boo
 export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ body, cors }) => {
   const supabase = getServiceClient();
   const now = new Date().toISOString();
-  const { entreprise_id, project_id, enrichment_id, company, enrichment, project, reviews } = body;
+  const { entreprise_id, project_id, opportunite_id, enrichment_id, company, enrichment, project, reviews } = body;
 
   // 1) Company row.
   const { error: compErr } = await supabase
@@ -102,8 +102,43 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
     }
   }
 
-  // 3) Lead magnet project overrides / logo / stats / zones.
-  if (project_id && project) {
+  // 3) Dossier lead magnet — créé au besoin.
+  //
+  // Ville SEO, logo et chiffres clés vivent sur `lead_magnet_projects`. Quand
+  // l'enrichissement automatique n'a jamais abouti (site introuvable, page
+  // illisible), ce dossier n'existe pas : la fiche n'avait alors nulle part où
+  // enregistrer ce qu'on saisissait à la main, et l'étape « Validation
+  // données » restait « à débloquer » pour toujours. On le crée donc à la
+  // première sauvegarde, exactement comme le fait `enrich-prepare`.
+  let targetProjectId = project_id ?? null;
+  if (!targetProjectId && project) {
+    // Le dossier est par ENTREPRISE : on le cherche d'abord ainsi, pour ne pas
+    // créer un doublon quand l'entreprise porte un second deal.
+    const { data: existing } = await supabase
+      .from("lead_magnet_projects")
+      .select("id")
+      .eq("entreprise_id", entreprise_id)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    targetProjectId = (existing as { id?: string } | null)?.id ?? null;
+
+    if (!targetProjectId && opportunite_id) {
+      const { data, error } = await supabase
+        .from("lead_magnet_projects")
+        .upsert(
+          { opportunite_id, entreprise_id, pret_pour_lm: true, statut: "draft" },
+          { onConflict: "opportunite_id" },
+        )
+        .select("id")
+        .single();
+      if (error) return jsonError(error.message, 500, {}, cors);
+      targetProjectId = (data as { id: string }).id;
+    }
+  }
+
+  // 3 bis) Overrides / logo / stats / zones.
+  if (targetProjectId && project) {
     // Provenance de la ville SEO : on ne bascule sur 'manual' que si la valeur
     // CHANGE réellement. Sans cette comparaison, un simple enregistrement de la
     // fiche (qui renvoie toujours le payload complet) marquerait comme saisie à
@@ -112,7 +147,7 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
     const { data: currentProject } = await supabase
       .from("lead_magnet_projects")
       .select("override_city")
-      .eq("id", project_id)
+      .eq("id", targetProjectId)
       .maybeSingle();
     const previousCity = (currentProject as { override_city?: string | null } | null)?.override_city ?? null;
     const nextCity = project.override_city || null;
@@ -137,19 +172,19 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
     if (project.variables != null) payload.variables = project.variables;
     if (cityChanged) payload.override_city_source = nextCity ? "manual" : null;
 
-    let { error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", project_id);
+    let { error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", targetProjectId);
     // `override_city_source` vient de la migration 20260727_ville_seo_geo,
     // appliquée à la main : tant qu'elle ne l'est pas, on enregistre sans elle
     // plutôt que de faire échouer la fiche entière.
     if (error && isMissingColumn(error)) {
       delete payload.override_city_source;
-      ({ error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", project_id));
+      ({ error } = await supabase.from("lead_magnet_projects").update(payload).eq("id", targetProjectId));
     }
     if (error) return jsonError(error.message, 500, {}, cors);
   }
 
   // 4) Reviews: deletions first, then updates (existing) / inserts (new).
-  if (project_id && reviews) {
+  if (targetProjectId && reviews) {
     if (reviews.deleted_ids.length > 0) {
       const { error } = await supabase.from("lead_magnet_reviews").delete().in("id", reviews.deleted_ids);
       if (error) return jsonError(error.message, 500, {}, cors);
@@ -169,7 +204,7 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
         if (error) return jsonError(error.message, 500, {}, cors);
       } else {
         const { error } = await supabase.from("lead_magnet_reviews").insert({
-          lead_magnet_project_id: project_id,
+          lead_magnet_project_id: targetProjectId,
           author_name: r.author_name,
           review_text: r.review_text,
           rating: r.rating,
@@ -183,5 +218,5 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
     }
   }
 
-  return json({ ok: true }, { headers: cors });
+  return json({ ok: true, project_id: targetProjectId }, { headers: cors });
 });
