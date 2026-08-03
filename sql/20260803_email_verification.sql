@@ -378,10 +378,15 @@ create policy "admin write email_events" on public.email_events
 -- domaine par domaine, sans bloquer cette migration. Tant qu'une adresse est
 -- `pending`, aucune séquence ne part vers elle — c'est voulu, et c'est
 -- exactement ce qu'on veut le premier jour.
-insert into public.email_verifications (email, domain, status)
+insert into public.email_verifications (email, domain, status, expires_at)
 select distinct
   lower(trim(src.email)),
-  split_part(lower(trim(src.email)), '@', 2)
+  split_part(lower(trim(src.email)), '@', 2),
+  'pending',
+  -- Même valeur que les deux autres chemins d'entrée en file
+  -- (`enqueueVerification` et `bump_email_send_counters`) : une adresse jamais
+  -- vérifiée n'a pas de verdict à faire expirer.
+  to_timestamp(0)
 from (
   select email from public.contacts where email is not null and email like '%@%'
   union
