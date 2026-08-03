@@ -3,6 +3,8 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import { getAgentPipeline } from "@/app/api/agent/_lib";
+import { dealsByEntreprise, type PipelineRow, type StageRow } from "../_agent-pool";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -61,10 +63,32 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
 
   const { data: opps } = await sc
     .from("opportunites")
-    .select("id, entreprise_id")
+    .select("id, entreprise_id, pipeline_id, stage_id, updated_at")
     .in("entreprise_id", entIds);
   const oppIds = (opps ?? []).map((o) => o.id as string);
   const entByOpp = new Map((opps ?? []).map((o) => [o.id as string, o.entreprise_id as number]));
+
+  // Pipelines CRM des entreprises attribuées, pour pouvoir filtrer (et retirer)
+  // par pipeline comme dans le pool. Le pipeline « Agent SAMA » est écarté : il
+  // est commun à toutes les entreprises attribuées, donc sans valeur de tri.
+  const [agentPipeline, pipelinesRes, stagesRes] = await Promise.all([
+    getAgentPipeline(),
+    sc.from("pipelines").select("id, nom, ordre").order("ordre", { ascending: true }),
+    sc.from("etapes_pipeline").select("id, nom, pipeline_id, ordre").order("ordre", { ascending: true }),
+  ]);
+  const pipelineRows = (pipelinesRes.data ?? []) as PipelineRow[];
+  const stageRows = (stagesRes.data ?? []) as StageRow[];
+  const dealsByEnt = dealsByEntreprise(
+    (opps ?? []).map((o) => ({
+      entreprise_id: (o.entreprise_id as number | null) ?? null,
+      pipeline_id: (o.pipeline_id as string | null) ?? null,
+      stage_id: (o.stage_id as number | null) ?? null,
+      updated_at: (o.updated_at as string | null) ?? null,
+    })),
+    new Map(pipelineRows.map((p) => [p.id, p])),
+    new Map(stageRows.map((s) => [s.id, s])),
+    agentPipeline?.pipelineId ?? null,
+  );
 
   const [auditsRes, sitesRes] = await Promise.all([
     oppIds.length > 0
@@ -151,6 +175,7 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
       id: e.id,
       name: e.name,
       ville: e.ville,
+      deals: dealsByEnt.get(entId) ?? [],
       enriched: enrichedEnts.has(entId),
       data_validated: validatedEnts.has(entId),
       audit: audit
@@ -167,5 +192,13 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
     };
   });
 
-  return json({ prospects }, { headers: cors });
+  return json(
+    {
+      prospects,
+      pipelines: pipelineRows
+        .filter((p) => p.id !== agentPipeline?.pipelineId)
+        .map((p) => ({ id: p.id, nom: p.nom ?? "Sans nom", ordre: p.ordre ?? 0 })),
+    },
+    { headers: cors },
+  );
 });

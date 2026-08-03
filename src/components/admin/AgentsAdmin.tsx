@@ -7,45 +7,22 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Building2,
-  MapPin,
-  Phone,
-  Check,
-  X,
-  Inbox,
-  Users,
-  Workflow,
-  FileText,
-  Globe,
-  ExternalLink,
-  ArrowRight,
-  ArrowLeft,
-} from "lucide-react";
-import {
-  ListPanel,
-  EmptyRow,
-  one,
-  agentLabel,
-  matches,
-  type Agent,
-  type Ent,
-} from "./agents/shared";
+import { Building2, Check, X, Inbox, Users, Workflow, RefreshCw } from "lucide-react";
+import { one, agentLabel, type Agent, type Ent } from "./agents/shared";
 import AgentPermissionsPanel from "./agents/AgentPermissionsPanel";
 import AgentQualificationReview from "./agents/AgentQualificationReview";
 import AgentActivityFeed from "./agents/AgentActivityFeed";
+import {
+  OwnedPanel,
+  PoolPanel,
+  type AgentProspect,
+  type PipelineOption,
+  type PoolProspect,
+  type StageOption,
+} from "./agents/ProspectPanels";
 
 type Sequence = { id: string; name: string | null; status: string; steps_count: number };
 type SeqAssignment = { automation_id: string; agent_id: string };
-type AgentProspect = {
-  id: number;
-  name: string | null;
-  ville: string | null;
-  enriched?: boolean;
-  data_validated?: boolean;
-  audit: { statut: string; url: string | null; ready: boolean } | null;
-  demo: { url: string | null; is_published: boolean; build_stage: string | null; ready: boolean } | null;
-};
 type ClaimRequest = {
   id: string;
   created_at: string;
@@ -53,59 +30,48 @@ type ClaimRequest = {
   agent: Agent | Agent[] | null;
 };
 
-/** Les 4 étapes de production, telles que l'agent les voit sur son board. */
-function PipelineSteps({ p }: { p: AgentProspect }) {
-  const steps: { label: string; done: boolean }[] = [
-    { label: "Enrichi", done: p.enriched === true },
-    { label: "Données validées", done: p.data_validated === true },
-    { label: "Site démo", done: p.demo?.ready === true },
-    { label: "Audit", done: p.audit?.ready === true },
-  ];
-  return (
-    <div className="mt-1 flex flex-wrap items-center gap-1">
-      {steps.map((s) => (
-        <Badge
-          key={s.label}
-          variant={s.done ? "default" : "outline"}
-          className="gap-1 text-[11px] font-normal"
-        >
-          {s.done && <Check className="h-3 w-3" />}
-          {s.label}
-        </Badge>
-      ))}
-    </div>
-  );
-}
+type PoolPayload = {
+  prospects: PoolProspect[];
+  pipelines: PipelineOption[];
+  stages: StageOption[];
+  owned_counts: Record<string, number>;
+  truncated: boolean;
+};
+
+const EMPTY_POOL: PoolPayload = {
+  prospects: [],
+  pipelines: [],
+  stages: [],
+  owned_counts: {},
+  truncated: false,
+};
 
 export default function AgentsAdmin() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [requests, setRequests] = useState<ClaimRequest[]>([]);
-  const [pool, setPool] = useState<Ent[]>([]);
+  const [pool, setPool] = useState<PoolPayload>(EMPTY_POOL);
   const [sequences, setSequences] = useState<Sequence[]>([]);
   const [seqAssignments, setSeqAssignments] = useState<SeqAssignment[]>([]);
   const [agentProspects, setAgentProspects] = useState<AgentProspect[]>([]);
+  const [ownedPipelines, setOwnedPipelines] = useState<PipelineOption[]>([]);
   const [prospectsLoading, setProspectsLoading] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<string>("");
-  const [poolQuery, setPoolQuery] = useState("");
-  const [ownedQuery, setOwnedQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  /** Id en cours de traitement à l'unité, et lot en cours — pour figer l'UI juste. */
+  const [busyEnt, setBusyEnt] = useState<number | null>(null);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = useCallback(async () => {
     const supabase = createClient();
-    const [agentsRes, poolRes, reqJson, seqJson] = await Promise.all([
+    const [agentsRes, poolJson, reqJson, seqJson] = await Promise.all([
       supabase
         .from("user_profiles")
         .select("id, full_name, email")
         .eq("role", "freelance")
         .order("full_name", { nullsFirst: false }),
-      supabase
-        .from("entreprises")
-        .select("id, name, ville, telephone")
-        .is("owner_id", null)
-        .eq("qualifie", true)
-        .order("name")
-        .limit(200),
+      authedFetch("/api/admin/agent-pool").then((r) => (r.ok ? r.json() : null)),
       authedFetch("/api/admin/claim-requests").then((r) => (r.ok ? r.json() : [])),
       authedFetch("/api/admin/agent-sequences").then((r) =>
         r.ok ? r.json() : { sequences: [], assignments: [] },
@@ -114,7 +80,7 @@ export default function AgentsAdmin() {
     const ag = (agentsRes.data ?? []) as Agent[];
     setAgents(ag);
     setSelectedAgent((cur) => cur || ag[0]?.id || "");
-    setPool((poolRes.data ?? []) as Ent[]);
+    setPool(poolJson ? ({ ...EMPTY_POOL, ...poolJson } as PoolPayload) : EMPTY_POOL);
     setRequests((reqJson ?? []) as ClaimRequest[]);
     setSequences((seqJson?.sequences ?? []) as Sequence[]);
     setSeqAssignments((seqJson?.assignments ?? []) as SeqAssignment[]);
@@ -134,15 +100,22 @@ export default function AgentsAdmin() {
     const seq = ++reqRef.current;
     if (!agentId) {
       setAgentProspects([]);
+      setOwnedPipelines([]);
       return;
     }
     setProspectsLoading(true);
     try {
       const res = await authedFetch(`/api/admin/agent-prospects?agent_id=${agentId}`);
-      const data = res.ok ? await res.json() : { prospects: [] };
-      if (seq === reqRef.current) setAgentProspects((data?.prospects ?? []) as AgentProspect[]);
+      const data = res.ok ? await res.json() : { prospects: [], pipelines: [] };
+      if (seq === reqRef.current) {
+        setAgentProspects((data?.prospects ?? []) as AgentProspect[]);
+        setOwnedPipelines((data?.pipelines ?? []) as PipelineOption[]);
+      }
     } catch {
-      if (seq === reqRef.current) setAgentProspects([]);
+      if (seq === reqRef.current) {
+        setAgentProspects([]);
+        setOwnedPipelines([]);
+      }
     } finally {
       if (seq === reqRef.current) setProspectsLoading(false);
     }
@@ -153,7 +126,12 @@ export default function AgentsAdmin() {
   }, [selectedAgent, loadProspects]);
 
   const refreshLists = useCallback(async () => {
-    await Promise.all([load(), loadProspects(selectedAgent)]);
+    setRefreshing(true);
+    try {
+      await Promise.all([load(), loadProspects(selectedAgent)]);
+    } finally {
+      setRefreshing(false);
+    }
   }, [load, loadProspects, selectedAgent]);
 
   const decide = async (requestId: string, decision: "approve" | "refuse") => {
@@ -204,64 +182,90 @@ export default function AgentsAdmin() {
     }
   };
 
-  const assign = async (entrepriseId: number) => {
+  const currentAgent = useMemo(
+    () => agents.find((a) => a.id === selectedAgent) ?? null,
+    [agents, selectedAgent],
+  );
+  const currentAgentName = currentAgent ? agentLabel(currentAgent) : "l'agent";
+
+  /** Marque l'action en cours : une seule ligne, ou tout le panneau si c'est un lot. */
+  const startBusy = (ids: number[]) => {
+    if (ids.length === 1) setBusyEnt(ids[0]);
+    else setBulkBusy(true);
+  };
+  const endBusy = () => {
+    setBusyEnt(null);
+    setBulkBusy(false);
+  };
+
+  type Failure = { entreprise_id: number; error: string };
+
+  /** « 3 attribuées, 1 en échec » plutôt qu'un succès qui cache une moitié ratée. */
+  const reportPartial = (done: number, failed: Failure[], verb: string) => {
+    if (failed.length === 0) {
+      toast.success(`${done} entreprise${done > 1 ? "s" : ""} ${verb}.`);
+      return;
+    }
+    toast.warning(
+      `${done} ${verb}, ${failed.length} en échec (${failed[0].error || "raison inconnue"}).`,
+    );
+  };
+
+  const assign = async (entrepriseIds: number[]) => {
     if (!selectedAgent) {
       toast.error("Choisis d'abord un agent.");
       return;
     }
-    setBusy(`ent-${entrepriseId}`);
+    if (entrepriseIds.length === 0) return;
+    startBusy(entrepriseIds);
     try {
       const res = await authedFetch("/api/admin/assign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entreprise_id: entrepriseId, agent_id: selectedAgent }),
+        body: JSON.stringify({ entreprise_ids: entrepriseIds, agent_id: selectedAgent }),
       });
-      if (!res.ok) throw new Error();
-      toast.success("Prospect attribué à l'agent.");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || "");
+      reportPartial(
+        Number(data?.assigned ?? entrepriseIds.length),
+        (data?.failed ?? []) as Failure[],
+        `attribuée${entrepriseIds.length > 1 ? "s" : ""} à ${currentAgentName}`,
+      );
       await refreshLists();
-    } catch {
-      toast.error("Attribution impossible.");
+    } catch (e) {
+      const detail = e instanceof Error ? e.message : "";
+      toast.error(detail ? `Attribution impossible : ${detail}` : "Attribution impossible.");
     } finally {
-      setBusy(null);
+      endBusy();
     }
   };
 
-  const unassign = async (entrepriseId: number) => {
-    if (!selectedAgent) return;
-    setBusy(`ent-${entrepriseId}`);
+  const unassign = async (entrepriseIds: number[]) => {
+    if (!selectedAgent || entrepriseIds.length === 0) return;
+    startBusy(entrepriseIds);
     try {
-      const res = await authedFetch(
-        `/api/admin/assign?entreprise_id=${entrepriseId}&agent_id=${selectedAgent}`,
-        { method: "DELETE" },
-      );
+      const params = new URLSearchParams({
+        entreprise_ids: entrepriseIds.join(","),
+        agent_id: selectedAgent,
+      });
+      const res = await authedFetch(`/api/admin/assign?${params}`, { method: "DELETE" });
       // Un retrait qui échoue à mi-chemin laissait l'entreprise dans un état
       // bâtard : on remonte la raison exacte plutôt qu'un « impossible » muet.
-      if (!res.ok) {
-        const detail = await res.json().catch(() => null);
-        throw new Error(detail?.error || detail?.message || "");
-      }
-      toast.success("Prospect retiré de l'agent, remis dans le pool.");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.error || data?.message || "");
+      reportPartial(
+        Number(data?.released ?? entrepriseIds.length),
+        (data?.failed ?? []) as Failure[],
+        `remise${entrepriseIds.length > 1 ? "s" : ""} dans le pool`,
+      );
       await refreshLists();
     } catch (e) {
       const detail = e instanceof Error ? e.message : "";
       toast.error(detail ? `Retrait impossible : ${detail}` : "Retrait impossible.");
     } finally {
-      setBusy(null);
+      endBusy();
     }
   };
-
-  const currentAgent = useMemo(
-    () => agents.find((a) => a.id === selectedAgent) ?? null,
-    [agents, selectedAgent],
-  );
-  const filteredPool = useMemo(
-    () => pool.filter((e) => matches(poolQuery, e.name, e.ville, e.telephone)),
-    [pool, poolQuery],
-  );
-  const filteredOwned = useMemo(
-    () => agentProspects.filter((p) => matches(ownedQuery, p.name, p.ville)),
-    [agentProspects, ownedQuery],
-  );
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 p-6">
@@ -279,8 +283,9 @@ export default function AgentsAdmin() {
 
       {!loading && (
         <>
-          {/* Agent picker — drives every section below. */}
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-4 py-3 text-sm">
+          {/* Agent picker — drives every section below, et reste accessible
+              quand on fait défiler les listes. */}
+          <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-xl border bg-card/95 px-4 py-3 text-sm shadow-sm backdrop-blur">
             <Users className="h-4 w-4 text-muted-foreground" />
             <span className="text-muted-foreground">Agent :</span>
             <select
@@ -291,22 +296,55 @@ export default function AgentsAdmin() {
               {agents.length === 0 && <option value="">Aucun agent</option>}
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {agentLabel(a)}
+                  {agentLabel(a)} ({pool.owned_counts[a.id] ?? 0})
                 </option>
               ))}
             </select>
             <span className="text-xs text-muted-foreground">
               {agentProspects.length} entreprise{agentProspects.length > 1 ? "s" : ""} attribuée
-              {agentProspects.length > 1 ? "s" : ""}
+              {agentProspects.length > 1 ? "s" : ""} · {pool.prospects.length} dans le pool
             </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto h-8"
+              disabled={refreshing}
+              onClick={() => void refreshLists()}
+            >
+              <RefreshCw className={`mr-1 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} /> Rafraîchir
+            </Button>
+          </div>
+
+          {/* Pool ⇄ agent: two fixed-height, independently scrolling lists.
+              C'est le cœur de l'écran, donc juste sous le sélecteur d'agent. */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <PoolPanel
+              prospects={pool.prospects}
+              pipelines={pool.pipelines}
+              stages={pool.stages}
+              truncated={pool.truncated}
+              loading={refreshing && pool.prospects.length === 0}
+              agentName={currentAgentName}
+              canAssign={!!selectedAgent}
+              busyId={busyEnt}
+              bulkBusy={bulkBusy}
+              onAssign={assign}
+            />
+
+            <OwnedPanel
+              prospects={agentProspects}
+              pipelines={ownedPipelines}
+              loading={prospectsLoading}
+              agentName={currentAgentName}
+              busyId={busyEnt}
+              bulkBusy={bulkBusy}
+              onUnassign={unassign}
+            />
           </div>
 
           {/* Ce que l'agent a le droit de faire. */}
           {selectedAgent && (
-            <AgentPermissionsPanel
-              agentId={selectedAgent}
-              agentName={agentLabel(currentAgent)}
-            />
+            <AgentPermissionsPanel agentId={selectedAgent} agentName={agentLabel(currentAgent)} />
           )}
 
           {/* Le pré-tri à valider — le cœur de la boucle agent → admin. */}
@@ -315,132 +353,6 @@ export default function AgentsAdmin() {
             agents={agents}
             onChanged={refreshLists}
           />
-
-          {/* Pool ⇄ agent: two fixed-height, independently scrolling lists. */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <ListPanel
-              title="Pool disponible"
-              icon={<Inbox className="h-4 w-4" />}
-              count={filteredPool.length}
-              hint="Entreprises qualifiées sans agent. Clique sur Attribuer pour les donner à l'agent sélectionné."
-              search={poolQuery}
-              onSearch={setPoolQuery}
-              searchPlaceholder="Filtrer par nom, ville, téléphone…"
-            >
-              {filteredPool.length === 0 ? (
-                <EmptyRow>
-                  {pool.length === 0
-                    ? "Aucun prospect qualifié disponible dans le pool."
-                    : "Aucune entreprise ne correspond à ce filtre."}
-                </EmptyRow>
-              ) : (
-                filteredPool.map((e) => {
-                  const disabled = busy === `ent-${e.id}` || !selectedAgent;
-                  return (
-                    <div
-                      key={e.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border bg-background px-3 py-2"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 text-sm font-medium">
-                          <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate">{e.name || "Sans nom"}</span>
-                        </div>
-                        <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
-                          {e.ville && (
-                            <span className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3" /> {e.ville}
-                            </span>
-                          )}
-                          {e.telephone && (
-                            <span className="flex items-center gap-1">
-                              <Phone className="h-3 w-3" /> {e.telephone}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <Button
-                        size="sm"
-                        className="shrink-0"
-                        disabled={disabled}
-                        onClick={() => assign(e.id)}
-                      >
-                        Attribuer <ArrowRight className="ml-1 h-4 w-4" />
-                      </Button>
-                    </div>
-                  );
-                })
-              )}
-            </ListPanel>
-
-            <ListPanel
-              title={`Entreprises de ${currentAgent ? agentLabel(currentAgent) : "l'agent"}`}
-              icon={<Building2 className="h-4 w-4" />}
-              count={filteredOwned.length}
-              hint="Avec l'avancement des 4 étapes du marketing pipeline. Retirer les remet dans le pool."
-              search={ownedQuery}
-              onSearch={setOwnedQuery}
-              searchPlaceholder="Filtrer par nom, ville…"
-            >
-              {prospectsLoading ? (
-                <div className="py-8 text-center text-sm text-muted-foreground">Chargement…</div>
-              ) : filteredOwned.length === 0 ? (
-                <EmptyRow>
-                  {agentProspects.length === 0
-                    ? "Aucune entreprise attribuée à cet agent."
-                    : "Aucune entreprise ne correspond à ce filtre."}
-                </EmptyRow>
-              ) : (
-                filteredOwned.map((p) => {
-                  const disabled = busy === `ent-${p.id}`;
-                  return (
-                    <div key={p.id} className="rounded-lg border bg-background px-3 py-2">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5 text-sm font-medium">
-                            <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <span className="truncate">{p.name || "Sans nom"}</span>
-                          </div>
-                          {p.ville && (
-                            <div className="mt-0.5 text-xs text-muted-foreground">{p.ville}</div>
-                          )}
-                          <PipelineSteps p={p} />
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="shrink-0 text-destructive hover:text-destructive"
-                          disabled={disabled}
-                          onClick={() => unassign(p.id)}
-                        >
-                          <ArrowLeft className="mr-1 h-4 w-4" /> Retirer
-                        </Button>
-                      </div>
-                      {(p.audit?.url || p.demo?.url) && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {p.audit?.url && (
-                            <Button size="sm" variant="ghost" className="h-7 px-2" asChild>
-                              <a href={p.audit.url} target="_blank" rel="noreferrer">
-                                <FileText className="mr-1 h-3.5 w-3.5" /> Audit
-                              </a>
-                            </Button>
-                          )}
-                          {p.demo?.url && (
-                            <Button size="sm" variant="ghost" className="h-7 px-2" asChild>
-                              <a href={p.demo.url} target="_blank" rel="noreferrer">
-                                <Globe className="mr-1 h-3.5 w-3.5" /> Site démo
-                                <ExternalLink className="ml-1 h-3 w-3" />
-                              </a>
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </ListPanel>
-          </div>
 
           {/* Ce que l'agent a fait, et ce qu'il a dépensé. */}
           {selectedAgent && <AgentActivityFeed agentId={selectedAgent} />}
