@@ -24,6 +24,7 @@ import {
 } from "@/lib/site-builder/position-layout";
 import type { ReviewItem } from "@/lib/site-resolver";
 import { extractClassTokens } from "@/lib/library-section/preprocess";
+import { pickRenderExampleData } from "@/lib/site-builder/render-example-data";
 import { generateTailwindCSS } from "@/lib/library-section/tailwind-jit";
 import { LibrarySectionInline } from "./LibrarySectionInline";
 import { LibrarySectionHydrator } from "./LibrarySectionHydrator";
@@ -211,14 +212,24 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
     .filter((r): r is { theme_slug: string; section_id: string } => Boolean(r));
   if (lookupRefs.length > 0) {
     const themeSlugs = [...new Set(lookupRefs.map((r) => r.theme_slug))];
+    // Filter on section_id too. Every imported Claude design shares the single
+    // CLAUDE_DESIGN_THEME_SLUG bucket, so a theme_slug-only filter fetches every
+    // page of every design in the database — and each row carries the whole page
+    // HTML four times over (code + example_data.{__source_html,__token_html}).
+    const sectionIds = [...new Set(lookupRefs.map((r) => r.section_id))];
     const { data: themeSections } = await supabase
       .from("theme_sections")
       .select("theme_slug, section_id, code, example_data, category, render_mode")
-      .in("theme_slug", themeSlugs);
+      .in("theme_slug", themeSlugs)
+      .in("section_id", sectionIds);
     for (const ts of themeSections ?? []) {
       themeSectionMap.set(`${ts.theme_slug}:${ts.section_id}`, {
         code: ts.code,
-        example_data: ts.example_data,
+        // Only __page_js is read at render time (injected with the design's JS
+        // below). The other keys are import-time artefacts that are each a full
+        // copy of the page HTML — keeping them here would spread them into the
+        // section's `content` and ship them to the browser in the hydration JSON.
+        example_data: pickRenderExampleData(ts.example_data),
         category: ts.category ?? null,
         render_mode: ts.render_mode ?? null,
       });
@@ -264,8 +275,15 @@ export async function DynamicPageRenderer({ siteId, pageSlug, styleGuide, variab
   let tailwindCss = "";
   if (hasLibrarySections) {
     const allTokens: string[] = [];
-    for (const ts of themeSectionMap.values()) {
-      allTokens.push(...extractClassTokens(ts.code ?? ""));
+    // Iterate THIS page's refs, not the whole map: the map may hold inherited
+    // home chrome, and the token set is the cache key — widening it past the
+    // page makes unrelated designs invalidate each other's compiled CSS.
+    const seenRefs = new Set<string>();
+    for (const ref of libRefs) {
+      const key = `${ref.theme_slug}:${ref.section_id}`;
+      if (seenRefs.has(key)) continue;
+      seenRefs.add(key);
+      allTokens.push(...extractClassTokens(themeSectionMap.get(key)?.code ?? ""));
     }
     tailwindCss = await generateTailwindCSS(allTokens);
   }

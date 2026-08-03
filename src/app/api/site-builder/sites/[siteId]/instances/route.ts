@@ -35,10 +35,19 @@ export const GET = withAuth<undefined, Params>({}, async ({ params }) => {
 
   if (libRefs.length > 0) {
     const themeSlugs = [...new Set(libRefs.map((r) => r.theme_slug))];
+    // section_id matters as much as theme_slug: every imported Claude design
+    // shares one theme_slug bucket, so filtering on the slug alone reads every
+    // page of every design — each row carrying several copies of a full page
+    // of HTML. Columns are listed explicitly for the same reason ("*" drags in
+    // blobs this route never reads back).
+    const sectionIds = [...new Set(libRefs.map((r) => r.section_id))];
     const { data: themeSections } = await supabase
       .from("theme_sections")
-      .select("*")
-      .in("theme_slug", themeSlugs);
+      .select(
+        "id, name, section_id, theme_slug, category, example_data, code, schema, render_mode, is_tag_adaptive, created_at, updated_at",
+      )
+      .in("theme_slug", themeSlugs)
+      .in("section_id", sectionIds);
 
     const tsMap = new Map(
       (themeSections ?? []).map((ts) => [`${ts.theme_slug}:${ts.section_id}`, ts]),
