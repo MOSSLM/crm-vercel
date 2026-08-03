@@ -89,10 +89,49 @@ describe('authentification du ticker', () => {
 describe('travail du tick', () => {
   it('ne fait rien quand la file est vide', async () => {
     const { GET } = await importRoute()
-    const body = await (await GET(request())).json()
+    const res = await GET(request())
+    const body = await res.json()
 
+    expect(res.status).toBe(200)
     expect(body).toEqual(expect.objectContaining({ ok: true, checked: 0 }))
     expect(mockVerifyMany).not.toHaveBeenCalled()
+  })
+
+  it('rend 500 avec le motif quand la file est ILLISIBLE', async () => {
+    // Le piège qu'on répare : « rien à faire » et « je n'ai pas pu lire »
+    // rendaient tous deux `200 ok:true, checked:0`. Une vérification à l'arrêt
+    // ressemblait alors trait pour trait à une file vide, et personne ne
+    // pouvait s'en apercevoir — c'est exactement ce qui est arrivé en
+    // production avec un cache de schéma PostgREST périmé.
+    mockLoadDue.mockResolvedValue({
+      emails: [],
+      remaining: 0,
+      error: "PGRST205 · Could not find the table 'public.email_verifications' in the schema cache",
+    })
+
+    const { GET } = await importRoute()
+    const res = await GET(request())
+    const body = await res.json()
+
+    expect(res.status).toBe(500)
+    expect(body.ok).toBe(false)
+    expect(body.error).toContain('schema cache')
+    expect(mockVerifyMany).not.toHaveBeenCalled()
+  })
+
+  it('travaille quand même si seule une salve secondaire a échoué', async () => {
+    // Les verdicts périmés n'ont pas pu être lus, mais les adresses jamais vues
+    // si : le tick fait son travail et signale l'incident sans échouer.
+    mockLoadDue.mockResolvedValue({ emails: ['a@x.fr'], remaining: 0, error: 'lecture partielle' })
+    mockVerifyMany.mockResolvedValue([{ email: 'a@x.fr', status: 'valid' }])
+
+    const { GET } = await importRoute()
+    const res = await GET(request())
+    const body = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(body.checked).toBe(1)
+    expect(body.warning).toBe('lecture partielle')
   })
 
   it('vérifie la tranche et rend le détail par statut', async () => {

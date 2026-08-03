@@ -68,7 +68,15 @@ async function handle(req: Request): Promise<Response> {
   const sb = getServiceClient()
   const startedAt = Date.now()
   const validTtlDays = await readTtlDays(sb)
-  const { emails, remaining } = await loadDueForVerification(sb, MAX_PER_TICK)
+  const { emails, remaining, error } = await loadDueForVerification(sb, MAX_PER_TICK)
+
+  // La file est illisible : c'est une panne, et elle doit se voir au CODE
+  // D'ÉTAT. C'est ce qu'on lit en premier dans `net._http_response` — un
+  // `200 ok:true` sur une file inaccessible est indiscernable d'un repos, et
+  // laisse la vérification à l'arrêt sans que personne ne s'en aperçoive.
+  if (emails.length === 0 && error) {
+    return json({ ok: false, checked: 0, remaining, error, ms: Date.now() - startedAt }, { status: 500 })
+  }
 
   if (emails.length === 0) {
     return json({ ok: true, checked: 0, remaining, ms: Date.now() - startedAt })
@@ -87,6 +95,9 @@ async function handle(req: Request): Promise<Response> {
     remaining,
     byStatus,
     ttlDays: validTtlDays,
+    // Une salve a échoué mais le tick a quand même travaillé : on le dit sans
+    // faire échouer le passage.
+    ...(error ? { warning: error } : {}),
     ms: Date.now() - startedAt,
   })
 }

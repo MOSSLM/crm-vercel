@@ -673,6 +673,14 @@ export interface DueBatch {
   emails: string[]
   /** Combien restaient à faire au-delà de la tranche rendue. */
   remaining: number
+  /**
+   * Motif d'échec de LECTURE de la file — pas d'échec de vérification.
+   *
+   * Sans ce champ, « la file est vide » et « je n'ai pas pu lire la file »
+   * rendaient exactement la même réponse : `checked: 0`. Deux situations
+   * opposées, un seul signal, et une panne indiscernable d'un repos.
+   */
+  error?: string
 }
 
 /**
@@ -686,43 +694,63 @@ export async function loadDueForVerification(sb: SupabaseClient, limit: number):
   const emails: string[] = []
   const nowIso = new Date().toISOString()
 
+  // Première salve : les adresses jamais vues. Un échec ICI est une panne, pas
+  // un repos — on le remonte tel quel, avec le message de PostgREST, qui nomme
+  // précisément la cause (table absente du cache de schéma, droits, colonne
+  // manquante…).
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('email_verifications')
       .select('email')
       .eq('status', 'pending')
       .order('created_at', { ascending: true })
       .limit(limit)
+    if (error) return { emails: [], remaining: 0, error: describe(error) }
     for (const row of (data ?? []) as { email: string }[]) emails.push(row.email)
-  } catch {
-    return { emails: [], remaining: 0 }
+  } catch (err) {
+    return { emails: [], remaining: 0, error: describe(err) }
   }
 
+  // Seconde salve : les verdicts périmés. Un échec ici n'empêche pas le tick de
+  // travailler sur ce qu'il a déjà — mais il doit quand même se voir.
+  let error: string | undefined
   if (emails.length < limit) {
     try {
-      const { data } = await sb
+      const { data, error: staleError } = await sb
         .from('email_verifications')
         .select('email')
         .neq('status', 'pending')
         .lte('expires_at', nowIso)
         .order('expires_at', { ascending: true })
         .limit(limit - emails.length)
-      for (const row of (data ?? []) as { email: string }[]) emails.push(row.email)
-    } catch {
-      /* la première salve suffit pour ce tick */
+      if (staleError) error = describe(staleError)
+      else for (const row of (data ?? []) as { email: string }[]) emails.push(row.email)
+    } catch (err) {
+      error = describe(err)
     }
   }
 
   let remaining = 0
   try {
-    const { count } = await sb
+    const { count, error: countError } = await sb
       .from('email_verifications')
       .select('email', { count: 'exact', head: true })
       .or(`status.eq.pending,expires_at.lte.${nowIso}`)
-    remaining = Math.max(0, (count ?? 0) - emails.length)
-  } catch {
-    /* le compte est indicatif */
+    if (countError) error = error ?? describe(countError)
+    else remaining = Math.max(0, (count ?? 0) - emails.length)
+  } catch (err) {
+    error = error ?? describe(err)
   }
 
-  return { emails, remaining }
+  return { emails, remaining, error }
+}
+
+/** Message lisible d'une erreur PostgREST ou d'une exception. */
+function describe(err: unknown): string {
+  if (err && typeof err === 'object') {
+    const e = err as { code?: string; message?: string; hint?: string }
+    const parts = [e.code, e.message, e.hint].filter(Boolean)
+    if (parts.length > 0) return parts.join(' · ')
+  }
+  return String(err)
 }
