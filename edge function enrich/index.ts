@@ -19,6 +19,7 @@
 
 import type { EnrichRequest, EnrichResponse, EnrichResult } from "./types.ts";
 import { scrapeWebsite, buildSiteContext } from "./scraper.ts";
+import { sameOrigin } from "./url-variants.ts";
 import { fetchGooglePlace, resolvePlaceId, isV1PlaceId, searchPlaceId, extractLatLngFromUrl } from "./google.ts";
 import { extractWithLLM } from "./llm.ts";
 import {
@@ -101,6 +102,18 @@ async function processOne(projectId: string): Promise<EnrichResult> {
         status: "no_website",
         error: scraped.error,
       };
+    }
+
+    // 4 bis. L'URL stockée était fausse mais le site répond ailleurs (www en
+    //        trop, http au lieu de https, redirection) : on corrige la fiche.
+    //        Sans ça, chaque relance repart de l'URL morte, et l'audit comme le
+    //        site démo continuent de pointer vers un hôte injoignable.
+    if (scraped.base_url && siteUrl && !sameOrigin(scraped.base_url, siteUrl)) {
+      console.log(`[${projectId}] URL corrigée : ${siteUrl} → ${scraped.base_url}`);
+      await sb
+        .from("entreprises")
+        .update({ site_web_canonique: scraped.base_url, updated_at: new Date().toISOString() })
+        .eq("id", ctx.entreprise_id);
     }
 
     // 5. Google Places (best-effort)

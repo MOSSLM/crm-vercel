@@ -16,6 +16,7 @@
  */
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
+import { buildUrlCandidates } from "@/lib/http/url-variants";
 import { normalizeImportedHtml, type NormalizeResult } from "./normalize-imported-html";
 import { extractPageAssets } from "@/lib/ai/import-page-sections";
 import { slimImportHtml } from "@/lib/ai/slim-import-html";
@@ -167,26 +168,50 @@ function detectBlocked(html: string): string | null {
   return null;
 }
 
+/**
+ * Joint l'URL, en essayant les variantes www/apex et https/http.
+ *
+ * Un `www` en trop ou un `https` que le serveur ne sert pas suffisait à faire
+ * échouer l'import sur un site parfaitement en ligne. On ne bascule QUE sur les
+ * échecs de connexion : un site qui répond (même par une erreur HTTP) a bien été
+ * joint, et son message doit remonter tel quel.
+ */
+async function reachPage(url: URL): Promise<Response> {
+  const candidates = buildUrlCandidates(url.href);
+  let lastError: FetchPageError | null = null;
+
+  for (const candidate of candidates.length > 0 ? candidates : [url.href]) {
+    const target = new URL(candidate);
+    try {
+      await assertPublicHost(target.hostname);
+    } catch (e) {
+      // Hôte refusé (réseau interne) : la variante est écartée, pas l'import.
+      lastError = e instanceof FetchPageError ? e : lastError;
+      continue;
+    }
+    try {
+      return await fetch(target.href, {
+        method: "GET",
+        headers: BROWSER_HEADERS,
+        redirect: "follow",
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
+    } catch (e) {
+      const aborted = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+      lastError = new FetchPageError(
+        aborted ? "Délai dépassé lors de la récupération de la page." : "Impossible de joindre l'URL.",
+        504,
+        PASTE_HINT,
+      );
+    }
+  }
+
+  throw lastError ?? new FetchPageError("Impossible de joindre l'URL.", 504, PASTE_HINT);
+}
+
 export async function fetchPageHtml(input: string): Promise<FetchPageResult> {
   const url = normalizeUrlInput(input);
-  await assertPublicHost(url.hostname);
-
-  let res: Response;
-  try {
-    res = await fetch(url.href, {
-      method: "GET",
-      headers: BROWSER_HEADERS,
-      redirect: "follow",
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
-  } catch (e) {
-    const aborted = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-    throw new FetchPageError(
-      aborted ? "Délai dépassé lors de la récupération de la page." : "Impossible de joindre l'URL.",
-      504,
-      PASTE_HINT,
-    );
-  }
+  const res = await reachPage(url);
 
   // Re-validate after redirects (best-effort SSRF guard against open redirects).
   try {
