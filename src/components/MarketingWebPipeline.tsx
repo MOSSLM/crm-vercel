@@ -1080,7 +1080,10 @@ const OpportunityEditModal: React.FC<{
       return rs.filter((_, i) => i !== idx);
     });
 
-  const requiredRules = siteRequiredFor(projectId != null);
+  // Le dossier lead magnet est créé à l'enregistrement quand il manque : ses
+  // champs sont donc toujours exigés, sinon une fiche « complète » sans ville
+  // SEO ni chiffres clés resterait bloquée à l'étape suivante.
+  const requiredRules = siteRequiredFor(true);
   const missingRequired = requiredRules.filter((r) => !r.ok(form)).map((r) => r.label);
   const invalidFields = new Set(requiredRules.filter((r) => !r.ok(form)).map((r) => r.field));
   const showInvalid = (field: keyof EditForm) => siteRequirement && invalidFields.has(field);
@@ -1088,9 +1091,10 @@ const OpportunityEditModal: React.FC<{
   const persist = async (): Promise<boolean> => {
     if (entrepriseId == null) return false;
 
-    // lead_magnet_projects : overrides, logo, stats, zones (sortie edge function)
-    let project: Record<string, unknown> | null = null;
-    if (projectId) {
+    // lead_magnet_projects : overrides, logo, stats, zones (sortie edge function).
+    // Envoyé même sans dossier existant — le serveur le crée alors, ce qui rend
+    // l'enrichissement manuel possible de bout en bout.
+    const project: Record<string, unknown> = (() => {
       const vars: Record<string, unknown> = { ...variablesRef.current };
       const zones = toArr(form.lm_zones);
       if (zones.length > 0) {
@@ -1100,7 +1104,7 @@ const OpportunityEditModal: React.FC<{
         delete vars.surrounding_cities;
         delete vars.surrounding_cities_text;
       }
-      project = {
+      return {
         override_entreprise_name: form.lm_override_name || null,
         // Ville SEO. `override_location` en est le miroir historique : on le
         // synchronise pour que les designs qui utilisent encore
@@ -1118,22 +1122,20 @@ const OpportunityEditModal: React.FC<{
         stat_rge_count: form.lm_stat_rge || null,
         variables: vars,
       };
-    }
+    })();
 
     // Avis : on conserve l'index d'origine pour display_order (lignes vides ignorées).
-    const reviewRows = projectId
-      ? reviews
-          .map((r, i) => ({ r, i }))
-          .filter(({ r }) => r.author_name.trim() || r.review_text.trim())
-          .map(({ r, i }) => ({
-            id: r.id ?? null,
-            author_name: r.author_name.trim(),
-            review_text: r.review_text.trim(),
-            rating: r.rating === "" ? 5 : Number(r.rating),
-            is_active: r.is_active,
-            display_order: i * 10 + 100,
-          }))
-      : [];
+    const reviewRows = reviews
+      .map((r, i) => ({ r, i }))
+      .filter(({ r }) => r.author_name.trim() || r.review_text.trim())
+      .map(({ r, i }) => ({
+        id: r.id ?? null,
+        author_name: r.author_name.trim(),
+        review_text: r.review_text.trim(),
+        rating: r.rating === "" ? 5 : Number(r.rating),
+        is_active: r.is_active,
+        display_order: i * 10 + 100,
+      }));
 
     const hasEnrData =
       form.enr_website_url || form.enr_emails || form.enr_phones || form.enr_services || form.enr_contact_page || form.enr_summary;
@@ -1146,6 +1148,8 @@ const OpportunityEditModal: React.FC<{
       body: JSON.stringify({
         entreprise_id: entrepriseId,
         project_id: projectId,
+        // Sans dossier lead magnet, le serveur en crée un pour cette opportunité.
+        opportunite_id: item?.id ?? null,
         enrichment_id: enrichmentId,
         company: {
           name: form.name || null,
@@ -1172,7 +1176,7 @@ const OpportunityEditModal: React.FC<{
             }
           : null,
         project,
-        reviews: projectId ? { deleted_ids: deletedReviewIds.current, rows: reviewRows } : null,
+        reviews: { deleted_ids: deletedReviewIds.current, rows: reviewRows },
       }),
     });
 
@@ -1252,18 +1256,13 @@ const OpportunityEditModal: React.FC<{
                 <Field label="Ville" required invalid={showInvalid("ville")}><Input value={form.ville} onChange={set("ville")} /></Field>
                 <Field
                   label="Ville SEO"
-                  required={projectId != null}
+                  required
                   invalid={showInvalid("lm_override_city")}
-                  hint={
-                    projectId != null
-                      ? "Grande ville la plus proche — celle mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, remets la même."
-                      : "Disponible une fois le projet lead magnet créé (lance l'enrichissement)."
-                  }
+                  hint="Grande ville la plus proche — celle mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, remets la même."
                 >
                   <Input
                     value={form.lm_override_city}
                     onChange={set("lm_override_city")}
-                    disabled={projectId == null}
                     placeholder={form.ville}
                   />
                 </Field>
@@ -1305,14 +1304,19 @@ const OpportunityEditModal: React.FC<{
               </div>
             </div>
 
-            {projectId ? (
-              <>
+            <>
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Lead magnet — overrides &amp; logo</h4>
                   <p className="text-xs text-muted-foreground mb-2">
                     Ce que l&apos;enrichissement a produit et ce que le site utilise. Vide = la
                     valeur entreprise ci-dessus est utilisée.
                   </p>
+                  {projectId == null && (
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Aucun dossier lead magnet pour cette entreprise : il sera créé à
+                      l&apos;enregistrement, avec ce que vous saisissez ici.
+                    </p>
+                  )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Nom affiché (override)"><Input value={form.lm_override_name} onChange={set("lm_override_name")} placeholder={form.name} /></Field>
                     <LogoField
@@ -1396,12 +1400,6 @@ const OpportunityEditModal: React.FC<{
                   </div>
                 </div>
               </>
-            ) : (
-              <p className="text-xs text-muted-foreground">
-                Projet lead magnet non encore créé pour cette entreprise : les overrides,
-                stats et avis apparaîtront une fois l&apos;enrichissement lancé.
-              </p>
-            )}
           </div>
         )}
 

@@ -272,6 +272,13 @@ const strArray = z.array(z.string()).optional().default([]);
 export const marketingCompanyDetailsSchema = z.object({
   entreprise_id: z.coerce.number().int().positive(),
   project_id: z.string().uuid().nullable().optional(),
+  /**
+   * Opportunité d'où la fiche est ouverte. Sert à CRÉER le dossier lead magnet
+   * quand il n'existe pas encore : sans lui, une entreprise dont
+   * l'enrichissement automatique n'a jamais abouti n'a nulle part où recevoir
+   * la ville SEO, le logo et les chiffres clés saisis à la main.
+   */
+  opportunite_id: z.string().uuid().nullable().optional(),
   enrichment_id: z.string().uuid().nullable().optional(),
   company: z.object({
     name: nullableStr,
