@@ -20,6 +20,8 @@ import {
   Euro,
   FileText,
   Globe,
+  Inbox,
+  Layers,
   Linkedin,
   Lock,
   Mail,
@@ -52,6 +54,7 @@ export const KIND_ICON: Record<string, LucideIcon> = {
 
 /** Icône d'une colonne, quelle que soit son origine. */
 export function columnIcon(column: SalesColumn): LucideIcon {
+  if (column.group === 'entry') return Inbox
   if (column.kind) return KIND_ICON[column.kind] ?? ClipboardCheck
   const n = column.label.toLowerCase()
   if (n.includes('rdv') || n.includes('rendez')) return Calendar
@@ -62,6 +65,7 @@ export function columnIcon(column: SalesColumn): LucideIcon {
 }
 
 function ctaIcon(column: SalesColumn): LucideIcon {
+  if (column.group === 'entry') return Layers
   if (column.kind === 'email') return Bolt
   if (column.kind) return KIND_ICON[column.kind] ?? ClipboardCheck
   const n = column.label.toLowerCase()
@@ -96,6 +100,7 @@ export function eur(value: number | null | undefined): string {
 
 /** Résumé d'une colonne franchie — ce que la carte grisée raconte. */
 function doneSummary(column: SalesColumn, row: SalesBoardRow): string {
+  if (column.group === 'entry') return row.sequence?.name ?? 'Mis en séquence'
   if (column.group === 'sequence') {
     switch (column.kind) {
       case 'email': {
@@ -148,6 +153,58 @@ function ActiveBody({
   now: number
   timezone: string
 }) {
+  // ── Colonne d'entrée ────────────────────────────────────────────────────
+  // Ce qui compte ici, c'est de décider : ce prospect est-il prêt à être
+  // démarché ? On montre donc ce qui manque, pas ce qui va bien.
+  if (column.group === 'entry') {
+    return (
+      <div className="c-body col">
+        <div className="ctx">
+          {row.auditReady ? (
+            <span className="chip">
+              <ClipboardCheck className="ico-sm" />
+              Audit prêt
+            </span>
+          ) : (
+            <span className="chip miss">
+              <ClipboardCheck className="ico-sm" />
+              Sans audit
+            </span>
+          )}
+          {row.demoUrl ? (
+            <span className="chip">
+              <Globe className="ico-sm" />
+              Démo prête
+            </span>
+          ) : (
+            <span className="chip miss">
+              <Globe className="ico-sm" />
+              Sans démo
+            </span>
+          )}
+        </div>
+        {row.contact ? (
+          <div className="muted">
+            {row.contact.name}
+            {row.contact.role ? ` · ${row.contact.role}` : ''}
+          </div>
+        ) : (
+          <div className="why" style={{ color: 'var(--danger)' }}>
+            <AlertTriangle className="ico-xs" />
+            Aucun contact — impossible de démarcher
+          </div>
+        )}
+        {/* Inscrit ailleurs : sans ça, la ligne semblerait n'avoir rien fait. */}
+        {row.sequence && (
+          <div className="why">
+            <Layers className="ico-xs" />
+            déjà dans « {row.sequence.name} »
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ── Colonnes de séquence ────────────────────────────────────────────────
   if (column.group === 'sequence') {
     if (column.kind === 'email') {
@@ -357,11 +414,14 @@ export function SalesCell({
   const busy = handlers.busy === row.id
   const Icon = columnIcon(column)
   const CtaIcon = ctaIcon(column)
+  // Teinte de groupe portée jusqu'au bas du tableau, pour que l'encadrement
+  // du groupe séquence se lise sur toute la hauteur.
+  const groupClass = column.group === 'sequence' ? ' in-seq' : column.group === 'entry' ? ' in-entry' : ''
   const inSequence = column.group === 'sequence'
 
   if (status === 'locked') {
     return (
-      <div className={'mx-cell locked' + (inSequence ? ' in-seq' : '')}>
+      <div className={'mx-cell locked' + groupClass}>
         <div className="locked-ph">
           <Lock />
           <span className="t">À venir</span>
@@ -372,7 +432,7 @@ export function SalesCell({
 
   if (status === 'skip') {
     return (
-      <div className={'mx-cell' + (inSequence ? ' in-seq' : '')} style={seg}>
+      <div className={'mx-cell' + groupClass} style={seg}>
         <div className="card is-skip">
           <div className="c-hd">
             <span className="skip-ic">
@@ -395,7 +455,7 @@ export function SalesCell({
   if (status === 'lost' || status === 'black') {
     const black = status === 'black'
     return (
-      <div className={'mx-cell' + (inSequence ? ' in-seq' : '')} style={seg}>
+      <div className={'mx-cell' + groupClass} style={seg}>
         <div className="card is-rej">
           <div className="c-hd">
             <span className="c-dot" />
@@ -418,7 +478,7 @@ export function SalesCell({
 
   if (status === 'nurt') {
     return (
-      <div className={'mx-cell' + (inSequence ? ' in-seq' : '')} style={seg}>
+      <div className={'mx-cell' + groupClass} style={seg}>
         <div className="card is-nurt">
           <div className="c-hd">
             <span className="c-dot" />
@@ -443,7 +503,7 @@ export function SalesCell({
 
   if (status === 'done') {
     return (
-      <div className={'mx-cell done' + (inSequence ? ' in-seq' : '')} style={seg}>
+      <div className={'mx-cell done' + groupClass} style={seg}>
         <div className="card is-done">
           <div className="c-hd">
             <span className="done-check">
@@ -475,7 +535,7 @@ export function SalesCell({
   // Une tâche manuelle n'a plus lieu d'être si le prospect a déjà réagi.
   if (column.mode === 'manual' && hasInterest(row.state)) {
     return (
-      <div className={'mx-cell' + (inSequence ? ' in-seq' : '')} style={seg}>
+      <div className={'mx-cell' + groupClass} style={seg}>
         <div className="card is-nn">
           <div className="c-hd">
             <span className="c-dot" />
@@ -503,12 +563,22 @@ export function SalesCell({
     )
   }
 
-  const tagLabel = column.mode === 'auto' ? 'Auto' : column.mode === 'manual' ? 'À faire' : 'En cours'
-  const tagKind = column.mode === 'auto' ? 'magic' : column.mode === 'manual' ? 'warn' : 'accent'
+  const isEntry = column.group === 'entry'
+  const tagLabel = isEntry
+    ? 'En attente'
+    : column.mode === 'auto'
+      ? 'Auto'
+      : column.mode === 'manual'
+        ? 'À faire'
+        : 'En cours'
+  const tagKind = isEntry ? 'outline' : column.mode === 'auto' ? 'magic' : column.mode === 'manual' ? 'warn' : 'accent'
   const isLastPipelineColumn = column.group === 'pipeline' && /sign|gagn|client/i.test(column.label)
+  // Sans contact identifiable, la mise en séquence échouerait côté serveur :
+  // autant le dire tout de suite plutôt que d'offrir un bouton qui rate.
+  const canEnroll = isEntry && !!row.contact
 
   return (
-    <div className={'mx-cell active-cell' + (inSequence ? ' in-seq' : '')} style={seg}>
+    <div className={'mx-cell active-cell' + groupClass} style={seg}>
       <div className="card active">
         <div className="c-hd">
           <span className="live-dot" />
@@ -530,13 +600,25 @@ export function SalesCell({
 
         <ActiveBody column={column} row={row} now={now} timezone={timezone} />
 
-        <button className="cta" disabled={busy} onClick={() => handlers.onWork(column, row)}>
+        <button
+          className="cta"
+          disabled={busy || (isEntry && !canEnroll)}
+          title={isEntry && !canEnroll ? 'Aucun contact rattaché à ce prospect' : undefined}
+          onClick={() => (isEntry ? handlers.onEnroll([row]) : handlers.onWork(column, row))}
+        >
           <CtaIcon className="ico-sm" />
           {column.cta}
         </button>
 
         <div className="c-foot">
-          {isLastPipelineColumn ? (
+          {isEntry ? (
+            // Le stock de départ, c'est aussi là qu'on trie : soit on lance,
+            // soit on écarte. Pas de « fait » à valider à la main.
+            <button className="btn ghost sm danger-h" onClick={(e) => handlers.onReact(e, row)}>
+              <Slash className="ico-sm" />
+              Écarter
+            </button>
+          ) : isLastPipelineColumn ? (
             <>
               <button className="btn ok sm" disabled={busy} onClick={() => handlers.onValidate(row, column.id)}>
                 <Check className="ico-sm" />

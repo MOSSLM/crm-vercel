@@ -241,6 +241,8 @@ export function derivePosition(opts: {
     if (firstDeal) return firstDeal.id
   }
 
+  // Rien de tout ça : le prospect n'a pas encore démarré. Il attend dans le
+  // stock de départ, avec les autres à mettre en séquence.
   return columns[0].id
 }
 
