@@ -58,6 +58,21 @@ export async function snoozeProspectionTask(id: string, hours: number): Promise<
   if (error) throw error
 }
 
+/**
+ * Redonne une tâche à quelqu'un d'autre. `null` la sort de toutes les files
+ * sans la supprimer — elle réapparaît dans « sans destinataire ».
+ */
+export async function assignProspectionTask(id: string, assigneeId: string | null): Promise<void> {
+  const res = await authedFetch(`/api/automations/prospection/${id}/assign`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  })
+  if (res.ok) return
+  const payload = (await res.json().catch(() => ({}))) as { message?: string }
+  throw new Error(payload.message || 'Réattribution impossible')
+}
+
 export async function skipProspectionTask(id: string): Promise<void> {
   const { error } = await supabase
     .from('prospection_tasks')

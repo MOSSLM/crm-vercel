@@ -27,7 +27,10 @@ import {
   AXIS_START,
   Avatar,
   CardHead,
+  JitterPreview,
   MiniWindows,
+  RangeSlider,
+  Segmented,
   SetBlock,
   WindowEditor,
   axisPct,
@@ -44,6 +47,20 @@ const AXIS_HOURS = [6, 8, 10, 12, 14, 16, 18, 20, 22]
 
 /** Couleur stable par séquence — la même dans la file, la frise et la liste. */
 const seqColor = (id: string) => colorForId(id)
+
+/**
+ * Traduit un échec d'enregistrement en phrase actionnable. Le message du
+ * serveur fait foi quand il y en a un ; sinon le statut HTTP dit déjà beaucoup,
+ * et vaut mieux qu'un « Enregistrement impossible » identique pour tout.
+ */
+export function failureMessage(status: number, payload: { message?: string; error?: string } | null): string {
+  if (payload?.message) return payload.message
+  if (status === 401) return 'Session expirée — reconnectez-vous, puis réessayez.'
+  if (status === 403) return 'Réglage réservé aux administrateurs.'
+  if (status === 400 && payload?.error === 'invalid_body') return 'Valeur refusée — vérifiez le champ modifié.'
+  if (status >= 500) return `Le serveur a refusé l’enregistrement (${payload?.error ?? status}).`
+  return `Enregistrement impossible (${payload?.error ?? status}).`
+}
 
 export function RegulatorPage() {
   const [view, setView] = React.useState<RegulatorView | null>(null)
@@ -80,54 +97,47 @@ export function RegulatorPage() {
     }
   }, [load])
 
-  const patch = React.useCallback(
-    async (body: Record<string, unknown>, message?: string) => {
-      setSaving(true)
-      try {
-        const res = await authedFetch('/api/automations/regulator', {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(body),
-        })
-        const payload = await res.json().catch(() => ({}))
-        if (!res.ok) {
-          toast.error(payload?.message || 'Enregistrement impossible')
-          return false
-        }
-        setView(payload as RegulatorView)
-        if (message) toast.success(message)
-        return true
-      } catch {
-        toast.error('Enregistrement impossible')
-        return false
-      } finally {
-        setSaving(false)
-      }
-    },
-    [],
-  )
-
-  const patchSequence = React.useCallback(async (body: Record<string, unknown>, message?: string) => {
+  const save = React.useCallback(async (url: string, body: Record<string, unknown>, message?: string) => {
     setSaving(true)
     try {
-      const res = await authedFetch('/api/automations/regulator/sequence', {
+      const res = await authedFetch(url, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
       })
       const payload = await res.json().catch(() => ({}))
       if (!res.ok) {
-        toast.error(payload?.message || 'Enregistrement impossible')
-        return
+        // « Enregistrement impossible » tout court ne laissait aucune prise :
+        // on dit ce qui a échoué, et on affiche la vue à jour quand le serveur
+        // en renvoie une (une migration manquante en fait partie).
+        toast.error(failureMessage(res.status, payload), {
+          description: payload?.sql_file ? `Fichier à jouer : ${payload.sql_file}` : undefined,
+          duration: payload?.sql_file ? 12_000 : undefined,
+        })
+        return false
       }
       setView(payload as RegulatorView)
       if (message) toast.success(message)
+      return true
     } catch {
-      toast.error('Enregistrement impossible')
+      toast.error('Réseau indisponible — le réglage n’a pas été enregistré.')
+      return false
     } finally {
       setSaving(false)
     }
   }, [])
+
+  const patch = React.useCallback(
+    (body: Record<string, unknown>, message?: string) => save('/api/automations/regulator', body, message),
+    [save],
+  )
+
+  const patchSequence = React.useCallback(
+    async (body: Record<string, unknown>, message?: string) => {
+      await save('/api/automations/regulator/sequence', body, message)
+    },
+    [save],
+  )
 
   if (loading && !view) {
     return (
@@ -538,6 +548,8 @@ export function RegulatorPage() {
               sentToday={view.sentToday}
               testAddresses={view.testAddresses}
               blockedToday={view.blockedToday}
+              testGuardReady={view.testGuardReady !== false}
+              testGuardMigration={view.testGuardMigration ?? 'sql/20260802_test_phase_guard.sql'}
               saving={saving}
               onPatch={patch}
             />
@@ -579,6 +591,24 @@ export function RegulatorPage() {
                       </button>
                     </div>
                     <MiniWindows windows={seq.windows} off={seq.status !== 'on'} />
+                    {/* Ce que cette séquence pèse dans le tuyau commun : sans
+                        ça, « 12 en file » ne dit pas si c'est beaucoup. */}
+                    {view.queue.length > 0 && (
+                      <>
+                        <div className="rg-rnglb" style={{ marginTop: 7 }}>
+                          <span>part de la file</span>
+                          <span>{Math.round((seq.queued / view.queue.length) * 100)}%</span>
+                        </div>
+                        <div className="rg-bar" style={{ marginTop: 3 }}>
+                          <i
+                            style={{
+                              width: `${Math.min(100, (seq.queued / view.queue.length) * 100)}%`,
+                              background: seqColor(seq.id),
+                            }}
+                          />
+                        </div>
+                      </>
+                    )}
                     <div className="rg-seq-meta">
                       <span>{seq.queued} en file</span>
                       <span>·</span>
@@ -617,13 +647,18 @@ export function RegulatorPage() {
                         <div className="rg-trow" style={{ marginTop: 8 }}>
                           <div className="tx">
                             <b>Priorité dans la file</b>
-                            <span>Qui passe devant quand deux séquences veulent envoyer au même moment.</span>
+                            <span>Qui passe devant quand deux séquences veulent envoyer au même moment. 1 passe devant 5.</span>
                           </div>
-                          <NumberField
-                            value={seq.priority}
-                            min={1}
-                            max={9}
-                            onCommit={(v) => void patchSequence({ automation_id: seq.id, queue_priority: v })}
+                          <Segmented
+                            value={Math.min(5, Math.max(1, seq.priority))}
+                            disabled={saving}
+                            ariaLabel={`Priorité de ${seq.name} dans la file`}
+                            options={[1, 2, 3, 4, 5].map((n) => ({
+                              value: n,
+                              label: String(n),
+                              title: n === 1 ? 'passe devant tout le reste' : n === 5 ? 'passe en dernier' : undefined,
+                            }))}
+                            onChange={(v) => void patchSequence({ automation_id: seq.id, queue_priority: v })}
                           />
                         </div>
                         <div className="rg-trow">
@@ -882,6 +917,8 @@ function SettingsCard({
   sentToday,
   testAddresses,
   blockedToday,
+  testGuardReady,
+  testGuardMigration,
   saving,
   onPatch,
 }: {
@@ -889,15 +926,34 @@ function SettingsCard({
   sentToday: number
   testAddresses: { id: string; label: string; email: string }[]
   blockedToday: number
+  testGuardReady: boolean
+  testGuardMigration: string
   saving: boolean
   onPatch: (body: Record<string, unknown>, message?: string) => Promise<boolean>
 }) {
   const [windows, setWindows] = React.useState<SendWindow[]>(s.defaultWindows)
   React.useEffect(() => setWindows(s.defaultWindows), [s.defaultWindows])
 
-  const avg = (s.gapMinMinutes + s.gapMaxMinutes) / 2
+  // Fourchette affichée pendant qu'on glisse un curseur : le serveur ne la
+  // connaît qu'au relâchement, mais l'aperçu de l'aléatoire doit suivre le doigt.
+  const [gap, setGap] = React.useState<[number, number]>([s.gapMinMinutes, s.gapMaxMinutes])
+  React.useEffect(() => setGap([s.gapMinMinutes, s.gapMaxMinutes]), [s.gapMinMinutes, s.gapMaxMinutes])
+  const [seed, setSeed] = React.useState('apercu')
+  const [cap, setCap] = React.useState(s.dailyCap)
+  React.useEffect(() => setCap(s.dailyCap), [s.dailyCap])
+
+  const [lo, hi] = gap
+  const avg = (lo + hi) / 2
   const preset = GAP_PRESETS.find((p) => p.min === s.gapMinMinutes && p.max === s.gapMaxMinutes)
   const windowsInvalid = overlappingWindows(windows).size > 0
+
+  /** Un curseur ne peut pas croiser l'autre : la borne poussée entraîne sa voisine. */
+  const clampGap = (side: 0 | 1, v: number): [number, number] =>
+    side === 0 ? [v, Math.max(v, gap[1])] : [Math.min(v, gap[0]), v]
+  const commitGap = (next: [number, number]) => {
+    if (next[0] === s.gapMinMinutes && next[1] === s.gapMaxMinutes) return
+    void onPatch({ gap_min_minutes: next[0], gap_max_minutes: next[1] })
+  }
 
   return (
     <div className="rg-card">
@@ -911,12 +967,13 @@ function SettingsCard({
       <SetBlock
         icon="warning"
         title="Phase de test"
-        extra={s.testMode ? `${testAddresses.length} adresses` : 'inactive'}
+        extra={!testGuardReady ? 'migration à jouer' : s.testMode ? `${testAddresses.length} adresses` : 'inactive'}
       >
         <ToggleRow
           label="Ne servir que les adresses de test"
           desc="Tout autre destinataire est retenu et journalisé — la séquence avance quand même, pour qu’on voie le régulateur tourner sans qu’un email ne sorte."
           checked={s.testMode}
+          disabled={!testGuardReady || saving}
           onChange={(v) =>
             void onPatch(
               { test_mode: v },
@@ -925,7 +982,21 @@ function SettingsCard({
           }
           accent
         />
-        {s.testMode && (
+        {/* Le cas qui produisait « Enregistrement impossible » sans rien
+            expliquer : l'interrupteur existe dans le code, pas encore en base. */}
+        {!testGuardReady && (
+          <div className="rg-sqlgap">
+            <span className="t">
+              <XI name="warning" className="ico-xs" /> Interrupteur absent de la base
+            </span>
+            <span className="d">
+              La phase de test a besoin de la colonne <b>regulator_settings.test_mode</b> et du journal{' '}
+              <b>email_logs.blocked_reason</b>. Jouez ce fichier dans l’éditeur SQL de Supabase, puis rafraîchissez :
+            </span>
+            <code>{testGuardMigration}</code>
+          </div>
+        )}
+        {testGuardReady && s.testMode && (
           <div style={{ marginTop: 8 }}>
             {testAddresses.length === 0 ? (
               <p className="rg-hint" style={{ color: 'var(--danger)' }}>
@@ -956,20 +1027,64 @@ function SettingsCard({
         <div className="rg-dual">
           <span className="rg-lb">toutes les</span>
           <NumberField
-            value={s.gapMinMinutes}
+            value={lo}
             min={1}
             max={600}
-            onCommit={(v) => void onPatch({ gap_min_minutes: v, gap_max_minutes: Math.max(v, s.gapMaxMinutes) })}
+            onCommit={(v) => {
+              const next = clampGap(0, v)
+              setGap(next)
+              commitGap(next)
+            }}
           />
           <span className="rg-lb">→</span>
           <NumberField
-            value={s.gapMaxMinutes}
+            value={hi}
             min={1}
             max={600}
-            onCommit={(v) => void onPatch({ gap_max_minutes: v, gap_min_minutes: Math.min(v, s.gapMinMinutes) })}
+            onCommit={(v) => {
+              const next = clampGap(1, v)
+              setGap(next)
+              commitGap(next)
+            }}
           />
           <span className="rg-lb">minutes</span>
         </div>
+
+        {/* Les deux curseurs de la maquette : on glisse, l'aperçu suit, et
+            l'écriture n'a lieu qu'au relâchement. */}
+        <RangeSlider
+          value={lo}
+          min={1}
+          max={60}
+          disabled={saving}
+          ariaLabel="Écart minimum entre deux emails, en minutes"
+          onPreview={(v) => setGap(clampGap(0, v))}
+          onCommit={(v) => commitGap(clampGap(0, v))}
+        />
+        <RangeSlider
+          value={hi}
+          min={2}
+          max={90}
+          tone="hi"
+          disabled={saving}
+          ariaLabel="Écart maximum entre deux emails, en minutes"
+          onPreview={(v) => setGap(clampGap(1, v))}
+          onCommit={(v) => commitGap(clampGap(1, v))}
+        />
+
+        <JitterPreview min={lo} max={hi} seed={seed} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+          <button
+            type="button"
+            className="btn ghost xs"
+            onClick={() => setSeed(`t${Date.now()}`)}
+            title="Retirer une autre série d’écarts dans la même fourchette"
+          >
+            <XI name="refresh" className="ico-xs" />
+            Re-tirer l’aléatoire
+          </button>
+        </div>
+
         <div className="rg-presets">
           {GAP_PRESETS.map((p) => (
             <button
@@ -1049,13 +1164,39 @@ function SettingsCard({
         />
       </SetBlock>
 
-      <SetBlock icon="flag" title="Plafond quotidien" extra={`${sentToday} / ${s.dailyCap}`}>
+      <SetBlock icon="flag" title="Plafond quotidien" extra={`${sentToday} / ${cap}`}>
         <div className="rg-dual">
-          <NumberField value={s.dailyCap} min={0} max={10000} onCommit={(v) => void onPatch({ daily_cap: v })} />
+          <NumberField
+            value={cap}
+            min={0}
+            max={10000}
+            onCommit={(v) => {
+              setCap(v)
+              if (v !== s.dailyCap) void onPatch({ daily_cap: v })
+            }}
+          />
           <span className="rg-lb">emails / jour, tous confondus</span>
         </div>
+        <RangeSlider
+          value={Math.min(cap, 500)}
+          min={0}
+          max={500}
+          step={5}
+          disabled={saving}
+          ariaLabel="Plafond d’emails par jour"
+          onPreview={setCap}
+          onCommit={(v) => {
+            setCap(v)
+            if (v !== s.dailyCap) void onPatch({ daily_cap: v })
+          }}
+        />
+        <div className="rg-rnglb">
+          <span>0</span>
+          <span>{cap === 0 ? 'aucun envoi' : `≈ ${Math.round(cap / Math.max(1, 60 / avg))} h de file`}</span>
+          <span>500</span>
+        </div>
         <div className="rg-bar">
-          <i style={{ width: `${Math.min(100, s.dailyCap ? (sentToday / s.dailyCap) * 100 : 0)}%` }} />
+          <i style={{ width: `${Math.min(100, cap ? (sentToday / cap) * 100 : 0)}%` }} />
         </div>
         <ToggleRow
           label="Envoyer uniquement du lundi au vendredi"

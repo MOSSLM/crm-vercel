@@ -5,6 +5,7 @@
 // la même file, avec les mêmes motifs de report.
 
 import { getServiceClient } from '@/app/api/_lib/service-client'
+import { isSchemaGap } from '@/app/api/_lib/schema-gap'
 import type { Automation, SequenceDefinition } from '@/components/automations/types'
 import {
   buildQueueItems,
@@ -115,7 +116,14 @@ export interface RegulatorView {
   testAddresses: { id: string; label: string; email: string }[]
   /** Envois retenus aujourd'hui par la phase de test. */
   blockedToday: number
+  /** `false` quand sql/20260802_test_phase_guard.sql n'a pas été joué sur cette base. */
+  testGuardReady: boolean
+  /** Fichier SQL à jouer quand `testGuardReady` est faux. */
+  testGuardMigration: string
 }
+
+/** Migration qui installe la phase de test (interrupteur + journal des envois retenus). */
+export const TEST_GUARD_MIGRATION = 'sql/20260802_test_phase_guard.sql'
 
 const iso = (ms: number | null | undefined): string | null =>
   ms == null || ms === 0 ? null : new Date(ms).toISOString()
@@ -352,8 +360,11 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
   )
 
   // ── Phase de test ─────────────────────────────────────────────────────────
+  // Tout ce bloc dépend de sql/20260802_test_phase_guard.sql. Sur une base où
+  // la migration n'a pas été jouée, on ne fait PAS tomber la page entière : on
+  // remonte `testGuardReady: false` et l'interface explique quoi jouer.
   const dayStart = new Date(localDayBounds(nowMs, settings.timezone).start).toISOString()
-  const [{ data: testRows }, { count: blockedCount }] = await Promise.all([
+  const [testRes, blockedRes] = await Promise.all([
     sb.from('test_email_addresses').select('id, label, email').order('created_at', { ascending: true }),
     sb
       .from('email_logs')
@@ -361,7 +372,8 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
       .not('blocked_reason', 'is', null)
       .gte('sent_at', dayStart),
   ])
-  const testAddresses = ((testRows ?? []) as { id: string; label: string | null; email: string }[]).map((r) => ({
+  const testGuardReady = !isSchemaGap(testRes.error) && !isSchemaGap(blockedRes.error)
+  const testAddresses = ((testRes.data ?? []) as { id: string; label: string | null; email: string }[]).map((r) => ({
     id: r.id,
     label: r.label || r.email.split('@')[0],
     email: r.email,
@@ -381,7 +393,9 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     pendingTasks: tasks.length,
     unassignedTasks,
     testAddresses,
-    blockedToday: blockedCount ?? 0,
+    blockedToday: blockedRes.count ?? 0,
+    testGuardReady,
+    testGuardMigration: TEST_GUARD_MIGRATION,
   }
 }
 

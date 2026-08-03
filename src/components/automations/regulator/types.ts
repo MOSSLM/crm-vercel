@@ -82,4 +82,8 @@ export interface RegulatorView {
   unassignedTasks: number
   testAddresses: { id: string; label: string; email: string }[]
   blockedToday: number
+  /** `false` quand la migration de la phase de test n'a pas été jouée sur cette base. */
+  testGuardReady?: boolean
+  /** Fichier SQL à jouer quand `testGuardReady` est faux. */
+  testGuardMigration?: string
 }

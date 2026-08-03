@@ -186,6 +186,12 @@ export interface ProspectionTask {
   enrollment_id: string | null
   step_id: string | null
   assignee_id: string | null
+  /**
+   * Pourquoi cette tâche est chez cette personne (« propriétaire du contact »,
+   * « file pleine → admin », « réattribué à la main »). Affiché sur la carte :
+   * une file distribuée sans motif ressemble à de l'arbitraire.
+   */
+  routing_reason?: string | null
   title: string
   payload: ProspectionTaskPayload
   due_at: string

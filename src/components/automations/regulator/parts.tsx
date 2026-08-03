@@ -6,6 +6,7 @@ import { XI } from '../icons'
 import {
   DAY_MINUTES,
   formatHM,
+  gapForItem,
   localClock,
   overlappingWindows,
   parseHM,
@@ -215,6 +216,131 @@ export function WindowEditor({
           {duration(windowMinutes(windows) * 60_000)} d’ouverture / jour
         </span>
       </div>
+    </div>
+  )
+}
+
+/* ── Curseurs ──────────────────────────────────────────────────────────── */
+
+/**
+ * Curseur qu'on fait glisser. La valeur suit le doigt en direct (le reste de la
+ * page réagit pendant le glissement), mais l'enregistrement n'a lieu qu'au
+ * relâchement : un PATCH par pixel parcouru serait absurde.
+ */
+export function RangeSlider({
+  value,
+  min,
+  max,
+  step = 1,
+  disabled,
+  tone,
+  ariaLabel,
+  onPreview,
+  onCommit,
+}: {
+  value: number
+  min: number
+  max: number
+  step?: number
+  disabled?: boolean
+  /** `hi` colore la poignée en accent secondaire — la borne haute d'une fourchette. */
+  tone?: 'hi'
+  ariaLabel: string
+  onPreview: (v: number) => void
+  onCommit: (v: number) => void
+}) {
+  // Pendant le glissement, la valeur affichée est locale : elle ne doit pas
+  // sauter si une réponse serveur arrive entre deux mouvements.
+  const [dragging, setDragging] = React.useState<number | null>(null)
+  const shown = dragging ?? value
+
+  const commit = () => {
+    const v = dragging
+    setDragging(null)
+    if (v != null && v !== value) onCommit(v)
+  }
+
+  return (
+    <input
+      className={'rg-rng' + (tone === 'hi' ? ' hi' : '')}
+      type="range"
+      min={min}
+      max={max}
+      step={step}
+      value={shown}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      onChange={(e) => {
+        const v = Number(e.target.value)
+        setDragging(v)
+        onPreview(v)
+      }}
+      onPointerUp={commit}
+      onPointerCancel={commit}
+      onBlur={commit}
+      onKeyUp={(e) => {
+        // Au clavier, chaque flèche est un réglage fini : on enregistre.
+        if (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End') commit()
+      }}
+    />
+  )
+}
+
+/**
+ * Aperçu de l'aléatoire : chaque barre est un écart réellement tiré par le
+ * régulateur (même fonction que la file), pour la fourchette courante.
+ */
+export function JitterPreview({ min, max, seed, count = 24 }: { min: number; max: number; seed: string; count?: number }) {
+  const values = React.useMemo(
+    () => Array.from({ length: count }, (_, i) => gapForItem(`${seed}:${i}`, min, max)),
+    [min, max, seed, count],
+  )
+  const top = Math.max(max, ...values, 1)
+  return (
+    <>
+      <div className="rg-jit" aria-hidden="true">
+        {values.map((v, i) => (
+          <i key={i} className={v > (min + max) / 2 ? 'hi' : ''} style={{ height: `${Math.max(12, (v / top) * 100)}%` }} title={`${v} min`} />
+        ))}
+      </div>
+      <div className="rg-rnglb">
+        <span>{min} min</span>
+        <span>écarts tirés</span>
+        <span>{max} min</span>
+      </div>
+    </>
+  )
+}
+
+/** Segmenté compact — un choix parmi peu de valeurs, sans ouvrir de liste. */
+export function Segmented<T extends string | number>({
+  value,
+  options,
+  disabled,
+  ariaLabel,
+  onChange,
+}: {
+  value: T
+  options: { value: T; label: string; title?: string }[]
+  disabled?: boolean
+  ariaLabel?: string
+  onChange: (v: T) => void
+}) {
+  return (
+    <div className="rg-seg" role="group" aria-label={ariaLabel}>
+      {options.map((o) => (
+        <button
+          key={String(o.value)}
+          type="button"
+          className={o.value === value ? 'on' : ''}
+          disabled={disabled}
+          title={o.title}
+          aria-pressed={o.value === value}
+          onClick={() => o.value !== value && onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   )
 }

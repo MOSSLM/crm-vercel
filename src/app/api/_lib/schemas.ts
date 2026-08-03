@@ -484,6 +484,15 @@ export const regulatorSettingsSchema = z
   .strict();
 export type RegulatorSettingsPayload = z.infer<typeof regulatorSettingsSchema>;
 
+/**
+ * Réattribution d'une tâche manuelle. `null` = personne : la tâche reste dans
+ * la file « sans destinataire », visible mais non distribuée.
+ */
+export const prospectionAssignSchema = z
+  .object({ assignee_id: z.string().uuid().nullable() })
+  .strict();
+export type ProspectionAssignPayload = z.infer<typeof prospectionAssignSchema>;
+
 /** Surcharges d'une séquence : ses plages, sa priorité de file, son plafond. */
 export const sequenceRegulatorSchema = z
   .object({
