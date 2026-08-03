@@ -169,8 +169,10 @@ export type MailProvider =
   | 'laposte'
   | 'zoho'
   | 'proton'
+  | 'yahoo'
+  | 'apple'
   | 'infomaniak'
-  | 'mailinblack'
+  | 'passerelle'
   | 'parking'
   | 'autre'
 
@@ -192,7 +194,13 @@ const MX_FINGERPRINTS: ReadonlyArray<{ provider: MailProvider; hosts: readonly s
   { provider: 'laposte', hosts: ['laposte.net'] },
   { provider: 'zoho', hosts: ['zoho.com', 'zoho.eu'] },
   { provider: 'proton', hosts: ['protonmail.ch', 'proton.me'] },
-  { provider: 'mailinblack', hosts: ['mailinblack.com'] },
+  { provider: 'yahoo', hosts: ['yahoodns.net', 'yahoo.com'] },
+  { provider: 'apple', hosts: ['icloud.com', 'apple.com', 'me.com'] },
+  // Passerelles anti-spam placées DEVANT la vraie boîte. Elles acceptent le
+  // message puis le filtrent : leur « oui » ne dit rien de l'existence du
+  // destinataire, et certaines (Mailinblack) retiennent le premier email d'un
+  // expéditeur inconnu jusqu'à confirmation. À traiter comme un catch-all.
+  { provider: 'passerelle', hosts: ['mailinblack.com', 'mimecast', 'pphosted.com', 'barracudanetworks', 'messagelabs'] },
   // Parkings et revendeurs : le domaine est enregistré mais n'héberge rien.
   // Il « accepte » parfois le courrier, qui n'arrive nulle part.
   { provider: 'parking', hosts: ['parkingcrew', 'sedoparking', 'above.com', 'bodis.com', 'dan.com', 'afternic'] },
@@ -226,6 +234,7 @@ export function guessCatchAll(provider: MailProvider): boolean {
     case 'o2switch':
     case 'gandi':
     case 'infomaniak':
+    case 'passerelle':
     case 'parking':
     case 'autre':
       return true
