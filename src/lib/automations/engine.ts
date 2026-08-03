@@ -9,6 +9,7 @@ import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/aut
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
 import { BLOCK_LABEL, allowRecipient } from '@/lib/email/test-guard'
 import {
+  cleanEmail,
   loadRegulatorSettings,
   loadTaskLoads,
   loadUnavailableAgents,
@@ -38,7 +39,10 @@ type VarBag = Record<string, string>
 type ResolvedEntities = {
   contactId: string | null
   entrepriseId: number | null
+  /** Adresse retenue : celle du contact, à défaut celle de l'entreprise. */
   contactEmail: string | null
+  /** Adresse de l'entreprise (`entreprises.email`), qu'elle serve de repli ou non. */
+  companyEmail: string | null
   contactName: string | null
   contactPhone: string | null
   contactLinkedin: string | null
@@ -64,6 +68,7 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
 
   const vars: VarBag = {}
   let contactEmail: string | null = null
+  let companyEmail: string | null = null
   let contactName: string | null = null
   let contactPhone: string | null = null
   let contactLinkedin: string | null = null
@@ -78,7 +83,7 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       vars['contact.first_name'] = c.first_name ?? ''
       vars['contact.last_name'] = c.last_name ?? ''
       vars['contact.role'] = c.role_title ?? ''
-      contactEmail = c.email ?? null
+      contactEmail = cleanEmail(c.email)
       contactName = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || null
       contactPhone = c.tel ?? null
       contactLinkedin = c.linkedin_url ?? null
@@ -89,13 +94,15 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
   if (entrepriseId) {
     const { data: e } = await sb
       .from('entreprises')
-      .select('name,ville,site_web_canonique')
+      .select('name,ville,site_web_canonique,email')
       .eq('id', entrepriseId)
       .maybeSingle()
     if (e) {
       vars['company.name'] = e.name ?? ''
       vars['company.city'] = e.ville ?? ''
       vars['company.website'] = e.site_web_canonique ?? ''
+      companyEmail = cleanEmail(e.email)
+      vars['company.email'] = companyEmail ?? ''
     }
 
     // Audit + site démo : liens interpolables dans les messages des séquences.
@@ -142,7 +149,21 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     vars['company.audit_url'] = auditUrl ?? ''
     vars['company.demo_url'] = demoUrl ?? ''
   }
-  return { contactId, entrepriseId, contactEmail, contactName, contactPhone, contactLinkedin, auditUrl, demoUrl, vars }
+  // Un contact sans adresse n'est pas une impasse : l'email saisi sur la fiche
+  // entreprise (`entreprises.email`) sert de destinataire de repli, c'est là que
+  // le pipeline commercial enregistre les adresses ajoutées à la main.
+  return {
+    contactId,
+    entrepriseId,
+    contactEmail: contactEmail ?? companyEmail,
+    companyEmail,
+    contactName,
+    contactPhone,
+    contactLinkedin,
+    auditUrl,
+    demoUrl,
+    vars,
+  }
 }
 
 export function interpolate(text: string | null | undefined, vars: VarBag): string {
@@ -669,6 +690,14 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   const ent = await resolveEntities(sb, ctx)
 
   if (step.kind === 'email') {
+    // Aucun destinataire : l'étape ne s'exécute PAS et la séquence n'avance pas.
+    // Avant, l'inscription franchissait l'étape email en silence — le prospect
+    // « passait » un email qui n'était jamais parti. Elle attend désormais qu'on
+    // saisisse l'adresse ou qu'on saute l'étape depuis le pipeline commercial.
+    if (!ent.contactEmail) {
+      await holdForMissingEmail(sb, enrollment.id)
+      return
+    }
     let sentAt: string | null = null
     if (ent.contactEmail && step.template) {
       const { data: tpl } = await sb.from('email_templates').select('subject,body').eq('id', step.template).maybeSingle()
@@ -751,6 +780,25 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
   } else {
     await scheduleNextStep(sb, enrollment, steps, idx + 1)
   }
+}
+
+/**
+ * Combien de temps une inscription bloquée faute d'adresse dort avant d'être
+ * réexaminée. Sans ce report, elle resterait en tête de la file des « dues » et
+ * finirait par affamer les inscriptions réellement envoyables.
+ */
+export const NO_EMAIL_RETRY_MS = 2 * 3_600_000
+
+/** Gèle l'étape email d'une inscription faute de destinataire, sans la faire avancer. */
+export async function holdForMissingEmail(sb: SupabaseClient, enrollmentId: string): Promise<void> {
+  await sb
+    .from('sequence_enrollments')
+    .update({
+      send_at: null,
+      hold_reason: 'no_email',
+      next_run_at: new Date(Date.now() + NO_EMAIL_RETRY_MS).toISOString(),
+    })
+    .eq('id', enrollmentId)
 }
 
 /**

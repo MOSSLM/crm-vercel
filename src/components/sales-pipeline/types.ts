@@ -47,6 +47,8 @@ export interface SalesBoardRow {
   mrr: number | null
   contact: { id: string; name: string; role: string | null; email: string | null; phone: string | null } | null
   owner: { id: string; name: string } | null
+  companyEmail: string | null
+  emailMissing: boolean
   stageName: string | null
   sequence: SalesSequenceInfo | null
   tasks: SalesTaskInfo[]
@@ -69,14 +71,26 @@ export interface SalesSequenceOption {
   activeEnrollments: number
 }
 
+export interface SalesMissingEmailRow {
+  id: string
+  companyName: string
+  contactName: string | null
+  contactId: string | null
+  entrepriseId: number | null
+  sequenceName: string | null
+  onEmailStep: boolean
+}
+
 export interface SalesBoardData {
   rows: SalesBoardRow[]
   total: number
   page: number
   perPage: number
-  counts: { actifs: number; rdvPlus: number; won: number; todo: number; value: number }
+  counts: { actifs: number; rdvPlus: number; won: number; todo: number; value: number; missingEmail: number }
   columns: SalesColumn[]
   columnCounts: Record<string, { active: number; done: number }>
+  missingEmail: SalesMissingEmailRow[]
+  sequenceHasEmailStep: boolean
   pipelines: { id: string; nom: string; isDefault: boolean }[]
   selectedPipelineId: string | null
   selectedSequenceId: string | null

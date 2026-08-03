@@ -7,9 +7,11 @@ import { toast } from "sonner";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
+  AlertTriangle,
   Phone,
   MessageCircle,
   Mail,
+  MailPlus,
   Linkedin,
   Building2,
   Check,
@@ -24,13 +26,15 @@ import { one } from "@/components/agent-portal/format";
 
 type Step = { id: string; kind: string; day: number; label: string | null };
 type Sequence = { id: string; name: string | null; description: string | null; steps: Step[] };
-type Contact = { first_name: string | null; last_name: string | null; tel: string | null };
-type Entreprise = { id: number; name: string | null; telephone: string | null };
+type Contact = { first_name: string | null; last_name: string | null; tel: string | null; email?: string | null };
+type Entreprise = { id: number; name: string | null; telephone: string | null; email?: string | null };
 type Enrollment = {
   id: string;
   automation_id: string;
   current_step: number;
   status: string;
+  /** `no_email` quand la séquence est arrêtée faute d'adresse. */
+  hold_reason: string | null;
   sequence_name: string | null;
   total_steps: number;
   entreprise: Entreprise | Entreprise[] | null;
@@ -58,10 +62,19 @@ type OwnedContact = {
   first_name: string | null;
   last_name: string | null;
   tel: string | null;
+  email: string | null;
   is_decision_maker: boolean | null;
   entreprise_id: number;
   entreprise_nom: string | null;
+  /** Adresse de la fiche entreprise — le repli qu'utilisent les séquences. */
+  entreprise_email: string | null;
 };
+
+/** Une adresse exploitable, ou `null`. Même règle que le régulateur. */
+function usableEmail(value: string | null | undefined): string | null {
+  const text = (value ?? "").trim();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text) ? text : null;
+}
 
 const KIND_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   call: Phone,
@@ -110,6 +123,12 @@ export default function AgentSequencesPage() {
   const [launching, setLaunching] = useState<string | null>(null);
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [openScript, setOpenScript] = useState<string | null>(null);
+  // Saisie manuelle d'une adresse manquante.
+  const [emailTarget, setEmailTarget] = useState<{
+    entrepriseId: number;
+    name: string;
+    current: string | null;
+  } | null>(null);
 
   const load = async () => {
     try {
@@ -143,13 +162,62 @@ export default function AgentSequencesPage() {
       byEnt.set(c.entreprise_id, list);
     }
     return [...byEnt.entries()]
-      .map(([id, list]) => ({
-        id,
-        name: list[0]?.entreprise_nom ?? "Sans nom",
-        contact: list.find((c) => c.is_decision_maker) ?? list.find((c) => c.tel) ?? list[0] ?? null,
-      }))
+      .map(([id, list]) => {
+        const contact =
+          list.find((c) => c.is_decision_maker) ?? list.find((c) => c.tel) ?? list[0] ?? null;
+        // Une entreprise est joignable par email si l'un de ses contacts a une
+        // adresse, ou si sa fiche en porte une. Sinon l'étape email est
+        // impossible : rien ne sera préparé, la séquence s'arrêtera là.
+        const email =
+          list.map((c) => usableEmail(c.email)).find(Boolean) ??
+          usableEmail(list[0]?.entreprise_email) ??
+          null;
+        return {
+          id,
+          name: list[0]?.entreprise_nom ?? "Sans nom",
+          contact,
+          email,
+          noEmail: !email,
+        };
+      })
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [contacts]);
+
+  /** Les entreprises qu'aucun email ne peut atteindre. */
+  const withoutEmail = useMemo(() => companies.filter((c) => c.noEmail), [companies]);
+
+  /** Une séquence qui n'envoie aucun email n'est pas concernée par l'alerte. */
+  const anySequenceEmails = useMemo(
+    () => sequences.some((s) => s.steps.some((step) => step.kind === "email")),
+    [sequences],
+  );
+
+  const saveEmail = async (entrepriseId: number, email: string) => {
+    setBusy(`email-${entrepriseId}`);
+    try {
+      const res = await authedFetch("/api/agent/sales-pipeline/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ entreprise_id: entrepriseId, email }),
+      });
+      if (!res.ok) {
+        const payload = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(
+          payload.error === "email_invalide"
+            ? "Cette adresse n'est pas valide."
+            : "Enregistrement impossible.",
+        );
+        return;
+      }
+      toast.success("Email enregistré — la séquence peut repartir.");
+      setEmailTarget(null);
+      await load();
+    } catch {
+      toast.error("Enregistrement impossible.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   // Companies already enrolled (active/paused) in a given sequence.
   const enrolledEnts = useMemo(() => {
@@ -260,6 +328,40 @@ export default function AgentSequencesPage() {
       </div>
 
       {loading && <div className="text-sm text-muted-foreground">Chargement…</div>}
+
+      {/* Sans email : dit dès le départ ce que la séquence ne pourra pas faire.
+          Ces entreprises n'entrent pas dans la file d'envoi — aucun email n'est
+          préparé pour elles tant qu'aucune adresse n'est saisie. */}
+      {!loading && withoutEmail.length > 0 && anySequenceEmails && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-destructive">
+                {withoutEmail.length} entreprise{withoutEmail.length > 1 ? "s" : ""} sans email
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Aucun envoi n&apos;est préparé pour {withoutEmail.length > 1 ? "elles" : "elle"} : elles ne
+                figurent pas dans la file. Ajoute l&apos;adresse ici — elle est enregistrée sur la fiche
+                entreprise, au même endroit que toutes les autres.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {withoutEmail.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-destructive/30 bg-background px-2.5 py-1 text-xs hover:bg-muted"
+                    onClick={() => setEmailTarget({ entrepriseId: c.id, name: c.name, current: null })}
+                  >
+                    <MailPlus className="h-3 w-3 text-destructive" />
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!loading && (
         <>
@@ -418,6 +520,9 @@ export default function AgentSequencesPage() {
                 {sequences.map((seq) => {
                   const isLaunching = launching === seq.id;
                   const disabled = busy === `launch-${seq.id}`;
+                  // Une séquence sans étape email ne rend personne « bloqué ».
+                  const seqHasEmail = seq.steps.some((s) => s.kind === "email");
+                  const pickedNoEmail = companies.filter((c) => picked.has(c.id) && c.noEmail).length;
                   return (
                     <Card key={seq.id}>
                       <CardContent className="space-y-3 py-4">
@@ -520,7 +625,15 @@ export default function AgentSequencesPage() {
                                           onChange={() => togglePicked(c.id)}
                                         />
                                         <span className="min-w-0 flex-1">
-                                          <span className="block truncate font-medium">{c.name}</span>
+                                          <span className="flex items-center gap-1.5">
+                                            <span className="truncate font-medium">{c.name}</span>
+                                            {c.noEmail && seqHasEmail && (
+                                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-0.5 text-[10px] font-medium text-destructive">
+                                                <Mail className="h-2.5 w-2.5" />
+                                                sans email
+                                              </span>
+                                            )}
+                                          </span>
                                           <span className="block truncate text-xs text-muted-foreground">
                                             {alreadyIn
                                               ? "Déjà dans la séquence"
@@ -529,10 +642,37 @@ export default function AgentSequencesPage() {
                                                 : `${`${c.contact!.first_name ?? ""} ${c.contact!.last_name ?? ""}`.trim() || "Contact"}${c.contact!.tel ? ` · ${c.contact!.tel}` : ""}${c.contact!.is_decision_maker ? " · décideur" : ""}`}
                                           </span>
                                         </span>
+                                        {c.noEmail && seqHasEmail && (
+                                          <button
+                                            type="button"
+                                            className="shrink-0 text-xs text-primary hover:underline"
+                                            onClick={(e) => {
+                                              e.preventDefault();
+                                              e.stopPropagation();
+                                              setEmailTarget({
+                                                entrepriseId: c.id,
+                                                name: c.name,
+                                                current: null,
+                                              });
+                                            }}
+                                          >
+                                            Ajouter
+                                          </button>
+                                        )}
                                       </label>
                                     );
                                   })}
                                 </div>
+                                {seqHasEmail && pickedNoEmail > 0 && (
+                                  <p className="flex items-start gap-1.5 text-xs text-destructive">
+                                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                                    <span>
+                                      {pickedNoEmail} sélectionné{pickedNoEmail > 1 ? "s" : ""} sans email —
+                                      l&apos;étape email ne partira pas pour {pickedNoEmail > 1 ? "eux" : "lui"},
+                                      la séquence s&apos;y arrêtera.
+                                    </span>
+                                  </p>
+                                )}
                                 <Button
                                   size="sm"
                                   disabled={disabled || picked.size === 0}
@@ -568,10 +708,18 @@ export default function AgentSequencesPage() {
                   const ent = one(e.entreprise);
                   const contact = one(e.contact);
                   const step = Math.min(e.current_step + 1, Math.max(e.total_steps, 1));
+                  // Arrêtée faute d'adresse : le ticker pose ce motif, rien
+                  // n'est préparé tant qu'on ne saisit pas d'email.
+                  const blockedNoEmail =
+                    e.hold_reason === "no_email" ||
+                    (e.status === "active" && !usableEmail(contact?.email) && !usableEmail(ent?.email));
                   return (
                     <div
                       key={e.id}
-                      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3"
+                      className={
+                        "flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3" +
+                        (blockedNoEmail ? " border-destructive/40" : "")
+                      }
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 font-medium">
@@ -591,6 +739,27 @@ export default function AgentSequencesPage() {
                           {contactName(contact)}
                           {e.sequence_name ? ` · ${e.sequence_name}` : ""}
                         </div>
+                        {blockedNoEmail && (
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-destructive">
+                            <AlertTriangle className="h-3 w-3 shrink-0" />
+                            Sans email — étape bloquée, hors file
+                            {ent?.id != null && (
+                              <button
+                                type="button"
+                                className="underline"
+                                onClick={() =>
+                                  setEmailTarget({
+                                    entrepriseId: ent.id,
+                                    name: ent.name ?? "Entreprise",
+                                    current: ent.email ?? null,
+                                  })
+                                }
+                              >
+                                ajouter l&apos;adresse
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <div className="flex shrink-0 items-center gap-2 text-xs">
                         {e.total_steps > 0 && e.status !== "finished" && (
@@ -618,6 +787,96 @@ export default function AgentSequencesPage() {
           </section>
         </>
       )}
+
+      {emailTarget && (
+        <EmailModal
+          name={emailTarget.name}
+          current={emailTarget.current}
+          busy={busy === `email-${emailTarget.entrepriseId}`}
+          onClose={() => setEmailTarget(null)}
+          onSubmit={(email) => void saveEmail(emailTarget.entrepriseId, email)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Saisie manuelle de l'adresse d'une entreprise. Elle est enregistrée sur la
+ * fiche entreprise — la même colonne que toutes les autres adresses du CRM — et
+ * sert aussitôt de destinataire à la séquence quand le contact n'en a pas.
+ */
+function EmailModal({
+  name,
+  current,
+  busy,
+  onClose,
+  onSubmit,
+}: {
+  name: string;
+  current: string | null;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (email: string) => void;
+}) {
+  const [email, setEmail] = useState(current ?? "");
+  const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-md rounded-xl border bg-background p-5 shadow-lg"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3">
+          <span
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-primary"
+            style={{ background: "var(--accent-tint)" }}
+          >
+            <MailPlus className="h-4 w-4" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">Email de l&apos;entreprise</div>
+            <div className="truncate text-xs text-muted-foreground">{name}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Fermer">
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (valid && !busy) onSubmit(email.trim());
+          }}
+        >
+          <input
+            type="email"
+            autoFocus
+            value={email}
+            placeholder="contact@entreprise.fr"
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+          />
+          <p className="text-xs text-muted-foreground">
+            Enregistrée sur la fiche entreprise, au même endroit que toutes les autres adresses. La séquence
+            reprend aussitôt : l&apos;étape email repasse dans la file d&apos;envoi.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" size="sm" variant="outline" onClick={onClose}>
+              Annuler
+            </Button>
+            <Button type="submit" size="sm" disabled={!valid || busy}>
+              Enregistrer
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

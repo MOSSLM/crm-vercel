@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 
 import { supabase } from "@/utils/supabase/client";
+import { authedFetch } from "@/utils/authedFetch";
 import { logLeadMagnet } from "@/utils/journalApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -268,6 +269,27 @@ function isInteractiveTarget(target: EventTarget | null) {
       'input, textarea, button, a, select, option, label, [role="button"], [contenteditable="true"], [data-no-swipe="true"]',
     ),
   );
+}
+
+/**
+ * Envoie une image de projet dans la médiathèque et rend son URL publique.
+ * `null` si l'import échoue — l'appelant retombe alors sur le data URL local.
+ */
+async function uploadProjectImage(file: File, entrepriseId: number | null): Promise<string | null> {
+  if (file.size > 15 * 1024 * 1024) return null;
+  const body = new FormData();
+  body.append("files", file);
+  body.append("image_type", entrepriseId != null ? "company" : "stock");
+  if (entrepriseId != null) body.append("entreprise_id", String(entrepriseId));
+  body.append("tags", "logo");
+  try {
+    const res = await authedFetch("/api/media", { method: "POST", body });
+    if (!res.ok) return null;
+    const payload = (await res.json()) as { inserted?: { public_url?: string }[] };
+    return payload.inserted?.[0]?.public_url ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function readFileAsDataUrl(file: File) {
@@ -734,6 +756,8 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
 
     const hasBranding = Boolean(project?.logo_url || project?.hero_image_url || project?.favicon_url);
 
+    // Les qualifications RGE ne comptent pas : toutes les entreprises n'en ont
+    // pas, et leur absence ne doit pas faire passer la fiche pour incomplète.
     const hasHome =
       [
         project?.home_slogan_template,
@@ -742,8 +766,7 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
         project?.stat_years_experience,
         project?.stat_satisfied_clients,
         project?.stat_installations_completed,
-        project?.stat_rge_count,
-      ].filter(isTruthyText).length >= 6;
+      ].filter(isTruthyText).length >= 5;
 
     const hasServices =
       serviceTags.length > 0 &&
@@ -943,7 +966,16 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
   const handleImagePicked = async (field: "logo_url" | "hero_image_url" | "favicon_url", file: File) => {
     try {
       const dataUrl = await readFileAsDataUrl(file);
-      updateProjectField(field, dataUrl);
+
+      // Le fichier part dans la médiathèque : le champ garde une URL, pas un
+      // base64 de plusieurs méga-octets recopié dans chaque page du site. Le
+      // data URL reste le filet de sécurité si l'import échoue (hors ligne,
+      // storage indisponible) — mieux vaut une image lourde que pas d'image.
+      const uploaded = await uploadProjectImage(
+        file,
+        typeof project?.entreprise_id === "number" ? project.entreprise_id : null,
+      );
+      updateProjectField(field, uploaded ?? dataUrl);
 
       if (field === "logo_url") {
         const generatedFavicon = await generateFaviconFromDataUrl(dataUrl);

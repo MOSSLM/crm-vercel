@@ -57,7 +57,7 @@ describe("missingForSite", () => {
     expect(missingForSite(ent({ logo_url: "https://cdn/l.png" }), project({ logo_url: null }))).toEqual([]);
   });
 
-  it("exige les quatre chiffres clés", () => {
+  it("exige les trois chiffres clés obligatoires", () => {
     expect(
       missingForSite(
         ent(),
@@ -65,15 +65,17 @@ describe("missingForSite", () => {
           stat_years_experience: "",
           stat_satisfied_clients: null,
           stat_installations_completed: "0",
-          stat_rge_count: "—",
         }),
       ),
-    ).toEqual([
-      "Années d'expérience",
-      "Clients satisfaits",
-      "Installations",
-      "Qualifications (RGE)",
-    ]);
+    ).toEqual(["Années d'expérience", "Clients satisfaits", "Installations"]);
+  });
+
+  it("n'exige pas les qualifications RGE — toutes les entreprises n'en ont pas", () => {
+    // Vide, « 0 » ou « — » : dans les trois cas la fiche reste complète, le bloc
+    // « chiffres clés » se contente alors de trois colonnes.
+    for (const value of ["", "0", "—", null]) {
+      expect(missingForSite(ent(), project({ stat_rge_count: value }))).toEqual([]);
+    }
   });
 
   it("traite « 0 » comme vide : le bloc chiffres clés ne l'affiche pas", () => {

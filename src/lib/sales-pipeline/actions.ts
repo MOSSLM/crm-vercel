@@ -8,8 +8,10 @@
 // attente, un email part quand même après que le prospect a pris rendez-vous.
 
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { cancelEnrollmentWork } from '@/lib/automations/engine'
-import { isLostStage, parseColumnId, type SalesReactionId, type SalesRowState } from './stages'
+import { cancelEnrollmentWork, processSequenceEnrollment } from '@/lib/automations/engine'
+import { cleanEmail } from '@/lib/automations/regulator-db'
+import type { SequenceDefinition, SequenceEnrollment, SequenceStep } from '@/components/automations/types'
+import { isLostStage, parseColumnId, stepColumnId, type SalesReactionId, type SalesRowState } from './stages'
 
 type StatePatch = {
   skipped?: string[]
@@ -316,6 +318,177 @@ export async function advanceStage(
 
   await writeState(sb, opportuniteId, patch)
   return { state: (stored?.state ?? 'progress') as SalesRowState }
+}
+
+/* ── L'étape email quand il n'y a pas d'adresse ──────────────────────────── */
+
+/** Les étapes d'une inscription, `wait` compris (le pointeur les compte). */
+async function stepsOfEnrollment(sb: SupabaseClient, automationId: string): Promise<SequenceStep[]> {
+  const { data } = await sb.from('automations').select('definition').eq('id', automationId).maybeSingle()
+  const def = (data?.definition as SequenceDefinition) || { steps: [] }
+  return Array.isArray(def.steps) ? def.steps : []
+}
+
+export interface SkipEmailResult {
+  /** Colonnes marquées « sautée » (identifiants de colonne du tableau). */
+  skipped: string[]
+  /** Inscriptions avancées jusqu'à l'étape suivante. */
+  advanced: number
+  /** Libellé du canal repris (« WhatsApp », « Appel »…), pour le retour utilisateur. */
+  nextKind: string | null
+}
+
+/**
+ * Saute l'étape email d'un prospect et enchaîne sur l'étape suivante — en
+ * pratique WhatsApp, puisque c'est le canal qui suit l'email dans les séquences
+ * de démarchage.
+ *
+ * Le geste sert surtout aux entreprises sans adresse : plutôt que de les laisser
+ * gelées à une étape impossible, on passe au canal qui, lui, est joignable. Les
+ * étapes d'attente intercalées sautent avec l'email — attendre trois jours un
+ * email qui ne partira jamais n'a aucun sens.
+ */
+export async function skipEmailStep(
+  sb: SupabaseClient,
+  opportuniteId: string,
+  extraColumns: string[] = [],
+): Promise<SkipEmailResult> {
+  const stored = await readState(sb, opportuniteId)
+  const skippedColumns = new Set<string>(extraColumns)
+  let advanced = 0
+  let nextKind: string | null = null
+
+  const { data } = await sb
+    .from('sequence_enrollments')
+    .select('*')
+    .eq('opportunite_id', opportuniteId)
+    .eq('status', 'active')
+  const enrollments = (data ?? []) as SequenceEnrollment[]
+
+  for (const enrollment of enrollments) {
+    const steps = await stepsOfEnrollment(sb, enrollment.automation_id)
+    let index = enrollment.current_step
+    let moved = false
+    // On avance tant qu'on tombe sur un email (ou sur l'attente qui le précède).
+    while (index < steps.length && (steps[index].kind === 'email' || (moved && steps[index].kind === 'wait'))) {
+      if (steps[index].kind === 'email') skippedColumns.add(stepColumnId(steps[index].id))
+      index++
+      moved = true
+    }
+    if (!moved) continue
+
+    if (index >= steps.length) {
+      await sb
+        .from('sequence_enrollments')
+        .update({
+          current_step: index,
+          status: 'finished',
+          next_run_at: null,
+          send_at: null,
+          hold_reason: null,
+          finished_at: new Date().toISOString(),
+        })
+        .eq('id', enrollment.id)
+      advanced++
+      continue
+    }
+
+    nextKind = nextKind ?? steps[index].kind
+    await sb
+      .from('sequence_enrollments')
+      .update({
+        current_step: index,
+        next_run_at: new Date().toISOString(),
+        send_at: null,
+        hold_reason: null,
+      })
+      .eq('id', enrollment.id)
+    advanced++
+
+    // L'étape suivante est manuelle : sa tâche est créée tout de suite, sinon le
+    // commercial devrait attendre le prochain tick pour voir apparaître le geste.
+    const { data: fresh } = await sb.from('sequence_enrollments').select('*').eq('id', enrollment.id).maybeSingle()
+    if (fresh) await processSequenceEnrollment(fresh as SequenceEnrollment).catch(() => {})
+  }
+
+  const skipped = [...new Set([...(stored?.skipped ?? []), ...skippedColumns])]
+  if (skipped.length > 0) {
+    await writeState(sb, opportuniteId, {
+      skipped,
+      skip_reason: 'Étape email sautée — passage au canal suivant',
+    })
+  }
+  return { skipped: [...skippedColumns], advanced, nextKind }
+}
+
+export interface SetEmailResult {
+  email: string
+  /** Où l'adresse a été enregistrée. */
+  target: 'entreprise' | 'contact'
+  /** Inscriptions dégelées et remises dans la file. */
+  resumed: number
+}
+
+/**
+ * Enregistre à la main l'adresse d'un prospect.
+ *
+ * Elle va dans `entreprises.email` — la colonne où vivent déjà toutes les autres
+ * adresses d'entreprise du CRM (saisie manuelle ou synchronisation depuis
+ * `lead_magnet_projects.override_email`). Le moteur de séquence s'en sert comme
+ * destinataire de repli quand le contact n'a pas d'adresse propre, donc l'envoi
+ * redevient possible immédiatement : les inscriptions gelées faute d'adresse
+ * repassent dans la file au tick suivant.
+ */
+export async function setProspectEmail(
+  sb: SupabaseClient,
+  target: { opportuniteId?: string | null; entrepriseId?: number | null },
+  rawEmail: string,
+): Promise<{ ok: true; result: SetEmailResult } | { ok: false; error: string }> {
+  const email = cleanEmail(rawEmail)
+  if (!email) return { ok: false, error: 'email_invalide' }
+
+  let entrepriseId = target.entrepriseId ?? null
+  let contactId: string | null = null
+  if (target.opportuniteId) {
+    const { data: opp } = await sb
+      .from('opportunites')
+      .select('id, entreprise_id, contact_id')
+      .eq('id', target.opportuniteId)
+      .maybeSingle()
+    if (!opp) return { ok: false, error: 'introuvable' }
+    entrepriseId = entrepriseId ?? (opp.entreprise_id as number | null)
+    contactId = (opp.contact_id as string | null) ?? null
+  }
+
+  let where: SetEmailResult['target']
+  if (entrepriseId != null) {
+    const { error } = await sb
+      .from('entreprises')
+      .update({ email, updated_at: new Date().toISOString() })
+      .eq('id', entrepriseId)
+    if (error) return { ok: false, error: error.message }
+    where = 'entreprise'
+  } else if (contactId) {
+    const { error } = await sb.from('contacts').update({ email }).eq('id', contactId)
+    if (error) return { ok: false, error: error.message }
+    where = 'contact'
+  } else {
+    return { ok: false, error: 'aucune_fiche' }
+  }
+
+  // Dégel : les inscriptions bloquées repartent tout de suite, sans attendre la
+  // relecture différée posée par le ticker.
+  let resume = sb
+    .from('sequence_enrollments')
+    .update({ hold_reason: null, send_at: null, next_run_at: new Date().toISOString() })
+    .eq('status', 'active')
+    .eq('hold_reason', 'no_email')
+  resume = target.opportuniteId
+    ? resume.eq('opportunite_id', target.opportuniteId)
+    : resume.eq('entreprise_id', entrepriseId as number)
+  const { data: resumed } = await resume.select('id')
+
+  return { ok: true, result: { email, target: where, resumed: (resumed ?? []).length } }
 }
 
 /**

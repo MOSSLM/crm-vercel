@@ -43,6 +43,25 @@ export interface RegulatorQueueRow {
   lastEmailAt: string | null
 }
 
+/**
+ * Une inscription arrêtée à une étape email faute d'adresse. Elle n'est pas dans
+ * la file — rien n'est préparé pour elle — mais elle doit se voir : c'est ce qui
+ * alimente l'alerte « N entreprises sans email » et les drapeaux du pipeline.
+ */
+export interface RegulatorMissingEmailRow {
+  enrollmentId: string
+  automationId: string
+  sequenceName: string
+  contactName: string
+  companyName: string
+  entrepriseId: number | null
+  contactId: string | null
+  opportuniteId: string | null
+  ownerId: string | null
+  step: number
+  stepLabel: string
+}
+
 export interface RegulatorSequenceRow {
   id: string
   name: string
@@ -84,6 +103,8 @@ export interface RegulatorView {
   openWindows: SendWindow[]
   sentToday: number
   queue: RegulatorQueueRow[]
+  /** Prospects arrêtés à l'étape email faute d'adresse — hors file, mais à traiter. */
+  missingEmail: RegulatorMissingEmailRow[]
   sent: RegulatorSentRow[]
   sequences: RegulatorSequenceRow[]
   agents: RegulatorAgentRow[]
@@ -110,12 +131,53 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
   const history = await loadSendHistory(sb, settings, nowMs)
   const ctx = { settings, history, now: nowMs }
 
-  const { emails } = await loadDueEnrollments(sb, nowMs, 400)
+  const { emails, noEmail } = await loadDueEnrollments(sb, nowMs, 400)
+
+  // Les inscriptions déjà marquées « sans email » par le ticker : elles ne sont
+  // plus « dues » (leur relecture est reportée) mais restent à traiter, donc
+  // elles doivent apparaître dans l'alerte. On les fusionne avec celles que ce
+  // tour vient de détecter.
+  const { data: heldRows } = await sb
+    .from('sequence_enrollments')
+    .select('id, automation_id, contact_id, entreprise_id, opportunite_id, current_step')
+    .eq('status', 'active')
+    .eq('hold_reason', 'no_email')
+    .limit(500)
+
+  type HeldRow = {
+    id: string
+    automation_id: string
+    contact_id: string | null
+    entreprise_id: number | null
+    opportunite_id: string | null
+    current_step: number
+  }
+  const held = new Map<string, HeldRow>()
+  for (const row of (heldRows ?? []) as HeldRow[]) held.set(row.id, row)
+  for (const entry of noEmail) {
+    held.set(entry.enrollment.id, {
+      id: entry.enrollment.id,
+      automation_id: entry.enrollment.automation_id,
+      contact_id: entry.enrollment.contact_id,
+      entreprise_id: entry.enrollment.entreprise_id,
+      opportunite_id: entry.enrollment.opportunite_id,
+      current_step: entry.enrollment.current_step,
+    })
+  }
+  const heldList = [...held.values()]
 
   // Décoration : nom du contact, entreprise, propriétaire. Deux requêtes en lot
-  // plutôt qu'une par ligne.
-  const contactIds = [...new Set(emails.map((e) => e.enrollment.contact_id).filter(Boolean))] as string[]
-  const entIds = [...new Set(emails.map((e) => e.enrollment.entreprise_id).filter((v) => v != null))] as number[]
+  // plutôt qu'une par ligne — file et « sans email » servies d'un coup.
+  const contactIds = [
+    ...new Set([...emails.map((e) => e.enrollment.contact_id), ...heldList.map((h) => h.contact_id)].filter(Boolean)),
+  ] as string[]
+  const entIds = [
+    ...new Set(
+      [...emails.map((e) => e.enrollment.entreprise_id), ...heldList.map((h) => h.entreprise_id)].filter(
+        (v) => v != null,
+      ),
+    ),
+  ] as number[]
 
   const [contactsRes, entsRes] = await Promise.all([
     contactIds.length > 0
@@ -173,6 +235,31 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     .eq('kind', 'sequence')
     .order('name', { ascending: true })
   const sequencesRaw = (seqRows ?? []) as Automation[]
+  const automationById = new Map(sequencesRaw.map((a) => [a.id, a]))
+
+  // ── Sans email ────────────────────────────────────────────────────────────
+  let missingEmail: RegulatorMissingEmailRow[] = heldList.map((row) => {
+    const automation = automationById.get(row.automation_id)
+    const def = (automation?.definition as SequenceDefinition) || { steps: [] }
+    const steps = Array.isArray(def.steps) ? def.steps : []
+    const step = steps[row.current_step]
+    const ent = row.entreprise_id != null ? entById.get(row.entreprise_id) : undefined
+    return {
+      enrollmentId: row.id,
+      automationId: row.automation_id,
+      sequenceName: automation?.name ?? 'Séquence',
+      contactName: (row.contact_id ? contactById.get(row.contact_id) : '') || 'Contact',
+      companyName: ent?.name ?? '—',
+      entrepriseId: row.entreprise_id,
+      contactId: row.contact_id,
+      opportuniteId: row.opportunite_id,
+      ownerId: ent?.owner_id ?? null,
+      step: row.current_step + 1,
+      stepLabel: step?.label || step?.template || `Étape ${row.current_step + 1}`,
+    }
+  })
+  if (opts.ownerId) missingEmail = missingEmail.filter((m) => m.ownerId === opts.ownerId)
+  missingEmail.sort((a, b) => a.companyName.localeCompare(b.companyName))
 
   const { data: activeCounts } = await sb
     .from('sequence_enrollments')
@@ -287,6 +374,7 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     openWindows: openWindows.length > 0 ? openWindows : settings.defaultWindows,
     sentToday: history.sentToday,
     queue,
+    missingEmail,
     sent,
     sequences,
     agents,

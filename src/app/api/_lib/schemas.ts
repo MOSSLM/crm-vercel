@@ -551,6 +551,35 @@ export const salesEnrollSchema = z.object({
 export type SalesEnrollPayload = z.infer<typeof salesEnrollSchema>;
 
 /**
+ * Sauter l'étape email et enchaîner sur le canal suivant (WhatsApp en
+ * pratique). Le serveur retrouve seul les étapes email de l'inscription ;
+ * `skip_columns` sert aux colonnes que seul le client connaît (séquence
+ * affichée non encore lancée).
+ */
+export const salesSkipEmailSchema = z.object({
+  opportunite_id: z.string().uuid(),
+  skip_columns: z.array(salesColumnId).max(40).optional(),
+});
+export type SalesSkipEmailPayload = z.infer<typeof salesSkipEmailSchema>;
+
+/**
+ * Saisie manuelle de l'adresse d'un prospect, depuis le pipeline commercial
+ * (qui raisonne en opportunités) ou depuis les séquences (qui raisonnent en
+ * entreprises). L'un ou l'autre suffit — l'adresse finit au même endroit.
+ */
+export const salesSetEmailSchema = z
+  .object({
+    opportunite_id: z.string().uuid().optional(),
+    entreprise_id: z.coerce.number().int().positive().optional(),
+    email: z.string().trim().email("email invalide").max(200),
+  })
+  .refine((v) => v.opportunite_id != null || v.entreprise_id != null, {
+    message: "opportunite_id ou entreprise_id est requis",
+    path: ["opportunite_id"],
+  });
+export type SalesSetEmailPayload = z.infer<typeof salesSetEmailSchema>;
+
+/**
  * Reads JSON from the request and validates it.
  *
  * Returns `{ ok: true, data }` on success; on parse or validation failure,

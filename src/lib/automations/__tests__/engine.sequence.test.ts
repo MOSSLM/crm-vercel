@@ -222,6 +222,60 @@ describe('processSequenceEnrollment', () => {
     });
   });
 
+  describe('sans adresse', () => {
+    const noContactEmail = {
+      contacts: tableChain({
+        data: { first_name: 'Jean', last_name: 'Test', email: null, tel: '0600', role_title: null, linkedin_url: null },
+        error: null,
+      }),
+    };
+
+    it('gèle l’étape email au lieu de la franchir en silence', async () => {
+      wire(sequenceWith('email'), {
+        ...noContactEmail,
+        entreprises: tableChain({
+          data: { name: 'Clim Ouest', ville: 'Angers', site_web_canonique: null, email: null, owner_id: 'agent-1' },
+          error: null,
+        }),
+      });
+
+      await processSequenceEnrollment(enrollment);
+
+      expect(mockSend).not.toHaveBeenCalled();
+      const updates = tables.sequence_enrollments.captured.updates as Record<string, unknown>[];
+      // Un seul update : le gel. L'étape n'avance PAS — avant, la séquence
+      // franchissait l'email sans que rien ne parte.
+      expect(updates).toHaveLength(1);
+      expect(updates[0]).toEqual(
+        expect.objectContaining({ send_at: null, hold_reason: 'no_email', next_run_at: expect.any(String) }),
+      );
+    });
+
+    it('utilise l’adresse de la fiche entreprise comme destinataire de repli', async () => {
+      wire(sequenceWith('email'), {
+        ...noContactEmail,
+        entreprises: tableChain({
+          data: {
+            name: 'Clim Ouest',
+            ville: 'Angers',
+            site_web_canonique: null,
+            email: 'contact@clim-ouest.fr',
+            owner_id: 'agent-1',
+          },
+          error: null,
+        }),
+      });
+      mockSend.mockResolvedValue({ data: { id: 're-1' }, error: null });
+
+      await processSequenceEnrollment(enrollment);
+
+      expect(mockSend).toHaveBeenCalledTimes(1);
+      expect(mockSend.mock.calls[0][0]).toEqual(
+        expect.objectContaining({ to: 'Jean Test <contact@clim-ouest.fr>' }),
+      );
+    });
+  });
+
   it('gèle l’inscription et dit pourquoi quand la séquence est en pause', async () => {
     wire({ ...sequenceWith('email'), status: 'paused' });
 

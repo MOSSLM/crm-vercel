@@ -225,8 +225,57 @@ export interface DueEnrollment {
 export interface QueueBuild {
   /** Les inscriptions dont l'étape courante est un email : elles passent par la file. */
   emails: DueEnrollment[]
+  /**
+   * Étape email, mais aucune adresse connue (ni sur le contact, ni sur
+   * l'entreprise). Ces inscriptions n'entrent PAS dans la file : préparer un
+   * envoi sans destinataire n'a pas de sens, et les laisser occuper un créneau
+   * fausserait l'écart et le plafond du jour. Elles attendent qu'on saisisse
+   * l'email ou qu'on saute l'étape.
+   */
+  noEmail: DueEnrollment[]
   /** Les autres (WhatsApp, appel, attente…) : traitées tout de suite, sans régulateur. */
   others: DueEnrollment[]
+}
+
+/** Une adresse exploitable, ou `null` — « — », « n/a » et compagnie ne comptent pas. */
+export const cleanEmail = (value: unknown): string | null => {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (text.length < 5 || !text.includes('@') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text)) return null
+  return text
+}
+
+/**
+ * Adresses réellement joignables, par contact et par entreprise.
+ *
+ * Un prospect est « sans email » quand NI son contact NI son entreprise n'en
+ * portent : `entreprises.email` est le repli officiel (saisie manuelle, ou
+ * synchronisation depuis `lead_magnet_projects.override_email`), donc il compte
+ * autant que celui du contact.
+ */
+export async function loadRecipientEmails(
+  sb: SupabaseClient,
+  contactIds: string[],
+  entrepriseIds: number[],
+): Promise<{ byContact: Map<string, string>; byCompany: Map<number, string> }> {
+  const byContact = new Map<string, string>()
+  const byCompany = new Map<number, string>()
+  const [contacts, ents] = await Promise.all([
+    contactIds.length > 0
+      ? sb.from('contacts').select('id, email').in('id', [...new Set(contactIds)])
+      : Promise.resolve({ data: [] as unknown[] }),
+    entrepriseIds.length > 0
+      ? sb.from('entreprises').select('id, email').in('id', [...new Set(entrepriseIds)])
+      : Promise.resolve({ data: [] as unknown[] }),
+  ])
+  for (const row of ((contacts.data ?? []) as { id: string; email: string | null }[])) {
+    const mail = cleanEmail(row.email)
+    if (mail) byContact.set(row.id, mail)
+  }
+  for (const row of ((ents.data ?? []) as { id: number; email: string | null }[])) {
+    const mail = cleanEmail(row.email)
+    if (mail) byCompany.set(row.id, mail)
+  }
+  return { byContact, byCompany }
 }
 
 /**
@@ -248,7 +297,7 @@ export async function loadDueEnrollments(
     .limit(limit)
 
   const enrollments = (data ?? []) as SequenceEnrollment[]
-  if (enrollments.length === 0) return { emails: [], others: [] }
+  if (enrollments.length === 0) return { emails: [], noEmail: [], others: [] }
 
   const ids = [...new Set(enrollments.map((e) => e.automation_id))]
   const { data: autos } = await sb.from('automations').select('*').in('id', ids)
@@ -264,7 +313,26 @@ export async function loadDueEnrollments(
     if (step?.kind === 'email') emails.push(entry)
     else others.push(entry)
   }
-  return { emails, others }
+
+  // Les emails sans destinataire sortent de la file AVANT toute planification.
+  if (emails.length === 0) return { emails, noEmail: [], others }
+  const { byContact, byCompany } = await loadRecipientEmails(
+    sb,
+    emails.map((e) => e.enrollment.contact_id).filter((v): v is string => !!v),
+    emails.map((e) => e.enrollment.entreprise_id).filter((v): v is number => v != null),
+  )
+  const sendable: DueEnrollment[] = []
+  const noEmail: DueEnrollment[] = []
+  for (const entry of emails) {
+    const { contact_id, entreprise_id } = entry.enrollment
+    const address =
+      (contact_id ? byContact.get(contact_id) : undefined) ??
+      (entreprise_id != null ? byCompany.get(entreprise_id) : undefined) ??
+      null
+    if (address) sendable.push(entry)
+    else noEmail.push(entry)
+  }
+  return { emails: sendable, noEmail, others }
 }
 
 export interface QueueContext {

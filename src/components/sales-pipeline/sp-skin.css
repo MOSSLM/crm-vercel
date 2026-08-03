@@ -205,6 +205,16 @@
   display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
   color: var(--warn); background: var(--warn-tint); border-radius: 6px; padding: 5px 8px;
 }
+/* Un report se règle tout seul (plage, plafond) ; une adresse manquante non —
+   d'où le rouge : c'est un blocage, pas une attente. */
+.mp-scope .hold.danger { color: var(--danger); background: var(--danger-tint); }
+
+/* Une pastille de manque BLOQUANT : la version pointillée dit « pas encore »,
+   celle-ci dit « impossible en l'état ». */
+.mp-scope .chip.danger {
+  background: var(--danger-tint); border-color: transparent; color: var(--danger);
+}
+.mp-scope .chip.danger .ico { color: var(--danger); }
 
 /* ── variantes de carte ── */
 .mp-scope .card.is-skip { background: var(--bg-2); box-shadow: none; border-style: dashed; }
@@ -226,6 +236,60 @@
 .mp-scope .card.is-nn .c-dot { background: var(--ok); }
 .mp-scope .card.is-nn .c-body { color: #1a6b48; }
 .mp-scope .card.is-nn .c-foot { border-top-color: rgba(31,138,91,.2); }
+/* Étape impossible en l'état (email sans adresse) : la carte reste « active »
+   — il y a bien quelque chose à faire — mais son liseré passe au rouge. */
+.mp-scope .card.active.is-blocked {
+  box-shadow: 0 0 0 1.5px var(--danger-tint), var(--shadow-2);
+  border-color: rgba(181,50,47,.35);
+}
+.mp-scope .card.active.is-blocked .c-dot { background: var(--danger); }
+.mp-scope .card.active.is-blocked .cta {
+  background: var(--danger); border-color: var(--danger); color: #fff;
+}
+.mp-scope .card.active.is-blocked .cta:hover { filter: brightness(1.08); }
+
+/* ── alerte « sans email » ──
+   Une bande sous la barre régulateur : le compte des prospects que l'étape
+   email ne peut pas atteindre, et le raccourci pour les traiter d'un bloc. */
+.mp-scope .mailalert {
+  display: flex; align-items: center; gap: 10px;
+  margin: 0 24px 12px; padding: 9px 13px;
+  background: var(--danger-tint); border: 1px solid rgba(181,50,47,.24);
+  border-radius: 11px; width: calc(100% - 48px); text-align: left;
+  color: var(--danger); font-size: 12.5px;
+}
+.mp-scope .mailalert .ico { flex-shrink: 0; }
+.mp-scope .mailalert b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.mp-scope .mailalert .txt { color: var(--text-2); }
+.mp-scope .mailalert .btn { margin-left: auto; flex-shrink: 0; }
+
+/* ── liste « sans email » du tiroir ── */
+.mp-scope .me-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 16px; border-bottom: 1px solid var(--border-2);
+}
+.mp-scope .me-row:last-child { border-bottom: 0; }
+.mp-scope .me-row .who { min-width: 0; flex: 1; }
+.mp-scope .me-row .nm {
+  font-size: 12.5px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-scope .me-row .sn {
+  font-size: 10.5px; font-family: var(--font-mono); color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-scope .me-row .acts { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* Drapeau porté par la ligne prospect, visible avant même la mise en séquence. */
+.mp-scope .rh-flag {
+  display: inline-flex; align-items: center; gap: 5px; align-self: flex-start;
+  font-size: 11px; font-weight: 500; color: var(--danger);
+  background: var(--danger-tint); border: 1px solid transparent;
+  border-radius: 999px; padding: 2px 9px; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.mp-scope .rh-flag .ico { flex-shrink: 0; }
+.mp-scope .rh-flag:hover { border-color: rgba(181,50,47,.35); }
 
 /* ── pied : légende + pagination ── */
 .mp-scope .footbar { display: flex; align-items: center; border-top: 1px solid var(--border); background: var(--bg-2); }

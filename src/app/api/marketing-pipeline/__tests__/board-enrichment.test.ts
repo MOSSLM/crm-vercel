@@ -48,4 +48,25 @@ describe("isEnrichmentDone", () => {
     // Rien à valider : la carte suivante n'aurait qu'un bouton inerte.
     expect(isEnrichmentDone(null, { status: "done" })).toBe(false);
   });
+
+  describe("enrichissement fait à la main", () => {
+    it("franchit l'étape dès que la fiche ne réclame plus rien", () => {
+      // Le run automatique n'a jamais abouti (site introuvable, page illisible),
+      // mais tout a été saisi : la validation doit être accessible.
+      expect(isEnrichmentDone({ statut: "draft", validated: false }, null, true)).toBe(true);
+      expect(isEnrichmentDone({ statut: "failed", validated: false }, null, true)).toBe(true);
+      expect(isEnrichmentDone({ statut: "failed", validated: false }, { status: "error" }, true)).toBe(true);
+    });
+
+    it("reste bloquée tant qu'il manque une variable", () => {
+      expect(isEnrichmentDone({ statut: "draft", validated: false }, null, false)).toBe(false);
+      expect(isEnrichmentDone({ statut: "failed", validated: false }, null, false)).toBe(false);
+    });
+
+    it("n'ouvre rien sans projet, même avec une fiche entreprise complète", () => {
+      // La carte suivante valide un projet lead magnet : sans projet, elle
+      // n'aurait qu'un bouton inerte.
+      expect(isEnrichmentDone(null, null, true)).toBe(false);
+    });
+  });
 });

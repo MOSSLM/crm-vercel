@@ -19,6 +19,21 @@ export interface RegulatorQueueRow {
   lastEmailAt: string | null
 }
 
+/** Inscription arrêtée à une étape email faute d'adresse — hors file. */
+export interface RegulatorMissingEmailRow {
+  enrollmentId: string
+  automationId: string
+  sequenceName: string
+  contactName: string
+  companyName: string
+  entrepriseId: number | null
+  contactId: string | null
+  opportuniteId: string | null
+  ownerId: string | null
+  step: number
+  stepLabel: string
+}
+
 export interface RegulatorSequenceRow {
   id: string
   name: string
@@ -59,6 +74,7 @@ export interface RegulatorView {
   openWindows: SendWindow[]
   sentToday: number
   queue: RegulatorQueueRow[]
+  missingEmail: RegulatorMissingEmailRow[]
   sent: RegulatorSentRow[]
   sequences: RegulatorSequenceRow[]
   agents: RegulatorAgentRow[]
