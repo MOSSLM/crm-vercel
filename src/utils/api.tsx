@@ -1642,18 +1642,16 @@ export const opportunitiesApi = {
       logger.log('Successfully created opportunity:', data);
       return data;
     } catch (error) {
+      // Un échec de création remonte, il ne se déguise plus en succès.
+      //
+      // Ce `catch` fabriquait une opportunité factice (id local, montant 2500)
+      // et la renvoyait comme si l'insert avait réussi : l'UI affichait une
+      // affaire qui n'existait nulle part en base, jusqu'au prochain
+      // rechargement. Avec l'index unique `opportunites_entreprise_unique`, un
+      // doublon rejeté (23505) serait devenu invisible de cette façon — le pire
+      // des cas, puisque c'est précisément ce qu'on cherche à empêcher.
       logger.error('Error creating opportunity:', error);
-      const now = new Date().toISOString();
-      const fallbackId =
-        typeof globalThis.crypto !== 'undefined' &&
-        typeof globalThis.crypto.randomUUID === 'function'
-          ? globalThis.crypto.randomUUID()
-          : Date.now().toString();
-      return buildOpportunityFromPartial(fallbackId, {
-        ...opportunityData,
-        created_at: now,
-        updated_at: now,
-      });
+      throw error;
     }
   },
   

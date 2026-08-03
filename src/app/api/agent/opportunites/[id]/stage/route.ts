@@ -2,12 +2,20 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
+import { stageBelongsToDeal } from "@/app/api/agent/_lib";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
 
-// Move an opportunity to another stage (kanban drop). Ownership is enforced
-// by the owner_id filter, so an agent can only move their own cards.
+// Déplace une affaire vers une autre étape (dépôt kanban). La propriété est
+// vérifiée par le filtre `owner_id` : un agent ne bouge que ses propres cartes.
+//
+// L'étape visée doit appartenir au pipeline de l'affaire. Sans ce contrôle,
+// `trg_sync_opportunity_pipeline_from_stage` (sql/20260326_multi_pipeline_support.sql)
+// réécrit `pipeline_id` à partir de l'étape : déposer une carte de « Streak
+// Mars/Avril » sur une colonne « Agent SAMA » déplacerait l'affaire de pipeline
+// sans le moindre message. Les affaires historiques repartiraient une à une vers
+// le pipeline agent, défaisant la fusion des doublons.
 export const PATCH = withAuth<undefined, { id: string }>(
   { role: "freelance" },
   async ({ user, params, req, cors }) => {
@@ -23,7 +31,12 @@ export const PATCH = withAuth<undefined, { id: string }>(
       return jsonError("id et stage_id requis", 400, {}, cors);
     }
 
-    const { data, error } = await getServiceClient()
+    const sc = getServiceClient();
+    if (!(await stageBelongsToDeal(sc, id, stageId))) {
+      return jsonError("etape_hors_pipeline", 400, {}, cors);
+    }
+
+    const { data, error } = await sc
       .from("opportunites")
       .update({ stage_id: stageId, updated_at: new Date().toISOString() })
       .eq("id", id)

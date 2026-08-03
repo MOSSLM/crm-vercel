@@ -1102,6 +1102,31 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   ------------------------------------------------------------- */
   const addOpportunity = async (opportunity: Omit<Opportunity, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      // UNE ENTREPRISE = UNE AFFAIRE.
+      //
+      // Point de passage unique des trois chemins de création du CRM
+      // (qualification d'une entreprise, « Nouvelle opportunité » sur la fiche
+      // entreprise, création depuis un contact). Sans ce garde-fou, chacun
+      // pouvait rouvrir une seconde affaire sur une entreprise qui en avait déjà
+      // une — exactement le doublon que l'attribution ne produit plus et que la
+      // fusion vient de réparer. L'index unique
+      // `opportunites_entreprise_unique` le rejetterait de toute façon, mais avec
+      // une erreur illisible ; on le dit ici, en clair.
+      //
+      // Les affaires de test portent leur propre entreprise fictive : elles ne
+      // sont pas concernées.
+      if (opportunity.entreprise_id != null && opportunity.is_test !== true) {
+        const existante = opportunities.find(
+          (o) => o.entreprise_id === opportunity.entreprise_id && o.is_test !== true,
+        );
+        if (existante) {
+          toast.error(
+            "Cette entreprise a déjà une opportunité. Modifie-la au lieu d'en créer une seconde.",
+          );
+          return;
+        }
+      }
+
       const associatedCompany = companies.find((company) => company.id === opportunity.entreprise_id);
       const companyDisplayName = associatedCompany
         ? getCompanyDisplayName(associatedCompany.name, associatedCompany.canonical_url)

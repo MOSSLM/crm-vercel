@@ -14,6 +14,7 @@ export type OppRow = {
   pipeline_id: string | null;
   stage_id: number | null;
   updated_at: string | null;
+  owner_id?: string | null;
 };
 export type PipelineRow = { id: string; nom: string | null; ordre: number | null };
 export type StageRow = { id: number; nom: string | null; pipeline_id: string; ordre: number | null };
@@ -24,6 +25,8 @@ export type PoolDeal = {
   pipeline_nom: string;
   stage_id: number | null;
   stage_nom: string | null;
+  /** À qui l'affaire est attribuée — `null` = personne, elle est dans le pool. */
+  owner_id: string | null;
 };
 
 export const chunk = <T,>(arr: T[], size: number): T[][] => {
@@ -65,7 +68,7 @@ export async function fetchDeals(sc: ServiceClient, entIds: number[]): Promise<O
     for (let from = 0; ; from += PAGE) {
       const { data, error } = await sc
         .from("opportunites")
-        .select("entreprise_id, pipeline_id, stage_id, updated_at")
+        .select("entreprise_id, pipeline_id, stage_id, updated_at, owner_id")
         .in("entreprise_id", ids)
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1);
@@ -99,22 +102,30 @@ export async function fetchOwnedCounts(sc: ServiceClient): Promise<Record<string
 }
 
 /**
- * Une affaire par pipeline et par entreprise — la plus récemment mise à jour.
- * Une entreprise présente dans deux pipelines reste filtrable depuis les deux,
- * au lieu d'être arbitrairement rattachée à l'un des deux.
+ * Les affaires d'une entreprise, une par pipeline — la plus récemment mise à
+ * jour l'emporte.
+ *
+ * `skipPipelineId` a disparu : il servait à masquer le pipeline « Agent SAMA »,
+ * commun à toutes les entreprises attribuées parce que l'attribution y créait
+ * systématiquement une affaire. Depuis qu'elle réutilise l'affaire existante,
+ * une affaire dans « Agent SAMA » est une vraie affaire — la seule, pour les
+ * entreprises qui n'en avaient aucune. La masquer priverait l'admin de la seule
+ * ligne de ces prospects.
+ *
+ * Le retour reste un TABLEAU le temps que l'invariant « une entreprise = une
+ * affaire » soit posé en base : tant qu'un doublon subsiste, mieux vaut que
+ * l'admin le voie que de n'en montrer qu'un arbitrairement.
  */
 export function dealsByEntreprise(
   opps: OppRow[],
   pipelines: Map<string, PipelineRow>,
   stages: Map<number, StageRow>,
-  skipPipelineId?: string | null,
 ): Map<number, PoolDeal[]> {
   const best = new Map<number, Map<string, { deal: PoolDeal; updatedAt: string }>>();
 
   for (const o of opps) {
     const entId = o.entreprise_id;
     if (entId == null || !o.pipeline_id) continue;
-    if (skipPipelineId && o.pipeline_id === skipPipelineId) continue;
     const pipeline = pipelines.get(o.pipeline_id);
     if (!pipeline) continue;
 
@@ -124,6 +135,7 @@ export function dealsByEntreprise(
       pipeline_nom: pipeline.nom ?? "Sans nom",
       stage_id: o.stage_id,
       stage_nom: stage?.nom ?? null,
+      owner_id: o.owner_id ?? null,
     };
     const updatedAt = o.updated_at ?? "";
 

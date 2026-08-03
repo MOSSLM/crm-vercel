@@ -26,6 +26,7 @@ const opp = (o: Partial<OppRow>): OppRow => ({
   pipeline_id: 'p-web',
   stage_id: null,
   updated_at: null,
+  owner_id: null,
   ...o,
 });
 
@@ -38,8 +39,8 @@ describe('dealsByEntreprise', () => {
     );
 
     expect(deals.get(1)).toEqual([
-      { pipeline_id: 'p-web', pipeline_nom: 'Entreprises sans site web', stage_id: 1, stage_nom: 'Nouveau lead' },
-      { pipeline_id: 'p-reseaux', pipeline_nom: 'Réseaux sociaux', stage_id: null, stage_nom: null },
+      { pipeline_id: 'p-web', pipeline_nom: 'Entreprises sans site web', stage_id: 1, stage_nom: 'Nouveau lead', owner_id: null },
+      { pipeline_id: 'p-reseaux', pipeline_nom: 'Réseaux sociaux', stage_id: null, stage_nom: null, owner_id: null },
     ]);
   });
 
@@ -56,19 +57,34 @@ describe('dealsByEntreprise', () => {
     );
 
     expect(deals.get(1)).toEqual([
-      { pipeline_id: 'p-web', pipeline_nom: 'Entreprises sans site web', stage_id: 2, stage_nom: 'Contacté' },
+      { pipeline_id: 'p-web', pipeline_nom: 'Entreprises sans site web', stage_id: 2, stage_nom: 'Contacté', owner_id: null },
     ]);
   });
 
-  it('écarte le pipeline demandé — celui de l\'agent, commun à tous ses prospects', () => {
+  // Le pipeline « Agent SAMA » était masqué parce que l'attribution y ouvrait une
+  // affaire pour CHAQUE entreprise attribuée. Elle réutilise désormais l'affaire
+  // existante : une affaire dans Agent SAMA est la vraie et unique affaire d'un
+  // prospect qui n'en avait aucune. La masquer laisserait la ligne vide.
+  it('n\'écarte plus le pipeline de l\'agent', () => {
     const deals = dealsByEntreprise(
       [opp({ pipeline_id: 'p-agent' }), opp({ pipeline_id: 'p-web' })],
       PIPELINES,
       STAGES,
-      'p-agent',
     );
 
-    expect(deals.get(1)?.map((d) => d.pipeline_id)).toEqual(['p-web']);
+    expect(deals.get(1)?.map((d) => d.pipeline_id)).toEqual(['p-web', 'p-agent']);
+  });
+
+  // Le tableau est le détecteur de doublon résiduel : tant que l'index unique
+  // n'est pas posé, l'admin doit voir qu'une entreprise porte deux affaires.
+  it('remonte le propriétaire de chaque affaire', () => {
+    const deals = dealsByEntreprise(
+      [opp({ pipeline_id: 'p-web', owner_id: 'agent-1' })],
+      PIPELINES,
+      STAGES,
+    );
+
+    expect(deals.get(1)?.[0].owner_id).toBe('agent-1');
   });
 
   it('ignore les affaires sans entreprise ou sur un pipeline inconnu', () => {

@@ -3,7 +3,8 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { preflight } from "@/app/api/_lib/cors";
 import { advanceEnrollmentAfterTask } from "@/lib/automations/engine";
-import { advanceToContacted } from "@/app/api/agent/_lib";
+import { advanceToContacted, resolveStageForRole, stageBelongsToDeal } from "@/app/api/agent/_lib";
+import type { StageRole } from "@/lib/opportunites/stage-roles";
 
 export const runtime = "nodejs";
 export const OPTIONS = (req: Request) => preflight(req);
@@ -81,9 +82,30 @@ export const PATCH = withAuth({ role: "freelance" }, async ({ user, req, cors })
     }
   }
 
-  const opportuniteId = body.opportunite_id as string | undefined;
+  const opportuniteId = (body.opportunite_id as string | undefined) ?? null;
   const stageId = body.stage_id;
-  if (opportuniteId && stageId != null && Number.isFinite(Number(stageId))) {
+  // `outcome` exprime une INTENTION (« RDV calé », « pas intéressé »…) et laisse
+  // le serveur trouver l'étape correspondante DANS le pipeline de l'affaire.
+  // L'ancien contrat — un `stage_id` deviné côté client à partir des libellés
+  // d'« Agent SAMA » — aspirait toute affaire d'un autre pipeline vers Agent
+  // SAMA au premier clic, via `trg_sync_opportunity_pipeline_from_stage`.
+  const outcome = body.outcome as StageRole | undefined;
+
+  if (opportuniteId && outcome) {
+    const target = await resolveStageForRole(sc, opportuniteId, outcome);
+    if (target) {
+      await sc
+        .from("opportunites")
+        .update({ stage_id: target.id, updated_at: new Date().toISOString() })
+        .eq("id", opportuniteId)
+        .eq("owner_id", user.id);
+    }
+  } else if (opportuniteId && stageId != null && Number.isFinite(Number(stageId))) {
+    // Chemin explicite conservé, mais l'étape doit appartenir au pipeline de
+    // l'affaire : on ne déplace jamais une affaire de pipeline par ce biais.
+    if (!(await stageBelongsToDeal(sc, opportuniteId, Number(stageId)))) {
+      return jsonError("etape_hors_pipeline", 400, {}, cors);
+    }
     await sc
       .from("opportunites")
       .update({ stage_id: Number(stageId), updated_at: new Date().toISOString() })
