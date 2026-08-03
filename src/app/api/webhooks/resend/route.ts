@@ -194,13 +194,16 @@ export async function POST(req: Request): Promise<Response> {
       // Conflit de clé primaire : déjà traité, rien à refaire. C'est un succès,
       // pas une erreur — Resend ne doit pas réessayer.
       if (error.code === '23505') return json({ ok: true, duplicate: true })
-      // Table absente (migration non jouée) : on répond 200 pour ne pas faire
-      // boucler Resend, mais on le dit.
-      return json({ ok: true, stored: false, detail: error.message })
+      // Tout autre échec d'enregistrement : on rend un 500 pour que Resend
+      // REJOUE. Répondre 200 ici lui ferait considérer l'événement comme livré,
+      // et le rebond serait perdu pour de bon — donc une adresse morte resterait
+      // marquée valide et continuerait de recevoir. Exactement ce que ce
+      // dispositif existe pour empêcher.
+      return json({ ok: false, stored: false, error: error.message, code: error.code }, { status: 500 })
     }
     if (!data || data.length === 0) return json({ ok: true, duplicate: true })
   } catch (err) {
-    return json({ ok: true, stored: false, detail: String(err) })
+    return json({ ok: false, stored: false, error: String(err) }, { status: 500 })
   }
 
   if (!email) return json({ ok: true, applied: false, reason: 'destinataire_inconnu' })

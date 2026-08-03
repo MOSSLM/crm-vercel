@@ -190,6 +190,36 @@ describe('idempotence', () => {
     expect(mockRpc).not.toHaveBeenCalled()
   })
 
+  it('rend 500 quand l’enregistrement échoue, pour que Resend REJOUE', async () => {
+    // Répondre 200 ici ferait considérer l'événement comme livré : le rebond
+    // serait perdu, l'adresse morte resterait marquée valide, et elle
+    // continuerait de recevoir. C'est précisément ce que ce dispositif existe
+    // pour empêcher.
+    setupClient({
+      email_events: { data: null, error: { code: 'PGRST205', message: 'Could not find the table' } },
+    })
+    const { POST } = await importRoute()
+    const res = await POST(signedRequest(bounced('jean@garage.fr', { type: 'Permanent' })))
+
+    expect(res.status).toBe(500)
+    const body = await res.json()
+    expect(body.ok).toBe(false)
+    expect(body.error).toContain('Could not find the table')
+    // Rien n'a été condamné sur la foi d'un événement qu'on n'a pas su ranger.
+    expect(mockRpc).not.toHaveBeenCalled()
+  })
+
+  it('rend 500 quand la base est injoignable', async () => {
+    mockFrom.mockImplementation(() => {
+      throw new Error('fetch failed')
+    })
+    const { POST } = await importRoute()
+    const res = await POST(signedRequest(bounced('jean@garage.fr', { type: 'Permanent' })))
+
+    expect(res.status).toBe(500)
+    expect((await res.json()).error).toContain('fetch failed')
+  })
+
   it('traite l’événement quand l’insertion crée bien une ligne', async () => {
     setupClient({ email_events: { data: [{ event_id: 'msg_x' }], error: null } })
     const { POST } = await importRoute()
