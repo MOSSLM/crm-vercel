@@ -96,3 +96,43 @@ describe('loadDueForVerification', () => {
     expect(batch.error).toContain('réseau coupé')
   })
 })
+
+/* ── Défauts trouvés par l'audit de mise en service ──────────────────────── */
+
+import { loadSuppressions } from '../service'
+
+describe('audit — loadSuppressions ne doit pas échouer en mode ouvert', () => {
+  const clientOf = (result: { data: unknown; error?: unknown }) =>
+    ({
+      from: jest.fn(() => {
+        const self: Record<string, unknown> = {}
+        for (const m of ['select', 'in', 'eq']) self[m] = jest.fn(() => self)
+        self.then = (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve)
+        return self
+      }),
+    }) as never
+
+  it('rend ok:true et la liste quand la lecture réussit', async () => {
+    const r = await loadSuppressions(clientOf({ data: [{ email: 'parti@garage.fr' }], error: null }), [
+      'parti@garage.fr',
+    ])
+    expect(r.ok).toBe(true)
+    expect(r.emails.has('parti@garage.fr')).toBe(true)
+  })
+
+  it('rend ok:false quand la lecture échoue — « je ne sais pas » n’est pas « personne »', async () => {
+    const r = await loadSuppressions(clientOf({ data: null, error: { code: '08006', message: 'connexion perdue' } }), [
+      'jean@garage.fr',
+    ])
+    expect(r.ok).toBe(false)
+  })
+
+  it('rend ok:true quand la table n’existe pas encore', async () => {
+    // Migration non appliquée : il n'y a légitimement aucune suppression.
+    const r = await loadSuppressions(
+      clientOf({ data: null, error: { code: 'PGRST205', message: 'Could not find the table' } }),
+      ['jean@garage.fr'],
+    )
+    expect(r.ok).toBe(true)
+  })
+})

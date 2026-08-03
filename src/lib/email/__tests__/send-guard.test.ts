@@ -16,6 +16,12 @@ const clientOf = (state: {
   allowlist?: string[]
   verifications?: Row[]
   suppressions?: Row[]
+  /** La liste de suppression est illisible (panne passagère). */
+  suppressionsError?: boolean
+  /** La lecture des réglages échoue (panne passagère). */
+  settingsError?: boolean
+  /** La colonne n'existe pas encore (migration non appliquée). */
+  settingsMissingColumn?: boolean
 }) => {
   const chain = (result: { data: unknown; error?: unknown }) => {
     const self: Record<string, unknown> = {}
@@ -31,6 +37,12 @@ const clientOf = (state: {
     from: jest.fn((table: string) => {
       switch (table) {
         case 'regulator_settings':
+          if (state.settingsMissingColumn) {
+            return chain({ data: null, error: { code: '42703', message: 'column does not exist' } })
+          }
+          if (state.settingsError) {
+            return chain({ data: null, error: { code: '08006', message: 'connection failure' } })
+          }
           return chain({
             data: { verify_before_send: state.verifyBeforeSend ?? false, test_mode: state.testMode ?? false },
             error: null,
@@ -40,6 +52,9 @@ const clientOf = (state: {
         case 'email_verifications':
           return chain({ data: state.verifications ?? [], error: null })
         case 'email_suppressions':
+          if (state.suppressionsError) {
+            return chain({ data: null, error: { code: '08006', message: 'connection failure' } })
+          }
           return chain({ data: state.suppressions ?? [], error: null })
         default:
           return chain({ data: [], error: null })
@@ -194,5 +209,67 @@ describe('loadSendPolicy / eligibilityFor', () => {
     const sb = clientOf({ verifyBeforeSend: true })
     const policy = await loadSendPolicy(sb, [])
     expect(eligibilityFor(policy, 'pas-une-adresse')).toBe('blocked')
+  })
+})
+
+/* ── Défauts trouvés par l'audit de mise en service ──────────────────────── */
+
+describe('audit — le garde ne doit jamais s’ouvrir par accident', () => {
+  it('bloque une chaîne qui n’est pas une adresse', async () => {
+    // Auparavant `normalizeEmail` rendait `null`, TOUS les contrôles étaient
+    // sautés, et le garde répondait « autorisé » — il laissait passer
+    // exactement ce qu'il y a de moins fiable.
+    const sb = clientOf({ verifyBeforeSend: true })
+    for (const mauvais of ['', 'pas-une-adresse', '@garage.fr', 'jean@', null, undefined]) {
+      const verdict = await allowRecipient(sb, mauvais)
+      expect(verdict.allowed).toBe(false)
+      expect(verdict.reason).toBe('email_invalid')
+    }
+  })
+
+  it('applique la liste de suppression MÊME garde de vérification coupé', async () => {
+    // Un désabonnement est une obligation légale, pas un réglage de confort :
+    // couper la vérification ne doit pas rouvrir la porte.
+    const sb = clientOf({
+      verifyBeforeSend: false,
+      suppressions: [{ email: 'jean@garage.fr', reason: 'unsubscribe' }],
+    })
+    const verdict = await allowRecipient(sb, 'jean@garage.fr')
+    expect(verdict.allowed).toBe(false)
+    expect(verdict.reason).toBe('email_suppressed')
+  })
+
+  it('retient l’envoi quand la liste de suppression est ILLISIBLE', async () => {
+    // « Je ne sais pas qui s'est désabonné » ne vaut pas « personne ne l'est ».
+    const sb = clientOf({ verifyBeforeSend: true, suppressionsError: true })
+    const verdict = await allowRecipient(sb, 'jean@garage.fr')
+    expect(verdict.allowed).toBe(false)
+    expect(verdict.reason).toBe('email_unverified')
+  })
+
+  it('garde le garde ACTIF quand la lecture des réglages échoue', async () => {
+    // Une panne passagère ne doit pas se traduire par « garde désactivé, tout
+    // passe » : c'est le moment où il faut retenir, pas ouvrir les vannes.
+    const sb = clientOf({ settingsError: true })
+    const verdict = await allowRecipient(sb, 'jean@garage.fr')
+    expect(verdict.allowed).toBe(false)
+    expect(verdict.reason).toBe('email_unverified')
+  })
+
+  it('reste inactif quand la colonne n’existe pas encore', async () => {
+    // Migration non appliquée : c'est légitime, pas une panne. On retrouve le
+    // comportement d'avant.
+    const sb = clientOf({ settingsMissingColumn: true })
+    expect((await allowRecipient(sb, 'jean@garage.fr')).allowed).toBe(true)
+  })
+
+  it('bloque une adresse supprimée dans un tri de LOT, garde coupé', async () => {
+    const sb = clientOf({
+      verifyBeforeSend: false,
+      suppressions: [{ email: 'partie@garage.fr', reason: 'complaint' }],
+    })
+    const policy = await loadSendPolicy(sb, ['partie@garage.fr', 'ok@garage.fr'])
+    expect(eligibilityFor(policy, 'partie@garage.fr')).toBe('blocked')
+    expect(eligibilityFor(policy, 'ok@garage.fr')).toBe('ok')
   })
 })

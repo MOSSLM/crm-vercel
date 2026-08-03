@@ -405,3 +405,64 @@ describe('événements sans effet sur le verdict', () => {
     )
   })
 })
+
+/* ── Défauts trouvés par l'audit de mise en service ──────────────────────── */
+
+describe('audit — ne condamner QUE la bonne adresse', () => {
+  it('échappe les jokers SQL du motif de recherche', async () => {
+    // `_` et `%` sont les jokers de LIKE/ILIKE. Sans échappement,
+    // `jean_dupont@garage.fr` attrapait aussi `jean.dupont@garage.fr` : on
+    // gelait — et sur une plainte, on blacklistait définitivement — des
+    // prospects qui n'avaient rien demandé.
+    const spies = setupClient({
+      email_events: { data: [{ event_id: 'msg_x' }], error: null },
+      contacts: { data: [], error: null },
+      entreprises: { data: [], error: null },
+    })
+    const { POST } = await importRoute()
+    await POST(signedRequest(bounced('jean_dupont@garage.fr', { type: 'Permanent' })))
+
+    const motifs = spies.contacts.filters.filter(([col]) => col === 'email').map(([, v]) => v)
+    expect(motifs).toContain('jean\\_dupont@garage.fr')
+    expect(motifs).not.toContain('jean_dupont@garage.fr')
+  })
+
+  it('sort le prospect du pipeline même quand l’adresse est sur le CONTACT', async () => {
+    // Le destinataire d'une séquence est `contacts.email` en priorité ;
+    // `entreprises.email` n'est qu'un repli. Ne regarder que les entreprises
+    // laissait la carte en « en cours » : un commercial rappelait quelqu'un qui
+    // venait de nous signaler comme indésirables.
+    const spies = setupClient({
+      email_events: { data: [{ event_id: 'msg_x' }], error: null },
+      contacts: { data: [{ id: 'c-1', entreprise_id: 7 }], error: null },
+      entreprises: { data: [], error: null },
+      opportunites: { data: [{ id: 'opp-1' }], error: null },
+    })
+    const { POST } = await importRoute()
+    await POST(
+      signedRequest({
+        type: 'email.complained',
+        created_at: new Date().toISOString(),
+        data: { email_id: 're_9', to: ['jean@garage.fr'] },
+      }),
+    )
+
+    expect(spies.sales_pipeline_state.upserts[0]).toEqual(
+      expect.objectContaining({ opportunite_id: 'opp-1', state: 'black' }),
+    )
+  })
+
+  it('ne ressuscite pas une adresse supprimée sur une livraison', async () => {
+    // La suppression est une décision ; la livraison n'est qu'une mesure, et
+    // elle ne la rediscute pas.
+    const spies = setupClient({
+      email_events: { data: [{ event_id: 'msg_x' }], error: null },
+      email_suppressions: { data: [{ email: 'jean@garage.fr' }], error: null },
+      regulator_settings: { data: { verify_ttl_days: 120 }, error: null },
+    })
+    const { POST } = await importRoute()
+    await POST(signedRequest(delivered('jean@garage.fr')))
+
+    expect(spies.email_verifications?.updates ?? []).toHaveLength(0)
+  })
+})

@@ -66,6 +66,11 @@ export interface StoredVerdict {
   fresh: boolean
   /** Cette adresse est-elle sur la liste de suppression ? */
   suppressed: boolean
+  /**
+   * A-t-on RÉUSSI à consulter la liste de suppression ? `false` signifie « je
+   * ne sais pas », ce qui doit retenir l'envoi — pas l'autoriser.
+   */
+  suppressionKnown: boolean
 }
 
 /**
@@ -85,6 +90,11 @@ export type SendEligibility =
 export function eligibilityOf(verdict: StoredVerdict | undefined): SendEligibility {
   if (!verdict) return 'pending'
   if (verdict.suppressed) return 'blocked'
+  // On n'a pas pu consulter la liste de suppression : on retient, on n'autorise
+  // pas. Le blocage est provisoire et se lève seul au passage suivant — c'est
+  // très exactement le prix à payer pour ne jamais écrire à quelqu'un qui s'est
+  // désabonné.
+  if (!verdict.suppressionKnown) return 'pending'
   // Un verdict de mort reste vrai même périmé : une syntaxe cassée ne se répare
   // pas toute seule, et revérifier ne servirait qu'à retarder le constat.
   if (verdict.status === 'invalid') return 'blocked'
@@ -105,7 +115,12 @@ type VerificationRow = {
   details: Record<string, unknown> | null
 }
 
-const toStored = (row: VerificationRow, suppressed: boolean, now: number): StoredVerdict => {
+const toStored = (
+  row: VerificationRow,
+  suppressed: boolean,
+  now: number,
+  suppressionKnown: boolean,
+): StoredVerdict => {
   const expiresAt = row.expires_at ? Date.parse(row.expires_at) : 0
   return {
     email: row.email,
@@ -118,6 +133,7 @@ const toStored = (row: VerificationRow, suppressed: boolean, now: number): Store
     expiresAt,
     fresh: Number.isFinite(expiresAt) && expiresAt > now,
     suppressed,
+    suppressionKnown,
   }
 }
 
@@ -144,7 +160,8 @@ export async function loadVerdicts(
   if (normalized.length === 0) return out
 
   const now = Date.now()
-  const suppressed = await loadSuppressions(sb, normalized)
+  const suppression = await loadSuppressions(sb, normalized)
+  const suppressed = suppression.emails
 
   for (const slice of chunk(normalized, 500)) {
     try {
@@ -157,7 +174,7 @@ export async function loadVerdicts(
         continue
       }
       for (const row of (data ?? []) as VerificationRow[]) {
-        out.set(row.email, toStored(row, suppressed.has(row.email), now))
+        out.set(row.email, toStored(row, suppressed.has(row.email), now, suppression.ok))
       }
     } catch {
       return out
@@ -179,6 +196,7 @@ export async function loadVerdicts(
         expiresAt: 0,
         fresh: true,
         suppressed: true,
+        suppressionKnown: true,
       })
     }
   }
@@ -187,22 +205,38 @@ export async function loadVerdicts(
 }
 
 /** Adresses présentes dans `email_suppressions`, parmi celles demandées. */
+export interface SuppressionLookup {
+  emails: Set<string>
+  /**
+   * La liste a-t-elle pu être lue ?
+   *
+   * Distinction vitale : « personne n'est supprimé » et « je n'ai pas pu
+   * savoir qui l'est » ne doivent pas produire la même décision. Rendre une
+   * liste vide sur une erreur de lecture revenait à autoriser l'envoi vers
+   * quelqu'un qui s'est désabonné — un manquement au RGPD, pas une
+   * approximation technique.
+   */
+  ok: boolean
+}
+
 export async function loadSuppressions(
   sb: SupabaseClient,
   emails: readonly string[],
-): Promise<Set<string>> {
+): Promise<SuppressionLookup> {
   const out = new Set<string>()
-  if (emails.length === 0) return out
+  if (emails.length === 0) return { emails: out, ok: true }
   for (const slice of chunk([...emails], 500)) {
     try {
       const { data, error } = await sb.from('email_suppressions').select('email').in('email', slice)
-      if (error) return out
+      // Table absente = migration non appliquée : il n'y a légitimement aucune
+      // suppression, ce n'est pas un échec de lecture.
+      if (error) return { emails: out, ok: isMissingTable(error) }
       for (const row of (data ?? []) as { email: string }[]) out.add(row.email)
     } catch {
-      return out
+      return { emails: out, ok: false }
     }
   }
-  return out
+  return { emails: out, ok: true }
 }
 
 /* ── Inscription en file ─────────────────────────────────────────────────── */
@@ -326,9 +360,21 @@ export async function loadDomainFacts(
 }
 
 async function saveDomainFacts(sb: SupabaseClient, domain: string, dns: DnsAnswer): Promise<void> {
+  // NE RIEN CACHER quand le DNS n'a pas répondu.
+  //
+  // Le cache ne sait stocker qu'une résolution : des MX, ou pas de MX. Il n'a
+  // pas de troisième état pour « on ne sait pas ». Écrire un résolveur muet
+  // sous la forme « aucun MX » revenait donc à condamner le domaine : toute
+  // relecture le lisait comme « pas de serveur mail », soit un verdict
+  // `invalid` valable UN AN, pour toutes les adresses du domaine — et la
+  // contagion par domaine d'entreprise pouvait l'étendre aux voisines.
+  //
+  // Un hoquet réseau de quelques secondes ne doit pas coûter un domaine. Sans
+  // ligne en cache, la résolution est simplement retentée au passage suivant.
+  if (dns.unresolved) return
+
   const provider = dns.mxHosts.length > 0 ? providerFromMx(dns.mxHosts) : null
-  // Un résolveur muet ne mérite pas une semaine de cache : on retente vite.
-  const expiresAt = dns.unresolved ? Date.now() + DOMAIN_RETRY_MS : Date.now() + DOMAIN_TTL_DAYS * DAY_MS
+  const expiresAt = Date.now() + DOMAIN_TTL_DAYS * DAY_MS
   try {
     await sb.from('email_domain_cache').upsert(
       {

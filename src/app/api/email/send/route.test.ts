@@ -36,7 +36,19 @@ describe('POST /api/email/send', () => {
     });
     mockEmailsSend.mockResolvedValue({ data: { id: 'res-1' }, error: null });
     mockEmailLogsInsert.mockResolvedValue({ error: null });
-    mockFrom.mockImplementation(() => ({ insert: mockEmailLogsInsert }));
+    // Le garde d'envoi consulte désormais la liste de suppression et les
+    // verdicts avant tout envoi : la chaîne doit savoir répondre à un `select`,
+    // pas seulement à un `insert`.
+    mockFrom.mockImplementation(() => {
+      const chain: Record<string, unknown> = { insert: mockEmailLogsInsert };
+      for (const method of ['select', 'eq', 'in', 'order', 'limit']) {
+        chain[method] = jest.fn(() => chain);
+      }
+      chain.maybeSingle = jest.fn().mockResolvedValue({ data: null, error: null });
+      chain.then = (resolve: (v: unknown) => unknown) =>
+        Promise.resolve({ data: [], error: null }).then(resolve);
+      return chain;
+    });
   });
   afterEach(() => {
     process.env = ORIGINAL_ENV;

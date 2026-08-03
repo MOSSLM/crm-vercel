@@ -26,7 +26,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadTestPhase, recipientAllowed } from './test-guard'
 import { normalizeEmail } from './verify/normalize'
-import { eligibilityOf, loadVerdicts, type SendEligibility } from './verify/service'
+import { eligibilityOf, loadSuppressions, loadVerdicts, type SendEligibility } from './verify/service'
 
 export type BlockReason = 'mode_test' | 'email_suppressed' | 'email_invalid' | 'email_unverified'
 
@@ -66,26 +66,45 @@ export function resetSendGuardCache(): void {
   cache = null
 }
 
+/** La colonne n'existe pas encore : migration non appliquée, pas une panne. */
+const isMissingColumn = (error: { code?: string; message?: string } | null | undefined): boolean =>
+  !!error &&
+  (error.code === '42703' ||
+    error.code === 'PGRST204' ||
+    error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    /does not exist|could not find the (table|column)/i.test(error.message ?? ''))
+
 async function verifyEnabled(sb: SupabaseClient): Promise<boolean> {
   const now = Date.now()
   if (cache && now - cache.at < CACHE_TTL_MS) return cache.verifyBeforeSend
 
-  let verifyBeforeSend = false
   try {
-    const { data } = await sb
+    const { data, error } = await sb
       .from('regulator_settings')
       .select('verify_before_send')
       .eq('id', 'global')
       .maybeSingle()
-    verifyBeforeSend = (data as { verify_before_send?: boolean } | null)?.verify_before_send === true
-  } catch {
-    // Migration pas encore appliquée : on n'invente pas un garde qui bloquerait
-    // des envois légitimes. Même parti pris que le garde de phase de test.
-    verifyBeforeSend = false
-  }
 
-  cache = { at: now, verifyBeforeSend }
-  return verifyBeforeSend
+    if (error) {
+      // Colonne absente = migration non appliquée : le garde n'existe pas
+      // encore, on retrouve le comportement d'avant. C'est légitime.
+      if (isMissingColumn(error)) {
+        cache = { at: now, verifyBeforeSend: false }
+        return false
+      }
+      // Panne passagère : surtout NE PAS conclure « garde désactivé ». On
+      // conserve la dernière valeur connue, et à défaut on garde le garde
+      // ACTIF — le sens sûr est de retenir, pas d'ouvrir les vannes.
+      return cache?.verifyBeforeSend ?? true
+    }
+
+    const verifyBeforeSend = (data as { verify_before_send?: boolean } | null)?.verify_before_send === true
+    cache = { at: now, verifyBeforeSend }
+    return verifyBeforeSend
+  } catch {
+    return cache?.verifyBeforeSend ?? true
+  }
 }
 
 /* ── Le garde ────────────────────────────────────────────────────────────── */
@@ -101,14 +120,34 @@ async function verifyEnabled(sb: SupabaseClient): Promise<boolean> {
 export async function allowRecipient(sb: SupabaseClient, to: string | null | undefined): Promise<GuardVerdict> {
   const email = normalizeEmail(to)
 
-  // 1. Suppression et vérification (seulement si le garde est actif).
-  if (email && (await verifyEnabled(sb))) {
-    const verdicts = await loadVerdicts(sb, [email])
-    const verdict = verdicts.get(email)
+  // 0. Ce qu'on ne sait pas lire n'est pas une adresse.
+  //
+  // Auparavant, une chaîne que `normalizeEmail` rendait `null` sautait TOUS les
+  // contrôles de suppression et de vérification, et ressortait autorisée — le
+  // garde laissait donc passer précisément ce qu'il y a de moins fiable.
+  if (!email) {
+    return { allowed: false, reason: 'email_invalid', detail: 'adresse illisible' }
+  }
 
-    if (verdict?.suppressed) {
-      return { allowed: false, reason: 'email_suppressed', detail: verdict.reason || undefined }
-    }
+  // 1. La liste de suppression, TOUJOURS.
+  //
+  // Elle ne dépend pas de l'interrupteur `verify_before_send` : un
+  // désabonnement ou une plainte est une obligation légale, pas une option de
+  // confort. Couper la vérification ne doit pas rouvrir la porte à quelqu'un qui
+  // a demandé qu'on cesse de lui écrire.
+  const suppression = await loadSuppressions(sb, [email])
+  if (!suppression.ok) {
+    // Lecture impossible : on retient. « Je ne sais pas » ne vaut pas « personne
+    // n'est supprimé ». Le blocage est provisoire.
+    return { allowed: false, reason: 'email_unverified', detail: 'liste de suppression illisible' }
+  }
+  if (suppression.emails.has(email)) {
+    return { allowed: false, reason: 'email_suppressed' }
+  }
+
+  // 2. Vérification de l'adresse, si le garde est actif.
+  if (await verifyEnabled(sb)) {
+    const verdict = (await loadVerdicts(sb, [email])).get(email)
 
     const eligibility = eligibilityOf(verdict)
     if (eligibility === 'blocked') {
@@ -119,7 +158,7 @@ export async function allowRecipient(sb: SupabaseClient, to: string | null | und
     }
   }
 
-  // 2. Phase de test.
+  // 3. Phase de test.
   const phase = await loadTestPhase(sb)
   if (!recipientAllowed(phase, to)) {
     return { allowed: false, reason: 'mode_test', allowlist: [...phase.allowlist] }
@@ -148,15 +187,27 @@ export interface SendPolicy {
  * C'est le même raisonnement que `loadTestPhase`, étendu à la vérification.
  */
 export async function loadSendPolicy(sb: SupabaseClient, emails: readonly string[]): Promise<SendPolicy> {
-  const [enabled, testPhase] = await Promise.all([verifyEnabled(sb), loadTestPhase(sb)])
-  const eligibility = new Map<string, SendEligibility>()
+  const normalized = [...new Set(emails.map((e) => normalizeEmail(e)).filter((e): e is string => !!e))]
+  const [enabled, testPhase, suppression] = await Promise.all([
+    verifyEnabled(sb),
+    loadTestPhase(sb),
+    // Toujours consultée, même garde coupé : voir `allowRecipient`.
+    normalized.length > 0 ? loadSuppressions(sb, normalized) : Promise.resolve({ emails: new Set<string>(), ok: true }),
+  ])
 
-  if (enabled && emails.length > 0) {
-    const verdicts = await loadVerdicts(sb, emails)
-    for (const raw of emails) {
-      const email = normalizeEmail(raw)
-      if (email) eligibility.set(email, eligibilityOf(verdicts.get(email)))
+  const eligibility = new Map<string, SendEligibility>()
+  const verdicts = enabled && normalized.length > 0 ? await loadVerdicts(sb, normalized) : null
+
+  for (const email of normalized) {
+    if (!suppression.ok) {
+      eligibility.set(email, 'pending')
+      continue
     }
+    if (suppression.emails.has(email)) {
+      eligibility.set(email, 'blocked')
+      continue
+    }
+    eligibility.set(email, verdicts ? eligibilityOf(verdicts.get(email)) : 'ok')
   }
 
   return { verifyEnabled: enabled, testPhase, eligibility }
@@ -164,8 +215,9 @@ export async function loadSendPolicy(sb: SupabaseClient, emails: readonly string
 
 /** Éligibilité d'une adresse dans l'état courant du garde. */
 export function eligibilityFor(policy: SendPolicy, to: string | null | undefined): SendEligibility {
-  if (!policy.verifyEnabled) return 'ok'
   const email = normalizeEmail(to)
+  // Illisible : jamais « ok », même garde coupé.
   if (!email) return 'blocked'
-  return policy.eligibility.get(email) ?? 'pending'
+  // Absente de la table : le garde est coupé ET l'adresse n'est pas supprimée.
+  return policy.eligibility.get(email) ?? (policy.verifyEnabled ? 'pending' : 'ok')
 }

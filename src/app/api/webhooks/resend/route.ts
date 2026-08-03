@@ -33,6 +33,7 @@ import { json } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { domainPart, normalizeEmail } from '@/lib/email/verify/normalize'
 import { FOREVER_DAYS } from '@/lib/email/verify/score'
+import { loadSuppressions } from '@/lib/email/verify/service'
 
 export const runtime = 'nodejs'
 
@@ -272,6 +273,12 @@ async function applyToVerification(
   switch (type) {
     case 'email.delivered': {
       await bump('delivered')
+      // Une adresse retirée de la prospection ne redevient pas « valide » parce
+      // qu'un email transactionnel lui est arrivé. La suppression est une
+      // décision ; la livraison n'est qu'une mesure, et elle ne la rediscute pas.
+      const { emails: supprimees } = await loadSuppressions(sb, [email])
+      if (supprimees.has(email)) return true
+
       // LA bonne nouvelle du système : la boîte existe, prouvé. On repart pour
       // la durée réglée sans rien revérifier. Une adresse qui reçoit
       // régulièrement ne repasse donc jamais par le DNS.
@@ -306,7 +313,7 @@ async function applyToVerification(
     case 'email.complained': {
       await bump('complaint')
       await condemn(sb, email, domain, 'plainte', 'complaint', null)
-      await blacklistProspect(sb, email)
+      await blacklistProspect(sb, email, event.data?.email_id ?? null)
       return true
     }
 
@@ -364,12 +371,7 @@ async function condemn(
   // la portent : `sequence_enrollments` ne stocke pas l'adresse, elle est
   // résolue à l'envoi (contact d'abord, entreprise en repli).
   try {
-    const [contacts, entreprises] = await Promise.all([
-      sb.from('contacts').select('id').ilike('email', email),
-      sb.from('entreprises').select('id').ilike('email', email),
-    ])
-    const contactIds = ((contacts.data ?? []) as { id: string }[]).map((r) => r.id)
-    const entrepriseIds = ((entreprises.data ?? []) as { id: number }[]).map((r) => r.id)
+    const { contactIds, entrepriseIds } = await fichesPortant(sb, email)
 
     const freeze = { send_at: null, hold_reason: 'email_invalid' }
     if (contactIds.length > 0) {
@@ -392,19 +394,85 @@ async function condemn(
 }
 
 /**
+ * Fiches portant cette adresse — contacts ET entreprises.
+ *
+ * Deux pièges évités ici :
+ *
+ *   · `ilike` interprète `_` et `%` comme des JOKERS. `jean_dupont@garage.fr`
+ *     attrapait aussi `jean.dupont@garage.fr` et `jeanXdupont@garage.fr` : on
+ *     gelait, et pire on blacklistait, des prospects qui n'avaient rien
+ *     demandé. Le motif est donc échappé.
+ *   · la casse : les adresses sont stockées telles qu'elles ont été saisies
+ *     (`Contact@Garage.fr`), d'où `ilike` plutôt que `eq` — mais sur un motif
+ *     désormais littéral.
+ */
+async function fichesPortant(
+  sb: ReturnType<typeof getServiceClient>,
+  email: string,
+): Promise<{ contactIds: string[]; entrepriseIds: number[] }> {
+  const motif = escapeLike(email)
+  const [contacts, entreprises] = await Promise.all([
+    sb.from('contacts').select('id').ilike('email', motif),
+    sb.from('entreprises').select('id').ilike('email', motif),
+  ])
+  return {
+    contactIds: ((contacts.data ?? []) as { id: string }[]).map((r) => r.id),
+    entrepriseIds: ((entreprises.data ?? []) as { id: number }[]).map((r) => r.id),
+  }
+}
+
+/** Neutralise les jokers de LIKE/ILIKE : `\`, `%`, `_`. */
+const escapeLike = (value: string): string => value.replace(/([\\%_])/g, '\\$1')
+
+/**
  * Une plainte n'est pas qu'un problème de délivrabilité : c'est un prospect qui
  * dit non. On le sort du pipeline commercial, pas seulement de la file d'envoi.
+ *
+ * On cherche l'opportunité par TROIS chemins, parce qu'un seul ne suffisait pas :
+ * le destinataire d'une séquence est `contacts.email` en priorité, et
+ * `entreprises.email` seulement en repli. Ne regarder que les entreprises, comme
+ * avant, laissait donc la carte du prospect en « en cours » dans le pipeline —
+ * un commercial rappelait quelqu'un qui venait de nous signaler comme
+ * indésirables.
  */
-async function blacklistProspect(sb: ReturnType<typeof getServiceClient>, email: string): Promise<void> {
+async function blacklistProspect(sb: ReturnType<typeof getServiceClient>, email: string, resendId: string | null): Promise<void> {
   try {
-    const { data } = await sb.from('entreprises').select('id').ilike('email', email)
-    const ids = ((data ?? []) as { id: number }[]).map((r) => r.id)
-    if (ids.length === 0) return
-    const { data: opps } = await sb.from('opportunites').select('id').in('entreprise_id', ids)
-    for (const opp of (opps ?? []) as { id: string }[]) {
+    const opportuniteIds = new Set<string>()
+
+    // 1. Le plus précis : la ligne du journal d'envoi, qui porte déjà l'opportunité.
+    if (resendId) {
+      const { data } = await sb
+        .from('email_logs')
+        .select('opportunite_id')
+        .eq('resend_id', resendId)
+        .maybeSingle()
+      const id = (data as { opportunite_id?: string | null } | null)?.opportunite_id
+      if (id) opportuniteIds.add(id)
+    }
+
+    // 2. Par les fiches qui portent l'adresse — contacts compris.
+    const { contactIds, entrepriseIds } = await fichesPortant(sb, email)
+    if (contactIds.length > 0) {
+      const { data } = await sb.from('opportunites').select('id').in('contact_id', contactIds)
+      for (const o of (data ?? []) as { id: string }[]) opportuniteIds.add(o.id)
+      // Un contact rattaché à une entreprise sort l'entreprise entière : c'est
+      // la même personne morale qui nous a signalés.
+      const { data: ents } = await sb.from('contacts').select('entreprise_id').in('id', contactIds)
+      for (const c of (ents ?? []) as { entreprise_id: number | null }[]) {
+        if (c.entreprise_id != null) entrepriseIds.push(c.entreprise_id)
+      }
+    }
+
+    const ids = [...new Set(entrepriseIds)]
+    if (ids.length > 0) {
+      const { data } = await sb.from('opportunites').select('id').in('entreprise_id', ids)
+      for (const o of (data ?? []) as { id: string }[]) opportuniteIds.add(o.id)
+    }
+
+    for (const opportuniteId of opportuniteIds) {
       await sb.from('sales_pipeline_state').upsert(
         {
-          opportunite_id: opp.id,
+          opportunite_id: opportuniteId,
           state: 'black',
           state_reason: 'a signalé nos emails comme indésirables',
         },

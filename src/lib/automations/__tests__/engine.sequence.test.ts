@@ -101,6 +101,8 @@ describe('processSequenceEnrollment', () => {
       automation_connections: tableChain({ data: null, error: null }),
       email_signature_settings: tableChain({ data: null, error: null }),
       email_logs: tableChain(),
+      email_suppressions: tableChain({ data: [], error: null }),
+      email_verifications: tableChain({ data: [], error: null }),
       sequence_enrollments: tableChain(),
       prospection_tasks: tableChain({ data: [], error: null }),
       regulator_settings: tableChain({
