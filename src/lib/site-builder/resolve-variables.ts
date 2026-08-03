@@ -70,15 +70,32 @@ export async function resolveEnterpriseVariables(
   let serviceTags: string[] = [];
   let entStats: Array<{ label: string; value: string; display_order?: number }> = [];
 
-  if (site.enterprise_id) {
-    const { data: companyRaw } = await supabase
-      .from("entreprises")
-      .select(
-        "id, name, telephone, email, adresse, ville, code_postal, pays, logo_url, " +
-        "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats, horaires"
-      )
-      .eq("id", site.enterprise_id)
-      .single();
+  // These three reads depend only on the site row the caller already holds, so
+  // they are issued together instead of in three separate waves. Their RESULTS
+  // are still consumed in the original order — variable precedence (entreprise,
+  // then projet, then enrichissement as fill-only) is load-bearing; only the
+  // waiting is shared. Both helpers swallow their own query errors and resolve
+  // to null/[], so an early rejection can't escape before it is awaited.
+  const companyPromise = site.enterprise_id
+    ? supabase
+        .from("entreprises")
+        .select(
+          "id, name, telephone, email, adresse, ville, code_postal, pays, logo_url, " +
+          "site_web_canonique, note_moyenne, nombre_avis, service_tags, stats, horaires"
+        )
+        .eq("id", site.enterprise_id)
+        .single()
+    : null;
+  const projectIdPromise = resolveLeadMagnetProjectId(supabase, {
+    explicitProjectId: site.lead_magnet_project_id,
+    enterpriseId: site.enterprise_id,
+  });
+  const enrichmentPromise = site.enterprise_id
+    ? fetchEnrichmentSlice(supabase, site.enterprise_id)
+    : null;
+
+  if (companyPromise) {
+    const { data: companyRaw } = await companyPromise;
 
     const company = companyRaw as unknown as {
       id: number;
@@ -131,12 +148,7 @@ export async function resolveEnterpriseVariables(
   // des projets de l'entreprise (il y en a un par OPPORTUNITÉ). Règle unique
   // partagée avec l'aperçu de l'éditeur — quand les deux divergent, un site
   // publié n'affiche pas les mêmes chiffres que ce que montre le builder.
-  const projectId = (
-    await resolveLeadMagnetProjectId(supabase, {
-      explicitProjectId: site.lead_magnet_project_id,
-      enterpriseId: site.enterprise_id,
-    })
-  ).projectId;
+  const projectId = (await projectIdPromise).projectId;
 
   let reviews: ReviewItem[] = [];
   // Enrichissement issu du projet (sortie edge function). Null tant qu'aucun
@@ -251,9 +263,8 @@ export async function resolveEnterpriseVariables(
   // after entreprises/overrides/manual variables so it never overrides them.
   // Covers zones_desservies, annee_experience, horaires fallback, departement,
   // region, telephone_lien and email_domain.
-  if (site.enterprise_id) {
-    const enrichment = await fetchEnrichmentSlice(supabase, site.enterprise_id);
-    applyEnrichmentVariables(vars, enrichment);
+  if (enrichmentPromise) {
+    applyEnrichmentVariables(vars, await enrichmentPromise);
   }
   applyDerivedVariables(vars);
 
