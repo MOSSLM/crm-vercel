@@ -366,6 +366,32 @@ alter table public.email_domain_cache enable row level security;
 alter table public.email_suppressions enable row level security;
 alter table public.email_events enable row level security;
 
+-- ── Le service-role d'abord ───────────────────────────────────────────────
+--
+-- Ces quatre tables ne sont PAS lues par un humain connecté : elles le sont par
+-- le ticker et par le webhook, côté serveur, via la clé de service. Or les
+-- politiques ci-dessous s'appuient sur `is_staff()` / `is_admin()`, qui lisent
+-- le profil de `auth.uid()` — vide pour le service-role. Sur un projet où ce
+-- rôle ne porte pas `BYPASSRLS`, il ne voit alors AUCUNE ligne, **sans la
+-- moindre erreur** : la file paraît vide, le worker rend « rien à faire », et
+-- la vérification est à l'arrêt sans que rien ne le signale.
+--
+-- On ne désactive pas la RLS pour autant : on donne son accès au seul rôle qui
+-- en a besoin, explicitement.
+drop policy if exists "service_role all email_verifications" on public.email_verifications;
+drop policy if exists "service_role all email_domain_cache" on public.email_domain_cache;
+drop policy if exists "service_role all email_suppressions" on public.email_suppressions;
+drop policy if exists "service_role all email_events" on public.email_events;
+
+create policy "service_role all email_verifications" on public.email_verifications
+  for all to service_role using (true) with check (true);
+create policy "service_role all email_domain_cache" on public.email_domain_cache
+  for all to service_role using (true) with check (true);
+create policy "service_role all email_suppressions" on public.email_suppressions
+  for all to service_role using (true) with check (true);
+create policy "service_role all email_events" on public.email_events
+  for all to service_role using (true) with check (true);
+
 drop policy if exists "staff read email_verifications" on public.email_verifications;
 drop policy if exists "admin write email_verifications" on public.email_verifications;
 create policy "staff read email_verifications" on public.email_verifications
