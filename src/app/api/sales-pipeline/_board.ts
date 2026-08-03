@@ -273,6 +273,39 @@ export function derivePosition(opts: {
   return columns[0].id
 }
 
+/**
+ * Le pipeline où l'agent a le plus d'affaires — le seul défaut qui ne lui
+ * ouvre pas un tableau vide maintenant que ses prospects restent dans le
+ * pipeline d'origine de leur affaire.
+ */
+async function busiestPipelineFor(
+  sb: ReturnType<typeof getServiceClient>,
+  ownerId: string,
+): Promise<string | null> {
+  const { data } = await sb
+    .from('opportunites')
+    .select('pipeline_id')
+    .eq('owner_id', ownerId)
+    .not('pipeline_id', 'is', null)
+    .limit(OPPORTUNITY_LIMIT)
+
+  const counts = new Map<string, number>()
+  for (const row of data ?? []) {
+    const id = row.pipeline_id as string
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+
+  let best: string | null = null
+  let bestCount = 0
+  for (const [id, count] of counts) {
+    if (count > bestCount) {
+      best = id
+      bestCount = count
+    }
+  }
+  return best
+}
+
 export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   { ok: true; data: SalesBoardData } | { ok: false; error: string; status: number }
 > {
@@ -294,10 +327,18 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   }))
   if (pipelines.length === 0) return { ok: false, error: 'aucun_pipeline', status: 404 }
 
-  // Le pipeline demandé, sinon « Agent SAMA » (celui du démarchage), sinon le
-  // pipeline par défaut du CRM.
+  // Le pipeline demandé, sinon celui où l'appelant a le plus d'affaires, sinon
+  // « Agent SAMA », sinon le pipeline par défaut du CRM.
+  //
+  // Le repli sur « Agent SAMA » était juste tant que l'attribution y ouvrait une
+  // affaire pour chaque prospect. Depuis qu'elle réutilise l'affaire existante,
+  // les prospects d'un agent restent dans « Streak Mars/Avril » ou le pipeline
+  // par défaut : ouvrir le tableau commercial sur « Agent SAMA » afficherait un
+  // écran vide à un agent qui a pourtant tout son portefeuille.
+  const busiestPipelineId = query.ownerId ? await busiestPipelineFor(sb, query.ownerId) : null
   const selectedPipeline =
     pipelines.find((p) => p.id === query.pipelineId) ??
+    pipelines.find((p) => p.id === busiestPipelineId) ??
     pipelines.find((p) => /agent sama/i.test(p.nom)) ??
     pipelines.find((p) => p.isDefault) ??
     pipelines[0]
