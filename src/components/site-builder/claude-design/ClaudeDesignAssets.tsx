@@ -17,6 +17,7 @@ import {
   type Tweaks,
 } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { coerceThemeSets } from "@/lib/site-builder/claude-design/parse-theme-sets";
+import { resolveFontLinkTags } from "@/lib/site-builder/claude-design/font-links";
 
 export interface ClaudeDesignAssetsData {
   sharedCss: string;
@@ -67,8 +68,11 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks, themeSets }: 
   return (
     <>
       {fontHref ? <link rel="stylesheet" href={fontHref} /> : null}
-      {fontLinks.map((href, i) => (
-        <link key={i} rel="stylesheet" href={href} />
+      {/* The stored list is hrefs only — the `rel` is recovered from each URL
+          shape. See font-links.ts: emitting the harvested preconnect hints as
+          stylesheets meant two render-blocking 404s on every page. */}
+      {resolveFontLinkTags(fontLinks).map((tag, i) => (
+        <link key={i} rel={tag.rel} href={tag.href} crossOrigin={tag.crossOrigin} />
       ))}
       <style data-cd-theme dangerouslySetInnerHTML={{ __html: `${sharedCss}\n${rootVars}` }} />
       <script dangerouslySetInnerHTML={{ __html: `${setAttrsJs}\n${extrasJs}` }} />
