@@ -16,9 +16,15 @@
 //   2. Coupe-circuit : dès que Jina renvoie 429 sur un site, on cesse de le
 //      solliciter pour les autres pages du même site (évite d'attendre pour rien).
 //   3. Fetch direct avec un User-Agent de navigateur (réduit les 403).
-//   4. On tente plusieurs variantes d'URL pour la home (chemin d'origine,
-//      origine, http, bascule www) avant d'abandonner.
+//   4. On tente les quatre variantes d'URL (www/apex × https/http) avant
+//      d'abandonner — cf. `url-variants.ts`. Et surtout : la variante qui a
+//      RÉPONDU devient l'origine du reste du scraping. Sans ça, la home était
+//      trouvée sur `exemple.fr` mais les pages secondaires (contact, mentions
+//      légales — celles qui portent les emails et le SIRET) continuaient d'être
+//      demandées à `www.exemple.fr`, injoignable, et revenaient vides.
 // =====================================================================
+
+import { buildHomeCandidates, originOf } from "./url-variants.ts";
 
 const JINA_BASE = "https://r.jina.ai/";
 const JINA_API_KEY = Deno.env.get("JINA_API_KEY") ?? "";
@@ -53,46 +59,6 @@ export interface ScrapedSite {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** Normalise "exemple.fr/x" → URL absolue (ajoute https:// si absent). */
-function toAbsoluteUrl(raw: string): URL | null {
-  if (!raw) return null;
-  try {
-    const withScheme = raw.match(/^https?:\/\//i) ? raw : `https://${raw}`;
-    return new URL(withScheme);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Construit la liste ordonnée d'URLs à tenter pour la home, à partir de l'URL
- * brute stockée en base. On garde le chemin d'origine (certains sites ne rendent
- * du contenu que sur /accueil), puis on retombe sur l'origine, le http, et la
- * bascule www.
- */
-function buildHomeCandidates(rawUrl: string): { origin: string; candidates: string[] } | null {
-  const u = toAbsoluteUrl(rawUrl);
-  if (!u) return null;
-  const origin = u.origin;
-  const candidates: string[] = [];
-  const push = (v: string) => {
-    if (v && !candidates.includes(v)) candidates.push(v);
-  };
-
-  // 1. URL d'origine complète (avec chemin) si elle apporte un chemin utile.
-  if (u.pathname && u.pathname !== "/") push(origin + u.pathname.replace(/\/+$/, ""));
-  // 2. Origine (racine).
-  push(origin);
-  // 3. Variante http (sites sans redirection https propre).
-  if (u.protocol === "https:") push(`http://${u.host}`);
-  // 4. Bascule www / apex.
-  const host = u.host;
-  const toggledHost = host.startsWith("www.") ? host.slice(4) : `www.${host}`;
-  push(`https://${toggledHost}`);
-
-  return { origin, candidates };
-}
 
 // ---------------------------------------------------------------------
 // Décodage minimal d'entités HTML pour le fallback direct.
@@ -240,7 +206,17 @@ async function fetchJina(targetUrl: string, timeoutMs = 20000): Promise<JinaResu
 // ---------------------------------------------------------------------
 // Fallback : récupération directe du HTML puis conversion en texte.
 // ---------------------------------------------------------------------
-async function fetchDirect(targetUrl: string, timeoutMs = 15000): Promise<string | null> {
+/**
+ * Contenu d'une page, avec l'URL réellement servie quand on la connaît.
+ * `finalUrl` est le fruit des redirections suivies par le fetch direct : c'est
+ * lui qui dit sur quel hôte le site vit vraiment.
+ */
+interface PageFetch {
+  text: string;
+  finalUrl: string | null;
+}
+
+async function fetchDirect(targetUrl: string, timeoutMs = 15000): Promise<PageFetch | null> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -264,7 +240,7 @@ async function fetchDirect(targetUrl: string, timeoutMs = 15000): Promise<string
     }
     const html = await res.text();
     if (!html) return null;
-    return htmlToText(html);
+    return { text: htmlToText(html), finalUrl: res.url || targetUrl };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(`Direct fetch error for ${targetUrl}: ${msg}`);
@@ -275,11 +251,12 @@ async function fetchDirect(targetUrl: string, timeoutMs = 15000): Promise<string
 }
 
 /** Tente Jina en tenant compte du coupe-circuit de rate-limit du run. */
-async function tryJina(targetUrl: string, state: ScrapeState, timeoutMs: number): Promise<string | null> {
+async function tryJina(targetUrl: string, state: ScrapeState, timeoutMs: number): Promise<PageFetch | null> {
   if (state.jinaRateLimited) return null; // déjà rate-limité sur ce site → on n'insiste pas
   const res = await fetchJina(targetUrl, timeoutMs);
   if (res.rateLimited) state.jinaRateLimited = true;
-  return res.text;
+  // Jina ne dit pas où il a atterri : seule la variante demandée fait foi.
+  return res.text ? { text: res.text, finalUrl: null } : null;
 }
 
 /**
@@ -293,19 +270,19 @@ async function fetchPage(
   minChars: number,
   state: ScrapeState,
   timeoutMs = 15000,
-): Promise<string | null> {
+): Promise<PageFetch | null> {
   const jina = () => tryJina(targetUrl, state, timeoutMs);
   const direct = () => fetchDirect(targetUrl, timeoutMs);
   const order = HAS_JINA_KEY ? [jina, direct] : [direct, jina];
 
-  const gathered: string[] = [];
+  const gathered: PageFetch[] = [];
   for (const source of order) {
     const out = await source();
-    if (out && out.trim().length >= minChars) return out;
-    if (out && out.trim().length > 0) gathered.push(out);
+    if (out && out.text.trim().length >= minChars) return out;
+    if (out && out.text.trim().length > 0) gathered.push(out);
   }
   // Aucune source complète → on renvoie le meilleur contenu partiel disponible.
-  return gathered.sort((a, b) => b.length - a.length)[0] ?? null;
+  return gathered.sort((a, b) => b.text.length - a.text.length)[0] ?? null;
 }
 
 /**
@@ -324,11 +301,17 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
   // On tente la home sur chaque variante jusqu'à obtenir du contenu utile.
   let homeMarkdown: string | null = null;
   let homeUrl = origin;
+  // L'origine qui a RÉPONDU — pas celle qui était stockée. C'est elle qui sert
+  // au reste du scraping : demander les pages secondaires à un hôte qu'on vient
+  // de constater injoignable ne peut rien donner.
+  let workingOrigin = origin;
   for (const candidate of candidates) {
-    const md = await fetchPage(candidate, MIN_HOME_CHARS, state);
-    if (md && md.trim().length >= MIN_HOME_CHARS) {
-      homeMarkdown = md;
-      homeUrl = candidate;
+    const page = await fetchPage(candidate, MIN_HOME_CHARS, state);
+    if (page && page.text.trim().length >= MIN_HOME_CHARS) {
+      homeMarkdown = page.text;
+      // Une redirection fait autorité sur la variante demandée.
+      homeUrl = page.finalUrl ?? candidate;
+      workingOrigin = originOf(homeUrl) ?? originOf(candidate) ?? origin;
       break;
     }
   }
@@ -345,12 +328,12 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
 
   const pages = [{ url: homeUrl, path: "/", markdown: homeMarkdown }];
 
-  // Pages secondaires en parallèle (relatives à l'origine).
+  // Pages secondaires en parallèle, relatives à l'origine qui répond.
   const secondaryFetches = SECONDARY_PATHS.map(async (path) => {
-    const u = `${origin}/${path}`;
-    const md = await fetchPage(u, MIN_SECONDARY_CHARS, state, 10000);
-    if (md && md.trim().length >= MIN_SECONDARY_CHARS) {
-      return { url: u, path: `/${path}`, markdown: md };
+    const u = `${workingOrigin}/${path}`;
+    const page = await fetchPage(u, MIN_SECONDARY_CHARS, state, 10000);
+    if (page && page.text.trim().length >= MIN_SECONDARY_CHARS) {
+      return { url: page.finalUrl ?? u, path: `/${path}`, markdown: page.text };
     }
     return null;
   });
@@ -361,7 +344,7 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
 
   const totalChars = pages.reduce((acc, p) => acc + p.markdown.length, 0);
 
-  return { base_url: origin, pages, total_chars: totalChars, accessible: true };
+  return { base_url: workingOrigin, pages, total_chars: totalChars, accessible: true };
 }
 
 /**
