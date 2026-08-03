@@ -10,14 +10,23 @@
 import { json } from '@/app/api/_lib/respond'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { dispatchEvent } from '@/lib/automations/dispatch'
-import { runWorkflowAutomation, processSequenceEnrollment, holdForMissingEmail } from '@/lib/automations/engine'
+import {
+  runWorkflowAutomation,
+  processSequenceEnrollment,
+  holdForMissingEmail,
+  holdForInvalidEmail,
+  holdForPendingVerification,
+} from '@/lib/automations/engine'
 import {
   buildQueueItems,
   loadDueEnrollments,
+  loadQueueEmailContext,
   loadRegulatorSettings,
   loadSendHistory,
   planFromContext,
 } from '@/lib/automations/regulator-db'
+import { enqueueVerification } from '@/lib/email/verify/service'
+import { tripBounceGuard } from '@/lib/email/bounce-guard'
 import type { Automation, AutomationJob, SequenceEnrollment } from '@/components/automations/types'
 import type { RunContext as EngineContext } from '@/lib/automations/engine'
 
@@ -71,6 +80,12 @@ async function handle(req: Request): Promise<Response> {
     emailsNoAddress: 0,
     /** Retenus par la phase de test : rien préparé, rien avancé. */
     emailsTestHeld: 0,
+    /** Adresse qui ne recevra pas : gelée en attendant une correction. */
+    emailsInvalid: 0,
+    /** Adresse sans verdict frais : gelée le temps de la vérifier. */
+    emailsUnverified: 0,
+    /** Le disjoncteur a-t-il coupé la file sur ce tick ? */
+    bounceGuardTripped: false as boolean | string,
     errors: 0,
   }
 
@@ -142,7 +157,8 @@ async function handle(req: Request): Promise<Response> {
   // 3. Étapes de séquence dues
   const nowMs = Date.parse(now)
   const settings = await loadRegulatorSettings(sb)
-  const { emails, noEmail, testHeld, others } = await loadDueEnrollments(sb, nowMs)
+  const { emails, noEmail, testHeld, invalidEmail, unverified, others, addressOf } =
+    await loadDueEnrollments(sb, nowMs)
 
   // 3a. Les étapes non-email (WhatsApp, appel, LinkedIn, attente) ne passent pas
   //     par la file : elles créent une tâche ou avancent le pointeur tout de suite.
@@ -189,10 +205,55 @@ async function handle(req: Request): Promise<Response> {
     }
   }
 
+  // 3a quater. L'adresse ne recevra pas (domaine mort, syntaxe cassée, rebond
+  //            dur déjà encaissé). L'inscription gèle avec son motif : elle
+  //            n'est pas perdue, elle attend une correction. Saisir une nouvelle
+  //            adresse depuis le pipeline la dégèle toute seule.
+  for (const { enrollment } of invalidEmail) {
+    try {
+      await holdForInvalidEmail(sb, enrollment.id)
+      result.emailsInvalid++
+    } catch {
+      result.errors++
+    }
+  }
+
+  // 3a quinquies. Pas de verdict frais : blocage PROVISOIRE. On inscrit
+  //               l'adresse en file de vérification et on gèle sans repousser
+  //               `next_run_at` — le tick de vérification lève l'attente tout
+  //               seul, en général en quelques minutes.
+  for (const { enrollment } of unverified) {
+    try {
+      await enqueueVerification(sb, addressOf.get(enrollment.id))
+      await holdForPendingVerification(sb, enrollment.id)
+      result.emailsUnverified++
+    } catch {
+      result.errors++
+    }
+  }
+
   // 3b. Les emails passent par le régulateur.
   if (emails.length > 0) {
-    const history = await loadSendHistory(sb, settings, nowMs)
-    const ctx = { settings, history, now: nowMs }
+    // Le disjoncteur, AVANT toute planification. Si le taux de rebond réel a
+    // dérapé sur les dernières vingt-quatre heures, la file se gèle d'elle-même
+    // et l'admin est prévenu. C'est la seule protection qui ne repose sur aucune
+    // prédiction : peu importe comment les adresses ont été classées, si la
+    // réalité dérape, tout s'arrête.
+    //
+    // Consulté ici et pas plus haut : un tick sans rien à envoyer n'a rien à
+    // couper, et doit rester gratuit — il repasse toutes les minutes.
+    const guard = await tripBounceGuard(sb, settings)
+    const planSettings = guard.tripped ? { ...settings, paused: true } : settings
+    if (guard.tripped) result.bounceGuardTripped = guard.detail ?? true
+
+    const history = await loadSendHistory(sb, planSettings, nowMs)
+    // Ce que la file doit savoir des adresses : lesquelles portent un signal
+    // négatif (quota), et quels domaines d'entreprise restent à éprouver.
+    const emailContext = await loadQueueEmailContext(sb, addressOf, planSettings, history.emailsToday)
+    // `planSettings` et pas `settings` : c'est ce qui fait que la coupure vaut
+    // pour le tick courant. Avec les réglages d'origine, les emails de CETTE
+    // minute partiraient malgré le disjoncteur.
+    const ctx = { settings: planSettings, history, now: nowMs, emailContext }
     const plan = planFromContext(buildQueueItems(emails, ctx), ctx)
     const byId = new Map(emails.map((e) => [e.enrollment.id, e.enrollment]))
 

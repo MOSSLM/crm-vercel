@@ -10,6 +10,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cancelEnrollmentWork, processSequenceEnrollment } from '@/lib/automations/engine'
 import { cleanEmail } from '@/lib/automations/regulator-db'
+import { verifyEmail, type VerifyResult } from '@/lib/email/verify/service'
+import type { VerificationStatus } from '@/lib/email/verify/score'
 import type { SequenceDefinition, SequenceEnrollment, SequenceStep } from '@/components/automations/types'
 import { isLostStage, parseColumnId, stepColumnId, type SalesReactionId, type SalesRowState } from './stages'
 
@@ -427,6 +429,18 @@ export interface SetEmailResult {
   target: 'entreprise' | 'contact'
   /** Inscriptions dégelées et remises dans la file. */
   resumed: number
+  /**
+   * Verdict de la vérification, faite dans la foulée. `null` quand le
+   * vérificateur n'est pas disponible — l'adresse est alors simplement
+   * enregistrée, et le tick de vérification s'en occupera.
+   */
+  verification: {
+    status: VerificationStatus
+    /** Phrase française affichable telle quelle. */
+    reason: string
+    /** Correction proposée si le domaine ressemble à une faute de frappe. */
+    suggestion: string | null
+  } | null
 }
 
 /**
@@ -476,19 +490,42 @@ export async function setProspectEmail(
     return { ok: false, error: 'aucune_fiche' }
   }
 
+  // On vérifie l'adresse TOUT DE SUITE, avant de dégeler quoi que ce soit :
+  // corriger une adresse morte par une autre adresse morte ne doit pas relancer
+  // une séquence. Quelques centaines de millisecondes, et l'utilisateur sait
+  // immédiatement à quoi s'en tenir plutôt que de le découvrir au prochain tick.
+  let verdict: VerifyResult | null = null
+  try {
+    verdict = await verifyEmail(sb, email, { force: true })
+  } catch {
+    // Le vérificateur n'est pas une dépendance dure : sans lui, l'adresse est
+    // simplement enregistrée et le tick de vérification s'en occupera.
+  }
+
   // Dégel : les inscriptions bloquées repartent tout de suite, sans attendre la
-  // relecture différée posée par le ticker.
+  // relecture différée posée par le ticker. Les trois motifs liés à l'adresse
+  // sont concernés — c'est précisément ce que la saisie vient de corriger.
   let resume = sb
     .from('sequence_enrollments')
     .update({ hold_reason: null, send_at: null, next_run_at: new Date().toISOString() })
     .eq('status', 'active')
-    .eq('hold_reason', 'no_email')
+    .in('hold_reason', ['no_email', 'email_invalid', 'email_pending'])
   resume = target.opportuniteId
     ? resume.eq('opportunite_id', target.opportuniteId)
     : resume.eq('entreprise_id', entrepriseId as number)
   const { data: resumed } = await resume.select('id')
 
-  return { ok: true, result: { email, target: where, resumed: (resumed ?? []).length } }
+  return {
+    ok: true,
+    result: {
+      email,
+      target: where,
+      resumed: (resumed ?? []).length,
+      verification: verdict
+        ? { status: verdict.status, reason: verdict.reason, suggestion: verdict.details.suggestion }
+        : null,
+    },
+  }
 }
 
 /**

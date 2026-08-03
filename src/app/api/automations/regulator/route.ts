@@ -10,8 +10,9 @@ import { preflight } from '@/app/api/_lib/cors'
 import { regulatorSettingsSchema, type RegulatorSettingsPayload } from '@/app/api/_lib/schemas'
 import { isSchemaGap, migrationMessage } from '@/app/api/_lib/schema-gap'
 import { normalizeWindows, overlappingWindows } from '@/lib/automations/regulator'
+import { resetSendGuardCache } from '@/lib/email/send-guard'
 import { resetTestGuardCache } from '@/lib/email/test-guard'
-import { TEST_GUARD_MIGRATION, buildRegulatorView } from './_view'
+import { TEST_GUARD_MIGRATION, VERIFY_MIGRATION, buildRegulatorView } from './_view'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -50,6 +51,13 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
     if (body.admin_user_id !== undefined) patch.admin_user_id = body.admin_user_id
     if (body.test_mode != null) patch.test_mode = body.test_mode
 
+    if (body.verify_before_send != null) patch.verify_before_send = body.verify_before_send
+    if (body.verify_ttl_days != null) patch.verify_ttl_days = body.verify_ttl_days
+    if (body.risky_daily_share != null) patch.risky_daily_share = body.risky_daily_share
+    if (body.domain_first_touch != null) patch.domain_first_touch = body.domain_first_touch
+    if (body.bounce_guard != null) patch.bounce_guard = body.bounce_guard
+    if (body.bounce_guard_threshold != null) patch.bounce_guard_threshold = body.bounce_guard_threshold
+
     if (body.default_windows != null) {
       const windows = normalizeWindows(body.default_windows)
       if (overlappingWindows(windows).size > 0) {
@@ -73,7 +81,19 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
       // pas jouée. Le dire, plutôt que renvoyer un 500 muet que l'interface
       // traduisait en « Enregistrement impossible ».
       if (isSchemaGap(error)) {
-        const file = 'test_mode' in patch ? TEST_GUARD_MIGRATION : 'la migration du dossier sql/ correspondante'
+        const verifyKeys = [
+          'verify_before_send',
+          'verify_ttl_days',
+          'risky_daily_share',
+          'domain_first_touch',
+          'bounce_guard',
+          'bounce_guard_threshold',
+        ]
+        const file = verifyKeys.some((key) => key in patch)
+          ? VERIFY_MIGRATION
+          : 'test_mode' in patch
+            ? TEST_GUARD_MIGRATION
+            : 'la migration du dossier sql/ correspondante'
         return jsonError(
           'migration_non_appliquee',
           503,
@@ -91,6 +111,7 @@ export const PATCH = withAuth<RegulatorSettingsPayload>(
     // Le garde-fou d'envoi met les réglages en cache quelques secondes :
     // activer ou couper la phase de test doit prendre effet immédiatement.
     resetTestGuardCache()
+    resetSendGuardCache()
 
     const view = await buildRegulatorView()
     return json(view, { headers: cors })

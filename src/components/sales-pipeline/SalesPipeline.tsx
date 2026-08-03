@@ -1489,6 +1489,7 @@ function EmailDialog({
 }) {
   const [email, setEmail] = React.useState(target.current ?? '')
   const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
+  const check = useAddressCheck(email, valid)
 
   return (
     <div className="modal-scrim" onClick={onClose}>
@@ -1523,6 +1524,29 @@ function EmailDialog({
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
+          {/* Le verdict arrive pendant la saisie : découvrir au tick suivant
+              qu'on vient de recopier une adresse morte serait une perte sèche. */}
+          {check.state === 'checking' && (
+            <p className="muted" style={{ fontSize: 11.5 }}>
+              Vérification de l’adresse…
+            </p>
+          )}
+          {check.state === 'done' && check.verdict && (
+            <div className={`sp-verdict ${check.verdict.tone}`}>
+              <span className="t">{check.verdict.label}</span>
+              <span className="d">{check.verdict.reason}</span>
+              {check.verdict.suggestion && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => setEmail(check.verdict!.suggestion as string)}
+                >
+                  Vouliez-vous dire {check.verdict.suggestion} ?
+                </button>
+              )}
+            </div>
+          )}
+
           <p className="muted" style={{ fontSize: 11.5 }}>
             Enregistrée sur la fiche entreprise, au même endroit que toutes les autres adresses du CRM. La séquence
             reprend aussitôt : l’étape email repasse dans la file d’envoi.
@@ -1532,6 +1556,9 @@ function EmailDialog({
               Annuler
             </button>
             <button className="btn accent sm" type="submit" disabled={!valid || busy}>
+              {/* Une adresse jugée morte reste enregistrable : c'est peut-être
+                  la bonne et notre verdict qui se trompe. On prévient, on
+                  n'interdit pas. */}
               Enregistrer
             </button>
           </div>
@@ -1539,6 +1566,98 @@ function EmailDialog({
       </div>
     </div>
   )
+}
+
+/* ── Vérification d'une adresse pendant la saisie ──────────────────────── */
+
+type AddressVerdict = {
+  tone: 'ok' | 'warn' | 'bad' | 'mute'
+  label: string
+  reason: string
+  suggestion: string | null
+}
+
+const VERDICT_TONE: Record<string, AddressVerdict['tone']> = {
+  valid: 'ok',
+  risky: 'warn',
+  invalid: 'bad',
+  unknown: 'mute',
+  pending: 'mute',
+}
+
+const VERDICT_LABEL: Record<string, string> = {
+  valid: 'Adresse vérifiée',
+  risky: 'Adresse douteuse',
+  invalid: 'Adresse invalide',
+  unknown: 'Verdict indisponible',
+  pending: 'Vérification en attente',
+}
+
+/**
+ * Vérifie l'adresse en cours de saisie, après une pause de frappe.
+ *
+ * La vérification tourne côté serveur (DNS, listes, historique de rebonds) et
+ * rend son verdict en quelques centaines de millisecondes. La faire ici plutôt
+ * qu'après l'enregistrement change tout : on peut corriger une faute de frappe
+ * avant qu'elle ne gèle une séquence pendant deux heures.
+ */
+function useAddressCheck(email: string, valid: boolean) {
+  const [state, setState] = React.useState<'idle' | 'checking' | 'done'>('idle')
+  const [verdict, setVerdict] = React.useState<AddressVerdict | null>(null)
+
+  React.useEffect(() => {
+    if (!valid) {
+      setState('idle')
+      setVerdict(null)
+      return
+    }
+    const address = email.trim()
+    let cancelled = false
+    setState('checking')
+
+    // 600 ms : assez pour ne pas vérifier à chaque frappe, assez court pour que
+    // le verdict soit là avant que le doigt n'atteigne « Enregistrer ».
+    const timer = setTimeout(async () => {
+      try {
+        const res = await authedFetch('/api/email/verify', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ emails: [address] }),
+        })
+        if (cancelled) return
+        if (!res.ok) {
+          setState('idle')
+          return
+        }
+        const data = (await res.json()) as {
+          results?: { status?: string; reason?: string; suggestion?: string | null }[]
+        }
+        const first = data.results?.[0]
+        if (!first?.status) {
+          setState('idle')
+          return
+        }
+        setVerdict({
+          tone: VERDICT_TONE[first.status] ?? 'mute',
+          label: VERDICT_LABEL[first.status] ?? first.status,
+          reason: first.reason ?? '',
+          suggestion: first.suggestion ?? null,
+        })
+        setState('done')
+      } catch {
+        // Le vérificateur n'est pas une dépendance dure : sans lui, la saisie
+        // fonctionne exactement comme avant.
+        if (!cancelled) setState('idle')
+      }
+    }, 600)
+
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [email, valid])
+
+  return { state, verdict }
 }
 
 /* ── Saisie complémentaire pour trois des cinq issues ──────────────────── */

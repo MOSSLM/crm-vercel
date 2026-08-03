@@ -88,4 +88,27 @@ export interface RegulatorView {
   testGuardReady?: boolean
   /** Fichier SQL à jouer quand `testGuardReady` est faux. */
   testGuardMigration?: string
+  /** Qualité des adresses et santé de la délivrabilité. */
+  verification?: RegulatorVerification
+}
+
+/** Ce que la page montre de la qualité des adresses (cf. `_view.ts`). */
+export interface RegulatorVerification {
+  ready: boolean
+  migration: string
+  counts: { valid: number; risky: number; invalid: number; unknown: number; pending: number }
+  suppressed: number
+  bounce24h: BounceRate
+  bounce7d: BounceRate
+  overThreshold: boolean
+  invalidHeld: RegulatorMissingEmailRow[]
+  pendingHeld: RegulatorMissingEmailRow[]
+  queueLength: number
+}
+
+export interface BounceRate {
+  sent: number
+  hardBounces: number
+  /** En pourcentage. */
+  rate: number
 }

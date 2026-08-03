@@ -40,7 +40,7 @@ import {
   hmd,
   minutesOfDay,
 } from './parts'
-import type { RegulatorQueueRow, RegulatorView } from './types'
+import type { RegulatorQueueRow, RegulatorVerification, RegulatorView } from './types'
 import '../regulator.css'
 
 const AXIS_HOURS = [6, 8, 10, 12, 14, 16, 18, 20, 22]
@@ -586,6 +586,7 @@ export function RegulatorPage() {
               blockedToday={view.blockedToday}
               testGuardReady={view.testGuardReady !== false}
               testGuardMigration={view.testGuardMigration ?? 'sql/20260802_test_phase_guard.sql'}
+              verification={view.verification}
               saving={saving}
               onPatch={patch}
             />
@@ -955,6 +956,7 @@ function SettingsCard({
   blockedToday,
   testGuardReady,
   testGuardMigration,
+  verification,
   saving,
   onPatch,
 }: {
@@ -964,6 +966,7 @@ function SettingsCard({
   blockedToday: number
   testGuardReady: boolean
   testGuardMigration: string
+  verification?: RegulatorVerification
   saving: boolean
   onPatch: (body: Record<string, unknown>, message?: string) => Promise<boolean>
 }) {
@@ -977,6 +980,10 @@ function SettingsCard({
   const [seed, setSeed] = React.useState('apercu')
   const [cap, setCap] = React.useState(s.dailyCap)
   React.useEffect(() => setCap(s.dailyCap), [s.dailyCap])
+
+  // Migration non jouée : on n'affiche pas des réglages qui échoueraient à
+  // l'enregistrement, on dit quoi faire. Même parti pris que la phase de test.
+  const verifyReady = verification?.ready !== false
 
   const [lo, hi] = gap
   const avg = (lo + hi) / 2
@@ -1239,7 +1246,190 @@ function SettingsCard({
           checked={s.businessDaysOnly}
           onChange={(v) => void onPatch({ business_days_only: v })}
         />
+        <ToggleRow
+          label={`Pause automatique si les rebonds dépassent ${s.bounceGuardThreshold} %`}
+          desc="Le régulateur se coupe seul et prévient l’admin. C’est la seule protection qui ne repose sur aucune prédiction : si la réalité dérape, tout s’arrête."
+          checked={s.bounceGuard}
+          disabled={!verifyReady || saving}
+          onChange={(v) => void onPatch({ bounce_guard: v })}
+        />
       </SetBlock>
+
+      <VerificationBlock
+        s={s}
+        verification={verification}
+        ready={verifyReady}
+        saving={saving}
+        onPatch={onPatch}
+      />
+    </div>
+  )
+}
+
+/**
+ * Qualité des adresses.
+ *
+ * Le bloc dit deux choses, dans cet ordre : ce que vaut la base (répartition
+ * des adresses) et ce que dit la réalité (taux de rebond mesuré). La seconde
+ * prime toujours sur la première — c'est elle qui décide.
+ */
+function VerificationBlock({
+  s,
+  verification,
+  ready,
+  saving,
+  onPatch,
+}: {
+  s: RegulatorSettings
+  verification?: RegulatorVerification
+  ready: boolean
+  saving: boolean
+  onPatch: (body: Record<string, unknown>, message?: string) => Promise<boolean>
+}) {
+  const counts = verification?.counts
+  const known = counts ? counts.valid + counts.risky + counts.invalid + counts.unknown + counts.pending : 0
+  const bounce = verification?.bounce24h
+
+  return (
+    <SetBlock
+      icon="shield"
+      title="Qualité des adresses"
+      extra={!ready ? 'migration à jouer' : s.verifyBeforeSend ? `${known} adresses` : 'garde coupé'}
+    >
+      {!ready ? (
+        <div className="rg-sqlgap">
+          <span className="t">
+            <XI name="warning" className="ico-xs" /> Vérificateur absent de la base
+          </span>
+          <span className="d">
+            La vérification des adresses a besoin des tables <b>email_verifications</b>,{' '}
+            <b>email_domain_cache</b>, <b>email_suppressions</b> et <b>email_events</b>. Jouez ce fichier dans
+            l’éditeur SQL de Supabase, puis rafraîchissez :
+          </span>
+          <code>{verification?.migration ?? 'sql/20260803_email_verification.sql'}</code>
+        </div>
+      ) : (
+        <>
+          <ToggleRow
+            label="Ne rien envoyer vers une adresse non vérifiée"
+            desc="Une adresse jamais contrôlée gèle son étape le temps du contrôle — quelques minutes — au lieu de partir à l’aveugle."
+            checked={s.verifyBeforeSend}
+            disabled={saving}
+            onChange={(v) =>
+              void onPatch(
+                { verify_before_send: v },
+                v ? 'Vérification exigée avant tout envoi' : 'Vérification désactivée',
+              )
+            }
+            accent
+          />
+
+          {counts && known > 0 && (
+            <div className="rg-vgrid">
+              <VerdictTile tone="ok" n={counts.valid} label="Vérifiées" hint="rien à signaler" />
+              <VerdictTile tone="warn" n={counts.risky} label="Douteuses" hint="au compte-gouttes" />
+              <VerdictTile tone="bad" n={counts.invalid} label="Invalides" hint="aucun envoi" />
+              <VerdictTile
+                tone="mute"
+                n={counts.pending + counts.unknown}
+                label="À vérifier"
+                hint="file de fond"
+              />
+            </div>
+          )}
+
+          {/* Le taux de rebond réel : la seule mesure qui ne suppose rien. */}
+          {bounce && (
+            <div className={'rg-bounce' + (verification?.overThreshold ? ' over' : '')}>
+              <div className="v">
+                {bounce.sent === 0 ? '—' : `${bounce.rate.toFixed(1)} %`}
+                <small>de rebonds sur 24 h</small>
+              </div>
+              <p className="rg-hint">
+                {bounce.sent === 0
+                  ? 'Aucun envoi sur les dernières 24 heures.'
+                  : `${bounce.hardBounces} rebond${bounce.hardBounces > 1 ? 's' : ''} dur${
+                      bounce.hardBounces > 1 ? 's' : ''
+                    } sur ${bounce.sent} envoi${bounce.sent > 1 ? 's' : ''}.`}
+                {verification?.bounce7d && verification.bounce7d.sent > 0 && (
+                  <> Sur 7 jours : {verification.bounce7d.rate.toFixed(1)} %.</>
+                )}
+              </p>
+            </div>
+          )}
+
+          {(verification?.invalidHeld.length ?? 0) > 0 && (
+            <p className="rg-hint">
+              <b>{verification?.invalidHeld.length}</b> prospect
+              {(verification?.invalidHeld.length ?? 0) > 1 ? 's' : ''} gelé
+              {(verification?.invalidHeld.length ?? 0) > 1 ? 's' : ''} sur une adresse qui ne recevra pas. Corrigez
+              l’adresse depuis le pipeline commercial : la séquence repart toute seule.
+            </p>
+          )}
+
+          <div className="rg-dual" style={{ marginTop: 10 }}>
+            <span className="rg-lb">revérifier après</span>
+            <NumberField
+              value={s.verifyTtlDays}
+              min={1}
+              max={3650}
+              onCommit={(v) => {
+                if (v !== s.verifyTtlDays) void onPatch({ verify_ttl_days: v })
+              }}
+            />
+            <span className="rg-lb">jours</span>
+          </div>
+          <p className="rg-hint">
+            Une adresse qui reçoit repart pour {s.verifyTtlDays} jours à chaque livraison, sans être retestée.
+          </p>
+
+          <div className="rg-dual" style={{ marginTop: 10 }}>
+            <span className="rg-lb">adresses douteuses, au plus</span>
+            <NumberField
+              value={s.riskyDailyShare}
+              min={0}
+              max={100}
+              onCommit={(v) => {
+                if (v !== s.riskyDailyShare) void onPatch({ risky_daily_share: v })
+              }}
+            />
+            <span className="rg-lb">% du plafond du jour</span>
+          </div>
+          <p className="rg-hint">
+            Est « douteuse » une adresse qui porte un signal négatif concret — un rebond sur le même domaine
+            d’entreprise, un domaine sans serveur mail, des rebonds répétés. Pas simplement « pas encore
+            prouvée » : au démarrage, aucune adresse ne l’est.
+          </p>
+
+          <ToggleRow
+            label="Éprouver un domaine avant d’y envoyer en nombre"
+            desc="Sur un domaine d’entreprise vers lequel rien n’est jamais parti, un seul email s’en va ; les autres attendent son verdict. S’il rebondit, ils sont gelés avant d’être envoyés."
+            checked={s.domainFirstTouch}
+            disabled={saving}
+            onChange={(v) => void onPatch({ domain_first_touch: v })}
+          />
+        </>
+      )}
+    </SetBlock>
+  )
+}
+
+function VerdictTile({
+  tone,
+  n,
+  label,
+  hint,
+}: {
+  tone: 'ok' | 'warn' | 'bad' | 'mute'
+  n: number
+  label: string
+  hint: string
+}) {
+  return (
+    <div className={`rg-vtile ${tone}`}>
+      <b>{n}</b>
+      <span>{label}</span>
+      <small>{hint}</small>
     </div>
   )
 }

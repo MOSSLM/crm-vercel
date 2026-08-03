@@ -10,6 +10,7 @@ import type { Automation, SequenceDefinition } from '@/components/automations/ty
 import {
   buildQueueItems,
   loadDueEnrollments,
+  loadQueueEmailContext,
   loadRegulatorSettings,
   loadSendHistory,
   loadTaskLoads,
@@ -26,6 +27,7 @@ import {
   type RegulatorSettings,
   type SendWindow,
 } from '@/lib/automations/regulator'
+import { MIN_SENDS_FOR_GUARD, measureBounceRate } from '@/lib/email/bounce-guard'
 
 export interface RegulatorQueueRow {
   id: string
@@ -126,10 +128,43 @@ export interface RegulatorView {
   testGuardReady: boolean
   /** Fichier SQL à jouer quand `testGuardReady` est faux. */
   testGuardMigration: string
+  /** Qualité des adresses et santé de la délivrabilité. */
+  verification: RegulatorVerification
+}
+
+/**
+ * Ce que la page Régulateur montre de la qualité des adresses.
+ *
+ * Les compteurs disent l'état de la base ; le taux de rebond dit la réalité.
+ * Les deux ensemble suffisent à savoir si la prospection est saine, sans avoir
+ * à lire la moindre ligne de journal.
+ */
+export interface RegulatorVerification {
+  /** `false` quand sql/20260803_email_verification.sql n'a pas été joué. */
+  ready: boolean
+  migration: string
+  /** Répartition des adresses connues. */
+  counts: { valid: number; risky: number; invalid: number; unknown: number; pending: number }
+  /** Adresses retirées de la prospection (rebond, plainte, désabonnement). */
+  suppressed: number
+  /** Taux de rebond dur mesuré, en pourcentage. */
+  bounce24h: { sent: number; hardBounces: number; rate: number }
+  bounce7d: { sent: number; hardBounces: number; rate: number }
+  /** Le disjoncteur couperait-il maintenant ? (seuil dépassé et plancher atteint) */
+  overThreshold: boolean
+  /** Prospects gelés parce que leur adresse ne recevra pas — à corriger. */
+  invalidHeld: RegulatorMissingEmailRow[]
+  /** Prospects en attente de vérification — se débloquent seuls. */
+  pendingHeld: RegulatorMissingEmailRow[]
+  /** Adresses encore à vérifier dans la file de fond. */
+  queueLength: number
 }
 
 /** Migration qui installe la phase de test (interrupteur + journal des envois retenus). */
 export const TEST_GUARD_MIGRATION = 'sql/20260802_test_phase_guard.sql'
+
+/** Migration qui installe le vérificateur d'adresses et le disjoncteur de rebond. */
+export const VERIFY_MIGRATION = 'sql/20260803_email_verification.sql'
 
 const iso = (ms: number | null | undefined): string | null =>
   ms == null || ms === 0 ? null : new Date(ms).toISOString()
@@ -145,7 +180,20 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
   const history = await loadSendHistory(sb, settings, nowMs)
   const ctx = { settings, history, now: nowMs }
 
-  const { emails, noEmail, testHeld: testHeldDue } = await loadDueEnrollments(sb, nowMs, 400)
+  const {
+    emails,
+    noEmail,
+    testHeld: testHeldDue,
+    invalidEmail: invalidDue,
+    unverified: unverifiedDue,
+    addressOf,
+  } = await loadDueEnrollments(sb, nowMs, 400)
+
+  // La file affichée doit montrer les MÊMES motifs que ceux du ticker : quota
+  // des adresses douteuses et première touche par domaine compris. Sans ça,
+  // l'interface annoncerait un départ que le tick suivant refuserait.
+  const emailContext = await loadQueueEmailContext(sb, addressOf, settings, history.emailsToday)
+  const ctxWithEmails = { ...ctx, emailContext }
 
   // Les inscriptions déjà marquées retenues par le ticker : elles ne sont plus
   // forcément « dues » mais restent à traiter, donc elles doivent apparaître
@@ -154,10 +202,10 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     .from('sequence_enrollments')
     .select('id, automation_id, contact_id, entreprise_id, opportunite_id, current_step, hold_reason')
     .eq('status', 'active')
-    .in('hold_reason', ['no_email', 'test_hold'])
+    .in('hold_reason', ['no_email', 'test_hold', 'email_invalid', 'email_pending'])
     .limit(500)
 
-  type HeldReasonKey = 'no_email' | 'test_hold'
+  type HeldReasonKey = 'no_email' | 'test_hold' | 'email_invalid' | 'email_pending'
   type HeldRow = {
     id: string
     automation_id: string
@@ -186,6 +234,8 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
   // dernière écriture ne doit pas rester dans l'ancienne catégorie.
   remember(noEmail, 'no_email')
   remember(testHeldDue, 'test_hold')
+  remember(invalidDue, 'email_invalid')
+  remember(unverifiedDue, 'email_pending')
   const heldList = [...held.values()]
 
   // Décoration : nom du contact, entreprise, propriétaire. Deux requêtes en lot
@@ -229,10 +279,10 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     }
   }
 
-  let items = buildQueueItems(emails, ctx, decorate)
+  let items = buildQueueItems(emails, ctxWithEmails, decorate)
   if (opts.ownerId) items = items.filter((i) => i.ownerId === opts.ownerId)
 
-  const plan = planFromContext(items, ctx)
+  const plan = planFromContext(items, ctxWithEmails)
 
   const queue: RegulatorQueueRow[] = plan.map((p) => ({
     id: p.id,
@@ -291,6 +341,14 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     .sort(byCompany)
   const testHeld = heldList
     .filter((row) => row.hold_reason === 'test_hold' && ownedByCaller(row))
+    .map(decorateHeld)
+    .sort(byCompany)
+  const invalidHeld = heldList
+    .filter((row) => row.hold_reason === 'email_invalid' && ownedByCaller(row))
+    .map(decorateHeld)
+    .sort(byCompany)
+  const pendingHeld = heldList
+    .filter((row) => row.hold_reason === 'email_pending' && ownedByCaller(row))
     .map(decorateHeld)
     .sort(byCompany)
 
@@ -404,6 +462,12 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     email: r.email,
   }))
 
+  // ── Qualité des adresses ──────────────────────────────────────────────────
+  // Comme la phase de test : si sql/20260803_email_verification.sql n'a pas été
+  // joué, on ne fait pas tomber la page — on remonte `ready: false` et
+  // l'interface dit quoi jouer.
+  const verification = await buildVerificationView(sb, settings, invalidHeld, pendingHeld)
+
   return {
     now: new Date(nowMs).toISOString(),
     settings,
@@ -422,6 +486,95 @@ export async function buildRegulatorView(opts: { ownerId?: string | null } = {})
     blockedToday: blockedRes.count ?? 0,
     testGuardReady,
     testGuardMigration: TEST_GUARD_MIGRATION,
+    verification,
+  }
+}
+
+/* ── Qualité des adresses & délivrabilité ───────────────────────────────── */
+
+const EMPTY_RATE = { sent: 0, hardBounces: 0, rate: 0 }
+
+const EMPTY_VERIFICATION: Omit<RegulatorVerification, 'invalidHeld' | 'pendingHeld'> = {
+  ready: false,
+  migration: VERIFY_MIGRATION,
+  counts: { valid: 0, risky: 0, invalid: 0, unknown: 0, pending: 0 },
+  suppressed: 0,
+  bounce24h: EMPTY_RATE,
+  bounce7d: EMPTY_RATE,
+  overThreshold: false,
+  queueLength: 0,
+}
+
+/** Compte les lignes d'une table sans les rapatrier. */
+async function countRows(
+  sb: ReturnType<typeof getServiceClient>,
+  build: (q: ReturnType<ReturnType<typeof getServiceClient>['from']>) => unknown,
+  table: string,
+): Promise<{ count: number; missing: boolean }> {
+  try {
+    const query = build(sb.from(table)) as Promise<{ count: number | null; error: unknown }>
+    const { count, error } = await query
+    if (error) return { count: 0, missing: isSchemaGap(error) }
+    return { count: count ?? 0, missing: false }
+  } catch {
+    return { count: 0, missing: true }
+  }
+}
+
+async function buildVerificationView(
+  sb: ReturnType<typeof getServiceClient>,
+  settings: RegulatorSettings,
+  invalidHeld: RegulatorMissingEmailRow[],
+  pendingHeld: RegulatorMissingEmailRow[],
+): Promise<RegulatorVerification> {
+  const statuses = ['valid', 'risky', 'invalid', 'unknown', 'pending'] as const
+
+  const [countResults, suppressed, bounce24h, bounce7d] = await Promise.all([
+    Promise.all(
+      statuses.map((status) =>
+        countRows(
+          sb,
+          (q) => q.select('email', { count: 'exact', head: true }).eq('status', status),
+          'email_verifications',
+        ),
+      ),
+    ),
+    countRows(sb, (q) => q.select('email', { count: 'exact', head: true }), 'email_suppressions'),
+    measureBounceRate(sb),
+    measureBounceRate(sb, 7 * 86_400_000),
+  ])
+
+  if (countResults.some((r) => r.missing)) {
+    return { ...EMPTY_VERIFICATION, invalidHeld, pendingHeld }
+  }
+
+  const counts = Object.fromEntries(
+    statuses.map((status, i) => [status, countResults[i].count]),
+  ) as RegulatorVerification['counts']
+
+  const rate = (r: { sent: number; hardBounces: number; rate: number }) => ({
+    sent: r.sent,
+    hardBounces: r.hardBounces,
+    rate: Number(r.rate.toFixed(2)),
+  })
+
+  return {
+    ready: true,
+    migration: VERIFY_MIGRATION,
+    counts,
+    suppressed: suppressed.count,
+    bounce24h: rate(bounce24h),
+    bounce7d: rate(bounce7d),
+    // Le plancher compte autant que le seuil : un rebond sur trois envois
+    // afficherait 33 % sans rien vouloir dire.
+    overThreshold:
+      bounce24h.measured &&
+      bounce24h.sent >= MIN_SENDS_FOR_GUARD &&
+      bounce24h.rate > settings.bounceGuardThreshold,
+    invalidHeld,
+    pendingHeld,
+    // La file de vérification, c'est tout ce qui n'a pas de verdict frais.
+    queueLength: counts.pending + counts.unknown,
   }
 }
 
