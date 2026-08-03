@@ -337,6 +337,27 @@ $$;
 revoke all on function public.bump_email_send_counters(text, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.bump_email_event_counters(text, text, text, timestamptz) from public, anon, authenticated;
 
+-- Révoquer de PUBLIC retire l'exécution à TOUT LE MONDE, `service_role`
+-- compris — c'est pourtant le seul appelant légitime (le ticker et le webhook
+-- passent par lui). Sans ce grant, les compteurs ne s'incrémentent jamais.
+grant execute on function public.bump_email_send_counters(text, text, timestamptz) to service_role;
+grant execute on function public.bump_email_event_counters(text, text, text, timestamptz) to service_role;
+
+-- ── 8 bis. Droits d'accès aux tables ──────────────────────────────────────
+--
+-- Le `service_role` contourne les politiques RLS, mais **pas les droits de
+-- table** : ce sont deux mécanismes distincts. Supabase pose des droits par
+-- défaut sur le schéma `public`, mais ils ne couvrent pas de façon fiable les
+-- objets créés par une migration jouée à la main. Sans ces GRANT, PostgREST
+-- répond « permission denied » là où l'éditeur SQL, lui, lit sans problème —
+-- une divergence particulièrement trompeuse.
+grant usage on schema public to anon, authenticated, service_role;
+
+grant all on public.email_verifications to anon, authenticated, service_role;
+grant all on public.email_domain_cache to anon, authenticated, service_role;
+grant all on public.email_suppressions to anon, authenticated, service_role;
+grant all on public.email_events to anon, authenticated, service_role;
+
 -- ── 9. RLS ────────────────────────────────────────────────────────────────
 -- Lecture pour le personnel, écriture réservée à l'admin. Le service-role des
 -- routes serveur passe outre, comme partout ailleurs.
@@ -397,6 +418,13 @@ where trim(src.email) <> ''
 on conflict (email) do nothing;
 
 commit;
+
+-- ── 10 bis. Réveiller le cache de schéma de PostgREST ─────────────────────
+-- L'API garde en mémoire la liste des tables qu'elle connaît. Des tables
+-- créées après son démarrage lui restent invisibles jusqu'à ce rechargement :
+-- l'éditeur SQL les voit, l'API répond « table inconnue ». Hors transaction,
+-- pour que la notification parte réellement.
+notify pgrst, 'reload schema';
 
 -- ── 11. Le tick de vérification, toutes les 5 minutes ─────────────────────
 -- Hors transaction : `cron.schedule` ne se rejoue pas proprement dedans.
