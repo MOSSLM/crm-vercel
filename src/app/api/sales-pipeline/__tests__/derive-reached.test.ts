@@ -5,7 +5,7 @@ jest.mock('@/app/api/_lib/service-client', () => ({ getServiceClient: () => ({})
 jest.mock('@/app/api/automations/regulator/_view', () => ({ buildRegulatorView: jest.fn() }))
 
 import { derivePosition, toStateRow } from '../_board'
-import { buildColumns, type PipelineStageRef } from '@/lib/sales-pipeline/stages'
+import { ENTRY_COLUMN_ID, buildColumns, type PipelineStageRef } from '@/lib/sales-pipeline/stages'
 import type { SalesSequenceInfo } from '../_board'
 import type { SeqStepKind } from '@/components/automations/types'
 
@@ -96,9 +96,11 @@ describe('derivePosition', () => {
     expect(derivePosition({ columns, sequence: null, steps: [], stageId: 7 })).toBe('stage:7')
   })
 
-  it('une étape trop en amont ramène en tête : il faut mettre en séquence', () => {
-    // « Nouveau lead » n'a pas de colonne (elle est avant la reprise).
-    expect(derivePosition({ columns, sequence: null, steps: [], stageId: 1 })).toBe('step:s1')
+  it('une étape trop en amont gare la ligne dans le stock à démarcher', () => {
+    // « Nouveau lead » n'a pas de colonne (elle est avant la reprise) : le
+    // prospect attend d'être mis en séquence.
+    expect(derivePosition({ columns, sequence: null, steps: [], stageId: 1 })).toBe(ENTRY_COLUMN_ID)
+    expect(derivePosition({ columns, sequence: null, steps: [], stageId: null })).toBe(ENTRY_COLUMN_ID)
   })
 
   it('ne plante pas sans colonnes', () => {

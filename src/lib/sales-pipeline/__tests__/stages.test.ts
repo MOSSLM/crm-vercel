@@ -3,6 +3,7 @@
  */
 import {
   EMPTY_STATE,
+  ENTRY_COLUMN_ID,
   buildColumns,
   cellStatuses,
   channelOf,
@@ -48,9 +49,10 @@ const state = (over: Partial<SalesStateRow> = {}): SalesStateRow => ({
 })
 
 describe('identifiants de colonne', () => {
-  it('préfixe séquence et pipeline pour qu’on ne les confonde jamais', () => {
+  it('préfixe chaque origine pour qu’on ne les confonde jamais', () => {
     expect(stepColumnId('s1')).toBe('step:s1')
     expect(stageColumnId(6)).toBe('stage:6')
+    expect(parseColumnId(ENTRY_COLUMN_ID)).toEqual({ group: 'entry', ref: 'start' })
     expect(parseColumnId('step:s1')).toEqual({ group: 'sequence', ref: 's1' })
     expect(parseColumnId('stage:6')).toEqual({ group: 'pipeline', ref: '6' })
   })
@@ -63,15 +65,27 @@ describe('identifiants de colonne', () => {
 })
 
 describe('buildColumns', () => {
-  it('met la séquence à gauche, le pipeline à droite', () => {
+  it('ouvre sur le stock, puis la séquence, puis le pipeline', () => {
     const columns = columnsOf()
-    expect(columns.map((c) => c.id)).toEqual(['step:s1', 'step:s2', 'step:s3', 'stage:6', 'stage:7'])
-    expect(columns.slice(0, 3).every((c) => c.group === 'sequence')).toBe(true)
-    expect(columns.slice(3).every((c) => c.group === 'pipeline')).toBe(true)
+    expect(columns.map((c) => c.id)).toEqual([
+      ENTRY_COLUMN_ID,
+      'step:s1',
+      'step:s2',
+      'step:s3',
+      'stage:6',
+      'stage:7',
+    ])
+    expect(columns[0].group).toBe('entry')
+    expect(columns.slice(1, 4).every((c) => c.group === 'sequence')).toBe(true)
+    expect(columns.slice(4).every((c) => c.group === 'pipeline')).toBe(true)
+  })
+
+  it('propose de mettre en séquence depuis le stock', () => {
+    expect(columnsOf()[0].cta).toBe('Mettre en séquence')
   })
 
   it('numérote les colonnes dans l’ordre — c’est le pointeur monotone', () => {
-    expect(columnsOf().map((c) => c.index)).toEqual([0, 1, 2, 3, 4])
+    expect(columnsOf().map((c) => c.index)).toEqual([0, 1, 2, 3, 4, 5])
   })
 
   it('n’affiche que les étapes à partir de la reprise', () => {
@@ -86,26 +100,25 @@ describe('buildColumns', () => {
 
   it('reprend le libellé de l’étape, sinon le nom du canal', () => {
     const columns = columnsOf()
-    expect(columns[0].label).toBe('Vos clients vous cherchent')
-    expect(columns[1].label).toBe('WhatsApp')
+    expect(columns[1].label).toBe('Vos clients vous cherchent')
+    expect(columns[2].label).toBe('WhatsApp')
   })
 
   it('affiche le jour de chaque étape de séquence', () => {
-    expect(columnsOf().map((c) => c.hint)).toEqual(['immédiat', 'J+1', 'J+5', null, null])
+    expect(columnsOf().map((c) => c.hint)).toEqual([null, 'immédiat', 'J+1', 'J+5', null, null])
   })
 
   it('marque l’email comme automatique et le reste comme manuel', () => {
     const columns = columnsOf()
-    expect(columns[0].mode).toBe('auto')
-    expect(columns[1].mode).toBe('manual')
+    expect(columns[1].mode).toBe('auto')
     expect(columns[2].mode).toBe('manual')
-    expect(columns[3].mode).toBe('deal')
+    expect(columns[3].mode).toBe('manual')
+    expect(columns[4].mode).toBe('deal')
   })
 
-  it('tient debout sans séquence', () => {
+  it('garde le stock même sans séquence — il faut bien démarrer quelque part', () => {
     const columns = columnsOf({ steps: [] })
-    expect(columns.every((c) => c.group === 'pipeline')).toBe(true)
-    expect(columns).toHaveLength(2)
+    expect(columns.map((c) => c.group)).toEqual(['entry', 'pipeline', 'pipeline'])
   })
 })
 
@@ -164,9 +177,16 @@ describe('cellStatuses', () => {
     expect(Object.values(cells).every((c) => c === 'done')).toBe(true)
   })
 
-  it('retombe sur la première colonne quand la position est inconnue', () => {
-    expect(cellStatuses(columns, null, state())['step:s1']).toBe('active')
-    expect(cellStatuses(columns, 'step:disparue', state())['step:s1']).toBe('active')
+  it('gare la ligne dans le stock quand la position est inconnue', () => {
+    // Un prospect qui n'a rien commencé attend dans « À démarcher », pas sur la
+    // première étape d'une séquence où il n'est pas inscrit.
+    expect(cellStatuses(columns, null, state())[ENTRY_COLUMN_ID]).toBe('active')
+    expect(cellStatuses(columns, 'step:disparue', state())[ENTRY_COLUMN_ID]).toBe('active')
+    expect(cellStatuses(columns, null, state())['step:s1']).toBe('locked')
+  })
+
+  it('marque le stock comme fait dès que la séquence tourne', () => {
+    expect(cellStatuses(columns, 'step:s2', state())[ENTRY_COLUMN_ID]).toBe('done')
   })
 })
 

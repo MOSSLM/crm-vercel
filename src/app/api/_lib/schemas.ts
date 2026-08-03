@@ -499,7 +499,7 @@ export type SequenceRegulatorPayload = z.infer<typeof sequenceRegulatorSchema>;
  */
 const salesColumnId = z
   .string()
-  .regex(/^(step|stage):.+$/, "stage doit être de la forme step:<id> ou stage:<id>")
+  .regex(/^(entry|step|stage):.+$/, "stage doit être de la forme entry:, step:<id> ou stage:<id>")
   .max(120);
 
 /**

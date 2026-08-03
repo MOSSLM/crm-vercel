@@ -74,6 +74,19 @@
 }
 .mp-scope .mx-group.seq .n { color: var(--gc); opacity: .7; }
 
+/* Le stock de départ : neutre, sans titre de groupe — c'est le point de repère
+   sobre à partir duquel le groupe séquence tranche. */
+.mp-scope .mx-group.entry { box-shadow: inset 0 -1px 0 var(--border-2); }
+.mp-scope .mx-colhead.in-entry { background: var(--bg-3); }
+.mp-scope .mx-cell.in-entry { background: var(--bg-2); }
+
+/* Une pastille « ce qui manque » : le contraire d'un badge de réussite. */
+.mp-scope .chip.miss {
+  background: transparent; border-style: dashed;
+  border-color: var(--border-2); color: var(--text-4);
+}
+.mp-scope .chip.miss .ico { color: var(--text-4); }
+
 /* Les en-têtes descendent sous le bandeau. */
 .mp-scope .mx-colhead { top: 30px; }
 .mp-scope .mx-corner { top: 30px; }

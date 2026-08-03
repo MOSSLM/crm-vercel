@@ -1,16 +1,18 @@
 // stages.ts — le modèle de colonnes du pipeline commercial.
 //
-// Les colonnes ne sont plus inventées : elles viennent de deux sources réelles,
+// Les colonnes ne sont plus inventées : elles viennent de sources réelles,
 // mises bout à bout sur une seule ligne.
 //
-//   ╔═══ SÉQUENCE · Artisans ═══════════════════════╗  ┌── PIPELINE · Agent SAMA ──┐
-//   ║ J+0 Email │ J+1 WhatsApp │ J+3 Email │ J+5 Appel ║  │ RDV calé │ Client signé │
-//   ╚═══════════════════════════════════════════════╝  └───────────────────────────┘
+//   ┌ À DÉMARCHER ┐ ╔═══ SÉQUENCE · Artisans ══════════╗ ┌ PIPELINE · Agent SAMA ┐
+//   │  en attente │ ║ J+0 Email │ J+1 WhatsApp │ J+5 ☎ ║ │ RDV calé │ Client signé│
+//   └─────────────┘ ╚══════════════════════════════════╝ └───────────────────────┘
 //
-// La séquence pousse le prospect jusqu'à sa dernière étape, puis le PIPELINE
-// reprend la main à l'étape de reprise (« RDV calé » par défaut). Le groupe
-// séquence est encadré et teinté pour qu'on voie d'un coup d'œil ce qui est
-// piloté par l'automatisation et ce qui relève du commercial.
+// La première colonne est le stock : tout ce qui n'est pas encore en séquence
+// s'y gare, avec ce qu'il faut pour décider (audit prêt ? démo prête ? contact
+// identifié ?). La séquence pousse ensuite le prospect jusqu'à sa dernière
+// étape, puis le PIPELINE reprend la main à l'étape de reprise (« RDV calé »
+// par défaut). Le groupe séquence est encadré et teinté pour qu'on voie d'un
+// coup d'œil ce qui est piloté par l'automatisation.
 //
 // Partagé serveur/client : l'API dérive l'état des cellules, l'interface s'en
 // sert pour le rendu. Une seule définition, donc pas de dérive entre les deux.
@@ -18,7 +20,7 @@
 import type { SeqStepKind } from '@/components/automations/types'
 
 /** Ce qui pilote une colonne. */
-export type ColumnGroup = 'sequence' | 'pipeline'
+export type ColumnGroup = 'entry' | 'sequence' | 'pipeline'
 
 /**
  * `auto`   : le moteur agit seul (le régulateur envoie l'email).
@@ -47,6 +49,9 @@ export interface SalesColumn {
 
 /* ── Identifiants de colonne ─────────────────────────────────────────────── */
 
+/** La colonne d'entrée est unique : un seul stock, un seul identifiant. */
+export const ENTRY_COLUMN_ID = 'entry:start'
+
 export const stepColumnId = (stepId: string) => `step:${stepId}`
 export const stageColumnId = (stageId: number | string) => `stage:${stageId}`
 
@@ -56,6 +61,7 @@ export function parseColumnId(id: string): { group: ColumnGroup; ref: string } |
   const prefix = id.slice(0, i)
   const ref = id.slice(i + 1)
   if (!ref) return null
+  if (prefix === 'entry') return { group: 'entry', ref }
   if (prefix === 'step') return { group: 'sequence', ref }
   if (prefix === 'stage') return { group: 'pipeline', ref }
   return null
@@ -128,7 +134,22 @@ export function buildColumns(opts: {
   stages: PipelineStageRef[]
   handoffOrdre: number
 }): SalesColumn[] {
-  const columns: SalesColumn[] = []
+  // Le stock de départ : tout ce qui n'a pas encore été mis en séquence. C'est
+  // la colonne où se fait le geste le plus fréquent du tableau, et la seule qui
+  // dise si le prospect est PRÊT à être démarché (audit, démo, contact).
+  const columns: SalesColumn[] = [
+    {
+      id: ENTRY_COLUMN_ID,
+      group: 'entry',
+      label: 'À démarcher',
+      hint: null,
+      mode: 'deal',
+      color: '#5C5953',
+      kind: null,
+      cta: 'Mettre en séquence',
+      index: 0,
+    },
+  ]
 
   for (const step of opts.steps) {
     const channel = channelOf(step.kind)

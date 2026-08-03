@@ -128,12 +128,18 @@ Une ligne = une opportunité. Les colonnes ne sont **pas** une liste figée :
 elles viennent de deux sources réelles, mises bout à bout.
 
 ```
-╔═══ SÉQUENCE · Artisans ════════════════════╗  ┌─── PIPELINE · Agent SAMA ───┐
-║ J+0 Email │ J+1 WhatsApp │ J+5 Appel       ║  │ RDV calé │ Client signé     │
-╚════════════════════════════════════════════╝  └─────────────────────────────┘
-        automatisé, teinté violet                     le commercial reprend
+┌ À DÉMARCHER ┐ ╔═══ SÉQUENCE · Artisans ═══════════╗ ┌ PIPELINE · Agent SAMA ┐
+│  en attente │ ║ J+0 Email │ J+1 WhatsApp │ J+5 ☎  ║ │ RDV calé │ Client signé│
+└─────────────┘ ╚═══════════════════════════════════╝ └───────────────────────┘
+   le stock            automatisé, teinté violet          le commercial reprend
 ```
 
+- **Colonne d'entrée** — le stock : tout ce qui n'est pas encore en séquence s'y
+  gare. C'est la seule colonne qui dise si le prospect est *prêt* à être
+  démarché (audit, démo, contact identifié), et c'est là que se fait le geste le
+  plus fréquent du tableau : « Mettre en séquence », ou « Écarter ». Sans
+  contact rattaché, le bouton est désactivé — la mise en séquence échouerait
+  côté serveur, autant le dire avant.
 - **Groupe séquence** — une colonne par étape de la séquence choisie, avec son
   `J+n`, son canal et son CTA (Ouvrir WhatsApp, cockpit d'appel, file d'envoi).
   Encadré et teinté pour qu'on voie d'un coup d'œil ce qui tourne tout seul.

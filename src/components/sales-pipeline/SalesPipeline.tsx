@@ -202,6 +202,7 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
 
   const columns = board?.columns ?? []
   const tz = board?.regulator.timezone ?? 'Europe/Paris'
+  const entryColumns = columns.filter((c) => c.group === 'entry')
   const sequenceColumns = columns.filter((c) => c.group === 'sequence')
   const pipelineColumns = columns.filter((c) => c.group === 'pipeline')
   const sequenceName = board?.sequences.find((s) => s.id === board?.selectedSequenceId)?.name ?? 'Séquence'
@@ -512,6 +513,11 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           {/* Bandeaux de groupe : on voit d'un coup d'œil ce qui est piloté par
               l'automatisation et ce qui relève du commercial. */}
           <div className="mx-gcorner" />
+          {/* La colonne d'entrée n'a pas besoin d'un titre de groupe : son
+              en-tête le dit déjà. La cellule sert à compléter la rangée. */}
+          {entryColumns.length > 0 && (
+            <div className="mx-group entry" style={{ gridColumn: `span ${entryColumns.length}` }} />
+          )}
           {sequenceColumns.length > 0 && (
             <div
               className="mx-group seq"
@@ -744,9 +750,10 @@ function ColumnHead({
   counts?: { active: number; done: number }
 }) {
   const Icon = columnIcon(column)
-  const inSequence = column.group === 'sequence'
+  const groupClass =
+    column.group === 'sequence' ? ' in-seq' : column.group === 'entry' ? ' in-entry' : ''
   return (
-    <div className={'mx-colhead' + (inSequence ? ' in-seq' : '')}>
+    <div className={'mx-colhead' + groupClass}>
       <div className="hd">
         <span className="sw" style={{ background: rgba(column.color, 0.12), color: column.color }}>
           <Icon className="ico" />
@@ -755,8 +762,11 @@ function ColumnHead({
         <span className="idx">{column.hint ?? String(index + 1).padStart(2, '0')}</span>
       </div>
       <div className="meta">
-        <b style={{ color: column.color }}>{counts?.active ?? 0}</b> en cours · {counts?.done ?? 0} faites
-        <span className="mode">{column.mode === 'auto' ? 'auto' : column.mode === 'manual' ? 'tâche' : 'manuel'}</span>
+        <b style={{ color: column.color }}>{counts?.active ?? 0}</b>
+        {column.group === 'entry' ? ' en attente' : ' en cours'} · {counts?.done ?? 0} faites
+        <span className="mode">
+          {column.group === 'entry' ? 'stock' : column.mode === 'auto' ? 'auto' : column.mode === 'manual' ? 'tâche' : 'manuel'}
+        </span>
       </div>
     </div>
   )
