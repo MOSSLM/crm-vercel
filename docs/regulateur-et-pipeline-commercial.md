@@ -318,5 +318,19 @@ saisit. Ce qui existe désormais, et où :
 
 **Démarchage** (`/automations/prospection`)
 
-- filtre **par destinataire** : la file distribuée redevient lisible quand
-  l'admin récupère le surplus de plusieurs agents.
+- filtre **par destinataire** dans la file en 3 volets ;
+- une bascule **File / Par personne**. La file répond à « que fais-je
+  maintenant » ; le tableau répond à « qui croule, qui n'a rien, et qu'est-ce
+  que personne n'a pris » — la question de l'admin, que la file n'aborde pas.
+  Une colonne par agent, l'admin en dernier (c'est le filet, pas le point de
+  départ), et une colonne « sans destinataire » qui ne se referme jamais en
+  silence ;
+- chaque carte porte le message déjà rédigé, le motif de son attribution, et
+  ouvre le bon canal (wa.me, `tel:`, profil LinkedIn) — le CRM n'envoie jamais
+  à votre place ;
+- **réattribution** (`PATCH /api/automations/prospection/:id/assign`, admin
+  seulement). La règle globale ne sait pas qu'un agent part en congé cet
+  après-midi : sans reprise à la main, la seule issue était de basculer TOUTE
+  l'attribution sur « admin » — on déplaçait cent tâches pour en déplacer une.
+  Une tâche déjà traitée est refusée : la redonner ne la ferait revenir dans
+  aucune file.

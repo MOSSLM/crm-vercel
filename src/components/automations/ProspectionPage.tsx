@@ -3,9 +3,13 @@
 // Porté depuis claude design/automations-prospection.jsx.
 import React, { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
+import { supabase } from '@/utils/supabase/client'
+import { useAuth } from '@/components/AuthContext'
 import { XI } from './icons'
 import { useRefData } from './ref-data'
+import { TaskBoard } from './TaskBoard'
 import {
+  assignProspectionTask,
   listProspectionTasks,
   completeProspectionTask,
   snoozeProspectionTask,
@@ -45,12 +49,17 @@ function kindLabel(kind: string) {
 
 export function ProspectionPage() {
   const ref = useRefData()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [tasks, setTasks] = useState<ProspectionTaskFull[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState('today')
   const [owner, setOwner] = useState<string>('all')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detailTab, setDetailTab] = useState<'action' | 'context' | 'history'>('action')
+  // « file » répond à « que fais-je maintenant », « board » à « qui croule ».
+  const [mode, setMode] = useState<'file' | 'board'>('file')
+  const [sequenceNames, setSequenceNames] = useState<Record<string, string>>({})
 
   function reload() {
     setLoading(true)
@@ -64,6 +73,17 @@ export function ProspectionPage() {
   }
 
   useEffect(reload, [])
+
+  // Le nom de la séquence d'où vient la tâche : sans lui, une carte WhatsApp
+  // hors contexte ne dit pas de quelle campagne elle relève.
+  useEffect(() => {
+    ;(async () => {
+      const { data } = await supabase.from('automations').select('id,name').eq('kind', 'sequence')
+      const map: Record<string, string> = {}
+      for (const row of (data ?? []) as { id: string; name: string }[]) map[row.id] = row.name
+      setSequenceNames(map)
+    })()
+  }, [])
 
   /**
    * Qui a quoi. Le régulateur distribue les tâches manuelles ; sans ce filtre,
@@ -104,6 +124,79 @@ export function ProspectionPage() {
     }
   }
 
+  /** Marquer faite une tâche depuis le tableau : elle quitte la file sur place. */
+  async function completeFromBoard(task: ProspectionTaskFull) {
+    try {
+      await completeProspectionTask(task.id)
+      setTasks((prev) => prev.filter((t) => t.id !== task.id))
+      toast.success('Tâche traitée — la séquence reprend')
+    } catch {
+      toast.error('Action impossible')
+    }
+  }
+
+  /** Redonner une tâche sans toucher à la règle globale d'attribution. */
+  async function reassign(task: ProspectionTaskFull, assigneeId: string | null) {
+    const previous = task.assignee_id ?? null
+    // Optimiste : la carte change de colonne tout de suite, et revient si le
+    // serveur refuse — un aller-retour visible sur chaque carte serait pénible.
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, assignee_id: assigneeId } : t)))
+    try {
+      await assignProspectionTask(task.id, assigneeId)
+      const name = assigneeId ? (ref.users.find((u) => u.id === assigneeId)?.name ?? 'un agent') : 'personne'
+      toast.success(`Tâche confiée à ${name}`)
+    } catch (err) {
+      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, assignee_id: previous } : t)))
+      toast.error(err instanceof Error ? err.message : 'Réattribution impossible')
+    }
+  }
+
+  const modeSwitch = (
+    <div className="pros-mode" role="group" aria-label="Affichage de la file">
+      <button type="button" className={mode === 'file' ? 'on' : ''} onClick={() => setMode('file')}>
+        <XI name="inbox" className="ico-xs" />
+        File
+      </button>
+      <button type="button" className={mode === 'board' ? 'on' : ''} onClick={() => setMode('board')}>
+        <XI name="users" className="ico-xs" />
+        Par personne
+      </button>
+    </div>
+  )
+
+  if (mode === 'board') {
+    return (
+      <div className="pros-board">
+        <div className="pros-board-hd">
+          <div style={{ minWidth: 0 }}>
+            <h2>Tâches à la main</h2>
+            <div className="subline">
+              WhatsApp, LinkedIn et appels ne partent jamais seuls. Les séquences les préparent, le CRM les distribue —
+              et vous voyez qui a quoi.
+            </div>
+          </div>
+          <span className="pill">{tasks.length} à traiter</span>
+          {overdueCount > 0 && <span className="pill danger">{overdueCount} en retard</span>}
+          {modeSwitch}
+        </div>
+        {loading ? (
+          <div className="empty-row" style={{ padding: 40 }}>
+            Chargement…
+          </div>
+        ) : (
+          <TaskBoard
+            tasks={tasks}
+            users={ref.users}
+            sequenceNames={sequenceNames}
+            canReassign={isAdmin}
+            onComplete={completeFromBoard}
+            onReassign={reassign}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="pros-page">
       {/* LEFT — file */}
@@ -119,6 +212,7 @@ export function ProspectionPage() {
               </>
             )}
           </div>
+          {modeSwitch}
         </div>
         <div className="pros-side-tabs" role="tablist">
           {TABS.map((tab) => {
