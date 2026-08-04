@@ -7,11 +7,34 @@
 
 const mockProcessSequenceEnrollment = jest.fn()
 const mockCancelEnrollmentWork = jest.fn()
+const mockVerifyEmail = jest.fn()
 
 jest.mock('@/lib/automations/engine', () => ({
   processSequenceEnrollment: (...args: unknown[]) => mockProcessSequenceEnrollment(...args),
   cancelEnrollmentWork: (...args: unknown[]) => mockCancelEnrollmentWork(...args),
 }))
+
+// `setProspectEmail` vérifie l'adresse dans la foulée, et `verifyEmail` sort sur
+// le réseau (DNS-over-HTTPS). Sans ce mock le verdict dépend de la machine :
+// « indéterminé » sur un poste sans résolution sortante, « valide » sur un
+// runner qui a du réseau — ce qui faisait passer ce fichier en local et échouer
+// en intégration continue. Ce que ces cas testent, c'est le pipeline commercial,
+// pas le vérificateur : le verdict est donc fourni.
+// Seul `verifyEmail` est remplacé ; le reste du module est réel, car
+// `regulator-db` et `engine` en importent d'autres fonctions.
+jest.mock('@/lib/email/verify/service', () => ({
+  ...jest.requireActual('@/lib/email/verify/service'),
+  verifyEmail: (...args: unknown[]) => mockVerifyEmail(...args),
+}))
+
+/** Verdict rendu quand aucun résolveur DNS n'a répondu. */
+const UNRESOLVED_VERDICT = {
+  email: 'contact@garage.fr',
+  status: 'unknown' as const,
+  reason: 'dns_unresolved',
+  details: { suggestion: null },
+  expiresAt: 0,
+}
 
 import { setProspectEmail, skipEmailStep } from '../actions'
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -67,6 +90,8 @@ beforeEach(() => {
   mockProcessSequenceEnrollment.mockReset()
   mockProcessSequenceEnrollment.mockResolvedValue(undefined)
   mockCancelEnrollmentWork.mockReset()
+  mockVerifyEmail.mockReset()
+  mockVerifyEmail.mockResolvedValue(UNRESOLVED_VERDICT)
 })
 
 describe('skipEmailStep', () => {
@@ -165,6 +190,12 @@ describe('setProspectEmail', () => {
     expect(entreprises.captured.updates[0]).toEqual(
       expect.objectContaining({ email: 'Contact@Garage.fr' }),
     )
+    // L'adresse nettoyée est bien celle qui part au vérificateur, et `force`
+    // court-circuite le verdict en cache : une correction manuelle doit être
+    // retestée tout de suite. Cette assertion garde aussi le mock honnête — si
+    // elle tombe, c'est que le vrai vérificateur est appelé et que le test
+    // repart sur le réseau.
+    expect(mockVerifyEmail).toHaveBeenCalledWith(sb, 'Contact@Garage.fr', { force: true })
     // Le contact garde son adresse : on n'écrase jamais une fiche personne.
     expect(result).toEqual({
       ok: true,
@@ -172,9 +203,10 @@ describe('setProspectEmail', () => {
         email: 'Contact@Garage.fr',
         target: 'entreprise',
         resumed: 1,
-        // L'adresse est vérifiée dans la foulée. Sans réseau dans les tests, le
-        // verdict est « indéterminé » — ce qui est le comportement voulu : on
-        // n'invente pas un verdict quand le DNS ne répond pas.
+        // L'adresse est vérifiée dans la foulée, et le verdict est remonté tel
+        // quel. Ici le vérificateur rend « indéterminé » (aucun résolveur DNS
+        // n'a répondu) : on n'invente pas un verdict, et l'adresse est quand
+        // même enregistrée.
         verification: { status: 'unknown', reason: expect.any(String), suggestion: null },
       },
     })
