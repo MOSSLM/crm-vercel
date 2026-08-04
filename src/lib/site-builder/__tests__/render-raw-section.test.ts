@@ -17,6 +17,9 @@ const VARIABLES = {
   "entreprise.nom": "Ventilation Plus",
   "entreprise.ville": "Seynod",
   "entreprise.logo_url": "https://cdn.example.com/logo.webp",
+  // A value carrying markup and an ampersand: substitution happens inside a
+  // dangerouslySetInnerHTML payload, so neither path escapes it.
+  "entreprise.bio_html": `<strong>Chauffage & ventilation</strong> depuis 1998`,
 };
 
 /** What the production render path does today, reproduced end to end. */
@@ -48,6 +51,37 @@ const CASES: Array<[string, string]> = [
   ["newlines and tabs", `<div>\n\tligne 1\n\tligne 2\n</div>`],
   ["accented text", `<p>Élévation, à côté, œuf, ça</p>`],
   ["an empty design", ``],
+
+  // Shapes taken from what the imported templates actually contain. The fast
+  // path is only worth having if it is indistinguishable on real markup, so
+  // these are the cases that would bite in production rather than in theory.
+  [
+    "escaped quotes and apostrophes inside an attribute",
+    `<div title="Il a dit &quot;oui&quot;" data-label='L&apos;atelier'>x</div>`,
+  ],
+  ["an HTML comment", `<div><!-- section hero, ne pas retirer --><p>x</p></div>`],
+  [
+    "a data attribute carrying JSON, as the carousels emit",
+    `<div data-swiper='{"slidesPerView":3,"loop":true}' data-gap="24">x</div>`,
+  ],
+  [
+    "an iframe embed",
+    `<iframe src="https://www.youtube.com/embed/abc123" allowfullscreen loading="lazy"></iframe>`,
+  ],
+  [
+    "a picture with srcset",
+    `<picture><source media="(max-width:767px)" srcset="a.webp 1x, b.webp 2x"><img src="c.webp" alt=""></picture>`,
+  ],
+  [
+    "a token whose value is itself HTML",
+    // The substitution lands inside a dangerouslySetInnerHTML payload, so React
+    // does not escape it either. If the fast path escaped more (or less), the
+    // rendered content would differ — this is the case that proves it doesn't.
+    `<p>{{ entreprise.bio_html }}</p>`,
+  ],
+  ["numeric and named entities", `<p>&#233;t&eacute; &nbsp; &#x2014; &copy;</p>`],
+  ["a boolean attribute with no value", `<input disabled readonly required>`],
+  ["nested tokens in a style attribute", `<div style="background-image:url({{ entreprise.logo_url }})">x</div>`],
 ];
 
 describe("renderRawSection", () => {

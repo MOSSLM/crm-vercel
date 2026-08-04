@@ -10,6 +10,7 @@
 import React from "react";
 import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
+import { renderRawSection, unwrapRawHtml } from "@/lib/site-builder/render-raw-section";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
@@ -71,29 +72,44 @@ export async function LibrarySectionInline({
   // renders the resolved text directly (matches the iframe behaviour).
   const interpolatedData = interpolateData(content, variables);
 
-  // NOTE: `src/lib/site-builder/render-raw-section.ts` can produce this HTML
-  // directly, byte for byte, without Babel or renderToString — its parity test
-  // proves it, and it saves a few hundred ms per request. It is deliberately
-  // NOT wired in yet: skipping compilation also means `compiledJs` stays empty,
-  // which stops the client from hydrating the section, and that changed enough
-  // about the live pages to be worth verifying on a real design first. Re-land
-  // it on its own, with a visual check on a page that has a carousel.
-  try {
-    const compiled = await compileSection(code);
-    compiledJs = compiled.js;
-    renderName = compiled.renderName;
+  // A whole-page Claude design is a constant HTML string plus {{ token }}
+  // substitution. Compiling that with Babel, evaluating it, and asking
+  // renderToString to serialise it back into the string we started from costs a
+  // few hundred ms per request on a ~200 KB source — and the compile cache is
+  // process-local, so every new serverless instance pays it again.
+  //
+  // `unwrapRawHtml` only recognises the exact shape `wrapRawHtml` emits and
+  // returns null for anything else, so a hand-written section still compiles.
+  // Byte parity with the compiled path is asserted in render-raw-section.test.ts
+  // against the real Babel + renderToString chain, over the markup these
+  // templates actually contain — that test is what makes this safe to skip.
+  //
+  // `compiledJs` deliberately stays empty: there is no React component to
+  // hydrate, the design's interactivity comes from its own site.js injected by
+  // DynamicPageRenderer. The client still applies the overrides and mounts form
+  // slots — LibrarySectionHydrator guards only its hydration block on `js`, and
+  // override-reapply.test.tsx covers exactly that case.
+  const rawHtml = unwrapRawHtml(code);
+  if (rawHtml !== null) {
+    html = renderRawSection(rawHtml, variables);
+  } else {
+    try {
+      const compiled = await compileSection(code);
+      compiledJs = compiled.js;
+      renderName = compiled.renderName;
 
-    const result = renderSectionToHTML({
-      js: compiledJs,
-      renderName,
-      data: interpolatedData,
-      variables,
-      styleGuide,
-    });
-    html = result.html;
-    errorMsg = result.error;
-  } catch (err) {
-    errorMsg = err instanceof Error ? err.message : String(err);
+      const result = renderSectionToHTML({
+        js: compiledJs,
+        renderName,
+        data: interpolatedData,
+        variables,
+        styleGuide,
+      });
+      html = result.html;
+      errorMsg = result.error;
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
   }
 
   // Apply DOM-path overrides server-side so the deployed HTML reflects user
