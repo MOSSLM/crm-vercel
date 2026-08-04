@@ -20,6 +20,7 @@ import { parseImageSet, pickCandidate } from "./image-set";
 import {
   elementChildren,
   findSectionRoot,
+  hasDomPathStamps,
   parseDottedPath,
   resolveNodeAtPath,
 } from "./dom-paths";
@@ -77,13 +78,16 @@ export function resolveImageSets(
     const doc = parse(html);
     const root = findSectionRoot(elementChildren(doc as unknown as HTMLElement));
     if (!root) return html;
+    // Un chemin sans tampon, sur un arbre tamponné, vise un nœud retiré : ne
+    // rien poser plutôt que peindre le nœud qui a pris sa place en fond.
+    const stamped = hasDomPathStamps(root);
 
     for (const key of setKeys) {
       const entry = overrides[key];
       if (!entry || typeof entry.value !== "string") continue;
       const pathStr = key.slice(0, key.indexOf(":"));
       const path = parseDottedPath(pathStr);
-      const el = resolveNodeAtPath(root, path, pathStr);
+      const el = resolveNodeAtPath(root, path, pathStr, stamped);
       if (!el) continue;
       const { candidates } = parseImageSet(entry.value);
       const chosen = pickCandidate(candidates, enterpriseTags);
