@@ -549,15 +549,17 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
     const libTags = (scriptLinks ?? []).map((s) => `<script src="${s}"></script>`).join("");
     const bootTag = designJs ? `<script>${designJs}</script>` : `<script>${CLAUDE_DESIGN_RUNTIME}</script>`;
     // Order: helpers, then apply overrides FIRST (before the design JS shifts
-    // positional paths), then remote libs, then design JS, then per-page tweak
-    // extras, then the editor's own interaction script. Les tampons `data-cdp`
+    // positional paths), then the per-page tweak extras (they seed the
+    // localStorage keys site.js reads at init and defer their own DOM work to
+    // DOMContentLoaded, i.e. after the design JS), then remote libs, then design
+    // JS, then the editor's own interaction script. Les tampons `data-cdp`
     // sont déjà dans le body (posés côté parent, sur le markup non conditionné).
     // cssForIframe first (vh already px), then rootVars — so even the stylesheet
     // fallback wins over the design's own :root defaults (inline html wins both).
     // EDIT_REVEAL_CSS en dernier : l'éditeur ne défile pas, donc les blocs qui
     // n'apparaissent qu'au scroll resteraient invisibles (voir edit-reveal.ts).
     // EDIT_REVEAL_SCRIPT passe après le JS du design, pour repasser derrière lui.
-    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}\n${EDIT_REVEAL_CSS}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${libTags}${bootTag}${extras ? `<script>${extras}</script>` : ""}<script>${EDIT_REVEAL_SCRIPT}</script><script>${EDIT_SCRIPT}</script></body></html>`;
+    return `<!doctype html><html ${attrStr} style='${htmlStyle}'><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${viewportLock}${fonts}<style>${cssForIframe}\n${rootVars}\nbody{margin:0}[contenteditable]{cursor:text}\n${EDIT_REVEAL_CSS}</style>${vhBlock}</head><body><div id="cd-root">${body}</div><script>window.__cdOverrides=${overridesJson};window.__enterpriseTags=${enterpriseTagsJson};</script><script>${CD_HELPERS}</script><script>${OVERRIDES_APPLY}</script>${extras ? `<script>${extras}</script>` : ""}${libTags}${bootTag}<script>${EDIT_REVEAL_SCRIPT}</script><script>${EDIT_SCRIPT}</script></body></html>`;
   }, [html, sharedCss, fontLinks, tweaks, themeSets, js, pageJs, scriptLinks, serviceTagBySlug, overrides, variables, simViewportHeight]);
 
   return (

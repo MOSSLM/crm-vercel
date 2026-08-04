@@ -3,11 +3,13 @@
 import React from "react";
 import { Check } from "lucide-react";
 import type { TweakControl } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
+import { sliderValue } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 
 /**
  * Faithful reproduction of the template's own Tweaks panel: preset color
- * swatches (no native color picker), selects and per-page radios, driven by the
- * schema extracted from the template's *-tweaks.jsx (parse-tweaks-schema).
+ * swatches (no native color picker), selects, sliders and per-page radios,
+ * driven by the schema extracted from the template's *-tweaks.jsx
+ * (parse-tweaks-schema).
  */
 export function TweaksPanel({
   controls,
@@ -16,7 +18,7 @@ export function TweaksPanel({
 }: {
   controls: TweakControl[];
   tweaks: Record<string, unknown>;
-  onChange: (key: string, value: string | boolean) => void;
+  onChange: (key: string, value: string | boolean | number) => void;
 }) {
   const val = (k: string, d = "") => (typeof tweaks[k] === "string" ? (tweaks[k] as string) : d);
   const boolVal = (k: string) => tweaks[k] === true || tweaks[k] === "true" || tweaks[k] === "1" || tweaks[k] === "on";
@@ -44,7 +46,13 @@ export function TweaksPanel({
             <Control
               key={c.key}
               control={c}
-              value={c.type === "toggle" ? boolVal(c.key) : val(c.key, c.options[0] ?? "")}
+              value={
+                c.type === "toggle"
+                  ? boolVal(c.key)
+                  : c.type === "slider"
+                    ? sliderValue(c, tweaks[c.key])
+                    : val(c.key, c.options[0] ?? "")
+              }
               onChange={(v) => onChange(c.key, v)}
             />
           ))}
@@ -54,7 +62,29 @@ export function TweaksPanel({
   );
 }
 
-function Control({ control, value, onChange }: { control: TweakControl; value: string | boolean; onChange: (v: string | boolean) => void }) {
+function Control({ control, value, onChange }: { control: TweakControl; value: string | boolean | number; onChange: (v: string | boolean | number) => void }) {
+  if (control.type === "slider") {
+    const n = typeof value === "number" ? value : 0;
+    return (
+      <div>
+        <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span>{control.label}</span>
+          <span className="font-mono text-[11px]">{n}{control.unit ?? ""}</span>
+        </div>
+        <input
+          type="range"
+          className="w-full accent-primary"
+          aria-label={control.label}
+          min={control.min ?? 0}
+          max={control.max ?? 100}
+          step={control.step ?? 1}
+          value={n}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+      </div>
+    );
+  }
+
   if (control.type === "toggle") {
     const on = value === true;
     return (

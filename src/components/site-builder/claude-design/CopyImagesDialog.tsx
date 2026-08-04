@@ -24,6 +24,8 @@ interface Props {
 interface CopyResult {
   pages: Array<{ slug: string; applied: number; skipped: number; dropped: number }>;
   commonSlugs: string[];
+  /** Pages the source carries photos on that this template does not have yet. */
+  missingPages?: Array<{ slug: string; images: number }>;
   totalApplied: number;
   totalSkipped: number;
   totalDropped: number;
@@ -119,6 +121,10 @@ export function CopyImagesDialog({ open, siteId, pages, onClose, onDone }: Props
 
   const titleOf = (slug: string) => pages.find((p) => p.slug === slug)?.title || slug;
   const commonSlugs = preview?.commonSlugs ?? [];
+  // Pages the source has photos on that this template does not have at all —
+  // a page added to the export after this template was imported. Without a slot
+  // to copy into, it would otherwise just be absent from the list above.
+  const missingPages = preview?.missingPages ?? [];
 
   const toggle = (slug: string) => {
     setSelected((prev) => {
@@ -166,7 +172,8 @@ export function CopyImagesDialog({ open, siteId, pages, onClose, onDone }: Props
         <div className="flex flex-col gap-4 py-1">
           <p className="text-sm text-muted-foreground">
             Reprend les photos posées sur un autre template et les replace dans les mêmes zones ici.
-            Les textes de ce template ne sont pas touchés.
+            Toutes les pages portant le même chemin sont reprises — y compris celles ajoutées plus tard
+            au design. Les textes de ce template ne sont pas touchés.
           </p>
 
           <div>
@@ -193,7 +200,11 @@ export function CopyImagesDialog({ open, siteId, pages, onClose, onDone }: Props
               <div className="max-h-56 overflow-y-auto rounded-lg border">
                 {commonSlugs.length === 0 ? (
                   <p className="px-3 py-4 text-sm text-muted-foreground">
-                    {probing ? "Analyse…" : "Aucune page commune entre les deux templates."}
+                    {probing
+                      ? "Analyse…"
+                      : missingPages.length > 0
+                        ? "Aucune page commune — les deux templates n’ont aucun chemin en commun (voir ci-dessous)."
+                        : "Aucune page commune entre les deux templates."}
                   </p>
                 ) : commonSlugs.map((slug) => {
                   const row = preview?.pages.find((p) => p.slug === slug);
@@ -215,6 +226,27 @@ export function CopyImagesDialog({ open, siteId, pages, onClose, onDone }: Props
                   );
                 })}
               </div>
+
+              {missingPages.length > 0 && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <p className="flex items-start gap-1.5 font-medium">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    {missingPages.length} page{missingPages.length > 1 ? "s" : ""} du template source
+                    {missingPages.length > 1 ? " n’existent" : " n’existe"} pas encore ici
+                  </p>
+                  <ul className="mt-1 ml-5 list-disc">
+                    {missingPages.map((p) => (
+                      <li key={p.slug}>
+                        <span className="font-mono">{p.slug}</span> — {p.images} image{p.images > 1 ? "s" : ""} en attente
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 ml-5">
+                    Ajoute-les d’abord avec « Importer des pages », puis relance cet import : elles seront reprises
+                    automatiquement.
+                  </p>
+                </div>
+              )}
 
               <label className="flex cursor-pointer items-start gap-2 text-sm">
                 <Checkbox checked={overwrite} onCheckedChange={(v) => setOverwrite(v === true)} className="mt-0.5" disabled={busy} />

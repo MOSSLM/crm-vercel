@@ -56,6 +56,23 @@ export const CORNER_SETS: Record<string, CornerSet> = {
   "Arrondi": ["34px", "24px", "999px"],
 };
 
+/** `theme-apply.js#PATTERN_SLUGS` — motif label → `html[data-pattern]` slug. */
+export const PATTERN_SLUGS: Record<string, string> = {
+  "Aucun": "aucun", "Quadrillé": "quadrille", "Millimétré": "millimetre",
+  "Lignes": "lignes", "Lignes + croix": "lignes-croix", "Croix": "croix",
+  "Points": "points", "Diagonales": "diagonales", "Mixte": "mixte",
+};
+
+/** `theme-apply.js#PATTERN_SCOPES` — portée label → `html[data-pattern-scope]`. */
+export const PATTERN_SCOPES: Record<string, string> = {
+  "Alternées": "alt", "Claires": "clair", "Tout": "tout",
+};
+
+/** Defaults `applyPatterns()` falls back to when the tweak is unset. */
+const PATTERN_DEFAULT = "quadrille";
+const PATTERN_SCOPE_DEFAULT = "clair";
+const PATTERN_ALPHA_DEFAULT = 55;
+
 const GOOGLE = "https://fonts.googleapis.com/css2?family=";
 
 /* ── set resolution ─────────────────────────────────────────────────────────
@@ -91,6 +108,35 @@ function cornerSet(tweaks: Tweaks, sets?: ThemeSets | null): CornerSet {
   return pickSet(sets?.cornerSets, CORNER_SETS, (tweaks || {}).angles, "Doux");
 }
 
+/** A numeric tweak (a TweakSlider), tolerating the string form a JSONB
+ *  round-trip can produce. `null` when absent or unusable. */
+export function tweakNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "string" && value.trim() !== "") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+/** A TweakToggle whose CSS hook is PRESENCE-based, with the template's own
+ *  default when the key is absent (`v.filets !== false` → ON by default). */
+function flagOn(value: unknown, whenMissing: boolean): boolean {
+  if (value === undefined || value === null || value === "") return whenMissing;
+  return tweakEnabled(value);
+}
+
+/** Motif label → slug, preferring this skin's own table (patterns.css names). */
+function patternSlug(name: unknown, sets?: ThemeSets | null): string {
+  const table = { ...PATTERN_SLUGS, ...(sets?.patternSlugs ?? {}) };
+  return (typeof name === "string" ? table[name] : undefined) ?? PATTERN_DEFAULT;
+}
+
+function patternScope(name: unknown, sets?: ThemeSets | null): string {
+  const table = { ...PATTERN_SCOPES, ...(sets?.patternScopes ?? {}) };
+  return (typeof name === "string" ? table[name] : undefined) ?? PATTERN_SCOPE_DEFAULT;
+}
+
 /**
  * Builds the CSS custom properties for a tweaks object — mirrors
  * `theme-apply.js#applyTheme`. Color vars are only set when present (so a
@@ -119,6 +165,20 @@ export function tweaksToCssVars(tweaks: Tweaks, sets?: ThemeSets | null): Record
   const f = fontSet(v, sets);
   vars["--serif"] = f.head;
   vars["--sans"] = f.body;
+
+  // Flottement des cartes — the two sliders styles.css animates `.float-cert` /
+  // `.float-stat` with. Present-only, like the template: no value keeps the
+  // stylesheet's own `:root{--fc-amp:9px;--fc-dur:6.5s}`.
+  const amp = tweakNumber(v.flotAmp);
+  if (amp !== null) vars["--fc-amp"] = `${amp}px`;
+  const dur = tweakNumber(v.flotDur);
+  if (dur !== null) vars["--fc-dur"] = `${dur}s`;
+
+  // Motif de fond — `applyPatterns()` sets --pat-a unconditionally (0 → 1), so
+  // the slider works from the very first paint. Skins with no patterns.css just
+  // carry an unused variable.
+  const alpha = tweakNumber(v.motifIntensite) ?? PATTERN_ALPHA_DEFAULT;
+  vars["--pat-a"] = String(Math.round((alpha / 100) * 1000) / 1000);
   return vars;
 }
 
@@ -132,7 +192,8 @@ export function tweakEnabled(value: unknown): boolean {
 }
 
 /** The `data-*` attributes theme-apply.js sets on <html>: the font/weight keys,
- *  plus the section-visibility flags the template's persistSections() toggles
+ *  the navbar style, the motif/artefact hooks patterns.css gates on, plus the
+ *  section-visibility flags the template's persistSections() toggles
  *  (`data-hide-certifs` / `data-hide-marques`, keyed by masquerCertifications /
  *  masquerMarques). Present-only: a flag is emitted only when ON, so the
  *  `html[data-hide-*]` CSS never matches while the section is shown. */
@@ -144,7 +205,20 @@ export function tweaksDataAttrs(tweaks: Tweaks, sets?: ThemeSets | null): Record
     "data-weight": w.key,
     "data-font": f.key,
     "data-font-serif": f.serif ? "1" : "0",
+    // Barre de navigation (TweakRadio "Style de barre") — every skin ships the
+    // `html[data-nav="flottante"]` rules; the attribute is always written, with
+    // "classique" as the template's own fallback.
+    "data-nav": v.navbar === "Flottante" ? "flottante" : "classique",
+    // Motif de fond — `applyPatterns()` runs on every load, saved theme or not.
+    "data-pattern": patternSlug(v.motif, sets),
+    "data-pattern-scope": patternScope(v.motifPortee, sets),
   };
+  // Artefacts: presence-based, ON by default (the template reads `!== false`),
+  // except the column rules which are opt-in.
+  if (flagOn(v.motifHero, true)) attrs["data-pattern-hero"] = "";
+  if (flagOn(v.filets, true)) attrs["data-filets"] = "";
+  if (flagOn(v.croixAngles, true)) attrs["data-croix"] = "";
+  if (flagOn(v.colonnes, false)) attrs["data-colonnes"] = "";
   if (tweakEnabled(v.masquerCertifications)) attrs["data-hide-certifs"] = "";
   if (tweakEnabled(v.masquerMarques)) attrs["data-hide-marques"] = "";
   return attrs;
@@ -188,27 +262,52 @@ const STEPPER_MOBILE_MAP: Record<string, string> = { "Deck": "deck", "Slides": "
 
 /**
  * Trusted inline-script body that applies the per-page section tweaks
- * (stepperStyle / stepperMobile / proStyle): seeds the localStorage keys the
- * template reads and toggles the CSS classes on `.solution-stepper` /
- * `.pro-stage` (or calls the runtime hook for the mobile deck, which JS builds).
+ * (stepperStyle / stepperMobile / proStyle) and the zone-d'intervention radius
+ * (rayonKm): seeds the localStorage keys the template reads and toggles the CSS
+ * classes on `.solution-stepper` / `.pro-stage` (or calls the runtime hook, for
+ * the mobile deck and the Leaflet circle, which JS builds).
+ *
+ * Emitted in TWO layers, because site.js reads those localStorage keys while it
+ * initialises: the seeds run IMMEDIATELY (they touch no DOM), the element work
+ * waits for DOMContentLoaded. Seeding inside the deferred half meant the stepper
+ * and the map were first built with the wrong value and only corrected after.
  * No-op when the elements or values are absent. Returns JS (no tags).
  */
 export function tweaksExtrasScript(tweaks: Tweaks): string {
   const stepper = STEPPER_STYLE_MAP[tweaks?.stepperStyle as string];
   const stepperMobile = STEPPER_MOBILE_MAP[tweaks?.stepperMobile as string];
   const pro = PRO_STYLE_MAP[tweaks?.proStyle as string];
-  const parts: string[] = [];
+  const rayonKm = tweakNumber(tweaks?.rayonKm);
+  const seeds: string[] = [];
+  const dom: string[] = [];
   if (stepper) {
-    parts.push(`try{localStorage.setItem('cvc-stepper-style', ${JSON.stringify(stepper)});}catch(e){}`);
-    parts.push(`(function(){var s=document.querySelector('.solution-stepper');if(s){['framed','float','deck','wheel','wheel2'].forEach(function(k){s.classList.toggle('is-'+k, k===${JSON.stringify(stepper)});});}})();`);
+    seeds.push(`try{localStorage.setItem('cvc-stepper-style', ${JSON.stringify(stepper)});}catch(e){}`);
+    dom.push(`(function(){var s=document.querySelector('.solution-stepper');if(s){['framed','float','deck','wheel','wheel2'].forEach(function(k){s.classList.toggle('is-'+k, k===${JSON.stringify(stepper)});});}})();`);
   }
   if (stepperMobile) {
-    parts.push(`try{localStorage.setItem('cvc-stepper-mobile', ${JSON.stringify(stepperMobile)});}catch(e){}`);
-    parts.push(`(function(){if(window.__cvcStepperMobile)window.__cvcStepperMobile(${JSON.stringify(stepperMobile)});})();`);
+    seeds.push(`try{localStorage.setItem('cvc-stepper-mobile', ${JSON.stringify(stepperMobile)});}catch(e){}`);
+    dom.push(`(function(){if(window.__cvcStepperMobile)window.__cvcStepperMobile(${JSON.stringify(stepperMobile)});})();`);
   }
   if (pro) {
-    parts.push(`try{localStorage.setItem('cvc-pro-style', ${JSON.stringify(pro)});}catch(e){}`);
-    parts.push(`(function(){var p=document.querySelector('.pro-stage');if(p){p.classList.toggle('pro-mode-deck', ${JSON.stringify(pro)}==='deck');p.classList.toggle('pro-mode-slider', ${JSON.stringify(pro)}==='slider');}})();`);
+    seeds.push(`try{localStorage.setItem('cvc-pro-style', ${JSON.stringify(pro)});}catch(e){}`);
+    dom.push(`(function(){var p=document.querySelector('.pro-stage');if(p){p.classList.toggle('pro-mode-deck', ${JSON.stringify(pro)}==='deck');p.classList.toggle('pro-mode-slider', ${JSON.stringify(pro)}==='slider');}})();`);
   }
-  return parts.join("");
+  if (rayonKm !== null && rayonKm > 0) {
+    // site.js reads `cvc-zone-rayon` when it builds the Leaflet map, so the seed
+    // alone is usually enough; the DOM half covers the map built before us and
+    // the `{{ rayon }} km` labels, which exist with or without Leaflet.
+    const km = JSON.stringify(rayonKm);
+    seeds.push(`try{localStorage.setItem('cvc-zone-rayon', ${JSON.stringify(String(rayonKm))});}catch(e){}`);
+    dom.push(
+      `(function(){var e=document.getElementById('zone-leaflet');if(e)e.setAttribute('data-radius-km', ${km});` +
+        `var l=document.querySelectorAll('[data-zone-km]');for(var i=0;i<l.length;i++)l[i].textContent=${km}+' km';` +
+        `if(window.setZoneRadiusKm)window.setZoneRadiusKm(${km});})();`,
+    );
+  }
+  if (seeds.length === 0 && dom.length === 0) return "";
+  const deferred = dom.length
+    ? `(function(){function r(){${dom.join("")}}` +
+      `if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',r);else r();})();`
+    : "";
+  return seeds.join("") + deferred;
 }

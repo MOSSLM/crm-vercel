@@ -4,7 +4,7 @@ import { withAuth } from "@/app/api/_lib/with-auth";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
 import { parse, type HTMLElement } from "node-html-parser";
 import { remapOverrides, splitOverrideKey } from "@/lib/site-builder/claude-design/remap-overrides";
-import { clearImageKeys, imageSlotPaths, isImageOverrideKey, kindForElement } from "@/lib/site-builder/claude-design/image-override-keys";
+import { clearImageKeys, imageSlotPaths, isImageOverrideKey, kindForElement, pagesMissingFromTarget } from "@/lib/site-builder/claude-design/image-override-keys";
 import { pushBackup } from "@/lib/site-builder/claude-design/override-backups";
 import { assetPathMap } from "@/lib/site-builder/claude-design/asset-path-map";
 import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
@@ -114,9 +114,14 @@ async function loadDesignPages(
  * The copied values are public bucket URLs and are reused as-is: no bytes are
  * re-uploaded, exactly like a cloned demo pointing at its template's assets.
  *
+ * Pages are paired by slug, so the set copied grows on its own as the export
+ * does — nothing here enumerates the CVC pages. A page the source has photos on
+ * and the target does not have AT ALL is reported in `missingPages`: it has to
+ * be imported («  Importer des pages ») before its photos have anywhere to land.
+ *
  * Body: { sourceSiteId, slugs?: string[], overwrite?: boolean, dryRun?: boolean }
  * → { pages: [{ slug, applied, skipped, dropped }], totalApplied, totalSkipped,
- *     totalDropped, commonSlugs }
+ *     totalDropped, commonSlugs, missingPages: [{ slug, images }] }
  */
 export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const siteId = params.siteId?.trim();
@@ -222,10 +227,19 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     if (updErr) return jsonError(updErr.message, 500);
   }
 
+  // Pages the source has photos on that this template does not have at all.
+  // Matching is slug to slug, so there is nothing to copy into — but staying
+  // silent about it is what makes a freshly added page look like it was skipped.
+  const missingPages = pagesMissingFromTarget(
+    new Map([...source.pages].map(([slug, p]) => [slug, p.overrides])),
+    target.pages,
+  );
+
   if (!dryRun) invalidateSiteCache(siteId);
   return json({
     pages: results,
     commonSlugs,
+    missingPages,
     totalApplied: results.reduce((n, r) => n + r.applied, 0),
     totalSkipped: results.reduce((n, r) => n + r.skipped, 0),
     totalUncertain: results.reduce((n, r) => n + r.uncertain, 0),
