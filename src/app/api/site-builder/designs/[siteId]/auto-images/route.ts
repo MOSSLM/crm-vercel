@@ -3,8 +3,8 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
 import { AUTO_IMAGE_ZONES, findZone, findZoneSlots, type AutoImageSlot } from "@/lib/site-builder/claude-design/auto-image-zones";
-import { drawImageSets, seededRandom, type LibraryImage } from "@/lib/site-builder/claude-design/draw-image-sets";
-import { serializeImageSet } from "@/lib/site-builder/claude-design/image-set";
+import { drawImageSets, redrawSlot, seededRandom, type LibraryImage } from "@/lib/site-builder/claude-design/draw-image-sets";
+import { parseImageSet, pickCandidate, serializeImageSet } from "@/lib/site-builder/claude-design/image-set";
 import { clearImageKeys } from "@/lib/site-builder/claude-design/image-override-keys";
 import { pushBackup } from "@/lib/site-builder/claude-design/override-backups";
 import { invalidateSiteCache } from "@/lib/site-builder/site-cache";
@@ -153,6 +153,43 @@ function zoneTargets(pages: DesignPage[], zoneIds: string[]): ZoneTarget[] {
   return out;
 }
 
+interface PlacedSlot {
+  order: number;
+  url: string;
+  alt: string;
+  tag: string | null;
+}
+
+/**
+ * What the band currently SHOWS for this company: each slot's stored set,
+ * resolved the way the renderer resolves it. Read from the first page that
+ * carries the zone — every page holds the same draw.
+ *
+ * Without this the panel could only display a draw it had just made, so
+ * reopening the editor left the per-photo swap button with nothing to act on.
+ */
+function placedSlots(target: ZoneTarget, tags: string[]): PlacedSlot[] {
+  for (const { page, slots } of target.pages) {
+    const placed: PlacedSlot[] = [];
+    for (const slot of slots) {
+      const entry = page.overrides[`${slot.path}:image_set`] as { value?: string } | undefined;
+      if (!entry || typeof entry.value !== "string") continue;
+      const candidates = parseImageSet(entry.value).candidates;
+      const chosen = pickCandidate(candidates, tags);
+      if (!chosen?.url) continue;
+      placed.push({
+        order: slot.order,
+        url: chosen.url,
+        alt: chosen.alt ?? slot.alt,
+        // The lead candidate's tag is the trade the slot was drawn for.
+        tag: candidates[0]?.tags?.[0] ?? null,
+      });
+    }
+    if (placed.length > 0) return placed.sort((a, b) => a.order - b.order);
+  }
+  return [];
+}
+
 /**
  * GET /api/site-builder/designs/[siteId]/auto-images
  *
@@ -188,6 +225,9 @@ export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
       hint: zone.hint,
       slotCount: t.slotCount,
       pages: t.pages.map((p) => ({ slug: p.slug, slots: p.slots.length })),
+      /** What the band shows right now, so the panel can offer a per-photo swap
+       *  without having to draw first. */
+      slots: placedSlots(t, tags),
     };
   });
 
@@ -213,7 +253,12 @@ export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
  * band is the same band on the home page and on each service page, and the
  * operator asked for the same photos throughout.
  *
- * Body: { zones?: string[], entrepriseId?: number, seed?: number, dryRun?: boolean }
+ * With `slot` (1-based), only THAT slot is redrawn — the operator likes the
+ * band but wants one photo swapped. The slot keeps its trade and avoids the
+ * photos the other slots already show; everything else is left untouched.
+ *
+ * Body: { zones?: string[], entrepriseId?: number, seed?: number, slot?: number,
+ *         dryRun?: boolean }
  * → { seed, zones: [{ zoneId, pages: [{slug, slots}], slots: [{order, url, alt, tag}] }],
  *     pools, emptyTags, written }
  */
@@ -221,7 +266,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const siteId = params.siteId?.trim();
   if (!siteId) return jsonError("siteId requis.", 400);
 
-  let body: { zones?: string[]; entrepriseId?: number; seed?: number; dryRun?: boolean };
+  let body: { zones?: string[]; entrepriseId?: number; seed?: number; slot?: number; dryRun?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -272,25 +317,67 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   let pools: ReturnType<typeof drawImageSets>["pools"] = [];
   let emptyTags: string[] = [];
 
+  // `slot` (1-based) → swap that photo only, keeping the rest of the band.
+  const oneSlot = Number.isFinite(body.slot) ? Math.floor(Number(body.slot)) : null;
+
   for (const target of targets) {
     const zone = findZone(target.zoneId)!;
-    const draw = drawImageSets(
+    const full = drawImageSets(
       { slotCount: target.slotCount, companyTags: tags, library, random: seededRandom(seed) },
       target.alts,
     );
-    pools = draw.pools;
-    emptyTags = draw.emptyTags;
+    pools = full.pools;
+    emptyTags = full.emptyTags;
+
+    // What the band shows today — the baseline a single-slot swap edits, and
+    // the set of photos the new one must not duplicate.
+    const placed = oneSlot === null ? [] : placedSlots(target, tags);
+    let single: ReturnType<typeof redrawSlot> = null;
+    if (oneSlot !== null) {
+      if (oneSlot < 1 || oneSlot > target.slotCount) {
+        return jsonError(`Emplacement ${oneSlot} inconnu dans cette section.`, 422);
+      }
+      const current = placed.find((p) => p.order === oneSlot);
+      single = redrawSlot(
+        {
+          slotCount: target.slotCount,
+          companyTags: tags,
+          library,
+          random: seededRandom(seed),
+          slotIndex: oneSlot - 1,
+          usedUrls: placed.filter((p) => p.order !== oneSlot).map((p) => p.url),
+          currentUrl: current?.url,
+        },
+        target.alts[oneSlot - 1] ?? "",
+      );
+      if (!single) {
+        return jsonError(
+          "Pas d'autre photo disponible pour ce métier — importe-en dans la médiathèque.",
+          422,
+        );
+      }
+    }
+
+    // The report always describes the WHOLE band, so the panel refreshes its
+    // thumbnails from one answer whether one photo changed or all six.
+    const slotsReport = full.slots.map((drawnSlot, i) => {
+      const order = i + 1;
+      const alt = target.alts[i] ?? "";
+      if (oneSlot === null) {
+        return { order, url: drawnSlot.chosen?.url ?? "", alt: drawnSlot.chosen?.alt ?? alt, tag: drawnSlot.leadTag };
+      }
+      if (order === oneSlot) {
+        return { order, url: single!.chosen?.url ?? "", alt: single!.chosen?.alt ?? alt, tag: single!.leadTag };
+      }
+      const kept = placed.find((p) => p.order === order);
+      return { order, url: kept?.url ?? "", alt: kept?.alt ?? alt, tag: kept?.tag ?? null };
+    });
 
     report.push({
       zoneId: zone.id,
       label: zone.label,
       pages: target.pages.map((p) => ({ slug: p.slug, slots: p.slots.length })),
-      slots: draw.slots.map((s, i) => ({
-        order: i + 1,
-        url: s.chosen?.url ?? "",
-        alt: s.chosen?.alt ?? target.alts[i] ?? "",
-        tag: s.leadTag,
-      })),
+      slots: slotsReport,
     });
 
     if (dryRun) continue;
@@ -299,8 +386,12 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
       const entry = writesByInstance.get(page.instanceId)
         ?? { page, overrides: { ...page.overrides }, replacesHandwork: false };
       for (const slot of slots) {
+        // Single-slot swap: leave every other slot exactly as it is.
+        if (oneSlot !== null && slot.order !== oneSlot) continue;
         // A page with fewer slots than the zone's max takes the first ones.
-        const drawn = draw.slots[slot.order - 1] ?? draw.slots[slots.indexOf(slot)];
+        const drawn = oneSlot !== null
+          ? single
+          : full.slots[slot.order - 1] ?? full.slots[slots.indexOf(slot)];
         if (!drawn || drawn.candidates.length === 0) continue;
         // Only a photo the operator placed by hand is worth a backup slot. A
         // re-draw replaces a previous draw, and backing THAT up would push the

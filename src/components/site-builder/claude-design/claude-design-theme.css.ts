@@ -406,5 +406,12 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-autoimg-thumb{margin:0;position:relative;aspect-ratio:4/3;border-radius:6px;overflow:hidden;background:var(--bg-2);border:1px solid var(--cd-border);}
 .cd-autoimg-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
 .cd-autoimg-thumb figcaption{position:absolute;left:0;right:0;bottom:0;font-size:9px;line-height:1.3;padding:2px 4px;color:#fff;background:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Remplacer UNE photo : visible au survol, et toujours visible au clavier. */
+.cd-autoimg-swap{position:absolute;top:3px;right:3px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:0;border-radius:5px;color:#fff;background:rgba(0,0,0,.55);opacity:0;transition:opacity .12s;cursor:pointer;}
+.cd-autoimg-thumb:hover .cd-autoimg-swap,.cd-autoimg-swap:focus-visible{opacity:1;}
+.cd-autoimg-swap:hover{background:rgba(0,0,0,.8);}
+.cd-autoimg-swap:disabled{cursor:default;}
+.cd-autoimg-busy{position:absolute;inset:0;background:rgba(255,255,255,.55);}
+@media (hover:none){.cd-autoimg-swap{opacity:1;}}
 
 `;
