@@ -157,9 +157,17 @@ const OVERRIDES_APPLY = `
   var root = document.getElementById('cd-root');
   if(!root) return;
   var OV = window.__cdOverrides || {};
+  // Le body est tamponné côté parent AVANT le conditionnement. Un chemin sans
+  // tampon vise donc un nœud RETIRÉ (la carte d'un service que l'entreprise n'a
+  // pas) : on abandonne l'override au lieu de marcher les indices, qui
+  // atterriraient sur le nœud ayant pris sa place — d'où les fonds apparus sur
+  // « Entretien & contrat » et les photos au hasard sur les logos RGE.
+  var STAMPED = false;
+  try{ STAMPED = root.querySelector('[${DOM_PATH_ATTR}]') !== null; }catch(e){}
   function nodeAt(path){
     var key = path.join('.');
     try{ var stamped = root.querySelector('[${DOM_PATH_ATTR}="' + key + '"]'); if(stamped) return stamped; }catch(e){}
+    if(STAMPED) return null;
     var n=root; for(var i=0;i<path.length;i++){ var ch=Array.prototype.filter.call(n.childNodes,function(c){return c.nodeType===1;}); n=ch[path[i]]; if(!n) return null;} return n;
   }
   // Apply image_set overrides LAST so a resolved set wins over any stale

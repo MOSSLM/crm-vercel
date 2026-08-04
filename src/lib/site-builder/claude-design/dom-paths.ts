@@ -65,19 +65,36 @@ export function nodeAtPath(root: HTMLElement, path: number[]): HTMLElement | nul
   return node;
 }
 
+/** Le markup porte-t-il des tampons ? Sur un arbre tamponné, l'ABSENCE de
+ *  tampon pour un chemin est une information : le nœud n'existe plus. */
+export function hasDomPathStamps(root: HTMLElement): boolean {
+  return root.querySelector(`[${DOM_PATH_ATTR}]`) !== null;
+}
+
 /**
  * Résout un chemin : tampon d'abord, marche positionnelle ensuite.
  * `path` est le chemin déjà découpé, `dotted` sa forme `"3.1.0"`.
+ *
+ * La marche positionnelle n'est un repli que sur un markup NON tamponné (un
+ * override écrit avant l'existence des tampons). Dès que l'arbre est tamponné,
+ * un chemin sans tampon signifie que son nœud a été RETIRÉ — typiquement la
+ * carte d'un service que l'entreprise n'a pas — et marcher les indices y
+ * atterrit sur le nœud qui a pris sa place : la photo d'un service disparu se
+ * posait ainsi en fond de la carte « Entretien & contrat », ou sur un logo de
+ * certification. Mieux vaut ne rien appliquer que viser à côté.
  */
 export function resolveNodeAtPath(
   root: HTMLElement,
   path: number[],
   dotted: string,
+  /** Résultat de `hasDomPathStamps(root)`, calculé une fois par passe. */
+  stamped?: boolean,
 ): HTMLElement | null {
   if (dotted) {
-    const stamped = root.querySelector(`[${DOM_PATH_ATTR}="${dotted}"]`);
-    if (stamped) return stamped as HTMLElement;
+    const hit = root.querySelector(`[${DOM_PATH_ATTR}="${dotted}"]`);
+    if (hit) return hit as HTMLElement;
   }
+  if (stamped ?? hasDomPathStamps(root)) return null;
   return nodeAtPath(root, path);
 }
 

@@ -72,23 +72,39 @@ function nodeAtPath(root: Element, path: number[]): Element | null {
   return node;
 }
 
+/** Le DOM porte-t-il des tampons ? Sur un arbre tamponné, l'absence de tampon
+ *  pour un chemin dit que son nœud a disparu. */
+function hasStamps(root: Element): boolean {
+  try {
+    return root.querySelector(`[${DOM_PATH_ATTR}]`) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /**
- * Résout un chemin d'override sur le DOM livré : tampon `data-cdp` d'abord,
- * marche positionnelle en repli.
+ * Résout un chemin d'override sur le DOM livré : tampon `data-cdp` d'abord.
  *
  * Indispensable ici : le HTML rendu par le serveur est DÉJÀ conditionné pour
  * l'entreprise (cartes des services absents retirées). Une marche positionnelle
  * y décale chaque override situé après une carte retirée — et comme un
  * MutationObserver ré-applique en boucle, elle écrasait quelques millisecondes
  * après le premier paint le placement correct calculé côté serveur.
+ *
+ * D'où la règle : sur un arbre tamponné, un chemin sans tampon vise un nœud
+ * retiré et l'override est ABANDONNÉ. Marcher les indices y posait la photo
+ * d'un service absent sur le nœud qui avait pris sa place — un fond sur la
+ * carte « Entretien & contrat », une photo au hasard sur un logo de
+ * certification. La marche ne reste qu'un repli pour un markup sans tampon.
  */
-function resolveNode(root: Element, path: number[], dotted: string): Element | null {
+function resolveNode(root: Element, path: number[], dotted: string, stamped: boolean): Element | null {
   if (dotted) {
     try {
-      const stamped = root.querySelector(`[${DOM_PATH_ATTR}="${CSS.escape(dotted)}"]`);
-      if (stamped) return stamped;
+      const hit = root.querySelector(`[${DOM_PATH_ATTR}="${CSS.escape(dotted)}"]`);
+      if (hit) return hit;
     } catch { /* selector API indisponible → repli positionnel */ }
   }
+  if (stamped) return null;
   return nodeAtPath(root, path);
 }
 
@@ -198,6 +214,8 @@ export function applyOverridesToContainer(
   const root = findSectionRoot(container);
   if (!root) return;
   const enterpriseTags = enterpriseTagsFromVars(variables);
+  // Calculé une fois par passe : le MutationObserver rappelle cette fonction.
+  const stamped = hasStamps(root);
   for (const key of Object.keys(overrides)) {
     const entry = overrides[key];
     if (!entry || typeof entry.value !== "string") continue;
@@ -205,7 +223,7 @@ export function applyOverridesToContainer(
     const colonIdx = key.indexOf(":");
     const pathStr = colonIdx === -1 ? key : key.slice(0, colonIdx);
     const path = pathStr.split(".").map((s) => parseInt(s, 10)).filter((n) => !isNaN(n));
-    const el = resolveNode(root, path, pathStr);
+    const el = resolveNode(root, path, pathStr, stamped);
     if (!el) continue;
     const value = interpolateVariables(entry.value, variables);
     try {

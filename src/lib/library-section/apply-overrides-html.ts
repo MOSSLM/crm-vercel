@@ -21,6 +21,7 @@ import { interpolateVars } from "@/lib/site-builder/interpolate-vars";
 import {
   elementChildren,
   findSectionRoot,
+  hasDomPathStamps,
   parseDottedPath,
   pathOfOverrideKey,
   resolveNodeAtPath,
@@ -109,6 +110,9 @@ export function applyOverridesToHTML(
     // hints (<link rel="preload">) ahead of it. findSectionRoot skips those.
     const root = findSectionRoot(elementChildren(doc as unknown as HTMLElement));
     if (!root) return { html, applied: 0, failed: 0 };
+    // Calculé une fois : sur un arbre tamponné, un chemin sans tampon vise un
+    // nœud retiré, et la marche positionnelle y toucherait son remplaçant.
+    const stamped = hasDomPathStamps(root);
 
     for (const key of Object.keys(overrides)) {
       const entry = overrides[key];
@@ -120,7 +124,7 @@ export function applyOverridesToHTML(
       const path = parseDottedPath(pathStr);
       // Tampon `data-cdp` d'abord (posé sur le markup non conditionné), marche
       // positionnelle en repli — cf. claude-design/dom-paths.ts.
-      const el = resolveNodeAtPath(root, path, pathStr);
+      const el = resolveNodeAtPath(root, path, pathStr, stamped);
       if (!el) {
         failed++;
         continue;
