@@ -10,7 +10,6 @@
 import React from "react";
 import { compileSection } from "@/lib/library-section/compile";
 import { renderSectionToHTML } from "@/lib/library-section/render-server";
-import { renderRawSection, unwrapRawHtml } from "@/lib/site-builder/render-raw-section";
 import { applyOverridesToHTML, type OverrideEntry } from "@/lib/library-section/apply-overrides-html";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
@@ -72,36 +71,29 @@ export async function LibrarySectionInline({
   // renders the resolved text directly (matches the iframe behaviour).
   const interpolatedData = interpolateData(content, variables);
 
-  // A whole-page Claude design is a constant HTML string plus {{ token }}
-  // substitution — see render-raw-section.ts. Compiling that with Babel and
-  // round-tripping it through renderToString just to get the string back costs
-  // a few hundred ms per request on a ~200 KB source, with a cache that is cold
-  // on every new serverless instance. `unwrapRawHtml` returns null for anything
-  // that isn't exactly that shape, so everything else compiles as before.
-  const rawHtml = unwrapRawHtml(code);
-  if (rawHtml !== null) {
-    html = renderRawSection(rawHtml, variables);
-    // No compiled component, so nothing to hydrate: the design's interactivity
-    // comes from its own site.js, injected by DynamicPageRenderer. The client
-    // still receives the overrides and form slots — see LibrarySectionHydrator.
-  } else {
-    try {
-      const compiled = await compileSection(code);
-      compiledJs = compiled.js;
-      renderName = compiled.renderName;
+  // NOTE: `src/lib/site-builder/render-raw-section.ts` can produce this HTML
+  // directly, byte for byte, without Babel or renderToString — its parity test
+  // proves it, and it saves a few hundred ms per request. It is deliberately
+  // NOT wired in yet: skipping compilation also means `compiledJs` stays empty,
+  // which stops the client from hydrating the section, and that changed enough
+  // about the live pages to be worth verifying on a real design first. Re-land
+  // it on its own, with a visual check on a page that has a carousel.
+  try {
+    const compiled = await compileSection(code);
+    compiledJs = compiled.js;
+    renderName = compiled.renderName;
 
-      const result = renderSectionToHTML({
-        js: compiledJs,
-        renderName,
-        data: interpolatedData,
-        variables,
-        styleGuide,
-      });
-      html = result.html;
-      errorMsg = result.error;
-    } catch (err) {
-      errorMsg = err instanceof Error ? err.message : String(err);
-    }
+    const result = renderSectionToHTML({
+      js: compiledJs,
+      renderName,
+      data: interpolatedData,
+      variables,
+      styleGuide,
+    });
+    html = result.html;
+    errorMsg = result.error;
+  } catch (err) {
+    errorMsg = err instanceof Error ? err.message : String(err);
   }
 
   // Apply DOM-path overrides server-side so the deployed HTML reflects user
@@ -180,8 +172,9 @@ export async function LibrarySectionInline({
   }
 
   // `tokens` are style-guide props for the hydrated React component, and the
-  // three shade tables are computed. Without a component to hydrate they are
-  // dead weight in the payload, so they are only built when they'll be used.
+  // three shade tables are computed. When compilation failed there is no
+  // component to hydrate, so the hydrator never reads them — don't compute or
+  // ship them for a section that is already emitting a placeholder.
   const willHydrate = Boolean(compiledJs && renderName);
   const tokens =
     willHydrate && styleGuide
