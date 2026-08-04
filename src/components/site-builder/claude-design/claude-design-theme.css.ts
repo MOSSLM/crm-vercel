@@ -389,4 +389,22 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-missimg-pop{top:36px;left:0;right:0;padding:6px;}
 .cd-missimg-hint{margin:10px 0 0;font-size:11px;line-height:1.5;color:var(--text-3);}
 
+/* Remplissage auto des photos de réalisations (inspecteur droit) */
+.cd-autoimg{flex-shrink:0;padding:14px;border-bottom:1px solid var(--cd-border);}
+.cd-autoimg-body{display:flex;flex-direction:column;gap:10px;}
+.cd-autoimg-note{margin:0;font-size:11px;line-height:1.5;color:var(--text-3);}
+.cd-autoimg-note b{color:var(--text-2);font-weight:600;}
+.cd-autoimg-warn{margin:0;display:flex;gap:6px;align-items:flex-start;font-size:11px;line-height:1.45;color:var(--warn,#9a6700);}
+.cd-autoimg-warn svg{flex-shrink:0;margin-top:2px;}
+.cd-autoimg-pools{display:flex;flex-wrap:wrap;gap:5px;}
+.cd-autoimg-pool{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-2);background:var(--bg-2);border:1px solid var(--cd-border);border-radius:99px;padding:2px 4px 2px 8px;}
+.cd-autoimg-pool b{font-family:var(--font-mono);font-size:10px;font-weight:600;color:#fff;background:var(--text-3);border-radius:99px;padding:1px 6px;}
+.cd-autoimg-pool.short b{background:var(--warn,#9a6700);}
+.cd-autoimg-pool.empty{opacity:.75;}
+.cd-autoimg-pool.empty b{background:var(--danger,#c0392b);}
+.cd-autoimg-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;}
+.cd-autoimg-thumb{margin:0;position:relative;aspect-ratio:4/3;border-radius:6px;overflow:hidden;background:var(--bg-2);border:1px solid var(--cd-border);}
+.cd-autoimg-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.cd-autoimg-thumb figcaption{position:absolute;left:0;right:0;bottom:0;font-size:9px;line-height:1.3;padding:2px 4px;color:#fff;background:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
 `;

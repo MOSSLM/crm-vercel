@@ -33,6 +33,7 @@ import { InlinePreview, type OverrideEntry } from "./InlinePreview";
 import { ClaudeDesignTheme } from "./ClaudeDesignTheme";
 import { CLAUDE_DESIGN_VARIABLES } from "./VariablesPanel";
 import { MissingImagesPanel } from "./MissingImagesPanel";
+import { AutoImagesPanel } from "./AutoImagesPanel";
 import { UpdateTemplatePagesDialog } from "./UpdateTemplatePagesDialog";
 import { CopyImagesDialog } from "./CopyImagesDialog";
 import { RestoreImagesDialog } from "./RestoreImagesDialog";
@@ -527,6 +528,16 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
 
         {/* RIGHT */}
         <aside className="cd-pane cd-inspector">
+          {/* Le seul remplissage automatique du design : la bande réalisations,
+              dont le NOMBRE de photos est fixe et dont seul le sujet dépend des
+              services de l'entreprise. `load` recharge les overrides écrits côté
+              serveur pour que l'aperçu montre le tirage tout de suite. */}
+          <AutoImagesPanel
+            siteId={siteId}
+            entrepriseId={company?.id ?? null}
+            companyName={company?.nom ?? null}
+            onDone={load}
+          />
           <MissingImagesPanel
             designName={data.name}
             pages={data.pages.map((p) => ({ slug: p.slug, title: p.title, html: p.html, overrides: p.overrides }))}
