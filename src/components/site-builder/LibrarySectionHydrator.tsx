@@ -325,12 +325,35 @@ export function applyOverridesToContainer(
   }
 }
 
-/** Only the tree shape matters — see the comment at the observer's call site. */
-const OVERRIDE_OBSERVE_OPTIONS: MutationObserverInit = { childList: true, subtree: true };
+/**
+ * Watch everything the overrides themselves write.
+ *
+ * Narrowing this to `childList` looked safe — the observer is nominally there to
+ * survive a React re-render — but a design's own JS routinely rewrites an
+ * `img.src` or an inline style, and neither of those is a childList mutation.
+ * The overrides carrying this company's real images then stayed lost, which is
+ * what "the images don't load" turned out to mean.
+ *
+ * Watching attributes is only dangerous if re-applying them writes something.
+ * It doesn't: every write in `applyOverridesToContainer` is guarded by a
+ * read-first comparison, and the observer is disconnected around its own pass
+ * anyway. `apply-overrides-idempotent.test.ts` pins that property — it is what
+ * makes this safe, so it must stay green.
+ */
+const OVERRIDE_OBSERVE_OPTIONS: MutationObserverInit = {
+  childList: true,
+  subtree: true,
+  characterData: true,
+  attributes: true,
+};
 
-/** Safety valve: a design whose own JS keeps rewriting the DOM must not make
- *  the override re-application loop indefinitely. */
-const MAX_OVERRIDE_REAPPLIES = 20;
+// There is deliberately no cap on re-applications. Capping it at 20 looked
+// prudent and was the opposite: on a design that animates, the budget was spent
+// within a second, after which `apply()` disconnected the observer and never
+// re-attached — the overrides were abandoned for the rest of the session and
+// anything the design wrote afterwards won. The cost that had to go away was
+// the WRITE storm, and idempotent writes removed it; observing was never the
+// expensive part. This matches the behaviour that shipped before the perf pass.
 
 export function LibrarySectionHydrator() {
   useEffect(() => {
@@ -462,25 +485,25 @@ export function LibrarySectionHydrator() {
       // doesn't wipe them out. Then watch the container so any later
       // re-render re-applies them.
       if (hasOverrides) {
-        // The observer exists for one reason: a React re-render can replace the
-        // nodes the overrides were written onto. So it watches the tree shape —
-        // NOT attributes or text. Watching those made the callback observe its
-        // own writes: apply → attribute mutation → callback → apply, forever at
-        // ~60 Hz, restarting and cancelling every CSS transition on the page.
+        // The overrides carry this company's real text and images, and both a
+        // React re-render and the design's own JS can overwrite them — so the
+        // observer watches everything they write (see OVERRIDE_OBSERVE_OPTIONS).
+        // What it must never do is react to its OWN writes: that loop ran at
+        // ~60 Hz and restarted then cancelled every CSS transition on the page.
+        // Two things stop it — the writes are idempotent, and the observer is
+        // disconnected for the duration of each pass.
         let observer: MutationObserver | null = null;
-        // Re-attaching after a re-render is bounded work; a page that keeps
-        // mutating its own DOM (an animation loop, a carousel) must not turn
-        // this into an unbounded rewrite loop.
-        let remaining = MAX_OVERRIDE_REAPPLIES;
 
         const apply = () => {
           // Disconnect around our own writes: `disconnect()` also empties the
-          // queue, so mutations we cause never reach the callback.
+          // queue, so mutations we cause never reach the callback. Re-attaching
+          // in `finally` means an exception mid-pass can't leave the overrides
+          // permanently unwatched.
           observer?.disconnect();
           try {
             applyOverridesToContainer(container, overrides, variables);
           } finally {
-            if (remaining > 0) observer?.observe(container, OVERRIDE_OBSERVE_OPTIONS);
+            observer?.observe(container, OVERRIDE_OBSERVE_OPTIONS);
           }
         };
 
@@ -494,11 +517,10 @@ export function LibrarySectionHydrator() {
         if (typeof MutationObserver !== "undefined") {
           let scheduled = false;
           observer = new MutationObserver(() => {
-            if (scheduled || remaining <= 0) return;
+            if (scheduled) return;
             scheduled = true;
             setTimeout(() => {
               scheduled = false;
-              remaining -= 1;
               apply();
             }, 16);
           });

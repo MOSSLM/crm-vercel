@@ -22,9 +22,32 @@ import React from "react";
  * default here would be a CRM string on a client's page — which is what the
  * shared root layout was doing.
  */
+
+/**
+ * The two reset rules that dropping `globals.css` actually took away here.
+ *
+ * `LIBRARY_BASE_CSS` in DynamicPageRenderer already applies `box-sizing` and
+ * `img { max-width: 100% }` inside `[data-lsi]`, which is every design section,
+ * and the Tailwind CDN re-supplies a full preflight at runtime. What was left
+ * uncovered is the page chrome *outside* the sections — the demo paywall bar,
+ * the preview diagnosis page — plus iOS text inflation.
+ *
+ * Deliberately nothing that changes a display mode. A rule like
+ * `img { display: block }` is part of Tailwind's preflight but it is a
+ * rendering decision, not a reset, and imported designs lay out their inline
+ * images assuming the browser default.
+ */
+const PUBLIC_RESET_CSS = `
+*,::before,::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+`;
+
 export default function PublicSiteLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" suppressHydrationWarning>
+      <head>
+        <style dangerouslySetInnerHTML={{ __html: PUBLIC_RESET_CSS }} />
+      </head>
       <body style={{ margin: 0 }}>{children}</body>
     </html>
   );
