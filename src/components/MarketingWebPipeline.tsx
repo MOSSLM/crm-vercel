@@ -968,10 +968,14 @@ const OpportunityEditModal: React.FC<{
   const deletedReviewIds = React.useRef<string[]>([]);
   const variablesRef = React.useRef<Record<string, unknown>>({});
 
-  // Catalogue des service tags autorisés (allowlist globale comprise), chargé
-  // une fois pour toute la page : la fiche les propose au lieu de les faire
-  // retaper. La modale est montée en permanence, d'où l'absence de dépendance.
+  // Catalogue des service tags autorisés : taxonomie métier, tags déjà posés
+  // sur les entreprises et les dossiers lead magnet, allowlist des Paramètres
+  // appliquée. Rechargé à CHAQUE ouverture de fiche — un tag saisi à la main
+  // ailleurs (ou ici même, à la fiche précédente) doit se retrouver dans la
+  // liste au lieu d'être retapé une seconde fois.
+  const modalOpen = !!item;
   React.useEffect(() => {
+    if (!modalOpen) return;
     let cancelled = false;
     authedFetch("/api/site-builder/service-tags")
       .then((r) => (r.ok ? r.json() : null))
@@ -984,7 +988,7 @@ const OpportunityEditModal: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [modalOpen]);
 
   const entrepriseId = item?.entreprise_id ?? null;
   const projectId = item?.project?.id ?? null;
