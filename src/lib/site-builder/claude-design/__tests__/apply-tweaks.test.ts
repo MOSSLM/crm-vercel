@@ -27,6 +27,28 @@ describe("tweaksToCssVars", () => {
     expect(vars["--serif"]).toContain("Space Grotesk");
     expect(vars["--sans"]).toContain("DM Sans");
   });
+
+  it("maps the card-float sliders onto --fc-amp / --fc-dur", () => {
+    const vars = tweaksToCssVars({ flotAmp: 18, flotDur: 3.5 });
+    expect(vars["--fc-amp"]).toBe("18px");
+    expect(vars["--fc-dur"]).toBe("3.5s");
+    // 0 is a real amplitude (float off), not "unset"
+    expect(tweaksToCssVars({ flotAmp: 0 })["--fc-amp"]).toBe("0px");
+  });
+
+  it("leaves the float vars to the stylesheet when the sliders are unset", () => {
+    const vars = tweaksToCssVars({});
+    expect(vars).not.toHaveProperty("--fc-amp");
+    expect(vars).not.toHaveProperty("--fc-dur");
+  });
+
+  it("turns the motif intensity slider into the --pat-a alpha (0 → 1)", () => {
+    expect(tweaksToCssVars({ motifIntensite: 80 })["--pat-a"]).toBe("0.8");
+    expect(tweaksToCssVars({ motifIntensite: 0 })["--pat-a"]).toBe("0");
+    expect(tweaksToCssVars({ motifIntensite: "35" })["--pat-a"]).toBe("0.35");
+    // applyPatterns() always sets it — 55 % is the template's own default
+    expect(tweaksToCssVars({})["--pat-a"]).toBe("0.55");
+  });
 });
 
 describe("tweaksDataAttrs", () => {
@@ -59,6 +81,49 @@ describe("tweaksDataAttrs", () => {
     expect(attrs["data-hide-certifs"]).toBe("");
     expect(attrs).not.toHaveProperty("data-hide-marques");
   });
+
+  it("writes the navbar style every skin's CSS gates on", () => {
+    expect(tweaksDataAttrs({ navbar: "Flottante" })["data-nav"]).toBe("flottante");
+    expect(tweaksDataAttrs({ navbar: "Classique" })["data-nav"]).toBe("classique");
+    expect(tweaksDataAttrs({})["data-nav"]).toBe("classique");
+  });
+
+  it("maps the motif tweaks onto the patterns.css hooks", () => {
+    const attrs = tweaksDataAttrs({ motif: "Lignes + croix", motifPortee: "Tout" });
+    expect(attrs["data-pattern"]).toBe("lignes-croix");
+    expect(attrs["data-pattern-scope"]).toBe("tout");
+    expect(tweaksDataAttrs({ motif: "Aucun" })["data-pattern"]).toBe("aucun");
+    // applyPatterns() runs with or without a saved theme → template defaults
+    const bare = tweaksDataAttrs({});
+    expect(bare["data-pattern"]).toBe("quadrille");
+    expect(bare["data-pattern-scope"]).toBe("clair");
+  });
+
+  it("prefers this skin's own pattern table over the built-in one", () => {
+    const sets = {
+      fontSets: {}, weightSets: {}, cornerSets: {},
+      patternSlugs: { "Béton": "beton" }, patternScopes: { "Partout": "tout" },
+    };
+    expect(tweaksDataAttrs({ motif: "Béton" }, sets)["data-pattern"]).toBe("beton");
+    expect(tweaksDataAttrs({ motifPortee: "Partout" }, sets)["data-pattern-scope"]).toBe("tout");
+    // the shared names still resolve through the built-in fallback
+    expect(tweaksDataAttrs({ motif: "Points" }, sets)["data-pattern"]).toBe("points");
+  });
+
+  it("emits the artefact flags with the template's own defaults", () => {
+    // motifHero / filets / croixAngles read `!== false` → ON when unset
+    const bare = tweaksDataAttrs({});
+    expect(bare["data-pattern-hero"]).toBe("");
+    expect(bare["data-filets"]).toBe("");
+    expect(bare["data-croix"]).toBe("");
+    expect(bare).not.toHaveProperty("data-colonnes"); // opt-in
+
+    const off = tweaksDataAttrs({ motifHero: false, filets: false, croixAngles: "false", colonnes: true });
+    expect(off).not.toHaveProperty("data-pattern-hero");
+    expect(off).not.toHaveProperty("data-filets");
+    expect(off).not.toHaveProperty("data-croix");
+    expect(off["data-colonnes"]).toBe("");
+  });
 });
 
 describe("tweaksExtrasScript — stepperMobile (mobile deck)", () => {
@@ -83,6 +148,44 @@ describe("tweaksExtrasScript — stepperMobile (mobile deck)", () => {
     expect(js).toContain("cvc-stepper-style");
     expect(js).toContain("cvc-stepper-mobile");
     expect(js).toContain("cvc-pro-style");
+  });
+});
+
+describe("tweaksExtrasScript — zone d'intervention (rayonKm)", () => {
+  it("seeds the key, stamps the map and refreshes the « … km » labels", () => {
+    const js = tweaksExtrasScript({ rayonKm: 150 });
+    expect(js).toContain("cvc-zone-rayon");
+    expect(js).toContain("zone-leaflet");
+    expect(js).toContain("data-radius-km");
+    expect(js).toContain("data-zone-km");
+    expect(js).toContain("window.setZoneRadiusKm(150)");
+  });
+
+  it("ignores a missing or nonsensical radius", () => {
+    expect(tweaksExtrasScript({})).toBe("");
+    expect(tweaksExtrasScript({ rayonKm: 0 })).toBe("");
+    expect(tweaksExtrasScript({ rayonKm: "beaucoup" })).toBe("");
+  });
+
+  it("reads a radius round-tripped as a string", () => {
+    expect(tweaksExtrasScript({ rayonKm: "80" })).toContain("window.setZoneRadiusKm(80)");
+  });
+});
+
+describe("tweaksExtrasScript — ordering", () => {
+  // site.js reads cvc-stepper-style / cvc-zone-rayon while it BUILDS the stepper
+  // and the map. The seeds must therefore run straight away; only the element
+  // work may wait for DOMContentLoaded.
+  it("seeds localStorage outside — and before — the deferred block", () => {
+    const js = tweaksExtrasScript({ stepperStyle: "Pile", rayonKm: 120 });
+    // Everything after this marker is the body deferred to DOMContentLoaded.
+    const deferred = js.indexOf("(function(){function r(){");
+    expect(deferred).toBeGreaterThan(-1);
+    expect(js).toContain("if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',r);else r();");
+    expect(js.indexOf("cvc-stepper-style")).toBeLessThan(deferred);
+    expect(js.indexOf("cvc-zone-rayon")).toBeLessThan(deferred);
+    expect(js.indexOf("querySelector('.solution-stepper')")).toBeGreaterThan(deferred);
+    expect(js.indexOf("setZoneRadiusKm")).toBeGreaterThan(deferred);
   });
 });
 

@@ -15,6 +15,7 @@ import type { SitemapPage } from "@/types";
 import type { Tweaks } from "@/lib/site-builder/claude-design/apply-tweaks";
 import { tweakEnabled } from "@/lib/site-builder/claude-design/apply-tweaks";
 import type { TweakControl, TweaksSchema } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
+import { sliderValue } from "@/lib/site-builder/claude-design/parse-tweaks-schema";
 import { getSimulatedViewportHeight } from "@/lib/site-builder/preview-viewport";
 import { buildPreviewUrl } from "@/lib/site-builder/preview-url";
 import { SITE_DOMAIN } from "@/lib/site-domain";
@@ -209,7 +210,7 @@ export function ClaudeDesignBuilder({ siteId }: { siteId: string }) {
 
   const handleEdit = (key: string, entry: OverrideEntry | null) => applyOverrideUpdates({ [key]: entry });
 
-  const handleTweak = (k: string, v: string | boolean) => {
+  const handleTweak = (k: string, v: string | boolean | number) => {
     if (!data) return;
     const tweaks = { ...data.tweaks, [k]: v };
     const nextData = { ...data, tweaks };
@@ -706,7 +707,7 @@ function CanvasStage({ viewport, company, children }: {
 function DesignTweaks({ controls, tweaks, onChange }: {
   controls: TweakControl[];
   tweaks: Record<string, unknown>;
-  onChange: (key: string, value: string | boolean) => void;
+  onChange: (key: string, value: string | boolean | number) => void;
 }) {
   const val = (k: string, d = "") => (typeof tweaks[k] === "string" ? (tweaks[k] as string) : d);
   if (controls.length === 0) {
@@ -719,6 +720,30 @@ function DesignTweaks({ controls, tweaks, onChange }: {
         Tweaks détectés dans le design Claude — réglables ici, figés au déploiement.
       </div>
       {controls.map((c) => {
+        // Numeric slider (a TweakSlider, e.g. "Intensité" du motif, "Rayon" de
+        // la zone d'intervention): label + live value, then the range itself.
+        if (c.type === "slider") {
+          const n = sliderValue(c, tweaks[c.key]);
+          return (
+            <div className="cd-dtweak" key={c.key}>
+              <div className="cd-dtweak-lab" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                <span>{c.label}</span>
+                <span className="cd-range-v">{n}{c.unit ?? ""}</span>
+              </div>
+              <div className="cd-range">
+                <input
+                  type="range"
+                  aria-label={c.label}
+                  min={c.min ?? 0}
+                  max={c.max ?? 100}
+                  step={c.step ?? 1}
+                  value={n}
+                  onChange={(e) => onChange(c.key, Number(e.target.value))}
+                />
+              </div>
+            </div>
+          );
+        }
         // Boolean toggle (a TweakToggle, e.g. "Masquer les certifications"):
         // label + switch on one row, no options.
         if (c.type === "toggle") {

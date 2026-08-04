@@ -42,6 +42,12 @@ export interface ThemeSets {
   fontSets: Record<string, FontSet>;
   weightSets: Record<string, WeightSet>;
   cornerSets: Record<string, CornerSet>;
+  /** `PATTERN_SLUGS` — motif label ("Quadrillé") → `html[data-pattern]` slug
+   *  ("quadrille"). Only the skins that ship a patterns.css declare it. */
+  patternSlugs?: Record<string, string>;
+  /** `PATTERN_SCOPES` — portée label ("Claires") → `html[data-pattern-scope]`
+   *  slug ("clair"). */
+  patternScopes?: Record<string, string>;
 }
 
 type JsValue = string | number | boolean | null | JsValue[] | { [k: string]: JsValue };
@@ -203,10 +209,21 @@ function toCornerSets(raw: { [k: string]: JsValue } | null): Record<string, Corn
   return out;
 }
 
+/** `{ "Quadrillé": "quadrille", … }` — a flat label → slug map. */
+function toSlugMap(raw: { [k: string]: JsValue } | null): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw ?? {})) {
+    const s = str(value);
+    if (s) out[name] = s;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 /**
- * Extracts `FONT_SETS` / `WEIGHT_SETS` / `CORNER_SETS` from a `theme-apply.js`
- * source. Returns `null` when none of them is usable, so the caller can keep the
- * built-in fallbacks rather than store an empty table.
+ * Extracts `FONT_SETS` / `WEIGHT_SETS` / `CORNER_SETS` (+ the optional
+ * `PATTERN_SLUGS` / `PATTERN_SCOPES` of the skins that ship a patterns.css)
+ * from a `theme-apply.js` source. Returns `null` when none of them is usable, so
+ * the caller can keep the built-in fallbacks rather than store an empty table.
  */
 export function parseThemeSets(source: string): ThemeSets | null {
   if (!source) return null;
@@ -215,6 +232,10 @@ export function parseThemeSets(source: string): ThemeSets | null {
     weightSets: toWeightSets(readTable(source, "WEIGHT_SETS")),
     cornerSets: toCornerSets(readTable(source, "CORNER_SETS")),
   };
+  const patternSlugs = toSlugMap(readTable(source, "PATTERN_SLUGS"));
+  const patternScopes = toSlugMap(readTable(source, "PATTERN_SCOPES"));
+  if (patternSlugs) sets.patternSlugs = patternSlugs;
+  if (patternScopes) sets.patternScopes = patternScopes;
   const total =
     Object.keys(sets.fontSets).length + Object.keys(sets.weightSets).length + Object.keys(sets.cornerSets).length;
   return total > 0 ? sets : null;
@@ -229,6 +250,10 @@ export function coerceThemeSets(value: unknown): ThemeSets | null {
     weightSets: toWeightSets((v.weightSets ?? null) as { [k: string]: JsValue } | null),
     cornerSets: toCornerSets((v.cornerSets ?? null) as { [k: string]: JsValue } | null),
   };
+  const patternSlugs = toSlugMap((v.patternSlugs ?? null) as { [k: string]: JsValue } | null);
+  const patternScopes = toSlugMap((v.patternScopes ?? null) as { [k: string]: JsValue } | null);
+  if (patternSlugs) sets.patternSlugs = patternSlugs;
+  if (patternScopes) sets.patternScopes = patternScopes;
   const total =
     Object.keys(sets.fontSets).length + Object.keys(sets.weightSets).length + Object.keys(sets.cornerSets).length;
   return total > 0 ? sets : null;

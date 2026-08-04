@@ -58,12 +58,11 @@ export function ClaudeDesignAssets({ sharedCss, fontLinks, tweaks, themeSets }: 
     .map(([k, v]) => `d.setAttribute(${JSON.stringify(k)},${JSON.stringify(v)});`)
     .join("")}${seedThemeScript(tweaks)}}catch(e){}`;
 
-  // Per-page section tweaks (stepper/pro) — DOMContentLoaded-guarded, so it is
-  // safe to emit here at the top.
-  const extras = tweaksExtrasScript(tweaks);
-  const extrasJs = extras
-    ? `(function(){function r(){${extras}}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',r);else r();})();`
-    : "";
+  // Per-page section tweaks (stepper / pro / rayon de zone). Self-guarded: the
+  // localStorage seeds run now — the design's runtime reads them as it builds
+  // the stepper and the map, further down the page — and the element work waits
+  // for DOMContentLoaded on its own. Safe to emit here at the top.
+  const extrasJs = tweaksExtrasScript(tweaks);
 
   return (
     <>

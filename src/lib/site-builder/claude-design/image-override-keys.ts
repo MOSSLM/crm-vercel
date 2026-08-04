@@ -28,6 +28,37 @@ export function imageSlotPaths(overrides: Record<string, unknown>): Set<string> 
   return paths;
 }
 
+/** How many photo overrides a page carries. */
+export function countImageOverrides(overrides: Record<string, unknown>): number {
+  return Object.keys(overrides).filter(isImageOverrideKey).length;
+}
+
+/**
+ * Pages the SOURCE design carries photos on that the TARGET design does not have
+ * at all — the cross-template copy can only match slug to slug, so those pages
+ * have nowhere to land.
+ *
+ * The CVC export grows: a new service page (rénovation générale…) lands in every
+ * skin of the ZIP at once, but a template imported before it simply has no such
+ * page until it is re-imported. The copy then quietly skipped it, which reads as
+ * "the import forgot my new page". Naming them turns that silence into a next
+ * step, for this page and for every one added later.
+ *
+ * Ordered by slug; pages with no photo to copy are left out — there is nothing
+ * to act on there.
+ */
+export function pagesMissingFromTarget(
+  sourceOverridesBySlug: ReadonlyMap<string, Record<string, unknown>>,
+  /** The target's page slugs — a Set, or any slug-keyed Map (both expose `has`). */
+  targetSlugs: { has(slug: string): boolean },
+): Array<{ slug: string; images: number }> {
+  return [...sourceOverridesBySlug.entries()]
+    .filter(([slug]) => !targetSlugs.has(slug))
+    .map(([slug, overrides]) => ({ slug, images: countImageOverrides(overrides) }))
+    .filter((p) => p.images > 0)
+    .sort((a, b) => a.slug.localeCompare(b.slug));
+}
+
 /**
  * Clears the image kinds of `path` that the incoming write does NOT replace —
  * so a slot never ends up holding two contradictory settings, and never loses a
