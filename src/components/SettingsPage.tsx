@@ -42,6 +42,7 @@ import {
 import { useTheme } from './ThemeContext';
 import { THEME_PRESETS, ThemePreset } from './themePresets';
 import { EnrichmentTagsSettings } from './settings/EnrichmentTagsSettings';
+import { GoogleStatsSettings } from './settings/GoogleStatsSettings';
 import { EnrichmentLlmSettings } from './settings/EnrichmentLlmSettings';
 import { EnrichmentReenrichSettings } from './settings/EnrichmentReenrichSettings';
 import { VilleSeoSettings } from './settings/VilleSeoSettings';
@@ -491,6 +492,7 @@ export const SettingsPage: React.FC = () => {
           <EnrichmentReenrichSettings />
           <VilleSeoSettings />
           <MediaAutotagSettings />
+          <GoogleStatsSettings />
           <EnrichmentTagsSettings />
         </TabsContent>
 

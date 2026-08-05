@@ -276,6 +276,19 @@ export const serviceTagMergeSchema = z.object({
 export type ServiceTagMergePayload = z.infer<typeof serviceTagMergeSchema>;
 
 /**
+ * Rattrapage de la note et du nombre d'avis depuis Google Places.
+ *
+ * Sans `entreprise_ids`, porte sur toutes les fiches candidates — celles qui ont
+ * une page Google mais dont la note ou le compte d'avis manque.
+ */
+export const googleStatsRefreshSchema = z.object({
+  entreprise_ids: z.array(z.number().int().positive()).max(2000).optional(),
+  /** Curseur keyset : ne traite que les entreprises d'id supérieur (reprise). */
+  after_id: z.number().int().nonnegative().optional(),
+});
+export type GoogleStatsRefreshPayload = z.infer<typeof googleStatsRefreshSchema>;
+
+/**
  * Moves a batch of opportunities to another CRM pipeline from the Marketing &
  * Web board (e.g. "Entreprises sans site web", "Streak mars/avril", "Général").
  */

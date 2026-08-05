@@ -12,7 +12,13 @@
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import type { ProjectContext, LLMExtraction, GooglePlaceData, EnrichResult, LlmConfig, LlmProvider } from "./types.ts";
 import { serviceTagKey } from "./types.ts";
-import { extractLatLngFromUrl } from "./google.ts";
+import {
+  extractLatLngFromUrl,
+  fetchGooglePlace,
+  isV1PlaceId,
+  resolvePlaceId,
+  searchPlaceId,
+} from "./google.ts";
 import { parisRegionFor, pickSeoCity, type LatLng } from "./geo.ts";
 import {
   loadBigCityCandidates,
@@ -437,6 +443,27 @@ export async function applyExtraction(
     }
   }
 
+  // --- note + nombre d'avis Google ---
+  //
+  // Ces deux champs étaient RÉCUPÉRÉS puis jetés : `google.total_reviews` ne
+  // servait qu'à estimer `stat_satisfied_clients` (× 1.4 plus bas), et rien ne
+  // les écrivait sur l'entreprise. Leur valeur restait donc celle du scraping
+  // initial, d'où 132 fiches avec une note Google et zéro avis — et un site qui
+  // affiche « 4,8 (0 avis) ».
+  //
+  // Écriture autoritaire, contrairement au reste de cette fonction : Google EST
+  // la source de ces deux chiffres, et une note périmée n'a aucune valeur. Mais
+  // seulement quand Google répond vraiment — un `null` ne doit jamais effacer une
+  // valeur existante.
+  if (google?.total_reviews != null && google.total_reviews !== ctx.entreprise.nombre_avis) {
+    entrepriseUpdate.nombre_avis = google.total_reviews;
+    updatedFields.push("entreprise.nombre_avis");
+  }
+  if (google?.rating != null && Number(ctx.entreprise.note_moyenne) !== google.rating) {
+    entrepriseUpdate.note_moyenne = google.rating;
+    updatedFields.push("entreprise.note_moyenne");
+  }
+
   // --- ville SEO : la grande ville mise en avant sur le site ---
   // Source de vérité = `override_city`, qui alimente `{{ entreprise.ville_seo }}`.
   // `override_location` est conservé en miroir pour les designs déjà publiés qui
@@ -710,6 +737,91 @@ export interface RecomputeResult {
   ville_seo?: string;
   source?: VilleSeoSource;
   reason?: string;
+}
+
+export interface GoogleStatsResult {
+  entreprise_id: number;
+  status: "updated" | "unchanged" | "skipped" | "failed";
+  nombre_avis?: number | null;
+  note_moyenne?: number | null;
+  reason?: string;
+}
+
+/**
+ * Va chercher la note et le nombre d'avis sur la fiche Google d'une entreprise,
+ * sans rien d'autre : un appel Places, ni scraping ni LLM, donc AUCUNE IA — ce
+ * sont deux champs d'API (`rating`, `userRatingCount`).
+ *
+ * Sert à rattraper les fiches dont le scraping initial n'avait relevé que la
+ * note : 132 entreprises affichaient une note Google avec zéro avis, ce que le
+ * site rendait en « 4,8 (0 avis) ». L'enrichissement complet aurait pu les
+ * corriger, mais il coûte un scraping et un appel LLM par fiche, et aucune de ces
+ * 132 n'a de projet lead magnet — donc rien à enrichir.
+ *
+ * Travaille sur l'ENTREPRISE, pas sur un projet : c'est là que vivent les deux
+ * colonnes, et c'est la seule clé qui atteint ces fiches.
+ */
+export async function refreshGoogleStats(
+  sb: SupabaseClient,
+  entrepriseId: number,
+  apiKey: string,
+): Promise<GoogleStatsResult> {
+  if (!apiKey) return { entreprise_id: entrepriseId, status: "failed", reason: "no_api_key" };
+
+  const { data: ent, error } = await sb
+    .from("entreprises")
+    .select("id, name, ville, google_place_id, google_url, google_maps_url, nombre_avis, note_moyenne")
+    .eq("id", entrepriseId)
+    .maybeSingle();
+  if (error) return { entreprise_id: entrepriseId, status: "failed", reason: error.message };
+  if (!ent) return { entreprise_id: entrepriseId, status: "failed", reason: "entreprise_not_found" };
+
+  // Même résolution que l'enrichissement complet : le place_id stocké s'il est
+  // exploitable par l'API v1, sinon une recherche texte biaisée par les
+  // coordonnées de l'URL Google. Les anciens « ftid » (0x…:0x…) sont rejetés par
+  // v1, d'où le repli.
+  const raw = resolvePlaceId(ent.google_place_id, ent.google_url, ent.google_maps_url);
+  let placeId = raw && isV1PlaceId(raw) ? raw : null;
+  if (!placeId) {
+    const latLng = extractLatLngFromUrl(ent.google_url) ?? extractLatLngFromUrl(ent.google_maps_url);
+    placeId = await searchPlaceId(ent.name, ent.ville, apiKey, latLng);
+  }
+  if (!placeId) return { entreprise_id: entrepriseId, status: "skipped", reason: "no_place_id" };
+
+  const google = await fetchGooglePlace(placeId, apiKey);
+  if (!google) return { entreprise_id: entrepriseId, status: "failed", reason: "places_fetch_failed" };
+
+  // Un `null` de Google ne doit jamais effacer une valeur existante : on écrit
+  // seulement ce qui a été effectivement retourné.
+  const update: Record<string, unknown> = {};
+  if (google.total_reviews != null && google.total_reviews !== ent.nombre_avis) {
+    update.nombre_avis = google.total_reviews;
+  }
+  if (google.rating != null && Number(ent.note_moyenne) !== google.rating) {
+    update.note_moyenne = google.rating;
+  }
+
+  if (Object.keys(update).length === 0) {
+    return {
+      entreprise_id: entrepriseId,
+      status: "unchanged",
+      nombre_avis: ent.nombre_avis,
+      note_moyenne: ent.note_moyenne == null ? null : Number(ent.note_moyenne),
+    };
+  }
+
+  update.updated_at = new Date().toISOString();
+  const { error: upErr } = await sb.from("entreprises").update(update).eq("id", entrepriseId);
+  if (upErr) return { entreprise_id: entrepriseId, status: "failed", reason: upErr.message };
+
+  return {
+    entreprise_id: entrepriseId,
+    status: "updated",
+    nombre_avis: (update.nombre_avis as number | undefined) ?? ent.nombre_avis,
+    note_moyenne:
+      (update.note_moyenne as number | undefined) ??
+      (ent.note_moyenne == null ? null : Number(ent.note_moyenne)),
+  };
 }
 
 /**

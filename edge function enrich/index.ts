@@ -32,7 +32,9 @@ import {
   applyExtraction,
   loadLlmConfig,
   recomputeVilleSeo,
+  refreshGoogleStats,
   type RecomputeResult,
+  type GoogleStatsResult,
 } from "./db.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -242,6 +244,36 @@ Deno.serve(async (req: Request) => {
     body = await req.json() as EnrichRequest;
   } catch {
     return jsonResponse({ error: "invalid_json" }, 400);
+  }
+
+  // Rafraîchissement de la note + du nombre d'avis Google : un appel Places par
+  // entreprise, ni scraping ni LLM. Indexé sur les ENTREPRISES et non sur les
+  // projets — les fiches à rattraper n'en ont pas — donc traité avant la
+  // résolution des `project_ids`, qui ne s'applique pas ici.
+  if (body.action === "refresh_google_stats") {
+    const entIds = [...new Set((body.entreprise_ids ?? []).filter((n) => Number.isInteger(n) && n > 0))];
+    if (entIds.length === 0) return jsonResponse({ error: "no_entreprise_ids" }, 400);
+    if (entIds.length > 200) return jsonResponse({ error: "too_many_entreprises", max: 200 }, 400);
+    if (!GOOGLE_PLACES_API_KEY) {
+      return jsonResponse({ error: "missing_google_places_api_key" }, 500);
+    }
+    const sb = makeSupabaseClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    console.log(`Refreshing Google stats for ${entIds.length} entreprise(s)`);
+    const results: GoogleStatsResult[] = [];
+    // Séquentiel : on évite de bombarder l'API Places, comme l'enrichissement.
+    for (const id of entIds) {
+      results.push(await refreshGoogleStats(sb, id, GOOGLE_PLACES_API_KEY));
+    }
+    return jsonResponse({
+      results,
+      summary: {
+        total: results.length,
+        updated: results.filter((r) => r.status === "updated").length,
+        unchanged: results.filter((r) => r.status === "unchanged").length,
+        skipped: results.filter((r) => r.status === "skipped").length,
+        failed: results.filter((r) => r.status === "failed").length,
+      },
+    }, 200);
   }
 
   const ids: string[] = [];
