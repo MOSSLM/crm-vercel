@@ -14,6 +14,9 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0
 import {
   boundingBox,
   DEFAULT_GEO_SETTINGS,
+  normalizeCityName,
+  pickSurroundingCities,
+  SURROUNDING_DEFAULTS,
   type CommuneCandidate,
   type GeoSettings,
   type LatLng,
@@ -50,9 +53,14 @@ function normalizeName(s: string): string {
 // Seuils d'arbitrage
 // ---------------------------------------------------------------------
 export async function loadGeoSettings(sb: SupabaseClient): Promise<GeoSettings> {
+  // `select("*")` et non la liste explicite : une seule colonne absente faisait
+  // échouer la requête entière, `isMissingRelation` renvoyait alors true et TOUS
+  // les seuils retombaient sur les défauts — les réglages de l'utilisateur étaient
+  // silencieusement ignorés. Avec l'étoile, l'ajout d'une colonne ne peut plus
+  // provoquer cette régression.
   const { data, error } = await sb
     .from("enrichment_geo_settings")
-    .select("metro_population, metro_radius_km, big_city_population, preferred_radius_km, max_radius_km")
+    .select("*")
     .eq("id", "default")
     .maybeSingle();
 
@@ -207,4 +215,76 @@ export async function loadBigCityCandidates(
       typeof r.population === "number"
     )
     .map((r) => ({ nom: r.nom, population: r.population, lat: r.lat, lon: r.lon }));
+}
+
+// ---------------------------------------------------------------------
+// Zones desservies
+// ---------------------------------------------------------------------
+/**
+ * Communes réelles à présenter comme zones desservies, ou `[]`.
+ *
+ * Remplace la liste que le LLM inventait. Le seuil descend par paliers — 3 000,
+ * puis 2 000, puis 1 000 habitants — et s'arrête dès qu'il y a de quoi remplir la
+ * liste : en zone dense on reste à 3 000 (ce que le prompt demandait déjà), et le
+ * rural profond obtient quand même des voisines crédibles au lieu de rien.
+ *
+ * Rend `[]` sans lever si `communes_fr` n'est pas chargée : l'appelant retombe
+ * alors sur la liste du LLM, comme avant.
+ */
+export async function loadSurroundingCities(
+  sb: SupabaseClient,
+  origin: LatLng,
+  exclude: readonly string[],
+  /** Liste du LLM, utilisée en complément et filtrée par l'existence en base. */
+  llmFallback: readonly string[] = [],
+): Promise<{ villes: string[]; source: "geo" | "llm_filtre" | "llm_brut" | "aucune" }> {
+  const tiers = SURROUNDING_DEFAULTS.populationTiers;
+  let lastPool: CommuneCandidate[] = [];
+
+  for (const populationMin of tiers) {
+    const candidates = await loadBigCityCandidates(
+      sb,
+      origin,
+      SURROUNDING_DEFAULTS.radiusKm,
+      populationMin,
+    );
+    if (candidates.length > 0) lastPool = candidates;
+
+    const villes = pickSurroundingCities(origin, candidates, {
+      radiusKm: SURROUNDING_DEFAULTS.radiusKm,
+      count: SURROUNDING_DEFAULTS.count,
+      exclude,
+    });
+    // Assez de voisines à ce palier : inutile de descendre chercher des villages.
+    if (villes.length >= SURROUNDING_DEFAULTS.minCount) return { villes, source: "geo" };
+    // Dernier palier atteint : on complète avec le LLM plutôt que de rendre une
+    // liste maigre, mais on ne garde de lui que ce qui existe VRAIMENT dans le
+    // rayon — c'est tout l'objet de la correction.
+    if (populationMin === tiers[tiers.length - 1]) {
+      if (villes.length > 0 || lastPool.length > 0) {
+        const known = new Map(lastPool.map((c) => [normalizeCityName(c.nom), c.nom]));
+        const already = new Set(villes.map(normalizeCityName));
+        const complements: string[] = [];
+        for (const raw of llmFallback) {
+          const key = normalizeCityName(raw);
+          const real = known.get(key);
+          if (!real || already.has(key)) continue;
+          already.add(key);
+          complements.push(real); // graphie de la base, pas celle du modèle
+          if (villes.length + complements.length >= SURROUNDING_DEFAULTS.count) break;
+        }
+        const merged = [...villes, ...complements];
+        if (merged.length > 0) {
+          return { villes: merged, source: complements.length > 0 ? "llm_filtre" : "geo" };
+        }
+      }
+      break;
+    }
+  }
+
+  // `communes_fr` n'est pas chargée (ou aucune commune dans le rayon) : on rend la
+  // liste du modèle telle quelle, exactement comme avant cette correction. Mieux
+  // vaut le comportement d'hier qu'une page sans zones desservies.
+  if (llmFallback.length > 0) return { villes: [...llmFallback], source: "llm_brut" };
+  return { villes: [], source: "aucune" };
 }

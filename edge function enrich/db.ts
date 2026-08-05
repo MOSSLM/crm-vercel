@@ -24,6 +24,7 @@ import {
   loadBigCityCandidates,
   loadGeoSettings,
   loadOriginCommune,
+  loadSurroundingCities,
   loadVilleSeoOverride,
 } from "./communes.ts";
 
@@ -503,17 +504,32 @@ export async function applyExtraction(
   }
 
   // --- villes autour : stockées dans variables (jsonb) ---
-  if (extraction.surrounding_cities.length > 0) {
+  //
+  // Ces villes s'affichent sur le site comme secteur d'intervention. Elles venaient
+  // du LLM, sans aucune validation, alors que la ville SEO juste à côté était
+  // calculée sur des distances réelles : la même page mêlait une donnée vérifiée et
+  // une donnée devinée. On les calcule donc depuis `communes_fr`, et la liste du
+  // modèle ne sert plus que de repli — filtrée par l'existence en base.
+  {
     const currentVars = ctx.lmp.variables ?? {};
     const currentSurrounding = currentVars["surrounding_cities"];
-    if (!currentSurrounding || (Array.isArray(currentSurrounding) && currentSurrounding.length === 0)) {
-      const joined = extraction.surrounding_cities.join("; ");
-      lmpUpdate.variables = {
-        ...currentVars,
-        surrounding_cities: extraction.surrounding_cities,
-        surrounding_cities_text: joined,
-      };
-      updatedFields.push("variables.surrounding_cities");
+    const alreadySet =
+      Array.isArray(currentSurrounding) && currentSurrounding.length > 0;
+
+    if (!alreadySet) {
+      // La ville SEO qu'on vient éventuellement de décider, sinon celle déjà en
+      // place : on ne veut pas la citer comme « zone desservie » alors qu'elle est
+      // mise en avant partout ailleurs sur le site.
+      const villeSeo = (lmpUpdate.override_city as string | undefined) ?? ctx.lmp.override_city;
+      const villes = await resolveSurroundingCities(sb, ctx, extraction, google, villeSeo);
+      if (villes.length > 0) {
+        lmpUpdate.variables = {
+          ...currentVars,
+          surrounding_cities: villes,
+          surrounding_cities_text: villes.join("; "),
+        };
+        updatedFields.push("variables.surrounding_cities");
+      }
     }
   }
 
@@ -705,6 +721,40 @@ async function resolveOrigin(
   }
 
   return null;
+}
+
+/**
+ * Zones desservies de l'entreprise, calculées puis complétées par le LLM.
+ *
+ * Même origine géographique que la ville SEO (`resolveOrigin`) : les deux données
+ * s'affichent sur la même page, il serait absurde qu'elles ne partent pas du même
+ * point. Sans coordonnées, on retombe sur la liste du modèle — le comportement
+ * d'avant la correction.
+ */
+async function resolveSurroundingCities(
+  sb: SupabaseClient,
+  ctx: ProjectContext,
+  extraction: LLMExtraction,
+  google: GooglePlaceData | null,
+  villeSeo: string | null,
+): Promise<string[]> {
+  const origin = await resolveOrigin(sb, ctx, google);
+  if (!origin) {
+    console.log(`[${ctx.project_id}] zones desservies : aucune coordonnée → liste du LLM telle quelle`);
+    return [...extraction.surrounding_cities];
+  }
+
+  const exclude = [ctx.entreprise.ville, villeSeo].filter((v): v is string => !!v);
+  const { villes, source } = await loadSurroundingCities(
+    sb,
+    origin.point,
+    exclude,
+    extraction.surrounding_cities,
+  );
+  console.log(
+    `[${ctx.project_id}] zones desservies : ${villes.length} ville(s), source=${source} (origine ${origin.from})`,
+  );
+  return villes;
 }
 
 /**
