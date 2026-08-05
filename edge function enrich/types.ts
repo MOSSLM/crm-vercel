@@ -56,6 +56,28 @@ export interface LlmConfig {
   model: string;
 }
 
+/**
+ * Consommation d'un appel LLM, remontée jusqu'à l'écriture pour être stockée sur
+ * le projet.
+ *
+ * Sans elle, aucun coût n'était attribuable : `usage` n'était lu que pour
+ * diagnostiquer une réponse vide, alors que des milliers de fiches sont enrichies.
+ */
+export interface LlmUsage {
+  provider: LlmProvider;
+  model: string;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+}
+
+/** Résultat d'un appel LLM : l'extraction si elle a abouti, et son coût. */
+export interface LlmAttempt {
+  extraction: LLMExtraction | null;
+  /** Statut HTTP, `0` sur erreur réseau ou expiration. Décide du retry. */
+  status: number;
+  usage: LlmUsage | null;
+}
+
 export interface EnrichRequest {
   project_id?: string;
   project_ids?: string[];
@@ -96,6 +118,15 @@ export interface EnrichResponse {
     skipped: number;
     no_website: number;
   };
+  /** `false` quand le budget de temps a interrompu le lot avant la fin. */
+  done: boolean;
+  /**
+   * Projets non traités faute de temps. L'appelant les renvoie tels quels pour
+   * continuer — c'est ce qui remplace l'expiration muette qui laissait des projets
+   * verrouillés en `processing`.
+   */
+  remaining_project_ids: string[];
+  elapsed_ms: number;
 }
 
 // Snapshot des données d'entrée récupérées de Supabase

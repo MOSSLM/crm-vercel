@@ -95,7 +95,16 @@ export const POST = withAuth({ role: "admin", body: marketingReenrichSchema }, a
     total = countRes.count ?? 0;
   }
 
-  const summary = { processed: 0, success: 0, failed: 0, no_website: 0, skipped: 0, republished: 0 };
+  const summary = {
+    processed: 0,
+    success: 0,
+    failed: 0,
+    no_website: 0,
+    skipped: 0,
+    republished: 0,
+    /** Renvoyés par l'edge function faute de temps : à relancer, pas en échec. */
+    not_attempted: 0,
+  };
   const outcomes: Outcome[] = [];
   let cursor = body.after_id ?? null;
   let done = false;
@@ -167,12 +176,26 @@ export const POST = withAuth({ role: "admin", body: marketingReenrichSchema }, a
         continue;
       }
 
-      const payload = (await res.json().catch(() => ({}))) as { results?: EdgeResult[] };
+      const payload = (await res.json().catch(() => ({}))) as {
+        results?: EdgeResult[];
+        remaining_project_ids?: string[];
+      };
       const byId = new Map<string, EdgeResult>();
       for (const r of payload.results ?? []) if (r.project_id) byId.set(r.project_id, r);
+      // L'edge function s'arrête à son propre budget de temps et rend les projets
+      // qu'elle n'a pas eu le temps de traiter. Ils ne sont NI réussis NI en
+      // échec : les compter en échec ferait croire à un problème d'enrichissement
+      // là où il n'y a qu'un lot trop gros. Ils sont revenus en `draft` par la
+      // remise à zéro, donc une relance les reprendra.
+      const notAttempted = new Set(payload.remaining_project_ids ?? []);
 
       const enriched: string[] = [];
       for (const id of ready) {
+        if (notAttempted.has(id)) {
+          summary.not_attempted += 1;
+          outcomes.push({ project_id: id, status: "not_attempted" });
+          continue;
+        }
         const r = byId.get(id);
         const status = r?.status ?? "unknown";
         summary.processed += 1;

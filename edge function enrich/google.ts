@@ -171,24 +171,42 @@ function normalizeToken(s: string): string {
 }
 
 /**
- * Garde-fou anti-mauvaise-entreprise : on n'accepte un résultat de recherche que
- * s'il partage un mot significatif avec le nom, ou si son adresse contient la ville.
+ * Garde-fou anti-mauvaise-entreprise.
+ *
+ * Le nom est une condition NÉCESSAIRE. La version précédente acceptait un
+ * résultat sur la seule ville — « ou si son adresse contient la ville » — ce qui,
+ * avec `maxResultCount: 1`, revenait à accepter le premier commerce que Google
+ * renvoie dès qu'il est dans la bonne commune. Ses avis 5 étoiles, noms de vrais
+ * clients compris, partaient alors sur le site d'une autre entreprise. Une
+ * recherche qui ne trouve pas le bon établissement doit échouer, pas se rabattre
+ * sur le voisin.
+ *
+ * La ville reste utile mais seulement comme confirmation : elle permet d'accepter
+ * un token un peu plus court (3 caractères, « ADS », « BTP ») quand l'adresse
+ * concorde, sans jamais valider à elle seule.
  */
-function looksLikeSameBusiness(
+export function looksLikeSameBusiness(
   companyName: string,
   ville: string | null,
   foundName: string,
   foundAddress: string | null,
 ): boolean {
+  const cityMatches =
+    !!ville &&
+    !!foundAddress &&
+    normalizeToken(ville).length >= 3 &&
+    normalizeToken(foundAddress).includes(normalizeToken(ville));
+
+  // Avec l'adresse en renfort on tolère des sigles courts ; sans elle, il faut un
+  // mot franchement significatif.
+  const minToken = cityMatches ? 3 : 4;
   const nameTokens = new Set(
-    companyName.split(/\s+/).map(normalizeToken).filter((t) => t.length >= 4),
+    companyName.split(/\s+/).map(normalizeToken).filter((t) => t.length >= minToken),
   );
+  if (nameTokens.size === 0) return false;
+
   for (const t of foundName.split(/\s+/).map(normalizeToken)) {
-    if (t.length >= 4 && nameTokens.has(t)) return true;
-  }
-  if (ville && foundAddress) {
-    const v = normalizeToken(ville);
-    if (v.length >= 3 && normalizeToken(foundAddress).includes(v)) return true;
+    if (t.length >= minToken && nameTokens.has(t)) return true;
   }
   return false;
 }

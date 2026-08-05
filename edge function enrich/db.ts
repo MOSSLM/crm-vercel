@@ -10,7 +10,7 @@
 // =====================================================================
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import type { ProjectContext, LLMExtraction, GooglePlaceData, EnrichResult, LlmConfig, LlmProvider } from "./types.ts";
+import type { ProjectContext, LLMExtraction, GooglePlaceData, EnrichResult, LlmConfig, LlmProvider, LlmUsage } from "./types.ts";
 import { serviceTagKey } from "./types.ts";
 import {
   extractLatLngFromUrl,
@@ -200,10 +200,17 @@ export async function acquireLock(sb: SupabaseClient, projectId: string): Promis
     return false;
   }
 
-  // Étape 2 : update conditionnel. On re-vérifie le statut pour éviter une race.
-  // Si statut était 'processing' stale, on n'a pas de garantie atomique parfaite
-  // mais c'est acceptable vu la rareté du cas.
-  const { data: updated, error: updErr } = await sb
+  // Étape 2 : update conditionnel.
+  //
+  // Le garde porte sur le statut ET sur `enrichment_started_at`, ce qui en fait un
+  // vrai compare-and-swap dans les trois cas.
+  //
+  // Le statut seul ne suffisait pas pour un `processing` PÉRIMÉ : il vaut
+  // « processing » avant comme après l'écriture, donc deux invocations
+  // concurrentes passaient toutes les deux le garde et enrichissaient le même
+  // projet — deux scrapings, deux appels LLM, deux fois le coût. En incluant le
+  // timestamp, la première écriture le change et la seconde ne matche plus rien.
+  let query = sb
     .from("lead_magnet_projects")
     .update({
       statut: "processing",
@@ -211,8 +218,11 @@ export async function acquireLock(sb: SupabaseClient, projectId: string): Promis
       enrichment_error: null,
     })
     .eq("id", projectId)
-    .eq("statut", current.statut) // guard: le statut n'a pas changé entre-temps
-    .select("id");
+    .eq("statut", current.statut);
+  query = current.enrichment_started_at
+    ? query.eq("enrichment_started_at", current.enrichment_started_at)
+    : query.is("enrichment_started_at", null);
+  const { data: updated, error: updErr } = await query.select("id");
 
   if (updErr) {
     console.error(`acquireLock update error: ${updErr.message}`);
@@ -367,6 +377,8 @@ export async function applyExtraction(
   ctx: ProjectContext,
   extraction: LLMExtraction,
   google: GooglePlaceData | null,
+  /** Consommation de l'appel LLM, stockée pour pouvoir attribuer le coût. */
+  usage: LlmUsage | null = null,
 ): Promise<ApplyResult> {
   const updatedFields: string[] = [];
   const lmpUpdate: Record<string, unknown> = {};
@@ -560,6 +572,16 @@ export async function applyExtraction(
     }
   }
 
+  // --- consommation LLM : toujours écrite, même quand rien d'autre ne change ---
+  // C'est le seul moyen d'attribuer un coût à une fiche. Les colonnes viennent
+  // d'une migration appliquée à la main : `updateProject` les retire d'office si
+  // elles manquent (cf. OPTIONAL_PROJECT_COLUMNS).
+  if (usage) {
+    lmpUpdate.enrichment_tokens_prompt = usage.prompt_tokens;
+    lmpUpdate.enrichment_tokens_completion = usage.completion_tokens;
+    lmpUpdate.enrichment_model = `${usage.provider}/${usage.model}`;
+  }
+
   // ===== Écriture lmp =====
   if (Object.keys(lmpUpdate).length > 0) {
     lmpUpdate.updated_at = new Date().toISOString();
@@ -596,12 +618,28 @@ export async function applyExtraction(
 // ---------------------------------------------------------------------
 
 /**
- * Écrit sur `lead_magnet_projects` en tolérant l'absence d'une colonne récente.
+ * Colonnes issues de migrations appliquées à la main, dont l'absence ne doit pas
+ * faire échouer tout l'enrichissement — on ne perd qu'une trace, pas la donnée
+ * métier.
  *
- * `override_city_source` vient de la migration 20260727, appliquée à la main
- * dans Supabase. Sans ce repli, l'edge function déployée avant la migration
- * ferait échouer TOUT l'enrichissement du projet sur une colonne inconnue —
- * alors que la seule chose qu'on perd, c'est la trace de provenance.
+ * `override_city_source` vient de la migration 20260727 ; les trois colonnes de
+ * consommation LLM sont plus récentes encore. Sans ce repli, une edge function
+ * déployée avant la migration ferait échouer chaque projet sur une colonne
+ * inconnue.
+ */
+const OPTIONAL_PROJECT_COLUMNS = [
+  "override_city_source",
+  "enrichment_tokens_prompt",
+  "enrichment_tokens_completion",
+  "enrichment_model",
+] as const;
+
+/**
+ * Écrit sur `lead_magnet_projects` en retirant les colonnes optionnelles absentes.
+ *
+ * Une seule nouvelle tentative, sans TOUTES les colonnes optionnelles présentes
+ * dans le payload : l'erreur PostgREST ne nomme pas toujours la colonne fautive,
+ * et retirer les quatre d'un coup coûte moins qu'un aller-retour par colonne.
  * Retourne le message d'erreur, ou null si l'écriture a réussi.
  */
 async function updateProject(
@@ -616,10 +654,15 @@ async function updateProject(
     error.code === "42703" ||
     error.code === "PGRST204" ||
     /column .* does not exist|could not find the .* column/i.test(error.message ?? "");
-  if (!missingColumn || !("override_city_source" in payload)) return error.message;
+  const optionalInPayload = OPTIONAL_PROJECT_COLUMNS.filter((c) => c in payload);
+  if (!missingColumn || optionalInPayload.length === 0) return error.message;
 
-  console.warn(`updateProject: override_city_source absente (migration non appliquée) — écriture sans elle`);
-  const { override_city_source: _dropped, ...rest } = payload;
+  console.warn(
+    `updateProject: colonne optionnelle absente (migration non appliquée) — nouvelle écriture sans ${optionalInPayload.join(", ")}`,
+  );
+  const rest = { ...payload };
+  for (const c of optionalInPayload) delete rest[c];
+  if (Object.keys(rest).length === 0) return null; // il ne restait que de l'optionnel
   const retry = await sb.from("lead_magnet_projects").update(rest).eq("id", projectId);
   return retry.error ? retry.error.message : null;
 }
@@ -782,9 +825,11 @@ export async function refreshGoogleStats(
   // v1, d'où le repli.
   const raw = resolvePlaceId(ent.google_place_id, ent.google_url, ent.google_maps_url);
   let placeId = raw && isV1PlaceId(raw) ? raw : null;
+  let resolvedBySearch = false;
   if (!placeId) {
     const latLng = extractLatLngFromUrl(ent.google_url) ?? extractLatLngFromUrl(ent.google_maps_url);
     placeId = await searchPlaceId(ent.name, ent.ville, apiKey, latLng);
+    resolvedBySearch = placeId !== null;
   }
   if (!placeId) return { entreprise_id: entrepriseId, status: "skipped", reason: "no_place_id" };
 
@@ -793,33 +838,36 @@ export async function refreshGoogleStats(
 
   // Un `null` de Google ne doit jamais effacer une valeur existante : on écrit
   // seulement ce qui a été effectivement retourné.
-  const update: Record<string, unknown> = {};
+  const stats: Record<string, unknown> = {};
   if (google.total_reviews != null && google.total_reviews !== ent.nombre_avis) {
-    update.nombre_avis = google.total_reviews;
+    stats.nombre_avis = google.total_reviews;
   }
   if (google.rating != null && Number(ent.note_moyenne) !== google.rating) {
-    update.note_moyenne = google.rating;
+    stats.note_moyenne = google.rating;
   }
 
-  if (Object.keys(update).length === 0) {
-    return {
-      entreprise_id: entrepriseId,
-      status: "unchanged",
-      nombre_avis: ent.nombre_avis,
-      note_moyenne: ent.note_moyenne == null ? null : Number(ent.note_moyenne),
-    };
-  }
+  // La mémorisation du place_id est comptée à part des statistiques : le
+  // place_id obtenu par recherche texte est FACTURÉ et doit être écrit pour ne pas
+  // repayer la même résolution au prochain passage, mais l'écrire ne veut pas dire
+  // que la note ou le nombre d'avis ont changé. Les confondre aurait fait passer
+  // toutes les fiches en « mise à jour » dans le rapport.
+  const update: Record<string, unknown> = { ...stats };
+  if (resolvedBySearch) update.google_place_id = placeId;
 
-  update.updated_at = new Date().toISOString();
-  const { error: upErr } = await sb.from("entreprises").update(update).eq("id", entrepriseId);
-  if (upErr) return { entreprise_id: entrepriseId, status: "failed", reason: upErr.message };
+  const statsChanged = Object.keys(stats).length > 0;
+
+  if (Object.keys(update).length > 0) {
+    update.updated_at = new Date().toISOString();
+    const { error: upErr } = await sb.from("entreprises").update(update).eq("id", entrepriseId);
+    if (upErr) return { entreprise_id: entrepriseId, status: "failed", reason: upErr.message };
+  }
 
   return {
     entreprise_id: entrepriseId,
-    status: "updated",
-    nombre_avis: (update.nombre_avis as number | undefined) ?? ent.nombre_avis,
+    status: statsChanged ? "updated" : "unchanged",
+    nombre_avis: (stats.nombre_avis as number | undefined) ?? ent.nombre_avis,
     note_moyenne:
-      (update.note_moyenne as number | undefined) ??
+      (stats.note_moyenne as number | undefined) ??
       (ent.note_moyenne == null ? null : Number(ent.note_moyenne)),
   };
 }
