@@ -118,16 +118,25 @@ function toCandidate(img: LibraryImage, tags: string[], fallbackAlt: string): Im
   return { url: img.url, tags, alt: img.alt?.trim() || fallbackAlt || undefined };
 }
 
-/**
- * Builds one `:image_set` worth of candidates per slot.
- *
- * `altBySlot` supplies the export's own alt text as a fallback, so a library
- * item with no description does not leave the slot without one.
- */
-export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = []): DrawResult {
+/** Everything a draw derives from its inputs before touching a single slot.
+ *  Shared by the full draw and the single-slot redraw so both compose a set the
+ *  same way — a slot rebuilt on its own must stay indistinguishable from one the
+ *  full draw produced. */
+interface DrawContext {
+  /** Canonical key → the label as the company writes it. */
+  labelByKey: Map<string, string>;
+  /** The company's trades that the library can actually serve, in order. */
+  usable: string[];
+  /** Canonical key → that trade's pool, already shuffled for this draw. */
+  shuffled: Map<string, LibraryImage[]>;
+  universals: LibraryImage[];
+  emptyTags: string[];
+  pools: Map<string, LibraryImage[]>;
+  tagKeys: string[];
+}
+
+function buildContext(input: DrawInput): DrawContext {
   const random = input.random ?? Math.random;
-  const slotCount = Math.max(0, Math.floor(input.slotCount));
-  if (slotCount === 0) return { slots: [], pools: [], emptyTags: [] };
 
   // Company trades, deduped by canonical key and keeping their written label.
   const labelByKey = new Map<string, string>();
@@ -144,50 +153,84 @@ export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = [
   for (const [key, pool] of pools) shuffled.set(key, shuffle(pool, random));
   const universals = shuffle(input.library.filter(isUniversal), random);
 
-  // Trades the draw actually uses, and how many distinct photos each owes.
   const usable = tagKeys.filter((k) => (shuffled.get(k)?.length ?? 0) > 0);
   const emptyTags = tagKeys.filter((k) => (shuffled.get(k)?.length ?? 0) === 0).map((k) => labelByKey.get(k)!);
+
+  return { labelByKey, usable, shuffled, universals, emptyTags, pools, tagKeys };
+}
+
+/** The trade slot `i` leads with — the round-robin that alternates the company's
+ *  services down the band. */
+function leadTagFor(ctx: DrawContext, slotIndex: number): string | null {
+  return ctx.usable.length > 0 ? ctx.usable[slotIndex % ctx.usable.length] : null;
+}
+
+/**
+ * Assembles one slot's candidate list around an already-chosen lead image.
+ *
+ * Order is the whole mechanism: `pickCandidate` breaks a score tie on position,
+ * so the lead trade's image comes first and is what the company sees. The other
+ * trades follow — that is what lets the same set serve a company this draw was
+ * not made for — and the universal images close the list.
+ */
+function assembleSlot(
+  ctx: DrawContext,
+  slotIndex: number,
+  leadTag: string | null,
+  leadImage: LibraryImage | null,
+  fallbackAlt: string,
+  imageForTag: (key: string) => LibraryImage,
+): DrawnSlot {
+  const candidates: ImageSetCandidate[] = [];
+  let chosen: LibraryImage | null = null;
+
+  const order = leadTag ? [leadTag, ...ctx.usable.filter((k) => k !== leadTag)] : [];
+  for (const key of order) {
+    const img = key === leadTag && leadImage ? leadImage : imageForTag(key);
+    if (key === leadTag) chosen = img;
+    candidates.push(toCandidate(img, [ctx.labelByKey.get(key)!], fallbackAlt));
+  }
+
+  for (const [key, pool] of ctx.shuffled) {
+    if (ctx.labelByKey.has(key)) continue;
+    candidates.push(toCandidate(pool[slotIndex % pool.length], [key], fallbackAlt));
+  }
+
+  if (ctx.universals.length > 0) {
+    const img = ctx.universals[slotIndex % ctx.universals.length];
+    candidates.push(toCandidate(img, [MEDIA_LIBRARY_UNIVERSAL_TAG], fallbackAlt));
+    if (!chosen) chosen = img;
+  }
+
+  return { candidates, chosen, leadTag };
+}
+
+/**
+ * Builds one `:image_set` worth of candidates per slot.
+ *
+ * `altBySlot` supplies the export's own alt text as a fallback, so a library
+ * item with no description does not leave the slot without one.
+ */
+export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = []): DrawResult {
+  const slotCount = Math.max(0, Math.floor(input.slotCount));
+  if (slotCount === 0) return { slots: [], pools: [], emptyTags: [] };
+
+  const ctx = buildContext(input);
+  const { labelByKey, usable, shuffled, pools, tagKeys, emptyTags } = ctx;
 
   const takenByTag = new Map<string, number>();
   const slots: DrawnSlot[] = [];
 
   for (let i = 0; i < slotCount; i++) {
-    const fallbackAlt = altBySlot[i] ?? "";
-    const leadTag = usable.length > 0 ? usable[i % usable.length] : null;
-
-    const candidates: ImageSetCandidate[] = [];
-    let chosen: LibraryImage | null = null;
-
-    // The lead trade first — `pickCandidate` resolves a tie on order, so this is
-    // the photo the company being drawn for will see in this slot.
-    const order = leadTag ? [leadTag, ...usable.filter((k) => k !== leadTag)] : [];
-    for (const key of order) {
+    const leadTag = leadTagFor(ctx, i);
+    // Successive slots on the same trade walk distinct photos of its pool.
+    const nextOf = (key: string): LibraryImage => {
       const pool = shuffled.get(key)!;
-      const taken = takenByTag.get(key) ?? 0;
-      const img = pool[taken % pool.length];
-      if (key === leadTag) {
-        takenByTag.set(key, taken + 1);
-        chosen = img;
-      }
-      candidates.push(toCandidate(img, [labelByKey.get(key)!], fallbackAlt));
-    }
-
-    // Every OTHER trade of the taxonomy present in the library also gets a
-    // candidate: the same set then serves a company this draw wasn't for.
-    for (const [key, pool] of shuffled) {
-      if (labelByKey.has(key)) continue;
-      candidates.push(toCandidate(pool[i % pool.length], [key], fallbackAlt));
-    }
-
-    // Universal images close the list — `pickCandidate` falls back to them when
-    // nothing matches, before giving up on the first candidate.
-    if (universals.length > 0) {
-      const img = universals[i % universals.length];
-      candidates.push(toCandidate(img, [MEDIA_LIBRARY_UNIVERSAL_TAG], fallbackAlt));
-      if (!chosen) chosen = img;
-    }
-
-    slots.push({ candidates, chosen, leadTag });
+      return pool[(takenByTag.get(key) ?? 0) % pool.length];
+    };
+    const leadImage = leadTag ? nextOf(leadTag) : null;
+    if (leadTag) takenByTag.set(leadTag, (takenByTag.get(leadTag) ?? 0) + 1);
+    slots.push(assembleSlot(ctx, i, leadTag, leadImage, altBySlot[i] ?? "", nextOf));
   }
 
   // How many distinct photos each trade owes: its slots under the round-robin.
@@ -201,6 +244,55 @@ export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = [
   }));
 
   return { slots, pools: poolReport, emptyTags };
+}
+
+export interface RedrawInput extends DrawInput {
+  /** 0-based index of the only slot to rebuild. */
+  slotIndex: number;
+  /** Photos the OTHER slots currently show — the new one avoids them, so
+   *  swapping one image never creates a duplicate in the band. */
+  usedUrls?: readonly string[];
+  /** What this slot shows right now: the redraw must land on something else,
+   *  otherwise the button would visibly do nothing. */
+  currentUrl?: string;
+}
+
+/**
+ * Rebuilds a SINGLE slot, leaving the rest of the band alone — the operator
+ * likes the selection but wants one photo swapped.
+ *
+ * The slot keeps its trade: the round-robin that alternates the company's
+ * services down the band is what makes it readable, and re-rolling one image
+ * should not collapse it. Only the photo changes, drawn from that trade's pool
+ * minus what the other slots already show.
+ *
+ * Returns `null` when nothing else is available (a one-photo pool), so the
+ * caller can say so instead of writing an identical set.
+ */
+export function redrawSlot(input: RedrawInput, fallbackAlt = ""): DrawnSlot | null {
+  const ctx = buildContext(input);
+  const leadTag = leadTagFor(ctx, input.slotIndex);
+  if (!leadTag) {
+    // No trade the library can serve: the slot only ever held a universal
+    // image, and there is no alternative to offer.
+    return null;
+  }
+
+  const pool = ctx.shuffled.get(leadTag)!;
+  const used = new Set(input.usedUrls ?? []);
+  // Already shuffled, so "the first acceptable one" IS the random pick.
+  const fresh =
+    pool.find((img) => img.url !== input.currentUrl && !used.has(img.url)) ??
+    // Pool exhausted by the other slots: settle for anything but the current
+    // photo — a visible change matters more than avoiding a repeat here.
+    pool.find((img) => img.url !== input.currentUrl);
+  if (!fresh) return null;
+
+  const nextOf = (key: string): LibraryImage => {
+    const p = ctx.shuffled.get(key)!;
+    return p[input.slotIndex % p.length];
+  };
+  return assembleSlot(ctx, input.slotIndex, leadTag, fresh, fallbackAlt, nextOf);
 }
 
 /**

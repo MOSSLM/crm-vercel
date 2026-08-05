@@ -1,4 +1,4 @@
-import { drawImageSets, seededRandom, type LibraryImage } from "../draw-image-sets";
+import { drawImageSets, redrawSlot, seededRandom, type LibraryImage } from "../draw-image-sets";
 import { pickCandidate } from "../image-set";
 
 /** `n` library images all carrying `tag`, urls `<prefix>-1.jpg`… */
@@ -119,6 +119,84 @@ describe("drawImageSets — reporting what the library lacks", () => {
     });
     expect(emptyTags).toEqual(["Climatisation"]);
     expect(slots.every((s) => s.candidates.length === 0 && s.chosen === null)).toBe(true);
+  });
+});
+
+describe("redrawSlot — swapping ONE photo", () => {
+  const TAGS = ["Climatisation", "Plomberie"];
+  const base = () => drawImageSets({ slotCount: 6, companyTags: TAGS, library: LIBRARY, random: SEED() }).slots;
+
+  it("keeps the slot's trade so the alternation survives", () => {
+    const slots = base();
+    // Slot 2 (index 1) leads with plomberie under the round-robin.
+    const next = redrawSlot({
+      slotCount: 6, companyTags: TAGS, library: LIBRARY, random: seededRandom(99),
+      slotIndex: 1,
+      usedUrls: slots.filter((_, i) => i !== 1).map((s) => s.chosen!.url),
+      currentUrl: slots[1].chosen!.url,
+    })!;
+    expect(next.leadTag).toBe("plomberie");
+    expect(next.chosen!.url).toContain("Plomberie");
+  });
+
+  it("actually changes the photo", () => {
+    const slots = base();
+    const next = redrawSlot({
+      slotCount: 6, companyTags: TAGS, library: LIBRARY, random: seededRandom(99),
+      slotIndex: 0, currentUrl: slots[0].chosen!.url,
+    })!;
+    expect(next.chosen!.url).not.toBe(slots[0].chosen!.url);
+  });
+
+  it("avoids the photos the other slots already show", () => {
+    const slots = base();
+    const used = slots.filter((_, i) => i !== 0).map((s) => s.chosen!.url);
+    const next = redrawSlot({
+      slotCount: 6, companyTags: TAGS, library: LIBRARY, random: seededRandom(99),
+      slotIndex: 0, usedUrls: used, currentUrl: slots[0].chosen!.url,
+    })!;
+    expect(used).not.toContain(next.chosen!.url);
+  });
+
+  it("still resolves to the swapped photo through pickCandidate", () => {
+    const next = redrawSlot({
+      slotCount: 6, companyTags: TAGS, library: LIBRARY, random: seededRandom(99),
+      slotIndex: 2, currentUrl: "https://x/Climatisation-1.jpg",
+    })!;
+    expect(pickCandidate(next.candidates, TAGS)!.url).toBe(next.chosen!.url);
+  });
+
+  it("keeps serving the other companies — the set is rebuilt whole", () => {
+    const next = redrawSlot({
+      slotCount: 6, companyTags: TAGS, library: LIBRARY, random: seededRandom(99), slotIndex: 0,
+    })!;
+    expect(pickCandidate(next.candidates, ["Électricité"])!.url).toContain("Électricité");
+  });
+
+  it("settles for a repeat rather than nothing when the pool is exhausted", () => {
+    // 2 photos for 3 slots of that trade: the swap can't avoid every other slot.
+    const library = pool("Climatisation", 2);
+    const next = redrawSlot({
+      slotCount: 6, companyTags: ["Climatisation"], library, random: seededRandom(5),
+      slotIndex: 0,
+      usedUrls: ["https://x/Climatisation-2.jpg"],
+      currentUrl: "https://x/Climatisation-1.jpg",
+    })!;
+    expect(next.chosen!.url).toBe("https://x/Climatisation-2.jpg"); // ≠ current, repeat accepted
+  });
+
+  it("reports that nothing else exists for a one-photo pool", () => {
+    const library = pool("Climatisation", 1);
+    expect(redrawSlot({
+      slotCount: 6, companyTags: ["Climatisation"], library, random: seededRandom(5),
+      slotIndex: 0, currentUrl: "https://x/Climatisation-1.jpg",
+    })).toBeNull();
+  });
+
+  it("reports that nothing else exists when no trade is stocked", () => {
+    expect(redrawSlot({
+      slotCount: 6, companyTags: ["Ramonage"], library: LIBRARY, random: seededRandom(5), slotIndex: 0,
+    })).toBeNull();
   });
 });
 

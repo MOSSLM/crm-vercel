@@ -5,12 +5,21 @@ import { toast } from "sonner";
 import { Shuffle, AlertTriangle, Wand2 } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 
+interface DrawnSlot {
+  order: number;
+  url: string;
+  alt: string;
+  tag: string | null;
+}
+
 interface ZoneInfo {
   id: string;
   label: string;
   hint: string;
   slotCount: number;
   pages: Array<{ slug: string; slots: number }>;
+  /** What the band shows right now — present from the first load. */
+  slots: DrawnSlot[];
 }
 
 interface Pool {
@@ -26,13 +35,6 @@ interface State {
   pools: Pool[];
   emptyTags: string[];
   librarySize: number;
-}
-
-interface DrawnSlot {
-  order: number;
-  url: string;
-  alt: string;
-  tag: string | null;
 }
 
 interface DrawResponse {
@@ -70,44 +72,58 @@ export function AutoImagesPanel({
   onDone?: () => void;
 }) {
   const [state, setState] = React.useState<State | null>(null);
-  const [drawn, setDrawn] = React.useState<DrawResponse | null>(null);
+  /** The band as last known — seeded by the GET, replaced by every draw. */
+  const [slots, setSlots] = React.useState<DrawnSlot[]>([]);
   const [busy, setBusy] = React.useState(false);
+  /** The slot being swapped, so only its thumbnail shows the spinner. */
+  const [swapping, setSwapping] = React.useState<number | null>(null);
 
   // Reload the zones + pools whenever the applied company changes: the pools are
   // reported for ITS trades, and a stale list would advertise the wrong stock.
+  // The response also carries what the band currently shows, so the per-photo
+  // swap works on a freshly opened editor, not only right after a draw.
   React.useEffect(() => {
     let alive = true;
-    setDrawn(null);
     const qs = entrepriseId != null ? `?entreprise_id=${entrepriseId}` : "";
     authedFetch(`/api/site-builder/designs/${siteId}/auto-images${qs}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d: State | null) => { if (alive) setState(d); })
-      .catch(() => { if (alive) setState(null); });
+      .then((d: State | null) => {
+        if (!alive) return;
+        setState(d);
+        setSlots(d?.zones?.[0]?.slots ?? []);
+      })
+      .catch(() => { if (alive) { setState(null); setSlots([]); } });
     return () => { alive = false; };
   }, [siteId, entrepriseId]);
 
-  const run = async (seed?: number) => {
+  /** `slot` omitted → redraw the whole band; `slot` given → swap that photo. */
+  const run = async (slot?: number) => {
     if (entrepriseId == null) return;
-    setBusy(true);
-    const t = toast.loading(seed === undefined ? "Tirage des photos…" : "Nouveau tirage…");
+    if (slot === undefined) setBusy(true); else setSwapping(slot);
+    const t = toast.loading(slot === undefined ? "Tirage des photos…" : `Nouvelle photo ${slot}…`);
     try {
       const res = await authedFetch(`/api/site-builder/designs/${siteId}/auto-images`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entrepriseId, ...(seed === undefined ? {} : { seed }) }),
+        body: JSON.stringify({ entrepriseId, ...(slot === undefined ? {} : { slot }) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((body as { error?: string }).error || "Tirage impossible");
       const result = body as DrawResponse;
-      setDrawn(result);
+      setSlots(result.zones[0]?.slots ?? []);
       setState((prev) => (prev ? { ...prev, pools: result.pools, emptyTags: result.emptyTags } : prev));
-      const pages = result.zones.reduce((n, z) => n + z.pages.length, 0);
-      toast.success(`${result.written} emplacement(s) remplis sur ${pages} page(s)`, { id: t });
+      if (slot === undefined) {
+        const pages = result.zones.reduce((n, z) => n + z.pages.length, 0);
+        toast.success(`${result.written} emplacement(s) remplis sur ${pages} page(s)`, { id: t });
+      } else {
+        toast.success(`Photo ${slot} remplacée`, { id: t });
+      }
       onDone?.();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Tirage impossible", { id: t });
     } finally {
       setBusy(false);
+      setSwapping(null);
     }
   };
 
@@ -180,22 +196,45 @@ export function AutoImagesPanel({
             <button
               className="cd-btn accent"
               style={{ width: "100%", justifyContent: "center" }}
-              disabled={busy || state.companyTags.length === 0}
+              disabled={busy || swapping !== null || state.companyTags.length === 0}
               onClick={() => run()}
             >
-              <Shuffle className="ico-sm" />{drawn ? "Retirer au sort" : "Tirer les photos"}
+              <Shuffle className="ico-sm" />{slots.length > 0 ? "Retirer au sort" : "Tirer les photos"}
             </button>
 
-            {drawn && (
-              <div className="cd-autoimg-grid">
-                {drawn.zones[0]?.slots.map((s) => (
-                  <figure key={s.order} className="cd-autoimg-thumb" title={`${s.alt || "Sans description"}${s.tag ? ` · ${s.tag}` : ""}`}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={s.url} alt={s.alt} loading="lazy" />
-                    {s.tag ? <figcaption>{s.tag}</figcaption> : null}
-                  </figure>
-                ))}
-              </div>
+            {slots.length > 0 && (
+              <>
+                <div className="cd-autoimg-grid">
+                  {slots.map((s) => (
+                    <figure
+                      key={s.order}
+                      className="cd-autoimg-thumb"
+                      title={`${s.alt || "Sans description"}${s.tag ? ` · ${s.tag}` : ""}`}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={s.url} alt={s.alt} loading="lazy" />
+                      {s.tag ? <figcaption>{s.tag}</figcaption> : null}
+                      {/* Remplace CETTE photo seulement — le reste de la bande
+                          ne bouge pas, et le métier de l'emplacement est
+                          conservé pour ne pas casser l'alternance. */}
+                      <button
+                        type="button"
+                        className="cd-autoimg-swap"
+                        aria-label={`Changer la photo ${s.order}`}
+                        title="Changer cette photo"
+                        disabled={busy || swapping !== null}
+                        onClick={() => run(s.order)}
+                      >
+                        <Shuffle className="ico-xs" />
+                      </button>
+                      {swapping === s.order ? <span className="cd-autoimg-busy" /> : null}
+                    </figure>
+                  ))}
+                </div>
+                <p className="cd-autoimg-note">
+                  Survole une photo et clique l’icône pour ne changer que celle-là.
+                </p>
+              </>
             )}
           </>
         )}
