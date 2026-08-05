@@ -11,6 +11,7 @@
 
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import type { ProjectContext, LLMExtraction, GooglePlaceData, EnrichResult, LlmConfig, LlmProvider } from "./types.ts";
+import { serviceTagKey } from "./types.ts";
 import { extractLatLngFromUrl } from "./google.ts";
 import { parisRegionFor, pickSeoCity, type LatLng } from "./geo.ts";
 import {
@@ -305,7 +306,9 @@ export async function fetchBlockedServiceTags(sb: SupabaseClient): Promise<Set<s
   }
   const blocked = new Set<string>();
   for (const row of data ?? []) {
-    if (typeof row.tag === "string") blocked.add(row.tag.trim().toLowerCase());
+    // Clé canonique, comme côté CRM : `trim().toLowerCase()` laissait
+    // « bornes-irve » traverser un blocage enregistré sur « Bornes IRVE ».
+    if (typeof row.tag === "string") blocked.add(serviceTagKey(row.tag));
   }
   return blocked;
 }
@@ -369,7 +372,7 @@ export async function applyExtraction(
   // sur l'entreprise : le filtrage est non destructif côté source de vérité.
   {
     const blockedTags = await fetchBlockedServiceTags(sb);
-    const isAllowed = (tag: string) => !blockedTags.has(tag.trim().toLowerCase());
+    const isAllowed = (tag: string) => !blockedTags.has(serviceTagKey(tag));
 
     const newTags = extraction.services_tags
       .filter((t) => t && t.trim().length > 0)
@@ -377,7 +380,7 @@ export async function applyExtraction(
 
     // Snapshot du lead magnet : ne doit contenir que des tags autorisés
     // (on purge aussi les tags devenus interdits depuis sa création).
-    const finalSnapshot = dedupeCaseInsensitive([
+    const finalSnapshot = dedupeServiceTags([
       ...ctx.lmp.service_tags_snapshot.filter(isAllowed),
       ...newTags,
     ]);
@@ -389,7 +392,7 @@ export async function applyExtraction(
     // Entreprise : merge non destructif — on conserve tous les tags existants
     // et on n'ajoute que les nouveaux tags autorisés.
     if (newTags.length > 0) {
-      const finalEntreprise = dedupeCaseInsensitive([...ctx.entreprise.service_tags, ...newTags]);
+      const finalEntreprise = dedupeServiceTags([...ctx.entreprise.service_tags, ...newTags]);
       if (finalEntreprise.length !== ctx.entreprise.service_tags.length) {
         entrepriseUpdate.service_tags = finalEntreprise;
         updatedFields.push("entreprise.service_tags");
@@ -824,12 +827,20 @@ async function insertReviewsIfNeeded(
 // ---------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------
-function dedupeCaseInsensitive(arr: string[]): string[] {
+/**
+ * Dédoublonne des service tags par clé canonique.
+ *
+ * La casse seule ne suffisait pas : « Bornes IRVE » et « bornes-irve » sont le
+ * même service pour tout le reste du CRM, mais passaient ici pour deux tags
+ * distincts. Une entreprise finissait avec les deux dans `service_tags`, et la
+ * fiche affichait le doublon.
+ */
+function dedupeServiceTags(arr: string[]): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const s of arr) {
     if (!s || typeof s !== "string") continue;
-    const key = s.trim().toLowerCase();
+    const key = serviceTagKey(s);
     if (key.length === 0) continue;
     if (seen.has(key)) continue;
     seen.add(key);
