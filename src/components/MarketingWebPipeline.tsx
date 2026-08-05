@@ -921,8 +921,17 @@ const SITE_REQUIRED: RequiredRule[] = [
   { field: "code_postal", label: "Code postal", ok: (f) => f.code_postal.trim().length > 0 },
   { field: "telephone", label: "Téléphone", ok: (f) => f.telephone.trim().length > 0 },
   { field: "service_tags", label: "Service tags", ok: (f) => toArr(f.service_tags).length > 0 },
-  { field: "note_moyenne", label: "Note moyenne", ok: (f) => Number(f.note_moyenne) > 0 },
-  { field: "nombre_avis", label: "Nombre d'avis", ok: (f) => Number(f.nombre_avis) > 0 },
+  // Avis Google : paire FACULTATIVE. Une entreprise sans fiche Google, ou avec
+  // zéro avis, n'a rien à saisir ici et ne doit pas rester bloquée pour autant.
+  // Seule la cohérence est exigée : des avis annoncés sans note afficheraient un
+  // bloc noté vide. Pas de règle sur `nombre_avis`, jamais.
+  // Doit rester aligné sur `missingForSite` côté API — le test
+  // `missing-for-site.test.ts` compare les deux listes.
+  {
+    field: "note_moyenne",
+    label: "Note moyenne",
+    ok: (f) => (Number(f.nombre_avis) > 0 ? Number(f.note_moyenne) > 0 : true),
+  },
 ];
 
 /** Une stat vide au sens du rendu : "", "0", "-" et "—" n'affichent rien. */
@@ -1292,10 +1301,17 @@ const OpportunityEditModal: React.FC<{
                 </Field>
                 <Field label="Code postal" required invalid={showInvalid("code_postal")}><Input value={form.code_postal} onChange={set("code_postal")} /></Field>
                 <Field label="Téléphone" required invalid={showInvalid("telephone")}><Input value={form.telephone} onChange={set("telephone")} /></Field>
-                <Field label="Note moyenne" required invalid={showInvalid("note_moyenne")}>
+                {/* L'astérisque de la note suit le nombre d'avis : sans avis il
+                    n'y a rien à noter, et la marquer obligatoire réclamerait un
+                    chiffre que l'entreprise n'a pas. */}
+                <Field
+                  label="Note moyenne"
+                  required={Number(form.nombre_avis) > 0}
+                  invalid={showInvalid("note_moyenne")}
+                >
                   <Input type="number" step="0.1" value={form.note_moyenne} onChange={set("note_moyenne")} placeholder="4.8" />
                 </Field>
-                <Field label="Nombre d'avis" required invalid={showInvalid("nombre_avis")}>
+                <Field label="Nombre d'avis">
                   <Input type="number" value={form.nombre_avis} onChange={set("nombre_avis")} placeholder="120" />
                 </Field>
                 <Field label="Email"><Input value={form.email} onChange={set("email")} /></Field>

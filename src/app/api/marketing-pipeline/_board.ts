@@ -61,13 +61,23 @@ function hasStat(v: unknown): boolean {
  * Returns the human-readable labels missing.
  *
  * Le principe : tout ce que le site AFFICHE est obligatoire. D'où le logo et les
- * quatre chiffres clés, en plus de l'identité (nom, ville, ville SEO, code
- * postal, téléphone), des services et des avis — un site généré sans eux sort
- * avec des blocs vides qu'il faut ensuite rattraper à la main.
+ * trois chiffres clés, en plus de l'identité (nom, ville, ville SEO, code
+ * postal, téléphone) et des services — un site généré sans eux sort avec des
+ * blocs vides qu'il faut ensuite rattraper à la main.
+ *
+ * Avec un tempérament, sans quoi le principe devient un piège : une exigence
+ * doit être SATISFIABLE. Les qualifications RGE, la note et le nombre d'avis
+ * n'existent pas pour une partie du parc — 1210 entreprises sur 2797 n'ont même
+ * pas de fiche Google. Les réclamer ne produisait pas une fiche plus complète,
+ * seulement une fiche impossible à valider, dont la seule issue était d'inventer
+ * un chiffre. Ce qu'on exige d'elles est donc leur COHÉRENCE : des avis annoncés
+ * sans note affichent un bloc noté vide, l'inverse non.
  *
  * Must stay in sync with `SITE_REQUIRED` in MarketingWebPipeline.tsx — including
  * the rule that everything living on `lead_magnet_projects` (SEO city, logo,
- * stats) is only required once that project exists.
+ * stats) is only required once that project exists. Le test
+ * `missing-for-site.test.ts` compare les deux listes de libellés : la
+ * synchronisation n'est plus une simple demande en commentaire.
  */
 export function missingForSite(ent: EntRow | undefined, project: ProjectRow | null | undefined): string[] {
   const miss: string[] = [];
@@ -84,8 +94,17 @@ export function missingForSite(ent: EntRow | undefined, project: ProjectRow | nu
       ? [str(ent.service_tags)]
       : [];
   if (tags.length === 0) miss.push("Service tags");
-  if (!(Number(ent.note_moyenne) > 0)) miss.push("Note moyenne");
-  if (!(Number(ent.nombre_avis) > 0)) miss.push("Nombre d'avis");
+  // Les avis Google forment une paire FACULTATIVE, et c'est le seul énoncé
+  // satisfiable : une entreprise sans fiche Google — 1210 sur 2797 — ou avec
+  // zéro avis — 217 — ne pouvait pas les fournir. Les exiger rendait sa fiche
+  // définitivement « incomplète », sans autre issue que d'inventer une note.
+  //
+  // Ce qui reste exigé est la COHÉRENCE : annoncer N avis sans note afficherait
+  // un bloc noté vide sur le site. Sans avis, il n'y a rien à noter, et
+  // `hydrate-reviews` retombe sur les cartes d'exemple du design.
+  if (Number(ent.nombre_avis) > 0 && !(Number(ent.note_moyenne) > 0)) {
+    miss.push("Note moyenne");
+  }
   // Logo : celui du projet prime au rendu, celui de l'entreprise sert de repli.
   if (!str(project?.logo_url) && !str(ent.logo_url)) miss.push("Logo");
   if (project) {

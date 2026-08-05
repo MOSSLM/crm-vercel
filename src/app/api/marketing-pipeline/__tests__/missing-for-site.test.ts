@@ -5,7 +5,14 @@ import { missingForSite } from "../_board";
  * ici : tout ce que la page AFFICHE est obligatoire — logo et chiffres clés
  * compris — sinon la démo sort avec des blocs vides.
  *
- * Doit rester aligné sur `SITE_REQUIRED` dans MarketingWebPipeline.tsx.
+ * Avec une limite que la première version ignorait : une exigence doit être
+ * SATISFIABLE. Réclamer les avis Google d'une entreprise qui n'a pas de fiche
+ * Google (1210 sur 2797) ou zéro avis (217) laissait sa fiche définitivement
+ * incomplète, sans autre issue que d'inventer une note.
+ *
+ * Doit rester aligné sur `SITE_REQUIRED` dans MarketingWebPipeline.tsx — le
+ * dernier test de ce fichier compare les deux listes au lieu de s'en remettre
+ * à ce commentaire.
  */
 
 type Ent = Parameters<typeof missingForSite>[0];
@@ -88,9 +95,106 @@ describe("missingForSite", () => {
     expect(missingForSite(ent(), null)).toEqual([]);
   });
 
-  it("continue de réclamer l'identité et les avis", () => {
+  it("continue de réclamer l'identité", () => {
     expect(
       missingForSite(ent({ ville: null, telephone: "", note_moyenne: 0, service_tags: [] }), project()),
     ).toEqual(["Ville", "Téléphone", "Service tags", "Note moyenne"]);
+  });
+});
+
+/**
+ * Les avis Google ne sont pas saisissables partout : sans fiche Google, il n'y a
+ * ni note ni compte à fournir. L'exigence porte donc sur leur COHÉRENCE, pas sur
+ * leur présence.
+ */
+describe("missingForSite — avis Google facultatifs", () => {
+  it("n'exige jamais le nombre d'avis", () => {
+    for (const nombre_avis of [0, null, undefined]) {
+      const miss = missingForSite(ent({ nombre_avis, note_moyenne: null }), project());
+      expect(miss).not.toContain("Nombre d'avis");
+    }
+  });
+
+  it("laisse la fiche complète sans aucun avis ni note", () => {
+    expect(missingForSite(ent({ nombre_avis: 0, note_moyenne: null }), project())).toEqual([]);
+    expect(missingForSite(ent({ nombre_avis: null, note_moyenne: 0 }), project())).toEqual([]);
+  });
+
+  it("exige la note dès qu'il y a des avis à noter", () => {
+    expect(missingForSite(ent({ nombre_avis: 120, note_moyenne: null }), project())).toEqual([
+      "Note moyenne",
+    ]);
+    expect(missingForSite(ent({ nombre_avis: 120, note_moyenne: 0 }), project())).toEqual([
+      "Note moyenne",
+    ]);
+  });
+
+  it("accepte une note sans avis — la donnée existe en base, elle ne bloque pas", () => {
+    // 25 fiches sont dans cet état : note relevée sur Google, compte non capturé
+    // par le scraping. Ce n'est pas à la validation de la fiche de le corriger.
+    expect(missingForSite(ent({ nombre_avis: 0, note_moyenne: 4.8 }), project())).toEqual([]);
+  });
+
+  it("reste complète quand les avis sont là et cohérents", () => {
+    expect(missingForSite(ent({ nombre_avis: 120, note_moyenne: 4.8 }), project())).toEqual([]);
+  });
+});
+
+/**
+ * Garde-fou anti-dérive. Les exigences existent en DEUX exemplaires — cette
+ * fonction côté API, `SITE_REQUIRED_WITH_PROJECT` côté écran — et les deux
+ * commentaires se contentaient de demander qu'elles restent alignées. Elles ne
+ * l'étaient plus dès qu'on touchait à l'une : l'écran a réclamé « Nombre
+ * d'avis » que l'API n'exigeait plus, ou l'inverse, et la fiche affichait un
+ * astérisque sur un champ que rien ne bloquait.
+ */
+describe("alignement avec les règles de l'écran", () => {
+  /** Tous les libellés que `missingForSite` peut produire, sondés champ par champ. */
+  const labelsFromApi = (): Set<string> => {
+    const found = new Set<string>();
+    const blanks: Array<Partial<NonNullable<Ent>>> = [
+      { name: "" },
+      { ville: null },
+      { code_postal: null },
+      { telephone: "" },
+      { service_tags: [] },
+      { note_moyenne: null, nombre_avis: 120 },
+      { logo_url: null },
+    ];
+    for (const over of blanks) {
+      for (const l of missingForSite(ent(over), project({ logo_url: null }))) found.add(l);
+    }
+    for (const over of [
+      { override_city: "" },
+      { stat_years_experience: "" },
+      { stat_satisfied_clients: "" },
+      { stat_installations_completed: "" },
+    ] as Array<Partial<NonNullable<Proj>>>) {
+      for (const l of missingForSite(ent(), project(over))) found.add(l);
+    }
+    return found;
+  };
+
+  it("produit exactement les libellés de l'écran", () => {
+    // Recopiés de `SITE_REQUIRED_WITH_PROJECT` (MarketingWebPipeline.tsx). Toute
+    // divergence doit casser ici, pas en production.
+    const ecran = new Set([
+      "Nom",
+      "Ville",
+      "Code postal",
+      "Téléphone",
+      "Service tags",
+      "Note moyenne",
+      "Ville SEO",
+      "Logo",
+      "Années d'expérience",
+      "Clients satisfaits",
+      "Installations",
+    ]);
+    expect([...labelsFromApi()].sort()).toEqual([...ecran].sort());
+  });
+
+  it("ne réclame plus « Nombre d'avis » nulle part", () => {
+    expect(labelsFromApi().has("Nombre d'avis")).toBe(false);
   });
 });
