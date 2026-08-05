@@ -51,6 +51,15 @@ const project = (over: Partial<NonNullable<Proj>> = {}): Proj =>
     ...over,
   }) as Proj;
 
+/** Projet dont AUCUNE estimation n'est remplie — seul l'officiel peut le sauver. */
+const projectSansEstimation = (over: Partial<NonNullable<Proj>> = {}): Proj =>
+  project({
+    stat_years_experience: "",
+    stat_satisfied_clients: "",
+    stat_installations_completed: "",
+    ...over,
+  });
+
 describe("missingForSite", () => {
   it("ne réclame rien quand la fiche est complète", () => {
     expect(missingForSite(ent(), project())).toEqual([]);
@@ -196,5 +205,64 @@ describe("alignement avec les règles de l'écran", () => {
 
   it("ne réclame plus « Nombre d'avis » nulle part", () => {
     expect(labelsFromApi().has("Nombre d'avis")).toBe(false);
+  });
+});
+
+/**
+ * Les chiffres confirmés par le client (migration 20260805) sont prioritaires à
+ * l'affichage et jamais écrits par l'enrichissement. Ils doivent donc satisfaire
+ * l'exigence exactement comme une estimation : sans ce « ou », remplacer une
+ * estimation par un vrai chiffre aurait rendu la fiche incomplète — l'inverse de
+ * l'effet voulu.
+ */
+describe("missingForSite — chiffres officiels", () => {
+  it("un chiffre officiel suffit quand l'estimation est vide", () => {
+    expect(
+      missingForSite(
+        ent(),
+        projectSansEstimation({
+          stat_years_experience_official: "20",
+          stat_satisfied_clients_official: "900",
+          stat_installations_completed_official: "1500",
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("réclame encore ce qui n'est ni estimé ni confirmé", () => {
+    expect(
+      missingForSite(
+        ent(),
+        projectSansEstimation({
+          stat_years_experience_official: "20",
+          stat_satisfied_clients_official: "900",
+        }),
+      ),
+    ).toEqual(["Installations"]);
+  });
+
+  it("l'estimation seule reste suffisante — rien ne devient obligatoire", () => {
+    expect(missingForSite(ent(), project())).toEqual([]);
+  });
+
+  it("traite « 0 » et « — » officiels comme vides, comme les estimations", () => {
+    for (const value of ["0", "—", "", null]) {
+      expect(
+        missingForSite(
+          ent(),
+          projectSansEstimation({
+            stat_years_experience_official: value,
+            stat_satisfied_clients_official: "900",
+            stat_installations_completed_official: "1500",
+          }),
+        ),
+      ).toEqual(["Années d'expérience"]);
+    }
+  });
+
+  it("les qualifications RGE officielles ne sont pas davantage requises", () => {
+    expect(missingForSite(ent(), project({ stat_rge_count: "", stat_rge_count_official: "" }))).toEqual(
+      [],
+    );
   });
 });

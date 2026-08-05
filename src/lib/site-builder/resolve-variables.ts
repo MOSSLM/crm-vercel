@@ -159,12 +159,12 @@ export async function resolveEnterpriseVariables(
     const [projResult, reviewsResult] = await Promise.all([
       supabase
         .from("lead_magnet_projects")
-        .select(
-          "override_entreprise_name, override_city, override_location, " +
-            "override_phone, override_email, override_address, variables, " +
-            "logo_url, service_tags_snapshot, stat_years_experience, " +
-            "stat_satisfied_clients, stat_installations_completed, stat_rge_count"
-        )
+        // `*` et non une liste de colonnes : les `stat_*_official` viennent d'une
+        // migration appliquée à la main, et une colonne absente d'un select
+        // explicite fait échouer la requête ENTIÈRE — on perdrait alors tout
+        // l'enrichissement du projet (logo, tags, ville SEO) pour une colonne
+        // facultative. Une seule ligne est lue, le surcoût est nul.
+        .select("*")
         .eq("id", projectId)
         .single(),
       supabase
@@ -189,6 +189,11 @@ export async function resolveEnterpriseVariables(
       stat_satisfied_clients: string | null;
       stat_installations_completed: string | null;
       stat_rge_count: string | null;
+      /** Chiffres confirmés par le client — absents si la migration n'est pas passée. */
+      stat_years_experience_official?: string | null;
+      stat_satisfied_clients_official?: string | null;
+      stat_installations_completed_official?: string | null;
+      stat_rge_count_official?: string | null;
     } | null;
     if (proj) {
       if (proj.override_entreprise_name) {

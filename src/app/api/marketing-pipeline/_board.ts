@@ -108,9 +108,23 @@ export function missingForSite(ent: EntRow | undefined, project: ProjectRow | nu
   // Logo : celui du projet prime au rendu, celui de l'entreprise sert de repli.
   if (!str(project?.logo_url) && !str(ent.logo_url)) miss.push("Logo");
   if (project) {
-    if (!hasStat(project.stat_years_experience)) miss.push("Années d'expérience");
-    if (!hasStat(project.stat_satisfied_clients)) miss.push("Clients satisfaits");
-    if (!hasStat(project.stat_installations_completed)) miss.push("Installations");
+    // Le chiffre confirmé par le client satisfait l'exigence autant que
+    // l'estimation : c'est celui qui s'affichera (cf. `effectiveStat`). Sans ce
+    // « ou », remplacer une estimation par un vrai chiffre aurait rendu la fiche
+    // incomplète — l'inverse de l'effet voulu.
+    const hasEither = (estimated: unknown, official: unknown) =>
+      hasStat(official) || hasStat(estimated);
+    if (!hasEither(project.stat_years_experience, project.stat_years_experience_official)) {
+      miss.push("Années d'expérience");
+    }
+    if (!hasEither(project.stat_satisfied_clients, project.stat_satisfied_clients_official)) {
+      miss.push("Clients satisfaits");
+    }
+    if (
+      !hasEither(project.stat_installations_completed, project.stat_installations_completed_official)
+    ) {
+      miss.push("Installations");
+    }
     // Les qualifications RGE ne sont PAS requises : beaucoup d'entreprises n'en
     // ont aucune, et le bloc « chiffres clés » se contente alors de trois
     // colonnes. L'exiger faisait remonter une variable manquante impossible à
@@ -133,6 +147,14 @@ type ProjectRow = {
   stat_satisfied_clients: string | null;
   stat_installations_completed: string | null;
   stat_rge_count: string | null;
+  /**
+   * Chiffres confirmés par le client (migration 20260805, appliquée à la main) :
+   * prioritaires à l'affichage, et suffisants pour valider la fiche.
+   */
+  stat_years_experience_official?: string | null;
+  stat_satisfied_clients_official?: string | null;
+  stat_installations_completed_official?: string | null;
+  stat_rge_count_official?: string | null;
   enrichment_validated?: boolean | null;
 };
 
@@ -346,26 +368,44 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     const PROJECT_COLUMNS =
       "id, opportunite_id, entreprise_id, statut, pret_pour_lm, override_city, logo_url, " +
       "stat_years_experience, stat_satisfied_clients, stat_installations_completed, stat_rge_count";
+    /** Chiffres confirmés par le client — migration 20260805, appliquée à la main. */
+    const OFFICIAL_COLUMNS =
+      "stat_years_experience_official, stat_satisfied_clients_official, " +
+      "stat_installations_completed_official, stat_rge_count_official";
     // Recherche par ENTREPRISE, pas par opportunité : le dossier lead magnet est
     // par entreprise (chiffres clés, logo, ville SEO, avis, site démo le sont
     // tous). Interroger par `opportunite_id` laissait sans dossier la carte du
     // deal qui n'avait pas créé la ligne — et en affichait un différent sur
     // chaque deal quand l'entreprise en avait deux.
-    const withCol = await supabase
-      .from("lead_magnet_projects")
-      .select(`${PROJECT_COLUMNS}, enrichment_validated`)
-      .in("entreprise_id", entIds);
-    if (withCol.error) {
-      hasValidatedColumn = false;
-      const withoutCol = await supabase
+    // Deux groupes de colonnes facultatifs, issus de migrations distinctes, qui
+    // doivent dégrader INDÉPENDAMMENT : une base qui a `enrichment_validated`
+    // mais pas encore les chiffres officiels ne doit pas perdre sa validation
+    // explicite au passage. D'où une chaîne du plus complet au plus dépouillé,
+    // dont chaque repli n'est payé que s'il sert.
+    const attempts: Array<{ select: string; validated: boolean }> = [
+      { select: `${PROJECT_COLUMNS}, ${OFFICIAL_COLUMNS}, enrichment_validated`, validated: true },
+      { select: `${PROJECT_COLUMNS}, enrichment_validated`, validated: true },
+      { select: `${PROJECT_COLUMNS}, ${OFFICIAL_COLUMNS}`, validated: false },
+      { select: PROJECT_COLUMNS, validated: false },
+    ];
+
+    let lastError: string | null = null;
+    let loaded = false;
+    for (const attempt of attempts) {
+      const res = await supabase
         .from("lead_magnet_projects")
-        .select(PROJECT_COLUMNS)
+        .select(attempt.select)
         .in("entreprise_id", entIds);
-      if (withoutCol.error) return { ok: false, error: withoutCol.error.message, status: 500 };
-      projectRows = (withoutCol.data ?? []) as unknown as ProjectRow[];
-    } else {
-      projectRows = (withCol.data ?? []) as ProjectRow[];
+      if (res.error) {
+        lastError = res.error.message;
+        continue;
+      }
+      hasValidatedColumn = attempt.validated;
+      projectRows = (res.data ?? []) as unknown as ProjectRow[];
+      loaded = true;
+      break;
     }
+    if (!loaded) return { ok: false, error: lastError ?? "lecture des projets impossible", status: 500 };
   }
 
   // Sites : deux requêtes ciblées plutôt qu'un `select` sur toute la table.

@@ -46,6 +46,10 @@ const STAT_COLUMNS = [
   "stat_satisfied_clients",
   "stat_installations_completed",
   "stat_rge_count",
+  "stat_years_experience_official",
+  "stat_satisfied_clients_official",
+  "stat_installations_completed_official",
+  "stat_rge_count_official",
 ] as const;
 
 /**
@@ -55,7 +59,17 @@ const STAT_COLUMNS = [
  * trois colonnes, et `missingForSite` ne le réclame pas. Perdre la saisie
  * complète d'une fiche pour ce chiffre-là n'a aucun sens.
  */
-const DISPENSABLE_COLUMNS = ["stat_rge_count"] as const;
+const DISPENSABLE_COLUMNS = [
+  "stat_rge_count",
+  // Les quatre colonnes « officielles » viennent d'une migration appliquée à la
+  // main (20260805). Tant qu'elle n'est pas passée, la fiche doit s'enregistrer
+  // sans elles plutôt que d'échouer entièrement : on ne perd que la priorité des
+  // chiffres confirmés, l'estimation reste affichée.
+  "stat_years_experience_official",
+  "stat_satisfied_clients_official",
+  "stat_installations_completed_official",
+  "stat_rge_count_official",
+] as const;
 
 /** Applique un payload sur la ligne projet ; renvoie l'erreur, ou `null`. */
 export type ProjectUpdate = (payload: Record<string, unknown>) => Promise<WriteError | null>;
