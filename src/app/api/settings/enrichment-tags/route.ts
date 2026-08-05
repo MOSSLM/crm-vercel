@@ -3,7 +3,13 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { loadServiceTagUniverse } from "@/app/api/_lib/service-tag-universe";
 import { withAuth } from "@/app/api/_lib/with-auth";
-import { collectServiceTags, isServiceTagAllowed, serviceTagKey } from "@/utils/serviceTags";
+import {
+  SERVICE_TAGS_TAXONOMY,
+  collectServiceTags,
+  isServiceTagAllowed,
+  isServiceTagKnownToTemplate,
+  serviceTagKey,
+} from "@/utils/serviceTags";
 
 export const OPTIONS = (req: Request) => preflight(req);
 
@@ -26,12 +32,27 @@ export const GET = withAuth({}, async ({ cors }) => {
 
   // Autorisation résolue par clé canonique : bloquer « climatisation » doit
   // aussi bloquer « Climatisation », que les deux graphies cohabitent ou non.
-  const tags = collectServiceTags(universe).map((tag) => ({
-    tag,
-    allowed: isServiceTagAllowed(tag, universe.settings),
-  }));
+  //
+  // `knownToTemplate` est un axe INDÉPENDANT de `allowed`. Un tag peut être
+  // autorisé et pourtant ne correspondre à aucune page : c'est exactement le cas
+  // qui nous a coûté deux campagnes. L'écran doit distinguer « je refuse ce
+  // tag » de « ce tag ne marche pas ».
+  const { usage } = universe;
+  const tags = collectServiceTags(universe).map((tag) => {
+    const key = serviceTagKey(tag);
+    return {
+      tag,
+      allowed: isServiceTagAllowed(tag, universe.settings),
+      knownToTemplate: isServiceTagKnownToTemplate(tag),
+      usage: {
+        entreprises: usage.entreprises[key] ?? 0,
+        leadMagnets: usage.leadMagnets[key] ?? 0,
+        media: usage.media[key] ?? 0,
+      },
+    };
+  });
 
-  return json({ tags }, { headers: cors });
+  return json({ tags, taxonomy: SERVICE_TAGS_TAXONOMY }, { headers: cors });
 });
 
 export const PUT = withAuth({}, async ({ req, cors }) => {

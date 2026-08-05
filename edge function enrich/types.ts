@@ -2,7 +2,14 @@
 // Types partagés
 // =====================================================================
 
-// Taxonomie fixe des services (selon la spec du projet)
+// Taxonomie fixe des services.
+//
+// DOIT rester identique à `SERVICE_TAGS_TAXONOMY` de `src/utils/serviceTags.ts`
+// (Deno ne peut pas importer le module du CRM, d'où la copie). Les deux listes
+// sont calées sur les `data-service-tag` du template de site : un tag absent du
+// template ne correspond à aucune page, et l'enrichissement masquerait alors la
+// page même qu'il croit remplir. C'est arrivé avec « rénovation » (le template
+// dit `renovation-generale`) et avec `bornes-irve`, absent d'ici.
 export const SERVICE_TAGS_TAXONOMY = [
   "climatisation",
   "pompe à chaleur",
@@ -11,7 +18,8 @@ export const SERVICE_TAGS_TAXONOMY = [
   "plomberie",
   "électricité",
   "photovoltaïque",
-  "rénovation",
+  "rénovation générale",
+  "bornes IRVE",
 ] as const;
 
 export type ServiceTag = (typeof SERVICE_TAGS_TAXONOMY)[number] | string; // string = fallback si rien ne matche

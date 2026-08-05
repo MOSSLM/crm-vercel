@@ -343,7 +343,7 @@ Ton rôle : lire le contenu brut d'un site web (en markdown) + les données Goog
 
 RÈGLES IMPORTANTES :
 - N'invente AUCUNE information. Si tu n'es pas sûr, retourne null.
-- Pour les services : utilise UNIQUEMENT la taxonomie fournie (climatisation, pompe à chaleur, chauffage, ventilation, plomberie, électricité, photovoltaïque, rénovation). Ajoute un tag custom SEULEMENT si un service mentionné ne rentre dans aucune catégorie.
+- Pour les services : utilise UNIQUEMENT la taxonomie fournie (${SERVICE_TAGS_TAXONOMY.join(", ")}). Ajoute un tag custom SEULEMENT si un service mentionné ne rentre dans aucune catégorie.
 - Pour la géographie : raisonne sur la position réelle de la ville en France. Donne des vraies villes existantes. Évite de citer des communes trop petites (<3000 hab) ou trop lointaines (>50km).
 - La VILLE SEO (closest_big_city) est la donnée la plus importante de la partie géographique : c'est la grande ville affichée partout sur le site. Le code postal suffit à situer le département, donc tu dois presque toujours pouvoir la déterminer — ne te rabats sur null qu'en dernier recours.
 - Pour le logo : l'URL doit être ABSOLUE (https://...) et pointer vers une image (.png/.jpg/.svg/.webp). Regarde les balises <img> du header/footer dans le markdown.
