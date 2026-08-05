@@ -1,4 +1,5 @@
 import React from "react";
+import { VisitBeacon } from "@/components/site-builder/VisitBeacon";
 
 /**
  * Root layout for everything served on a CLIENT's domain: published sites
@@ -48,7 +49,13 @@ export default function PublicSiteLayout({ children }: { children: React.ReactNo
       <head>
         <style dangerouslySetInnerHTML={{ __html: PUBLIC_RESET_CSS }} />
       </head>
-      <body style={{ margin: 0 }}>{children}</body>
+      <body style={{ margin: 0 }}>
+        {children}
+        {/* Mesure des visites de démo — sans cookie ni tiers, et rendu null.
+            C'est la seule chose que ce layout ajoute au poids d'une page
+            client : un effet, aucun markup. */}
+        <VisitBeacon />
+      </body>
     </html>
   );
 }

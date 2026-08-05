@@ -8,7 +8,9 @@ import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { useTelephonyOptional } from "./CallProvider";
 import { CallJournal } from "./CallJournal";
+import { DemoActivityPanel } from "./DemoActivityPanel";
 import BookingLinkPanel from "@/components/scheduling/BookingLinkPanel";
+import { heatOf, HEAT_RANK, HEAT_LABEL, type SiteVisitSummary, type VisitHeat } from "@/lib/site-visits";
 
 interface QueueItem {
   oppId: string;
@@ -17,6 +19,9 @@ interface QueueItem {
   org: string | null;
   ville: string | null;
   phone: string | null;
+  /** Température issue des visites de démo — pilote l'ordre de la file. */
+  heat: VisitHeat;
+  heatReason: string;
 }
 
 const DISPOSITIONS: Array<{ id: string; label: string; kind: string }> = [
@@ -27,6 +32,15 @@ const DISPOSITIONS: Array<{ id: string; label: string; kind: string }> = [
   { id: "absent", label: "Pas de réponse", kind: "muted" },
   { id: "refus", label: "Pas intéressé", kind: "danger" },
 ];
+
+/**
+ * Accroche de remplacement quand le prospect a ouvert sa maquette. Appeler
+ * quelqu'un qui vient de regarder son site de démo en lui disant « j'ai vu
+ * votre présence en ligne » gâche le seul avantage qu'on ait dans l'appel :
+ * il a déjà vu le travail, l'appel n'est plus à froid.
+ */
+const WARM_ACCROCHE =
+  "Bonjour {org}, je vous appelle au sujet de la maquette que je vous ai envoyée — vous avez eu le temps d'y jeter un œil ?";
 
 const SCRIPT_STEPS = [
   { title: "Accroche", body: "Bonjour {org}, je vous appelle car j'ai vu votre présence en ligne — 30 secondes ?" },
@@ -44,6 +58,29 @@ function colorOf(name: string): string {
 function initials(name: string): string {
   const p = name.trim().split(/\s+/);
   return ((p[0]?.[0] ?? "?") + (p[1]?.[0] ?? "")).toUpperCase();
+}
+
+/**
+ * Agrégats de visites pour toute la file, en un appel.
+ *
+ * Une requête par prospect ferait soixante allers-retours pour n'afficher
+ * qu'une pastille ; l'API accepte donc une liste d'identifiants. Un échec est
+ * silencieux : sans donnée de visite tout le monde ressort en `none`, la file
+ * garde son ordre d'origine, et le cockpit reste utilisable.
+ */
+async function loadHeats(ids: Array<number | null>): Promise<Map<number, SiteVisitSummary>> {
+  const map = new Map<number, SiteVisitSummary>();
+  const clean = Array.from(new Set(ids.filter((v): v is number => typeof v === "number")));
+  if (clean.length === 0) return map;
+  try {
+    const res = await authedFetch(`/api/site-visits?entreprise_ids=${clean.join(",")}`);
+    if (!res.ok) return map;
+    const data = (await res.json()) as { summaries: SiteVisitSummary[] };
+    for (const s of data.summaries ?? []) map.set(s.entreprise_id, s);
+  } catch {
+    /* cf. commentaire ci-dessus */
+  }
+  return map;
 }
 
 /** Cockpit d'appel (skin prototype ck-*) : file de prospection, surface d'appel, contexte. */
@@ -66,7 +103,7 @@ export function Cockpit() {
         .select("id, name, entreprise:entreprises(id, name, ville, telephone)")
         .eq("owner_id", user.id)
         .limit(60);
-      const items: QueueItem[] = (data ?? [])
+      const base = (data ?? [])
         .map((o) => {
           const ent = Array.isArray(o.entreprise) ? o.entreprise[0] : o.entreprise;
           return {
@@ -79,6 +116,19 @@ export function Cockpit() {
           };
         })
         .filter((i) => i.phone);
+
+      // Les visites de démo sont chargées AVANT d'afficher la file : les
+      // récupérer après obligerait à la retrier sous les yeux de l'agent, qui
+      // aurait déjà commencé à lire — et peut-être déjà cliqué.
+      const heats = await loadHeats(base.map((i) => i.entrepriseId));
+
+      const items: QueueItem[] = base
+        .map((i) => {
+          const verdict = heatOf(i.entrepriseId ? heats.get(i.entrepriseId) : null);
+          return { ...i, heat: verdict.heat, heatReason: verdict.reason };
+        })
+        .sort((a, b) => HEAT_RANK[b.heat] - HEAT_RANK[a.heat]);
+
       setQueue(items);
       setSelected(items[0]?.oppId ?? null);
       setLoading(false);
@@ -182,6 +232,11 @@ export function Cockpit() {
                     <div className="sb">{[q.org, q.ville].filter(Boolean).join(" · ")}</div>
                   </div>
                   <div className="ck-qmeta">
+                    {q.heat !== "none" && q.heat !== "cold" && (
+                      <div className={`ck-heat h-${q.heat}`} title={q.heatReason}>
+                        {HEAT_LABEL[q.heat]}
+                      </div>
+                    )}
                     {q.phone && <div className="best">{q.phone}</div>}
                   </div>
                 </div>
@@ -258,10 +313,16 @@ export function Cockpit() {
                   </div>
                   <div className="ck-script-body">
                     <p>
-                      {SCRIPT_STEPS[step].body
+                      {(step === 0 && HEAT_RANK[current.heat] >= HEAT_RANK.warm
+                        ? WARM_ACCROCHE
+                        : SCRIPT_STEPS[step].body
+                      )
                         .replace("{org}", current.org ?? "votre entreprise")
                         .replace("{ville}", current.ville ?? "votre région")}
                     </p>
+                    {step === 0 && HEAT_RANK[current.heat] >= HEAT_RANK.warm && (
+                      <p className="ck-script-why">{current.heatReason}</p>
+                    )}
                   </div>
                 </div>
 
@@ -316,6 +377,7 @@ export function Cockpit() {
               <div className="ck-empty">Sélectionnez un prospect.</div>
             </div>
           )}
+          <DemoActivityPanel entrepriseId={current?.entrepriseId ?? null} />
           <div className="blk">
             <h4>Historique d'appels</h4>
             {current?.entrepriseId ? (

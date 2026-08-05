@@ -52,6 +52,24 @@ type ResolvedEntities = {
   vars: VarBag
 }
 
+/**
+ * Ajoute `?k=<jeton>` au lien de démo pour attribuer la visite au contact.
+ * Sans jeton, ou sur une URL qu'on n'arrive pas à analyser (un lien saisi à la
+ * main dans `audits.demo_site_url` peut être n'importe quoi), on renvoie le
+ * lien inchangé : mieux vaut une visite mal attribuée qu'un lien cassé dans un
+ * email déjà parti.
+ */
+function withVisitToken(url: string, token: string | null): string {
+  if (!token) return url
+  try {
+    const u = new URL(url)
+    u.searchParams.set('k', token)
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
 // ── Résolution des entités + variables ─────────────────────────────────────
 async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<ResolvedEntities> {
   let contactId = ctx.contact_id ?? null
@@ -73,11 +91,12 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
   let contactName: string | null = null
   let contactPhone: string | null = null
   let contactLinkedin: string | null = null
+  let visitToken: string | null = null
 
   if (contactId) {
     const { data: c } = await sb
       .from('contacts')
-      .select('first_name,last_name,email,tel,role_title,linkedin_url')
+      .select('first_name,last_name,email,tel,role_title,linkedin_url,visit_token')
       .eq('id', contactId)
       .maybeSingle()
     if (c) {
@@ -88,6 +107,7 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       contactName = `${c.first_name ?? ''} ${c.last_name ?? ''}`.trim() || null
       contactPhone = c.tel ?? null
       contactLinkedin = c.linkedin_url ?? null
+      visitToken = c.visit_token ?? null
     }
   }
   let auditUrl: string | null = null
@@ -147,8 +167,12 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       }
     }
 
+    // Le lien envoyé au contact porte son jeton de visite : sans lui la visite
+    // n'est rattachée qu'à l'entreprise, avec lui on sait QUI a ouvert — ce qui
+    // change l'accroche de l'appel qui suit. `demoUrl` reste nu par ailleurs
+    // (l'objet `ResolvedEntities` sert aussi à d'autres appelants).
     vars['company.audit_url'] = auditUrl ?? ''
-    vars['company.demo_url'] = demoUrl ?? ''
+    vars['company.demo_url'] = demoUrl ? withVisitToken(demoUrl, visitToken) : ''
   }
   // Un contact sans adresse n'est pas une impasse : l'email saisi sur la fiche
   // entreprise (`entreprises.email`) sert de destinataire de repli, c'est là que
