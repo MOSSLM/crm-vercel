@@ -9,6 +9,7 @@ import {
   isServiceTagAllowed,
   isServiceTagKnownToTemplate,
   serviceTagKey,
+  serviceTagNearMiss,
 } from "@/utils/serviceTags";
 
 export const OPTIONS = (req: Request) => preflight(req);
@@ -44,6 +45,8 @@ export const GET = withAuth({}, async ({ cors }) => {
       tag,
       allowed: isServiceTagAllowed(tag, universe.settings),
       knownToTemplate: isServiceTagKnownToTemplate(tag),
+      /** Tag de la taxonomie dont celui-ci n'est qu'une variante de graphie. */
+      nearMiss: serviceTagNearMiss(tag),
       usage: {
         entreprises: usage.entreprises[key] ?? 0,
         leadMagnets: usage.leadMagnets[key] ?? 0,

@@ -28,6 +28,15 @@ export interface ServiceTagRow {
   tag: string;
   allowed: boolean;
   knownToTemplate: boolean;
+  /**
+   * Tag de la taxonomie dont celui-ci n'est qu'une variante de graphie, ou null.
+   *
+   * Indispensable pour que l'alerte serve à quelque chose : le CRM stocke aussi
+   * les catégories Google Business (« Fournisseur de systèmes de climatisation »,
+   * 281 fiches), hors template par nature. Sans ce tri, l'alerte comptait cent
+   * étiquettes d'annuaire et le seul vrai problème passait inaperçu.
+   */
+  nearMiss: string | null;
   usage: { entreprises: number; leadMagnets: number; media: number };
 }
 
@@ -72,13 +81,23 @@ export function EnrichmentTagsSettings() {
   const blockedCount = useMemo(() => tags.filter((t) => !t.allowed).length, [tags]);
 
   /**
-   * Les tags réellement nuisibles : inconnus du template ET portés par quelque
-   * chose. Un tag inconnu que personne ne porte est inerte ; celui-ci masque une
-   * page en production. C'est le seul décompte qui répond à « est-ce que tout va
-   * bien ? », et il ne se déduit pas des autorisations.
+   * Divergences de graphie portées par quelque chose : quelqu'un a nommé ce
+   * service autrement que le template, et la page est masquée en production. Le
+   * cas urgent, et le seul qui se répare par une fusion.
    */
-  const broken = useMemo(
-    () => tags.filter((t) => !t.knownToTemplate && porteurs(t) > 0),
+  const divergences = useMemo(
+    () => tags.filter((t) => t.nearMiss && porteurs(t) > 0),
+    [tags],
+  );
+
+  /**
+   * Tags autorisés que le template ignore. Ils ne cassent rien aujourd'hui mais
+   * l'enrichissement va continuer à les poser, et ils ne correspondront à aucune
+   * page. Distinct des divergences : ici il n'y a pas de graphie à corriger, il
+   * faut décider — soit les interdire, soit les ajouter au template.
+   */
+  const autorisesSansPage = useMemo(
+    () => tags.filter((t) => t.allowed && !t.knownToTemplate && !t.nearMiss),
     [tags],
   );
 
@@ -105,11 +124,12 @@ export function EnrichmentTagsSettings() {
    * le template ignore est un piège, alors qu'un tag bloqué est un choix assumé.
    */
   const rowTone = (t: ServiceTagRow): string => {
-    if (!t.knownToTemplate && porteurs(t) > 0) {
-      return "border-l-2 border-l-red-500 bg-red-500/[0.07]";
-    }
+    // Une divergence portée par quelque chose passe devant tout, même bloquée :
+    // le blocage arrête les futurs enrichissements, il ne répare pas les fiches
+    // qui portent déjà la mauvaise graphie.
+    if (t.nearMiss && porteurs(t) > 0) return "border-l-2 border-l-red-500 bg-red-500/[0.07]";
+    if (t.allowed && !t.knownToTemplate) return "border-l-2 border-l-red-500 bg-red-500/[0.07]";
     if (!t.allowed) return "border-l-2 border-l-orange-500 bg-orange-500/[0.07]";
-    if (!t.knownToTemplate) return "border-l-2 border-l-orange-500/50 bg-orange-500/[0.04]";
     return "border-l-2 border-l-emerald-500 bg-emerald-500/[0.06]";
   };
 
@@ -137,16 +157,33 @@ export function EnrichmentTagsSettings() {
             </div>
           ) : (
             <>
-              {broken.length > 0 && (
+              {divergences.length > 0 && (
                 <div className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm">
                   <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
                   <div>
                     <strong>
-                      {broken.reduce((n, t) => n + porteurs(t), 0)} porteur(s) d&apos;un tag
-                      qu&apos;aucune page ne reconnaît.
+                      {divergences.reduce((n, t) => n + porteurs(t), 0)} porteur(s) d&apos;une
+                      graphie que le template ne reconnaît pas.
                     </strong>{" "}
-                    « Autorisé » ne veut pas dire « fonctionne » : ces tags masquent la page du
-                    service au lieu de l&apos;afficher. À fusionner vers la taxonomie.
+                    La page du service est masquée au lieu d&apos;être affichée. Interdire le tag
+                    n&apos;y change rien — il faut le fusionner :{" "}
+                    {divergences.map((t) => `« ${t.tag} » → ${t.nearMiss}`).join(", ")}.
+                  </div>
+                </div>
+              )}
+
+              {autorisesSansPage.length > 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm">
+                  <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+                  <div>
+                    <strong>
+                      {autorisesSansPage.length} tag(s) autorisé(s) ne correspondent à aucune
+                      page du template.
+                    </strong>{" "}
+                    « Autorisé » ne veut pas dire « fonctionne » : l&apos;enrichissement va
+                    continuer à les poser sans qu&apos;aucune page ne s&apos;affiche. À interdire,
+                    ou à ajouter au template :{" "}
+                    {autorisesSansPage.map((t) => t.tag).join(", ")}.
                   </div>
                 </div>
               )}
@@ -162,8 +199,13 @@ export function EnrichmentTagsSettings() {
                   />
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {broken.length > 0 && (
-                    <Badge variant="destructive">{broken.length} hors template</Badge>
+                  {divergences.length > 0 && (
+                    <Badge variant="destructive">{divergences.length} à fusionner</Badge>
+                  )}
+                  {autorisesSansPage.length > 0 && (
+                    <Badge variant="destructive">
+                      {autorisesSansPage.length} sans page
+                    </Badge>
                   )}
                   <Badge variant={blockedCount > 0 ? "destructive" : "outline"}>
                     {blockedCount > 0
@@ -183,8 +225,8 @@ export function EnrichmentTagsSettings() {
                   l&apos;enrichissement
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="h-2.5 w-2.5 rounded-sm bg-red-500" /> porté mais inconnu du
-                  template
+                  <span className="h-2.5 w-2.5 rounded-sm bg-red-500" /> à corriger : graphie
+                  divergente, ou autorisé sans page
                 </span>
               </div>
 
@@ -205,10 +247,16 @@ export function EnrichmentTagsSettings() {
                           {t.usage.entreprises} entreprise(s) · {t.usage.leadMagnets} dossier(s)
                           {t.usage.media > 0 && ` · ${t.usage.media} média(s)`}
                         </span>
-                        {!t.knownToTemplate && (
+                        {t.nearMiss ? (
                           <span className="ml-2 text-xs text-red-600 dark:text-red-400">
-                            aucune page ne le reconnaît
+                            variante de « {t.nearMiss} » — à fusionner
                           </span>
+                        ) : (
+                          !t.knownToTemplate && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              hors template
+                            </span>
+                          )
                         )}
                       </Label>
                       <Switch

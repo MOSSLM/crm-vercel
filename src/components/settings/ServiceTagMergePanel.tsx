@@ -90,9 +90,20 @@ export function ServiceTagMergePanel({
   }, [tags, search]);
 
   const taxonomyKeys = useMemo(() => new Set(taxonomy.map(serviceTagKey)), [taxonomy]);
+  /**
+   * Tous les tags hors taxonomie — proposés comme cibles possibles, parce que
+   * fusionner vers un tag maison est légitime. Ils ne servent PAS à l'alerte :
+   * la liste contient les catégories Google Business des entreprises, hors
+   * template par nature et sans rapport avec un problème à corriger.
+   */
   const horsTaxonomie = useMemo(
     () => tags.filter((t) => !taxonomyKeys.has(serviceTagKey(t.tag))),
     [tags, taxonomyKeys],
+  );
+  /** Les vraies divergences de graphie : celles qui appellent une fusion. */
+  const divergences = useMemo(
+    () => tags.filter((t) => t.nearMiss && t.usage.entreprises + t.usage.leadMagnets > 0),
+    [tags],
   );
 
   const targetRow = tags.find((t) => t.tag === target);
@@ -193,15 +204,36 @@ export function ServiceTagMergePanel({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {horsTaxonomie.length > 0 && (
-          <div className="flex items-start gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm">
-            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
-            <div>
-              <strong>
-                {horsTaxonomie.length} tag(s) ne correspondent à aucune page du template.
-              </strong>{" "}
-              Ils masquent silencieusement la page du service concerné. Fusionnez-les vers un
-              tag de la taxonomie : {horsTaxonomie.map((t) => t.tag).join(", ")}.
+        {divergences.length > 0 && (
+          <div className="space-y-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-sm">
+            <div className="flex items-start gap-2">
+              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
+              <div>
+                <strong>
+                  {divergences.length} graphie(s) divergente(s) à fusionner.
+                </strong>{" "}
+                Un clic remplit la sélection et la cible.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 pl-6">
+              {divergences.map((t) => (
+                <Button
+                  key={t.tag}
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setSelected([t.tag]);
+                    setTarget(t.nearMiss as string);
+                    setPreview(null);
+                    setForce(false);
+                  }}
+                >
+                  « {t.tag} » → {t.nearMiss}
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    ({t.usage.entreprises} ent.)
+                  </span>
+                </Button>
+              ))}
             </div>
           </div>
         )}
@@ -279,7 +311,9 @@ export function ServiceTagMergePanel({
                 </SelectGroup>
                 {horsTaxonomie.length > 0 && (
                   <SelectGroup>
-                    <SelectLabel>Hors taxonomie — aucune page ne les reconnaît</SelectLabel>
+                    <SelectLabel>
+                      Hors taxonomie — aucune page ne les reconnaît ({horsTaxonomie.length})
+                    </SelectLabel>
                     {horsTaxonomie.map((t) => (
                       <SelectItem key={t.tag} value={t.tag}>
                         {t.tag}
