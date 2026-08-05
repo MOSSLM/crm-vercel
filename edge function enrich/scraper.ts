@@ -22,9 +22,26 @@
 //      trouvée sur `exemple.fr` mais les pages secondaires (contact, mentions
 //      légales — celles qui portent les emails et le SIRET) continuaient d'être
 //      demandées à `www.exemple.fr`, injoignable, et revenaient vides.
+//
+// Pour que le LLM reçoive les bonnes pages (cf. `page-discovery.ts`) :
+//   5. Les pages secondaires sont DÉCOUVERTES dans les liens de la home, plus
+//      devinées : sept chemins fixes manquaient tout site nommant sa page
+//      `/nous-joindre` ou `/qui-sommes-nous.php` — précisément celles qui portent
+//      l'email et le SIRET. Les chemins devinés complètent la liste, et le
+//      `sitemap.xml` sert de repli quand la home ne donne rien d'exploitable.
+//   6. Menu et pied de page, répétés à l'identique sur chaque page, sont retirés.
+//      Concaténés, ils occupaient une large part des 30 000 caractères du prompt —
+//      huit fois la même navigation au détriment du contenu réel. Et le budget est
+//      désormais réparti par page au lieu d'être consommé dans l'ordre.
 // =====================================================================
 
 import { buildHomeCandidates, originOf } from "./url-variants.ts";
+import {
+  allocateBudget,
+  extractInternalLinks,
+  rankCandidatePages,
+  stripSharedBoilerplate,
+} from "./page-discovery.ts";
 
 const JINA_BASE = "https://r.jina.ai/";
 const JINA_API_KEY = Deno.env.get("JINA_API_KEY") ?? "";
@@ -38,8 +55,27 @@ const USER_AGENT =
 // Longueur minimale de contenu pour considérer une page utile.
 const MIN_HOME_CHARS = 100;
 const MIN_SECONDARY_CHARS = 200;
+/**
+ * Seuil auquel une page secondaire est gardée bien qu'incomplète.
+ *
+ * `fetchPage` promettait de « garder le meilleur contenu partiel », mais les deux
+ * appelants re-testaient ensuite le seuil plein et le jetaient : la promesse était
+ * du code mort. Elle sert maintenant aux pages secondaires, où quelques lignes
+ * suffisent à porter un email ou un SIRET. La home garde son seuil strict, parce
+ * qu'une home vide veut dire « site inexploitable » et doit router l'opportunité.
+ */
+const MIN_SECONDARY_PARTIAL_CHARS = 80;
 
-// Pages qu'on essaie de récupérer en plus de la home (en français et anglais)
+/** Pages secondaires retenues au maximum, découvertes et devinées confondues. */
+const MAX_SECONDARY_PAGES = 6;
+
+/**
+ * Chemins tentés en complément de la découverte de liens.
+ *
+ * Ils ne sont plus la stratégie principale — `page-discovery` lit les vrais liens
+ * de la home — mais restent utiles quand la home vient de Jina (markdown, aucun
+ * lien exploitable) ou quand la navigation est en JavaScript.
+ */
 const SECONDARY_PATHS = [
   "contact",
   "nous-contacter",
@@ -214,7 +250,26 @@ async function fetchJina(targetUrl: string, timeoutMs = 20000): Promise<JinaResu
 interface PageFetch {
   text: string;
   finalUrl: string | null;
+  /**
+   * HTML brut, quand la page vient du fetch direct.
+   *
+   * Conservé uniquement pour la home, dont les liens servent à découvrir les
+   * vraies pages du site. Jina ne rend que du markdown : dans ce cas il est
+   * `null` et la découverte est sautée.
+   */
+  html?: string;
 }
+
+/**
+ * Plafond de lecture d'une page.
+ *
+ * `res.text()` lit sans limite : un document de plusieurs dizaines de Mo — export
+ * mal configuré, page générée à la volée — passait entièrement en mémoire dans un
+ * isolat qui n'en a pas beaucoup. 2 Mo couvrent très largement une page de site
+ * vitrine ; au-delà on tronque, le budget du prompt étant de toute façon de 30 000
+ * caractères.
+ */
+const MAX_PAGE_BYTES = 2_000_000;
 
 async function fetchDirect(targetUrl: string, timeoutMs = 15000): Promise<PageFetch | null> {
   const controller = new AbortController();
@@ -238,9 +293,16 @@ async function fetchDirect(targetUrl: string, timeoutMs = 15000): Promise<PageFe
     if (ct && !/text\/html|application\/xhtml|text\/plain|application\/xml/i.test(ct)) {
       return null;
     }
-    const html = await res.text();
-    if (!html) return null;
-    return { text: htmlToText(html), finalUrl: res.url || targetUrl };
+    const declared = Number(res.headers.get("content-length") ?? "0");
+    if (declared > MAX_PAGE_BYTES) {
+      console.warn(`Direct fetch: ${targetUrl} annonce ${declared} octets — ignoré`);
+      return null;
+    }
+    const raw = await res.text();
+    if (!raw) return null;
+    // Troncature défensive : `content-length` est souvent absent en chunked.
+    const html = raw.length > MAX_PAGE_BYTES ? raw.slice(0, MAX_PAGE_BYTES) : raw;
+    return { text: htmlToText(html), finalUrl: res.url || targetUrl, html };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn(`Direct fetch error for ${targetUrl}: ${msg}`);
@@ -300,6 +362,7 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
 
   // On tente la home sur chaque variante jusqu'à obtenir du contenu utile.
   let homeMarkdown: string | null = null;
+  let homeHtml: string | null = null;
   let homeUrl = origin;
   // L'origine qui a RÉPONDU — pas celle qui était stockée. C'est elle qui sert
   // au reste du scraping : demander les pages secondaires à un hôte qu'on vient
@@ -309,6 +372,7 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
     const page = await fetchPage(candidate, MIN_HOME_CHARS, state);
     if (page && page.text.trim().length >= MIN_HOME_CHARS) {
       homeMarkdown = page.text;
+      homeHtml = page.html ?? null;
       // Une redirection fait autorité sur la variante demandée.
       homeUrl = page.finalUrl ?? candidate;
       workingOrigin = originOf(homeUrl) ?? originOf(candidate) ?? origin;
@@ -326,43 +390,122 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
     };
   }
 
+  const targets = await resolveSecondaryTargets(homeHtml, workingOrigin);
+  console.log(`scrape ${workingOrigin} : ${targets.length} page(s) secondaire(s) retenue(s)`);
+
   const pages = [{ url: homeUrl, path: "/", markdown: homeMarkdown }];
 
   // Pages secondaires en parallèle, relatives à l'origine qui répond.
-  const secondaryFetches = SECONDARY_PATHS.map(async (path) => {
-    const u = `${workingOrigin}/${path}`;
-    const page = await fetchPage(u, MIN_SECONDARY_CHARS, state, 10000);
-    if (page && page.text.trim().length >= MIN_SECONDARY_CHARS) {
-      return { url: page.finalUrl ?? u, path: `/${path}`, markdown: page.text };
-    }
-    return null;
-  });
-  const secondaryResults = await Promise.all(secondaryFetches);
+  const secondaryResults = await Promise.all(
+    targets.map(async (u) => {
+      const page = await fetchPage(u, MIN_SECONDARY_CHARS, state, 10000);
+      // Seuil abaissé : sur une page secondaire, quelques lignes suffisent à
+      // porter un email ou un SIRET.
+      if (page && page.text.trim().length >= MIN_SECONDARY_PARTIAL_CHARS) {
+        const path = pathOf(page.finalUrl ?? u);
+        return { url: page.finalUrl ?? u, path, markdown: page.text };
+      }
+      return null;
+    }),
+  );
   for (const r of secondaryResults) {
-    if (r) pages.push(r);
+    if (r && !pages.some((p) => p.path === r.path)) pages.push(r);
   }
 
-  const totalChars = pages.reduce((acc, p) => acc + p.markdown.length, 0);
+  // Menu et pied de page, répétés sur chaque page, remplissaient le budget du
+  // prompt sans rien apprendre au modèle.
+  const deduped = stripSharedBoilerplate(pages.map((p) => ({ path: p.path, markdown: p.markdown })));
+  const byPath = new Map(deduped.map((p) => [p.path, p.markdown]));
+  const finalPages = pages.map((p) => ({ ...p, markdown: byPath.get(p.path) ?? p.markdown }));
 
-  return { base_url: workingOrigin, pages, total_chars: totalChars, accessible: true };
+  const totalChars = finalPages.reduce((acc, p) => acc + p.markdown.length, 0);
+
+  return { base_url: workingOrigin, pages: finalPages, total_chars: totalChars, accessible: true };
+}
+
+/** Chemin d'une URL, `/x` sans slash final — la clé d'identité d'une page ici. */
+function pathOf(url: string): string {
+  try {
+    const p = new URL(url).pathname.replace(/\/+$/, "");
+    return p === "" ? "/" : p;
+  } catch {
+    return url;
+  }
 }
 
 /**
- * Concatène les pages en un seul bloc de markdown, tronqué pour rester
- * dans un budget de tokens raisonnable pour le LLM (~30k chars = ~8k tokens).
+ * Les pages secondaires à récupérer, par ordre d'intérêt.
+ *
+ * Les liens de la home d'abord : ils donnent les VRAIES URLs du site, alors que
+ * les chemins devinés manquaient tout site nommant sa page `/nous-joindre` ou
+ * `/qui-sommes-nous.php`. Le sitemap ne sert que si la home n'a rien donné
+ * d'exploitable (navigation en JavaScript, ou home venue de Jina donc sans HTML),
+ * et les chemins devinés complètent toujours la liste — ils ne coûtent rien de
+ * plus qu'un 404.
+ */
+async function resolveSecondaryTargets(homeHtml: string | null, origin: string): Promise<string[]> {
+  const discovered = homeHtml ? rankCandidatePages(extractInternalLinks(homeHtml, origin)) : [];
+
+  let fromSitemap: string[] = [];
+  if (discovered.length < 3) {
+    fromSitemap = await fetchSitemapUrls(origin);
+  }
+
+  const guessed = SECONDARY_PATHS.map((p) => `${origin}/${p}`);
+  const ordered = [...discovered, ...rankCandidatePages(fromSitemap), ...guessed];
+
+  // Dédoublonnage par chemin : la découverte et les chemins devinés se recoupent
+  // largement sur un site classique.
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of ordered) {
+    const key = pathOf(u);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
+    if (out.length >= MAX_SECONDARY_PAGES) break;
+  }
+  return out;
+}
+
+/** URLs d'un `sitemap.xml`, au plus 200 — au-delà c'est un catalogue, pas un site vitrine. */
+async function fetchSitemapUrls(origin: string): Promise<string[]> {
+  const page = await fetchDirect(`${origin}/sitemap.xml`, 8000);
+  if (!page?.html) return [];
+  const urls: string[] = [];
+  for (const m of page.html.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)) {
+    urls.push(m[1]);
+    if (urls.length >= 200) break;
+  }
+  return urls;
+}
+
+/**
+ * Concatène les pages en un seul bloc de markdown, dans un budget de tokens
+ * raisonnable pour le LLM (~30k chars ≈ 8k tokens).
+ *
+ * Le budget est RÉPARTI, plus consommé dans l'ordre. L'ancienne version remplissait
+ * séquentiellement : une home bavarde absorbait les 30 000 caractères et `contact`
+ * — la page qui porte l'email — n'atteignait jamais le modèle, qui cherchait donc
+ * une donnée absente de son contexte. Chaque page a maintenant une part garantie,
+ * et le reliquat des pages courtes revient à celles qui débordent
+ * (cf. `allocateBudget`).
  */
 export function buildSiteContext(scraped: ScrapedSite, maxChars = 30000): string {
+  const quota = allocateBudget(
+    scraped.pages.map((p) => ({ path: p.path, markdown: p.markdown })),
+    { total: maxChars },
+  );
+
   const parts: string[] = [];
-  let remaining = maxChars;
   for (const page of scraped.pages) {
+    const allowed = quota.get(page.path) ?? 0;
+    if (allowed <= 0) continue;
     const header = `\n\n===== PAGE ${page.path} (${page.url}) =====\n`;
-    const available = remaining - header.length;
-    if (available <= 500) break;
-    const content = page.markdown.length > available
-      ? page.markdown.slice(0, available) + "\n...[tronqué]"
+    const content = page.markdown.length > allowed
+      ? page.markdown.slice(0, allowed) + "\n...[tronqué]"
       : page.markdown;
     parts.push(header + content);
-    remaining -= (header.length + content.length);
   }
   return parts.join("");
 }
