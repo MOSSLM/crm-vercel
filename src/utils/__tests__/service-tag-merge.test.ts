@@ -6,6 +6,7 @@ import {
   isServiceTagKnownToTemplate,
   rewriteNestedServiceTag,
   serviceTagKey,
+  serviceTagNearMiss,
 } from "../serviceTags";
 import {
   SERVICE_TAGS_TAXONOMY as EDGE_TAXONOMY,
@@ -329,5 +330,66 @@ describe("rewriteNestedServiceTag", () => {
   it("traverse un document scalaire ou nul sans casser", () => {
     expect(rewriteNestedServiceTag(null, ["rénovation"], "Rénovation générale").changed).toBe(false);
     expect(rewriteNestedServiceTag("texte", ["rénovation"], "Rénovation générale").changed).toBe(false);
+  });
+});
+
+/**
+ * « Hors template » ne suffit pas à lever une alerte utile : la base contient
+ * aussi les catégories Google Business des entreprises — « Fournisseur de
+ * systèmes de climatisation » à lui seul est porté par 281 fiches. Les compter
+ * comme cassées noyait le seul cas réparable sous cent lignes de bruit.
+ *
+ * Les cas ci-dessous sont ceux relevés en base, pas des exemples inventés.
+ */
+describe("serviceTagNearMiss", () => {
+  it("repère la divergence qui a coûté les campagnes", () => {
+    expect(serviceTagNearMiss("rénovation")).toBe("rénovation générale");
+    expect(serviceTagNearMiss("renovation")).toBe("rénovation générale");
+  });
+
+  it("repère une variante par suffixe ajouté", () => {
+    expect(serviceTagNearMiss("pompe a chaleur piscine")).toBe("pompe à chaleur");
+  });
+
+  it("ignore les catégories Google Business, même quand elles citent un service", () => {
+    for (const cat of [
+      "Fournisseur de systèmes de climatisation",
+      "Magasin de systèmes de climatisation",
+      "Service de réparation de systèmes de climatisation",
+      "Entrepreneur spécialisé dans les systèmes de CVC",
+      "Magasin de matériel de plomberie",
+      "Service de nettoyage de conduits de ventilation",
+      "Plombier",
+      "Chauffagiste",
+      "Électricien",
+    ]) {
+      expect(serviceTagNearMiss(cat)).toBeNull();
+    }
+  });
+
+  it("ignore les services maison sans rapport de graphie avec le template", () => {
+    for (const t of ["aérothermie", "géothermie", "désembouage", "domotique", "solaire", "zinguerie"]) {
+      expect(serviceTagNearMiss(t)).toBeNull();
+    }
+  });
+
+  it("ne signale rien pour un tag de la taxonomie, quelle que soit sa graphie", () => {
+    for (const t of SERVICE_TAGS_TAXONOMY) expect(serviceTagNearMiss(t)).toBeNull();
+    expect(serviceTagNearMiss("rénovation générale")).toBeNull();
+    expect(serviceTagNearMiss("renovation-generale")).toBeNull();
+    expect(serviceTagNearMiss("bornes-irve")).toBeNull();
+  });
+
+  it("ne se déclenche qu'à la frontière d'un segment", () => {
+    // « renovation » est bien un préfixe de « renovation-generale »…
+    expect(serviceTagNearMiss("renovation")).toBe("rénovation générale");
+    // …mais « renov » n'est un préfixe d'aucun segment complet.
+    expect(serviceTagNearMiss("renov")).toBeNull();
+    expect(serviceTagNearMiss("chauff")).toBeNull();
+  });
+
+  it("rend null sur une entrée vide", () => {
+    expect(serviceTagNearMiss("")).toBeNull();
+    expect(serviceTagNearMiss("---")).toBeNull();
   });
 });

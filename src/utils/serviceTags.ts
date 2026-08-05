@@ -124,6 +124,35 @@ const TAXONOMY_KEYS = new Set(SERVICE_TAGS_TAXONOMY.map((t) => serviceTagKey(t))
 export const isServiceTagKnownToTemplate = (tag: string): boolean =>
   TAXONOMY_KEYS.has(serviceTagKey(tag));
 
+/** Clé canonique → libellé de référence, pour proposer une cible de fusion. */
+const TAXONOMY_BY_KEY = new Map(SERVICE_TAGS_TAXONOMY.map((t) => [serviceTagKey(t), t] as const));
+
+/**
+ * Le tag de la taxonomie dont `tag` n'est qu'une variante, ou `null`.
+ *
+ * « Hors template » ne suffit pas à lever une alerte utile : le CRM stocke aussi
+ * les catégories Google Business des entreprises (« Fournisseur de systèmes de
+ * climatisation » — 281 fiches, « Plombier », « Magasin d'électroménager »…).
+ * Elles sont hors template par nature et n'ont jamais eu vocation à piloter une
+ * page. Les compter comme cassées noyait le seul cas qui compte sous cent lignes
+ * de bruit d'annuaire.
+ *
+ * On ne retient donc que les VRAIES divergences : celles où une clé est le
+ * préfixe de l'autre, à la frontière d'un segment. « renovation » contre
+ * `renovation-generale`, « pompe a chaleur piscine » contre `pompe-a-chaleur` —
+ * quelqu'un a voulu nommer ce service et l'a nommé autrement que le template.
+ * « fournisseur-de-systemes-de-climatisation » ne matche pas : `climatisation`
+ * en est un suffixe, pas un préfixe.
+ */
+export const serviceTagNearMiss = (tag: string): string | null => {
+  const key = serviceTagKey(tag);
+  if (!key || TAXONOMY_KEYS.has(key)) return null;
+  for (const [tKey, label] of TAXONOMY_BY_KEY) {
+    if (tKey.startsWith(`${key}-`) || key.startsWith(`${tKey}-`)) return label;
+  }
+  return null;
+};
+
 /** Ligne de l'allowlist globale `enrichment_tag_settings`. */
 export interface ServiceTagSetting {
   tag?: unknown;
