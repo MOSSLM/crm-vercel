@@ -54,8 +54,10 @@ type ReportKey =
  * service une page ou un bloc est RÉSERVÉ.
  */
 const PROPOSE_LABELS: Array<[ReportKey, string, string]> = [
-  ["entreprises", "Entreprises", "fiches et catalogue"],
-  ["leadMagnets", "Dossiers lead magnet", "décide de ce qu'affiche le site"],
+  ["entreprises", "Entreprises", "source de vérité"],
+  // Non écrits : un trigger les recopie depuis l'entreprise. La ligne mesure la
+  // propagation, et un « en échec » ici veut dire qu'elle n'a pas suivi.
+  ["leadMagnets", "Dossiers lead magnet", "propagés par la base"],
   ["media", "Médiathèque", "choix des images"],
 ];
 

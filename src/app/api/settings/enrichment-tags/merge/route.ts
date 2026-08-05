@@ -22,6 +22,23 @@ export const OPTIONS = (req: Request) => preflight(req);
  *  saturer le pool de connexions Postgres sur un parc de plusieurs milliers. */
 const WRITE_CONCURRENCY = 20;
 
+/**
+ * Lignes par page de lecture.
+ *
+ * La pagination n'est PAS une optimisation, c'est une correction. PostgREST
+ * plafonne un `select` sans `limit` (1000 lignes par défaut) et ne signale rien :
+ * sur 2797 entreprises, la première version de cette route n'en a vu qu'une
+ * partie, a réécrit ce qu'elle voyait et annoncé un succès complet. Sept fiches
+ * ont gardé l'ancien tag, et le rapport ne pouvait pas le dire.
+ *
+ * Sous le plafond, pour que la dernière page soit toujours reconnaissable à sa
+ * taille et jamais tronquée par lui.
+ */
+const READ_PAGE = 500;
+
+/** Garde-fou : au-delà, on préfère un rapport incomplet à une boucle infinie. */
+const MAX_PAGES = 200;
+
 /** Une table réécrite par la fusion. */
 interface TableTarget {
   /** Clé du rapport, côté client. */
@@ -46,12 +63,20 @@ type ReportKey =
   | "settings";
 
 const TARGETS: readonly TableTarget[] = [
+  // SOURCE DE VÉRITÉ, et le seul chemin vers les snapshots.
+  //
+  // `lead_magnet_projects.service_tags_snapshot` n'est PAS écrit ici, et ce n'est
+  // pas un oubli : le trigger `lm_force_service_tags_snapshot_from_entreprise`
+  // fait `new.service_tags_snapshot := (select service_tags from entreprises …)`
+  // en BEFORE UPDATE. Toute écriture directe du snapshot est donc écrasée par la
+  // valeur de l'entreprise — la tentative précédente le « modifiait » et la base
+  // le remettait aussitôt, en gonflant le rapport d'un changement fictif.
+  //
+  // La bonne porte est celle-ci : écrire l'entreprise déclenche
+  // `sync_lm_projects_service_tags_from_entreprise`, qui propage aux snapshots ET
+  // recalcule `variables` via `lm_merge_service_variables` — ce qu'une écriture
+  // directe du snapshot aurait laissé incohérent.
   { name: "entreprises", table: "entreprises", column: "service_tags", kind: "list" },
-  // Le snapshot ÉCRASE `entreprises.service_tags` au rendu du site
-  // (`resolve-variables.ts` : `projectServiceTags ?? serviceTags`). L'oublier
-  // ferait une fusion qui corrige la fiche et laisse la page masquée — le bug
-  // exact qu'on répare ici.
-  { name: "leadMagnets", table: "lead_magnet_projects", column: "service_tags_snapshot", kind: "list" },
   // La médiathèque choisit ses images sur ces mêmes tags, et le RPC
   // `media_library_by_company` les compare par INTERSECT SQL — égalité exacte,
   // sans canonicalisation. Sans elle la page réapparaît sans visuel.
@@ -90,6 +115,73 @@ const asStrings = (value: unknown): string[] =>
  * en silence des données qu'on n'a pas demandé de toucher. Une fusion ne change
  * QUE les tags fusionnés.
  */
+/**
+ * Toutes les lignes dont `column` est non nulle, par curseur keyset sur `id`.
+ *
+ * Chaque ligne est vue une fois, et aucun plafond implicite ne peut en cacher —
+ * c'est tout l'objet de la pagination ici, cf. `READ_PAGE`.
+ */
+async function scanAll(
+  sb: SupabaseClient,
+  table: string,
+  column: string,
+): Promise<{ rows: Array<Record<string, unknown>>; failed: boolean }> {
+  const rows: Array<Record<string, unknown>> = [];
+  let cursor: unknown = null;
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    let q = sb
+      .from(table)
+      .select(`id, ${column}`)
+      .not(column, "is", null)
+      .order("id", { ascending: true })
+      .limit(READ_PAGE);
+    if (cursor !== null) q = q.gt("id", cursor);
+
+    // La colonne étant choisie à l'exécution, l'inférence typée de supabase-js ne
+    // peut pas résoudre le `select` : on annote le résultat à la main.
+    const { data, error } = (await q) as unknown as {
+      data: Array<Record<string, unknown>> | null;
+      error: { message?: string } | null;
+    };
+
+    // Source secondaire illisible (table absente d'un environnement, RLS) : on le
+    // signale plutôt que de faire échouer une fusion dont les autres tables sont
+    // parfaitement réécrites.
+    if (error) return { rows, failed: true };
+
+    const batch = data ?? [];
+    rows.push(...batch);
+    if (batch.length < READ_PAGE) break;
+
+    const next = batch[batch.length - 1]?.id;
+    // Curseur qui n'avance pas : on s'arrête au lieu de relire la même page.
+    if (next === undefined || next === cursor) break;
+    cursor = next;
+  }
+
+  return { rows, failed: false };
+}
+
+/**
+ * Lignes portant encore l'un des tags fusionnés. Sert à VÉRIFIER après coup, pas
+ * à décider : c'est ce compte qui aurait révélé tout de suite que sept fiches
+ * n'avaient pas été touchées.
+ */
+async function countCarriers(
+  sb: SupabaseClient,
+  table: string,
+  column: string,
+  sourceKeys: ReadonlySet<string>,
+): Promise<{ total: number; carriers: number; failed: boolean }> {
+  const { rows, failed } = await scanAll(sb, table, column);
+  let carriers = 0;
+  for (const row of rows) {
+    if (asStrings(row[column]).some((t) => sourceKeys.has(serviceTagKey(t)))) carriers += 1;
+  }
+  return { total: rows.length, carriers, failed };
+}
+
 async function mergeTable(
   sb: SupabaseClient,
   target: TableTarget,
@@ -99,22 +191,9 @@ async function mergeTable(
 ): Promise<TableReport> {
   const report: TableReport = { scanned: 0, changed: 0, failed: 0 };
 
-  // La colonne étant choisie à l'exécution, l'inférence typée de supabase-js ne
-  // peut pas résoudre le `select` : on annote le résultat à la main.
-  const { data, error } = (await sb
-    .from(target.table)
-    .select(`id, ${target.column}`)
-    .not(target.column, "is", null)) as unknown as {
-    data: Array<Record<string, unknown>> | null;
-    error: { message?: string } | null;
-  };
+  const { rows, failed } = await scanAll(sb, target.table, target.column);
+  if (failed) return { scanned: rows.length, changed: 0, failed: 1 };
 
-  // Source secondaire illisible (table absente d'un environnement, RLS) : on le
-  // signale par `failed` plutôt que de faire échouer une fusion dont les autres
-  // tables sont parfaitement réécrites.
-  if (error) return { scanned: 0, changed: 0, failed: 1 };
-
-  const rows = data ?? [];
   const pending: Array<{ id: unknown; value: unknown }> = [];
 
   for (const row of rows) {
@@ -216,10 +295,39 @@ export const POST = withAuth(
       return jsonError("cible_hors_taxonomie", 409, { targetAllowed, targetKnownToTemplate }, cors);
     }
 
+    const sourceKeySet = new Set(sources.map((s) => serviceTagKey(s)).filter(Boolean));
+    sourceKeySet.delete(targetKey); // la cible n'est pas un tag « à faire disparaître »
+
+    /**
+     * Les snapshots lead magnet ne sont pas écrits mais DÉRIVÉS : le trigger
+     * `sync_lm_projects_service_tags_from_entreprise` les recopie depuis
+     * l'entreprise. On les mesure donc au lieu de les toucher — avant la fusion
+     * pour annoncer ce qui va être propagé, après pour prouver que ça l'a été.
+     */
+    const lmBefore = await countCarriers(
+      sb,
+      "lead_magnet_projects",
+      "service_tags_snapshot",
+      sourceKeySet,
+    );
+
     const report = emptyReport();
     for (const target of TARGETS) {
       report[target.name] = await mergeTable(sb, target, sources, body.target, body.dry_run);
     }
+
+    // `failed` non nul ici veut dire : des snapshots portent encore l'ancien tag
+    // alors que les entreprises ont été corrigées. C'est exactement le symptôme
+    // qui était passé inaperçu la première fois, et il ne doit plus l'être.
+    const lmAfter = body.dry_run
+      ? lmBefore
+      : await countCarriers(sb, "lead_magnet_projects", "service_tags_snapshot", sourceKeySet);
+
+    report.leadMagnets = {
+      scanned: lmBefore.total,
+      changed: body.dry_run ? lmBefore.carriers : lmBefore.carriers - lmAfter.carriers,
+      failed: lmBefore.failed || lmAfter.failed ? lmBefore.total : body.dry_run ? 0 : lmAfter.carriers,
+    };
 
     // Lignes d'allowlist des tags fusionnés : le tag n'existe plus, sa ligne
     // n'aurait plus aucun porteur et resterait dans l'écran à vie.
