@@ -50,6 +50,10 @@ export async function fetchGooglePlace(
     // SKU Essentials (le moins cher), le coût du champ est négligeable.
     "location",
     "userRatingCount",
+    // Note agrégée. `reviews` étant déjà demandé, l'appel est de toute façon au
+    // SKU le plus cher : ajouter `rating` ne change rien au coût, et sans lui la
+    // note affichée par les sites ne pouvait venir que du scraping initial.
+    "rating",
     "reviews",
   ].join(",");
 
@@ -98,6 +102,7 @@ export async function fetchGooglePlace(
     return {
       formatted_address: typeof data.formattedAddress === "string" ? data.formattedAddress : null,
       total_reviews: typeof data.userRatingCount === "number" ? data.userRatingCount : null,
+      rating: typeof data.rating === "number" ? data.rating : null,
       reviews_5star,
       name: (data.displayName as { text?: string } | undefined)?.text ?? null,
       lat,

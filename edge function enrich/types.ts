@@ -60,12 +60,24 @@ export interface EnrichRequest {
   project_id?: string;
   project_ids?: string[];
   /**
+   * Cibles de `refresh_google_stats`, qui travaille sur l'ENTREPRISE et non sur
+   * un projet : les fiches à rattraper n'ont, pour la plupart, aucun projet lead
+   * magnet (132 concernées, zéro projet), donc `project_ids` ne les atteindrait
+   * pas.
+   */
+  entreprise_ids?: number[];
+  /**
    * Par défaut : enrichissement complet (scraping + Google + LLM).
+   *
    * `recompute_ville_seo` ne rejoue QUE le calcul de la ville SEO — aucun appel
    * externe, aucun coût — pour rattraper les projets remplis par une version
    * antérieure de la règle.
+   *
+   * `refresh_google_stats` ne va chercher QUE la note et le nombre d'avis sur la
+   * fiche Google : un appel Places, ni scraping ni LLM. Aucune IA n'entre en jeu,
+   * ce sont deux champs d'API (`rating`, `userRatingCount`).
    */
-  action?: "enrich" | "recompute_ville_seo";
+  action?: "enrich" | "recompute_ville_seo" | "refresh_google_stats";
 }
 
 export interface EnrichResult {
@@ -166,7 +178,10 @@ export interface GoogleReview {
 // Résultat Google Places
 export interface GooglePlaceData {
   formatted_address: string | null;
+  /** `userRatingCount` — nombre total d'avis Google. */
   total_reviews: number | null;
+  /** `rating` — note moyenne Google, source de `entreprises.note_moyenne`. */
+  rating: number | null;
   reviews_5star: GoogleReview[];
   name: string | null;
   /** Coordonnées du lieu — source la plus précise pour calculer la ville SEO. */
