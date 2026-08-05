@@ -24,6 +24,29 @@ export const SERVICE_TAGS_TAXONOMY = [
 
 export type ServiceTag = (typeof SERVICE_TAGS_TAXONOMY)[number] | string; // string = fallback si rien ne matche
 
+/**
+ * Clé canonique de comparaison d'un service_tag.
+ *
+ * DOIT rester identique à `serviceTagKey` de `src/utils/serviceTags.ts` (Deno ne
+ * peut pas importer le module du CRM, d'où la copie).
+ *
+ * Un simple `trim().toLowerCase()` ne suffit pas, et s'en contenter faisait fuir
+ * l'allowlist : bloquer « Bornes IRVE » dans les Paramètres enregistrait la clé
+ * « bornes irve », que « bornes-irve » renvoyé par le LLM ne heurtait pas — le
+ * tag interdit était donc écrit quand même, alors que l'écran des Paramètres
+ * l'affichait bien comme bloqué. Les accents posaient le même piège :
+ * « renovation generale » passait à travers un blocage sur « rénovation
+ * générale ». Les deux côtés doivent effondrer accents ET séparateurs.
+ */
+export const serviceTagKey = (value: string): string =>
+  (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
 // Configuration du modèle LLM, lue depuis la table `enrichment_llm_settings`
 // (gérée depuis les Paramètres du CRM) avec repli sur les variables d'env.
 export type LlmProvider = "openai" | "deepseek";

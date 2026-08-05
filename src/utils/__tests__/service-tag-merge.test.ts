@@ -7,6 +7,10 @@ import {
   rewriteNestedServiceTag,
   serviceTagKey,
 } from "../serviceTags";
+import {
+  SERVICE_TAGS_TAXONOMY as EDGE_TAXONOMY,
+  serviceTagKey as edgeServiceTagKey,
+} from "../../../edge function enrich/types";
 
 /**
  * Les tags que le template de site reconnaît réellement, relevés dans les
@@ -51,19 +55,39 @@ describe("taxonomie alignée sur le template", () => {
   });
 
   /**
-   * Deno ne peut pas importer le module du CRM : l'edge function garde une copie
-   * de la taxonomie. Ce test la relit sur le disque, parce qu'une copie qu'aucun
-   * test ne compare est exactement ce qui a dérivé la première fois.
+   * Deno ne peut pas importer le module du CRM : l'edge function garde ses
+   * propres copies de la taxonomie ET de la clé canonique. On les importe ici
+   * pour les comparer pour de vrai — une copie qu'aucun test ne compare est
+   * exactement ce qui a dérivé la première fois.
    */
   it("reste identique à la copie de l'edge function d'enrichissement", () => {
-    const source = readFileSync(
-      join(__dirname, "..", "..", "..", "edge function enrich", "types.ts"),
-      "utf8",
-    );
-    const block = source.match(/SERVICE_TAGS_TAXONOMY\s*=\s*\[([\s\S]*?)\]\s*as const/);
-    expect(block).not.toBeNull();
-    const edgeTags = Array.from(block![1].matchAll(/"([^"]+)"/g)).map((m) => m[1]);
-    expect(edgeTags).toEqual([...SERVICE_TAGS_TAXONOMY]);
+    expect([...EDGE_TAXONOMY]).toEqual([...SERVICE_TAGS_TAXONOMY]);
+  });
+
+  /**
+   * L'edge function comparait les tags à l'allowlist avec un simple
+   * `trim().toLowerCase()`. Bloquer « Bornes IRVE » dans les Paramètres
+   * n'arrêtait donc pas « bornes-irve » renvoyé par le LLM : le tag interdit
+   * était écrit alors que l'écran l'affichait comme bloqué. Les deux clés
+   * doivent coïncider sur tout ce qui distingue les deux graphies.
+   */
+  it("calcule la même clé canonique que l'edge function", () => {
+    const cas = [
+      ...SERVICE_TAGS_TAXONOMY,
+      "Bornes IRVE",
+      "bornes-irve",
+      "BORNES   IRVE",
+      "Rénovation générale",
+      "renovation generale",
+      "renovation-generale",
+      "Pompe à chaleur",
+      "pompe-a-chaleur",
+      "électricité",
+      "  Chauffage  ",
+      "",
+      "---",
+    ];
+    for (const c of cas) expect(edgeServiceTagKey(c)).toBe(serviceTagKey(c));
   });
 
   /**
