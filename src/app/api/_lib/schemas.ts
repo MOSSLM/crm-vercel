@@ -251,6 +251,31 @@ export const villeSeoRecomputeSchema = z.object({
 export type VilleSeoRecomputePayload = z.infer<typeof villeSeoRecomputeSchema>;
 
 /**
+ * Fusion de service tags : toutes les entités portant l'un des `sources`
+ * reçoivent `target` à la place.
+ *
+ * `dry_run` par défaut à `true` — l'opération réécrit tout le parc sans
+ * annulation possible, donc le seul appel qu'on puisse faire par accident doit
+ * être celui qui ne touche rien.
+ */
+export const serviceTagMergeSchema = z.object({
+  sources: z.array(z.string().trim().min(1)).min(1).max(200),
+  target: z.string().trim().min(1).max(120),
+  dry_run: z.boolean().default(true),
+  /**
+   * Fusionner vers un tag bloqué déplace tout le parc sur un tag que
+   * l'enrichissement refuse : refusé sauf confirmation explicite.
+   */
+  allow_blocked_target: z.boolean().default(false),
+  /**
+   * Idem pour une cible hors taxonomie : aucune page ne la reconnaît, la fusion
+   * remplacerait un tag cassé par un autre.
+   */
+  allow_unknown_target: z.boolean().default(false),
+});
+export type ServiceTagMergePayload = z.infer<typeof serviceTagMergeSchema>;
+
+/**
  * Moves a batch of opportunities to another CRM pipeline from the Marketing &
  * Web board (e.g. "Entreprises sans site web", "Streak mars/avril", "Général").
  */
