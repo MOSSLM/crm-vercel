@@ -406,12 +406,34 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-autoimg-thumb{margin:0;position:relative;aspect-ratio:4/3;border-radius:6px;overflow:hidden;background:var(--bg-2);border:1px solid var(--cd-border);}
 .cd-autoimg-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
 .cd-autoimg-thumb figcaption{position:absolute;left:0;right:0;bottom:0;font-size:9px;line-height:1.3;padding:2px 4px;color:#fff;background:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-/* Remplacer UNE photo : visible au survol, et toujours visible au clavier. */
-.cd-autoimg-swap{position:absolute;top:3px;right:3px;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:0;border-radius:5px;color:#fff;background:rgba(0,0,0,.55);opacity:0;transition:opacity .12s;cursor:pointer;}
-.cd-autoimg-thumb:hover .cd-autoimg-swap,.cd-autoimg-swap:focus-visible{opacity:1;}
-.cd-autoimg-swap:hover{background:rgba(0,0,0,.8);}
-.cd-autoimg-swap:disabled{cursor:default;}
+.cd-autoimg-thumb.on{border-color:var(--cd-accent);box-shadow:0 0 0 1px var(--cd-accent);}
+/* Agir sur UNE photo : visible au survol, et toujours visible au clavier. */
+.cd-autoimg-tools{position:absolute;top:3px;right:3px;display:flex;gap:3px;opacity:0;transition:opacity .12s;}
+.cd-autoimg-thumb:hover .cd-autoimg-tools,.cd-autoimg-tools:focus-within{opacity:1;}
+.cd-autoimg-tool{width:20px;height:20px;display:flex;align-items:center;justify-content:center;border:0;border-radius:5px;color:#fff;background:rgba(0,0,0,.55);cursor:pointer;}
+.cd-autoimg-tool:hover{background:rgba(0,0,0,.8);}
+.cd-autoimg-tool:disabled{cursor:default;opacity:.5;}
 .cd-autoimg-busy{position:absolute;inset:0;background:rgba(255,255,255,.55);}
-@media (hover:none){.cd-autoimg-swap{opacity:1;}}
+@media (hover:none){.cd-autoimg-tools{opacity:1;}}
+
+/* Choisir la photo d'un emplacement dans la médiathèque, service par service. */
+.cd-autoimg-picker{display:flex;flex-direction:column;gap:7px;padding:8px;border:1px solid var(--cd-border);border-radius:9px;background:var(--bg-2);}
+.cd-autoimg-picker-hd{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-3);}
+.cd-autoimg-picker-hd b{font-size:11.5px;color:var(--text-1);font-weight:600;}
+.cd-autoimg-picker-x{flex-shrink:0;width:18px;height:18px;display:flex;align-items:center;justify-content:center;border:0;border-radius:5px;background:transparent;color:var(--text-3);cursor:pointer;}
+.cd-autoimg-picker-x:hover{background:var(--bg-3,rgba(0,0,0,.06));color:var(--text-1);}
+.cd-autoimg-chips{display:flex;flex-wrap:wrap;gap:4px;}
+.cd-autoimg-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;color:var(--text-2);background:var(--surface);border:1px solid var(--cd-border);border-radius:99px;padding:2px 4px 2px 8px;cursor:pointer;}
+.cd-autoimg-chip b{font-family:var(--font-mono);font-size:10px;font-weight:600;color:#fff;background:var(--text-3);border-radius:99px;padding:1px 6px;}
+.cd-autoimg-chip.on{border-color:var(--cd-accent);color:var(--cd-accent);}
+.cd-autoimg-chip.on b{background:var(--cd-accent);}
+.cd-autoimg-choices{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;max-height:186px;overflow-y:auto;}
+.cd-autoimg-choice{position:relative;padding:0;aspect-ratio:1;border:1px solid var(--cd-border);border-radius:5px;overflow:hidden;background:var(--surface);cursor:pointer;}
+.cd-autoimg-choice img{width:100%;height:100%;object-fit:cover;display:block;}
+.cd-autoimg-choice:hover{border-color:var(--cd-accent);}
+.cd-autoimg-choice.on{border-color:var(--cd-accent);box-shadow:0 0 0 1px var(--cd-accent);}
+.cd-autoimg-choice.used img{opacity:.45;}
+.cd-autoimg-choice:disabled{cursor:default;}
+.cd-autoimg-dup{position:absolute;left:0;right:0;bottom:0;font-size:8.5px;line-height:1.4;color:#fff;background:rgba(0,0,0,.6);}
 
 `;

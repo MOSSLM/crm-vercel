@@ -1,10 +1,17 @@
-import { drawImageSets, redrawSlot, seededRandom, type LibraryImage } from "../draw-image-sets";
+import { chooseSlotImage, drawImageSets, redrawSlot, seededRandom, type LibraryImage } from "../draw-image-sets";
 import { pickCandidate } from "../image-set";
 
 /** `n` library images all carrying `tag`, urls `<prefix>-1.jpg`… */
 function pool(tag: string, n: number, prefix = tag): LibraryImage[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `${prefix}-${i + 1}`, url: `https://x/${prefix}-${i + 1}.jpg`, tags: [tag], alt: `${tag} ${i + 1}`,
+  }));
+}
+
+/** `n` images carrying SEVERAL trades at once — one photo, several pools. */
+function multiTag(tags: string[], n: number, prefix = "mixte"): LibraryImage[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `${prefix}-${i + 1}`, url: `https://x/${prefix}-${i + 1}.jpg`, tags, alt: `${prefix} ${i + 1}`,
   }));
 }
 
@@ -56,6 +63,61 @@ describe("drawImageSets — what the drawn company sees", () => {
     });
     expect(emptyTags).toEqual([]);
     expect(slots.every((s) => s.chosen !== null)).toBe(true);
+  });
+});
+
+describe("drawImageSets — a photo tagged for several trades", () => {
+  // The pools of two trades OVERLAP as soon as a photo documents both jobs.
+  // Counting per trade cannot see it, and the band showed the same photo twice.
+  const TAGS = ["Climatisation", "Ventilation"];
+
+  it("never places the same photo twice when every photo carries both trades", () => {
+    const library = multiTag(TAGS, 8);
+    const { slots } = drawImageSets({ slotCount: 6, companyTags: TAGS, library, random: SEED() });
+    const urls = slots.map((s) => s.chosen!.url);
+    expect(new Set(urls).size).toBe(6);
+  });
+
+  it("never places the same photo twice when the pools only partly overlap", () => {
+    const library = [
+      ...multiTag(TAGS, 3),                 // in BOTH pools
+      ...pool("Climatisation", 3),
+      ...pool("Ventilation", 3),
+    ];
+    for (let seed = 1; seed <= 40; seed++) {
+      const { slots } = drawImageSets({
+        slotCount: 6, companyTags: TAGS, library, random: seededRandom(seed),
+      });
+      const urls = slots.map((s) => s.chosen!.url);
+      expect(new Set(urls).size).toBe(6);
+    }
+  });
+
+  it("keeps alternating the trades while it dedupes", () => {
+    const library = [...multiTag(TAGS, 3), ...pool("Climatisation", 3), ...pool("Ventilation", 3)];
+    const { slots } = drawImageSets({ slotCount: 6, companyTags: TAGS, library, random: SEED() });
+    expect(slots.map((s) => s.leadTag)).toEqual([
+      "climatisation", "ventilation", "climatisation", "ventilation", "climatisation", "ventilation",
+    ]);
+    // And what the renderer resolves is still what the draw chose.
+    for (const slot of slots) expect(pickCandidate(slot.candidates, TAGS)!.url).toBe(slot.chosen!.url);
+  });
+
+  it("still wraps, rather than leaving a hole, when the shared pool is too small", () => {
+    const library = multiTag(TAGS, 2);
+    const { slots } = drawImageSets({ slotCount: 6, companyTags: TAGS, library, random: SEED() });
+    expect(slots.every((s) => s.chosen !== null)).toBe(true);
+    expect(new Set(slots.map((s) => s.chosen!.url)).size).toBe(2); // reported via pools
+  });
+
+  it("gives a company the design is only CLONED for a repeat-free band too", () => {
+    // Drawn for a plumber-electrician; a plumber sees the same six slots.
+    const { slots } = drawImageSets({
+      slotCount: 6, companyTags: ["Plomberie", "Électricité"], library: LIBRARY, random: SEED(),
+    });
+    const seen = slots.map((s) => pickCandidate(s.candidates, ["Plomberie"])!.url);
+    expect(seen.every((u) => u.includes("Plomberie"))).toBe(true);
+    expect(new Set(seen).size).toBe(6);
   });
 });
 
@@ -139,6 +201,25 @@ describe("redrawSlot — swapping ONE photo", () => {
     expect(next.chosen!.url).toContain("Plomberie");
   });
 
+  it("stays on the trade the slot SHOWS, not on its round-robin one", () => {
+    // Slot 1 leads climatisation when drawn; a hand pick moved it to plomberie,
+    // and re-rolling must not quietly move it back.
+    const next = redrawSlot({
+      slotCount: 6, companyTags: TAGS, library: LIBRARY, random: seededRandom(99),
+      slotIndex: 0, leadTag: "Plomberie", currentUrl: "https://x/Plomberie-1.jpg",
+    })!;
+    expect(next.leadTag).toBe("plomberie");
+    expect(next.chosen!.url).toContain("Plomberie");
+  });
+
+  it("ignores a trade the library cannot serve and falls back to the round-robin", () => {
+    const next = redrawSlot({
+      slotCount: 6, companyTags: TAGS, library: LIBRARY, random: seededRandom(99),
+      slotIndex: 0, leadTag: "Ramonage",
+    })!;
+    expect(next.leadTag).toBe("climatisation");
+  });
+
   it("actually changes the photo", () => {
     const slots = base();
     const next = redrawSlot({
@@ -197,6 +278,63 @@ describe("redrawSlot — swapping ONE photo", () => {
     expect(redrawSlot({
       slotCount: 6, companyTags: ["Ramonage"], library: LIBRARY, random: seededRandom(5), slotIndex: 0,
     })).toBeNull();
+  });
+});
+
+describe("chooseSlotImage — the operator picks the photo himself", () => {
+  const TAGS = ["Climatisation", "Plomberie"];
+  const pick = (url: string, slotIndex = 0, extra: Partial<{ library: LibraryImage[] }> = {}) =>
+    chooseSlotImage({
+      slotCount: 6, companyTags: TAGS, library: extra.library ?? LIBRARY, random: SEED(), slotIndex, url,
+    });
+
+  it("puts exactly the named photo on the slot", () => {
+    const next = pick("https://x/Plomberie-7.jpg")!;
+    expect(next.chosen!.url).toBe("https://x/Plomberie-7.jpg");
+    expect(pickCandidate(next.candidates, TAGS)!.url).toBe("https://x/Plomberie-7.jpg");
+  });
+
+  it("takes the trade of the photo, even against the slot's round-robin", () => {
+    // Slot 1 (index 0) leads climatisation when drawn; a plumbing photo wins it.
+    const next = pick("https://x/Plomberie-2.jpg", 0)!;
+    expect(next.leadTag).toBe("plomberie");
+  });
+
+  it("wins on score, not merely on order, for a photo of several of the trades", () => {
+    const library = [...LIBRARY, ...multiTag(TAGS, 1, "mixte")];
+    const next = pick("https://x/mixte-1.jpg", 0, { library })!;
+    expect(next.candidates[0].tags).toEqual(TAGS);
+    expect(pickCandidate(next.candidates, TAGS)!.url).toBe("https://x/mixte-1.jpg");
+  });
+
+  it("pins a generic photo on the slot for THIS company only", () => {
+    const library = [...LIBRARY, { id: "u", url: "https://x/generique.jpg", tags: ["all"], alt: "Chantier" }];
+    const next = pick("https://x/generique.jpg", 2, { library })!;
+    expect(next.chosen!.url).toBe("https://x/generique.jpg");
+    expect(pickCandidate(next.candidates, TAGS)!.url).toBe("https://x/generique.jpg");
+    // Another company still resolves to a photo of ITS trade.
+    expect(pickCandidate(next.candidates, ["Électricité"])!.url).toContain("Électricité");
+  });
+
+  it("keeps serving the other companies — the set is rebuilt whole", () => {
+    const next = pick("https://x/Climatisation-4.jpg", 3)!;
+    expect(pickCandidate(next.candidates, ["Électricité"])!.url).toContain("Électricité");
+    expect(pickCandidate(next.candidates, ["Plomberie"])!.url).toContain("Plomberie");
+  });
+
+  it("refuses a url the library does not hold", () => {
+    expect(pick("https://x/ailleurs.jpg")).toBeNull();
+    expect(pick("")).toBeNull();
+  });
+
+  it("works for a company whose trades the library cannot serve at all", () => {
+    const library = [{ id: "u", url: "https://x/generique.jpg", tags: ["all"], alt: "Chantier" }];
+    const next = chooseSlotImage({
+      slotCount: 6, companyTags: ["Ramonage"], library, random: SEED(), slotIndex: 0,
+      url: "https://x/generique.jpg",
+    })!;
+    expect(next.chosen!.url).toBe("https://x/generique.jpg");
+    expect(pickCandidate(next.candidates, ["Ramonage"])!.url).toBe("https://x/generique.jpg");
   });
 });
 

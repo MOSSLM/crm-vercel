@@ -17,15 +17,22 @@
  *     climatisation + plomberie gets an alternating band, not six air
  *     conditioners. `pickCandidate` breaks a score tie on ORDER, so leading a
  *     slot's list with the trade we want for that slot is what selects it.
- *  2. **No repeats.** Slots that come back to the same trade take the NEXT photo
- *     from that trade's shuffled pool, so the six are distinct as long as the
- *     library holds enough of them (hence the ~10 per tag target). A pool too
- *     small to cover its slots wraps around and is reported, rather than
- *     silently repeating.
+ *  2. **No repeats.** A photo that has been drawn is never drawn again in the
+ *     band. Trade pools OVERLAP — a photo tagged "climatisation" AND
+ *     "ventilation" belongs to both — so the ledger has to be kept across trades
+ *     (see `createChooser`), not per trade: counting per trade is what used to
+ *     put the same photo on two slots of a two-trade company. A pool too small
+ *     to cover its slots wraps around and is reported, rather than silently
+ *     repeating.
  *
  * Every other trade still gets a candidate in each set, so a company that is not
- * the one drawn for is served too — that is the whole point of a set. The
- * universal ("all") images close the list as the last resort.
+ * the one drawn for is served too — that is the whole point of a set, and those
+ * candidates avoid repeating down the band as well. The universal ("all") images
+ * close the list as the last resort.
+ *
+ * An operator who does not like a photo can swap it (`redrawSlot`) or pick one
+ * by hand from the library (`chooseSlotImage`); both rebuild a whole set, so a
+ * hand-edited slot still serves every other company.
  *
  * Pure + side-effect free; the shuffle takes its randomness as an argument so
  * the tests are deterministic and a "re-draw" is just a new seed.
@@ -97,8 +104,10 @@ function isUniversal(img: LibraryImage): boolean {
   return img.tags.map(serviceTagKey).includes(MEDIA_LIBRARY_UNIVERSAL_TAG);
 }
 
-/** Library items per canonical tag key. An image tagged for two trades serves
- *  both — it is a real photo of both jobs, not a duplicate. */
+/** Library items per canonical tag key. An image tagged for two trades sits in
+ *  BOTH pools — it is a real photo of both jobs. Which is why the draw cannot
+ *  count per pool: only a ledger kept across trades (`createChooser`) knows the
+ *  photo has already been placed. */
 function poolsByTag(library: readonly LibraryImage[]): Map<string, LibraryImage[]> {
   const pools = new Map<string, LibraryImage[]>();
   for (const img of library) {
@@ -165,6 +174,18 @@ function leadTagFor(ctx: DrawContext, slotIndex: number): string | null {
   return ctx.usable.length > 0 ? ctx.usable[slotIndex % ctx.usable.length] : null;
 }
 
+interface SlotBuild {
+  slotIndex: number;
+  leadTag: string | null;
+  leadImage: LibraryImage | null;
+  /** Tags written on the lead candidate. Defaults to the lead trade's label —
+   *  `chooseSlotImage` passes several, so a hand-picked photo outscores (and
+   *  never merely ties with) the candidates that follow it. */
+  leadTags?: string[];
+  fallbackAlt: string;
+  imageForTag: (key: string) => LibraryImage;
+}
+
 /**
  * Assembles one slot's candidate list around an already-chosen lead image.
  *
@@ -173,22 +194,25 @@ function leadTagFor(ctx: DrawContext, slotIndex: number): string | null {
  * trades follow — that is what lets the same set serve a company this draw was
  * not made for — and the universal images close the list.
  */
-function assembleSlot(
-  ctx: DrawContext,
-  slotIndex: number,
-  leadTag: string | null,
-  leadImage: LibraryImage | null,
-  fallbackAlt: string,
-  imageForTag: (key: string) => LibraryImage,
-): DrawnSlot {
+function assembleSlot(ctx: DrawContext, build: SlotBuild): DrawnSlot {
+  const { slotIndex, leadTag, leadImage, leadTags, fallbackAlt, imageForTag } = build;
   const candidates: ImageSetCandidate[] = [];
   let chosen: LibraryImage | null = null;
 
   const order = leadTag ? [leadTag, ...ctx.usable.filter((k) => k !== leadTag)] : [];
   for (const key of order) {
-    const img = key === leadTag && leadImage ? leadImage : imageForTag(key);
-    if (key === leadTag) chosen = img;
-    candidates.push(toCandidate(img, [ctx.labelByKey.get(key)!], fallbackAlt));
+    const isLead = key === leadTag;
+    const img = isLead && leadImage ? leadImage : imageForTag(key);
+    if (isLead) chosen = img;
+    const tags = isLead && leadTags ? leadTags : [ctx.labelByKey.get(key)!];
+    candidates.push(toCandidate(img, tags, fallbackAlt));
+  }
+
+  // A hand-picked photo carrying none of the company's trades still opens the
+  // list: nothing in the loop above would have put it there.
+  if (!leadTag && leadImage) {
+    chosen = leadImage;
+    candidates.push(toCandidate(leadImage, leadTags ?? [MEDIA_LIBRARY_UNIVERSAL_TAG], fallbackAlt));
   }
 
   for (const [key, pool] of ctx.shuffled) {
@@ -206,6 +230,79 @@ function assembleSlot(
 }
 
 /**
+ * Hands out the photos of a draw, slot after slot, so none is placed twice.
+ *
+ * Trade pools overlap: a photo tagged "climatisation" AND "ventilation" is in
+ * both, and a per-trade cursor cannot see that the other trade already took it —
+ * which is exactly how the same photo used to show up two or three times in a
+ * six-photo band. The chooser keeps the ledgers a cursor cannot:
+ *
+ *  - `used` — every photo the DRAWN company already shows, all trades together.
+ *    That is the band on screen, so this rule is the last one ever relaxed.
+ *  - `servedByTag` — per trade, what that trade already served down the band
+ *    (as a lead or as a fallback), so a company the design is merely CLONED for
+ *    gets a repeat-free band too.
+ *  - `inSlot` — what the current set already lists, so one slot never offers the
+ *    same photo under two trades.
+ *
+ * When a pool runs dry these are dropped last-first and, as a last resort, the
+ * pool wraps: a repeat beats a hole, and `pools` reports the shortage so the
+ * operator knows to import more photos.
+ */
+function createChooser(ctx: DrawContext) {
+  const used = new Set<string>();
+  const servedByTag = new Map<string, Set<string>>();
+  const wrapped = new Map<string, number>();
+  let inSlot = new Set<string>();
+
+  const servedBy = (key: string): Set<string> => {
+    let seen = servedByTag.get(key);
+    if (!seen) servedByTag.set(key, (seen = new Set<string>()));
+    return seen;
+  };
+
+  /** First photo of `key`'s pool clearing every rule; then every rule but the
+   *  last, and so on — the leading rules are the ones worth keeping. */
+  const from = (key: string, rules: Array<(img: LibraryImage) => boolean>): LibraryImage => {
+    const pool = ctx.shuffled.get(key)!;
+    for (let kept = rules.length; kept > 0; kept--) {
+      const hit = pool.find((img) => rules.slice(0, kept).every((rule) => rule(img)));
+      if (hit) return hit;
+    }
+    const n = wrapped.get(key) ?? 0;
+    wrapped.set(key, n + 1);
+    return pool[n % pool.length];
+  };
+
+  const record = (key: string, img: LibraryImage): LibraryImage => {
+    servedBy(key).add(img.url);
+    inSlot.add(img.url);
+    return img;
+  };
+
+  return {
+    /** Opens a slot: its candidate list starts empty. */
+    startSlot(): void {
+      inSlot = new Set<string>();
+    },
+    /** The photo the drawn company sees on this slot. */
+    lead(key: string): LibraryImage {
+      const seen = servedBy(key);
+      const img = from(key, [(i) => !used.has(i.url), (i) => !seen.has(i.url)]);
+      used.add(img.url);
+      return record(key, img);
+    },
+    /** The photo this slot offers a company whose trade is `key` — not what the
+     *  drawn company sees, but it must not repeat down the band either. */
+    fallback(key: string): LibraryImage {
+      const seen = servedBy(key);
+      const img = from(key, [(i) => !seen.has(i.url), (i) => !inSlot.has(i.url)]);
+      return record(key, img);
+    },
+  };
+}
+
+/**
  * Builds one `:image_set` worth of candidates per slot.
  *
  * `altBySlot` supplies the export's own alt text as a fallback, so a library
@@ -216,21 +313,23 @@ export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = [
   if (slotCount === 0) return { slots: [], pools: [], emptyTags: [] };
 
   const ctx = buildContext(input);
-  const { labelByKey, usable, shuffled, pools, tagKeys, emptyTags } = ctx;
+  const { labelByKey, usable, pools, tagKeys, emptyTags } = ctx;
 
-  const takenByTag = new Map<string, number>();
+  // One ledger for the whole band — see createChooser: counting per trade would
+  // hand the same photo out again as soon as it carries two of the tags.
+  const chooser = createChooser(ctx);
   const slots: DrawnSlot[] = [];
 
   for (let i = 0; i < slotCount; i++) {
+    chooser.startSlot();
     const leadTag = leadTagFor(ctx, i);
-    // Successive slots on the same trade walk distinct photos of its pool.
-    const nextOf = (key: string): LibraryImage => {
-      const pool = shuffled.get(key)!;
-      return pool[(takenByTag.get(key) ?? 0) % pool.length];
-    };
-    const leadImage = leadTag ? nextOf(leadTag) : null;
-    if (leadTag) takenByTag.set(leadTag, (takenByTag.get(leadTag) ?? 0) + 1);
-    slots.push(assembleSlot(ctx, i, leadTag, leadImage, altBySlot[i] ?? "", nextOf));
+    slots.push(assembleSlot(ctx, {
+      slotIndex: i,
+      leadTag,
+      leadImage: leadTag ? chooser.lead(leadTag) : null,
+      fallbackAlt: altBySlot[i] ?? "",
+      imageForTag: (key) => chooser.fallback(key),
+    }));
   }
 
   // How many distinct photos each trade owes: its slots under the round-robin.
@@ -255,23 +354,30 @@ export interface RedrawInput extends DrawInput {
   /** What this slot shows right now: the redraw must land on something else,
    *  otherwise the button would visibly do nothing. */
   currentUrl?: string;
+  /** The trade the slot shows right now. Defaults to its round-robin trade,
+   *  which is the same thing — until the operator picked a photo of ANOTHER
+   *  trade by hand, and re-rolling must then stay on the trade he chose rather
+   *  than silently undo it. Ignored when the library cannot serve it. */
+  leadTag?: string;
 }
 
 /**
  * Rebuilds a SINGLE slot, leaving the rest of the band alone — the operator
  * likes the selection but wants one photo swapped.
  *
- * The slot keeps its trade: the round-robin that alternates the company's
- * services down the band is what makes it readable, and re-rolling one image
- * should not collapse it. Only the photo changes, drawn from that trade's pool
- * minus what the other slots already show.
+ * The slot keeps the trade it shows (`leadTag`, its round-robin trade by
+ * default): the alternation of the company's services down the band is what
+ * makes it readable, and re-rolling one image should not collapse it — nor undo
+ * a trade the operator chose by hand. Only the photo changes, drawn from that
+ * trade's pool minus what the other slots already show.
  *
  * Returns `null` when nothing else is available (a one-photo pool), so the
  * caller can say so instead of writing an identical set.
  */
 export function redrawSlot(input: RedrawInput, fallbackAlt = ""): DrawnSlot | null {
   const ctx = buildContext(input);
-  const leadTag = leadTagFor(ctx, input.slotIndex);
+  const kept = input.leadTag ? serviceTagKey(input.leadTag) : "";
+  const leadTag = kept && ctx.usable.includes(kept) ? kept : leadTagFor(ctx, input.slotIndex);
   if (!leadTag) {
     // No trade the library can serve: the slot only ever held a universal
     // image, and there is no alternative to offer.
@@ -288,11 +394,66 @@ export function redrawSlot(input: RedrawInput, fallbackAlt = ""): DrawnSlot | nu
     pool.find((img) => img.url !== input.currentUrl);
   if (!fresh) return null;
 
-  const nextOf = (key: string): LibraryImage => {
-    const p = ctx.shuffled.get(key)!;
-    return p[input.slotIndex % p.length];
-  };
-  return assembleSlot(ctx, input.slotIndex, leadTag, fresh, fallbackAlt, nextOf);
+  return assembleSlot(ctx, {
+    slotIndex: input.slotIndex,
+    leadTag,
+    leadImage: fresh,
+    fallbackAlt,
+    imageForTag: (key) => slotPhotoOf(ctx, key, input.slotIndex),
+  });
+}
+
+export interface ChooseInput extends DrawInput {
+  /** 0-based index of the slot the operator is editing. */
+  slotIndex: number;
+  /** Public url of the library photo they picked. */
+  url: string;
+}
+
+/**
+ * Rebuilds a SINGLE slot around a photo the operator picked BY HAND, rather than
+ * one the draw chose. The band's other slots are untouched.
+ *
+ * The set is rebuilt whole — same shape as a drawn slot — so the design keeps
+ * serving every other company: the picked photo opens the list, the company's
+ * other trades follow, then the universal images.
+ *
+ * The lead candidate carries every trade of the company the photo actually
+ * documents, so it beats the rest on score instead of merely tying on order. A
+ * photo that documents NONE of them (a generic shot the operator wants there
+ * anyway) is pinned with the company's own trades: it then wins for THIS company
+ * and only for it, and any other company still resolves to its own candidate.
+ *
+ * Returns `null` when the url is not in the library it was given — the caller
+ * says so rather than writing a set pointing nowhere.
+ */
+export function chooseSlotImage(input: ChooseInput, fallbackAlt = ""): DrawnSlot | null {
+  const url = input.url?.trim();
+  if (!url) return null;
+  const picked = input.library.find((img) => img.url === url);
+  if (!picked) return null;
+
+  const ctx = buildContext(input);
+  const own = new Set((picked.tags ?? []).map(serviceTagKey).filter(Boolean));
+  const documented = ctx.tagKeys.filter((key) => own.has(key));
+  const leadKeys = documented.length > 0 ? documented : ctx.tagKeys;
+
+  return assembleSlot(ctx, {
+    slotIndex: input.slotIndex,
+    leadTag: leadKeys[0] ?? null,
+    leadImage: picked,
+    leadTags: leadKeys.map((key) => ctx.labelByKey.get(key)!),
+    fallbackAlt,
+    imageForTag: (key) => slotPhotoOf(ctx, key, input.slotIndex),
+  });
+}
+
+/** The photo trade `key` offers on slot `slotIndex` when a single slot is
+ *  rebuilt: the full draw's ledgers are gone, so the slot index alone spreads
+ *  the pool — the same rule `assembleSlot` uses for the non-company trades. */
+function slotPhotoOf(ctx: DrawContext, key: string, slotIndex: number): LibraryImage {
+  const pool = ctx.shuffled.get(key)!;
+  return pool[slotIndex % pool.length];
 }
 
 /**
