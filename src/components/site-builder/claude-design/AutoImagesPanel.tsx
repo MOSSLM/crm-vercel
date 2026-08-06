@@ -2,8 +2,10 @@
 
 import React from "react";
 import { toast } from "sonner";
-import { Shuffle, AlertTriangle, Wand2 } from "lucide-react";
+import { Shuffle, AlertTriangle, Wand2, Images, X } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
+import { serviceTagKey } from "@/utils/serviceTags";
+import { MEDIA_LIBRARY_UNIVERSAL_TAG } from "@/types";
 
 interface DrawnSlot {
   order: number;
@@ -11,6 +13,17 @@ interface DrawnSlot {
   alt: string;
   tag: string | null;
 }
+
+/** A media-library photo the picker may offer, tags already canonical. */
+interface PickableImage {
+  id: string;
+  url: string;
+  alt: string;
+  tags: string[];
+}
+
+/** The picker's chip for photos that document no particular trade. */
+const GENERIC_CHIP = "__generic";
 
 interface ZoneInfo {
   id: string;
@@ -35,6 +48,9 @@ interface State {
   pools: Pool[];
   emptyTags: string[];
   librarySize: number;
+  /** Everything the per-slot picker may offer — already narrowed to the
+   *  company's trades (plus the generic photos) by the API. */
+  library: PickableImage[];
 }
 
 interface DrawResponse {
@@ -58,6 +74,11 @@ interface DrawResponse {
  * still resolves correctly for any other company the design is shown to. The
  * pool counts below the button are the operator's cue to import more photos:
  * a trade with fewer images than slots repeats itself.
+ *
+ * Three ways to fill a slot, from the fastest to the most deliberate: draw the
+ * whole band, re-roll one photo, or pick one by hand — the picker lists the
+ * library BY TRADE, so choosing the climatisation photo of slot 3 never means
+ * scrolling past the ventilation ones.
  */
 export function AutoImagesPanel({
   siteId,
@@ -77,6 +98,9 @@ export function AutoImagesPanel({
   const [busy, setBusy] = React.useState(false);
   /** The slot being swapped, so only its thumbnail shows the spinner. */
   const [swapping, setSwapping] = React.useState<number | null>(null);
+  /** The slot whose library picker is open, and the trade it is filtered on. */
+  const [picking, setPicking] = React.useState<number | null>(null);
+  const [pickTag, setPickTag] = React.useState<string>(GENERIC_CHIP);
 
   // Reload the zones + pools whenever the applied company changes: the pools are
   // reported for ITS trades, and a stale list would advertise the wrong stock.
@@ -91,21 +115,29 @@ export function AutoImagesPanel({
         if (!alive) return;
         setState(d);
         setSlots(d?.zones?.[0]?.slots ?? []);
+        // Another company means another library and other trades: a picker left
+        // open would be filtered on a trade this one may not even have.
+        setPicking(null);
       })
-      .catch(() => { if (alive) { setState(null); setSlots([]); } });
+      .catch(() => { if (alive) { setState(null); setSlots([]); setPicking(null); } });
     return () => { alive = false; };
   }, [siteId, entrepriseId]);
 
-  /** `slot` omitted → redraw the whole band; `slot` given → swap that photo. */
-  const run = async (slot?: number) => {
+  /**
+   * `slot` omitted → redraw the whole band; `slot` given → change that photo
+   * only, at random or — with `url` — for the one the operator picked.
+   */
+  const run = async (slot?: number, url?: string) => {
     if (entrepriseId == null) return;
     if (slot === undefined) setBusy(true); else setSwapping(slot);
-    const t = toast.loading(slot === undefined ? "Tirage des photos…" : `Nouvelle photo ${slot}…`);
+    const t = toast.loading(
+      slot === undefined ? "Tirage des photos…" : url ? `Photo ${slot}…` : `Nouvelle photo ${slot}…`,
+    );
     try {
       const res = await authedFetch(`/api/site-builder/designs/${siteId}/auto-images`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ entrepriseId, ...(slot === undefined ? {} : { slot }) }),
+        body: JSON.stringify({ entrepriseId, ...(slot === undefined ? {} : { slot }), ...(url ? { url } : {}) }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((body as { error?: string }).error || "Tirage impossible");
@@ -116,7 +148,8 @@ export function AutoImagesPanel({
         const pages = result.zones.reduce((n, z) => n + z.pages.length, 0);
         toast.success(`${result.written} emplacement(s) remplis sur ${pages} page(s)`, { id: t });
       } else {
-        toast.success(`Photo ${slot} remplacée`, { id: t });
+        toast.success(url ? `Photo ${slot} choisie` : `Photo ${slot} remplacée`, { id: t });
+        setPicking(null);
       }
       onDone?.();
     } catch (e) {
@@ -127,11 +160,48 @@ export function AutoImagesPanel({
     }
   };
 
+  // The picker is modeless (it pushes the panel's content down rather than
+  // floating over it), so nothing else would close it on Escape.
+  React.useEffect(() => {
+    if (picking === null) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setPicking(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [picking]);
+
+  /** Opens the picker on a slot, filtered on the trade it already shows — the
+   *  operator wants ANOTHER climatisation photo far more often than a photo of
+   *  something else. */
+  const openPicker = (slot: DrawnSlot, chips: Array<{ key: string }>) => {
+    const key = slot.tag ? serviceTagKey(slot.tag) : "";
+    setPickTag(chips.some((c) => c.key === key) ? key : chips[0]?.key ?? GENERIC_CHIP);
+    setPicking(slot.order);
+  };
+
   if (!state || state.zones.length === 0) return null;
 
   const zone = state.zones[0];
   const short = state.pools.filter((p) => p.available > 0 && p.available < p.needed);
   const totalPages = state.zones.reduce((n, z) => n + z.pages.length, 0);
+
+  // What the picker offers, trade by trade: the company's own trades as the
+  // library stocks them, then the generic photos — those fit any slot.
+  const library = state.library ?? [];
+  const genericImages = library.filter(
+    (img) => img.tags.length === 0 || img.tags.includes(MEDIA_LIBRARY_UNIVERSAL_TAG),
+  );
+  const chips = [
+    ...state.pools
+      .map((p) => ({ key: p.tag, label: p.label, images: library.filter((img) => img.tags.includes(p.tag)) }))
+      .filter((chip) => chip.images.length > 0),
+    ...(genericImages.length > 0
+      ? [{ key: GENERIC_CHIP, label: "Génériques", images: genericImages }]
+      : []),
+  ];
+  const shown = chips.find((chip) => chip.key === pickTag)?.images ?? [];
+  // A photo already on the band: still pickable, but worth flagging — the whole
+  // point of the draw is that the six are distinct.
+  const bandUrls = new Set(slots.map((s) => s.url));
 
   return (
     <div className="cd-autoimg">
@@ -208,31 +278,103 @@ export function AutoImagesPanel({
                   {slots.map((s) => (
                     <figure
                       key={s.order}
-                      className="cd-autoimg-thumb"
+                      className={"cd-autoimg-thumb" + (picking === s.order ? " on" : "")}
                       title={`${s.alt || "Sans description"}${s.tag ? ` · ${s.tag}` : ""}`}
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={s.url} alt={s.alt} loading="lazy" />
                       {s.tag ? <figcaption>{s.tag}</figcaption> : null}
-                      {/* Remplace CETTE photo seulement — le reste de la bande
-                          ne bouge pas, et le métier de l'emplacement est
+                      {/* Les deux actions ne touchent que CET emplacement : le
+                          reste de la bande ne bouge pas, et le métier est
                           conservé pour ne pas casser l'alternance. */}
-                      <button
-                        type="button"
-                        className="cd-autoimg-swap"
-                        aria-label={`Changer la photo ${s.order}`}
-                        title="Changer cette photo"
-                        disabled={busy || swapping !== null}
-                        onClick={() => run(s.order)}
-                      >
-                        <Shuffle className="ico-xs" />
-                      </button>
+                      <div className="cd-autoimg-tools">
+                        <button
+                          type="button"
+                          className="cd-autoimg-tool"
+                          aria-label={`Choisir la photo ${s.order} dans la médiathèque`}
+                          aria-expanded={picking === s.order}
+                          title="Choisir la photo dans la médiathèque"
+                          disabled={busy || swapping !== null || chips.length === 0}
+                          onClick={() => (picking === s.order ? setPicking(null) : openPicker(s, chips))}
+                        >
+                          <Images className="ico-xs" />
+                        </button>
+                        <button
+                          type="button"
+                          className="cd-autoimg-tool"
+                          aria-label={`Changer la photo ${s.order}`}
+                          title="Tirer une autre photo au sort"
+                          disabled={busy || swapping !== null}
+                          onClick={() => run(s.order)}
+                        >
+                          <Shuffle className="ico-xs" />
+                        </button>
+                      </div>
                       {swapping === s.order ? <span className="cd-autoimg-busy" /> : null}
                     </figure>
                   ))}
                 </div>
+
+                {picking !== null ? (
+                  <div className="cd-autoimg-picker">
+                    <div className="cd-autoimg-picker-hd">
+                      <b>Emplacement {picking}</b>
+                      <span className="cd-grow">choisis sa photo par service</span>
+                      <button
+                        type="button"
+                        className="cd-autoimg-picker-x"
+                        aria-label="Fermer le sélecteur"
+                        onClick={() => setPicking(null)}
+                      >
+                        <X className="ico-xs" />
+                      </button>
+                    </div>
+                    <div className="cd-autoimg-chips">
+                      {chips.map((chip) => (
+                        <button
+                          key={chip.key}
+                          type="button"
+                          className={"cd-autoimg-chip" + (chip.key === pickTag ? " on" : "")}
+                          onClick={() => setPickTag(chip.key)}
+                        >
+                          {chip.label}<b>{chip.images.length}</b>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="cd-autoimg-choices">
+                      {shown.map((img) => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          className={
+                            "cd-autoimg-choice"
+                            + (slots.find((s) => s.order === picking)?.url === img.url ? " on" : "")
+                            + (bandUrls.has(img.url) ? " used" : "")
+                          }
+                          title={
+                            (img.alt || "Sans description")
+                            + (bandUrls.has(img.url) ? " · déjà dans la bande" : "")
+                          }
+                          disabled={busy || swapping !== null}
+                          onClick={() => run(picking, img.url)}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={img.url} alt={img.alt} loading="lazy" />
+                          {bandUrls.has(img.url) ? <span className="cd-autoimg-dup">déjà</span> : null}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="cd-autoimg-note">
+                      La photo choisie est posée sur cet emplacement des {totalPages} pages ; les autres
+                      entreprises gardent une photo de leur propre métier.
+                    </p>
+                  </div>
+                ) : null}
+
                 <p className="cd-autoimg-note">
-                  Survole une photo et clique l’icône pour ne changer que celle-là.
+                  Survole une photo : <b>l’icône médiathèque</b> pour choisir la tienne par service,
+                  <b> les flèches</b> pour en tirer une autre au sort. Une photo déjà posée n’est jamais
+                  reprise ailleurs dans la bande, même si elle porte plusieurs services.
                 </p>
               </>
             )}

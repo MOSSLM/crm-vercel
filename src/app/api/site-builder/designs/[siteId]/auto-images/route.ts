@@ -3,7 +3,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import { CLAUDE_DESIGN_THEME_SLUG } from "@/lib/site-builder/create-claude-design";
 import { AUTO_IMAGE_ZONES, findZone, findZoneSlots, type AutoImageSlot } from "@/lib/site-builder/claude-design/auto-image-zones";
-import { drawImageSets, redrawSlot, seededRandom, type LibraryImage } from "@/lib/site-builder/claude-design/draw-image-sets";
+import { chooseSlotImage, drawImageSets, redrawSlot, seededRandom, type LibraryImage } from "@/lib/site-builder/claude-design/draw-image-sets";
 import { parseImageSet, pickCandidate, serializeImageSet } from "@/lib/site-builder/claude-design/image-set";
 import { clearImageKeys } from "@/lib/site-builder/claude-design/image-override-keys";
 import { pushBackup } from "@/lib/site-builder/claude-design/override-backups";
@@ -190,13 +190,27 @@ function placedSlots(target: ZoneTarget, tags: string[]): PlacedSlot[] {
   return [];
 }
 
+/** A library photo as the panel's per-slot picker needs it: canonical tag keys,
+ *  so the picker filters by trade the way the rest of the codebase compares
+ *  tags ("Pompe à chaleur" ≡ "pompe-a-chaleur"). An untagged photo comes out
+ *  with no tag at all and counts as generic, exactly like `isUniversal`. */
+function pickableImages(library: LibraryImage[]): Array<{ id: string; url: string; alt: string; tags: string[] }> {
+  return library.map((img) => ({
+    id: img.id,
+    url: img.url,
+    alt: img.alt ?? "",
+    tags: [...new Set((img.tags ?? []).map(serviceTagKey).filter(Boolean))],
+  }));
+}
+
 /**
  * GET /api/site-builder/designs/[siteId]/auto-images
  *
  * What the panel needs before anything is drawn: the zones this design actually
- * carries (with the pages and slot count behind each), the company's trades, and
- * the size of the library pool per trade — the number that tells the operator
- * whether more photos need importing.
+ * carries (with the pages and slot count behind each), the company's trades, the
+ * size of the library pool per trade — the number that tells the operator
+ * whether more photos need importing — and the photos themselves, so a slot can
+ * be filled by hand from the trade the operator wants instead of at random.
  *
  * `?entreprise_id=` overrides the site's own company, so a TEMPLATE previewed as
  * a company can be filled for that company.
@@ -238,7 +252,17 @@ export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
     targets[0]?.alts ?? [],
   );
 
-  return json({ zones, companyTags: tags, enterpriseId, pools, emptyTags, librarySize: library.length });
+  return json({
+    zones,
+    companyTags: tags,
+    enterpriseId,
+    pools,
+    emptyTags,
+    librarySize: library.length,
+    /** Everything the picker may offer — already narrowed to this company's
+     *  trades (plus the generic photos) by `loadLibrary`. */
+    library: pickableImages(library),
+  });
 });
 
 /**
@@ -257,8 +281,12 @@ export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
  * band but wants one photo swapped. The slot keeps its trade and avoids the
  * photos the other slots already show; everything else is left untouched.
  *
+ * With `slot` AND `url`, that slot takes the photo the operator picked in the
+ * library rather than a random one. The set is still rebuilt whole, so the
+ * design keeps serving the other companies.
+ *
  * Body: { zones?: string[], entrepriseId?: number, seed?: number, slot?: number,
- *         dryRun?: boolean }
+ *         url?: string, dryRun?: boolean }
  * → { seed, zones: [{ zoneId, pages: [{slug, slots}], slots: [{order, url, alt, tag}] }],
  *     pools, emptyTags, written }
  */
@@ -266,7 +294,9 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   const siteId = params.siteId?.trim();
   if (!siteId) return jsonError("siteId requis.", 400);
 
-  let body: { zones?: string[]; entrepriseId?: number; seed?: number; slot?: number; dryRun?: boolean };
+  let body: {
+    zones?: string[]; entrepriseId?: number; seed?: number; slot?: number; url?: string; dryRun?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -319,6 +349,10 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
 
   // `slot` (1-based) → swap that photo only, keeping the rest of the band.
   const oneSlot = Number.isFinite(body.slot) ? Math.floor(Number(body.slot)) : null;
+  // `url` → the operator picked it himself; without a slot there is nothing to
+  // put it on, and silently redrawing the whole band would throw the pick away.
+  const pickedUrl = typeof body.url === "string" ? body.url.trim() : "";
+  if (pickedUrl && oneSlot === null) return jsonError("Choisir une photo demande aussi son emplacement.", 400);
 
   for (const target of targets) {
     const zone = findZone(target.zoneId)!;
@@ -338,21 +372,33 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
         return jsonError(`Emplacement ${oneSlot} inconnu dans cette section.`, 422);
       }
       const current = placed.find((p) => p.order === oneSlot);
-      single = redrawSlot(
-        {
-          slotCount: target.slotCount,
-          companyTags: tags,
-          library,
-          random: seededRandom(seed),
-          slotIndex: oneSlot - 1,
-          usedUrls: placed.filter((p) => p.order !== oneSlot).map((p) => p.url),
-          currentUrl: current?.url,
-        },
-        target.alts[oneSlot - 1] ?? "",
-      );
+      const common = {
+        slotCount: target.slotCount,
+        companyTags: tags,
+        library,
+        random: seededRandom(seed),
+        slotIndex: oneSlot - 1,
+      };
+      const alt = target.alts[oneSlot - 1] ?? "";
+      single = pickedUrl
+        ? chooseSlotImage({ ...common, url: pickedUrl }, alt)
+        : redrawSlot(
+            {
+              ...common,
+              usedUrls: placed.filter((p) => p.order !== oneSlot).map((p) => p.url),
+              currentUrl: current?.url,
+              // Stay on the trade the slot SHOWS: a hand-picked photo may have
+              // moved it off its round-robin trade, and re-rolling is meant to
+              // change the photo, not to undo that choice.
+              leadTag: current?.tag ?? undefined,
+            },
+            alt,
+          );
       if (!single) {
         return jsonError(
-          "Pas d'autre photo disponible pour ce métier — importe-en dans la médiathèque.",
+          pickedUrl
+            ? "Cette photo n'est plus dans la médiathèque, ou ne concerne pas cette entreprise."
+            : "Pas d'autre photo disponible pour ce métier — importe-en dans la médiathèque.",
           422,
         );
       }
