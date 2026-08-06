@@ -50,6 +50,81 @@ export const DEFAULT_GEO_SETTINGS: GeoSettings = {
 };
 
 /**
+ * Zones desservies : rayon et paliers de population.
+ *
+ * Ces villes sont listées sur le site comme secteur d'intervention. Le seuil de la
+ * ville SEO (20 000 hab) est beaucoup trop haut ici : une entreprise rurale
+ * n'intervient pas que dans des préfectures. Mais descendre d'emblée à 1 000
+ * remplirait la liste de villages que le prospect ne reconnaîtrait pas comme un
+ * secteur crédible.
+ *
+ * D'où des paliers : on part de 3 000 — ce que le prompt du LLM demandait déjà —
+ * et on ne descend que si le rayon ne fournit pas assez de candidates.
+ */
+export const SURROUNDING_DEFAULTS = {
+  radiusKm: 50,
+  /** Cible haute ; en dessous de `minCount` on descend d'un palier. */
+  count: 12,
+  minCount: 8,
+  populationTiers: [3000, 2000, 1000],
+} as const;
+
+/**
+ * Villes à présenter comme zones desservies, les plus proches d'abord.
+ *
+ * Remplace une liste inventée par le LLM. La ville SEO, elle, était déjà calculée
+ * sur des distances réelles : les deux s'affichaient côte à côte sur la même page,
+ * l'une vérifiée et l'autre devinée.
+ *
+ * `exclude` sert à écarter la commune de l'entreprise et sa ville SEO — les citer
+ * comme « zone desservie » alors qu'elles sont déjà mises en avant partout ferait
+ * doublon. La comparaison plie accents et ponctuation, « Saint-Étienne » et
+ * « saint etienne » étant le même nom.
+ */
+export function pickSurroundingCities(
+  origin: LatLng,
+  candidates: CommuneCandidate[],
+  opts: { radiusKm?: number; count?: number; exclude?: readonly string[] } = {},
+): string[] {
+  const radiusKm = opts.radiusKm ?? SURROUNDING_DEFAULTS.radiusKm;
+  const count = opts.count ?? SURROUNDING_DEFAULTS.count;
+  const excluded = new Set((opts.exclude ?? []).map(normalizeCityName).filter(Boolean));
+
+  const seen = new Set<string>();
+  return candidates
+    .filter((c) => Number.isFinite(c.lat) && Number.isFinite(c.lon))
+    .map((c) => ({ nom: c.nom, population: c.population, distanceKm: haversineKm(origin, c) }))
+    .filter((c) => c.distanceKm <= radiusKm)
+    .filter((c) => {
+      const key = normalizeCityName(c.nom);
+      if (!key || excluded.has(key) || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    // Distance d'abord : une zone desservie crédible est une zone proche. À
+    // distance égale, la plus peuplée est la plus reconnaissable, puis le nom pour
+    // que deux runs sur les mêmes données donnent le même résultat.
+    .sort(
+      (a, b) =>
+        a.distanceKm - b.distanceKm ||
+        b.population - a.population ||
+        a.nom.localeCompare(b.nom),
+    )
+    .slice(0, count)
+    .map((c) => c.nom);
+}
+
+/** Nom de commune réduit à sa forme comparable : accents, casse, ponctuation. */
+export function normalizeCityName(s: string): string {
+  return (s ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+/**
  * Île-de-France : la ville SEO est « Région parisienne », pas une commune.
  *
  * L'arbitrage par distance n'a pas de sens dans l'agglomération parisienne : à

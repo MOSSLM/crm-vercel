@@ -43,11 +43,52 @@ const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
 const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY") ?? "";
 const GOOGLE_PLACES_API_KEY = Deno.env.get("GOOGLE_PLACES_API_KEY") ?? "";
 
+/**
+ * Budget de temps d'une invocation, sous la limite murale de la plateforme.
+ *
+ * Un projet peut coûter jusqu'à ~100 s (Jina jusqu'à 20 s par page, puis un
+ * modèle de raisonnement jusqu'à 90 s). Un lot de 20 traité en séquentiel dépasse
+ * donc largement la limite, et une expiration ne rendait AUCUNE réponse : on ne
+ * savait pas lesquels avaient abouti, et les projets non traités restaient bloqués
+ * en `processing` jusqu'à la péremption de 10 minutes.
+ *
+ * Épuisé, on s'arrête proprement et on rend les identifiants restants, que
+ * l'appelant renvoie pour continuer.
+ */
+const BUDGET_MS = 200_000;
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body, null, 2), {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/**
+ * Seule la clé `service_role` peut déclencher cette fonction.
+ *
+ * `verify_jwt: true` ne suffit PAS : la clé anon est un JWT parfaitement valide,
+ * et elle est publique par conception (elle est dans le JS du front). Sans ce
+ * contrôle, quiconque l'a lue peut lancer des lots de 20 scrapings et 20 appels
+ * LLM sur notre compte, autant de fois qu'il veut.
+ *
+ * Les deux appelants légitimes portent déjà cette clé : les routes du CRM
+ * (`SUPABASE_SERVICE_ROLE_KEY` côté serveur) et le trigger `pg_net`.
+ *
+ * Comparaison à longueur constante : une comparaison `===` sur des chaînes
+ * s'arrête au premier octet différent, ce qui laisse fuir la clé octet par octet
+ * à qui sait mesurer. Le coût est nul ici, autant ne pas ouvrir la porte.
+ */
+function isServiceRoleRequest(req: Request): boolean {
+  if (!SERVICE_ROLE_KEY) return false;
+  const header = req.headers.get("Authorization") ?? "";
+  const token = header.replace(/^Bearer\s+/i, "").trim();
+  if (token.length !== SERVICE_ROLE_KEY.length) return false;
+  let diff = 0;
+  for (let i = 0; i < token.length; i++) {
+    diff |= token.charCodeAt(i) ^ SERVICE_ROLE_KEY.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 async function processOne(projectId: string): Promise<EnrichResult> {
@@ -140,6 +181,16 @@ async function processOne(projectId: string): Promise<EnrichResult> {
           extractLatLngFromUrl(ctx.entreprise.google_url) ??
           extractLatLngFromUrl(ctx.entreprise.google_maps_url);
         placeId = await searchPlaceId(ctx.entreprise.name, ctx.entreprise.ville, GOOGLE_PLACES_API_KEY, latLng);
+        // La recherche texte est FACTURÉE. Sans cette écriture, chaque run la
+        // repayait pour retrouver le même identifiant — indéfiniment, sur toutes
+        // les fiches dont le place_id stocké est un « ftid » hérité.
+        if (placeId) {
+          console.log(`[${projectId}] place_id résolu et mémorisé : ${placeId}`);
+          await sb
+            .from("entreprises")
+            .update({ google_place_id: placeId, updated_at: new Date().toISOString() })
+            .eq("id", ctx.entreprise_id);
+        }
       }
       if (placeId) {
         console.log(`[${projectId}] fetching google place: ${placeId}`);
@@ -158,7 +209,7 @@ async function processOne(projectId: string): Promise<EnrichResult> {
     const llmKey = llmConfig.provider === "deepseek" ? DEEPSEEK_API_KEY : OPENAI_API_KEY;
     console.log(`[${projectId}] LLM extraction ${llmConfig.provider}/${llmConfig.model} (${scraped.pages.length} pages, ${scraped.total_chars} chars)`);
     const siteMarkdown = buildSiteContext(scraped);
-    const extraction = await extractWithLLM(
+    const { extraction, usage } = await extractWithLLM(
       {
         site_markdown: siteMarkdown,
         google_data: googleData,
@@ -171,6 +222,11 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       llmConfig,
       llmKey,
     );
+    if (usage) {
+      console.log(
+        `[${projectId}] tokens ${usage.provider}/${usage.model}: ${usage.prompt_tokens ?? "?"} + ${usage.completion_tokens ?? "?"}`,
+      );
+    }
 
     if (!extraction) {
       await markProjectStatus(sb, projectId, "failed", "llm_extraction_failed");
@@ -192,7 +248,7 @@ async function processOne(projectId: string): Promise<EnrichResult> {
     }
 
     // 7. Apply extraction
-    const applyRes = await applyExtraction(sb, ctx, extraction, googleData);
+    const applyRes = await applyExtraction(sb, ctx, extraction, googleData, usage);
     console.log(`[${projectId}] applied: ${applyRes.updated_fields.join(", ")}`);
 
     // 8. Mark as framer
@@ -217,26 +273,31 @@ async function processOne(projectId: string): Promise<EnrichResult> {
 // Handler
 // ---------------------------------------------------------------------
 Deno.serve(async (req: Request) => {
+  // Plus de préflight permissif : la fonction n'est appelée que de serveur à
+  // serveur, jamais depuis un navigateur. Répondre `*` à OPTIONS invitait
+  // justement à l'appeler depuis le front avec la clé anon.
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-      },
-    });
+    return new Response(null, { status: 204, headers: { "Access-Control-Allow-Methods": "POST" } });
   }
 
   if (req.method !== "POST") {
     return jsonResponse({ error: "method_not_allowed" }, 405);
   }
 
-  // Validation des env vars. La clé LLM (OPENAI_API_KEY / DEEPSEEK_API_KEY) est
-  // validée par run selon le provider choisi dans enrichment_llm_settings :
-  // extractWithLLM renvoie null (→ statut failed) si la clé du provider manque.
+  // Validation des env vars AVANT le contrôle d'accès : sans
+  // `SUPABASE_SERVICE_ROLE_KEY`, `isServiceRoleRequest` refuse tout le monde, et
+  // un 403 laisserait croire à un problème d'appelant plutôt qu'à une fonction
+  // mal configurée.
+  // La clé LLM (OPENAI_API_KEY / DEEPSEEK_API_KEY) est validée par run selon le
+  // provider choisi dans enrichment_llm_settings : extractWithLLM renvoie null
+  // (→ statut failed) si la clé du provider manque.
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
     return jsonResponse({ error: "missing_env_vars", hint: "SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY requis" }, 500);
+  }
+
+  if (!isServiceRoleRequest(req)) {
+    console.warn("appel refusé : clé service_role absente ou invalide");
+    return jsonResponse({ error: "forbidden", hint: "service_role key required" }, 403);
   }
 
   let body: EnrichRequest;
@@ -259,10 +320,18 @@ Deno.serve(async (req: Request) => {
     }
     const sb = makeSupabaseClient(SUPABASE_URL, SERVICE_ROLE_KEY);
     console.log(`Refreshing Google stats for ${entIds.length} entreprise(s)`);
+    const startedAt = Date.now();
     const results: GoogleStatsResult[] = [];
-    // Séquentiel : on évite de bombarder l'API Places, comme l'enrichissement.
-    for (const id of entIds) {
-      results.push(await refreshGoogleStats(sb, id, GOOGLE_PLACES_API_KEY));
+    const remaining: number[] = [];
+    // Séquentiel : on évite de bombarder l'API Places, comme l'enrichissement. Et
+    // borné par le même budget : 200 entreprises × un appel Places (doublé par la
+    // recherche par nom quand le place_id est hérité) dépasse aussi la limite.
+    for (let i = 0; i < entIds.length; i++) {
+      if (Date.now() - startedAt >= BUDGET_MS) {
+        remaining.push(...entIds.slice(i));
+        break;
+      }
+      results.push(await refreshGoogleStats(sb, entIds[i], GOOGLE_PLACES_API_KEY));
     }
     return jsonResponse({
       results,
@@ -273,6 +342,9 @@ Deno.serve(async (req: Request) => {
         skipped: results.filter((r) => r.status === "skipped").length,
         failed: results.filter((r) => r.status === "failed").length,
       },
+      done: remaining.length === 0,
+      remaining_entreprise_ids: remaining,
+      elapsed_ms: Date.now() - startedAt,
     }, 200);
   }
 
@@ -315,11 +387,19 @@ Deno.serve(async (req: Request) => {
 
   console.log(`Processing ${uniq.length} project(s)`);
 
-  // Traitement séquentiel (on évite de bombarder APIs externes en parallèle)
+  // Traitement séquentiel (on évite de bombarder APIs externes en parallèle),
+  // borné par le budget de temps : mieux vaut un résultat partiel explicite qu'une
+  // expiration muette qui laisse des projets verrouillés.
+  const startedAt = Date.now();
   const results: EnrichResult[] = [];
-  for (const id of uniq) {
-    const r = await processOne(id);
-    results.push(r);
+  const remaining: string[] = [];
+  for (let i = 0; i < uniq.length; i++) {
+    if (Date.now() - startedAt >= BUDGET_MS) {
+      remaining.push(...uniq.slice(i));
+      console.log(`budget épuisé après ${results.length} projet(s) — ${remaining.length} restant(s)`);
+      break;
+    }
+    results.push(await processOne(uniq[i]));
   }
 
   const summary = {
@@ -329,6 +409,12 @@ Deno.serve(async (req: Request) => {
     skipped: results.filter((r) => r.status === "skipped").length,
     no_website: results.filter((r) => r.status === "no_website").length,
   };
-  const response: EnrichResponse = { results, summary };
+  const response: EnrichResponse = {
+    results,
+    summary,
+    done: remaining.length === 0,
+    remaining_project_ids: remaining,
+    elapsed_ms: Date.now() - startedAt,
+  };
   return jsonResponse(response, 200);
 });

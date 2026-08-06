@@ -160,6 +160,12 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
       stat_satisfied_clients: project.stat_satisfied_clients || null,
       stat_installations_completed: project.stat_installations_completed || null,
       stat_rge_count: project.stat_rge_count || null,
+      // Chiffres confirmés par le client. `writeProjectDetails` les abandonne si la
+      // migration n'est pas passée, plutôt que de perdre toute la saisie.
+      stat_years_experience_official: project.stat_years_experience_official || null,
+      stat_satisfied_clients_official: project.stat_satisfied_clients_official || null,
+      stat_installations_completed_official: project.stat_installations_completed_official || null,
+      stat_rge_count_official: project.stat_rge_count_official || null,
       updated_at: now,
     };
     // Only overwrite the jsonb when the client actually sent it (never blank it).

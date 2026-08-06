@@ -13,7 +13,10 @@ import {
   parisRegionFor,
   PARIS_REGION_DEPARTMENTS,
   PARIS_REGION_LABEL,
+  normalizeCityName,
   pickSeoCity,
+  pickSurroundingCities,
+  SURROUNDING_DEFAULTS,
   type CommuneCandidate,
 } from "../geo";
 
@@ -170,5 +173,103 @@ describe("parisRegionFor", () => {
 
   it("tolère les espaces autour du code postal", () => {
     expect(parisRegionFor(" 93100 ")).toBe(PARIS_REGION_LABEL);
+  });
+});
+
+// =====================================================================
+// Zones desservies
+// =====================================================================
+// Ces villes s'affichent sur le site comme secteur d'intervention. Elles venaient
+// du LLM sans aucune validation, alors que la ville SEO juste à côté était calculée
+// sur des distances réelles : la même page mêlait une donnée vérifiée et une donnée
+// devinée. Mêmes fixtures fictives que ci-dessus — on teste la RÈGLE.
+
+describe("normalizeCityName", () => {
+  it("plie accents, casse et ponctuation", () => {
+    expect(normalizeCityName("Saint-Étienne")).toBe(normalizeCityName("saint etienne"));
+    expect(normalizeCityName("L'Haÿ-les-Roses")).toBe(normalizeCityName("l hay les roses"));
+    expect(normalizeCityName("CHENOVE")).toBe(normalizeCityName("Chenôve"));
+  });
+
+  it("survit au vide", () => {
+    expect(normalizeCityName("")).toBe("");
+  });
+});
+
+describe("pickSurroundingCities", () => {
+  /** Quatre voisines à 4, 5, 35 et 44 km, plus une hors rayon à 74 km. */
+  const voisines: CommuneCandidate[] = [
+    cityAt("Proche", 13500, 4),
+    cityAt("Bourg", 9500, 5),
+    cityAt("Moyenne", 21000, 35),
+    cityAt("Lointaine", 23000, 44),
+    cityAt("HorsRayon", 118000, 74),
+  ];
+
+  it("rend les plus proches d'abord", () => {
+    expect(pickSurroundingCities(ORIGIN, voisines).slice(0, 2)).toEqual(["Proche", "Bourg"]);
+  });
+
+  it("écarte ce qui dépasse le rayon", () => {
+    expect(pickSurroundingCities(ORIGIN, voisines)).not.toContain("HorsRayon");
+  });
+
+  it("exclut la commune de l'entreprise et sa ville SEO", () => {
+    const out = pickSurroundingCities(ORIGIN, voisines, { exclude: ["Proche", "Bourg"] });
+    expect(out).not.toContain("Proche");
+    expect(out).not.toContain("Bourg");
+    expect(out).toContain("Moyenne");
+  });
+
+  /** Le CRM peut stocker « CHENOVE » là où la base des communes dit « Chenôve ». */
+  it("exclut malgré une graphie différente", () => {
+    const avecAccent = [cityAt("Chenôve", 13500, 4), cityAt("Moyenne", 21000, 35)];
+    expect(pickSurroundingCities(ORIGIN, avecAccent, { exclude: ["CHENOVE"] })).toEqual(["Moyenne"]);
+  });
+
+  it("plafonne au nombre demandé", () => {
+    expect(pickSurroundingCities(ORIGIN, voisines, { count: 2 })).toHaveLength(2);
+  });
+
+  it("dédoublonne deux entrées du même nom", () => {
+    const doublon = [cityAt("Chenôve", 13500, 4), cityAt("chenove", 13500, 4)];
+    expect(pickSurroundingCities(ORIGIN, doublon)).toHaveLength(1);
+  });
+
+  it("rend une liste vide sans candidate", () => {
+    expect(pickSurroundingCities(ORIGIN, [])).toEqual([]);
+  });
+
+  /** Deux runs sur les mêmes données doivent donner le même ordre. */
+  it("est déterministe à distance et population égales", () => {
+    const exAequo = [cityAt("Bville", 5000, 20), cityAt("Aville", 5000, 20)];
+    expect(pickSurroundingCities(ORIGIN, exAequo)).toEqual(["Aville", "Bville"]);
+  });
+
+  it("préfère la plus peuplée à distance égale", () => {
+    const exAequo = [cityAt("Petite", 1200, 20), cityAt("Grande", 40000, 20)];
+    expect(pickSurroundingCities(ORIGIN, exAequo)).toEqual(["Grande", "Petite"]);
+  });
+
+  it("respecte un rayon resserré", () => {
+    const out = pickSurroundingCities(ORIGIN, voisines, { radiusKm: 10 });
+    expect(out).toEqual(["Proche", "Bourg"]);
+  });
+});
+
+describe("SURROUNDING_DEFAULTS", () => {
+  /** Le prompt du LLM demandait déjà « plus de 3000 hab » : on part de là. */
+  it("part de 3000 puis descend", () => {
+    expect(SURROUNDING_DEFAULTS.populationTiers).toEqual([3000, 2000, 1000]);
+  });
+
+  it("vise plus de villes qu'il n'en faut au minimum", () => {
+    expect(SURROUNDING_DEFAULTS.count).toBeGreaterThan(SURROUNDING_DEFAULTS.minCount);
+  });
+
+  /** Un secteur d'intervention plus large que le rayon de la ville SEO. */
+  it("couvre un rayon crédible pour un artisan", () => {
+    expect(SURROUNDING_DEFAULTS.radiusKm).toBeGreaterThanOrEqual(30);
+    expect(SURROUNDING_DEFAULTS.radiusKm).toBeLessThanOrEqual(60);
   });
 });

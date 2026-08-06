@@ -844,6 +844,14 @@ interface EditForm {
   lm_stat_clients: string;
   lm_stat_installations: string;
   lm_stat_rge: string;
+  /**
+   * Chiffres CONFIRMÉS par le client. Remplis, ils s'affichent à la place des
+   * estimations ci-dessus, et aucun réenrichissement ne peut les écraser.
+   */
+  lm_stat_years_official: string;
+  lm_stat_clients_official: string;
+  lm_stat_installations_official: string;
+  lm_stat_rge_official: string;
   // automated_enrichment
   enr_website_url: string;
   enr_emails: string;
@@ -878,6 +886,10 @@ const EMPTY_FORM: EditForm = {
   lm_stat_clients: "",
   lm_stat_installations: "",
   lm_stat_rge: "",
+  lm_stat_years_official: "",
+  lm_stat_clients_official: "",
+  lm_stat_installations_official: "",
+  lm_stat_rge_official: "",
   enr_website_url: "",
   enr_emails: "",
   enr_phones: "",
@@ -949,9 +961,24 @@ const SITE_REQUIRED_WITH_PROJECT: RequiredRule[] = [
   ...SITE_REQUIRED,
   { field: "lm_override_city", label: "Ville SEO", ok: (f) => f.lm_override_city.trim().length > 0 },
   { field: "lm_logo_url", label: "Logo", ok: (f) => f.lm_logo_url.trim().length > 0 },
-  { field: "lm_stat_years", label: "Années d'expérience", ok: (f) => filledStat(f.lm_stat_years) },
-  { field: "lm_stat_clients", label: "Clients satisfaits", ok: (f) => filledStat(f.lm_stat_clients) },
-  { field: "lm_stat_installations", label: "Installations", ok: (f) => filledStat(f.lm_stat_installations) },
+  // Un chiffre confirmé par le client satisfait l'exigence autant qu'une
+  // estimation : c'est lui qui s'affichera. Doit rester aligné sur
+  // `missingForSite` côté API, que le test compare à cette liste.
+  {
+    field: "lm_stat_years",
+    label: "Années d'expérience",
+    ok: (f) => filledStat(f.lm_stat_years_official) || filledStat(f.lm_stat_years),
+  },
+  {
+    field: "lm_stat_clients",
+    label: "Clients satisfaits",
+    ok: (f) => filledStat(f.lm_stat_clients_official) || filledStat(f.lm_stat_clients),
+  },
+  {
+    field: "lm_stat_installations",
+    label: "Installations",
+    ok: (f) => filledStat(f.lm_stat_installations_official) || filledStat(f.lm_stat_installations),
+  },
   // Pas de règle sur `lm_stat_rge` : une entreprise sans qualification RGE est
   // parfaitement valide, le bloc « chiffres clés » se limite alors à trois
   // colonnes. Doit rester aligné sur `missingForSite` côté API.
@@ -1029,9 +1056,11 @@ const OpportunityEditModal: React.FC<{
         projectId
           ? supabase
               .from("lead_magnet_projects")
-              .select(
-                "override_entreprise_name, override_city, override_location, override_phone, override_email, override_address, logo_url, service_tags_snapshot, stat_years_experience, stat_satisfied_clients, stat_installations_completed, stat_rge_count, variables",
-              )
+              // `*` et non une liste : les `stat_*_official` viennent d'une migration
+              // appliquée à la main, et une colonne absente d'un select explicite fait
+              // échouer la requête entière — la fiche s'ouvrirait vide. Une seule ligne
+              // est lue.
+              .select("*")
               .eq("id", projectId)
               .maybeSingle()
           : Promise.resolve({ data: null }),
@@ -1085,6 +1114,10 @@ const OpportunityEditModal: React.FC<{
         lm_stat_clients: numStr(p.stat_satisfied_clients),
         lm_stat_installations: numStr(p.stat_installations_completed),
         lm_stat_rge: numStr(p.stat_rge_count),
+        lm_stat_years_official: numStr(p.stat_years_experience_official),
+        lm_stat_clients_official: numStr(p.stat_satisfied_clients_official),
+        lm_stat_installations_official: numStr(p.stat_installations_completed_official),
+        lm_stat_rge_official: numStr(p.stat_rge_count_official),
         enr_website_url: (e.website_url as string) ?? "",
         enr_emails: fromArr(e.emails),
         enr_phones: fromArr(e.phones),
@@ -1153,6 +1186,10 @@ const OpportunityEditModal: React.FC<{
         stat_satisfied_clients: form.lm_stat_clients || null,
         stat_installations_completed: form.lm_stat_installations || null,
         stat_rge_count: form.lm_stat_rge || null,
+        stat_years_experience_official: form.lm_stat_years_official || null,
+        stat_satisfied_clients_official: form.lm_stat_clients_official || null,
+        stat_installations_completed_official: form.lm_stat_installations_official || null,
+        stat_rge_count_official: form.lm_stat_rge_official || null,
         variables: vars,
       };
     })();
@@ -1401,11 +1438,13 @@ const OpportunityEditModal: React.FC<{
                 </div>
 
                 <div>
-                  <h4 className="text-sm font-semibold mb-2">Chiffres clés (stats)</h4>
+                  <h4 className="text-sm font-semibold mb-2">Chiffres clés estimés</h4>
                   <p className="text-xs text-muted-foreground mb-2">
-                    Le bloc « chiffres clés » du site affiche ce qui est renseigné : une valeur vide
-                    ou à 0 laisse un trou dans la page, donc les trois premiers sont requis. Les
-                    qualifications RGE restent facultatives — toutes les entreprises n&apos;en ont pas.
+                    Ce que la démo affiche par défaut. Quand le site du client ne publie rien
+                    d&apos;exploitable, l&apos;enrichissement estime ces chiffres à partir du nombre
+                    d&apos;avis Google, pour donner un ordre de grandeur crédible. Les trois premiers
+                    sont requis — une valeur vide laisse un trou dans la page. Les qualifications RGE
+                    restent facultatives, toutes les entreprises n&apos;en ont pas.
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <Field label="Années d'expérience" required invalid={showInvalid("lm_stat_years")}>
@@ -1419,6 +1458,59 @@ const OpportunityEditModal: React.FC<{
                     </Field>
                     <Field label="Qualifications (RGE)" hint="facultatif — 0 ou vide n'empêche pas d'enregistrer">
                       <Input type="number" value={form.lm_stat_rge} onChange={set("lm_stat_rge")} />
+                    </Field>
+                  </div>
+                </div>
+
+                {/* Chiffres officiels : ils remplacent les estimations à l'affichage et
+                    résistent aux réenrichissements, contrairement aux champs ci-dessus. */}
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Chiffres officiels du client</h4>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    À remplir quand le client a confirmé ses vrais chiffres. Ils prennent alors la
+                    place des estimations sur le site, et <strong>aucun réenrichissement ne les
+                    écrase</strong>. Laissés vides, l&apos;estimation reste affichée.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <Field
+                      label="Années d'expérience"
+                      hint={form.lm_stat_years ? `estimé : ${form.lm_stat_years}` : undefined}
+                    >
+                      <Input
+                        type="number"
+                        value={form.lm_stat_years_official}
+                        onChange={set("lm_stat_years_official")}
+                      />
+                    </Field>
+                    <Field
+                      label="Clients satisfaits"
+                      hint={form.lm_stat_clients ? `estimé : ${form.lm_stat_clients}` : undefined}
+                    >
+                      <Input
+                        type="number"
+                        value={form.lm_stat_clients_official}
+                        onChange={set("lm_stat_clients_official")}
+                      />
+                    </Field>
+                    <Field
+                      label="Installations"
+                      hint={form.lm_stat_installations ? `estimé : ${form.lm_stat_installations}` : undefined}
+                    >
+                      <Input
+                        type="number"
+                        value={form.lm_stat_installations_official}
+                        onChange={set("lm_stat_installations_official")}
+                      />
+                    </Field>
+                    <Field
+                      label="Qualifications (RGE)"
+                      hint={form.lm_stat_rge ? `estimé : ${form.lm_stat_rge}` : undefined}
+                    >
+                      <Input
+                        type="number"
+                        value={form.lm_stat_rge_official}
+                        onChange={set("lm_stat_rge_official")}
+                      />
                     </Field>
                   </div>
                 </div>

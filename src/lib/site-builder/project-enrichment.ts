@@ -22,10 +22,21 @@ import type { StatItem } from "./menu-overrides";
 export interface ProjectEnrichmentRow {
   logo_url?: string | null;
   service_tags_snapshot?: string[] | string | null;
+  /** Estimations : dérivées du site ou du nombre d'avis Google. */
   stat_years_experience?: string | null;
   stat_satisfied_clients?: string | null;
   stat_installations_completed?: string | null;
   stat_rge_count?: string | null;
+  /**
+   * Chiffres CONFIRMÉS par le client, prioritaires sur les estimations
+   * ci-dessus (cf. `effectiveStat`). Optionnelles : la migration
+   * `20260805_stats_officielles.sql` s'applique à la main, et l'absence de
+   * colonne doit rester sans effet.
+   */
+  stat_years_experience_official?: string | null;
+  stat_satisfied_clients_official?: string | null;
+  stat_installations_completed_official?: string | null;
+  stat_rge_count_official?: string | null;
   variables?: Record<string, unknown> | null;
 }
 
@@ -86,17 +97,57 @@ function surroundingCitiesText(variables: Record<string, unknown> | null | undef
   return "";
 }
 
-const STAT_FIELDS: Array<{ key: keyof ProjectEnrichmentRow; label: string; order: number }> = [
-  { key: "stat_years_experience", label: "Années d'expérience", order: 10 },
-  { key: "stat_satisfied_clients", label: "Clients satisfaits", order: 20 },
-  { key: "stat_installations_completed", label: "Installations réalisées", order: 30 },
-  { key: "stat_rge_count", label: "Qualifications", order: 40 },
+const STAT_FIELDS: Array<{
+  key: keyof ProjectEnrichmentRow;
+  /** Colonne portant le chiffre CONFIRMÉ par le client, prioritaire. */
+  officialKey: keyof ProjectEnrichmentRow;
+  label: string;
+  order: number;
+}> = [
+  {
+    key: "stat_years_experience",
+    officialKey: "stat_years_experience_official",
+    label: "Années d'expérience",
+    order: 10,
+  },
+  {
+    key: "stat_satisfied_clients",
+    officialKey: "stat_satisfied_clients_official",
+    label: "Clients satisfaits",
+    order: 20,
+  },
+  {
+    key: "stat_installations_completed",
+    officialKey: "stat_installations_completed_official",
+    label: "Installations réalisées",
+    order: 30,
+  },
+  { key: "stat_rge_count", officialKey: "stat_rge_count_official", label: "Qualifications", order: 40 },
 ];
+
+/**
+ * Le chiffre à afficher : celui confirmé par le client s'il existe, sinon
+ * l'estimation.
+ *
+ * Les estimations sont dérivées du nombre d'avis Google (`× 1,4`, puis `× 2` pour
+ * les installations) quand le site du client ne publie rien d'exploitable. C'est
+ * assumé pour une démo privée, mais dès que le client donne ses vrais chiffres ils
+ * doivent prendre le dessus — et l'enrichissement n'écrit jamais les colonnes
+ * `_official`, donc une relance ne peut pas les effacer.
+ */
+export function effectiveStat(
+  proj: ProjectEnrichmentRow,
+  key: keyof ProjectEnrichmentRow,
+  officialKey: keyof ProjectEnrichmentRow,
+): string {
+  const official = statValue(proj[officialKey] as string | null | undefined);
+  return official || statValue(proj[key] as string | null | undefined);
+}
 
 function buildStatsFromProject(proj: ProjectEnrichmentRow): StatItem[] | null {
   const stats: StatItem[] = [];
   for (const f of STAT_FIELDS) {
-    const v = statValue(proj[f.key] as string | null | undefined);
+    const v = effectiveStat(proj, f.key, f.officialKey);
     if (v) stats.push({ label: f.label, value: v, display_order: f.order });
   }
   return stats.length > 0 ? stats : null;
@@ -124,10 +175,27 @@ export function applyProjectEnrichment(
   // Chiffres clés (stat_*). fillIfEmpty : un override manuel déjà présent dans
   // le jsonb `variables` reste prioritaire ; sinon la valeur enrichie gagne sur
   // le repli automated_enrichment (annee_experience), appliqué ensuite.
-  fillIfEmpty(vars, "entreprise.annee_experience", statValue(proj.stat_years_experience));
-  fillIfEmpty(vars, "entreprise.clients_count", statValue(proj.stat_satisfied_clients));
-  fillIfEmpty(vars, "entreprise.installations", statValue(proj.stat_installations_completed));
-  fillIfEmpty(vars, "entreprise.qualifications", statValue(proj.stat_rge_count));
+  // Un chiffre confirmé par le client passe devant l'estimation (cf. effectiveStat).
+  fillIfEmpty(
+    vars,
+    "entreprise.annee_experience",
+    effectiveStat(proj, "stat_years_experience", "stat_years_experience_official"),
+  );
+  fillIfEmpty(
+    vars,
+    "entreprise.clients_count",
+    effectiveStat(proj, "stat_satisfied_clients", "stat_satisfied_clients_official"),
+  );
+  fillIfEmpty(
+    vars,
+    "entreprise.installations",
+    effectiveStat(proj, "stat_installations_completed", "stat_installations_completed_official"),
+  );
+  fillIfEmpty(
+    vars,
+    "entreprise.qualifications",
+    effectiveStat(proj, "stat_rge_count", "stat_rge_count_official"),
+  );
 
   // Zones desservies : villes autour extraites par l'enrichissement.
   fillIfEmpty(vars, "entreprise.zones_desservies", surroundingCitiesText(proj.variables));

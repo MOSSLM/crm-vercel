@@ -10,7 +10,7 @@
 //     ci-dessous (coercition des types, valeurs manquantes → null/[]).
 // =====================================================================
 
-import type { LLMExtraction, GooglePlaceData, LlmConfig } from "./types.ts";
+import type { LLMExtraction, GooglePlaceData, LlmAttempt, LlmConfig, LlmUsage } from "./types.ts";
 import { SERVICE_TAGS_TAXONOMY } from "./types.ts";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
@@ -169,11 +169,36 @@ function toStrArray(v: unknown): string[] {
     .map((x) => x.trim());
 }
 
+/**
+ * Interprète `site_accessible`, qui décide si le site part en production.
+ *
+ * L'expression précédente — `typeof v === "boolean" ? v : v !== false` — ne
+ * s'évaluait qu'en l'absence de booléen, cas où `v !== false` est TOUJOURS vrai.
+ * Elle répondait donc « accessible » à tout ce qui n'était pas exactement
+ * `false` : la chaîne `"false"`, un `0`, `"non"`. DeepSeek n'a pas de schéma
+ * strict et renvoie volontiers une chaîne — un site en construction passait alors
+ * pour exploitable et un site démo vide était généré dessus.
+ *
+ * On ne défaute à `true` que sur une absence franche (`undefined` / `null`) :
+ * l'immense majorité des sites répondent, et refuser sur un champ manquant
+ * bloquerait des enrichissements valides.
+ */
+export function toSiteAccessible(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v !== 0;
+  if (typeof v === "string") {
+    const t = v.trim().toLowerCase();
+    if (["false", "non", "no", "0", "null"].includes(t)) return false;
+    if (["true", "oui", "yes", "1"].includes(t)) return true;
+    return true; // chaîne inattendue : on ne bloque pas sur une graphie exotique
+  }
+  return true; // absent : on laisse passer
+}
+
 function normalizeExtraction(raw: unknown): LLMExtraction | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  // Par défaut on considère le site accessible sauf si explicitement false.
-  const siteAccessible = typeof o.site_accessible === "boolean" ? o.site_accessible : o.site_accessible !== false;
+  const siteAccessible = toSiteAccessible(o.site_accessible);
   const reason = toStrOrNull(o.site_accessible_reason);
   return {
     services_tags: toStrArray(o.services_tags),
@@ -274,7 +299,7 @@ async function callOnce(
   apiKey: string,
   systemPrompt: string,
   userPrompt: string,
-): Promise<LLMExtraction | null> {
+): Promise<LlmAttempt> {
   const body = buildRequestBody(config, systemPrompt, userPrompt);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutForModel(config));
@@ -293,10 +318,17 @@ async function callOnce(
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
       console.error(`${config.provider} API error ${res.status}: ${errText.slice(0, 500)}`);
-      return null;
+      return { extraction: null, status: res.status, usage: null };
     }
 
     const data = await res.json();
+    const usage: LlmUsage = {
+      provider: config.provider,
+      model: config.model,
+      prompt_tokens: typeof data?.usage?.prompt_tokens === "number" ? data.usage.prompt_tokens : null,
+      completion_tokens:
+        typeof data?.usage?.completion_tokens === "number" ? data.usage.completion_tokens : null,
+    };
     const choice = data?.choices?.[0];
     const content = choice?.message?.content;
     if (typeof content !== "string" || content.trim().length === 0) {
@@ -304,37 +336,56 @@ async function callOnce(
       // est parti dans le raisonnement (voir max_completion_tokens / reasoning_effort).
       const finish = choice?.finish_reason ?? "?";
       const refusal = choice?.message?.refusal;
-      const usage = data?.usage ?? {};
-      const reasoningTokens = usage?.completion_tokens_details?.reasoning_tokens ?? "?";
+      const rawUsage = data?.usage ?? {};
+      const reasoningTokens = rawUsage?.completion_tokens_details?.reasoning_tokens ?? "?";
       console.warn(
         `${config.provider}/${config.model}: contenu vide ` +
-          `(finish_reason=${finish}, completion_tokens=${usage?.completion_tokens ?? "?"}, ` +
+          `(finish_reason=${finish}, completion_tokens=${rawUsage?.completion_tokens ?? "?"}, ` +
           `reasoning_tokens=${reasoningTokens}${refusal ? `, refusal=${String(refusal).slice(0, 120)}` : ""})`,
       );
-      return null;
+      // Le contenu est vide mais l'appel a été facturé : on remonte l'usage.
+      return { extraction: null, status: res.status, usage };
     }
     const parsed = parseJsonLoose(content);
-    return normalizeExtraction(parsed);
+    return { extraction: normalizeExtraction(parsed), status: res.status, usage };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`LLM extraction error (${config.provider}/${config.model}): ${msg}`);
-    return null;
+    // Réseau ou expiration : pas de statut HTTP, donc `0`. Retryable.
+    return { extraction: null, status: 0, usage: null };
   } finally {
     clearTimeout(timeout);
   }
 }
 
+/** Attentes avant les 2e et 3e tentatives. */
+const RETRY_DELAYS_MS = [1000, 3000];
+
+/**
+ * Une nouvelle tentative a-t-elle une chance d'aboutir ?
+ *
+ * `0` (réseau/expiration), `429` (débit) et les `5xx` sont transitoires. Un autre
+ * `4xx` est déterministe — schéma refusé, modèle inconnu, clé invalide — et le
+ * rejouer ne fait que payer deux fois la même erreur. Un `200` au contenu vide est
+ * retryable : c'est précisément le cas DeepSeek qui motivait le retry d'origine.
+ */
+export function isRetryableStatus(status: number): boolean {
+  if (status === 0 || status === 200 || status === 429) return true;
+  return status >= 500;
+}
+
 // ---------------------------------------------------------------------
-// Point d'entrée : 1 tentative + 1 retry (DeepSeek peut renvoyer vide).
+// Point d'entrée : jusqu'à 3 tentatives, avec backoff et seulement quand la
+// cause peut se résoudre d'elle-même.
 // ---------------------------------------------------------------------
 export async function extractWithLLM(
   input: LLMInput,
   config: LlmConfig,
   apiKey: string,
-): Promise<LLMExtraction | null> {
+): Promise<{ extraction: LLMExtraction | null; usage: LlmUsage | null }> {
   if (!apiKey) {
     console.error(`Clé API manquante pour le provider ${config.provider}`);
-    return null;
+    return { extraction: null, usage: null };
   }
 
   const systemBase = `Tu es un assistant spécialisé dans l'extraction d'informations structurées sur des TPE/PME françaises du secteur CVC (chauffage, ventilation, climatisation, plomberie) et photovoltaïque.
@@ -373,10 +424,28 @@ ${input.site_markdown}
 
 Extrais les informations en remplissant le JSON demandé.`;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const result = await callOnce(config, apiKey, systemPrompt, userPrompt);
-    if (result) return result;
-    if (attempt === 0) console.warn(`${config.provider}/${config.model}: nouvelle tentative`);
+  let lastUsage: LlmUsage | null = null;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const attemptResult = await callOnce(config, apiKey, systemPrompt, userPrompt);
+    // L'usage est conservé même en échec : l'appel a pu être facturé.
+    if (attemptResult.usage) lastUsage = attemptResult.usage;
+    if (attemptResult.extraction) return { extraction: attemptResult.extraction, usage: lastUsage };
+
+    if (!isRetryableStatus(attemptResult.status)) {
+      console.error(
+        `${config.provider}/${config.model}: échec définitif (status=${attemptResult.status}) — pas de nouvelle tentative`,
+      );
+      return { extraction: null, usage: lastUsage };
+    }
+    if (attempt < 2) {
+      // Backoff : un 429 relancé dans la milliseconde renvoie un 429.
+      const waitMs = RETRY_DELAYS_MS[attempt];
+      console.warn(
+        `${config.provider}/${config.model}: nouvelle tentative dans ${waitMs} ms (status=${attemptResult.status})`,
+      );
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
   }
-  return null;
+  return { extraction: null, usage: lastUsage };
 }

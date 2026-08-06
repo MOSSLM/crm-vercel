@@ -357,6 +357,12 @@ export const marketingCompanyDetailsSchema = z.object({
       stat_satisfied_clients: nullableStr,
       stat_installations_completed: nullableStr,
       stat_rge_count: nullableStr,
+      // Chiffres confirmés par le client : prioritaires à l'affichage sur les
+      // estimations ci-dessus, et jamais touchés par l'enrichissement.
+      stat_years_experience_official: nullableStr,
+      stat_satisfied_clients_official: nullableStr,
+      stat_installations_completed_official: nullableStr,
+      stat_rge_count_official: nullableStr,
       variables: z.record(z.string(), z.unknown()).nullable().optional(),
     })
     .nullable()
