@@ -145,9 +145,23 @@ export const POST = withAuth(
         );
       }
 
-      const payload = (await res.json().catch(() => ({}))) as { summary?: Partial<Summary> };
+      const payload = (await res.json().catch(() => ({}))) as {
+        summary?: Partial<Summary>;
+        remaining_entreprise_ids?: number[];
+      };
       for (const key of Object.keys(summary) as Array<keyof Summary>) {
         summary[key] += payload.summary?.[key] ?? 0;
+      }
+
+      // L'edge function s'arrête à son propre budget de temps et rend les
+      // entreprises qu'elle n'a pas traitées. Le curseur ci-dessus a DÉJÀ avancé
+      // au-delà d'elles : continuer la boucle les enjamberait définitivement, sans
+      // rien signaler. On s'arrête donc en reculant le curseur juste avant le lot
+      // partiel, pour que la relance le reprenne en entier.
+      const remaining = payload.remaining_entreprise_ids ?? [];
+      if (remaining.length > 0) {
+        cursor = Math.min(...remaining) - 1;
+        break;
       }
     }
 
