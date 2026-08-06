@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Copy, GripVertical, Plus, Tag, Trash2 } from "l
 import type { SectionBlockInstance, SectionBlockSchema, SectionSchema, StyleGuide } from "@/types";
 import { findBlockSchema, getBlockDefaults } from "@/data/section-schemas";
 import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
+import { serviceTagGate } from "@/utils/serviceTags";
 import { SchemaEditor } from "./SchemaEditor";
 
 interface BlocksEditorProps {
@@ -79,7 +80,9 @@ export function BlocksEditor({
         const isExpanded = expandedId === block.id;
         const preview = blockPreview(blockSchema, block.settings);
         const tag = block.service_tag ?? null;
-        const isFiltered = !!(tag && !enterpriseTags.includes(tag));
+        // Même comparaison que le rendu (serviceTagGate) : sinon l'éditeur
+        // grisait un bloc « pompe-a-chaleur » que le site affiche bel et bien.
+        const isFiltered = !serviceTagGate(enterpriseTags)(tag);
         const showTagPicker = !!onUpdateTag;
 
         return (

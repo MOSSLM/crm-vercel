@@ -16,7 +16,15 @@ export type PreviewFailureKind =
   | "site-missing"
   | "query-failed"
   | "no-sections"
-  | "page-missing";
+  | "page-missing"
+  /** The page renders — it is just closed for THIS company's services. */
+  | "service-gated";
+
+/** Which service tag closed the page, and what the linked company actually has. */
+export interface ServiceGateDetail {
+  pageTag: string;
+  companyTags: string[];
+}
 
 interface Verdict {
   title: string;
@@ -27,6 +35,7 @@ function verdictFor(
   probe: DraftSiteProbe | null,
   kind: PreviewFailureKind,
   reason: string,
+  gate?: ServiceGateDetail,
 ): Verdict {
   // A failed query is always the headline: the rest of what we know about the
   // design was read by other queries and would otherwise blame the design for a
@@ -51,6 +60,39 @@ function verdictFor(
               l&apos;éditeur SQL est ouvert sur un autre projet.
             </div>
           )}
+        </>
+      ),
+    };
+  }
+
+  // Before every probe-driven verdict: the design is fine, the page is fine, and
+  // listing "the pages that do exist" would list the requested one — which is
+  // exactly the dead end this branch exists to end.
+  if (kind === "service-gated" && gate) {
+    return {
+      title: `Cette page est réservée au service « ${gate.pageTag} », que l'entreprise liée à ce design ne porte pas.`,
+      advice: (
+        <>
+          {gate.companyTags.length > 0 ? (
+            <>
+              Services de l&apos;entreprise :{" "}
+              {gate.companyTags.map((t, i) => (
+                <React.Fragment key={t}>
+                  {i > 0 && ", "}
+                  <code>{t}</code>
+                </React.Fragment>
+              ))}
+              .
+            </>
+          ) : (
+            <>Aucun service n&apos;est renseigné sur l&apos;entreprise liée.</>
+          )}
+          <div style={{ marginTop: 10 }}>
+            C&apos;est le comportement attendu : le site déployé n&apos;affichera pas cette page,
+            et aucun lien de menu n&apos;y mènera. Pour l&apos;ouvrir, ajoutez le service à la
+            fiche de l&apos;entreprise (onglet Services), ou retirez le tag de la page dans le
+            plan du site.
+          </div>
         </>
       ),
     };
@@ -126,13 +168,15 @@ export function PreviewDiagnostic({
   kind,
   reason,
   probe,
+  gate,
 }: {
   siteId: string;
   kind: PreviewFailureKind;
   reason: string;
   probe: DraftSiteProbe | null;
+  gate?: ServiceGateDetail;
 }) {
-  const verdict = verdictFor(probe, kind, reason);
+  const verdict = verdictFor(probe, kind, reason, gate);
 
   return (
     <div

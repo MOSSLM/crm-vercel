@@ -18,6 +18,7 @@ import {
   type NavbarPosition,
 } from "@/lib/site-builder/position-layout";
 import { NAVBAR_CATEGORIES } from "@/lib/site-builder/menu-overrides";
+import { serviceTagGate } from "@/utils/serviceTags";
 import { BulkAIDialog } from "./BulkAIDialog";
 import type { SiteSectionDef, SiteSectionInstance } from "@/types";
 import { useRelumeBuilder } from "./RelumeBuilderProvider";
@@ -899,8 +900,7 @@ export function DesignWorkspace({ sectionDefs, availableSections = [], onRegener
                 // it would 404 on the published company site. Dim it as a cue.
                 const tagHidden =
                   state.simulatedTags != null &&
-                  !!p.service_tag &&
-                  !state.simulatedTags.includes(p.service_tag);
+                  !serviceTagGate(state.simulatedTags)(p.service_tag);
                 return (
                   <button
                     key={p.id}

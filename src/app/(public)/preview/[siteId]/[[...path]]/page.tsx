@@ -7,7 +7,12 @@ import { parseEnterpriseTags } from "@/components/site-builder/SitePageView";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
 import { resolvePreviewSlug } from "@/lib/site-builder/preview-slug";
-import { PreviewDiagnostic, type PreviewFailureKind } from "@/components/site-builder/PreviewDiagnostic";
+import {
+  PreviewDiagnostic,
+  type PreviewFailureKind,
+  type ServiceGateDetail,
+} from "@/components/site-builder/PreviewDiagnostic";
+import { serviceTagGate } from "@/utils/serviceTags";
 
 interface PreviewProps {
   params: Promise<{ siteId: string; path?: string[] }>;
@@ -26,14 +31,19 @@ function slugFromPath(path: string[] | undefined): string {
  * actual failure rather than inferring one from the row it managed to read.
  */
 class PreviewUnavailable extends Error {
-  constructor(readonly kind: PreviewFailureKind, reason: string) {
+  constructor(
+    readonly kind: PreviewFailureKind,
+    reason: string,
+    /** Set for "service-gated": which tag closed the page, against which tags. */
+    readonly gate?: ServiceGateDetail,
+  ) {
     super(reason);
   }
 }
 // A function declaration, not an arrow: TS only narrows control flow through
 // never-returning calls when the callee is declared this way.
-function unavailable(kind: PreviewFailureKind, reason: string): never {
-  throw new PreviewUnavailable(kind, reason);
+function unavailable(kind: PreviewFailureKind, reason: string, gate?: ServiceGateDetail): never {
+  throw new PreviewUnavailable(kind, reason, gate);
 }
 
 // Re-emit the viewport meta (stripped on import) so mobile @media fires, and
@@ -67,10 +77,9 @@ async function loadPreview(siteId: string, path: string[] | undefined) {
 
   // A design imported without an index.html has no "/" page; rather than 404 the
   // bare preview subdomain, fall back to its first renderable page.
-  const tagAllows = (slug: string) => {
-    const tag = publishedSitemap?.find((p) => p.slug === slug)?.service_tag;
-    return !tag || enterpriseTags.includes(tag);
-  };
+  const allowsService = serviceTagGate(enterpriseTags);
+  const tagAllows = (slug: string) =>
+    allowsService(publishedSitemap?.find((p) => p.slug === slug)?.service_tag);
   const resolved = resolvePreviewSlug(instances, publishedSitemap, requestedSlug, tagAllows);
   if (!resolved) unavailable("page-missing", `aucune page visible ne correspond à « ${requestedSlug} »`);
 
@@ -83,8 +92,20 @@ async function loadPreview(siteId: string, path: string[] | undefined) {
   if (!fellBack && pageSlug !== "/" && !targetPage) {
     unavailable("page-missing", `« ${pageSlug} » n'est pas dans le plan du site`);
   }
-  if (targetPage?.service_tag && !enterpriseTags.includes(targetPage.service_tag)) {
-    unavailable("page-missing", `« ${pageSlug} » est réservée au service « ${targetPage.service_tag} »`);
+  // Comparison goes through serviceTagGate — see its doc: the page's tag comes
+  // from its file name ("pompe-a-chaleur"), the enterprise's from the CRM
+  // ("pompe à chaleur"), and a raw comparison closed every service whose label
+  // isn't already one ASCII word.
+  if (!allowsService(targetPage?.service_tag)) {
+    unavailable(
+      // Its own kind: the page EXISTS and renders — it is closed for this
+      // company only. Reported as "page-missing", it drew the diagnosis that
+      // lists the available pages, including the very one being asked for.
+      "service-gated",
+      `« ${pageSlug} » est réservée au service « ${targetPage?.service_tag} », ` +
+        `absent des services de l'entreprise liée`,
+      { pageTag: targetPage?.service_tag ?? "", companyTags: enterpriseTags },
+    );
   }
 
   return {
@@ -119,7 +140,15 @@ export default async function DraftPreviewPage({ params }: PreviewProps) {
     // full read access to the design, and the platform logs where the reason
     // used to live are exactly what the link's recipients can't reach.
     const probe = await probeDraftSite(siteId).catch(() => null);
-    return <PreviewDiagnostic siteId={siteId} kind={e.kind} reason={e.message} probe={probe} />;
+    return (
+      <PreviewDiagnostic
+        siteId={siteId}
+        kind={e.kind}
+        reason={e.message}
+        probe={probe}
+        gate={e.gate}
+      />
+    );
   }
 
   const { site, pageSlug, visibleMenus } = data;
