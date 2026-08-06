@@ -92,6 +92,12 @@ export interface ScrapedSite {
   total_chars: number;
   accessible: boolean;
   error?: string;
+  /** Mesures reportées dans le journal des runs (cf. `metrics.ts`). */
+  duration_ms: number;
+  /** `jina` | `direct` | `mixed`, ou null si rien n'a été récupéré. */
+  via: string | null;
+  /** Jina a rendu un 429 sur ce site : le coupe-circuit s'est déclenché. */
+  jina_rate_limited: boolean;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -183,6 +189,12 @@ function htmlToText(html: string): string {
 interface ScrapeState {
   // Une fois Jina rate-limité, inutile de le re-solliciter pour les autres pages.
   jinaRateLimited: boolean;
+  // Qui a réellement fourni le contenu, page par page. Reporté dans le journal
+  // des runs : sans clé Jina le scraper bascule en direct, et le markdown envoyé
+  // au modèle n'a pas la même qualité — c'est une explication possible d'un
+  // mauvais taux d'extraction, qu'on ne pouvait pas distinguer jusqu'ici.
+  jinaPages: number;
+  directPages: number;
 }
 
 type JinaResult = { text: string | null; rateLimited: boolean };
@@ -333,18 +345,37 @@ async function fetchPage(
   state: ScrapeState,
   timeoutMs = 15000,
 ): Promise<PageFetch | null> {
-  const jina = () => tryJina(targetUrl, state, timeoutMs);
-  const direct = () => fetchDirect(targetUrl, timeoutMs);
+  const jina = { name: "jina" as const, run: () => tryJina(targetUrl, state, timeoutMs) };
+  const direct = { name: "direct" as const, run: () => fetchDirect(targetUrl, timeoutMs) };
   const order = HAS_JINA_KEY ? [jina, direct] : [direct, jina];
 
-  const gathered: PageFetch[] = [];
+  const gathered: Array<{ name: "jina" | "direct"; page: PageFetch }> = [];
   for (const source of order) {
-    const out = await source();
-    if (out && out.text.trim().length >= minChars) return out;
-    if (out && out.text.trim().length > 0) gathered.push(out);
+    const out = await source.run();
+    if (out && out.text.trim().length >= minChars) {
+      countSource(state, source.name);
+      return out;
+    }
+    if (out && out.text.trim().length > 0) gathered.push({ name: source.name, page: out });
   }
   // Aucune source complète → on renvoie le meilleur contenu partiel disponible.
-  return gathered.sort((a, b) => b.text.length - a.text.length)[0] ?? null;
+  const best = gathered.sort((a, b) => b.page.text.length - a.page.text.length)[0];
+  if (!best) return null;
+  countSource(state, best.name);
+  return best.page;
+}
+
+function countSource(state: ScrapeState, name: "jina" | "direct"): void {
+  if (name === "jina") state.jinaPages++;
+  else state.directPages++;
+}
+
+/** `jina` / `direct` / `mixed`, ou null quand rien n'a été récupéré. */
+function scrapeVia(state: ScrapeState): string | null {
+  if (state.jinaPages > 0 && state.directPages > 0) return "mixed";
+  if (state.jinaPages > 0) return "jina";
+  if (state.directPages > 0) return "direct";
+  return null;
 }
 
 /**
@@ -353,12 +384,22 @@ async function fetchPage(
  * et un flag accessible.
  */
 export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<ScrapedSite> {
+  const startedAt = Date.now();
   const built = buildHomeCandidates(rawUrl ?? "");
   if (!built) {
-    return { base_url: "", pages: [], total_chars: 0, accessible: false, error: "invalid_url" };
+    return {
+      base_url: "",
+      pages: [],
+      total_chars: 0,
+      accessible: false,
+      error: "invalid_url",
+      duration_ms: Date.now() - startedAt,
+      via: null,
+      jina_rate_limited: false,
+    };
   }
   const { origin, candidates } = built;
-  const state: ScrapeState = { jinaRateLimited: false };
+  const state: ScrapeState = { jinaRateLimited: false, jinaPages: 0, directPages: 0 };
 
   // On tente la home sur chaque variante jusqu'à obtenir du contenu utile.
   let homeMarkdown: string | null = null;
@@ -387,6 +428,9 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
       total_chars: 0,
       accessible: false,
       error: "home_unreachable_or_empty",
+      duration_ms: Date.now() - startedAt,
+      via: scrapeVia(state),
+      jina_rate_limited: state.jinaRateLimited,
     };
   }
 
@@ -420,7 +464,15 @@ export async function scrapeWebsite(rawUrl: string | null | undefined): Promise<
 
   const totalChars = finalPages.reduce((acc, p) => acc + p.markdown.length, 0);
 
-  return { base_url: workingOrigin, pages: finalPages, total_chars: totalChars, accessible: true };
+  return {
+    base_url: workingOrigin,
+    pages: finalPages,
+    total_chars: totalChars,
+    accessible: true,
+    duration_ms: Date.now() - startedAt,
+    via: scrapeVia(state),
+    jina_rate_limited: state.jinaRateLimited,
+  };
 }
 
 /** Chemin d'une URL, `/x` sans slash final — la clé d'identité d'une page ici. */

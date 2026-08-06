@@ -68,6 +68,13 @@ export interface LlmUsage {
   model: string;
   prompt_tokens: number | null;
   completion_tokens: number | null;
+  /**
+   * Part de raisonnement dans les tokens de sortie, quand le provider la
+   * détaille. Déjà comptée dans `completion_tokens` (c'est ce qui est facturé) :
+   * elle est isolée ici parce qu'elle explique, à elle seule, pourquoi un modèle
+   * de raisonnement coûte dix fois un modèle nano sur la même fiche.
+   */
+  reasoning_tokens: number | null;
 }
 
 /** Résultat d'un appel LLM : l'extraction si elle a abouti, et son coût. */
@@ -76,6 +83,21 @@ export interface LlmAttempt {
   /** Statut HTTP, `0` sur erreur réseau ou expiration. Décide du retry. */
   status: number;
   usage: LlmUsage | null;
+}
+
+/**
+ * Extraction rendue à l'appelant, avec de quoi la journaliser.
+ *
+ * `attempts` et `last_status` distinguent un modèle qui répond du premier coup
+ * d'un modèle qu'il faut relancer deux fois — deux appels facturés pour une
+ * fiche, ce que le seul `usage` de la dernière tentative ne montre pas.
+ */
+export interface LlmOutcome {
+  extraction: LLMExtraction | null;
+  usage: LlmUsage | null;
+  attempts: number;
+  last_status: number;
+  duration_ms: number;
 }
 
 export interface EnrichRequest {
@@ -100,6 +122,13 @@ export interface EnrichRequest {
    * ce sont deux champs d'API (`rating`, `userRatingCount`).
    */
   action?: "enrich" | "recompute_ville_seo" | "refresh_google_stats";
+  /**
+   * Origine de l'appel, reportée telle quelle dans le journal des runs :
+   * `db_trigger` (déclenchement automatique), `crm_manual`, `reenrich`, `agent`.
+   * Absente → `unknown`. Sans elle, impossible de distinguer un lot automatique
+   * d'une relance manuelle quand on compare deux périodes.
+   */
+  source?: string;
 }
 
 export interface EnrichResult {

@@ -371,6 +371,15 @@ export async function loadLlmConfig(sb: SupabaseClient): Promise<LlmConfig> {
 export interface ApplyResult {
   updated_fields: string[];
   reviews_inserted: number;
+  /**
+   * Qui a finalement décidé de la ville SEO (`geo`, `llm`, `override`…), et
+   * combien de services le modèle a retenus. Deux mesures reportées dans le
+   * journal des runs : la ville SEO est la donnée la plus visible du site, et
+   * savoir quelle part revient réellement au modèle change le jugement qu'on
+   * porte sur lui.
+   */
+  ville_seo_source: VilleSeoSource | null;
+  service_tags_count: number;
 }
 
 export async function applyExtraction(
@@ -384,6 +393,9 @@ export async function applyExtraction(
   const updatedFields: string[] = [];
   const lmpUpdate: Record<string, unknown> = {};
   const entrepriseUpdate: Record<string, unknown> = {};
+  // Mesures rendues à l'appelant pour le journal des runs.
+  let villeSeoSource: VilleSeoSource | null = null;
+  let serviceTagsCount = 0;
 
   // --- services_tags : filtrage allowlist + merge sans doublons ---
   // Seuls les tags autorisés (config globale enrichment_tag_settings) sont
@@ -396,6 +408,8 @@ export async function applyExtraction(
     const newTags = extraction.services_tags
       .filter((t) => t && t.trim().length > 0)
       .filter(isAllowed);
+    // Après allowlist : c'est ce que le modèle a réellement apporté d'exploitable.
+    serviceTagsCount = newTags.length;
 
     // Snapshot du lead magnet : ne doit contenir que des tags autorisés
     // (on purge aussi les tags devenus interdits depuis sa création).
@@ -485,6 +499,7 @@ export async function applyExtraction(
   if (!ctx.lmp.override_city || !ctx.lmp.override_location) {
     const decision = await resolveVilleSeo(sb, ctx, extraction, google);
     if (decision) {
+      villeSeoSource = decision.source;
       console.log(
         `[${ctx.project_id}] ville SEO = ${decision.ville} — source ${decision.source}` +
           (decision.detail ? ` (${decision.detail})` : ""),
@@ -626,7 +641,12 @@ export async function applyExtraction(
     .eq("id", ctx.opportunite_id);
   updatedFields.push("opportunite.lead_magnet");
 
-  return { updated_fields: updatedFields, reviews_inserted: reviewsInserted };
+  return {
+    updated_fields: updatedFields,
+    reviews_inserted: reviewsInserted,
+    ville_seo_source: villeSeoSource,
+    service_tags_count: serviceTagsCount,
+  };
 }
 
 // ---------------------------------------------------------------------

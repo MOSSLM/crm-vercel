@@ -10,7 +10,14 @@
 //     ci-dessous (coercition des types, valeurs manquantes → null/[]).
 // =====================================================================
 
-import type { LLMExtraction, GooglePlaceData, LlmAttempt, LlmConfig, LlmUsage } from "./types.ts";
+import type {
+  LLMExtraction,
+  GooglePlaceData,
+  LlmAttempt,
+  LlmConfig,
+  LlmOutcome,
+  LlmUsage,
+} from "./types.ts";
 import { SERVICE_TAGS_TAXONOMY } from "./types.ts";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
@@ -322,12 +329,14 @@ async function callOnce(
     }
 
     const data = await res.json();
+    const reasoning = data?.usage?.completion_tokens_details?.reasoning_tokens;
     const usage: LlmUsage = {
       provider: config.provider,
       model: config.model,
       prompt_tokens: typeof data?.usage?.prompt_tokens === "number" ? data.usage.prompt_tokens : null,
       completion_tokens:
         typeof data?.usage?.completion_tokens === "number" ? data.usage.completion_tokens : null,
+      reasoning_tokens: typeof reasoning === "number" ? reasoning : null,
     };
     const choice = data?.choices?.[0];
     const content = choice?.message?.content;
@@ -382,10 +391,11 @@ export async function extractWithLLM(
   input: LLMInput,
   config: LlmConfig,
   apiKey: string,
-): Promise<{ extraction: LLMExtraction | null; usage: LlmUsage | null }> {
+): Promise<LlmOutcome> {
+  const startedAt = Date.now();
   if (!apiKey) {
     console.error(`Clé API manquante pour le provider ${config.provider}`);
-    return { extraction: null, usage: null };
+    return { extraction: null, usage: null, attempts: 0, last_status: 0, duration_ms: 0 };
   }
 
   const systemBase = `Tu es un assistant spécialisé dans l'extraction d'informations structurées sur des TPE/PME françaises du secteur CVC (chauffage, ventilation, climatisation, plomberie) et photovoltaïque.
@@ -425,18 +435,34 @@ ${input.site_markdown}
 Extrais les informations en remplissant le JSON demandé.`;
 
   let lastUsage: LlmUsage | null = null;
+  let lastStatus = 0;
 
   for (let attempt = 0; attempt < 3; attempt++) {
     const attemptResult = await callOnce(config, apiKey, systemPrompt, userPrompt);
     // L'usage est conservé même en échec : l'appel a pu être facturé.
     if (attemptResult.usage) lastUsage = attemptResult.usage;
-    if (attemptResult.extraction) return { extraction: attemptResult.extraction, usage: lastUsage };
+    lastStatus = attemptResult.status;
+    if (attemptResult.extraction) {
+      return {
+        extraction: attemptResult.extraction,
+        usage: lastUsage,
+        attempts: attempt + 1,
+        last_status: lastStatus,
+        duration_ms: Date.now() - startedAt,
+      };
+    }
 
     if (!isRetryableStatus(attemptResult.status)) {
       console.error(
         `${config.provider}/${config.model}: échec définitif (status=${attemptResult.status}) — pas de nouvelle tentative`,
       );
-      return { extraction: null, usage: lastUsage };
+      return {
+        extraction: null,
+        usage: lastUsage,
+        attempts: attempt + 1,
+        last_status: lastStatus,
+        duration_ms: Date.now() - startedAt,
+      };
     }
     if (attempt < 2) {
       // Backoff : un 429 relancé dans la milliseconde renvoie un 429.
@@ -447,5 +473,11 @@ Extrais les informations en remplissant le JSON demandé.`;
       await new Promise((r) => setTimeout(r, waitMs));
     }
   }
-  return { extraction: null, usage: lastUsage };
+  return {
+    extraction: null,
+    usage: lastUsage,
+    attempts: 3,
+    last_status: lastStatus,
+    duration_ms: Date.now() - startedAt,
+  };
 }
