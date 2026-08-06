@@ -163,7 +163,10 @@ export const POST = withAuth({ role: "admin", body: marketingReenrichSchema }, a
           apikey: SUPABASE_SERVICE_ROLE_KEY,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ project_ids: ready }),
+        // `source` alimente le journal des runs (table `enrichment_runs`) :
+        // sans lui, un lot de réenrichissement serait indiscernable des runs
+        // déclenchés automatiquement quand on compare deux périodes.
+        body: JSON.stringify({ project_ids: ready, source: "reenrich" }),
       });
 
       if (!res.ok) {

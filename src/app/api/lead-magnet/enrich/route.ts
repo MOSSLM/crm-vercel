@@ -105,7 +105,10 @@ export const POST = withAuth({ body: enrichLeadMagnetSchema }, async ({ body, us
         apikey: SUPABASE_SERVICE_ROLE_KEY,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ project_id }),
+      // `source` alimente le journal des runs (`enrichment_runs`) : une relance
+      // manuelle depuis le CRM et un run d'agent freelance ne se comparent pas
+      // aux lots déclenchés automatiquement par le trigger.
+      body: JSON.stringify({ project_id, source: isAgent ? "agent" : "crm_manual" }),
     });
 
     const responseText = await response.text();

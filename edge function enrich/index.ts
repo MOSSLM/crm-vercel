@@ -22,6 +22,7 @@ import { scrapeWebsite, buildSiteContext } from "./scraper.ts";
 import { sameOrigin } from "./url-variants.ts";
 import { fetchGooglePlace, resolvePlaceId, isV1PlaceId, searchPlaceId, extractLatLngFromUrl } from "./google.ts";
 import { extractWithLLM } from "./llm.ts";
+import { fieldsFound, newRun, saveRun, type RunRecord } from "./metrics.ts";
 import {
   makeSupabaseClient,
   loadProjectContext,
@@ -91,15 +92,47 @@ function isServiceRoleRequest(req: Request): boolean {
   return diff === 0;
 }
 
-async function processOne(projectId: string): Promise<EnrichResult> {
+async function processOne(projectId: string, source: string): Promise<EnrichResult> {
   const sb = makeSupabaseClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+  // Journal du run : rempli au fil des étapes, écrit dans le `finally` en toute
+  // fin. C'est ce `finally` qui garantit qu'un run ignoré (lock déjà pris) ou
+  // interrompu très tôt laisse lui aussi sa ligne — les seuls runs qu'on ne
+  // voyait pas jusqu'ici étaient précisément ceux qui n'aboutissaient pas.
+  const startedAt = Date.now();
+  const run = newRun(projectId, source);
+  const finish = (result: EnrichResult): EnrichResult => {
+    run.status = result.status;
+    run.outcome_reason = result.error ? result.error.slice(0, 200) : null;
+    run.duration_ms = Date.now() - startedAt;
+    return result;
+  };
+
+  try {
+    return await runEnrichment(sb, projectId, run, finish);
+  } finally {
+    await saveRun(sb, run);
+  }
+}
+
+/**
+ * Corps de l'enrichissement. Séparé de `processOne` pour que le journal ne
+ * s'écrive qu'à un seul endroit, quel que soit le chemin de sortie.
+ */
+async function runEnrichment(
+  sb: ReturnType<typeof makeSupabaseClient>,
+  projectId: string,
+  run: RunRecord,
+  finish: (result: EnrichResult) => EnrichResult,
+): Promise<EnrichResult> {
   // 1. Load context
   const ctxOrErr = await loadProjectContext(sb, projectId);
   if ("error" in ctxOrErr) {
-    return { project_id: projectId, status: "failed", error: ctxOrErr.error };
+    return finish({ project_id: projectId, status: "failed", error: ctxOrErr.error });
   }
   const ctx = ctxOrErr;
+  run.entreprise_id = ctx.entreprise_id;
+  run.opportunite_id = ctx.opportunite_id;
 
   // 2. Re-read minimal flags pour validation (acquireLock fera son propre check aussi)
   const { data: lmpFull } = await sb
@@ -108,7 +141,7 @@ async function processOne(projectId: string): Promise<EnrichResult> {
     .eq("id", projectId)
     .maybeSingle();
   if (!lmpFull) {
-    return { project_id: projectId, status: "failed", error: "lmp_not_found_on_validate" };
+    return finish({ project_id: projectId, status: "failed", error: "lmp_not_found_on_validate" });
   }
   const check = shouldProcess(
     {
@@ -119,20 +152,30 @@ async function processOne(projectId: string): Promise<EnrichResult> {
     { lead_magnet: ctx.opportunite.lead_magnet },
   );
   if (!check.ok) {
-    return { project_id: projectId, status: "skipped", error: check.reason };
+    return finish({ project_id: projectId, status: "skipped", error: check.reason });
   }
 
   // 3. Acquire lock
   const locked = await acquireLock(sb, projectId);
   if (!locked) {
-    return { project_id: projectId, status: "skipped", error: "lock_not_acquired" };
+    return finish({ project_id: projectId, status: "skipped", error: "lock_not_acquired" });
   }
 
   try {
     // 4. Scrape site
     const siteUrl = ctx.entreprise.site_web_canonique || ctx.entreprise.canonical_url;
     console.log(`[${projectId}] scraping site: ${siteUrl}`);
+    run.site_url_input = siteUrl;
     const scraped = await scrapeWebsite(siteUrl);
+    run.site_reached = scraped.accessible;
+    run.site_url_final = scraped.base_url || null;
+    run.scrape_error = scraped.error ?? null;
+    run.scrape_pages = scraped.pages.length;
+    run.scrape_paths = scraped.pages.map((p) => p.path);
+    run.scrape_chars = scraped.total_chars;
+    run.scrape_ms = scraped.duration_ms;
+    run.scrape_via = scraped.via;
+    run.jina_rate_limited = scraped.jina_rate_limited;
 
     if (!scraped.accessible) {
       console.log(`[${projectId}] site inaccessible (${scraped.error}) — move to fallback pipeline`);
@@ -140,11 +183,11 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       // on route vers "sans site web" par défaut.
       await moveOpportunityToFallbackPipeline(sb, ctx.opportunite_id, null);
       await markProjectStatus(sb, projectId, "failed", `no_website: ${scraped.error}`);
-      return {
+      return finish({
         project_id: projectId,
         status: "no_website",
         error: scraped.error,
-      };
+      });
     }
 
     // 4 bis. L'URL stockée était fausse mais le site répond ailleurs (www en
@@ -153,6 +196,7 @@ async function processOne(projectId: string): Promise<EnrichResult> {
     //        site démo continuent de pointer vers un hôte injoignable.
     if (scraped.base_url && siteUrl && !sameOrigin(scraped.base_url, siteUrl)) {
       console.log(`[${projectId}] URL corrigée : ${siteUrl} → ${scraped.base_url}`);
+      run.site_url_corrected = true;
       await sb
         .from("entreprises")
         .update({ site_web_canonique: scraped.base_url, updated_at: new Date().toISOString() })
@@ -161,9 +205,11 @@ async function processOne(projectId: string): Promise<EnrichResult> {
 
     // 5. Google Places (best-effort)
     let googleData = null;
+    const googleStartedAt = Date.now();
     if (!GOOGLE_PLACES_API_KEY) {
       console.warn(`[${projectId}] GOOGLE_PLACES_API_KEY missing in secrets`);
     } else {
+      run.google_attempted = true;
       const rawPlaceId = resolvePlaceId(
         ctx.entreprise.google_place_id,
         ctx.entreprise.google_url,
@@ -172,6 +218,10 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       // L'ancien format "ftid" (0x...:0x...) est rejeté par l'API v1 : on le
       // re-résout par une recherche texte nom + ville (match vérifié).
       let placeId = rawPlaceId && isV1PlaceId(rawPlaceId) ? rawPlaceId : null;
+      // 'stored' : l'identifiant de la fiche suffisait. 'searched' : il a fallu
+      // repasser par une recherche texte, qui est FACTURÉE — c'est le chiffre à
+      // surveiller sur un gros lot.
+      run.google_place_id_source = placeId ? "stored" : "none";
       if (!placeId) {
         if (rawPlaceId) {
           console.log(`[${projectId}] place_id hérité (${rawPlaceId}) non exploitable par l'API v1 → recherche par nom`);
@@ -185,6 +235,7 @@ async function processOne(projectId: string): Promise<EnrichResult> {
         // repayait pour retrouver le même identifiant — indéfiniment, sur toutes
         // les fiches dont le place_id stocké est un « ftid » hérité.
         if (placeId) {
+          run.google_place_id_source = "searched";
           console.log(`[${projectId}] place_id résolu et mémorisé : ${placeId}`);
           await sb
             .from("entreprises")
@@ -202,6 +253,10 @@ async function processOne(projectId: string): Promise<EnrichResult> {
         const hasFallbackReviews = Array.isArray(ctx.entreprise.google_reviews_5star) && ctx.entreprise.google_reviews_5star.length > 0;
         console.log(`[${projectId}] pas de place_id exploitable → skip Google (fallback: nombre_avis=${ctx.entreprise.nombre_avis}, reviews_stored=${hasFallbackReviews})`);
       }
+      run.google_ok = !!googleData;
+      run.google_rating = googleData?.rating ?? null;
+      run.google_reviews_total = googleData?.total_reviews ?? null;
+      run.google_ms = Date.now() - googleStartedAt;
     }
 
     // 6. LLM extraction (provider/modèle configurables via enrichment_llm_settings)
@@ -209,7 +264,7 @@ async function processOne(projectId: string): Promise<EnrichResult> {
     const llmKey = llmConfig.provider === "deepseek" ? DEEPSEEK_API_KEY : OPENAI_API_KEY;
     console.log(`[${projectId}] LLM extraction ${llmConfig.provider}/${llmConfig.model} (${scraped.pages.length} pages, ${scraped.total_chars} chars)`);
     const siteMarkdown = buildSiteContext(scraped);
-    const { extraction, usage } = await extractWithLLM(
+    const { extraction, usage, attempts, last_status, duration_ms } = await extractWithLLM(
       {
         site_markdown: siteMarkdown,
         google_data: googleData,
@@ -222,16 +277,31 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       llmConfig,
       llmKey,
     );
+    // Le modèle est celui de la CONFIG, pas celui de l'usage : sans réponse du
+    // provider il n'y a pas d'usage, et un échec sans modèle serait inattribuable
+    // — c'est exactement le trou qu'on comble.
+    run.llm_provider = llmConfig.provider;
+    run.llm_model = llmConfig.model;
+    run.llm_attempts = attempts;
+    run.llm_last_status = last_status;
+    run.llm_ms = duration_ms;
+    run.llm_tokens_prompt = usage?.prompt_tokens ?? null;
+    run.llm_tokens_completion = usage?.completion_tokens ?? null;
+    run.llm_tokens_reasoning = usage?.reasoning_tokens ?? null;
     if (usage) {
       console.log(
         `[${projectId}] tokens ${usage.provider}/${usage.model}: ${usage.prompt_tokens ?? "?"} + ${usage.completion_tokens ?? "?"}`,
       );
     }
-
     if (!extraction) {
+      // Volontairement sans `fields_found` : un appel qui n'a pas abouti n'a rien
+      // « cherché puis pas trouvé ». L'enregistrer comme onze champs manquants
+      // ferait chuter le taux de remplissage du modèle pour une panne réseau,
+      // alors que `status` et `llm_last_status` disent déjà ce qui s'est passé.
       await markProjectStatus(sb, projectId, "failed", "llm_extraction_failed");
-      return { project_id: projectId, status: "failed", error: "llm_extraction_failed" };
+      return finish({ project_id: projectId, status: "failed", error: "llm_extraction_failed" });
     }
+    Object.assign(run, fieldsFound(extraction));
 
     // Si le LLM confirme que le site n'est pas accessible utilement
     if (!extraction.site_accessible) {
@@ -240,32 +310,41 @@ async function processOne(projectId: string): Promise<EnrichResult> {
       // Si LLM a identifié "site_en_construction", on route vers ce pipeline spécifique
       await moveOpportunityToFallbackPipeline(sb, ctx.opportunite_id, reason);
       await markProjectStatus(sb, projectId, "failed", `no_website_content: ${reason ?? "unknown"}`);
-      return {
+      // Le site a bien répondu : c'est le modèle qui le juge inexploitable. On ne
+      // touche pas à `site_reached`, sans quoi on confondrait un hôte injoignable
+      // avec une page d'attente — deux problèmes qui n'appellent pas le même
+      // correctif.
+      return finish({
         project_id: projectId,
         status: "no_website",
         error: reason ?? "site_not_useful",
-      };
+      });
     }
 
     // 7. Apply extraction
     const applyRes = await applyExtraction(sb, ctx, extraction, googleData, usage);
     console.log(`[${projectId}] applied: ${applyRes.updated_fields.join(", ")}`);
+    run.fields_written = applyRes.updated_fields;
+    run.google_reviews_inserted = applyRes.reviews_inserted;
+    run.ville_seo_source = applyRes.ville_seo_source;
+    run.service_tags_count = applyRes.service_tags_count;
 
     // 8. Mark as framer
     await markProjectStatus(sb, projectId, "framer");
 
-    return {
+    return finish({
       project_id: projectId,
       status: "success",
       updated_fields: applyRes.updated_fields,
-    };
+    });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`[${projectId}] error: ${msg}`);
+    run.error_message = msg.slice(0, 1000);
     try {
       await markProjectStatus(sb, projectId, "failed", msg.slice(0, 500));
     } catch (_) { /* ignore */ }
-    return { project_id: projectId, status: "failed", error: msg };
+    return finish({ project_id: projectId, status: "failed", error: msg });
   }
 }
 
@@ -399,7 +478,7 @@ Deno.serve(async (req: Request) => {
       console.log(`budget épuisé après ${results.length} projet(s) — ${remaining.length} restant(s)`);
       break;
     }
-    results.push(await processOne(uniq[i]));
+    results.push(await processOne(uniq[i], typeof body.source === "string" ? body.source : "unknown"));
   }
 
   const summary = {

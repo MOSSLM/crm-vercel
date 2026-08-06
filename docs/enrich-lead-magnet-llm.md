@@ -53,3 +53,53 @@ L'edge function lit ses secrets via `Deno.env` :
 La migration `sql/20260712_enrichment_llm_settings.sql`, le déploiement de la
 fonction (re-zip de `edge function enrich/*.ts`) et l'ajout du secret
 `DEEPSEEK_API_KEY` se font **côté Supabase** (le CRM ne déploie pas la fonction).
+
+## Mesurer la qualité et le coût
+
+Chaque passage de l'edge function écrit une ligne dans **`enrichment_runs`** —
+une par projet traité, **y compris les runs ignorés et échoués**. C'est ce qui
+permet de juger la fonction et de comparer les modèles ; les colonnes
+`lead_magnet_projects.enrichment_model` / `enrichment_tokens_*` restent, mais
+elles ne portent que le DERNIER run réussi d'un projet.
+
+Ce qu'une ligne contient : l'origine de l'appel (`source`), l'issue (`status`,
+`outcome_reason`), le scraping (site atteint, URL corrigée, pages et caractères
+récupérés, Jina ou fetch direct, rate-limit), Google Places (identifiant repris
+de la fiche ou re-cherché — la recherche texte est facturée), l'appel LLM
+(provider, modèle, tentatives, statut HTTP, tokens dont raisonnement, durée) et
+la qualité de l'extraction (`fields_found` champ par champ, `fields_written`,
+source de la ville SEO).
+
+Aucun contenu brut n'est stocké : ni le markdown scrapé, ni le JSON du modèle.
+
+### Où le lire
+
+**Paramètres → Enrichissement → « Qualité & coût de l'enrichissement »** :
+comparatif par modèle, taux de remplissage champ par champ, causes d'échec,
+derniers runs. En SQL, trois vues donnent la même chose sur tout l'historique :
+`v_enrichment_runs_by_model`, `v_enrichment_field_fill_rate`,
+`v_enrichment_failures` (chacune appelle une fonction homonyme qui accepte une
+date de début, ex. `select * from enrichment_metrics_by_model(now() - interval '7 days')`).
+
+### Renseigner les tarifs
+
+Les coûts sont calculés à la volée depuis **`enrichment_llm_pricing`**, en
+centimes d'euro par million de tokens. La migration sème les six modèles à `0`,
+donc aucun coût ne s'affiche tant qu'on n'a pas renseigné les prix du provider :
+
+```sql
+update enrichment_llm_pricing
+   set input_cents_per_mtok = 125, output_cents_per_mtok = 1000, updated_at = now()
+ where model = 'gpt-5';
+```
+
+Le coût n'étant jamais figé dans le journal, corriger un tarif recalcule tout
+l'historique — pas de redéploiement, pas de réécriture de lignes.
+
+### Ordre des opérations
+
+Appliquer `sql/20260806_enrichment_runs.sql` **avant** de redéployer l'edge
+function. L'inverse ne casse rien — l'insert du journal est best-effort et
+l'absence de la table ne fait qu'un `console.warn` — mais les runs de
+l'intervalle ne sont pas mesurés. Le panneau Paramètres, lui, affiche
+explicitement que la migration manque.

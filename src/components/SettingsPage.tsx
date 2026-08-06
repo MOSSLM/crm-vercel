@@ -44,6 +44,7 @@ import { THEME_PRESETS, ThemePreset } from './themePresets';
 import { EnrichmentTagsSettings } from './settings/EnrichmentTagsSettings';
 import { GoogleStatsSettings } from './settings/GoogleStatsSettings';
 import { EnrichmentLlmSettings } from './settings/EnrichmentLlmSettings';
+import { EnrichmentMetricsSettings } from './settings/EnrichmentMetricsSettings';
 import { EnrichmentReenrichSettings } from './settings/EnrichmentReenrichSettings';
 import { VilleSeoSettings } from './settings/VilleSeoSettings';
 import { MediaAutotagSettings } from './settings/MediaAutotagSettings';
@@ -489,6 +490,7 @@ export const SettingsPage: React.FC = () => {
 
         <TabsContent value="enrichment" className="space-y-6">
           <EnrichmentLlmSettings />
+          <EnrichmentMetricsSettings />
           <EnrichmentReenrichSettings />
           <VilleSeoSettings />
           <MediaAutotagSettings />
