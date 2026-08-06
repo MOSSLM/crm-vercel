@@ -44,6 +44,36 @@ export const serviceTagKey = (value: string): string =>
 export const serviceTagKeySet = (tags: readonly string[] | null | undefined): Set<string> =>
   new Set((tags ?? []).map((t) => serviceTagKey(String(t))).filter(Boolean));
 
+/**
+ * Prédicat de visibilité d'un `service_tag` SCALAIRE — page du plan de site,
+ * section, bloc — face aux tags d'une entreprise. Un tag absent ou vide ne
+ * restreint rien.
+ *
+ * À utiliser partout où une page/section est montrée ou cachée : comparés bruts,
+ * les deux vocabulaires ne se rencontrent QUE pour les services dont le libellé
+ * est déjà un seul mot ASCII. Le plan de site d'un design Claude porte le tag du
+ * nom de fichier (`service-pompe-a-chaleur.html` → "pompe-a-chaleur") là où
+ * l'entreprise porte le libellé du CRM ("pompe à chaleur") : "climatisation",
+ * "chauffage", "plomberie" et "ventilation" matchaient par coïncidence, tandis
+ * que pompe à chaleur, électricité et photovoltaïque étaient silencieusement
+ * refusées — 404 sur la page, et le lien du menu vers elle retiré.
+ *
+ * L'ensemble n'est calculé qu'une fois : ces gardes tournent en boucle sur tout
+ * un plan de site et tous les menus.
+ */
+export const serviceTagGate = (
+  enterpriseTags: readonly string[] | null | undefined,
+): ((tag: string | null | undefined) => boolean) => {
+  const have = serviceTagKeySet(enterpriseTags);
+  return (tag) => {
+    if (!tag) return true;
+    const key = serviceTagKey(tag);
+    // Un tag qui s'effondre sur une clé vide ("---") ne désigne aucun service :
+    // le traiter comme une restriction masquerait la page pour tout le monde.
+    return !key || have.has(key);
+  };
+};
+
 const EXCLUDED_SERVICE_TAGS_NORMALIZED = new Set(
   EXCLUDED_SERVICE_TAGS.map((tag) => formatServiceTag(tag))
 );

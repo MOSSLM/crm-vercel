@@ -27,6 +27,7 @@ import { splitSchemaFields } from "@/components/site-builder/editors/SchemaEdito
 import { ImagePickerField } from "@/components/site-builder/editors/ImagePickerField";
 import { VariableTextarea } from "./VariableTextarea";
 import { parseServiceTags } from "@/lib/site-builder/menu-overrides";
+import { serviceTagGate } from "@/utils/serviceTags";
 import type { SiteSectionInstance, SectionField, SectionBlockSchema, SectionImagePickerField } from "@/types";
 import { authedFetch } from "@/utils/authedFetch";
 
@@ -91,6 +92,10 @@ export function ContentWorkspace({ enterpriseId, tagCatalog = [] }: { enterprise
   // Simulation: a subset of the enterprise tags toggled for preview. null = all.
   const [simulatedTags, setSimulatedTags] = React.useState<string[] | null>(null);
   const activeTags = simulatedTags ?? enterpriseTags;
+  // Un tag posé par l'éditeur est saisi tel quel ("pompe-a-chaleur") alors que
+  // l'entreprise porte « pompe à chaleur » : masquer/afficher passe par la même
+  // porte que le rendu public, sinon l'aperçu de l'éditeur ment.
+  const activeTagAllows = React.useMemo(() => serviceTagGate(activeTags), [activeTags]);
 
   // Keep the simulated set valid when the enterprise changes.
   const prevEnterpriseId = React.useRef<number | undefined>(enterpriseId);
@@ -185,8 +190,7 @@ export function ContentWorkspace({ enterpriseId, tagCatalog = [] }: { enterprise
   }
   function sectionVisible(inst: SiteSectionInstance): boolean {
     if (inst.is_hidden) return false;
-    const t = sectionTag(inst);
-    if (t && !activeTags.includes(t)) return false;
+    if (!activeTagAllows(sectionTag(inst))) return false;
     return true;
   }
 
@@ -223,7 +227,7 @@ export function ContentWorkspace({ enterpriseId, tagCatalog = [] }: { enterprise
               </div>
               <div className="ct-page-select" role="listbox" aria-label="Pages" style={{ paddingBottom: 12 }}>
                 {state.sitemap.map((p, i) => {
-                  const hidden = !!(p.service_tag && !activeTags.includes(p.service_tag));
+                  const hidden = !activeTagAllows(p.service_tag);
                   return (
                     <button
                       key={p.id}

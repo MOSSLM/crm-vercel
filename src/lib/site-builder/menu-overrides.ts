@@ -1,5 +1,5 @@
 import type { SectionBlockInstance, SiteMenuItem, SiteMenus, SitemapPage } from "@/types";
-import { serviceTagKey, serviceTagKeySet } from "@/utils/serviceTags";
+import { serviceTagGate, serviceTagKey, serviceTagKeySet } from "@/utils/serviceTags";
 import { getParentSlug } from "./sitemap-tree";
 
 /**
@@ -134,11 +134,8 @@ export function filterSitemapByEnterpriseTags(
   enterpriseTags: string[] | undefined | null,
 ): SitemapPage[] {
   if (!Array.isArray(sitemap)) return [];
-  const tagSet = serviceTagKeySet(enterpriseTags);
-  return sitemap.filter((p) => {
-    if (!p.service_tag) return true;
-    return tagSet.has(serviceTagKey(p.service_tag));
-  });
+  const allows = serviceTagGate(enterpriseTags);
+  return sitemap.filter((p) => allows(p.service_tag));
 }
 
 /**
@@ -160,7 +157,7 @@ export function buildPublicMenus(
   const pages = Array.isArray(sitemap) ? sitemap : [];
   if (pages.length === 0) return menus;
 
-  const tagSet = new Set(enterpriseTags ?? []);
+  const allows = serviceTagGate(enterpriseTags);
   const slugSet = new Set(pages.map((p) => p.slug));
   const contentSlugs = new Set(
     (instances ?? []).filter((i) => !i.is_hidden).map((i) => i.page_slug),
@@ -170,7 +167,7 @@ export function buildPublicMenus(
   const isPageVisible = (slug: string): boolean => {
     const page = pages.find((p) => p.slug === slug);
     if (!page) return true; // external / non-sitemap link — leave untouched
-    if (page.service_tag && !tagSet.has(page.service_tag)) return false;
+    if (!allows(page.service_tag)) return false;
     return contentSlugs.has(slug);
   };
 

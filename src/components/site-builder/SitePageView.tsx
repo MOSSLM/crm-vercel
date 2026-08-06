@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { resolveSite } from "@/lib/site-resolver";
 import { buildPublicMenus } from "@/lib/site-builder/menu-overrides";
 import { serviceTagMapFromSitemap } from "@/lib/site-builder/claude-design/filter-service-links";
+import { serviceTagGate } from "@/utils/serviceTags";
 import { DynamicPageRenderer } from "./DynamicPageRenderer";
 
 /** Parse the enterprise service tags from the resolved variables map. */
@@ -59,8 +60,10 @@ export async function SitePageView({ subdomain, host, pageSlug }: SitePageViewPr
 
   // A non-home page must exist in the sitemap.
   if (!isHome && !targetPage) notFound();
-  // A page tagged with a service the enterprise doesn't have is hidden.
-  if (targetPage?.service_tag && !enterpriseTags.includes(targetPage.service_tag)) notFound();
+  // A page tagged with a service the enterprise doesn't have is hidden. Compared
+  // through serviceTagGate: the page's tag is the ASCII of its file name
+  // ("pompe-a-chaleur"), the enterprise's is the CRM label ("pompe à chaleur").
+  if (!serviceTagGate(enterpriseTags)(targetPage?.service_tag)) notFound();
   // A page with no sections is a category, not a real page.
   if (!instances.some((i) => i.page_slug === pageSlug && !i.is_hidden)) notFound();
 
