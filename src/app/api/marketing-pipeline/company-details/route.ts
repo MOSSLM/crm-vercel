@@ -3,7 +3,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { marketingCompanyDetailsSchema } from "@/app/api/_lib/schemas";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { withAuth } from "@/app/api/_lib/with-auth";
-import { writeProjectDetails } from "../_project-write";
+import { ensureProjectId, writeProjectDetails } from "../_project-write";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -96,39 +96,14 @@ export const POST = withAuth({ body: marketingCompanyDetailsSchema }, async ({ b
     }
   }
 
-  // 3) Dossier lead magnet — créé au besoin.
-  //
-  // Ville SEO, logo et chiffres clés vivent sur `lead_magnet_projects`. Quand
-  // l'enrichissement automatique n'a jamais abouti (site introuvable, page
-  // illisible), ce dossier n'existe pas : la fiche n'avait alors nulle part où
-  // enregistrer ce qu'on saisissait à la main, et l'étape « Validation
-  // données » restait « à débloquer » pour toujours. On le crée donc à la
-  // première sauvegarde, exactement comme le fait `enrich-prepare`.
+  // 3) Dossier lead magnet — créé au besoin (cf. `ensureProjectId`, partagé avec
+  // la complétion en masse : la règle « un seul dossier par entreprise » ne doit
+  // pas exister en deux exemplaires).
   let targetProjectId = project_id ?? null;
   if (!targetProjectId && project) {
-    // Le dossier est par ENTREPRISE : on le cherche d'abord ainsi, pour ne pas
-    // créer un doublon quand l'entreprise porte un second deal.
-    const { data: existing } = await supabase
-      .from("lead_magnet_projects")
-      .select("id")
-      .eq("entreprise_id", entreprise_id)
-      .order("updated_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    targetProjectId = (existing as { id?: string } | null)?.id ?? null;
-
-    if (!targetProjectId && opportunite_id) {
-      const { data, error } = await supabase
-        .from("lead_magnet_projects")
-        .upsert(
-          { opportunite_id, entreprise_id, pret_pour_lm: true, statut: "draft" },
-          { onConflict: "opportunite_id" },
-        )
-        .select("id")
-        .single();
-      if (error) return jsonError(error.message, 500, {}, cors);
-      targetProjectId = (data as { id: string }).id;
-    }
+    const found = await ensureProjectId(supabase, { entreprise_id, opportunite_id });
+    if (found.error) return jsonError(found.error.message ?? "dossier introuvable", 500, {}, cors);
+    targetProjectId = found.id;
   }
 
   // 3 bis) Overrides / logo / stats / zones.

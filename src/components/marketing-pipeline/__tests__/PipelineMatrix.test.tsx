@@ -97,6 +97,17 @@ const TRIAGE_ROWS: BoardItem[] = [
 ];
 
 function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) {
+  const bulkHandlers: BulkHandlers = {
+    onEnrich: jest.fn(),
+    onComplete: jest.fn(),
+    onValidateEnrich: jest.fn(),
+    onCreateSites: jest.fn(),
+    onValidateSites: jest.fn(),
+    onCreateAudits: jest.fn(),
+    onValidateAudits: jest.fn(),
+    onAssign: jest.fn(),
+    onMove: jest.fn(),
+  };
   render(
     <PipelineMatrix
       items={rows}
@@ -109,23 +120,16 @@ function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) 
       working={null}
       onRefresh={jest.fn()}
       handlers={handlers}
-      bulk={{
-        onEnrich: jest.fn(),
-        onValidateEnrich: jest.fn(),
-        onCreateSites: jest.fn(),
-        onValidateSites: jest.fn(),
-        onCreateAudits: jest.fn(),
-        onValidateAudits: jest.fn(),
-        onAssign: jest.fn(),
-        onMove: jest.fn(),
-      }}
+      bulk={bulkHandlers}
     />,
   );
+  return bulkHandlers;
 }
 
 function renderMatrix(bulk: Partial<BulkHandlers> = {}) {
   const bulkHandlers: BulkHandlers = {
     onEnrich: jest.fn(),
+    onComplete: jest.fn(),
     onValidateEnrich: jest.fn(),
     onCreateSites: jest.fn(),
     onValidateSites: jest.fn(),
@@ -312,6 +316,38 @@ describe("PipelineMatrix — tri et filtre sur la complétude et les tickets", (
     renderRows([item({ id: "s", name: "Sigma" })], { ...noopHandlers, onNotes });
     fireEvent.click(screen.getAllByTitle("Signaler un problème (ticket)")[0]);
     expect(onNotes).toHaveBeenCalledWith(expect.objectContaining({ id: "s" }), "enrichment");
+  });
+});
+
+/**
+ * Trouver les lignes incomplètes ne servait à rien tant qu'il fallait ensuite
+ * ouvrir chacune leur fiche. Le bouton part donc de là où on les a trouvées — la
+ * toolbar, à côté du filtre — et n'emporte QUE les incomplètes : ouvrir la
+ * grille sur des lignes qui n'ont rien à compléter n'afficherait aucune colonne.
+ */
+describe("PipelineMatrix — compléter les données manquantes", () => {
+  it("ouvre la grille sur les lignes visibles incomplètes, depuis la toolbar", () => {
+    const bulk = renderRows(TRIAGE_ROWS);
+    fireEvent.click(screen.getByTitle(/Compléter les variables manquantes des lignes visibles/));
+    expect(bulk.onComplete).toHaveBeenCalledTimes(1);
+    expect((bulk.onComplete as jest.Mock).mock.calls[0][0].map((r: BoardItem) => r.name)).toEqual([
+      "Yota",
+      "Xena",
+    ]);
+  });
+
+  it("ne propose rien quand plus aucune ligne visible n'est incomplète", () => {
+    renderRows(TRIAGE_ROWS);
+    fireEvent.change(screen.getByTitle(/Complétude des variables/), { target: { value: "complete" } });
+    expect(screen.queryByTitle(/Compléter les variables manquantes des lignes visibles/)).toBeNull();
+  });
+
+  it("depuis la sélection, n'emporte que les lignes cochées encore incomplètes", () => {
+    const bulk = renderRows(TRIAGE_ROWS);
+    fireEvent.click(rowCheckbox("Zeta"));
+    fireEvent.click(rowCheckbox("Xena"));
+    fireEvent.click(bar().getByTitle(/Compléter les variables manquantes des lignes cochées/));
+    expect((bulk.onComplete as jest.Mock).mock.calls[0][0].map((r: BoardItem) => r.name)).toEqual(["Xena"]);
   });
 });
 

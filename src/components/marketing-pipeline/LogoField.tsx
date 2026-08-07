@@ -28,6 +28,13 @@ export interface LogoFieldProps {
   required?: boolean;
   invalid?: boolean;
   hint?: string;
+  /**
+   * Tient dans une cellule de tableau : une seule ligne, vignette réduite, ni
+   * libellé ni aide (la colonne les porte déjà). Le comportement ne change pas —
+   * même dépôt, même import, même bascule URL. Un second composant « logo
+   * compact » aurait dérivé du premier au premier correctif.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -79,6 +86,7 @@ export const LogoField: React.FC<LogoFieldProps> = ({
   required,
   invalid,
   hint,
+  compact,
 }) => {
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = React.useState(false);
@@ -105,19 +113,24 @@ export const LogoField: React.FC<LogoFieldProps> = ({
     [entrepriseId, onChange],
   );
 
+  const thumb = compact ? "h-7 w-7" : "h-12 w-12";
+
   return (
     <div className="space-y-1" data-invalid={invalid ? "true" : undefined}>
-      <Label className="text-xs" style={{ color: invalid ? "var(--danger)" : "var(--text-3)" }}>
-        {label}
-        {required && <span style={{ color: "var(--danger)", marginLeft: 3 }}>*</span>}
-      </Label>
+      {!compact && (
+        <Label className="text-xs" style={{ color: invalid ? "var(--danger)" : "var(--text-3)" }}>
+          {label}
+          {required && <span style={{ color: "var(--danger)", marginLeft: 3 }}>*</span>}
+        </Label>
+      )}
 
       <div
         role="button"
         tabIndex={0}
         aria-label={`Déposer ou choisir ${label.toLowerCase()}`}
         className={
-          "flex items-center gap-3 rounded-md border border-dashed p-2 text-left transition-colors " +
+          "flex items-center rounded-md border border-dashed text-left transition-colors " +
+          (compact ? "gap-2 p-1 " : "gap-3 p-2 ") +
           (dragging ? "border-primary bg-primary/5" : "hover:bg-muted/50")
         }
         style={invalid ? { borderColor: "var(--danger)" } : undefined}
@@ -144,11 +157,13 @@ export const LogoField: React.FC<LogoFieldProps> = ({
           <img
             src={value}
             alt={label}
-            className="h-12 w-12 shrink-0 rounded border bg-background object-contain"
+            className={`${thumb} shrink-0 rounded border bg-background object-contain`}
             onError={() => setBroken(true)}
           />
         ) : (
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded border bg-muted text-muted-foreground">
+          <span
+            className={`${thumb} flex shrink-0 items-center justify-center rounded border bg-muted text-muted-foreground`}
+          >
             {broken ? <ImageOff className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
           </span>
         )}
@@ -157,15 +172,18 @@ export const LogoField: React.FC<LogoFieldProps> = ({
           {busy ? (
             <span className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" />
-              Import en cours…
+              {compact ? "Import…" : "Import en cours…"}
             </span>
           ) : value ? (
             <>
               <span className="block truncate font-medium">
                 {broken ? "Image introuvable" : "Logo en place"}
               </span>
-              <span className="block truncate text-muted-foreground">{value}</span>
+              {/* L'URL complète ne tient pas dans une cellule de tableau. */}
+              {!compact && <span className="block truncate text-muted-foreground">{value}</span>}
             </>
+          ) : compact ? (
+            <span className="block truncate text-muted-foreground">Déposer ou choisir…</span>
           ) : (
             <>
               <span className="block font-medium">Glisse le logo ici</span>
@@ -202,14 +220,19 @@ export const LogoField: React.FC<LogoFieldProps> = ({
       />
 
       <div className="flex items-center justify-between gap-2">
-        {hint ? <p className="text-[11px] leading-snug text-muted-foreground">{hint}</p> : <span />}
+        {hint && !compact ? (
+          <p className="text-[11px] leading-snug text-muted-foreground">{hint}</p>
+        ) : (
+          <span />
+        )}
         <button
           type="button"
           className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground hover:underline"
+          title={compact ? (showUrl ? "Masquer l’URL" : "Coller une URL") : undefined}
           onClick={() => setShowUrl((v) => !v)}
         >
           <Link2 className="h-3 w-3" />
-          {showUrl ? "Masquer l’URL" : "Coller une URL"}
+          {compact ? "URL" : showUrl ? "Masquer l’URL" : "Coller une URL"}
         </button>
       </div>
 
@@ -217,6 +240,7 @@ export const LogoField: React.FC<LogoFieldProps> = ({
         <Input
           value={value}
           placeholder="https://…/logo.png"
+          className={compact ? "h-7 text-xs" : undefined}
           onChange={(e) => onChange(e.target.value)}
           onClick={(e) => e.stopPropagation()}
         />

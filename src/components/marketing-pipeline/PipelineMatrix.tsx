@@ -28,6 +28,7 @@ import {
   Target,
   ChevronRight,
   MessageSquare,
+  ListChecks,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -797,6 +798,7 @@ function BulkBar({
   onClear: () => void;
   bulk: BulkHandlers;
 }) {
+  const toComplete = rows.filter((r) => missingCount(r) > 0);
   const toValidateEnrich = rows.filter((r) => r.project && !r.project.enrichment_validated);
   const toCreateSite = rows.filter((r) => r.entreprise_id != null && !r.site);
   const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
@@ -821,6 +823,16 @@ function BulkBar({
         <Sparkles className="ico-sm" />
         {overwrite ? "Ré-enrichir" : "Enrichir"}
         {ct(rows.length)}
+      </button>
+      <button
+        className="btn sm"
+        disabled={toComplete.length === 0}
+        title="Compléter les variables manquantes des lignes cochées, dans une grille"
+        onClick={() => bulk.onComplete(toComplete)}
+      >
+        <ListChecks className="ico-sm" />
+        Compléter
+        {ct(toComplete.length)}
       </button>
       <button className="btn sm" disabled={busy || toValidateEnrich.length === 0} onClick={() => bulk.onValidateEnrich(toValidateEnrich)}>
         <ClipboardCheck className="ico-sm" />
@@ -1087,6 +1099,8 @@ export function PipelineMatrix({
     () => visibleRows.filter((it) => selected.has(it.id)),
     [visibleRows, selected],
   );
+  /** Lignes visibles auxquelles il manque encore une variable requise. */
+  const incompleteRows = React.useMemo(() => visibleRows.filter((it) => missingCount(it) > 0), [visibleRows]);
   const allVisibleSelected = visibleRows.length > 0 && selectedRows.length === visibleRows.length;
   const toggleAllVisible = () =>
     setSelected((s) => {
@@ -1270,6 +1284,22 @@ export function PipelineMatrix({
           <option value="incomplete">Données : incomplètes</option>
           <option value="complete">Données : complètes</option>
         </select>
+
+        {/* Compléter d'un coup toutes les lignes visibles encore incomplètes.
+            Posé à côté du filtre parce que c'est là qu'on les a trouvées — et
+            sans passer par la sélection, qui aurait demandé de cocher soixante
+            cases avant de saisir le premier champ. */}
+        {incompleteRows.length > 0 && (
+          <button
+            className="btn sm"
+            title="Compléter les variables manquantes des lignes visibles, dans une grille"
+            onClick={() => bulk.onComplete(incompleteRows)}
+          >
+            <ListChecks className="ico-sm" />
+            Compléter
+            <span className="ct">{incompleteRows.length}</span>
+          </button>
+        )}
 
         <select
           className="mp-select"

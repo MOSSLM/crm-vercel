@@ -16,6 +16,54 @@
  * module fait que l'application ne dépend plus de cette migration.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * Le dossier lead magnet de cette entreprise, créé s'il n'existe pas encore.
+ *
+ * Ville SEO, logo et chiffres clés vivent sur `lead_magnet_projects`. Quand
+ * l'enrichissement automatique n'a jamais abouti (site introuvable, page
+ * illisible), ce dossier n'existe pas : ce qu'on saisit à la main n'a alors
+ * nulle part où aller, et l'étape « Validation données » reste « à débloquer »
+ * pour toujours.
+ *
+ * La recherche part de l'ENTREPRISE et non de l'opportunité : le dossier est par
+ * entreprise (c'est le cas de tout ce qu'il porte), et chercher par
+ * `opportunite_id` créait un second dossier dès qu'une entreprise avait deux
+ * deals — puis en affichait un différent sur chaque carte.
+ *
+ * `null` si rien n'existe et qu'aucune opportunité n'est donnée pour en créer un.
+ */
+export async function ensureProjectId(
+  supabase: SupabaseClient,
+  ids: { entreprise_id: number; opportunite_id?: string | null; project_id?: string | null },
+): Promise<{ id: string | null; error: WriteError | null }> {
+  if (ids.project_id) return { id: ids.project_id, error: null };
+
+  const existing = await supabase
+    .from("lead_magnet_projects")
+    .select("id")
+    .eq("entreprise_id", ids.entreprise_id)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const found = (existing.data as { id?: string } | null)?.id ?? null;
+  if (found) return { id: found, error: null };
+
+  if (!ids.opportunite_id) return { id: null, error: null };
+
+  const created = await supabase
+    .from("lead_magnet_projects")
+    .upsert(
+      { opportunite_id: ids.opportunite_id, entreprise_id: ids.entreprise_id, pret_pour_lm: true, statut: "draft" },
+      { onConflict: "opportunite_id" },
+    )
+    .select("id")
+    .single();
+  if (created.error) return { id: null, error: created.error };
+  return { id: (created.data as { id: string }).id, error: null };
+}
+
 /** `true` quand la colonne n'existe pas encore (migration non appliquée). */
 export const isMissingColumn = (error: WriteError | null): boolean =>
   !!error &&
