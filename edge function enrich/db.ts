@@ -22,11 +22,13 @@ import {
 import { parisRegionFor, pickSeoCity, type LatLng } from "./geo.ts";
 import {
   loadBigCityCandidates,
+  loadCommunesForPostalCode,
   loadGeoSettings,
   loadOriginCommune,
   loadSurroundingCities,
   loadVilleSeoOverride,
 } from "./communes.ts";
+import { isFrenchPostalCode, normalizeCommuneName, parseFrenchAddress } from "./address.ts";
 
 // Pipeline "Entreprises sans site web" — UUID constant dans ce projet
 const NO_WEBSITE_PIPELINE_ID = "1bbf2933-3c91-4494-9ab9-c582369d25eb";
@@ -397,6 +399,12 @@ export async function applyExtraction(
   let villeSeoSource: VilleSeoSource | null = null;
   let serviceTagsCount = 0;
 
+  // --- ville + code postal : lus dans l'adresse ---
+  // En tête de fonction, et pas à côté des autres écritures entreprise : tout ce
+  // qui suit — ville SEO, zones desservies, centre de la commune — se calcule à
+  // partir de ces deux colonnes.
+  await applyLocality(sb, ctx, extraction, google, entrepriseUpdate, updatedFields);
+
   // --- services_tags : filtrage allowlist + merge sans doublons ---
   // Seuls les tags autorisés (config globale enrichment_tag_settings) sont
   // utilisés par l'enrichissement. On ne supprime jamais un tag déjà présent
@@ -703,6 +711,165 @@ async function updateProject(
   return retry.error ? retry.error.message : null;
 }
 
+// ---------------------------------------------------------------------
+// Ville et code postal de l'entreprise
+// ---------------------------------------------------------------------
+
+/** Adresse qui a fourni la lecture. */
+export type LocalitySource = "google" | "llm" | "override_address" | "entreprise";
+
+export interface LocalityDecision {
+  code_postal: string | null;
+  ville: string | null;
+  source: LocalitySource;
+  /** Comment la commune a été arrêtée — utile pour expliquer un champ contesté. */
+  detail: string;
+}
+
+/**
+ * Ville et code postal lus dans l'adresse, puis confirmés sur `communes_fr`.
+ *
+ * Ces deux champs sont exigés pour créer un site (cf. `missingForSite`), et
+ * l'enrichissement ne les remplissait jamais : il extrayait pourtant une adresse
+ * propre, la stockait dans `override_address`, et laissait les deux colonnes
+ * vides. Résultat, une fiche dont l'adresse disait « 12 rue des Lilas, 21800
+ * Quetigny » sortait « incomplète » sur la ville ET le code postal, et attendait
+ * qu'un humain recopie ce qui était déjà écrit trois lignes plus haut.
+ *
+ * Les adresses sont essayées de la plus structurée à la plus brute, et celle qui
+ * donne les DEUX champs l'emporte sur celle qui n'en donne qu'un — Google est en
+ * général le plus fiable, mais une fiche Google absente ne doit pas empêcher de
+ * lire l'adresse que le CRM possède déjà.
+ *
+ * `communes_fr` sert d'arbitre :
+ *   - le nom de l'adresse y correspond → on prend l'orthographe officielle, ce
+ *     qui rend les accents perdus par une adresse en capitales ;
+ *   - il n'y correspond pas mais le code postal ne couvre qu'une commune → c'est
+ *     elle (un code postal est plus structuré qu'un nom saisi à la main) ;
+ *   - aucun nom lu et le code postal est partagé → on ne rend PAS de ville. Une
+ *     commune inventée se propagerait à tout le site sans que personne ne la
+ *     voie, alors qu'un champ vide reste signalé en rouge sur la fiche.
+ *
+ * Référentiel non chargé (`communes_fr` vide) : on rend ce que l'adresse disait,
+ * ce qui reste très au-dessus de rien du tout.
+ */
+export async function resolveLocality(
+  sb: SupabaseClient,
+  ctx: ProjectContext,
+  extraction: LLMExtraction | null,
+  google: GooglePlaceData | null,
+): Promise<LocalityDecision | null> {
+  const sources: Array<{ source: LocalitySource; adresse: string | null }> = [
+    { source: "google", adresse: google?.formatted_address ?? null },
+    { source: "llm", adresse: extraction?.address_clean ?? null },
+    { source: "override_address", adresse: ctx.lmp.override_address },
+    { source: "entreprise", adresse: ctx.entreprise.adresse },
+  ];
+
+  const parsed = sources
+    .map((s) => ({ ...s, ...parseFrenchAddress(s.adresse) }))
+    .filter((p) => p.code_postal !== null);
+  // Une adresse qui donne le code postal ET la commune vaut mieux qu'une adresse
+  // mieux placée dans l'ordre mais tronquée.
+  const best = parsed.find((p) => p.ville !== null) ?? parsed[0];
+  if (!best || !best.code_postal) return null;
+
+  const communes = await loadCommunesForPostalCode(sb, best.code_postal);
+  if (communes.length === 0) {
+    return {
+      code_postal: best.code_postal,
+      ville: best.ville,
+      source: best.source,
+      detail: "adresse (code postal inconnu du référentiel)",
+    };
+  }
+
+  const target = normalizeCommuneName(best.ville);
+  const match = target
+    ? communes.find((c) => normalizeCommuneName(c.nom) === target)
+    : undefined;
+  if (match) {
+    return {
+      code_postal: best.code_postal,
+      ville: match.nom,
+      source: best.source,
+      detail: "adresse confirmée par communes_fr",
+    };
+  }
+  if (communes.length === 1) {
+    return {
+      code_postal: best.code_postal,
+      ville: communes[0].nom,
+      source: best.source,
+      detail: best.ville
+        ? `communes_fr (« ${best.ville} » lu dans l'adresse ne correspond pas)`
+        : "communes_fr (code postal sans ambiguïté)",
+    };
+  }
+  return {
+    code_postal: best.code_postal,
+    ville: null,
+    source: best.source,
+    detail: `commune indécidable : ${communes.length} communes partagent ${best.code_postal}`,
+  };
+}
+
+/**
+ * Vrai quand `entreprises.code_postal` doit être (ré)écrit.
+ *
+ * Vide, bien sûr — mais aussi quand la valeur en place n'est pas un code postal :
+ * ces colonnes ont accueilli des restes de scraping (« 21800 Quetigny », « 4(9) »)
+ * que la fiche compte comme renseignés alors qu'ils ne passent aucune
+ * validation. Les corriger est l'objet même de cette lecture.
+ */
+function needsPostalCode(current: string | null): boolean {
+  return !isFrenchPostalCode(current);
+}
+
+/**
+ * Applique ville et code postal à l'entreprise, sans jamais écraser une ville
+ * déjà renseignée — un nom saisi à la main reste plus sûr qu'un nom déduit.
+ *
+ * `ctx` est mis à jour au passage : la ville SEO, les zones desservies et le
+ * centre de la commune se calculent tous à partir de ces deux colonnes, et se
+ * rabattaient jusqu'ici sur le LLM quand elles étaient vides. Les remplir AVANT
+ * ces calculs, c'est la moitié de l'intérêt de l'opération.
+ */
+async function applyLocality(
+  sb: SupabaseClient,
+  ctx: ProjectContext,
+  extraction: LLMExtraction | null,
+  google: GooglePlaceData | null,
+  entrepriseUpdate: Record<string, unknown>,
+  updatedFields: string[],
+): Promise<void> {
+  const wantsPostal = needsPostalCode(ctx.entreprise.code_postal);
+  const wantsVille = !(ctx.entreprise.ville ?? "").trim();
+  if (!wantsPostal && !wantsVille) return;
+
+  const locality = await resolveLocality(sb, ctx, extraction, google);
+  if (!locality) {
+    console.log(`[${ctx.project_id}] ville/code postal : aucune adresse exploitable`);
+    return;
+  }
+
+  console.log(
+    `[${ctx.project_id}] ville/code postal = ${locality.ville ?? "?"} / ${locality.code_postal ?? "?"}` +
+      ` — adresse ${locality.source} (${locality.detail})`,
+  );
+
+  if (wantsPostal && locality.code_postal) {
+    entrepriseUpdate.code_postal = locality.code_postal;
+    ctx.entreprise.code_postal = locality.code_postal;
+    updatedFields.push(`entreprise.code_postal(${locality.source})`);
+  }
+  if (wantsVille && locality.ville) {
+    entrepriseUpdate.ville = locality.ville;
+    ctx.entreprise.ville = locality.ville;
+    updatedFields.push(`entreprise.ville(${locality.source})`);
+  }
+}
+
 export type VilleSeoSource = "override" | "paris_region" | "geo" | "llm" | "entreprise";
 
 export interface VilleSeoDecision {
@@ -850,6 +1017,8 @@ export interface RecomputeResult {
   ville_seo?: string;
   source?: VilleSeoSource;
   reason?: string;
+  /** Colonnes entreprise rattrapées au passage (ville, code postal). */
+  locality?: string[];
 }
 
 export interface GoogleStatsResult {
@@ -943,6 +1112,29 @@ export async function refreshGoogleStats(
 }
 
 /**
+ * Rattrape ville et code postal sur l'entreprise, hors enrichissement complet.
+ *
+ * Même règle que pendant l'enrichissement (`applyLocality`), mais l'écriture est
+ * faite ici : le recalcul de la ville SEO n'accumule pas d'update entreprise.
+ * Une écriture refusée n'interrompt rien — `ctx` reste corrigé en mémoire, donc
+ * le calcul qui suit en profite quand même.
+ */
+async function backfillLocality(sb: SupabaseClient, ctx: ProjectContext): Promise<string[]> {
+  const entrepriseUpdate: Record<string, unknown> = {};
+  const updatedFields: string[] = [];
+  await applyLocality(sb, ctx, null, null, entrepriseUpdate, updatedFields);
+  if (Object.keys(entrepriseUpdate).length === 0) return [];
+
+  entrepriseUpdate.updated_at = new Date().toISOString();
+  const { error } = await sb.from("entreprises").update(entrepriseUpdate).eq("id", ctx.entreprise_id);
+  if (error) {
+    console.warn(`[${ctx.project_id}] ville/code postal non écrits : ${error.message}`);
+    return [];
+  }
+  return updatedFields;
+}
+
+/**
  * Recalcule la ville SEO d'un projet déjà enrichi, sans rejouer le scraping ni
  * le LLM — donc sans coût. Sert à rattraper les projets remplis par une version
  * antérieure de la règle.
@@ -950,6 +1142,13 @@ export async function refreshGoogleStats(
  * Contrairement à l'enrichissement, l'écriture ÉCRASE la valeur en place : c'est
  * tout l'intérêt d'un recalcul. Garde-fou : les projets dont la ville SEO a été
  * saisie à la main (`override_city_source = 'manual'`) sont laissés intacts.
+ *
+ * La ville et le code postal de l'entreprise sont rattrapés au passage. C'est la
+ * même lecture d'adresse que l'enrichissement, sans appel externe ni coût, et
+ * c'est ce qui permet de réparer le parc déjà enrichi sans repayer un run
+ * complet. Elle est faite AVANT le garde-fou « ville SEO saisie à la main » : les
+ * deux données n'ont rien à voir, une ville SEO corrigée à la main ne dit rien du
+ * code postal de l'entreprise.
  */
 export async function recomputeVilleSeo(
   sb: SupabaseClient,
@@ -961,23 +1160,32 @@ export async function recomputeVilleSeo(
   }
   const ctx = ctxOrErr;
 
+  const locality = await backfillLocality(sb, ctx);
+  const withLocality = (result: RecomputeResult): RecomputeResult =>
+    locality.length > 0 ? { ...result, locality } : result;
+
   const { data: row } = await sb
     .from("lead_magnet_projects")
     .select("override_city, override_city_source")
     .eq("id", projectId)
     .maybeSingle();
   if (row?.override_city_source === "manual") {
-    return { project_id: projectId, status: "skipped", reason: "manual" };
+    return withLocality({ project_id: projectId, status: "skipped", reason: "manual" });
   }
 
   // Pas d'appel Google ici : `resolveOrigin` se rabat sur les coordonnées de
   // l'URL Google déjà stockée, puis sur le centre de la commune. Gratuit.
   const decision = await resolveVilleSeo(sb, ctx, null, null);
   if (!decision) {
-    return { project_id: projectId, status: "failed", reason: "no_source" };
+    return withLocality({ project_id: projectId, status: "failed", reason: "no_source" });
   }
   if (decision.ville === row?.override_city) {
-    return { project_id: projectId, status: "unchanged", ville_seo: decision.ville, source: decision.source };
+    return withLocality({
+      project_id: projectId,
+      status: "unchanged",
+      ville_seo: decision.ville,
+      source: decision.source,
+    });
   }
 
   const error = await updateProject(sb, projectId, {
@@ -987,10 +1195,15 @@ export async function recomputeVilleSeo(
     updated_at: new Date().toISOString(),
   });
   if (error) {
-    return { project_id: projectId, status: "failed", reason: error };
+    return withLocality({ project_id: projectId, status: "failed", reason: error });
   }
 
-  return { project_id: projectId, status: "updated", ville_seo: decision.ville, source: decision.source };
+  return withLocality({
+    project_id: projectId,
+    status: "updated",
+    ville_seo: decision.ville,
+    source: decision.source,
+  });
 }
 
 async function insertReviewsIfNeeded(

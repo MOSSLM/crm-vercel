@@ -2,7 +2,12 @@
 // logique de sélection (désambiguïsation, spécificité des corrections, repli sur
 // les valeurs par défaut), pas le SDK.
 import { DEFAULT_GEO_SETTINGS } from "../geo";
-import { loadGeoSettings, loadOriginCommune, loadVilleSeoOverride } from "../communes";
+import {
+  loadCommunesForPostalCode,
+  loadGeoSettings,
+  loadOriginCommune,
+  loadVilleSeoOverride,
+} from "../communes";
 
 type Row = Record<string, unknown>;
 
@@ -86,6 +91,34 @@ describe("loadVilleSeoOverride", () => {
     const sb = fakeClient({ ville_seo_overrides: { rows: [] } });
     await expect(loadVilleSeoOverride(sb, null, "Peu-Importe")).resolves.toBeNull();
     await expect(loadVilleSeoOverride(sb, "44210", "Peu-Importe")).resolves.toBeNull();
+  });
+});
+
+describe("loadCommunesForPostalCode", () => {
+  // Sert à confirmer la commune lue dans l'adresse : le NOMBRE de communes
+  // compte autant que leurs noms, puisqu'un code postal partagé ne permet pas de
+  // trancher sans un nom en face.
+  it("rend toutes les communes du code postal, coordonnées ou non", async () => {
+    const sb = fakeClient({
+      communes_fr: {
+        rows: [
+          { nom: "Petite-Commune", population: 800, lat: 1, lon: 1 },
+          { nom: "Sans-Centre", population: null, lat: null, lon: null },
+        ],
+      },
+    });
+    await expect(loadCommunesForPostalCode(sb, "21800")).resolves.toEqual([
+      { nom: "Petite-Commune", population: 800, lat: 1, lon: 1 },
+      { nom: "Sans-Centre", population: 0, lat: null, lon: null },
+    ]);
+  });
+
+  it("rend [] sans code postal français, ou si le référentiel manque", async () => {
+    const rows = [{ nom: "Quetigny", population: 9000, lat: 1, lon: 1 }];
+    await expect(loadCommunesForPostalCode(fakeClient({ communes_fr: { rows } }), "CH-1200")).resolves.toEqual([]);
+    await expect(loadCommunesForPostalCode(fakeClient({ communes_fr: { rows } }), null)).resolves.toEqual([]);
+    const missing = fakeClient({ communes_fr: { error: { code: "42P01", message: "does not exist" } } });
+    await expect(loadCommunesForPostalCode(missing, "21800")).resolves.toEqual([]);
   });
 });
 

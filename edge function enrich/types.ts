@@ -113,9 +113,10 @@ export interface EnrichRequest {
   /**
    * Par défaut : enrichissement complet (scraping + Google + LLM).
    *
-   * `recompute_ville_seo` ne rejoue QUE le calcul de la ville SEO — aucun appel
-   * externe, aucun coût — pour rattraper les projets remplis par une version
-   * antérieure de la règle.
+   * `recompute_ville_seo` ne rejoue QUE ce qui se calcule en local — la ville
+   * SEO, plus la ville et le code postal lus dans l'adresse déjà stockée. Aucun
+   * appel externe, aucun coût : c'est ce qui permet de rattraper les fiches
+   * remplies par une version antérieure des règles sans repayer un run complet.
    *
    * `refresh_google_stats` ne va chercher QUE la note et le nombre d'avis sur la
    * fiche Google : un appel Places, ni scraping ni LLM. Aucune IA n'entre en jeu,

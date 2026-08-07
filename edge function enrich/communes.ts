@@ -122,6 +122,59 @@ export async function loadVilleSeoOverride(
 // ---------------------------------------------------------------------
 // Commune d'origine
 // ---------------------------------------------------------------------
+
+/** Une ligne de `communes_fr`. Les coordonnées peuvent manquer. */
+export interface CommuneRow {
+  nom: string;
+  population: number;
+  lat: number | null;
+  lon: number | null;
+}
+
+/**
+ * Toutes les communes qui portent ce code postal, telles quelles.
+ *
+ * Rendue publique parce qu'elle sert à deux choses très différentes : situer
+ * l'entreprise pour la ville SEO (`loadOriginCommune`, qui exige des
+ * coordonnées) et confirmer la commune lue dans l'adresse (`resolveLocality`
+ * dans `db.ts`, à qui le seul NOM suffit — et pour qui le NOMBRE de communes
+ * compte, puisqu'un code postal partagé par plusieurs communes ne permet pas de
+ * deviner laquelle sans un nom en face).
+ */
+export async function loadCommunesForPostalCode(
+  sb: SupabaseClient,
+  codePostal: string | null,
+): Promise<CommuneRow[]> {
+  const cp = (codePostal ?? "").trim();
+  if (!/^\d{5}$/.test(cp)) return [];
+
+  const { data, error } = await sb
+    .from("communes_fr")
+    .select("nom, population, lat, lon")
+    .contains("codes_postaux", [cp]);
+
+  if (error) {
+    if (!isMissingRelation(error)) console.warn(`loadCommunesForPostalCode: ${error.message}`);
+    return [];
+  }
+
+  return ((data ?? []) as Array<{
+    nom: string | null;
+    population: number | null;
+    lat: number | null;
+    lon: number | null;
+  }>)
+    .filter((r): r is { nom: string; population: number | null; lat: number | null; lon: number | null } =>
+      typeof r.nom === "string" && r.nom.trim().length > 0
+    )
+    .map((r) => ({
+      nom: r.nom,
+      population: r.population ?? 0,
+      lat: typeof r.lat === "number" ? r.lat : null,
+      lon: typeof r.lon === "number" ? r.lon : null,
+    }));
+}
+
 /**
  * La commune de l'entreprise et son centre, à partir du code postal.
  *
@@ -135,36 +188,18 @@ export async function loadOriginCommune(
   codePostal: string | null,
   ville: string | null,
 ): Promise<OriginCommune | null> {
-  const cp = (codePostal ?? "").trim();
-  if (!/^\d{5}$/.test(cp)) return null;
-
-  const { data, error } = await sb
-    .from("communes_fr")
-    .select("nom, population, lat, lon")
-    .contains("codes_postaux", [cp]);
-
-  if (error) {
-    if (!isMissingRelation(error)) console.warn(`loadOriginCommune: ${error.message}`);
-    return null;
-  }
-
-  const rows = ((data ?? []) as Array<{
-    nom: string | null;
-    population: number | null;
-    lat: number | null;
-    lon: number | null;
-  }>).filter((r): r is { nom: string; population: number | null; lat: number; lon: number } =>
-    typeof r.nom === "string" && typeof r.lat === "number" && typeof r.lon === "number"
+  const rows = (await loadCommunesForPostalCode(sb, codePostal)).filter(
+    (r): r is CommuneRow & { lat: number; lon: number } => r.lat !== null && r.lon !== null,
   );
   if (rows.length === 0) return null;
 
   const target = normalizeName(ville ?? "");
   const exact = target ? rows.find((r) => normalizeName(r.nom) === target) : undefined;
-  const chosen = exact ?? rows.slice().sort((a, b) => (b.population ?? 0) - (a.population ?? 0))[0];
+  const chosen = exact ?? rows.slice().sort((a, b) => b.population - a.population)[0];
 
   return {
     nom: chosen.nom,
-    population: chosen.population ?? 0,
+    population: chosen.population,
     lat: chosen.lat,
     lon: chosen.lon,
   };
