@@ -927,6 +927,9 @@ const numStr = (v: unknown): string => (v == null || v === "" ? "" : String(v));
 // missingForSite). Keyed by form field so the modal can outline them in red.
 type RequiredRule = { field: keyof EditForm; label: string; ok: (f: EditForm) => boolean };
 
+/** Champ du formulaire porté par une règle de complétude. */
+type RequiredField = RequiredRule["field"];
+
 const SITE_REQUIRED: RequiredRule[] = [
   { field: "name", label: "Nom", ok: (f) => f.name.trim().length > 0 },
   { field: "ville", label: "Ville", ok: (f) => f.ville.trim().length > 0 },
@@ -999,6 +1002,16 @@ const OpportunityEditModal: React.FC<{
   const [loading, setLoading] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [enrichmentId, setEnrichmentId] = React.useState<string | null>(null);
+  /**
+   * Champs requis vides À L'OUVERTURE de la fiche. Ce sont eux que le bloc
+   * « À compléter » remonte en tête.
+   *
+   * Figé au chargement, et pas recalculé à chaque frappe : un champ qui
+   * regagnerait sa place dès la première lettre saisie ferait sauter la moitié du
+   * formulaire sous le curseur. Le surlignage rouge, lui, suit la saisie en
+   * direct — c'est le repère qui doit être vivant, pas la mise en page.
+   */
+  const [missingAtOpen, setMissingAtOpen] = React.useState<RequiredField[]>([]);
   const [reviews, setReviews] = React.useState<ReviewRow[]>([]);
   const [tagCatalog, setTagCatalog] = React.useState<string[]>([]);
   const deletedReviewIds = React.useRef<string[]>([]);
@@ -1035,6 +1048,7 @@ const OpportunityEditModal: React.FC<{
     setLoading(true);
     setForm(EMPTY_FORM);
     setEnrichmentId(null);
+    setMissingAtOpen([]);
     setReviews([]);
     deletedReviewIds.current = [];
     variablesRef.current = {};
@@ -1089,7 +1103,7 @@ const OpportunityEditModal: React.FC<{
           is_active: r.is_active !== false,
         })),
       );
-      setForm({
+      const loaded: EditForm = {
         name: (c.name as string) ?? "",
         ville: (c.ville as string) ?? "",
         lm_override_city: (p.override_city as string) ?? "",
@@ -1124,7 +1138,11 @@ const OpportunityEditModal: React.FC<{
         enr_services: fromArr(e.services_list),
         enr_contact_page: (e.contact_page_url as string) ?? "",
         enr_summary: (e.site_summary as string) ?? "",
-      });
+      };
+      setForm(loaded);
+      // Le dossier lead magnet est créé à l'enregistrement quand il manque : on
+      // évalue donc toujours la liste complète, celle de `siteRequiredFor(true)`.
+      setMissingAtOpen(SITE_REQUIRED_WITH_PROJECT.filter((r) => !r.ok(loaded)).map((r) => r.field));
       setLoading(false);
     })();
     return () => {
@@ -1152,7 +1170,148 @@ const OpportunityEditModal: React.FC<{
   const requiredRules = siteRequiredFor(true);
   const missingRequired = requiredRules.filter((r) => !r.ok(form)).map((r) => r.label);
   const invalidFields = new Set(requiredRules.filter((r) => !r.ok(form)).map((r) => r.field));
-  const showInvalid = (field: keyof EditForm) => siteRequirement && invalidFields.has(field);
+  // Plus conditionné à `siteRequirement` : un champ requis vide se signale quelle
+  // que soit la porte par laquelle on est entré. Ouverte depuis « Fiche », la
+  // modale n'affichait AUCUN rouge — c'est pourtant là qu'on vient compléter, et
+  // il fallait dérouler tout le formulaire pour deviner ce qui manquait.
+  const showInvalid = (field: keyof EditForm) => invalidFields.has(field);
+
+  /**
+   * Rendu d'un champ requis, défini une seule fois pour ses deux emplacements
+   * possibles : le bloc « À compléter » en tête, ou sa section d'origine.
+   * Dupliquer le JSX ferait dériver l'un des deux au premier changement.
+   *
+   * `inHoistedBlock` ne change pas le champ, seulement son aide : remonté en
+   * tête, il perd le paragraphe qui l'expliquait dans sa section.
+   */
+  const renderRequiredField = (field: RequiredField, inHoistedBlock: boolean): React.ReactNode => {
+    const invalid = showInvalid(field);
+    switch (field) {
+      case "name":
+        return (
+          <Field label="Nom" required invalid={invalid}>
+            <Input value={form.name} onChange={set("name")} />
+          </Field>
+        );
+      case "ville":
+        return (
+          <Field label="Ville" required invalid={invalid}>
+            <Input value={form.ville} onChange={set("ville")} />
+          </Field>
+        );
+      case "lm_override_city":
+        return (
+          <Field
+            label="Ville SEO"
+            required
+            invalid={invalid}
+            hint="Grande ville la plus proche — celle mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, remets la même."
+          >
+            <Input
+              value={form.lm_override_city}
+              onChange={set("lm_override_city")}
+              placeholder={form.ville}
+            />
+          </Field>
+        );
+      case "code_postal":
+        return (
+          <Field label="Code postal" required invalid={invalid}>
+            <Input value={form.code_postal} onChange={set("code_postal")} />
+          </Field>
+        );
+      case "telephone":
+        return (
+          <Field label="Téléphone" required invalid={invalid}>
+            <Input value={form.telephone} onChange={set("telephone")} />
+          </Field>
+        );
+      // L'astérisque de la note suit le nombre d'avis : sans avis il n'y a rien à
+      // noter, et la marquer obligatoire réclamerait un chiffre que l'entreprise
+      // n'a pas.
+      case "note_moyenne":
+        return (
+          <Field label="Note moyenne" required={Number(form.nombre_avis) > 0} invalid={invalid}>
+            <Input type="number" step="0.1" value={form.note_moyenne} onChange={set("note_moyenne")} placeholder="4.8" />
+          </Field>
+        );
+      case "service_tags":
+        return (
+          <div className="sm:col-span-2">
+            <Field
+              label="Service tags"
+              required
+              invalid={invalid}
+              hint="Choisis-les dans la liste des tags autorisés : ce sont eux qui commandent les pages et les visuels du site. Un métier absent de la liste se saisit dans le champ à côté."
+            >
+              <ServiceTagsField
+                value={form.service_tags}
+                catalog={tagCatalog}
+                onChange={(v) => setForm((f) => ({ ...f, service_tags: v }))}
+                placeholder="autre tag…"
+              />
+            </Field>
+          </div>
+        );
+      case "lm_logo_url":
+        return (
+          <LogoField
+            label="Logo"
+            required
+            invalid={invalid}
+            hint="Affiché en en-tête du site : sans lui, la démo sort sans identité."
+            value={form.lm_logo_url}
+            entrepriseId={item?.entreprise_id ?? null}
+            onChange={(url) => setForm((f) => ({ ...f, lm_logo_url: url }))}
+          />
+        );
+      case "lm_stat_years":
+        return (
+          <Field
+            label="Années d'expérience"
+            required
+            invalid={invalid}
+            hint={inHoistedBlock ? "Chiffre clé affiché sur le site." : undefined}
+          >
+            <Input type="number" value={form.lm_stat_years} onChange={set("lm_stat_years")} />
+          </Field>
+        );
+      case "lm_stat_clients":
+        return (
+          <Field
+            label="Clients satisfaits"
+            required
+            invalid={invalid}
+            hint={inHoistedBlock ? "Chiffre clé affiché sur le site." : undefined}
+          >
+            <Input type="number" value={form.lm_stat_clients} onChange={set("lm_stat_clients")} />
+          </Field>
+        );
+      case "lm_stat_installations":
+        return (
+          <Field
+            label="Installations"
+            required
+            invalid={invalid}
+            hint={inHoistedBlock ? "Chiffre clé affiché sur le site." : undefined}
+          >
+            <Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} />
+          </Field>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Une règle ajoutée à `SITE_REQUIRED_WITH_PROJECT` sans son `case` ci-dessus
+  // laisserait une case vide dans le bloc, sous un bandeau qui la réclame. Le
+  // filtre la laisse alors simplement à sa place : signalée, pas remontée.
+  const toHoist = missingAtOpen.filter((field) => renderRequiredField(field, true) !== null);
+  const hoisted = new Set<RequiredField>(toHoist);
+
+  /** Le champ reste-t-il à sa place d'origine ? (non s'il a été remonté en tête) */
+  const inPlace = (field: RequiredField): React.ReactNode =>
+    hoisted.has(field) ? null : renderRequiredField(field, false);
 
   const persist = async (): Promise<boolean> => {
     if (entrepriseId == null) return false;
@@ -1289,7 +1448,7 @@ const OpportunityEditModal: React.FC<{
           </div>
         ) : (
           <div className="flex flex-col gap-4 py-1">
-            {siteRequirement && missingRequired.length > 0 && (
+            {missingRequired.length > 0 ? (
               <div
                 style={{
                   border: "1px solid var(--danger)",
@@ -1300,11 +1459,13 @@ const OpportunityEditModal: React.FC<{
                   fontSize: 12.5,
                 }}
               >
-                <strong>Variables requises manquantes pour créer le site :</strong>
+                <strong>
+                  {missingRequired.length} champ{missingRequired.length > 1 ? "s" : ""} requis
+                  manquant{missingRequired.length > 1 ? "s" : ""} pour créer le site :
+                </strong>
                 <div style={{ marginTop: 4 }}>{missingRequired.join(" · ")}</div>
               </div>
-            )}
-            {siteRequirement && missingRequired.length === 0 && (
+            ) : (
               <div
                 style={{
                   border: "1px solid var(--ok)",
@@ -1319,57 +1480,63 @@ const OpportunityEditModal: React.FC<{
               </div>
             )}
 
+            {/* Les champs qui manquaient à l'ouverture, remontés en tête. Ils
+                étaient jusqu'ici dispersés dans quatre sections, sur toute la
+                hauteur d'une modale qui défile : repérer les deux ou trois à
+                remplir demandait de tout dérouler. Ils restent ici pendant toute
+                la session d'édition (cf. `missingAtOpen`) et ne réapparaissent à
+                leur place d'origine qu'à la réouverture de la fiche. */}
+            {toHoist.length > 0 && (
+              <div
+                style={{
+                  // La bordure suit la saisie : rouge tant qu'il reste un champ à
+                  // remplir, verte dès que la fiche est complète.
+                  border: `1px solid var(${missingRequired.length > 0 ? "--danger" : "--ok"})`,
+                  borderRadius: 10,
+                  padding: 12,
+                }}
+              >
+                <h4
+                  className="text-sm font-semibold mb-1"
+                  style={{ color: `var(${missingRequired.length > 0 ? "--danger" : "--ok"})` }}
+                >
+                  À compléter
+                </h4>
+                <p className="text-[11px] leading-snug text-muted-foreground mb-3">
+                  Les champs requis qui étaient vides à l&apos;ouverture de la fiche. Ils sont
+                  retirés de leur section d&apos;origine tant qu&apos;elle reste ouverte, pour ne
+                  pas y figurer deux fois.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {toHoist.map((field) => (
+                    <React.Fragment key={field}>{renderRequiredField(field, true)}</React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <h4 className="text-sm font-semibold mb-2">Entreprise</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <Field label="Nom" required invalid={showInvalid("name")}><Input value={form.name} onChange={set("name")} /></Field>
-                <Field label="Ville" required invalid={showInvalid("ville")}><Input value={form.ville} onChange={set("ville")} /></Field>
-                <Field
-                  label="Ville SEO"
-                  required
-                  invalid={showInvalid("lm_override_city")}
-                  hint="Grande ville la plus proche — celle mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, remets la même."
-                >
-                  <Input
-                    value={form.lm_override_city}
-                    onChange={set("lm_override_city")}
-                    placeholder={form.ville}
-                  />
-                </Field>
-                <Field label="Code postal" required invalid={showInvalid("code_postal")}><Input value={form.code_postal} onChange={set("code_postal")} /></Field>
-                <Field label="Téléphone" required invalid={showInvalid("telephone")}><Input value={form.telephone} onChange={set("telephone")} /></Field>
-                {/* L'astérisque de la note suit le nombre d'avis : sans avis il
-                    n'y a rien à noter, et la marquer obligatoire réclamerait un
-                    chiffre que l'entreprise n'a pas. */}
-                <Field
-                  label="Note moyenne"
-                  required={Number(form.nombre_avis) > 0}
-                  invalid={showInvalid("note_moyenne")}
-                >
-                  <Input type="number" step="0.1" value={form.note_moyenne} onChange={set("note_moyenne")} placeholder="4.8" />
-                </Field>
+                {inPlace("name")}
+                {inPlace("ville")}
+                {inPlace("lm_override_city")}
+                {inPlace("code_postal")}
+                {inPlace("telephone")}
+                {inPlace("note_moyenne")}
                 <Field label="Nombre d'avis">
                   <Input type="number" value={form.nombre_avis} onChange={set("nombre_avis")} placeholder="120" />
                 </Field>
                 <Field label="Email"><Input value={form.email} onChange={set("email")} /></Field>
                 <Field label="Site web"><Input value={form.site_web} onChange={set("site_web")} /></Field>
                 <Field label="LinkedIn"><Input value={form.linkedin_url} onChange={set("linkedin_url")} /></Field>
-                <Field label="Adresse"><Input value={form.adresse} onChange={set("adresse")} /></Field>
-                <div className="sm:col-span-2">
-                  <Field
-                    label="Service tags"
-                    required
-                    invalid={showInvalid("service_tags")}
-                    hint="Choisis-les dans la liste des tags autorisés : ce sont eux qui commandent les pages et les visuels du site. Un métier absent de la liste se saisit dans le champ à côté."
-                  >
-                    <ServiceTagsField
-                      value={form.service_tags}
-                      catalog={tagCatalog}
-                      onChange={(v) => setForm((f) => ({ ...f, service_tags: v }))}
-                      placeholder="autre tag…"
-                    />
-                  </Field>
-                </div>
+                <Field
+                  label="Adresse"
+                  hint="L'enrichissement en tire la ville et le code postal quand ils manquent."
+                >
+                  <Input value={form.adresse} onChange={set("adresse")} />
+                </Field>
+                {inPlace("service_tags")}
               </div>
             </div>
 
@@ -1406,15 +1573,7 @@ const OpportunityEditModal: React.FC<{
                   )}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <Field label="Nom affiché (override)"><Input value={form.lm_override_name} onChange={set("lm_override_name")} placeholder={form.name} /></Field>
-                    <LogoField
-                      label="Logo"
-                      required
-                      invalid={showInvalid("lm_logo_url")}
-                      hint="Affiché en en-tête du site : sans lui, la démo sort sans identité."
-                      value={form.lm_logo_url}
-                      entrepriseId={item?.entreprise_id ?? null}
-                      onChange={(url) => setForm((f) => ({ ...f, lm_logo_url: url }))}
-                    />
+                    {inPlace("lm_logo_url")}
                     <Field label="Téléphone (override)"><Input value={form.lm_override_phone} onChange={set("lm_override_phone")} placeholder={form.telephone} /></Field>
                     <Field label="Email (override)"><Input value={form.lm_override_email} onChange={set("lm_override_email")} placeholder={form.email} /></Field>
                     <Field label="Horaires"><Input value={form.horaires} onChange={set("horaires")} placeholder="Lun–Ven 8h–18h" /></Field>
@@ -1447,15 +1606,9 @@ const OpportunityEditModal: React.FC<{
                     restent facultatives, toutes les entreprises n&apos;en ont pas.
                   </p>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    <Field label="Années d'expérience" required invalid={showInvalid("lm_stat_years")}>
-                      <Input type="number" value={form.lm_stat_years} onChange={set("lm_stat_years")} />
-                    </Field>
-                    <Field label="Clients satisfaits" required invalid={showInvalid("lm_stat_clients")}>
-                      <Input type="number" value={form.lm_stat_clients} onChange={set("lm_stat_clients")} />
-                    </Field>
-                    <Field label="Installations" required invalid={showInvalid("lm_stat_installations")}>
-                      <Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} />
-                    </Field>
+                    {inPlace("lm_stat_years")}
+                    {inPlace("lm_stat_clients")}
+                    {inPlace("lm_stat_installations")}
                     <Field label="Qualifications (RGE)" hint="facultatif — 0 ou vide n'empêche pas d'enregistrer">
                       <Input type="number" value={form.lm_stat_rge} onChange={set("lm_stat_rge")} />
                     </Field>
