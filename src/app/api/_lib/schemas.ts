@@ -389,6 +389,48 @@ export const marketingCompanyDetailsSchema = z.object({
 });
 export type MarketingCompanyDetailsPayload = z.infer<typeof marketingCompanyDetailsSchema>;
 
+/**
+ * Complétion en masse des variables manquantes, depuis la grille du board.
+ *
+ * À l'inverse du schéma ci-dessus, TOUTES les clés sont optionnelles et rien
+ * n'a de valeur par défaut : la grille n'envoie que ce qui a été modifié, et
+ * ici **une clé absente n'est pas une clé à vider** (cf. `_missing-data.ts`).
+ * Un `.default([])` sur les service tags, par exemple, viderait les tags de
+ * toute ligne dont on n'a corrigé que le téléphone.
+ */
+export const marketingMissingDataSchema = z.object({
+  rows: z
+    .array(
+      z.object({
+        opportunite_id: z.string().uuid(),
+        entreprise_id: z.coerce.number().int().positive(),
+        project_id: z.string().uuid().nullable().optional(),
+        company: z
+          .object({
+            name: nullableStr,
+            ville: nullableStr,
+            code_postal: nullableStr,
+            telephone: nullableStr,
+            service_tags: z.array(z.string()).optional(),
+            note_moyenne: z.number().nullable().optional(),
+          })
+          .optional(),
+        project: z
+          .object({
+            override_city: nullableStr,
+            logo_url: nullableStr,
+            stat_years_experience: nullableStr,
+            stat_satisfied_clients: nullableStr,
+            stat_installations_completed: nullableStr,
+          })
+          .optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type MarketingMissingDataPayload = z.infer<typeof marketingMissingDataSchema>;
+
 const channelEnum = z.enum(["email", "sms", "whatsapp", "linkedin", "telephone", "pas_defini"]);
 const directionEnum = z.enum(["entrant", "sortant"]);
 const outcomeEnum = z.enum(["positif", "neutre", "negatif", "inconnu"]);

@@ -122,6 +122,13 @@ export interface BoardData {
  */
 export interface BulkHandlers {
   onEnrich: (items: BoardItem[], overwrite: boolean) => void;
+  /**
+   * Ouvre la grille de complétion sur ces lignes. Sert aussi bien la barre de
+   * sélection que le bouton de la toolbar, qui lui passe toutes les lignes
+   * visibles encore incomplètes — cocher soixante cases avant de commencer
+   * n'aurait rien fait gagner.
+   */
+  onComplete: (items: BoardItem[]) => void;
   onValidateEnrich: (items: BoardItem[]) => void;
   onCreateSites: (items: BoardItem[]) => void;
   onValidateSites: (items: BoardItem[]) => void;

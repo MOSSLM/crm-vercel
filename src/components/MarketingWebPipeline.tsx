@@ -8,17 +8,32 @@ import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
 import { createAudit } from "@/utils/auditApi";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
-import { serviceTagKey } from "@/utils/serviceTags";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { EnrichmentProgressModal, type EnrichmentLogEntry } from "@/components/EnrichmentProgressModal";
-import { LogoField } from "./marketing-pipeline/LogoField";
 import { PipelineMatrix, STAGES, AGENT_STAGES } from "./marketing-pipeline/PipelineMatrix";
 import { NotesDialog } from "./marketing-pipeline/NotesDialog";
+import { CompleteDataDialog } from "./marketing-pipeline/CompleteDataDialog";
+// Les exigences de complétude vivaient ici ; elles sont désormais partagées avec
+// la grille de complétion en masse et avec le test qui les compare à
+// `missingForSite` côté API.
+import {
+  SITE_REQUIRED_WITH_PROJECT,
+  fromArr,
+  numStr,
+  ruleApplies,
+  siteRequiredFor,
+  toArr,
+  type RequiredField,
+} from "./marketing-pipeline/required-fields";
+import {
+  SELF_LABELLED_FIELDS,
+  ServiceTagsField,
+  requiredFieldControl,
+} from "./marketing-pipeline/RequiredFieldControl";
 import type { MatrixHandlers, BulkHandlers, NoteSubject } from "./marketing-pipeline/types";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
@@ -146,6 +161,8 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   const [templateId, setTemplateId] = React.useState<string>("");
   const [working, setWorking] = React.useState<string | null>(null);
   const [editingItem, setEditingItem] = React.useState<BoardItem | null>(null);
+  /** Lignes ouvertes dans la grille de complétion en masse (`null` = fermée). */
+  const [completing, setCompleting] = React.useState<BoardItem[] | null>(null);
   // Panneau des tickets (notes agent ↔ admin) de la ligne.
   const [notesItem, setNotesItem] = React.useState<BoardItem | null>(null);
   const [notesSubject, setNotesSubject] = React.useState<NoteSubject | undefined>(undefined);
@@ -730,6 +747,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   // tableaux, seule la sélection multiple avait disparu de l'écran.
   const bulkHandlers: BulkHandlers = {
     onEnrich: (items, overwrite) => runEnrich(items, overwrite),
+    onComplete: (items) => setCompleting(items),
     onValidateEnrich: (items) => validateEnrichment(items),
     onCreateSites: (items) => createSites(items),
     onValidateSites: (items) => validateSites(items),
@@ -807,6 +825,20 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           setSiteRequirement(false);
           await load();
           await createSiteDirect([it]);
+        }}
+      />
+
+      <CompleteDataDialog
+        items={completing}
+        onClose={() => setCompleting(null)}
+        onSaved={() => void load()}
+        onOpenDetails={(it) => {
+          // La grille couvre les champs requis ; le reste de la fiche (avis,
+          // horaires, zones) reste l'affaire de la modale. On ferme la grille
+          // pour ne pas empiler deux dialogues.
+          setCompleting(null);
+          setSiteRequirement(false);
+          setEditingItem(it);
         }}
       />
     </>
@@ -919,76 +951,23 @@ function zonesFromVariables(variables: unknown): string {
   return "";
 }
 
-const toArr = (s: string): string[] => s.split(",").map((x) => x.trim()).filter(Boolean);
-const fromArr = (a?: unknown): string => (Array.isArray(a) ? a.filter((x) => typeof x === "string").join(", ") : "");
-const numStr = (v: unknown): string => (v == null || v === "" ? "" : String(v));
-
-// Variables required before a demo site can be created (must match the board's
-// missingForSite). Keyed by form field so the modal can outline them in red.
-type RequiredRule = { field: keyof EditForm; label: string; ok: (f: EditForm) => boolean };
-
-/** Champ du formulaire porté par une règle de complétude. */
-type RequiredField = RequiredRule["field"];
-
-const SITE_REQUIRED: RequiredRule[] = [
-  { field: "name", label: "Nom", ok: (f) => f.name.trim().length > 0 },
-  { field: "ville", label: "Ville", ok: (f) => f.ville.trim().length > 0 },
-  { field: "code_postal", label: "Code postal", ok: (f) => f.code_postal.trim().length > 0 },
-  { field: "telephone", label: "Téléphone", ok: (f) => f.telephone.trim().length > 0 },
-  { field: "service_tags", label: "Service tags", ok: (f) => toArr(f.service_tags).length > 0 },
-  // Avis Google : paire FACULTATIVE. Une entreprise sans fiche Google, ou avec
-  // zéro avis, n'a rien à saisir ici et ne doit pas rester bloquée pour autant.
-  // Seule la cohérence est exigée : des avis annoncés sans note afficheraient un
-  // bloc noté vide. Pas de règle sur `nombre_avis`, jamais.
-  // Doit rester aligné sur `missingForSite` côté API — le test
-  // `missing-for-site.test.ts` compare les deux listes.
-  {
-    field: "note_moyenne",
-    label: "Note moyenne",
-    ok: (f) => (Number(f.nombre_avis) > 0 ? Number(f.note_moyenne) > 0 : true),
-  },
-];
-
-/** Une stat vide au sens du rendu : "", "0", "-" et "—" n'affichent rien. */
-const filledStat = (v: string): boolean => {
-  const t = v.trim();
-  return t !== "" && t !== "0" && t !== "-" && t !== "—";
-};
-
-// Ville SEO, logo et chiffres clés vivent sur `lead_magnet_projects` : ils ne
-// sont exigés que s'il y a un projet lead magnet, sinon la fiche d'une
-// entreprise sans projet serait impossible à valider (ces champs n'ont nulle
-// part où être enregistrés). Tout ce que le site affiche est obligatoire — un
-// site généré sans logo ni chiffres clés sort avec des blocs vides.
-const SITE_REQUIRED_WITH_PROJECT: RequiredRule[] = [
-  ...SITE_REQUIRED,
-  { field: "lm_override_city", label: "Ville SEO", ok: (f) => f.lm_override_city.trim().length > 0 },
-  { field: "lm_logo_url", label: "Logo", ok: (f) => f.lm_logo_url.trim().length > 0 },
-  // Un chiffre confirmé par le client satisfait l'exigence autant qu'une
-  // estimation : c'est lui qui s'affichera. Doit rester aligné sur
-  // `missingForSite` côté API, que le test compare à cette liste.
-  {
-    field: "lm_stat_years",
-    label: "Années d'expérience",
-    ok: (f) => filledStat(f.lm_stat_years_official) || filledStat(f.lm_stat_years),
-  },
-  {
-    field: "lm_stat_clients",
-    label: "Clients satisfaits",
-    ok: (f) => filledStat(f.lm_stat_clients_official) || filledStat(f.lm_stat_clients),
-  },
-  {
-    field: "lm_stat_installations",
-    label: "Installations",
-    ok: (f) => filledStat(f.lm_stat_installations_official) || filledStat(f.lm_stat_installations),
-  },
-  // Pas de règle sur `lm_stat_rge` : une entreprise sans qualification RGE est
-  // parfaitement valide, le bloc « chiffres clés » se limite alors à trois
-  // colonnes. Doit rester aligné sur `missingForSite` côté API.
-];
-
-const siteRequiredFor = (hasProject: boolean): RequiredRule[] =>
-  hasProject ? SITE_REQUIRED_WITH_PROJECT : SITE_REQUIRED;
+/**
+ * Mise en page propre à la fiche — pas des règles, donc pas dans
+ * `required-fields.ts`.
+ *
+ * `WIDE_FIELDS` : la grille de la modale a deux colonnes ; la saisie des tags,
+ * avec ses pastilles, son menu et son champ libre, ne tient pas dans une.
+ *
+ * `HINT_ONLY_WHEN_HOISTED` : les chiffres clés sont regroupés sous un paragraphe
+ * qui explique déjà le bloc. Leur aide ne sert qu'une fois remontés en tête, où
+ * ils en sont coupés.
+ */
+const WIDE_FIELDS: ReadonlySet<RequiredField> = new Set<RequiredField>(["service_tags"]);
+const HINT_ONLY_WHEN_HOISTED: ReadonlySet<RequiredField> = new Set<RequiredField>([
+  "lm_stat_years",
+  "lm_stat_clients",
+  "lm_stat_installations",
+]);
 
 const OpportunityEditModal: React.FC<{
   item: BoardItem | null;
@@ -1174,138 +1153,54 @@ const OpportunityEditModal: React.FC<{
   // que soit la porte par laquelle on est entré. Ouverte depuis « Fiche », la
   // modale n'affichait AUCUN rouge — c'est pourtant là qu'on vient compléter, et
   // il fallait dérouler tout le formulaire pour deviner ce qui manquait.
-  const showInvalid = (field: keyof EditForm) => invalidFields.has(field);
+  const showInvalid = (field: RequiredField) => invalidFields.has(field);
 
   /**
    * Rendu d'un champ requis, défini une seule fois pour ses deux emplacements
    * possibles : le bloc « À compléter » en tête, ou sa section d'origine.
    * Dupliquer le JSX ferait dériver l'un des deux au premier changement.
    *
+   * La saisie elle-même vient de `requiredFieldControl`, partagé avec la grille
+   * de complétion en masse ; ce qui reste ici est l'habillage propre à la
+   * fiche : libellé, astérisque, aide, largeur dans la grille à deux colonnes.
+   *
    * `inHoistedBlock` ne change pas le champ, seulement son aide : remonté en
    * tête, il perd le paragraphe qui l'expliquait dans sa section.
    */
   const renderRequiredField = (field: RequiredField, inHoistedBlock: boolean): React.ReactNode => {
+    const rule = SITE_REQUIRED_WITH_PROJECT.find((r) => r.field === field);
+    if (!rule) return null;
     const invalid = showInvalid(field);
-    switch (field) {
-      case "name":
-        return (
-          <Field label="Nom" required invalid={invalid}>
-            <Input value={form.name} onChange={set("name")} />
-          </Field>
-        );
-      case "ville":
-        return (
-          <Field label="Ville" required invalid={invalid}>
-            <Input value={form.ville} onChange={set("ville")} />
-          </Field>
-        );
-      case "lm_override_city":
-        return (
-          <Field
-            label="Ville SEO"
-            required
-            invalid={invalid}
-            hint="Grande ville la plus proche — celle mise en avant partout sur le site. Si l'entreprise est déjà dans une grande ville, remets la même."
-          >
-            <Input
-              value={form.lm_override_city}
-              onChange={set("lm_override_city")}
-              placeholder={form.ville}
-            />
-          </Field>
-        );
-      case "code_postal":
-        return (
-          <Field label="Code postal" required invalid={invalid}>
-            <Input value={form.code_postal} onChange={set("code_postal")} />
-          </Field>
-        );
-      case "telephone":
-        return (
-          <Field label="Téléphone" required invalid={invalid}>
-            <Input value={form.telephone} onChange={set("telephone")} />
-          </Field>
-        );
-      // L'astérisque de la note suit le nombre d'avis : sans avis il n'y a rien à
-      // noter, et la marquer obligatoire réclamerait un chiffre que l'entreprise
-      // n'a pas.
-      case "note_moyenne":
-        return (
-          <Field label="Note moyenne" required={Number(form.nombre_avis) > 0} invalid={invalid}>
-            <Input type="number" step="0.1" value={form.note_moyenne} onChange={set("note_moyenne")} placeholder="4.8" />
-          </Field>
-        );
-      case "service_tags":
-        return (
-          <div className="sm:col-span-2">
-            <Field
-              label="Service tags"
-              required
-              invalid={invalid}
-              hint="Choisis-les dans la liste des tags autorisés : ce sont eux qui commandent les pages et les visuels du site. Un métier absent de la liste se saisit dans le champ à côté."
-            >
-              <ServiceTagsField
-                value={form.service_tags}
-                catalog={tagCatalog}
-                onChange={(v) => setForm((f) => ({ ...f, service_tags: v }))}
-                placeholder="autre tag…"
-              />
-            </Field>
-          </div>
-        );
-      case "lm_logo_url":
-        return (
-          <LogoField
-            label="Logo"
-            required
-            invalid={invalid}
-            hint="Affiché en en-tête du site : sans lui, la démo sort sans identité."
-            value={form.lm_logo_url}
-            entrepriseId={item?.entreprise_id ?? null}
-            onChange={(url) => setForm((f) => ({ ...f, lm_logo_url: url }))}
-          />
-        );
-      case "lm_stat_years":
-        return (
-          <Field
-            label="Années d'expérience"
-            required
-            invalid={invalid}
-            hint={inHoistedBlock ? "Chiffre clé affiché sur le site." : undefined}
-          >
-            <Input type="number" value={form.lm_stat_years} onChange={set("lm_stat_years")} />
-          </Field>
-        );
-      case "lm_stat_clients":
-        return (
-          <Field
-            label="Clients satisfaits"
-            required
-            invalid={invalid}
-            hint={inHoistedBlock ? "Chiffre clé affiché sur le site." : undefined}
-          >
-            <Input type="number" value={form.lm_stat_clients} onChange={set("lm_stat_clients")} />
-          </Field>
-        );
-      case "lm_stat_installations":
-        return (
-          <Field
-            label="Installations"
-            required
-            invalid={invalid}
-            hint={inHoistedBlock ? "Chiffre clé affiché sur le site." : undefined}
-          >
-            <Input type="number" value={form.lm_stat_installations} onChange={set("lm_stat_installations")} />
-          </Field>
-        );
-      default:
-        return null;
-    }
+    // Les chiffres clés vivent déjà sous un paragraphe qui explique le bloc :
+    // leur aide ne sert qu'une fois remontés en tête, coupés de ce paragraphe.
+    const hint = HINT_ONLY_WHEN_HOISTED.has(field) && !inHoistedBlock ? undefined : rule.hint;
+    const control = requiredFieldControl({
+      field,
+      values: form,
+      onChange: (patch) => setForm((f) => ({ ...f, ...patch })),
+      entrepriseId: item?.entreprise_id ?? null,
+      tagCatalog,
+      invalid,
+      // L'astérisque de la note suit le nombre d'avis : sans avis il n'y a rien
+      // à noter, et la marquer obligatoire réclamerait un chiffre que
+      // l'entreprise n'a pas.
+      required: ruleApplies(rule, form),
+      hint,
+    });
+    if (control === null) return null;
+    if (SELF_LABELLED_FIELDS.has(field)) return control;
+
+    const wrapped = (
+      <Field label={rule.label} required={ruleApplies(rule, form)} invalid={invalid} hint={hint}>
+        {control}
+      </Field>
+    );
+    return WIDE_FIELDS.has(field) ? <div className="sm:col-span-2">{wrapped}</div> : wrapped;
   };
 
-  // Une règle ajoutée à `SITE_REQUIRED_WITH_PROJECT` sans son `case` ci-dessus
-  // laisserait une case vide dans le bloc, sous un bandeau qui la réclame. Le
-  // filtre la laisse alors simplement à sa place : signalée, pas remontée.
+  // Une règle ajoutée à `SITE_REQUIRED_WITH_PROJECT` sans son contrôle laisserait
+  // une case vide dans le bloc, sous un bandeau qui la réclame. Le filtre la
+  // laisse alors simplement à sa place : signalée, pas remontée.
   const toHoist = missingAtOpen.filter((field) => renderRequiredField(field, true) !== null);
   const hoisted = new Set<RequiredField>(toHoist);
 
@@ -1729,116 +1624,6 @@ const OpportunityEditModal: React.FC<{
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-};
-
-/**
- * Saisie des service tags : les tags autorisés se piochent dans une liste
- * déroulante (catalogue global `/api/site-builder/service-tags`, allowlist
- * `enrichment_tag_settings` déjà appliquée) plutôt que d'être retapés. Une
- * faute de frappe créait jusqu'ici un tag jumeau — « climatisation » vs
- * « climatisaton » — qu'aucune page, section ni image de la médiathèque ne
- * reconnaissait, et le site sortait amputé sans rien signaler.
- *
- * La saisie libre reste ouverte à côté : le catalogue est bâti sur les tags
- * DÉJÀ utilisés, il ne peut donc pas contenir celui d'un métier rencontré pour
- * la première fois.
- *
- * La valeur reste la chaîne « a, b, c » du formulaire — le reste de la modale
- * (et `toArr` à l'enregistrement) n'a pas à savoir d'où viennent les tags.
- */
-const ServiceTagsField: React.FC<{
-  value: string;
-  catalog: string[];
-  onChange: (next: string) => void;
-  placeholder?: string;
-}> = ({ value, catalog, onChange, placeholder }) => {
-  const selected = React.useMemo(() => toArr(value), [value]);
-  // Comparaison par clé canonique (accents, casse, tirets) : « Pompe à chaleur »
-  // et « pompe-a-chaleur » sont le même tag, il ne faut pas l'ajouter deux fois.
-  const selectedKeys = React.useMemo(
-    () => new Set(selected.map((t) => serviceTagKey(t))),
-    [selected],
-  );
-  const available = React.useMemo(
-    () => catalog.filter((t) => !selectedKeys.has(serviceTagKey(t))),
-    [catalog, selectedKeys],
-  );
-  const [draft, setDraft] = React.useState("");
-
-  const add = (tag: string) => {
-    const t = tag.trim();
-    if (!t || selectedKeys.has(serviceTagKey(t))) return;
-    onChange([...selected, t].join(", "));
-  };
-  const remove = (tag: string) => onChange(selected.filter((t) => t !== tag).join(", "));
-  const addDraft = () => {
-    add(draft);
-    setDraft("");
-  };
-
-  return (
-    <div className="flex flex-col gap-2">
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {selected.map((tag, i) => (
-            <span
-              key={`${tag}-${i}`}
-              className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
-            >
-              {tag}
-              <button
-                type="button"
-                onClick={() => remove(tag)}
-                aria-label={`Retirer ${tag}`}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-        </div>
-      )}
-      <div className="flex items-center gap-2">
-        <div className="flex-1 min-w-0">
-          <Select value="" onValueChange={add} disabled={available.length === 0}>
-            <SelectTrigger size="sm" className="w-full">
-              <SelectValue
-                placeholder={
-                  catalog.length === 0
-                    ? "Catalogue indisponible"
-                    : available.length === 0
-                      ? "Tous les tags autorisés sont déjà là"
-                      : "Ajouter un tag autorisé…"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {available.map((tag) => (
-                <SelectItem key={tag} value={tag}>
-                  {tag}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <Input
-          className="flex-1 min-w-0 h-8"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              addDraft();
-            }
-          }}
-          placeholder={placeholder ?? "autre tag…"}
-        />
-        <button type="button" className="btn ghost sm" onClick={addDraft} disabled={!draft.trim()}>
-          <Plus className="ico-sm" />
-        </button>
-      </div>
-    </div>
   );
 };
 

@@ -1,3 +1,4 @@
+import { SITE_REQUIRED_WITH_PROJECT } from "@/components/marketing-pipeline/required-fields";
 import { missingForSite } from "../_board";
 
 /**
@@ -10,9 +11,9 @@ import { missingForSite } from "../_board";
  * Google (1210 sur 2797) ou zéro avis (217) laissait sa fiche définitivement
  * incomplète, sans autre issue que d'inventer une note.
  *
- * Doit rester aligné sur `SITE_REQUIRED` dans MarketingWebPipeline.tsx — le
- * dernier test de ce fichier compare les deux listes au lieu de s'en remettre
- * à ce commentaire.
+ * Doit rester aligné sur `SITE_REQUIRED` (`components/marketing-pipeline/
+ * required-fields.ts`) — le dernier test de ce fichier compare les deux listes
+ * au lieu de s'en remettre à ce commentaire.
  */
 
 type Ent = Parameters<typeof missingForSite>[0];
@@ -156,6 +157,10 @@ describe("missingForSite — avis Google facultatifs", () => {
  * l'étaient plus dès qu'on touchait à l'une : l'écran a réclamé « Nombre
  * d'avis » que l'API n'exigeait plus, ou l'inverse, et la fiche affichait un
  * astérisque sur un champ que rien ne bloquait.
+ *
+ * La liste de l'écran est IMPORTÉE, plus recopiée : tant qu'elle vivait dans un
+ * composant `"use client"`, ce test ne pouvait que la retranscrire à la main —
+ * c'est-à-dire ajouter une troisième liste à tenir alignée.
  */
 describe("alignement avec les règles de l'écran", () => {
   /** Tous les libellés que `missingForSite` peut produire, sondés champ par champ. */
@@ -185,21 +190,9 @@ describe("alignement avec les règles de l'écran", () => {
   };
 
   it("produit exactement les libellés de l'écran", () => {
-    // Recopiés de `SITE_REQUIRED_WITH_PROJECT` (MarketingWebPipeline.tsx). Toute
-    // divergence doit casser ici, pas en production.
-    const ecran = new Set([
-      "Nom",
-      "Ville",
-      "Code postal",
-      "Téléphone",
-      "Service tags",
-      "Note moyenne",
-      "Ville SEO",
-      "Logo",
-      "Années d'expérience",
-      "Clients satisfaits",
-      "Installations",
-    ]);
+    // Lus sur les règles de l'écran elles-mêmes. Toute divergence doit casser
+    // ici, pas en production.
+    const ecran = new Set(SITE_REQUIRED_WITH_PROJECT.map((r) => r.label));
     expect([...labelsFromApi()].sort()).toEqual([...ecran].sort());
   });
 
