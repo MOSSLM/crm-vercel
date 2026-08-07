@@ -407,6 +407,18 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-autoimg-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
 .cd-autoimg-thumb figcaption{position:absolute;left:0;right:0;bottom:0;font-size:9px;line-height:1.3;padding:2px 4px;color:#fff;background:rgba(0,0,0,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .cd-autoimg-thumb.on{border-color:var(--cd-accent);box-shadow:0 0 0 1px var(--cd-accent);}
+/* Emplacement abandonné faute de photo : la carte n'est plus sur le site. */
+.cd-autoimg-thumb.gone{border-style:dashed;}
+.cd-autoimg-thumb.gone img{opacity:.3;filter:grayscale(1);}
+.cd-autoimg-thumb figcaption.gone{display:flex;align-items:center;gap:4px;background:rgba(0,0,0,.7);}
+.cd-autoimg-pool i{font-style:normal;font-family:var(--font-mono);font-size:10px;font-weight:600;color:#fff;background:var(--warn,#9a6700);border-radius:99px;padding:1px 5px;margin-left:-2px;}
+/* Ce qu'il faut importer, chiffré. */
+.cd-autoimg-plan{display:flex;flex-direction:column;gap:5px;padding:8px 9px;border-radius:8px;background:var(--bg-2);border:1px solid var(--cd-border);}
+.cd-autoimg-plan.short{border-color:var(--warn,#9a6700);}
+.cd-autoimg-plan p{margin:0;display:flex;gap:6px;align-items:flex-start;font-size:11px;line-height:1.45;color:var(--text-2);}
+.cd-autoimg-plan svg{flex-shrink:0;margin-top:2px;color:var(--warn,#9a6700);}
+.cd-autoimg-plan b{color:var(--text-1);font-weight:600;}
+.cd-autoimg-todo{color:var(--text-3);}
 /* Agir sur UNE photo : visible au survol, et toujours visible au clavier. */
 .cd-autoimg-tools{position:absolute;top:3px;right:3px;display:flex;gap:3px;opacity:0;transition:opacity .12s;}
 .cd-autoimg-thumb:hover .cd-autoimg-tools,.cd-autoimg-tools:focus-within{opacity:1;}

@@ -158,6 +158,35 @@ interface PlacedSlot {
   url: string;
   alt: string;
   tag: string | null;
+  /** The card is hidden: the library had no photo left for it that the band was
+   *  not already showing. See `gapEntry`. */
+  hidden: boolean;
+}
+
+/**
+ * A card the draw hid because filling it would have meant showing a photo
+ * twice — the operator asked for a band of five over a band of six with a twin
+ * in it. `remove` hides the element and lets the grid reflow, so no empty frame
+ * is left behind (see apply-overrides-html.ts).
+ *
+ * The marker matters both ways: the next draw CLEARS the gaps it made (import
+ * three photos and the sixth card comes back on its own), and it leaves a card
+ * the operator deleted by hand exactly where it is.
+ */
+const GAP_MARK = "auto-images-gap";
+const gapEntry = () => ({ kind: "remove", value: "", meta: { auto: GAP_MARK } });
+
+function isAutoGap(entry: unknown): boolean {
+  const e = entry as { kind?: string; meta?: { auto?: string } } | null;
+  return !!e && e.kind === "remove" && e.meta?.auto === GAP_MARK;
+}
+
+/** Hides the slot's card, or reopens it — a draw owns the gaps it made and
+ *  nothing else. Returns nothing; mutates the page's override map. */
+function setGap(overrides: Record<string, unknown>, cardPath: string, hidden: boolean): void {
+  const key = `${cardPath}:remove`;
+  if (hidden) overrides[key] = gapEntry();
+  else if (isAutoGap(overrides[key])) delete overrides[key];
 }
 
 /**
@@ -183,6 +212,7 @@ function placedSlots(target: ZoneTarget, tags: string[]): PlacedSlot[] {
         alt: chosen.alt ?? slot.alt,
         // The lead candidate's tag is the trade the slot was drawn for.
         tag: candidates[0]?.tags?.[0] ?? null,
+        hidden: isAutoGap(page.overrides[`${slot.cardPath}:remove`]),
       });
     }
     if (placed.length > 0) return placed.sort((a, b) => a.order - b.order);
@@ -247,7 +277,7 @@ export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
 
   // Pools are reported for the company's OWN trades: those are the ones that
   // must be stocked, and an empty one is why a band looks generic.
-  const { pools, emptyTags } = drawImageSets(
+  const { pools, emptyTags, distinctAvailable } = drawImageSets(
     { slotCount: targets[0]?.slotCount ?? 0, companyTags: tags, library, random: seededRandom(1) },
     targets[0]?.alts ?? [],
   );
@@ -258,6 +288,9 @@ export const GET = withAuth<undefined, Params>({}, async ({ req, params }) => {
     enterpriseId,
     pools,
     emptyTags,
+    /** Distinct photos the trades hold between them — under the slot count, the
+     *  band cannot be filled without a repeat and gives up the extra cards. */
+    distinctAvailable,
     librarySize: library.length,
     /** Everything the picker may offer — already narrowed to this company's
      *  trades (plus the generic photos) by `loadLibrary`. */
@@ -335,7 +368,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     zoneId: string;
     label: string;
     pages: Array<{ slug: string; slots: number }>;
-    slots: Array<{ order: number; url: string; alt: string; tag: string | null }>;
+    slots: Array<{ order: number; url: string; alt: string; tag: string | null; hidden: boolean }>;
   }> = [];
   const writesByInstance = new Map<string, {
     page: DesignPage;
@@ -346,6 +379,11 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   let written = 0;
   let pools: ReturnType<typeof drawImageSets>["pools"] = [];
   let emptyTags: string[] = [];
+  /** Distinct photos this company's trades hold — what decides whether the band
+   *  can be filled without a repeat, and by how much it falls short. */
+  let distinctAvailable = 0;
+  /** Cards the band gave up on: stock exhausted. */
+  let hiddenSlots = 0;
 
   // `slot` (1-based) → swap that photo only, keeping the rest of the band.
   const oneSlot = Number.isFinite(body.slot) ? Math.floor(Number(body.slot)) : null;
@@ -362,6 +400,7 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     );
     pools = full.pools;
     emptyTags = full.emptyTags;
+    distinctAvailable = full.distinctAvailable;
 
     // What the band shows today — the baseline a single-slot swap edits, and
     // the set of photos the new one must not duplicate.
@@ -410,15 +449,24 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
       const order = i + 1;
       const alt = target.alts[i] ?? "";
       if (oneSlot === null) {
-        return { order, url: drawnSlot.chosen?.url ?? "", alt: drawnSlot.chosen?.alt ?? alt, tag: drawnSlot.leadTag };
+        return {
+          order,
+          url: drawnSlot.chosen?.url ?? "",
+          alt: drawnSlot.chosen?.alt ?? alt,
+          tag: drawnSlot.leadTag,
+          // The stock stopped here: the card is hidden rather than doubled.
+          hidden: drawnSlot.repeated,
+        };
       }
       if (order === oneSlot) {
-        return { order, url: single!.chosen?.url ?? "", alt: single!.chosen?.alt ?? alt, tag: single!.leadTag };
+        // Acting on a slot always reopens it — the operator put a photo there.
+        return { order, url: single!.chosen?.url ?? "", alt: single!.chosen?.alt ?? alt, tag: single!.leadTag, hidden: false };
       }
       const kept = placed.find((p) => p.order === order);
-      return { order, url: kept?.url ?? "", alt: kept?.alt ?? alt, tag: kept?.tag ?? null };
+      return { order, url: kept?.url ?? "", alt: kept?.alt ?? alt, tag: kept?.tag ?? null, hidden: kept?.hidden ?? false };
     });
 
+    hiddenSlots = slotsReport.filter((s) => s.hidden).length;
     report.push({
       zoneId: zone.id,
       label: zone.label,
@@ -452,6 +500,10 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
           kind: "image_set",
           value: serializeImageSet(drawn.candidates),
         };
+        // The set is written even for a slot this company cannot fill: hiding
+        // the card is about THIS company's stock, and a company with a fuller
+        // library — this design cloned onto its site — resolves it normally.
+        setGap(entry.overrides, slot.cardPath, drawn.repeated);
         written++;
       }
       writesByInstance.set(page.instanceId, entry);
@@ -478,5 +530,5 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
     invalidateSiteCache(siteId);
   }
 
-  return json({ seed, zones: report, pools, emptyTags, written, dryRun });
+  return json({ seed, zones: report, pools, emptyTags, distinctAvailable, hiddenSlots, written, dryRun });
 });

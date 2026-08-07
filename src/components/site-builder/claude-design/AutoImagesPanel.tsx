@@ -2,7 +2,7 @@
 
 import React from "react";
 import { toast } from "sonner";
-import { Shuffle, AlertTriangle, Wand2, Images, X } from "lucide-react";
+import { Shuffle, AlertTriangle, Wand2, Images, X, ImageOff } from "lucide-react";
 import { authedFetch } from "@/utils/authedFetch";
 import { serviceTagKey } from "@/utils/serviceTags";
 import { MEDIA_LIBRARY_UNIVERSAL_TAG } from "@/types";
@@ -12,6 +12,9 @@ interface DrawnSlot {
   url: string;
   alt: string;
   tag: string | null;
+  /** The card was dropped: the library had nothing left for it that the band
+   *  was not already showing. Acting on the slot brings it back. */
+  hidden: boolean;
 }
 
 /** A media-library photo the picker may offer, tags already canonical. */
@@ -47,6 +50,9 @@ interface State {
   companyTags: string[];
   pools: Pool[];
   emptyTags: string[];
+  /** Distinct photos the company's trades hold between them. Below the slot
+   *  count, the band gives up its extra cards rather than repeat a photo. */
+  distinctAvailable: number;
   librarySize: number;
   /** Everything the per-slot picker may offer — already narrowed to the
    *  company's trades (plus the generic photos) by the API. */
@@ -58,6 +64,8 @@ interface DrawResponse {
   zones: Array<{ zoneId: string; label: string; pages: Array<{ slug: string; slots: number }>; slots: DrawnSlot[] }>;
   pools: Pool[];
   emptyTags: string[];
+  distinctAvailable: number;
+  hiddenSlots: number;
   written: number;
 }
 
@@ -143,7 +151,9 @@ export function AutoImagesPanel({
       if (!res.ok) throw new Error((body as { error?: string }).error || "Tirage impossible");
       const result = body as DrawResponse;
       setSlots(result.zones[0]?.slots ?? []);
-      setState((prev) => (prev ? { ...prev, pools: result.pools, emptyTags: result.emptyTags } : prev));
+      setState((prev) => (prev
+        ? { ...prev, pools: result.pools, emptyTags: result.emptyTags, distinctAvailable: result.distinctAvailable }
+        : prev));
       if (slot === undefined) {
         const pages = result.zones.reduce((n, z) => n + z.pages.length, 0);
         toast.success(`${result.written} emplacement(s) remplis sur ${pages} page(s)`, { id: t });
@@ -181,8 +191,18 @@ export function AutoImagesPanel({
   if (!state || state.zones.length === 0) return null;
 
   const zone = state.zones[0];
-  const short = state.pools.filter((p) => p.available > 0 && p.available < p.needed);
   const totalPages = state.zones.reduce((n, z) => n + z.pages.length, 0);
+
+  // Two different shortages, and confusing them is what made the old warning
+  // useless. `gap` is the blocking one: fewer DISTINCT photos than the band has
+  // slots, so cards are dropped — importing anything tagged for one of these
+  // trades fixes it. `short` is cosmetic: a trade below its share, so the band
+  // leans on the others; nothing repeats, nothing disappears.
+  const gap = Math.max(0, zone.slotCount - state.distinctAvailable);
+  const short = state.pools
+    .filter((p) => p.available > 0 && p.available < p.needed)
+    .map((p) => ({ ...p, missing: p.needed - p.available }));
+  const stocked = state.pools.filter((p) => p.available >= p.needed && p.needed > 0);
 
   // What the picker offers, trade by trade: the company's own trades as the
   // library stocks them, then the generic photos — those fit any slot.
@@ -240,11 +260,14 @@ export function AutoImagesPanel({
                     title={
                       p.available === 0
                         ? "Aucune image de la médiathèque ne porte ce service"
-                        : `${p.available} image(s) en médiathèque · ${p.needed} nécessaire(s) pour ne pas répéter`
+                        : p.available < p.needed
+                          ? `${p.available} photo(s) en médiathèque · ${p.needed} pour que ce service tienne sa part de la bande`
+                          : `${p.available} photo(s) en médiathèque · ${p.needed} suffisent, ce service n’en demande pas plus`
                     }
                   >
                     {p.label}
                     <b>{p.available}</b>
+                    {p.available > 0 && p.available < p.needed ? <i>+{p.needed - p.available}</i> : null}
                   </span>
                 ))}
               </div>
@@ -256,11 +279,36 @@ export function AutoImagesPanel({
                 Aucune photo taguée « {state.emptyTags.join(" », « ")} » — importe-en dans la médiathèque.
               </p>
             )}
-            {short.length > 0 && (
-              <p className="cd-autoimg-warn">
-                <AlertTriangle className="ico-xs" />
-                Trop peu de photos pour {short.map((p) => p.label).join(", ")} : certaines se répéteront.
-              </p>
+
+            {/* Combien importer, et de quoi : le seul chiffre qui décide, c'est
+                le nombre de photos DISTINCTES — une photo taguée pour deux
+                services ne remplit qu'un emplacement. */}
+            {gap > 0 && (
+              <div className="cd-autoimg-plan short">
+                <p>
+                  <AlertTriangle className="ico-xs" />
+                  <span>
+                    <b>{state.distinctAvailable} photo(s) distincte(s)</b> pour {zone.slotCount} emplacements :
+                    {" "}{gap} carte(s) sont retirées de la bande — jamais deux fois la même photo.
+                  </span>
+                </p>
+                <p className="cd-autoimg-todo">
+                  Importe <b>{gap} photo(s) de plus</b>, taguée(s)
+                  {" "}{state.pools.length > 0
+                    ? `« ${state.pools.map((p) => p.label).join(" », « ")} »`
+                    : "aux services de l’entreprise"} : les cartes reviennent au prochain tirage.
+                </p>
+              </div>
+            )}
+            {gap === 0 && short.length > 0 && (
+              <div className="cd-autoimg-plan">
+                <p className="cd-autoimg-todo">
+                  Les {zone.slotCount} photos sont distinctes. Pour équilibrer l’alternance :
+                  {" "}{short.map((p) => `+${p.missing} « ${p.label} »`).join(", ")}.
+                  {stocked.length > 0 && ` ${stocked.map((p) => `« ${p.label} »`).join(", ")} n’en `}
+                  {stocked.length > 0 && (stocked.length > 1 ? "ont pas besoin de plus." : "a pas besoin de plus.")}
+                </p>
+              </div>
             )}
 
             <button
@@ -278,12 +326,18 @@ export function AutoImagesPanel({
                   {slots.map((s) => (
                     <figure
                       key={s.order}
-                      className={"cd-autoimg-thumb" + (picking === s.order ? " on" : "")}
-                      title={`${s.alt || "Sans description"}${s.tag ? ` · ${s.tag}` : ""}`}
+                      className={"cd-autoimg-thumb" + (picking === s.order ? " on" : "") + (s.hidden ? " gone" : "")}
+                      title={
+                        s.hidden
+                          ? "Carte retirée de la bande : pas de photo disponible sans répéter une autre. Choisis-en une pour la remettre."
+                          : `${s.alt || "Sans description"}${s.tag ? ` · ${s.tag}` : ""}`
+                      }
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={s.url} alt={s.alt} loading="lazy" />
-                      {s.tag ? <figcaption>{s.tag}</figcaption> : null}
+                      {s.hidden
+                        ? <figcaption className="gone"><ImageOff className="ico-xs" />Retirée</figcaption>
+                        : s.tag ? <figcaption>{s.tag}</figcaption> : null}
                       {/* Les deux actions ne touchent que CET emplacement : le
                           reste de la bande ne bouge pas, et le métier est
                           conservé pour ne pas casser l'alternance. */}
@@ -373,8 +427,9 @@ export function AutoImagesPanel({
 
                 <p className="cd-autoimg-note">
                   Survole une photo : <b>l’icône médiathèque</b> pour choisir la tienne par service,
-                  <b> les flèches</b> pour en tirer une autre au sort. Une photo déjà posée n’est jamais
-                  reprise ailleurs dans la bande, même si elle porte plusieurs services.
+                  <b> les flèches</b> pour en tirer une autre au sort. Une photo posée n’est jamais
+                  reprise ailleurs dans la bande, même si elle porte plusieurs services — quitte à
+                  retirer une carte plutôt qu’à la doubler.
                 </p>
               </>
             )}

@@ -61,6 +61,36 @@ export interface AutoImageSlot {
   isImg: boolean;
   /** The export's own alt text, reused when a drawn image carries none. */
   alt: string;
+  /** The CARD the slot lives in — see `cardPathOf`. Hiding this is how a photo
+   *  leaves the band without leaving an empty frame behind it. */
+  cardPath: string;
+}
+
+/**
+ * The card a slot lives in: the highest ancestor that holds this slot and no
+ * other slot of the zone.
+ *
+ * Every skin nests the photo the same way — `<figure class="hcard|m-item">
+ * <div class="ph"><img id="realisation-3"></div></figure>` — but at its own
+ * depth, and none of them marks the card with anything stable. The containment
+ * rule needs no such mark: walk up while the ancestor is the slot's alone, stop
+ * at the one the band's other photos share (the track/grid). What that lands on
+ * IS the card, in a masonry as in a horizontal scroller.
+ *
+ * Falls back to the slot itself for a top-level slot: there, "the card" would be
+ * a whole block of the section, and hiding that much to drop one photo trades a
+ * repeat for something worse.
+ */
+function cardPathOf(path: number[], all: number[][], index: number): string {
+  let cut = path.length;
+  for (let len = path.length - 1; len >= 1; len--) {
+    const prefix = path.slice(0, len).join(".");
+    const shared = all.some((other, i) =>
+      i !== index && other.length >= len && other.slice(0, len).join(".") === prefix);
+    if (shared) break;
+    cut = len;
+  }
+  return (cut < path.length && cut >= 2 ? path.slice(0, cut) : path).join(".");
 }
 
 /**
@@ -85,7 +115,7 @@ export function findZoneSlots(html: string, zone: AutoImageZone): AutoImageSlot[
     return [];
   }
 
-  const slots: AutoImageSlot[] = [];
+  const slots: Array<AutoImageSlot & { indices: number[] }> = [];
   const walk = (el: HTMLElement, path: number[]): void => {
     const elementId = el.getAttribute("id") ?? "";
     if (elementId && zone.idPattern.test(elementId)) {
@@ -95,6 +125,8 @@ export function findZoneSlots(html: string, zone: AutoImageZone): AutoImageSlot[
         order: zone.order(elementId),
         isImg: (el.tagName ?? "").toLowerCase() === "img",
         alt: el.getAttribute("alt") ?? "",
+        cardPath: path.join("."),
+        indices: path,
       });
     }
     const kids = elementChildren(el);
@@ -103,8 +135,12 @@ export function findZoneSlots(html: string, zone: AutoImageZone): AutoImageSlot[
   const top = elementChildren(doc);
   for (let i = 0; i < top.length; i++) walk(top[i], [i]);
 
+  // Needs every slot: a card is defined by the ancestor the OTHERS reach.
+  const all = slots.map((s) => s.indices);
+  for (let i = 0; i < slots.length; i++) slots[i].cardPath = cardPathOf(all[i], all, i);
+
   slots.sort((a, b) => a.order - b.order || a.path.localeCompare(b.path));
-  return slots;
+  return slots.map(({ indices: _indices, ...slot }) => slot);
 }
 
 /** Every zone present in a page, with its slots. Zones with no slot are left out. */

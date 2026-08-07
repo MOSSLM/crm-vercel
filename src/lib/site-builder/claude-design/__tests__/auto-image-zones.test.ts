@@ -1,6 +1,7 @@
 import { AUTO_IMAGE_ZONES, findAllZoneSlots, findZone, findZoneSlots } from "../auto-image-zones";
 import { resolveImageSets } from "../resolve-image-sets";
 import { serializeImageSet } from "../image-set";
+import { applyOverridesToHTML } from "@/lib/library-section/apply-overrides-html";
 
 const REALISATIONS = findZone("realisations")!;
 
@@ -53,6 +54,41 @@ describe("findZoneSlots", () => {
     expect(slots.map((s) => s.elementId)).toEqual(["realisation-1", "realisation-2", "realisation-3"]);
     // The CTA card that follows the photos is not a slot.
     expect(slots).toHaveLength(3);
+  });
+
+  it("points at the CARD, not the photo, so dropping one leaves no empty frame", () => {
+    // figure.hcard > div.ph > img : the card is two levels above the slot, and
+    // the ancestor above it is the track the other photos share.
+    for (const html of [SERVICE_PAGE, HOME_PAGE]) {
+      const slots = findZoneSlots(html, REALISATIONS);
+      for (const slot of slots) {
+        expect(slot.cardPath).toBe(slot.path.split(".").slice(0, -2).join("."));
+        // A card never contains another slot — that is the whole rule.
+        const others = slots.filter((s) => s !== slot);
+        expect(others.some((s) => s.path.startsWith(`${slot.cardPath}.`))).toBe(false);
+      }
+    }
+  });
+
+  it("keeps a top-level slot to itself rather than hiding a whole block", () => {
+    // Nothing above it is the slot's "card": hiding an ancestor would take the
+    // section with it.
+    const slots = findZoneSlots(`<img id="realisation-1" src="a.jpg">`, REALISATIONS);
+    expect(slots[0].cardPath).toBe(slots[0].path);
+  });
+
+  it("stops at the shared ancestor when two slots sit in the same card", () => {
+    const twins = `
+      <section><div class="grid">
+        <figure class="card">
+          <div class="ph"><img id="realisation-1" src="a.jpg"></div>
+          <div class="ph"><img id="realisation-2" src="b.jpg"></div>
+        </figure>
+      </div></section>`;
+    const slots = findZoneSlots(twins, REALISATIONS);
+    // The card holds both, so each slot only owns its own `.ph` wrapper.
+    expect(slots[0].cardPath).toBe(slots[0].path.split(".").slice(0, -1).join("."));
+    expect(slots[1].cardPath).not.toBe(slots[0].cardPath);
   });
 
   it("orders by the id suffix, not by document order or string sort", () => {
@@ -127,6 +163,45 @@ describe("the paths reach the slot through the real renderer", () => {
       expect(html).toMatch(new RegExp(`src="https://x/tire-${i}\\.jpg"[^>]*id="${slot.elementId}"|id="${slot.elementId}"[^>]*src="https://x/tire-${i}\\.jpg"`));
     });
   });
+
+  it.each([["service page", SERVICE_PAGE], ["home page", HOME_PAGE]])(
+    "drops the whole card of an abandoned slot, and only that card (%s)",
+    (_label, fragment) => {
+      // What the draw writes when the stock cannot fill a slot without showing
+      // a photo twice: a `remove` on the CARD, next to the sets of its
+      // neighbours. `remove` hides rather than detaches, so the other slots'
+      // positional paths still address the same nodes afterwards.
+      const slots = findZoneSlots(fragment, REALISATIONS);
+      const dropped = slots[slots.length - 1];
+      const overrides: Record<string, { kind: string; value: string }> = {
+        [`${dropped.cardPath}:remove`]: { kind: "remove", value: "" },
+      };
+      slots.forEach((slot, i) => {
+        overrides[`${slot.path}:image_set`] = {
+          kind: "image_set",
+          value: serializeImageSet([{ url: `https://x/tire-${i}.jpg`, tags: ["Climatisation"] }]),
+        };
+      });
+
+      const html = applyOverridesToHTML(
+        `<div data-claude-design="">${fragment}</div>`,
+        overrides as never,
+        {},
+      ).html;
+      const rendered = resolveImageSets(html, overrides, ["Climatisation"]);
+
+      // The card is out of the layout — frame, caption and all.
+      const card = rendered.slice(0, rendered.indexOf(`id="${dropped.elementId}"`));
+      expect(card.slice(card.lastIndexOf("<figure"))).toMatch(/display:\s*none/);
+      // Its neighbours are untouched, and still resolve to their own photo.
+      expect(rendered.match(/display:\s*none/g) ?? []).toHaveLength(1);
+      slots.slice(0, -1).forEach((slot, i) => {
+        expect(rendered).toMatch(
+          new RegExp(`id="${slot.elementId}"[^>]*src="https://x/tire-${i}\\.jpg"|src="https://x/tire-${i}\\.jpg"[^>]*id="${slot.elementId}"`),
+        );
+      });
+    },
+  );
 
   it("still lands after the head <style> blocks shift every index", () => {
     const fragment = `<style>.a{}</style>${SERVICE_PAGE}`;
