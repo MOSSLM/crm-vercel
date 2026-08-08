@@ -431,6 +431,34 @@ export const marketingMissingDataSchema = z.object({
 });
 export type MarketingMissingDataPayload = z.infer<typeof marketingMissingDataSchema>;
 
+/**
+ * Aspirer une image distante dans la médiathèque. Sert au champ logo (une URL
+ * collée doit devenir une URL à nous) et à l'enrichissement, qui trouve des
+ * logos sur les sites des clients.
+ */
+export const mediaFromUrlSchema = z.object({
+  url: z.string().url({ message: "url doit être une URL http(s)" }),
+  entreprise_id: z.coerce.number().int().positive().nullable().optional(),
+  image_type: z.enum(["stock", "ai_generated", "personal", "company"]).optional(),
+  tags: z.array(z.string()).max(20).optional(),
+  alt_text: nullableStr,
+  file_name: nullableStr,
+});
+export type MediaFromUrlPayload = z.infer<typeof mediaFromUrlSchema>;
+
+/**
+ * Reprise : rapatrier les logos restés chez le client. `dry_run` liste ce qui
+ * serait fait sans rien écrire — on regarde avant de toucher cent fiches.
+ */
+export const mediaRehostLogosSchema = z.object({
+  limit: z.coerce.number().int().positive().max(500).optional(),
+  dry_run: z.boolean().optional(),
+  entreprise_ids: z.array(z.coerce.number().int().positive()).max(500).optional(),
+  /** Curseur keyset : l'id de la dernière entreprise traitée à l'appel précédent. */
+  after_id: z.coerce.number().int().nonnegative().optional(),
+});
+export type MediaRehostLogosPayload = z.infer<typeof mediaRehostLogosSchema>;
+
 const channelEnum = z.enum(["email", "sms", "whatsapp", "linkedin", "telephone", "pas_defini"]);
 const directionEnum = z.enum(["entrant", "sortant"]);
 const outcomeEnum = z.enum(["positif", "neutre", "negatif", "inconnu"]);
