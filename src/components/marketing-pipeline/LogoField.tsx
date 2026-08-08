@@ -9,6 +9,10 @@
 //
 // L'import passe par `/api/media` : mêmes optimisations (WebP, redimensionnement)
 // et même stockage que la médiathèque, donc rien de spécifique à maintenir ici.
+//
+// Une URL collée est aspirée elle aussi, via `/api/media/from-url`. Sans ça, la
+// démo affichait une image servie par le site du prospect : elle disparaissait
+// le jour où il le refaisait. Ce qu'on montre est servi par nous.
 
 import React from "react";
 import { toast } from "sonner";
@@ -78,6 +82,34 @@ async function uploadLogo(file: File, entrepriseId?: number | null): Promise<str
   }
 }
 
+/**
+ * Aspire une URL distante dans la médiathèque et rend l'URL publique produite.
+ * `null` si l'adresse ne donne pas une image — le message est déjà affiché.
+ */
+async function absorbUrl(url: string, entrepriseId?: number | null): Promise<string | null> {
+  try {
+    const res = await authedFetch("/api/media/from-url", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        entreprise_id: entrepriseId ?? null,
+        image_type: entrepriseId != null ? "company" : "stock",
+        tags: ["logo"],
+      }),
+    });
+    const payload = (await res.json().catch(() => ({}))) as { public_url?: string; error?: string };
+    if (!res.ok || !payload.public_url) {
+      toast.error(payload.error || "Cette adresse ne donne pas d'image.");
+      return null;
+    }
+    return payload.public_url;
+  } catch {
+    toast.error("Cette adresse ne donne pas d'image.");
+    return null;
+  }
+}
+
 export const LogoField: React.FC<LogoFieldProps> = ({
   label,
   value,
@@ -93,8 +125,12 @@ export const LogoField: React.FC<LogoFieldProps> = ({
   const [dragging, setDragging] = React.useState(false);
   const [showUrl, setShowUrl] = React.useState(false);
   const [broken, setBroken] = React.useState(false);
+  // L'URL se saisit librement puis s'aspire à la validation : aspirer à chaque
+  // frappe déclencherait un téléchargement par caractère tapé.
+  const [draft, setDraft] = React.useState(value);
 
   React.useEffect(() => setBroken(false), [value]);
+  React.useEffect(() => setDraft(value), [value]);
 
   const take = React.useCallback(
     async (file: File | undefined | null) => {
@@ -112,6 +148,36 @@ export const LogoField: React.FC<LogoFieldProps> = ({
     },
     [entrepriseId, onChange],
   );
+
+  /**
+   * Valide l'URL saisie : on l'aspire, et c'est l'adresse produite chez nous
+   * qui est retenue. Une adresse qui ne donne pas d'image ne remplace rien.
+   */
+  const commitUrl = React.useCallback(async () => {
+    const next = draft.trim();
+    if (next === value.trim()) return;
+    if (!next) {
+      onChange("");
+      return;
+    }
+    if (!/^https?:\/\//i.test(next)) {
+      toast.error("L'adresse doit commencer par http:// ou https://");
+      return;
+    }
+    setBusy(true);
+    try {
+      const hosted = await absorbUrl(next, entrepriseId);
+      if (hosted) {
+        onChange(hosted);
+        setShowUrl(false);
+        toast.success("Logo importé.");
+      } else {
+        setDraft(value);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [draft, value, entrepriseId, onChange]);
 
   const thumb = compact ? "h-7 w-7" : "h-12 w-12";
 
@@ -238,10 +304,20 @@ export const LogoField: React.FC<LogoFieldProps> = ({
 
       {showUrl && (
         <Input
-          value={value}
+          value={draft}
           placeholder="https://…/logo.png"
+          disabled={busy}
           className={compact ? "h-7 text-xs" : undefined}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={() => void commitUrl()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              void commitUrl();
+            } else if (e.key === "Escape") {
+              setDraft(value);
+            }
+          }}
           onClick={(e) => e.stopPropagation()}
         />
       )}
