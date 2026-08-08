@@ -266,9 +266,17 @@ create table if not exists public.entreprise_rge_qualifications (
 -- date de rafraîchissement du jeu et change donc à chaque publication : s'en
 -- servir créerait un doublon par jour. Le triplet porteur/qualification/début
 -- est stable.
+--
+-- Colonnes NUES et `nulls not distinct`, et non une expression `coalesce(...)` :
+-- PostgREST ne sait viser depuis `on_conflict=` qu'un index sur des colonnes
+-- réelles. Avec un index d'expression, l'upsert de l'hydratation échouerait à
+-- chaque passage — ou insérerait un doublon par jour sans rien signaler.
+-- `nulls not distinct` (PG 15+) fait qu'une `date_debut` absente reste une
+-- seule et même clé, là où le défaut Postgres laisserait les NULL coexister.
 create unique index if not exists erq_naturelle_unique
   on public.entreprise_rge_qualifications
-     (entreprise_id, siret, code_qualification, coalesce(date_debut, date '1900-01-01'));
+     (entreprise_id, siret, code_qualification, date_debut)
+  nulls not distinct;
 
 create index if not exists erq_entreprise_idx
   on public.entreprise_rge_qualifications (entreprise_id) where retiree_le is null;

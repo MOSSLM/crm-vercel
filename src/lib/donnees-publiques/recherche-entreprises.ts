@@ -334,7 +334,11 @@ export const etablissementsCandidats = (raw: RawUniteLegale): CandidatEtablissem
   const source = matched.length > 0 ? matched : raw.siege ? [raw.siege] : [];
 
   return source
-    .map((e) => {
+    // Annotation explicite : sans elle, le `siret` du spread est inféré comme
+    // `string` (et non `string | null`), donc plus ÉTROIT que
+    // `CandidatEtablissement` — ce qui invalide le prédicat du `filter` en
+    // dessous.
+    .map((e): CandidatEtablissement | null => {
       const siret = normalizeSiret(e.siret ?? null);
       if (!siret) return null;
       return {
