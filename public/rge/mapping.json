@@ -1,0 +1,98 @@
+{
+ "canvas": {
+  "w": 360,
+  "h": 180
+ },
+ "certificat_vers_logo": {
+  "QUALIBAT-RGE": "qualibat",
+  "QualiPAC module Chauffage et ECS": "qualipac",
+  "QualiPAC module CET": "qualipac",
+  "Qualibois Eau": "qualibois",
+  "Qualibois Air": "qualibois",
+  "QualiPV 36": "qualipv",
+  "QualiPV 500": "qualipv",
+  "Qualisol CESI": "qualisol",
+  "Qualisol Combi": "qualisol",
+  "Qualisol Collectif": "qualisol",
+  "Chauffage +": "chauffage-plus",
+  "Ventilation +": "ventilation-plus",
+  "Certificat Qualifelec RGE": "qualifelec",
+  "Certificat OPQIBI": "opqibi",
+  "Certification forage module Sonde": "certiforage",
+  "Certification forage module Nappe": "certiforage"
+ },
+ "dimensions": {
+  "qualipac": {
+   "w_src": 1045,
+   "h_src": 347,
+   "w": 251,
+   "h": 84
+  },
+  "qualibois": {
+   "w_src": 1045,
+   "h_src": 346,
+   "w": 252,
+   "h": 83
+  },
+  "qualipv": {
+   "w_src": 1046,
+   "h_src": 346,
+   "w": 252,
+   "h": 83
+  },
+  "qualisol": {
+   "w_src": 1044,
+   "h_src": 345,
+   "w": 252,
+   "h": 83
+  },
+  "chauffage-plus": {
+   "w_src": 1044,
+   "h_src": 347,
+   "w": 251,
+   "h": 84
+  },
+  "ventilation-plus": {
+   "w_src": 1044,
+   "h_src": 347,
+   "w": 251,
+   "h": 84
+  },
+  "qualibat": {
+   "w_src": 1100,
+   "h_src": 1150,
+   "w": 124,
+   "h": 130
+  },
+  "qualifelec": {
+   "w_src": 208,
+   "h_src": 257,
+   "w": 105,
+   "h": 130
+  },
+  "opqibi": {
+   "w_src": 2812,
+   "h_src": 1012,
+   "w": 242,
+   "h": 87
+  },
+  "certiforage": {
+   "w_src": 1282,
+   "h_src": 714,
+   "w": 194,
+   "h": 108
+  },
+  "recharge-elec": {
+   "w_src": 1039,
+   "h_src": 257,
+   "w": 291,
+   "h": 72
+  },
+  "opqibi-rge": {
+   "w_src": 1593,
+   "h_src": 1188,
+   "w": 168,
+   "h": 125
+  }
+ }
+}
