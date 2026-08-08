@@ -77,6 +77,13 @@ allégation trompeuse : le contrôle ADEME protège.
    Le résultat net est donc le chiffre qu'on a presque toujours ; il ne doit **pas** être annulé
    quand il vaut 0, contrairement au CA.
 
+10. **`recherche-entreprises` a bien un quota, contrairement à ce qui est écrit plus haut.**
+    40 requêtes lancées en parallèle : **26 sont revenues en HTTP 429 « Too Many Requests »**.
+    En cadençant (~4 requêtes puis une pause d'une seconde), les 40 passent. Le traitement doit donc
+    rester séquentiel, et un 429 mérite un backoff plutôt qu'un simple comptage en erreur.
+    **L'ADEME, elle, encaisse 40 requêtes simultanées sans broncher** — le quota est propre à
+    `recherche-entreprises`.
+
 ### A3. Couverture réelle, mesurée sur 45 entreprises du parc
 
 | Donnée | Couverture |
@@ -202,8 +209,59 @@ Composant `BoutonDonneesPubliques` à déposer dans une modale de fiche.
 - `nom_qualification` a ses **accents mutilés à la source** (« gnrateur photovoltaque raccord au
   rseau »). Ne pas l'afficher tel quel ; `nom_certificat`, `domaine` et `meta_domaine` sont propres.
 
-**Ce qui reste à faire :** les 150 fiches sans identifiant attendent un passage de
-`POST /resolution` puis une session de validation ; seule ECLEIS (id 2143) est hydratée à ce jour.
+### A9. Le cockpit livré le 08/08/2026 (prompt 2)
+
+`lib/donnees-publiques/fiche.ts` est le module PUR qui porte tout le jugement d'affichage
+(risques, accroches, classement des dirigeants), partagé par les deux surfaces via le composant
+`DossierEntreprise` : fiche agent `espace-agent/entreprises/[id]` et page admin `companies/[id]`,
+où il passe **avant** les champs éditables.
+
+**40 fiches ont été hydratées** au passage (celles dont le SIREN vivait dans les notes). Les
+couvertures réelles, qui remplacent les estimations de §A3 :
+
+| Donnée | Couverture mesurée sur 40 |
+|---|---|
+| **Dirigeants nommés** | **40/40 — 100 %** |
+| Tranche d'effectif | 19/40 — 47 % |
+| Résultat net | 16/40 — 40 % |
+| **Chiffre d'affaires** | **5/40 — 12 %** |
+
+Le dirigeant nommé est donc la seule donnée toujours là : c'est LUI qui remplace l'appel à
+l'aveugle, pas le CA. D'où la règle d'affichage unique — **un bloc sans contenu n'est pas rendu**.
+
+Trois détails coûteux à redécouvrir :
+
+- Certains « dirigeants » sont des **commissaires aux comptes** (auditeurs externes, ne décident
+  rien) ou des **personnes morales** (on n'appelle pas une holding). Les deux sont traités à part.
+- La **liquidation précède la radiation** de plusieurs mois : se fier au seul `etat_administratif`
+  laisse démarcher une entreprise morte. La qualité des dirigeants est le second signal.
+- 30 qualifications sur 10 entreprises, **dont 7 expirent sous 90 jours** — les accroches d'appel
+  de §A7 existent bel et bien.
+
+### A10. État de départ du prompt 3, et la décision déjà prise
+
+Les 190 projets se répartissent en trois groupes qu'il ne faut **pas** confondre :
+
+| Groupe | Projets | Dont `stat_rge_count` saisi | Qualifs ADEME |
+|---|---|---|---|
+| **A.** sans SIRET — *on n'a jamais regardé* | 150 | 65 | 0 |
+| **B.** SIRET + ADEME rend 0 — *absence VÉRIFIÉE* | 30 | 8 | 0 |
+| **C.** SIRET + qualifications réelles | 10 | 10 | 30 |
+
+`stat_rge_count_official` est renseigné sur **0** projet : la colonne prioritaire est vide partout,
+donc rien ne la protège aujourd'hui d'un affichage dérivé — raison de plus pour ne pas y toucher.
+
+> **DÉCISION DU PROPRIÉTAIRE (08/08/2026)** — `count(*)` ne fait autorité **que là où on a
+> vérifié**, c'est-à-dire quand la fiche porte un SIRET (groupes B et C). Les 8 cas du groupe B
+> perdent leur bloc RGE : c'est exactement le cas ECLEIS, une allégation prouvée fausse. Les 65 du
+> groupe A **gardent leur valeur saisie**, assortie d'un avertissement visible dans le CRM disant
+> qu'elle n'est pas vérifiée.
+>
+> Le raisonnement : ignorance et absence vérifiée ne sont pas la même chose, et un `count(*)`
+> appliqué partout les confondrait — retirant des qualifications probablement réelles sur 65 démos.
+
+**Ce qui reste à faire :** les 150 fiches du groupe A attendent un passage de `POST /resolution`
+puis une session de validation humaine. Tant qu'elles n'en ont pas, leur bloc RGE reste déclaratif.
 
 ---
 
