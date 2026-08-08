@@ -30,6 +30,8 @@ import { AgentExchangeHistory } from "@/components/agent-portal/AgentExchangeHis
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { CallJournal } from "@/components/telephony/CallJournal";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import DossierEntreprise from "@/components/donnees-publiques/DossierEntreprise";
+import BoutonDonneesPubliques from "@/components/donnees-publiques/BoutonDonneesPubliques";
 
 
 type SiteRow = {
@@ -57,6 +59,7 @@ type Entreprise = {
   note_moyenne: number | null;
   nombre_avis: number | null;
   owner_id: string | null;
+  siret: string | null;
 };
 type Contact = {
   id: string;
@@ -89,7 +92,7 @@ export default function AgentEntrepriseDetailPage() {
       supabase
         .from("entreprises")
         .select(
-          "id, name, ville, code_postal, adresse, telephone, email, site_web_canonique, note_moyenne, nombre_avis, owner_id",
+          "id, name, ville, code_postal, adresse, telephone, email, site_web_canonique, note_moyenne, nombre_avis, owner_id, siret",
         )
         .eq("id", id)
         .maybeSingle(),
@@ -245,6 +248,21 @@ export default function AgentEntrepriseDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Le dossier public, juste sous l'en-tête : c'est ce qu'on lit AVANT
+          de décrocher, donc ça passe avant le site démo et les opportunités. */}
+      <DossierEntreprise entrepriseId={ent.id} />
+
+      {!ent.siret && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Identifier l&apos;entreprise</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BoutonDonneesPubliques entrepriseId={ent.id} siret={ent.siret} onChange={load} />
+          </CardContent>
+        </Card>
+      )}
 
       {site && (
         <Card>

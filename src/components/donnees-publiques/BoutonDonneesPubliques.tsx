@@ -20,6 +20,8 @@
 
 import { useCallback, useState } from "react";
 
+import { authedFetch } from "@/utils/authedFetch";
+
 type Candidat = {
   id: string;
   siret: string;
@@ -46,20 +48,15 @@ export type BoutonDonneesPubliquesProps = {
   entrepriseId: number;
   /** SIRET déjà validé, s'il existe. */
   siret?: string | null;
-  accessToken: string;
   /** Appelé après une hydratation ou une validation, pour rafraîchir l'appelant. */
   onChange?: () => void;
 };
 
-const entetes = (token: string) => ({
-  "content-type": "application/json",
-  authorization: `Bearer ${token}`,
-});
+const JSON_HEADERS = { "content-type": "application/json" };
 
 export default function BoutonDonneesPubliques({
   entrepriseId,
   siret,
-  accessToken,
   onChange,
 }: BoutonDonneesPubliquesProps) {
   const [occupe, setOccupe] = useState(false);
@@ -70,9 +67,9 @@ export default function BoutonDonneesPubliques({
     setOccupe(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/donnees-publiques/hydrate", {
+      const res = await authedFetch("/api/donnees-publiques/hydrate", {
         method: "POST",
-        headers: entetes(accessToken),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ entreprise_ids: [entrepriseId] }),
       });
       const data = await res.json();
@@ -89,22 +86,21 @@ export default function BoutonDonneesPubliques({
     } finally {
       setOccupe(false);
     }
-  }, [accessToken, entrepriseId, onChange]);
+  }, [entrepriseId, onChange]);
 
   const chercher = useCallback(async () => {
     setOccupe(true);
     setMessage(null);
     try {
-      const res = await fetch("/api/donnees-publiques/resolution", {
+      const res = await authedFetch("/api/donnees-publiques/resolution", {
         method: "POST",
-        headers: entetes(accessToken),
+        headers: JSON_HEADERS,
         body: JSON.stringify({ entreprise_ids: [entrepriseId] }),
       });
       if (!res.ok) throw new Error((await res.json())?.error ?? "échec");
 
-      const liste = await fetch(
+      const liste = await authedFetch(
         `/api/donnees-publiques/resolution?entreprise_id=${entrepriseId}`,
-        { headers: entetes(accessToken) },
       );
       const data = await liste.json();
       setCandidats(data.candidats ?? []);
@@ -118,15 +114,15 @@ export default function BoutonDonneesPubliques({
     } finally {
       setOccupe(false);
     }
-  }, [accessToken, entrepriseId]);
+  }, [entrepriseId]);
 
   const trancher = useCallback(
     async (siretChoisi: string, decision: "valide" | "rejete") => {
       setOccupe(true);
       try {
-        const res = await fetch("/api/donnees-publiques/resolution", {
+        const res = await authedFetch("/api/donnees-publiques/resolution", {
           method: "PATCH",
-          headers: entetes(accessToken),
+          headers: JSON_HEADERS,
           body: JSON.stringify({ entreprise_id: entrepriseId, siret: siretChoisi, decision }),
         });
         const data = await res.json();
@@ -144,7 +140,7 @@ export default function BoutonDonneesPubliques({
         setOccupe(false);
       }
     },
-    [accessToken, entrepriseId, onChange],
+    [entrepriseId, onChange],
   );
 
   return (
