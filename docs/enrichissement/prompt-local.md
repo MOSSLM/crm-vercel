@@ -1,52 +1,24 @@
-# Prompt d'enrichissement — à lancer depuis Claude Code en local
+Tu travailles sur le CRM `crm-vercel`. Ta mission : aller chercher toi-même, par
+recherche web, les informations qui manquent aux fiches d'entreprises
+qualifiées.
 
-Ce fichier est le prompt à coller dans une session **Claude Code locale** (sur le
-Mac). Il n'est pas exécutable depuis Claude Code sur le web : le proxy réseau y
-bloque `WebFetch`, or tout ce travail consiste à lire les sites des clients.
+**Tu remplaces un humain qui ferait plusieurs tours de recherche, pas un script
+qui fait une passe.** C'est tout l'enjeu. Un enrichissement automatique tourne
+déjà sur ce parc (l'edge function `enrich`) et il rate régulièrement des choses
+écrites noir sur blanc : il ne classe que ~6 pages par site et tronque le
+contexte à 30 000 caractères, donc ce qui est en page 8 n'est jamais lu, et il
+ne sait pas décider d'aller voir ailleurs quand le site est muet.
 
-Copier tout ce qui suit la ligne de séparation.
-
-## Après la session : rapatrier les logos
-
-La session locale écrit dans `logo_url` l'adresse qu'elle trouve, sans se
-soucier de l'hébergement — écrire en base par le MCP Supabase court-circuite de
-toute façon les routes de l'application. C'est cette reprise qui rattrape :
-elle balaie **toutes** les entreprises dont le logo n'est pas encore servi par
-nous, quelle que soit la façon dont l'URL est arrivée là.
-
-Depuis la console du navigateur, connecté au CRM :
-
-```js
-const key = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
-const token = JSON.parse(localStorage.getItem(key)).access_token;
-const sweep = (body) => fetch('/api/media/rehost-logos', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-  body: JSON.stringify(body),
-}).then(r => r.json()).then(r => (console.log(r), r));
-
-await sweep({ dry_run: true });   // ce qui serait fait, sans rien écrire
-await sweep({});                  // pour de vrai
-```
-
-Réservée aux admins. Rejouable : une image déjà chez nous est ignorée. Si la
-réponse porte un `next_after_id` non nul, le budget de la requête a été atteint —
-rappeler avec `await sweep({ after_id: <la valeur> })` jusqu'à ce qu'il soit
-`null`.
-
----
-
-Tu travailles sur le CRM `crm-vercel`. Ta mission : enrichir à la main, par
-recherche web, les fiches d'entreprises qualifiées, parce que l'enrichissement
-automatique (l'edge function `enrich`) rate régulièrement des informations
-écrites noir sur blanc sur les sites. Ce n'est pas un défaut d'intelligence :
-elle ne classe que ~6 pages et tronque le contexte à 30 000 caractères, donc ce
-qui est en page 8 n'est jamais lu. Toi, tu peux insister, croiser, et renoncer.
+Toi, tu peux : ouvrir une deuxième page quand la première ne dit rien, chercher
+le nom sur Google quand le site n'a pas de mentions légales, croiser trois
+sources qui se contredisent, et **renoncer** quand tu tombes sur un homonyme.
+C'est cette insistance qu'on vient chercher. Ne t'arrête pas à la première page
+qui ne donne rien.
 
 ## Accès
 
 - Base : Supabase via MCP, projet `llzrpcbwnqvbrcjjwysm`.
-- Web : `WebFetch` et `WebSearch`. Les deux marchent en local.
+- Web : `WebFetch` et `WebSearch`.
 - Pour les registres, utilise **`recherche-entreprises.api.gouv.fr`** (API
   publique, gratuite, sans clé) ou `annuaire-entreprises.data.gouv.fr`.
   **N'utilise pas pappers.fr en scraping** : Cloudflare le bloque, et l'API gouv
@@ -56,7 +28,7 @@ qui est en page 8 n'est jamais lu. Toi, tu peux insister, croiser, et renoncer.
 
 **192 entreprises** ont `entreprises.qualifie = true`. **Toutes ont un site.**
 C'est le seul périmètre. Ne touche à rien d'autre — le reste du parc (2 600
-fiches) a déjà été passé à la moulinette automatique et n'est pas prospecté.
+fiches) n'est pas prospecté.
 
 État actuel de ces 192 :
 
@@ -90,21 +62,38 @@ Travaille par lots d'environ 10, en écrivant au fur et à mesure. Ne garde pas
 40 fiches en tête pour tout écrire à la fin : si la session est interrompue,
 tout est perdu.
 
-## Ce qu'il faut trouver, dans cet ordre de source
+## Comment chercher — la méthode
 
-1. **Le site du client** — pages contact, à-propos, mentions légales, équipe.
-   C'est la seule source pour les emails, les noms de salariés et les lignes
-   directes. Va jusqu'aux mentions légales : SIRET, gérant, adresse y sont
-   déclarés.
-2. **La fiche Google** — nombre d'avis, note, ancienneté indirecte (date du plus
-   vieil avis), horaires, téléphone.
-3. **Le registre** (`recherche-entreprises.api.gouv.fr`) — date de création,
-   SIREN/SIRET, code NAF, effectif, dirigeants.
-4. **LinkedIn** de l'entreprise, si le reste n'a rien donné sur les personnes.
+Ces quatre sources se recoupent, et c'est le recoupement qui fait le travail. Ce
+qu'une source ne dit pas, une autre le donne presque toujours.
+
+1. **Le site du client.** Pages contact, à-propos, **mentions légales**, équipe,
+   et le pied de page. Les mentions légales sont souvent la meilleure page du
+   site : raison sociale exacte, SIRET, adresse, nom du gérant y sont déclarés
+   parce que la loi l'exige. Si l'URL en base ne mène nulle part, cherche le nom
+   sur Google — beaucoup d'entreprises ont changé de domaine.
+2. **La fiche Google** (`google_url` / `google_maps_url` en base). Nombre d'avis,
+   note, horaires, téléphone, et une ancienneté indirecte : la date du plus vieil
+   avis donne un plancher — une entreprise avec un avis de 2013 existait en 2013.
+3. **Une recherche « nom + ville »** sur Google. C'est le geste qui débloque le
+   plus de cas : elle fait remonter les annuaires légaux (societe.com, Pappers,
+   verif.com, annuaire-entreprises), qui affichent la date de création, le SIREN
+   et les dirigeants **directement dans l'extrait de résultat**, souvent sans
+   même avoir à ouvrir la page.
+4. **Le registre** — `recherche-entreprises.api.gouv.fr`, en JSON propre. C'est
+   la source de vérité pour la date de création, le SIREN, le code NAF,
+   l'effectif et les mandataires sociaux.
+
+Fais-en autant de tours que nécessaire. Si le site ne donne pas de gérant, va au
+registre. Si le registre est ambigu, croise avec la fiche Google. Une fiche peut
+demander cinq requêtes : c'est normal, c'est le travail.
 
 **Règle d'arrêt : un homonyme se renonce.** Nom + ville + code postal doivent
 concorder. Si deux sources se contredisent sur le SIRET, n'écris rien et
 signale-le dans le rapport. Une case vide vaut mieux qu'un faux SIRET.
+
+Le SIRET et la date de création n'ont pas de colonne où atterrir : ils servent à
+lever les doutes et à calculer l'ancienneté, pas à être stockés.
 
 ## Les emails — uniquement ceux lus sur le site
 
@@ -113,11 +102,11 @@ de `prenom.nom@`. Tu n'écris que ce que tu as lu sur une page.
 
 Où l'écrire :
 
-- **Adresse générique** (`contact@`, `info@`, `contact@`, `devis@`, `accueil@`…)
-  **ou seule adresse du site** → dans **`entreprises.email`**. C'est la colonne
-  où sont déjà tous les emails du CRM.
+- **Adresse générique** (`contact@`, `info@`, `devis@`, `accueil@`…) **ou seule
+  adresse du site** → dans **`entreprises.email`**. C'est la colonne où sont déjà
+  tous les emails du CRM.
 - **Adresse nominative** (`jean.dupont@…`) → dans **`contacts.email`**, sur la
-  ligne de la personne concernée (voir plus bas), pas dans `entreprises.email`.
+  ligne de la personne concernée, pas dans `entreprises.email`.
 
 Si le site n'a qu'un formulaire de contact sans adresse affichée, laisse vide et
 note-le dans le rapport.
@@ -149,9 +138,28 @@ entreprise avec le même nom.
 ## Les chiffres clés — barème en cascade
 
 Ces chiffres nourrissent des **sites de démo privés**, jamais publiés et non
-indexés (`is_published = false` sur les 88 sites démo), montrés au seul prospect
-concerné. **Ils peuvent et doivent être flatteurs.** Un chiffre qui « fait
-petit » dessert la démo autant qu'un chiffre faux.
+indexés, montrés au seul prospect concerné. **Ils peuvent et doivent être
+flatteurs.** Un chiffre qui « fait petit » dessert la démo autant qu'un chiffre
+faux.
+
+### Le principe qui commande tout : est-ce que ce chiffre est plausible ?
+
+Avant et après le barème, pose-toi cette question : **est-ce que ce nombre a du
+sens pour une entreprise de cet âge ?**
+
+Une boîte qui tourne depuis 2007 n'a pas 2 clients. Ni 20. Elle en a
+vraisemblablement plusieurs centaines — 100, 200, 300, davantage. Un chauffagiste
+seul qui pose deux chaudières par semaine en pose une centaine par an ; sur
+quinze ans, ça fait plus de mille chantiers. C'est ce raisonnement d'ordre de
+grandeur qui doit gouverner, pas l'application mécanique d'une formule.
+
+Le barème ci-dessous est un outil pour trancher quand tu n'as rien de mieux. **Si
+son résultat te paraît absurde au vu de l'ancienneté, de la taille de l'équipe ou
+de ce que raconte le site, écarte-le et mets un chiffre qui tient debout** — en
+expliquant pourquoi dans le rapport. C'est exactement pour ce jugement-là qu'on
+te confie ce travail plutôt qu'à un script.
+
+### Le barème, quand il faut trancher
 
 Applique dans cet ordre, et **note dans le rapport quelle règle s'est
 appliquée** :
@@ -189,22 +197,11 @@ chiffres confirmés par le client lui-même, et l'affichage les fait primer. Les
 ## Le logo
 
 Si tu trouves un meilleur logo que celui en base, **écris simplement l'URL que
-tu as trouvée dans `entreprises.logo_url`**, comme le reste.
+tu as trouvée dans `entreprises.logo_url`**, comme le reste. Tu n'as pas à
+t'occuper de l'hébergement : le CRM aspire les logos distants dans son propre
+stockage, à la publication et par une reprise dédiée.
 
-Tu n'as pas à t'occuper du ré-hébergement. Une URL qui pointe vers le site du
-client casserait le jour où il le refait, mais c'est traité après coup : une
-reprise (`POST /api/media/rehost-logos`) ratisse toutes les entreprises dont le
-logo n'est pas encore servi par nous, aspire l'image dans notre bucket et
-réécrit `entreprises.logo_url` **et** `lead_magnet_projects.logo_url`. Elle est
-rejouable sans dommage.
-
-**Signale simplement dans le rapport final quelles entreprises ont reçu un
-nouveau logo**, pour qu'on sache qu'il faut repasser la reprise.
-
-(Si le serveur de dev tourne et que tu as un jeton, tu peux aussi appeler
-`POST /api/media/from-url` avec `{ url, entreprise_id, image_type: "company",
-tags: ["logo"] }` — mais ce n'est pas nécessaire, et ce n'est pas ce qui est
-attendu de toi.)
+**Signale dans le rapport final quelles entreprises ont reçu un nouveau logo.**
 
 ## Le rapport final — exigé
 
@@ -222,8 +219,7 @@ attendu de toi.)
    introuvables. Sois explicite sur ce que tu n'as pas pu faire.
 6. **Un récapitulatif chiffré** : emails gagnés sur les 82 manquants, fiches
    sorties du motif `×2`, entreprises ayant enfin au moins un contact.
-7. **La liste des entreprises dont tu as changé le logo**, pour savoir s'il faut
-   repasser la reprise de ré-hébergement.
+7. **La liste des entreprises dont tu as changé le logo.**
 
 Ne prétends pas avoir traité une fiche que tu n'as pas pu traiter. Un « site
 inaccessible » honnête vaut mieux qu'une estimation inventée.
