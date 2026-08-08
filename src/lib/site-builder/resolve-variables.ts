@@ -27,6 +27,7 @@ import {
   applyEnrichmentVariables,
   fetchEnrichmentSlice,
 } from "./enrichment-variables";
+import { chargerRgePourSite } from "../donnees-publiques/rge-pour-site";
 import { applyProjectEnrichment } from "./project-enrichment";
 import { applyCityVariables } from "./city-variables";
 import { finalizeEnterpriseVariables } from "./build-enterprise-variables";
@@ -86,6 +87,14 @@ export async function resolveEnterpriseVariables(
         .eq("id", site.enterprise_id)
         .single()
     : null;
+  // `enterprise_id` est nullable sur `sites` : un site sans entreprise ne peut
+  // porter aucune certification vérifiée, donc l'état vide.
+  const rgePourSitePromise = site.enterprise_id
+    ? chargerRgePourSite(supabase, site.enterprise_id)
+    : Promise.resolve({
+        etat: { aSiret: false, rgeInterroge: false, qualificationsValides: 0 },
+        logos: [],
+      });
   const projectIdPromise = resolveLeadMagnetProjectId(supabase, {
     explicitProjectId: site.lead_magnet_project_id,
     enterpriseId: site.enterprise_id,
@@ -156,6 +165,13 @@ export async function resolveEnterpriseVariables(
   let projectServiceTags: string[] | null = null;
   let projectStats: StatItem[] | null = null;
   if (projectId) {
+    // Résolu en même temps que le reste : c'est une lecture de plus, pas un
+    // aller-retour de plus.
+    const rgePourSite = await rgePourSitePromise;
+    if (rgePourSite.logos.length > 0) {
+      vars["__certifications"] = JSON.stringify(rgePourSite.logos);
+    }
+
     const [projResult, reviewsResult] = await Promise.all([
       supabase
         .from("lead_magnet_projects")
@@ -225,7 +241,11 @@ export async function resolveEnterpriseVariables(
         }
       }
       // Enrichissement du projet (edge function) : logo, stats, zones desservies.
-      const projEnrichment = applyProjectEnrichment(vars, proj);
+      // (`rgePourSite` est résolu plus haut, en parallèle des autres lectures.)
+      // `rge` vient du socle données publiques : il décide si `stat_rge_count`
+      // est un compte ADEME vérifié ou la saisie conservée. Même lecteur que
+      // l'aperçu de l'éditeur — une divergence se verrait sur le site public.
+      const projEnrichment = applyProjectEnrichment(vars, { ...proj, rge: rgePourSite.etat });
       projectServiceTags = projEnrichment.serviceTags;
       projectStats = projEnrichment.stats;
       if (vars["entreprise.logo_url"]) logoUrl = vars["entreprise.logo_url"];

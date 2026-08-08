@@ -16,6 +16,7 @@ import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/conditi
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
 import { stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { hydrateCertifications, logosDepuisVariables } from "@/lib/site-builder/claude-design/certifications-from-variables";
 import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
@@ -172,6 +173,13 @@ export async function LibrarySectionInline({
   // jamais un chiffre vide à côté d'un libellé orphelin.
   if (html.includes("data-stats")) {
     html = hydrateStats(html, variables?.["__stats"]);
+  }
+  // Certifications RGE ([data-certifications]). Repli INVERSE de celui des
+  // stats : sans qualification vérifiée, le bloc entier disparaît au lieu de
+  // garder les logos d'exemple du design — ceux-ci attribueraient au client des
+  // certifications qu'il ne détient pas.
+  if (html.includes("data-certifications")) {
+    html = hydrateCertifications(html, logosDepuisVariables(variables?.["__certifications"]));
   }
   // One line per section per request, on every published page — noise in the
   // platform logs, and billed there. Keep it for the cases worth knowing about:

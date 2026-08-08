@@ -16,6 +16,7 @@ import { CLAUDE_DESIGN_RUNTIME } from "@/lib/site-builder/claude-design/runtime"
 import { DOM_PATH_ATTR, stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/condition-service-markup";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
+import { hydrateCertifications, logosDepuisVariables } from "@/lib/site-builder/claude-design/certifications-from-variables";
 import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
 import { EDIT_REVEAL_CSS, EDIT_REVEAL_SCRIPT } from "@/lib/site-builder/claude-design/edit-reveal";
@@ -532,6 +533,9 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
       body = conditionServiceMarkup(body, serviceTagBySlug, enterpriseTagsOf(variables));
       body = hydrateReviews(body, variables["__reviews"]);
       body = hydrateStats(body, variables["__stats"]);
+      // Certifications : contrairement aux stats, l'absence SUPPRIME le bloc.
+      // Un logo RGE est une allégation, pas une décoration.
+      body = hydrateCertifications(body, logosDepuisVariables(variables["__certifications"]));
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     // Enterprise tags drive image-set resolution in the iframe. Empty when
