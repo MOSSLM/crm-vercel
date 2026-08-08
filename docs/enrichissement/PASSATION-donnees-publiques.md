@@ -53,6 +53,30 @@ allégation trompeuse : le contrôle ADEME protège.
    EMC Pessac est devenue « EDDIA NOUVELLE AQUITAINE ». La recherche par enseigne échoue ;
    ce qui débloque, c'est le SIRET affiché sur le site, ou le nom du dirigeant.
 
+   **Mesuré depuis** : `q=CLIMIZ` et `q=Eco Solutions 44&code_postal=44800` rendent tous deux
+   `total_results: 0`. L'échec est SILENCIEUX — un 200 avec une liste vide, indiscernable d'une
+   entreprise qui n'existe pas. D'où l'élargissement progressif implémenté dans
+   `variantesDeRecherche`.
+
+7. **Le SIRET à retenir est celui de l'ÉTABLISSEMENT, pas du siège.** Généralisation du piège 4, et
+   il mord dès le premier cas testé : la fiche « CLIMIZ, Paris 75011 » est TOP CLIMATISATION, dont
+   le **siège est à Paris 75017** et dont l'établissement du 75011 porte le SIRET
+   `88829510200014`. Retenir le siège donne la bonne entreprise à la mauvaise adresse, et
+   interroge ensuite l'ADEME sur un établissement qui ne porte pas les qualifications.
+   Le filtre `code_postal` s'applique aux `matching_etablissements`, pas au siège : c'est là qu'il
+   faut lire le résultat.
+
+8. **Homonymes stricts dans le parc.** « Chaleur et Confort » du CRM (id 2456/2457) est à **Dinan
+   22100** ; l'entreprise décrite en §A7 est à **Lestrem 62136**, SIREN 749892840, avec des
+   qualifications qui courent jusqu'en 2027. Deux entreprises distinctes, même nom. `q=CHALEUR ET
+   CONFORT` rend 34 résultats. C'est la raison concrète pour laquelle la validation reste humaine.
+
+9. **`ca: 0` est confirmé, `resultat_net` suit la règle INVERSE.** Sur 20 SIREN sondés, 13 ont
+   répondu et 8 avaient déposé des comptes : 6 sont à `ca: 0`, et le résultat net est publié **8
+   fois sur 8** — dont un négatif (−59 769 €), ce qui prouve que c'est une vraie valeur signée.
+   Le résultat net est donc le chiffre qu'on a presque toujours ; il ne doit **pas** être annulé
+   quand il vaut 0, contrairement au CA.
+
 ### A3. Couverture réelle, mesurée sur 45 entreprises du parc
 
 | Donnée | Couverture |
@@ -66,10 +90,18 @@ allégation trompeuse : le contrôle ADEME protège.
 La plupart des artisans déposent des comptes confidentiels : on obtient souvent le résultat net
 sans le chiffre d'affaires. Prévoir deux colonnes distinctes plutôt que de forcer l'un dans l'autre.
 
-### A4. Le verrou : il n'existe aucune colonne `siret`
+### A4. Le verrou : ~~il n'existe aucune colonne `siret`~~ — LEVÉ le 08/08/2026
 
-`entreprises` n'a ni `siret` ni `siren`. Les 93 SIREN déjà trouvés ne vivent que dans le texte des
-notes de `contacts`. **Rien n'est possible sans cette colonne.**
+> **Fait depuis.** `entreprises.siret` / `.siren` existent, avec contrôle de format, cohérence
+> SIREN = préfixe du SIRET, et unicité sur les fiches non fusionnées. Voir
+> `sql/20260808_donnees_publiques_siret.sql` et §A8 ci-dessous.
+>
+> Mesure corrigée : ce sont **41 SIREN** (couvrant 40 fiches, toutes dans les 190), et non 93, qui
+> sont extractibles des notes de `contacts` ; **5 seulement** portent un SIRET à 14 chiffres. Les
+> 150 fiches restantes n'ont aucun identifiant.
+
+`entreprises` n'avait ni `siret` ni `siren`. Les SIREN déjà trouvés ne vivaient que dans le texte des
+notes de `contacts`. **Rien n'était possible sans cette colonne.**
 
 Le problème se découpe en deux étages qu'il ne faut pas confondre :
 
@@ -124,6 +156,55 @@ modèle sur du JSON structuré est plus lent, plus cher et **moins fiable** qu'u
   septembre » ouvre une conversation.
 - **100 fiches** portent encore `installations = clients × 2`, motif visible en démo.
 
+### A8. Le socle livré le 08/08/2026 (prompt 1)
+
+Branche `claude/crm-siret-enrichment-ss4j8f`. Schéma et cron **déjà appliqués** sur
+`llzrpcbwnqvbrcjjwysm` ; le code attend un déploiement.
+
+**Le choix de conception à connaître avant de toucher à quoi que ce soit** : tout ce qui vient des
+API vit dans `entreprises_donnees_publiques`, une table 1:1 que rien d'humain n'écrit. La règle
+« ne jamais écraser le saisi humain ni les `*_official` » n'est plus une consigne qu'on peut
+oublier — l'hydratation n'a pas accès aux colonnes à protéger. Un test l'affirme en constatant les
+tables qui n'ont **pas** été écrites.
+
+| Objet | Rôle |
+|---|---|
+| `entreprises.siret` / `.siren` | Identité validée par un humain. Seul `PATCH /resolution` l'écrit. |
+| `entreprises_donnees_publiques` | Identité, taille, finances, dirigeants. 100 % API. |
+| `entreprise_rge_qualifications` | Une ligne par qualification, avec ses dates. Retrait marqué, jamais supprimé. |
+| `entreprise_siret_candidats` | Candidats scorés, à trancher. |
+| `donnees_publiques_runs` | Journal : distingue « rien à faire » de « rien fait ». |
+| `donnees_publiques_settings` | Cadences (RGE 24 h, identité 720 h, finances 8760 h) et taille de lot. |
+| `v_donnees_publiques_a_rafraichir` | **La** définition de « périmé ». Ne pas la recopier ailleurs. |
+| `v_rge_qualifications_valides` | Non retirées, avec `expiree` et `expire_bientot` (90 j). |
+
+Routes : `POST /api/donnees-publiques/hydrate` (bouton, force), `/api/cron/donnees-publiques`
+(pg_cron `donnees-publiques-tick`, `7 * * * *`), `POST|GET|PATCH /api/donnees-publiques/resolution`.
+Composant `BoutonDonneesPubliques` à déposer dans une modale de fiche.
+
+**Deux gains non prévus par cette note :**
+
+- **L'ADEME accepte un joker** : `qs=siret:<siren>*` trouve les qualifications portées par
+  n'importe quel établissement du SIREN. Le piège 4 (« siège ≠ établissement ») est donc réglé sans
+  coût — c'est la même requête. Utiliser `qs` et non `q` : `q` cherche en plein texte et peut
+  ramener une ligne étrangère.
+- **`nom_certificat` a 40 valeurs**, pas 16. `public/rge/mapping.json` en couvre 16 ; les
+  ~20 `CERTIFICAT_*` sont des certificats d'audit nominatifs, sans logo. Le rendu doit tolérer
+  l'absence de logo, ce n'est pas une anomalie.
+
+**Deux pièges d'implémentation, pour ne pas les repayer :**
+
+- `_id` de l'ADEME (`45415-32-2026-06-11`) porte la date de publication du jeu et **change chaque
+  jour** : s'en servir comme clé créerait un doublon quotidien. La clé stable est
+  (siret, code_qualification, date_debut).
+- Un index d'**expression** (`coalesce(...)`) ne peut pas être visé par `on_conflict` de PostgREST.
+  D'où `nulls not distinct` sur des colonnes nues.
+- `nom_qualification` a ses **accents mutilés à la source** (« gnrateur photovoltaque raccord au
+  rseau »). Ne pas l'afficher tel quel ; `nom_certificat`, `domaine` et `meta_domaine` sont propres.
+
+**Ce qui reste à faire :** les 150 fiches sans identifiant attendent un passage de
+`POST /resolution` puis une session de validation ; seule ECLEIS (id 2143) est hydratée à ce jour.
+
 ---
 
 ## B. Les prompts
@@ -132,7 +213,7 @@ Découper en **quatre conversations** plutôt qu'une. C'est précisément le mur
 motivé cette passation : une seule conversation pour les quatre chantiers s'y heurtera aussi.
 Chacune peut faire plusieurs commits.
 
-### Prompt 1 — Socle de données (Supabase + hydratation)
+### Prompt 1 — Socle de données (Supabase + hydratation) — ✅ FAIT le 08/08/2026, cf. §A8
 
 > Projet `crm-vercel`, Supabase MCP projet `llzrpcbwnqvbrcjjwysm`. Tu as les pleins droits sur la
 > base et le dépôt, tu peux committer.
