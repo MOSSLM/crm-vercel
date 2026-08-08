@@ -121,6 +121,78 @@ describe("drawImageSets — a photo tagged for several trades", () => {
   });
 });
 
+describe("drawImageSets — a trade that runs out mid-band", () => {
+  it("leans on the trade that still has photos instead of repeating one", () => {
+    // Ten climatisation photos, two of ventilation: a strict rota owes
+    // ventilation three slots and could only fill the third with a repeat.
+    const library = [...pool("Climatisation", 10), ...pool("Ventilation", 2)];
+    for (let seed = 1; seed <= 40; seed++) {
+      const { slots } = drawImageSets({
+        slotCount: 6, companyTags: ["Climatisation", "Ventilation"], library, random: seededRandom(seed),
+      });
+      expect(new Set(slots.map((s) => s.chosen!.url)).size).toBe(6);
+      expect(slots.every((s) => !s.repeated)).toBe(true);
+    }
+  });
+
+  it("reports the stock as DISTINCT photos, counting a shared one once", () => {
+    const library = [...multiTag(["Climatisation", "Ventilation"], 4), ...pool("Climatisation", 2)];
+    const { pools, distinctAvailable } = drawImageSets({
+      slotCount: 6, companyTags: ["Climatisation", "Ventilation"], library, random: SEED(),
+    });
+    // Per trade: 6 climatisation, 4 ventilation — but only 6 photos exist.
+    expect(pools.map((p) => p.available)).toEqual([6, 4]);
+    expect(distinctAvailable).toBe(6);
+  });
+
+  it("flags the slots the stock cannot serve, rather than filling them twice", () => {
+    const { slots, distinctAvailable } = drawImageSets({
+      slotCount: 6, companyTags: ["Climatisation"], library: pool("Climatisation", 4), random: SEED(),
+    });
+    expect(distinctAvailable).toBe(4);
+    expect(slots.map((s) => s.repeated)).toEqual([false, false, false, false, true, true]);
+    // The four that stand are distinct; the flagged ones are the caller's cue.
+    const kept = slots.filter((s) => !s.repeated);
+    expect(new Set(kept.map((s) => s.chosen!.url)).size).toBe(4);
+  });
+
+  it("flags them for a company the library serves only universal photos", () => {
+    const library = [
+      { id: "u1", url: "https://x/u1.jpg", tags: ["all"] },
+      { id: "u2", url: "https://x/u2.jpg", tags: [] },
+    ];
+    const { slots } = drawImageSets({
+      slotCount: 6, companyTags: ["Ramonage"], library, random: SEED(),
+    });
+    expect(slots.map((s) => s.repeated)).toEqual([false, false, true, true, true, true]);
+  });
+});
+
+describe("drawImageSets — the guarantee, over random libraries", () => {
+  it("never shows a photo twice unless the stock itself is too small", () => {
+    const TRADES = ["Climatisation", "Ventilation", "Plomberie", "Électricité"];
+    for (let seed = 1; seed <= 300; seed++) {
+      const rnd = seededRandom(seed);
+      const companyTags = TRADES.slice(0, 1 + Math.floor(rnd() * TRADES.length));
+      // Photos carrying a random handful of trades: overlapping pools, uneven
+      // stock, and some universal photos (those that drew no trade at all).
+      const library: LibraryImage[] = Array.from({ length: Math.floor(rnd() * 15) }, (_, i) => ({
+        id: `p${i}`, url: `https://x/p${i}.jpg`, tags: TRADES.filter(() => rnd() < 0.4),
+      }));
+      const { slots, distinctAvailable } = drawImageSets({
+        slotCount: 6, companyTags, library, random: seededRandom(seed * 7 + 1),
+      });
+
+      const urls = slots.map((s) => s.chosen?.url).filter((u): u is string => !!u);
+      // Every photo the stock holds is used before any is used twice.
+      expect(new Set(urls).size).toBe(Math.min(6, distinctAvailable));
+      // And what the band KEEPS — the slots not flagged — is always distinct.
+      const kept = slots.filter((s) => !s.repeated && s.chosen).map((s) => s.chosen!.url);
+      expect(new Set(kept).size).toBe(kept.length);
+    }
+  });
+});
+
 describe("drawImageSets — serving the OTHER companies", () => {
   it("puts a candidate for every stocked trade in each slot", () => {
     const { slots } = drawImageSets({
@@ -254,16 +326,29 @@ describe("redrawSlot — swapping ONE photo", () => {
     expect(pickCandidate(next.candidates, ["Électricité"])!.url).toContain("Électricité");
   });
 
-  it("settles for a repeat rather than nothing when the pool is exhausted", () => {
-    // 2 photos for 3 slots of that trade: the swap can't avoid every other slot.
+  it("refuses to swap in a photo the band already shows", () => {
+    // 2 photos, the other one is on another slot: swapping would duplicate it.
     const library = pool("Climatisation", 2);
-    const next = redrawSlot({
+    expect(redrawSlot({
       slotCount: 6, companyTags: ["Climatisation"], library, random: seededRandom(5),
       slotIndex: 0,
       usedUrls: ["https://x/Climatisation-2.jpg"],
       currentUrl: "https://x/Climatisation-1.jpg",
+    })).toBeNull();
+  });
+
+  it("borrows from another trade rather than repeat one of its own", () => {
+    // Climatisation is down to photos the band shows; ventilation still has some.
+    const library = [...pool("Climatisation", 2), ...pool("Ventilation", 4)];
+    const next = redrawSlot({
+      slotCount: 6, companyTags: ["Climatisation", "Ventilation"], library, random: seededRandom(5),
+      slotIndex: 0,
+      usedUrls: ["https://x/Climatisation-2.jpg"],
+      currentUrl: "https://x/Climatisation-1.jpg",
+      leadTag: "Climatisation",
     })!;
-    expect(next.chosen!.url).toBe("https://x/Climatisation-2.jpg"); // ≠ current, repeat accepted
+    expect(next.leadTag).toBe("ventilation");
+    expect(next.chosen!.url).toContain("Ventilation");
   });
 
   it("reports that nothing else exists for a one-photo pool", () => {
@@ -364,7 +449,7 @@ describe("drawImageSets — alt text and re-draws", () => {
 
   it("handles a zone with no slot", () => {
     expect(drawImageSets({ slotCount: 0, companyTags: ["Climatisation"], library: LIBRARY })).toEqual({
-      slots: [], pools: [], emptyTags: [],
+      slots: [], pools: [], emptyTags: [], distinctAvailable: 0,
     });
   });
 });

@@ -17,13 +17,19 @@
  *     climatisation + plomberie gets an alternating band, not six air
  *     conditioners. `pickCandidate` breaks a score tie on ORDER, so leading a
  *     slot's list with the trade we want for that slot is what selects it.
- *  2. **No repeats.** A photo that has been drawn is never drawn again in the
- *     band. Trade pools OVERLAP — a photo tagged "climatisation" AND
- *     "ventilation" belongs to both — so the ledger has to be kept across trades
- *     (see `createChooser`), not per trade: counting per trade is what used to
- *     put the same photo on two slots of a two-trade company. A pool too small
- *     to cover its slots wraps around and is reported, rather than silently
- *     repeating.
+ *  2. **No repeats — and this one wins.** A photo that has been drawn is never
+ *     drawn again in the band. Two things fight it:
+ *       - pools OVERLAP, a photo tagged "climatisation" AND "ventilation"
+ *         belongs to both, so the ledger is kept across trades
+ *         (`createChooser`) and not per trade;
+ *       - a trade can run OUT while another still has photos — a company with
+ *         ten climatisation photos and two of ventilation cannot fill three
+ *         ventilation slots. The slot then leads with the next trade that has
+ *         something left (`leadTagWithStock`): a band of four + two beats a
+ *         band with the same photo twice.
+ *     Only a company whose trades hold fewer DISTINCT photos than the band has
+ *     slots still repeats — nothing can be drawn from an empty library —
+ *     and `distinctAvailable` reports exactly that.
  *
  * Every other trade still gets a candidate in each set, so a company that is not
  * the one drawn for is served too — that is the whole point of a set, and those
@@ -68,6 +74,11 @@ export interface DrawnSlot {
   /** Which trade this slot leads with (canonical key), or null when the company
    *  has no tag at all and the slot falls back to universal images. */
   leadTag: string | null;
+  /** The stock ran out: `chosen` is a photo the band ALREADY shows. The caller
+   *  hides this slot's card rather than display it twice — a band of five is
+   *  what the operator asked for over a band of six with a twin in it. The set
+   *  is still built, so a company with a fuller library resolves it normally. */
+  repeated: boolean;
 }
 
 export interface PoolReport {
@@ -87,6 +98,11 @@ export interface DrawResult {
   pools: PoolReport[];
   /** Trades of the company with NO image at all in the library. */
   emptyTags: string[];
+  /** DISTINCT photos the company's trades hold, all trades counted together and
+   *  a photo tagged for two of them counted ONCE. Below the slot count, the band
+   *  cannot avoid repeating — that is the only case where it still does, so this
+   *  is the number the panel warns on, not the per-trade stock. */
+  distinctAvailable: number;
 }
 
 /** Fisher-Yates, on a copy. */
@@ -174,6 +190,34 @@ function leadTagFor(ctx: DrawContext, slotIndex: number): string | null {
   return ctx.usable.length > 0 ? ctx.usable[slotIndex % ctx.usable.length] : null;
 }
 
+/**
+ * The trade slot `i` leads with once the stock is taken into account: its
+ * round-robin trade, or the next one down the rota that still has a photo
+ * nobody has taken.
+ *
+ * The alternation is what makes the band readable; it is not worth a repeat.
+ * A company with ten climatisation photos and two of ventilation owes three
+ * slots to ventilation under a strict rota, and the third could only be a photo
+ * already shown — while eight climatisation photos sit unused. It leads with
+ * climatisation instead.
+ *
+ * Falls back to the rota's own trade when NOTHING is left anywhere: the library
+ * is simply too small, and `distinctAvailable` says so.
+ */
+function leadTagWithStock(
+  ctx: DrawContext,
+  hasFresh: (key: string) => boolean,
+  slotIndex: number,
+): string | null {
+  const rota = leadTagFor(ctx, slotIndex);
+  if (!rota || hasFresh(rota)) return rota;
+  for (let step = 1; step < ctx.usable.length; step++) {
+    const key = ctx.usable[(slotIndex + step) % ctx.usable.length];
+    if (hasFresh(key)) return key;
+  }
+  return rota;
+}
+
 interface SlotBuild {
   slotIndex: number;
   leadTag: string | null;
@@ -184,6 +228,8 @@ interface SlotBuild {
   leadTags?: string[];
   fallbackAlt: string;
   imageForTag: (key: string) => LibraryImage;
+  /** `chosen` is already somewhere else in the band — see `DrawnSlot.repeated`. */
+  repeated?: boolean;
 }
 
 /**
@@ -198,6 +244,7 @@ function assembleSlot(ctx: DrawContext, build: SlotBuild): DrawnSlot {
   const { slotIndex, leadTag, leadImage, leadTags, fallbackAlt, imageForTag } = build;
   const candidates: ImageSetCandidate[] = [];
   let chosen: LibraryImage | null = null;
+  let repeated = build.repeated ?? false;
 
   const order = leadTag ? [leadTag, ...ctx.usable.filter((k) => k !== leadTag)] : [];
   for (const key of order) {
@@ -223,10 +270,15 @@ function assembleSlot(ctx: DrawContext, build: SlotBuild): DrawnSlot {
   if (ctx.universals.length > 0) {
     const img = ctx.universals[slotIndex % ctx.universals.length];
     candidates.push(toCandidate(img, [MEDIA_LIBRARY_UNIVERSAL_TAG], fallbackAlt));
-    if (!chosen) chosen = img;
+    if (!chosen) {
+      chosen = img;
+      // A band filled from the universal photos alone walks them by slot, so it
+      // starts over — and repeats — past the last one.
+      repeated = slotIndex >= ctx.universals.length;
+    }
   }
 
-  return { candidates, chosen, leadTag };
+  return { candidates, chosen, leadTag, repeated };
 }
 
 /**
@@ -262,16 +314,20 @@ function createChooser(ctx: DrawContext) {
   };
 
   /** First photo of `key`'s pool clearing every rule; then every rule but the
-   *  last, and so on — the leading rules are the ones worth keeping. */
-  const from = (key: string, rules: Array<(img: LibraryImage) => boolean>): LibraryImage => {
+   *  last, and so on — the leading rules are the ones worth keeping. `wrap` is
+   *  true when NOTHING cleared even the first rule and the pool started over. */
+  const from = (
+    key: string,
+    rules: Array<(img: LibraryImage) => boolean>,
+  ): { img: LibraryImage; wrap: boolean } => {
     const pool = ctx.shuffled.get(key)!;
     for (let kept = rules.length; kept > 0; kept--) {
       const hit = pool.find((img) => rules.slice(0, kept).every((rule) => rule(img)));
-      if (hit) return hit;
+      if (hit) return { img: hit, wrap: false };
     }
     const n = wrapped.get(key) ?? 0;
     wrapped.set(key, n + 1);
-    return pool[n % pool.length];
+    return { img: pool[n % pool.length], wrap: true };
   };
 
   const record = (key: string, img: LibraryImage): LibraryImage => {
@@ -285,18 +341,24 @@ function createChooser(ctx: DrawContext) {
     startSlot(): void {
       inSlot = new Set<string>();
     },
-    /** The photo the drawn company sees on this slot. */
-    lead(key: string): LibraryImage {
+    /** Whether `key` still holds a photo the band has not shown — what decides
+     *  a slot to lead with another trade rather than repeat one. */
+    hasFresh(key: string): boolean {
+      return (ctx.shuffled.get(key) ?? []).some((img) => !used.has(img.url));
+    },
+    /** The photo the drawn company sees on this slot, and whether the pool was
+     *  exhausted — `repeat` means it is already elsewhere in the band. */
+    lead(key: string): { img: LibraryImage; repeat: boolean } {
       const seen = servedBy(key);
-      const img = from(key, [(i) => !used.has(i.url), (i) => !seen.has(i.url)]);
+      const { img, wrap } = from(key, [(i) => !used.has(i.url), (i) => !seen.has(i.url)]);
       used.add(img.url);
-      return record(key, img);
+      return { img: record(key, img), repeat: wrap };
     },
     /** The photo this slot offers a company whose trade is `key` — not what the
      *  drawn company sees, but it must not repeat down the band either. */
     fallback(key: string): LibraryImage {
       const seen = servedBy(key);
-      const img = from(key, [(i) => !seen.has(i.url), (i) => !inSlot.has(i.url)]);
+      const { img } = from(key, [(i) => !seen.has(i.url), (i) => !inSlot.has(i.url)]);
       return record(key, img);
     },
   };
@@ -310,7 +372,7 @@ function createChooser(ctx: DrawContext) {
  */
 export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = []): DrawResult {
   const slotCount = Math.max(0, Math.floor(input.slotCount));
-  if (slotCount === 0) return { slots: [], pools: [], emptyTags: [] };
+  if (slotCount === 0) return { slots: [], pools: [], emptyTags: [], distinctAvailable: 0 };
 
   const ctx = buildContext(input);
   const { labelByKey, usable, pools, tagKeys, emptyTags } = ctx;
@@ -322,17 +384,21 @@ export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = [
 
   for (let i = 0; i < slotCount; i++) {
     chooser.startSlot();
-    const leadTag = leadTagFor(ctx, i);
+    const leadTag = leadTagWithStock(ctx, (key) => chooser.hasFresh(key), i);
+    const lead = leadTag ? chooser.lead(leadTag) : null;
     slots.push(assembleSlot(ctx, {
       slotIndex: i,
       leadTag,
-      leadImage: leadTag ? chooser.lead(leadTag) : null,
+      leadImage: lead?.img ?? null,
+      repeated: lead?.repeat ?? false,
       fallbackAlt: altBySlot[i] ?? "",
       imageForTag: (key) => chooser.fallback(key),
     }));
   }
 
   // How many distinct photos each trade owes: its slots under the round-robin.
+  // A trade short of them no longer forces a repeat — the band leans on another
+  // trade — so this is what shapes the band, not what breaks it.
   const poolReport: PoolReport[] = tagKeys.map((key) => ({
     tag: key,
     label: labelByKey.get(key)!,
@@ -342,7 +408,19 @@ export function drawImageSets(input: DrawInput, altBySlot: readonly string[] = [
       : 0,
   }));
 
-  return { slots, pools: poolReport, emptyTags };
+  return { slots, pools: poolReport, emptyTags, distinctAvailable: distinctPhotos(ctx) };
+}
+
+/** Distinct photos the company's stocked trades hold between them — a photo
+ *  tagged for two of them is ONE photo, and counting the pools would say the
+ *  band can be filled twice over when it cannot be filled once. */
+function distinctPhotos(ctx: DrawContext): number {
+  const urls = new Set<string>();
+  for (const key of ctx.usable) for (const img of ctx.shuffled.get(key)!) urls.add(img.url);
+  // No trade the library can serve: the band falls back to the universal
+  // photos, so those are the stock that decides whether it repeats.
+  if (urls.size === 0) for (const img of ctx.universals) urls.add(img.url);
+  return urls.size;
 }
 
 export interface RedrawInput extends DrawInput {
@@ -371,8 +449,9 @@ export interface RedrawInput extends DrawInput {
  * a trade the operator chose by hand. Only the photo changes, drawn from that
  * trade's pool minus what the other slots already show.
  *
- * Returns `null` when nothing else is available (a one-photo pool), so the
- * caller can say so instead of writing an identical set.
+ * Returns `null` when the only photos left are ones the band already shows (a
+ * one-photo pool, or a library too small), so the caller can say so instead of
+ * swapping one photo for a twin of another.
  */
 export function redrawSlot(input: RedrawInput, fallbackAlt = ""): DrawnSlot | null {
   const ctx = buildContext(input);
@@ -384,20 +463,27 @@ export function redrawSlot(input: RedrawInput, fallbackAlt = ""): DrawnSlot | nu
     return null;
   }
 
-  const pool = ctx.shuffled.get(leadTag)!;
   const used = new Set(input.usedUrls ?? []);
   // Already shuffled, so "the first acceptable one" IS the random pick.
-  const fresh =
-    pool.find((img) => img.url !== input.currentUrl && !used.has(img.url)) ??
-    // Pool exhausted by the other slots: settle for anything but the current
-    // photo — a visible change matters more than avoiding a repeat here.
-    pool.find((img) => img.url !== input.currentUrl);
-  if (!fresh) return null;
+  const freshOf = (key: string): LibraryImage | undefined =>
+    ctx.shuffled.get(key)!.find((img) => img.url !== input.currentUrl && !used.has(img.url));
+
+  // The slot's own trade first; then the others, because a photo of a
+  // neighbouring service beats one the band already shows.
+  let taken: { key: string; img: LibraryImage } | null = null;
+  for (const key of [leadTag, ...ctx.usable.filter((k) => k !== leadTag)]) {
+    const img = freshOf(key);
+    if (img) { taken = { key, img }; break; }
+  }
+  // Nothing fresh in any trade: the only photos left are ones the band already
+  // shows. Say so instead of swapping in a twin — the caller turns that into
+  // "importe d'autres photos", which is the real answer.
+  if (!taken) return null;
 
   return assembleSlot(ctx, {
     slotIndex: input.slotIndex,
-    leadTag,
-    leadImage: fresh,
+    leadTag: taken.key,
+    leadImage: taken.img,
     fallbackAlt,
     imageForTag: (key) => slotPhotoOf(ctx, key, input.slotIndex),
   });
