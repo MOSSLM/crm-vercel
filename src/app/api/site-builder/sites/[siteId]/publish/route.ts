@@ -26,7 +26,9 @@ export const POST = withAuth<undefined, Params>({}, async ({ req, params }) => {
   }
 
   invalidateSiteCache(siteId);
-  return json({ ok: true, site: result.site });
+  // `warnings` est à destination de l'éditeur du CRM uniquement : le site
+  // publié, lui, n'en sait rien et n'affiche rien de tout ça.
+  return json({ ok: true, site: result.site, warnings: result.warnings ?? [] });
 });
 
 export const DELETE = withAuth<undefined, Params>({}, async ({ params }) => {

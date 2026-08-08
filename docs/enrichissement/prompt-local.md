@@ -6,6 +6,34 @@ bloque `WebFetch`, or tout ce travail consiste à lire les sites des clients.
 
 Copier tout ce qui suit la ligne de séparation.
 
+## Après la session : rapatrier les logos
+
+La session locale écrit dans `logo_url` l'adresse qu'elle trouve, sans se
+soucier de l'hébergement — écrire en base par le MCP Supabase court-circuite de
+toute façon les routes de l'application. C'est cette reprise qui rattrape :
+elle balaie **toutes** les entreprises dont le logo n'est pas encore servi par
+nous, quelle que soit la façon dont l'URL est arrivée là.
+
+Depuis la console du navigateur, connecté au CRM :
+
+```js
+const key = Object.keys(localStorage).find(k => k.startsWith('sb-') && k.endsWith('-auth-token'));
+const token = JSON.parse(localStorage.getItem(key)).access_token;
+const sweep = (body) => fetch('/api/media/rehost-logos', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  body: JSON.stringify(body),
+}).then(r => r.json()).then(r => (console.log(r), r));
+
+await sweep({ dry_run: true });   // ce qui serait fait, sans rien écrire
+await sweep({});                  // pour de vrai
+```
+
+Réservée aux admins. Rejouable : une image déjà chez nous est ignorée. Si la
+réponse porte un `next_after_id` non nul, le budget de la requête a été atteint —
+rappeler avec `await sweep({ after_id: <la valeur> })` jusqu'à ce qu'il soit
+`null`.
+
 ---
 
 Tu travailles sur le CRM `crm-vercel`. Ta mission : enrichir à la main, par
@@ -160,11 +188,23 @@ chiffres confirmés par le client lui-même, et l'affichage les fait primer. Les
 
 ## Le logo
 
-Si tu trouves un meilleur logo que celui en base, **ne colle pas l'URL distante
-dans `logo_url`** : appelle `POST /api/media/from-url` avec
-`{ url, entreprise_id, image_type: "company", tags: ["logo"] }`. La route
-télécharge l'image, la range dans notre bucket et rend une URL stable. Une URL
-qui pointe vers le site du client casse le jour où il le refait.
+Si tu trouves un meilleur logo que celui en base, **écris simplement l'URL que
+tu as trouvée dans `entreprises.logo_url`**, comme le reste.
+
+Tu n'as pas à t'occuper du ré-hébergement. Une URL qui pointe vers le site du
+client casserait le jour où il le refait, mais c'est traité après coup : une
+reprise (`POST /api/media/rehost-logos`) ratisse toutes les entreprises dont le
+logo n'est pas encore servi par nous, aspire l'image dans notre bucket et
+réécrit `entreprises.logo_url` **et** `lead_magnet_projects.logo_url`. Elle est
+rejouable sans dommage.
+
+**Signale simplement dans le rapport final quelles entreprises ont reçu un
+nouveau logo**, pour qu'on sache qu'il faut repasser la reprise.
+
+(Si le serveur de dev tourne et que tu as un jeton, tu peux aussi appeler
+`POST /api/media/from-url` avec `{ url, entreprise_id, image_type: "company",
+tags: ["logo"] }` — mais ce n'est pas nécessaire, et ce n'est pas ce qui est
+attendu de toi.)
 
 ## Le rapport final — exigé
 
@@ -182,6 +222,8 @@ qui pointe vers le site du client casse le jour où il le refait.
    introuvables. Sois explicite sur ce que tu n'as pas pu faire.
 6. **Un récapitulatif chiffré** : emails gagnés sur les 82 manquants, fiches
    sorties du motif `×2`, entreprises ayant enfin au moins un contact.
+7. **La liste des entreprises dont tu as changé le logo**, pour savoir s'il faut
+   repasser la reprise de ré-hébergement.
 
 Ne prétends pas avoir traité une fiche que tu n'as pas pu traiter. Un « site
 inaccessible » honnête vaut mieux qu'une estimation inventée.
