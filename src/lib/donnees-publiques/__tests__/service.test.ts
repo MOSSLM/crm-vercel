@@ -94,7 +94,10 @@ const REPONSE_RGE = (codes: string[]) => ({
     nom_certificat: "QualiPAC module Chauffage et ECS",
     lien_date_debut: "2023-05-09",
     lien_date_fin: "2027-05-09",
-    email: "contact@exemple.fr",
+    email: "Contact@Exemple.fr",
+    telephone: "03 21 26 81 30",
+    site_internet: "http://exemple.fr",
+    nom_entreprise: "EXEMPLE",
   })),
 });
 
@@ -218,6 +221,7 @@ describe("cloisonnement des écritures", () => {
     expect(ecrites).not.toContain("contacts");
     expect([...ecrites].sort()).toEqual([
       "donnees_publiques_runs",
+      "entreprise_contacts_ademe",
       "entreprise_rge_qualifications",
       "entreprises_donnees_publiques",
     ]);
@@ -267,5 +271,47 @@ describe("hydraterLot", () => {
     });
     expect(ops.some((o) => o.table === "entreprises_donnees_publiques")).toBe(true);
     expect(ops.some((o) => o.table === "entreprise_rge_qualifications")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Coordonnées ADEME
+// ---------------------------------------------------------------------------
+describe("contacts ADEME", () => {
+  it("stocke l'email déclaré au certificateur, en minuscules", async () => {
+    const { sb, ops } = fakeSb();
+    await hydraterRge(sb, CIBLE, { fetchImpl: fetchQui(() => REPONSE_RGE(["43"])) });
+    const up = ops.find((o) => o.table === "entreprise_contacts_ademe");
+    const lignes = up!.payload as Array<Record<string, unknown>>;
+    expect(lignes[0].email).toBe("contact@exemple.fr");
+    expect(lignes[0].telephone).toBe("03 21 26 81 30");
+  });
+
+  it("ne crée qu'une ligne quand six qualifications répètent la même adresse", async () => {
+    // Les coordonnées figurent sur CHAQUE ligne de qualification : sans
+    // déduplication, une entreprise à six qualifications rendrait six fois la
+    // même adresse.
+    const { sb, ops } = fakeSb();
+    await hydraterRge(sb, CIBLE, {
+      fetchImpl: fetchQui(() => REPONSE_RGE(["32", "43", "41", "21", "11", "12"])),
+    });
+    const up = ops.find((o) => o.table === "entreprise_contacts_ademe");
+    expect((up!.payload as unknown[]).length).toBe(1);
+  });
+
+  it("n'écrit RIEN dans entreprises ni contacts — le tri est le travail d'un agent", async () => {
+    const { sb, ops } = fakeSb();
+    await hydraterRge(sb, CIBLE, { fetchImpl: fetchQui(() => REPONSE_RGE(["43"])) });
+    const ecrites = new Set(
+      ops.filter((o) => ["upsert", "insert", "update"].includes(o.op)).map((o) => o.table),
+    );
+    expect(ecrites).not.toContain("contacts");
+    expect(ecrites).not.toContain("entreprises");
+  });
+
+  it("ne stocke rien quand l'ADEME ne rend aucune coordonnée", async () => {
+    const { sb, ops } = fakeSb();
+    await hydraterRge(sb, CIBLE, { fetchImpl: fetchQui(() => ({ results: [] })) });
+    expect(ops.some((o) => o.table === "entreprise_contacts_ademe")).toBe(false);
   });
 });

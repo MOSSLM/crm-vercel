@@ -42,6 +42,8 @@ export type QualificationRge = {
 
 /** Coordonnées déclarées par l'entreprise à son certificateur. */
 export type ContactAdeme = {
+  /** Établissement porteur : deux établissements peuvent déclarer différemment. */
+  siret: string;
   email: string | null;
   telephone: string | null;
   siteInternet: string | null;
@@ -51,11 +53,16 @@ export type ContactAdeme = {
 export type ResultatRge = {
   qualifications: QualificationRge[];
   /**
-   * Source officielle d'email et de téléphone, non exploitée jusqu'ici. Elle
-   * avait déjà rendu 9 adresses sur 32 fiches testées. Ce n'est PAS une adresse
-   * devinée : elle est déclarée par l'entreprise à son organisme certificateur.
+   * Coordonnées déclarées à l'organisme certificateur. Ce n'est PAS une adresse
+   * devinée — elle vient d'un registre, pas d'un `contact@` + domaine construit
+   * de tête.
+   *
+   * Mesuré sur le parc : le gain en adresses NOUVELLES est nul (l'ADEME en
+   * fournit une pour 50 entreprises sur 50, mais on en avait déjà une pour les
+   * 50). L'intérêt est ailleurs — 21 divergent, et l'ADEME porte l'adresse
+   * NOMINATIVE là où nous avons la boîte générique.
    */
-  contact: ContactAdeme | null;
+  contacts: ContactAdeme[];
 };
 
 type RawLine = {
@@ -157,7 +164,7 @@ export const fetchQualifications = async (
 ): Promise<ResultatRge> => {
   const tous = opts.tousEtablissements ?? true;
   const qs = buildQs(identifiant, tous);
-  if (!qs) return { qualifications: [], contact: null };
+  if (!qs) return { qualifications: [], contacts: [] };
 
   const params = new URLSearchParams({ qs, size: String(opts.maxLignes ?? 200) });
   const doFetch = opts.fetchImpl ?? fetch;
@@ -184,20 +191,29 @@ export const fetchQualifications = async (
     qualifications.push(q);
   }
 
-  // Les coordonnées sont répétées sur chaque ligne ; on prend la première
-  // renseignée. Aucune adresse n'est construite ni devinée ici — uniquement ce
-  // que le registre porte.
-  const avecContact = lines.find((l) => str(l.email) || str(l.telephone));
-  const contact = avecContact
-    ? {
-        email: str(avecContact.email),
-        telephone: str(avecContact.telephone),
-        siteInternet: str(avecContact.site_internet),
-        nomEntreprise: str(avecContact.nom_entreprise),
-      }
-    : null;
+  // Les coordonnées sont RÉPÉTÉES sur chaque ligne de qualification : une
+  // entreprise à six qualifications rendrait six fois le même email. On
+  // dédoublonne sur l'adresse, en gardant une entrée par établissement porteur.
+  const contacts: ContactAdeme[] = [];
+  const vusContacts = new Set<string>();
+  for (const l of lines) {
+    const siret = normalizeSiret(l.siret ?? null) ?? str(l.siret);
+    const email = str(l.email);
+    const telephone = str(l.telephone);
+    if (!siret || (!email && !telephone)) continue;
+    const cle = `${siret}|${(email ?? '').toLowerCase()}`;
+    if (vusContacts.has(cle)) continue;
+    vusContacts.add(cle);
+    contacts.push({
+      siret,
+      email: email ? email.toLowerCase() : null,
+      telephone,
+      siteInternet: str(l.site_internet),
+      nomEntreprise: str(l.nom_entreprise),
+    });
+  }
 
-  return { qualifications, contact };
+  return { qualifications, contacts };
 };
 
 /** Une qualification est-elle encore valide à la date donnée ? */

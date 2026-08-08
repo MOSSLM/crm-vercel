@@ -22,7 +22,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { fetchQualifications, type QualificationRge } from "./ademe-rge";
+import { fetchQualifications, type ContactAdeme, type QualificationRge } from "./ademe-rge";
 import { fetchIdentite, type IdentiteEntreprise } from "./recherche-entreprises";
 import { normalizeSiret } from "./siret";
 
@@ -190,6 +190,7 @@ export const hydraterRge = async (
   const now = nowDate.toISOString();
 
   let qualifications: QualificationRge[];
+  let contacts: ContactAdeme[];
   try {
     // `tousEtablissements` par défaut : le joker SIREN trouve les
     // qualifications portées par un établissement secondaire, que la requête
@@ -200,6 +201,7 @@ export const hydraterRge = async (
       tousEtablissements: true,
     });
     qualifications = res.qualifications;
+    contacts = res.contacts;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await sb
@@ -234,6 +236,28 @@ export const hydraterRge = async (
       .upsert(lignes, { onConflict: "entreprise_id,siret,code_qualification,date_debut" });
     if (error) return { statut: "erreur", ajoutees: 0, retirees: 0, message: error.message };
     ajoutees = lignes.length;
+  }
+
+  // ── Coordonnées déclarées au certificateur ────────────────────────────────
+  // Stockées TOUJOURS, dans leur propre table, et jamais poussées vers
+  // `entreprises.email` ni `contacts` : décider s'il faut créer un contact
+  // nommé ou ajouter une adresse secondaire demande un jugement. On dépose la
+  // matière première, un agent tranchera.
+  if (contacts.length > 0) {
+    await sb.from("entreprise_contacts_ademe").upsert(
+      contacts.map((c) => ({
+        entreprise_id: cible.entreprise_id,
+        siret: c.siret,
+        email: c.email,
+        telephone: c.telephone,
+        site_internet: c.siteInternet,
+        nom_entreprise: c.nomEntreprise,
+        derniere_vue_le: now,
+      })),
+      // `lower(email)` porte l'unicité : la même adresse répétée sur six
+      // qualifications ne crée qu'une ligne.
+      { onConflict: "entreprise_id,email", ignoreDuplicates: false },
+    );
   }
 
   // Rapprochement : tout ce qui n'a pas été revu à ce passage est retiré.
