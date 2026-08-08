@@ -103,6 +103,15 @@ export type LeadMagnetProjectRecord = {
   stat_satisfied_clients?: string | null;
   stat_installations_completed?: string | null;
   stat_rge_count?: string | null;
+  /**
+   * Chiffres CONFIRMÉS par le client. LECTURE SEULE ici : ils sont absents de
+   * `PROJECT_COLUMNS` — la whitelist d'écriture — et doivent le rester. Les
+   * écraser détruirait la seule donnée certaine de la fiche (cf. passation §A5).
+   */
+  stat_years_experience_official?: string | null;
+  stat_satisfied_clients_official?: string | null;
+  stat_installations_completed_official?: string | null;
+  stat_rge_count_official?: string | null;
 
   service_page_headline_template?: string | null;
   service_page_subheadline_template?: string | null;

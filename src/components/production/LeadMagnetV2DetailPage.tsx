@@ -21,6 +21,7 @@ import { logLeadMagnet } from "@/utils/journalApi";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import CompteurRgeVerifie from "@/components/donnees-publiques/CompteurRgeVerifie";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -1430,6 +1431,18 @@ export function LeadMagnetV2DetailPage({ projectId }: Props) {
                         onFocus={() => setFocusedField({ scope: "project", field: "stat_rge_count" })}
                       />
                       <PreviewLine value={asString(project.stat_rge_count)} />
+                      {/* Ce champ n'est plus la source de vérité : quand l'ADEME
+                          a été interrogée, c'est elle qui compte. Le bloc dit ce
+                          que le site affichera RÉELLEMENT, et montre les dates
+                          d'expiration — pour que laisser une qualification
+                          périmée reste un choix, pas une inattention. */}
+                      {typeof project.entreprise_id === "number" && (
+                        <CompteurRgeVerifie
+                          entrepriseId={project.entreprise_id}
+                          statSaisi={asString(project.stat_rge_count)}
+                          statOfficiel={asString(project.stat_rge_count_official)}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>
