@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { ensureHostedLogo } from "@/lib/site-builder/ensure-hosted-logo";
 import { resolveEnterpriseVariables } from "@/lib/site-builder/resolve-variables";
 
 export interface PublishSiteResult {
@@ -8,6 +9,11 @@ export interface PublishSiteResult {
   error?: string;
   status?: number;
   publishedSubdomain?: string | null;
+  /**
+   * Anomalies non bloquantes, à montrer dans l'éditeur du CRM — jamais dans le
+   * site publié. Aujourd'hui : un logo qu'on n'a pas pu rapatrier.
+   */
+  warnings?: string[];
 }
 
 /**
@@ -50,6 +56,15 @@ export async function publishSite(
     content_overrides: { stats?: Array<{ label: string; value: string; display_order?: number }> } | null;
   } | null;
 
+  // AVANT de résoudre les variables : l'instantané fige `entreprise.logo_url`,
+  // donc c'est le dernier moment où l'on peut encore garantir que le logo servi
+  // vient de chez nous et non du site du client. Ne bloque jamais la
+  // publication — au pire, on publie comme avant et le motif remonte.
+  const logo = await ensureHostedLogo(supabase, {
+    enterpriseId: siteSlice?.enterprise_id ?? null,
+    projectId: siteSlice?.lead_magnet_project_id ?? null,
+  });
+
   const { variables: publishedVariables, reviews: publishedReviews } =
     await resolveEnterpriseVariables(supabase, {
       id: siteId,
@@ -91,5 +106,6 @@ export async function publishSite(
     ok: true,
     site: data,
     publishedSubdomain: (data as { published_subdomain?: string | null } | null)?.published_subdomain ?? subdomain ?? null,
+    ...(logo.warnings.length ? { warnings: logo.warnings } : {}),
   };
 }

@@ -749,6 +749,7 @@ function RelumeEditorInner({
         const err = await res.json();
         throw new Error(err.error ?? "Erreur");
       }
+      const payload = (await res.json().catch(() => ({}))) as { warnings?: string[] };
       setShowPublish(false);
       setHasDraftChanges(false);
       // Mirror what the API just persisted so the popover's clickable
@@ -756,6 +757,12 @@ function RelumeEditorInner({
       // immediately (no full-page reload required).
       setActivePublishedSubdomain(publishDomain.trim());
       toast.success(`Site publié sur ${publishDomain}.${process.env.NEXT_PUBLIC_SITE_DOMAIN ?? "samadigitalstudio.fr"}`);
+      // Le logo n'a pas pu être rapatrié : la publication est allée au bout,
+      // mais l'image reste servie par le site du client et cassera le jour où
+      // il le refait. Visible ici seulement — le site publié n'en montre rien.
+      for (const w of payload.warnings ?? []) {
+        toast.warning(w, { duration: 10000 });
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Erreur de publication");
     } finally {
