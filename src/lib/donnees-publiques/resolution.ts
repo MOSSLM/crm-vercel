@@ -189,13 +189,71 @@ export const enregistrerCandidats = async (
  * Écrit `entreprises.siret` — la seule écriture de tout ce socle qui touche
  * `entreprises`, et elle exige un `decide_par` : on veut pouvoir dire QUI a
  * tranché, des mois plus tard, devant une fiche qui s'avère fausse.
+ *
+ * LE SIRET EST TOUJOURS VÉRIFIÉ AU REGISTRE avant d'être écrit, même quand il
+ * arrive d'ailleurs que de la liste de candidats — d'une recherche web, du pied
+ * de page d'un site, d'une saisie. La clé de Luhn ne prouve rien : elle valide
+ * la forme, pas l'existence, et un numéro plausible mais faux contaminerait
+ * ensuite toutes les données publiques de la fiche.
+ *
+ * Vérifié sur un cas réel : la fiche 57 « KM Dépannage » a deux SIREN plausibles
+ * à la MÊME adresse et au MÊME patronyme. L'un est l'entreprise de chauffage
+ * cherchée (cessée, en liquidation), l'autre un taxi (NAF 49.32Z). Seul l'appel
+ * au registre les distingue.
  */
 export const validerCandidat = async (
   sb: SupabaseClient,
-  params: { entreprise_id: number; siret: string; decide_par: string; commentaire?: string },
-): Promise<{ ok: true } | { ok: false; erreur: string }> => {
+  params: {
+    entreprise_id: number;
+    siret: string;
+    decide_par: string;
+    commentaire?: string;
+    /** D'où vient le numéro : 'resolution' (liste), 'recherche_web', 'saisie'. */
+    source?: string;
+    /** Injectable pour les tests ; sert la vérification au registre. */
+    fetchImpl?: typeof fetch;
+    /** Échappatoire explicite quand le registre est injoignable. */
+    sansVerification?: boolean;
+  },
+): Promise<{ ok: true; avertissements: string[] } | { ok: false; erreur: string }> => {
   const siret = normalizeSiret(params.siret);
   if (!siret) return { ok: false, erreur: "siret_invalide" };
+
+  const avertissements: string[] = [];
+
+  if (!params.sansVerification) {
+    let identite: Awaited<ReturnType<typeof fetchIdentite>>;
+    try {
+      identite = await fetchIdentite(siret, { fetchImpl: params.fetchImpl });
+    } catch (e) {
+      return { ok: false, erreur: `registre_injoignable: ${e instanceof Error ? e.message : e}` };
+    }
+    // Le registre ne connaît pas ce numéro : on n'écrit pas. C'est le garde-fou
+    // qui distingue « trouvé sur le web » de « vérifié ».
+    if (!identite) return { ok: false, erreur: "siret_inconnu_au_registre" };
+
+    // Les divergences ne bloquent PAS — elles peuvent être légitimes (siège
+    // ailleurs, activité mal codée) — mais elles remontent à l'appelant, qui
+    // décide en les voyant.
+    const { data: fiche } = await sb
+      .from("entreprises")
+      .select("code_postal")
+      .eq("id", params.entreprise_id)
+      .maybeSingle();
+    const cpFiche = (fiche as { code_postal?: string } | null)?.code_postal;
+    if (cpFiche && identite.codePostalSiege && cpFiche !== identite.codePostalSiege) {
+      avertissements.push(
+        `Code postal différent : fiche ${cpFiche}, registre ${identite.codePostalSiege}`,
+      );
+    }
+    if (identite.etatAdministratif === "C") {
+      avertissements.push(
+        identite.dateFermeture
+          ? `Entreprise cessée le ${identite.dateFermeture}`
+          : "Entreprise cessée au registre",
+      );
+    }
+  }
 
   const maintenant = new Date().toISOString();
 
@@ -225,7 +283,7 @@ export const validerCandidat = async (
     .update({
       siret,
       siren: siret.slice(0, 9),
-      siret_source: "resolution",
+      siret_source: params.source ?? "resolution",
       siret_confirme_le: maintenant,
       siret_confirme_par: params.decide_par,
     })
@@ -243,7 +301,7 @@ export const validerCandidat = async (
     };
   }
 
-  return { ok: true };
+  return { ok: true, avertissements };
 };
 
 /** Rejette un candidat, avec sa raison. */

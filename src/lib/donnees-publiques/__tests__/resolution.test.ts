@@ -7,7 +7,7 @@
  * finissent en logos sur un site public qu'on produit.
  */
 
-import { chercherCandidats, extraireIdentifiants } from "../resolution";
+import { chercherCandidats, extraireIdentifiants, validerCandidat } from "../resolution";
 
 const fetchQui = (parUrl: (url: string) => unknown): typeof fetch =>
   (async (url: string) => ({
@@ -197,5 +197,80 @@ describe("chercherCandidats", () => {
       { fetchImpl: fetchQui(() => horsSujet) },
     );
     expect(candidats).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// La porte d'écriture : vérification obligatoire au registre
+// ---------------------------------------------------------------------------
+describe("validerCandidat", () => {
+  const sbOk = () => {
+    const chain: Record<string, unknown> = {};
+    for (const m of ["eq", "neq", "in", "is"]) chain[m] = () => chain;
+    chain.select = () => chain;
+    chain.maybeSingle = async () => ({ data: { code_postal: "91130" }, error: null });
+    chain.then = (r: (v: unknown) => unknown) => r({ data: [], error: null });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { from: () => ({ update: () => chain, select: () => chain }) } as any;
+  };
+
+  it("refuse un SIRET que le registre ne connaît pas", async () => {
+    // La clé de Luhn valide la FORME, pas l'existence. Un numéro plausible
+    // trouvé sur le web mais inexistant contaminerait toute la fiche.
+    const vide = (async () => ({ ok: true, status: 200, json: async () => ({ results: [] }) })) as unknown as typeof fetch;
+    const r = await validerCandidat(sbOk(), {
+      entreprise_id: 57,
+      siret: "35137835100040",
+      decide_par: "u1",
+      fetchImpl: vide,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.erreur).toBe("siret_inconnu_au_registre");
+  });
+
+  it("accepte un SIRET vérifié et remonte les divergences sans bloquer", async () => {
+    // Cas réel : fiche 57 « KM Dépannage » à Ris-Orangis, SIRET 83355558400014,
+    // cessée le 31/03/2025 avec un liquidateur au registre.
+    const km = (async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        results: [
+          {
+            siren: "833555584",
+            nom_raison_sociale: "KM DEPANNAGE",
+            nom_complet: "KM DEPANNAGE",
+            etat_administratif: "C",
+            date_fermeture: "2025-03-31",
+            activite_principale: "43.22A",
+            siege: { siret: "83355558400014", code_postal: "91130", libelle_commune: "RIS-ORANGIS", est_siege: true },
+          },
+        ],
+      }),
+    })) as unknown as typeof fetch;
+
+    const r = await validerCandidat(sbOk(), {
+      entreprise_id: 57,
+      siret: "83355558400014",
+      decide_par: "u1",
+      source: "recherche_web",
+      fetchImpl: km,
+    });
+    expect(r.ok).toBe(true);
+    // L'entreprise est morte : ça ne bloque pas l'écriture — c'est justement
+    // l'information qu'on cherchait — mais ça doit remonter.
+    if (r.ok) expect(r.avertissements.join(" ")).toMatch(/cessée le 2025-03-31/);
+  });
+
+  it("ne prétend pas vérifier quand le registre est injoignable", async () => {
+    const ko = (async () => { throw new Error("ECONNRESET"); }) as unknown as typeof fetch;
+    const r = await validerCandidat(sbOk(), {
+      entreprise_id: 57,
+      siret: "83355558400014",
+      decide_par: "u1",
+      fetchImpl: ko,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.erreur).toMatch(/registre_injoignable/);
   });
 });
