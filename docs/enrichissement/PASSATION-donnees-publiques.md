@@ -260,8 +260,46 @@ donc rien ne la protège aujourd'hui d'un affichage dérivé — raison de plus 
 > Le raisonnement : ignorance et absence vérifiée ne sont pas la même chose, et un `count(*)`
 > appliqué partout les confondrait — retirant des qualifications probablement réelles sur 65 démos.
 
-**Ce qui reste à faire :** les 150 fiches du groupe A attendent un passage de `POST /resolution`
+**Ce qui reste à faire :** les fiches du groupe A attendent un passage de `POST /resolution`
 puis une session de validation humaine. Tant qu'elles n'en ont pas, leur bloc RGE reste déclaratif.
+
+### A11. Comment résoudre les SIRET restants — la méthode qui marche
+
+**Constat du propriétaire, et il est juste** : la résolution est un travail PONCTUEL. Construire
+dans le CRM un chercheur assez souple pour y arriver seul, c'est soit un LLM qui coûte à chaque
+appel, soit un algorithme qui plafonne. Une session Claude avec accès web lit le pied de page du
+site et trouve le numéro en quelques secondes.
+
+**La méthode, en trois temps, et les trois sont nécessaires :**
+
+1. **Chercher sur le web** (`WebSearch` fonctionne même quand le réseau du conteneur bloque les API
+   `.gouv.fr` — ce sont deux chemins différents). Pappers, societe.com, l'annuaire, le site lui-même.
+2. **Confirmer au registre.** Non négociable. La clé de Luhn valide la FORME, pas l'existence.
+3. **Écrire avec la preuve** : `siret_source = 'recherche_web'` et l'URL dans le commentaire.
+
+`validerCandidat` impose désormais l'étape 2 : elle interroge le registre avant toute écriture et
+refuse un `siret_inconnu_au_registre`. Les divergences (code postal, entreprise cessée) ne bloquent
+pas mais remontent dans `avertissements`.
+
+**Pourquoi l'étape 2 n'est pas une précaution théorique** — deux cas rencontrés :
+
+- Fiche 57 : la recherche web propose DEUX SIREN, même adresse, même patronyme.
+  `83355558400014` KM DEPANNAGE (NAF 43.22A, chauffage, cessée) et `53498039600038`
+  MOHAMED KHELOUF (**NAF 49.32Z, taxi**, active). Sans le registre : une chance sur deux.
+- Fiche 2006 : l'annuaire web annonce « Président Djillali Berradia », le registre dit
+  **« Liquidateur »**. L'officiel est à jour, l'annuaire non.
+
+**Les trois entreprises mortes de §A7 sont traitées** et sortent de la prospection :
+
+| Fiche | Au registre | État |
+|---|---|---|
+| 57 KM Dépannage | KM DEPANNAGE | liquidée 31/03/2025 |
+| 1494 EMC Sarl | EDDIA NOUVELLE AQUITAINE | cessée 27/05/2026 |
+| 2006 Energie Confort 33 | ENERGIE CONFORT 33 | liquidée 31/08/2025 |
+
+**État de la base au 08/08/2026** (le propriétaire fait tourner une passe locale, ces chiffres
+montent) : 42 fiches avec SIRET, 42 hydratées, 30 qualifications RGE, 3 cessées,
+148 projets encore sans identifiant.
 
 ---
 
