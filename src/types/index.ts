@@ -68,6 +68,13 @@ export interface Company {
   telephone?: string | null;
   email?: string | null;
   logo_url?: string | null;
+  /**
+   * Identifiant légal, posé UNIQUEMENT par la validation humaine d'un candidat
+   * (`PATCH /api/donnees-publiques/resolution`). C'est la clé d'entrée de
+   * toutes les données publiques : sans lui, rien n'est atteignable.
+   */
+  siret?: string | null;
+  siren?: string | null;
 }
 
 export interface Contact {

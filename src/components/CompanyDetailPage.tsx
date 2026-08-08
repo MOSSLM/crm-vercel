@@ -44,6 +44,8 @@ import {
 
 import logger from '../utils/logger';
 import { formatServiceTag, normalizeServiceTags } from '../utils/serviceTags';
+import DossierEntreprise from './donnees-publiques/DossierEntreprise';
+import BoutonDonneesPubliques from './donnees-publiques/BoutonDonneesPubliques';
 interface CompanyDetailPageProps {
   companyId: number;
   onBack: () => void;
@@ -458,6 +460,23 @@ export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId,
       <div className="grid gap-6 xl:grid-cols-4 lg:grid-cols-3">
         {/* Informations principales */}
         <div className="xl:col-span-3 lg:col-span-2 space-y-6">
+          {/* Le dossier public d'abord : c'est la seule donnée du CRM qui soit
+              vérifiable à la source, et celle qu'on lit avant d'appeler. Les
+              champs éditables restent en dessous — l'ordre dit lequel fait foi. */}
+          <DossierEntreprise entrepriseId={companyId} />
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Identifiant légal</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <BoutonDonneesPubliques
+                entrepriseId={companyId}
+                siret={(detailedCompany ?? company)?.siret ?? null}
+              />
+            </CardContent>
+          </Card>
+
           {/* Informations générales */}
           <Card>
             <CardHeader>
