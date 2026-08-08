@@ -16,6 +16,7 @@ import {
   faitsEntreprise,
   finances,
   nomAuRegistre,
+  personnesMorales,
   type DossierEntreprise,
 } from "../fiche";
 import { trancheEffectifLabel } from "../effectif";
@@ -149,7 +150,7 @@ describe("accrochesDAppel", () => {
     ).toBe("30 ans d'existence cette année");
     expect(
       accrochesDAppel(dossier({ date_creation: "2026-02-01" }), LE_8_AOUT)[0].titre,
-    ).toBe("Créée cette année");
+    ).toBe("Créée il y a moins d'un an");
   });
 
   it("ne fabrique aucune accroche quand il n'y a rien à dire", () => {
@@ -279,5 +280,36 @@ describe("ancienneteAnnees", () => {
 
   it("rend null sans date", () => {
     expect(ancienneteAnnees({ date_creation: null })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Détention par des sociétés
+// ---------------------------------------------------------------------------
+describe("personnesMorales", () => {
+  it("rend les sociétés dirigeantes — cas réel de la fiche 1494 (EDDIA)", () => {
+    // Aucune personne physique au registre : `classerDirigeants` rend une liste
+    // vide, et sans ce complément l'affichage ressemblerait à une donnée
+    // manquante alors qu'on sait qui détient la société.
+    const dirs = [
+      { qualite: "Président de SAS", denomination: "ORAVEST", type_dirigeant: "personne morale" },
+      { qualite: "Président de SAS", denomination: "HOLDING DU BEAUVOIR SARL", type_dirigeant: "personne morale" },
+    ];
+    expect(classerDirigeants(dirs, LE_8_AOUT)).toEqual([]);
+    expect(personnesMorales(dirs)).toEqual(["ORAVEST", "HOLDING DU BEAUVOIR SARL"]);
+  });
+
+  it("ne rend rien quand les dirigeants sont des personnes", () => {
+    expect(personnesMorales([{ nom: "SELS", prenoms: "PAUL", type_dirigeant: "personne physique" }])).toEqual([]);
+    expect(personnesMorales(null)).toEqual([]);
+  });
+});
+
+describe("libellé d'une entreprise jeune", () => {
+  it("parle en durée écoulée, pas en année civile — cas réel BTPhoto", () => {
+    // Immatriculée le 09/09/2025, regardée le 08/08/2026 : elle a onze mois,
+    // elle n'a pas été « créée cette année ».
+    const a = accrochesDAppel(dossier({ date_creation: "2025-09-09" }), LE_8_AOUT);
+    expect(a[0].titre).toBe("Créée il y a moins d'un an");
   });
 });

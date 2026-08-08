@@ -40,6 +40,7 @@ import {
   finances,
   formatDate,
   nomAuRegistre,
+  personnesMorales,
   type DossierEntreprise as Dossier,
 } from "@/lib/donnees-publiques/fiche";
 
@@ -181,6 +182,7 @@ export default function DossierEntreprise({ entrepriseId, compact = false }: Dos
   const faits = faitsEntreprise(dossier, trancheEffectifLabel);
   const fin = finances(dossier);
   const autreNom = nomAuRegistre(dossier);
+  const holdings = personnesMorales(dossier.dirigeants);
   const joignables = contacts.filter((c) => c.tel || c.email);
 
   return (
@@ -269,7 +271,7 @@ export default function DossierEntreprise({ entrepriseId, compact = false }: Dos
         {/* ── 3. À QUI PARLER ─────────────────────────────────────────────
             Le bloc le mieux couvert : 100 % des fiches hydratées ont au moins
             un dirigeant nommé. C'est ce qui remplace l'appel à l'aveugle. */}
-        {(dirigeants.length > 0 || joignables.length > 0) && (
+        {(dirigeants.length > 0 || joignables.length > 0 || holdings.length > 0) && (
           <Section titre="À qui parler" icone={<User className="h-3.5 w-3.5" />}>
             <div className="space-y-1.5">
               {dirigeants.map((d) => (
@@ -285,6 +287,14 @@ export default function DossierEntreprise({ entrepriseId, compact = false }: Dos
                   {d.age !== null && <span className="text-xs text-neutral-400">{d.age} ans</span>}
                 </div>
               ))}
+
+              {/* Détenue par des sociétés : dit pourquoi aucun nom de personne
+                  n'apparaît, au lieu de laisser un blanc qui ressemble à un bug. */}
+              {dirigeants.length === 0 && holdings.length > 0 && (
+                <p className="text-sm text-neutral-600">
+                  Dirigée par {holdings.join(", ")} — aucune personne physique au registre.
+                </p>
+              )}
 
               {joignables.map((c) => (
                 <div key={c.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">

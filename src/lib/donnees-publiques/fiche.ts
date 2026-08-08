@@ -211,10 +211,13 @@ export const accrochesDAppel = (
   }
 
   // ── Toute jeune : c'est le moment où l'on cherche de la visibilité.
+  // Le libellé parle en durée écoulée, pas en année civile : une société
+  // immatriculée en septembre 2025 n'a pas été « créée cette année » quand on
+  // la regarde en août 2026, elle a onze mois.
   if (anciennete !== null && anciennete < 2) {
     accroches.push({
       intensite: "tiede",
-      titre: anciennete < 1 ? "Créée cette année" : "Créée il y a moins de deux ans",
+      titre: anciennete < 1 ? "Créée il y a moins d'un an" : "Créée il y a moins de deux ans",
       detail: d.date_creation ? `Immatriculée le ${formatDate(d.date_creation)}` : null,
     });
   }
@@ -284,6 +287,22 @@ export const classerDirigeants = (
       return (ra === -1 ? 99 : ra) - (rb === -1 ? 99 : rb);
     });
 };
+
+/**
+ * Les dirigeants qui sont des SOCIÉTÉS, et non des personnes.
+ *
+ * `classerDirigeants` les écarte — on ne passe pas un appel à une holding. Mais
+ * les taire ferait croire à une donnée manquante alors qu'on sait quelque
+ * chose : la fiche 1494 (EDDIA) n'a QUE deux personnes morales à sa tête,
+ * ORAVEST et HOLDING DU BEAUVOIR. Savoir qu'une société est détenue par des
+ * holdings explique pourquoi aucun nom n'apparaît, et oriente vers le bon
+ * interlocuteur.
+ */
+export const personnesMorales = (dirigeants: Dirigeant[] | null): string[] =>
+  (dirigeants ?? [])
+    .filter((d) => d.type_dirigeant === "personne morale")
+    .map((d) => (d as { denomination?: string | null }).denomination ?? d.nom ?? "")
+    .filter((n): n is string => n.trim() !== "");
 
 // ---------------------------------------------------------------------------
 // Faits, et mise en forme
