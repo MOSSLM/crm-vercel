@@ -5,8 +5,18 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Sparkles, AlertTriangle } from 'lucide-react';
 import type { AuditPage2, AuditProblem } from '@/types';
-import { AUDIT_ISSUE_CATALOG, MIN_AUDIT_ISSUES } from '@/data/auditIssues';
+import {
+  AUDIT_ISSUE_CATALOG,
+  MIN_AUDIT_ISSUES,
+  MAX_AUDIT_ISSUES,
+  CARTES_RETENUES,
+  PILIERS,
+  type AuditPilier,
+} from '@/data/auditIssues';
 import { FieldGroup, labelStyle } from './shared';
+
+/** Du plus objectif au plus commercial : c'est l'ordre de lecture de l'audit. */
+const ORDRE_PILIERS: AuditPilier[] = ['technique', 'contenu', 'popularite'];
 
 interface Props {
   data: AuditPage2;
@@ -36,7 +46,7 @@ export function Page2Editor({
     onChange({ ...data, problems });
   };
   const addProb = () => {
-    if (data.problems.length >= 6) return;
+    if (data.problems.length >= MAX_AUDIT_ISSUES) return;
     onChange({ ...data, problems: [...data.problems, { title: '', desc: '' }] });
   };
   const removeProb = (i: number) => {
@@ -65,17 +75,36 @@ export function Page2Editor({
             {selectedCount < MIN_AUDIT_ISSUES && <AlertTriangle className="h-3 w-3" />}
             {selectedCount} coché{selectedCount > 1 ? 's' : ''} · au moins {MIN_AUDIT_ISSUES} recommandés
           </p>
-          <div className="space-y-2">
-            {AUDIT_ISSUE_CATALOG.map(issue => (
-              <label key={issue.key} className="flex items-start gap-2 cursor-pointer text-sm">
-                <Checkbox
-                  checked={selected.has(issue.key)}
-                  onCheckedChange={() => onToggleIssue(issue.key)}
-                  className="mt-0.5"
-                />
-                <span className="leading-tight">{issue.label}</span>
-              </label>
-            ))}
+          {/* Groupé par pilier : à plat, deux douzaines de cases ne se lisent
+              plus. Le pilier dit aussi de quoi on parle au prospect — la
+              technique, le discours, ou la réputation. */}
+          <div className="space-y-3">
+            {ORDRE_PILIERS.map(pilier => {
+              const constats = AUDIT_ISSUE_CATALOG.filter(i => i.pilier === pilier);
+              if (constats.length === 0) return null;
+              const coches = constats.filter(i => selected.has(i.key)).length;
+
+              return (
+                <div key={pilier}>
+                  <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-1.5">
+                    {PILIERS[pilier].titre}
+                    {coches > 0 && <span className="ml-1 text-foreground">· {coches}</span>}
+                  </p>
+                  <div className="space-y-2 pl-0.5">
+                    {constats.map(issue => (
+                      <label key={issue.key} className="flex items-start gap-2 cursor-pointer text-sm">
+                        <Checkbox
+                          checked={selected.has(issue.key)}
+                          onCheckedChange={() => onToggleIssue(issue.key)}
+                          className="mt-0.5"
+                        />
+                        <span className="leading-tight">{issue.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -101,8 +130,13 @@ export function Page2Editor({
       </FieldGroup>
 
       <div className="flex items-center justify-between mt-4 mb-2">
-        <p className={labelStyle}>Cartes affichées ({data.problems.length}/6)</p>
-        {data.problems.length < 6 && (
+        <p className={labelStyle}>
+          Cartes affichées ({data.problems.length}/{MAX_AUDIT_ISSUES})
+          {data.problems.length > CARTES_RETENUES && data.problems.length < MAX_AUDIT_ISSUES && (
+            <span className="ml-1 font-normal text-amber-600">· trou dans la grille</span>
+          )}
+        </p>
+        {data.problems.length < MAX_AUDIT_ISSUES && (
           <Button size="sm" variant="outline" onClick={addProb} className="h-6 text-xs px-2">
             <Plus className="h-3 w-3 mr-1" /> Carte libre
           </Button>

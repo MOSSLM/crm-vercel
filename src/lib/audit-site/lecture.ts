@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AxeId, Confiance, Preuve } from "./types";
-import { libelleDeNote } from "./score";
+import { libelleDeNote, noteDepuisPreuves } from "./score";
 import { psiEstFraiche } from "./pagespeed";
 
 /**
@@ -64,7 +64,7 @@ export type LectureAudit =
   | { disponible: true; audit: AuditLu | null }
   | { disponible: false; motif: string };
 
-const AXES: AxeId[] = ["vitesse", "seo", "mobile", "conversion"];
+const AXES: AxeId[] = ["vitesse", "seo", "mobile", "conversion", "popularite"];
 
 export async function lireAudit(
   sb: SupabaseClient,
@@ -129,11 +129,21 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
   const psiPerf = num(row.psi_performance);
   const vitesseGoogle = psiFraiche && psiPerf != null;
 
+  /**
+   * La popularité n'a PAS de colonne dédiée, et c'est voulu.
+   *
+   * Sa note se recalcule depuis ses preuves stockées dans `detail`. Ajouter une
+   * colonne aurait fait dépendre tout l'écrit d'une migration appliquée à la
+   * main : un `upsert` qui nomme une colonne absente échoue ENTIÈREMENT, et
+   * c'est exactement la panne déjà vécue avec `paywall_enabled`. Ici, migration
+   * ou pas, l'axe apparaît dès que ses preuves sont là.
+   */
   const noteParAxe: Record<AxeId, number | null> = {
     vitesse: vitesseGoogle ? psiPerf : num(row.note_vitesse),
     seo: num(row.note_seo),
     mobile: num(row.note_mobile),
     conversion: num(row.note_conversion),
+    popularite: noteDepuisPreuves(detail.popularite ?? []),
   };
 
   const axes: AxePublie[] = [];

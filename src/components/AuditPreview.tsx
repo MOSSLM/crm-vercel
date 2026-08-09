@@ -9,6 +9,7 @@ import { AuditPage4 } from './audit/AuditPage4';
 import { AuditPage5 } from './audit/AuditPage5';
 import { AuditPage6 } from './audit/AuditPage6';
 import type { AuditLu } from '@/lib/audit-site/lecture';
+import type { AuditVariante } from '@/lib/audit/autres-ameliorations';
 
 interface Props {
   content: AuditContent;
@@ -21,14 +22,16 @@ interface Props {
    * permet de le rendre pour un audit dont l'entreprise n'a pas été analysée.
    */
   audit?: AuditLu | null;
+  /** `court` = ce qu'on envoie ; `complet` = ce qu'on montre au rendez-vous. */
+  variante?: AuditVariante;
 }
 
-export function AuditPreview({ content, logoUrl, activeField, onFieldClick, audit }: Props) {
+export function AuditPreview({ content, logoUrl, activeField, onFieldClick, audit, variante }: Props) {
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <AuditPage1 content={content} logoUrl={logoUrl} activeField={activeField} onFieldClick={onFieldClick} />
       <div style={{ height: 24, background: '#1a1a1e' }} />
-      <AuditPage2 content={content} activeField={activeField} onFieldClick={onFieldClick} audit={audit} />
+      <AuditPage2 content={content} activeField={activeField} onFieldClick={onFieldClick} audit={audit} variante={variante} />
       <div style={{ height: 24, background: '#1a1a1e' }} />
       <AuditPage3 content={content} activeField={activeField} onFieldClick={onFieldClick} />
       <div style={{ height: 24, background: '#1a1a1e' }} />

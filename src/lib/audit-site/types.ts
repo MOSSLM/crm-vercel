@@ -23,8 +23,15 @@ export type Verdict = "ok" | "moyen" | "probleme" | "inconnu";
 /** Confiance dans une note, quand la mesure est structurellement partielle. */
 export type Confiance = "haute" | "moyenne" | "faible";
 
-/** Les quatre axes notés. */
-export type AxeId = "vitesse" | "seo" | "mobile" | "conversion";
+/**
+ * Les axes de l'analyse.
+ *
+ * Les quatre premiers notent LE SITE et composent la note globale. Le cinquième
+ * ne parle pas du site mais de la réputation : il s'affiche, il produit des
+ * constats vendables, et il pèse ZÉRO dans la note globale — sinon
+ * « votre site : 62/100 » inclurait des choses qui ne sont pas le site.
+ */
+export type AxeId = "vitesse" | "seo" | "mobile" | "conversion" | "popularite";
 
 /**
  * Un signal mesuré, avec ce qui le rend opposable : la valeur constatée et le
@@ -89,6 +96,30 @@ export interface CollecteSite {
   chargementMs: number | null;
   poidsOctets: number | null;
 
+  /**
+   * Poids de la page entière — document, images, scripts, feuilles — additionné
+   * depuis les `content-length` des ressources déclarées.
+   *
+   * `null` quand aucun serveur n'a exposé de taille. C'est « on n'a pas pu
+   * peser », jamais « c'est léger » : la preuve reste alors `inconnu`.
+   */
+  poidsTotalOctets: number | null;
+  /** Ressources dont la taille a effectivement été obtenue. */
+  ressourcesPesees: number;
+
+  /**
+   * CSS des feuilles externes, concaténé.
+   *
+   * Sans lui, `nbMediaQueries` valait 0 sur la moitié du parc — non parce que ces
+   * sites n'étaient pas adaptatifs, mais parce que leurs règles vivent dans un
+   * fichier qu'on ne lisait pas.
+   */
+  cssExterne: string;
+  /** Feuilles `<link rel=stylesheet>` déclarées par la page. */
+  nbFeuillesDeclarees: number;
+  /** Feuilles effectivement récupérées. Zéro sur des déclarations ⇒ CSS illisible. */
+  nbFeuillesLues: number;
+
   /** null quand la vérification n'a pas pu aboutir — distinct de `false`. */
   robotsTxt: boolean | null;
   sitemapXml: boolean | null;
@@ -106,6 +137,8 @@ export interface SignauxSite {
   ttfbMs: number | null;
   chargementMs: number | null;
   poidsOctets: number | null;
+  /** Document + ressources déclarées. `null` = non pesé, jamais « léger ». */
+  poidsTotalOctets: number | null;
   compression: boolean;
   cacheControl: boolean;
 
@@ -120,6 +153,19 @@ export interface SignauxSite {
    * parfaitement référencé rendrait sinon un 12/100 mensonger.
    */
   ressembleSpa: boolean;
+  /**
+   * La page ne contient quasiment rien — coquille de SPA, page parking, « site
+   * en construction », redirection HTML. Contrairement à `ressembleSpa`, ce
+   * drapeau n'exige PAS la présence de JavaScript.
+   *
+   * Il existe parce qu'une page de 1 Ko sans le moindre script a été notée
+   * « conversion 0/100, confiance haute » : on s'apprêtait à envoyer un rapport
+   * accablant sur une page qui n'est pas le site de l'entreprise. Comme
+   * `ressembleSpa`, il baisse la confiance et jamais la note.
+   */
+  coquille: boolean;
+  /** La page annonce elle-même qu'elle n'est pas un site (parking, en travaux). */
+  pageParking: boolean;
 
   // ── SEO ─────────────────────────────────────────────────────────────────
   title: string | null;
@@ -141,9 +187,16 @@ export interface SignauxSite {
   // ── Mobile ──────────────────────────────────────────────────────────────
   viewport: boolean;
   viewportZoomBloque: boolean;
-  nbMediaQueries: number;
+  /**
+   * `null` quand la page déclare des feuilles externes dont aucune n'a pu être
+   * lue : on ignore alors si les règles mobiles existent. Compter 0 dans ce cas
+   * revenait à conclure « pas adapté au mobile » faute d'avoir regardé.
+   */
+  nbMediaQueries: number | null;
   nbLargeursFixes: number;
-  nbPolicesTropPetites: number;
+  nbPolicesTropPetites: number | null;
+  /** Le CSS de la page a-t-il pu être lu en entier ? Décide des deux champs ci-dessus. */
+  cssLisible: boolean;
 
   // ── Confiance & conversion ──────────────────────────────────────────────
   telCliquable: boolean;
@@ -163,11 +216,41 @@ export interface SignauxSite {
   bandeauCookies: boolean;
   nbReseauxSociaux: number;
   nbCta: number;
+
+  // ── Popularité locale : ce que seul le croisement révèle ─────────────────
+  /**
+   * La ville de l'entreprise apparaît-elle dans le titre ou le h1 ?
+   * `null` quand on ne connaît pas sa ville : on ne juge pas ce qu'on ignore.
+   */
+  villeDansTitre: boolean | null;
+  /**
+   * La page cite-t-elle une qualification que l'ADEME confirme encore ?
+   * `null` quand l'entreprise n'en détient aucune — la question ne se pose pas.
+   */
+  mentionneRge: boolean | null;
 }
 
-/** Contexte CRM utile au scoreur, qu'on ne peut pas lire dans la page. */
+/**
+ * Contexte CRM utile au scoreur, qu'on ne peut pas lire dans la page.
+ *
+ * C'est ce qui rend l'audit intransigeant là où un outil générique reste vague :
+ * croiser la page avec ce qu'on sait déjà de l'entreprise permet de constater
+ * des écarts — 43 avis Google et zéro affiché, une qualification RGE détenue et
+ * jamais citée — qu'aucune lecture de HTML seule ne peut produire.
+ */
 export interface ContexteEntreprise {
   /** Nombre d'avis Google connus : sans lui, « avis absents » ne veut rien dire. */
   nombreAvis?: number | null;
   telephone?: string | null;
+  /** Note Google moyenne, sur 5. */
+  noteMoyenne?: number | null;
+  /** Ville de l'entreprise : la requête qui compte est « métier + ville ». */
+  ville?: string | null;
+  nom?: string | null;
+  /**
+   * Qualifications RGE encore valides, en libellés. Une liste vide et `undefined`
+   * ne veulent pas dire la même chose : la première dit « aucune », la seconde
+   * « on n'a pas regardé ».
+   */
+  qualificationsRge?: string[] | null;
 }

@@ -70,7 +70,9 @@ describe("lireAudit — règle de publication", () => {
     if (!res.disponible || !res.audit) throw new Error("audit attendu");
 
     expect(res.audit.axes.map((a) => a.id).sort()).toEqual(["mobile", "vitesse"]);
-    expect(res.audit.axes_masques.sort()).toEqual(["conversion", "seo"]);
+    // `popularite` est masqué faute de preuves dans cette ligne de test : sans
+    // détail, sa note ne se recalcule pas, et un axe sans note ne se publie pas.
+    expect(res.audit.axes_masques.sort()).toEqual(["conversion", "popularite", "seo"]);
   });
 
   it("n'expose jamais une preuve non mesurée", async () => {

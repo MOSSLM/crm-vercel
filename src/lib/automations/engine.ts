@@ -791,6 +791,15 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
             // `auditPdfUrl`, jamais `auditUrl` : depuis que ce dernier peut
             // porter le rapport web, les confondre attacherait une page HTML
             // sous le nom `audit.pdf`.
+            //
+            // ⚠️ `audits.pdf_url` n'est écrit par AUCUN code du dépôt :
+            // `savePdfUrl` (`src/utils/auditApi.ts`) n'a pas d'appelant, et
+            // l'export PDF de l'éditeur passe par l'impression du navigateur
+            // sans rien téléverser. Une étape « joindre l'audit » part donc
+            // aujourd'hui SANS pièce jointe. Le message reste utile — il porte
+            // `{{lien_audit}}`, qui pointe le rapport web —, mais l'opérateur
+            // doit l'apprendre autrement que par le silence : voir la trace
+            // ci-dessous.
             step.attachAudit && ent.auditPdfUrl
               ? [{ filename: 'audit.pdf', url: ent.auditPdfUrl }]
               : undefined,
@@ -810,6 +819,18 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
           return
         }
         if (result.ok) sentAt = new Date().toISOString()
+
+        // Une pièce jointe demandée et absente ne doit pas passer inaperçue.
+        // Le message est parti — il porte le lien du rapport, il reste utile —
+        // mais l'opérateur qui a coché « joindre l'audit » croit avoir joint
+        // quelque chose. Un envoi silencieusement amputé se découvre en
+        // rendez-vous, ce qui est le pire moment.
+        if (result.ok && step.attachAudit && !ent.auditPdfUrl) {
+          console.warn(
+            `[automations] audit non joint (aucun PDF pour l'entreprise ${ent.entrepriseId}) — ` +
+              `le message part avec le lien du rapport seul.`,
+          )
+        }
       }
     }
     await sb

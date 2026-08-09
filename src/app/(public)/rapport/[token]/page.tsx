@@ -25,6 +25,7 @@ import { AUDIT_MOBILE_CSS } from "@/utils/audit/mobileCss";
 
 interface RapportProps {
   params: Promise<{ token: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export const dynamic = "force-dynamic";
@@ -67,8 +68,12 @@ export async function generateMetadata({ params }: RapportProps): Promise<Metada
   };
 }
 
-export default async function RapportPublicPage({ params }: RapportProps) {
+export default async function RapportPublicPage({ params, searchParams }: RapportProps) {
   const { token } = await params;
+  // Le lien qu'on ENVOIE est court : trois constats et un nombre. La version
+  // complète se demande explicitement — c'est le document du rendez-vous, pas
+  // celui du premier contact. Même jeton, même contenu, deux profondeurs.
+  const variante = (await searchParams)?.complet !== undefined ? "complet" : "court";
   const sb = getServiceClient();
   const res = await resoudreRapport(sb, token);
 
@@ -84,6 +89,7 @@ export default async function RapportPublicPage({ params }: RapportProps) {
     captureActuelle: d.captureActuelle,
     captureDemo: d.captureDemo,
     noteDemo: d.noteDemo,
+    variante,
   });
 
   return (

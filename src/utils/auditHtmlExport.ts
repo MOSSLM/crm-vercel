@@ -1,4 +1,6 @@
 import type { AuditContent } from '@/types';
+import type { AuditLu } from '@/lib/audit-site/lecture';
+import type { AuditVariante } from '@/lib/audit/autres-ameliorations';
 import { generateCSS } from './audit/htmlShared';
 import { page1Html } from './audit/htmlPage1';
 import { page2Html } from './audit/htmlPage2';
@@ -7,7 +9,10 @@ import { page4Html } from './audit/htmlPage4';
 import { page5Html } from './audit/htmlPage5';
 import { page6Html } from './audit/htmlPage6';
 
-export function generateAuditHtml(content: AuditContent, opts: { logoUrl?: string; forPdf?: boolean } = {}): string {
+export function generateAuditHtml(
+  content: AuditContent,
+  opts: { logoUrl?: string; forPdf?: boolean; audit?: AuditLu | null; variante?: AuditVariante } = {},
+): string {
   const forPdf = opts.forPdf === true;
   const css = generateCSS(content.global_style, { forPdf });
   return `<!DOCTYPE html>
@@ -22,7 +27,7 @@ export function generateAuditHtml(content: AuditContent, opts: { logoUrl?: strin
 </head>
 <body>
 ${page1Html(content, opts.logoUrl, { forPdf })}
-${page2Html(content)}
+${page2Html(content, opts.audit, opts.variante ?? 'complet')}
 ${page3Html(content)}
 ${page4Html(content)}
 ${page5Html(content, { forPdf })}

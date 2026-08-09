@@ -15,7 +15,12 @@ import {
   solutionsFromKeys,
   renumberSolutions,
   ensureMinIssueKeys,
+  CARTES_RETENUES,
+  MAX_AUDIT_ISSUES,
 } from '@/data/auditIssues';
+import { classerParForce, type AuditVariante } from '@/lib/audit/autres-ameliorations';
+import { codesRetenus, construirePage5, type OffreAudit } from '@/lib/audit/offres-audit';
+import { authedFetch } from '@/utils/authedFetch';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 import { supabase } from '@/utils/supabase/client';
 import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
@@ -72,9 +77,11 @@ interface AuditEditorPageProps {
   detectedIssueKeys?: string[];
   /** Mesures du site actuel, affichées en tête de la page « Situation ». */
   siteAudit?: AuditLu | null;
+  /** L'opportunité à laquelle l'audit est rattaché — la cible du devis. */
+  opportuniteId?: string;
 }
 
-export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys, siteAudit }: AuditEditorPageProps) {
+export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys, siteAudit, opportuniteId }: AuditEditorPageProps) {
   const router = useRouter();
   const [content, setContent] = useState<AuditContent>(initialAudit.content);
   const debouncedContent = useDebounce(content, AUDIT_PREVIEW_DEBOUNCE_MS);
@@ -84,6 +91,34 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
   const [isSaving, setIsSaving] = useState(false);
   const [isReady, setIsReady] = useState(initialAudit.statut === 'ready');
   const [hasChanges, setHasChanges] = useState(false);
+  /**
+   * Deux profondeurs pour un seul document. `court` est ce qui part par
+   * WhatsApp — trois constats et un nombre ; `complet` est ce qu'on déplie en
+   * rendez-vous. L'aperçu s'ouvre sur la version envoyée, parce que c'est celle
+   * que le prospect verra en premier et la seule qu'on ne peut pas commenter.
+   */
+  const [variante, setVariante] = useState<AuditVariante>('court');
+  /**
+   * Les offres que l'audit a le droit de proposer, chargées une fois.
+   *
+   * Tableau vide tant qu'elles n'arrivent pas — et si elles n'arrivent jamais,
+   * la page tarifs garde ce que le document contenait déjà. Une page de tarifs
+   * vide devant un prospect coûterait plus cher qu'un tarif à revoir.
+   */
+  const [offres, setOffres] = useState<OffreAudit[]>([]);
+
+  useEffect(() => {
+    let vivant = true;
+    authedFetch('/api/audit/offres')
+      .then(r => (r.ok ? r.json() : null))
+      .then(b => {
+        if (vivant && Array.isArray(b?.offres)) setOffres(b.offres);
+      })
+      .catch(() => undefined);
+    return () => {
+      vivant = false;
+    };
+  }, []);
 
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const previewInnerRef = useRef<HTMLDivElement>(null);
@@ -130,9 +165,14 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
         problems = problems.filter(p => p.key !== key);
         solutions = solutions.filter(s => s.key !== key);
       } else {
-        if (problems.length >= 6) {
-          toast.error('Maximum 6 problèmes — décochez-en un avant.');
+        if (problems.length >= MAX_AUDIT_ISSUES) {
+          toast.error(`Maximum ${MAX_AUDIT_ISSUES} problèmes — décochez-en un avant.`);
           return prev;
+        }
+        // La grille de la page 2 fait trois colonnes : 3 ou 6 cartes remplissent
+        // des rangées nettes, 4 ou 5 laissent des trous visibles à l'impression.
+        if (problems.length + 1 === CARTES_RETENUES + 1) {
+          toast.warning('4 cartes laissent un trou dans la grille — visez 3 ou 6.');
         }
         problems = [...problems, ...problemsFromKeys([key])];
         solutions = [...solutions, ...solutionsFromKeys([key])];
@@ -148,17 +188,38 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
 
   const applyDetectedIssues = useCallback(() => {
     if (!detectedIssueKeys || detectedIssueKeys.length === 0) return;
-    const keys = ensureMinIssueKeys(detectedIssueKeys);
+
+    // L'analyseur émet souvent cinq ou six constats. On n'en retient que les
+    // plus FORTS — le poids de la preuve qui les déclenche, pas leur rang dans
+    // le catalogue. Les autres ne disparaissent pas : ils alimentent la ligne
+    // « et X autres améliorations possibles » en bas de la page 2.
+    const classees = classerParForce(ensureMinIssueKeys(detectedIssueKeys), siteAudit);
+    const keys = classees.slice(0, CARTES_RETENUES);
+
     setContent(prev => {
       const customProblems = prev.page2.problems.filter(p => !p.key);
       const customSolutions = prev.page3.solutions.filter(s => !s.key);
-      const problems = [...problemsFromKeys(keys), ...customProblems].slice(0, 6);
+      const problems = [...problemsFromKeys(keys), ...customProblems].slice(0, MAX_AUDIT_ISSUES);
       const solutions = renumberSolutions([...solutionsFromKeys(keys), ...customSolutions]);
-      return { ...prev, page2: { ...prev.page2, problems }, page3: { ...prev.page3, solutions } };
+      return {
+        ...prev,
+        page2: { ...prev.page2, problems },
+        page3: { ...prev.page3, solutions },
+        // Les tarifs suivent les constats : le socle est toujours là, les
+        // additions ne sont conseillées que si un constat retenu les justifie.
+        // Une addition sans constat serait une vente forcée, et ça se voit.
+        page5: construirePage5(prev.page5, offres, classees),
+      };
     });
     markChange();
-    toast.success('Problèmes détectés appliqués');
-  }, [detectedIssueKeys]);
+
+    const restants = classees.length - keys.length;
+    toast.success(
+      restants > 0
+        ? `${keys.length} constats retenus · ${restants} autres annoncés en bas de page`
+        : `${keys.length} constats retenus`,
+    );
+  }, [detectedIssueKeys, siteAudit, offres]);
 
   const handleFieldClick = (field: string) => {
     setActiveField(field);
@@ -185,6 +246,35 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
         statut: isReady ? 'ready' : 'draft',
       });
       setHasChanges(false);
+
+      // Un audit marqué prêt EST le devis : les offres qu'il propose deviennent
+      // les lignes de l'opportunité, sans ressaisie. Tant qu'il est en
+      // brouillon, on n'écrit rien — un audit qu'on retouche encore ne doit pas
+      // faire bouger un montant que quelqu'un consulte par ailleurs.
+      if (isReady && opportuniteId) {
+        const codes = codesRetenus(offres, selectedIssueKeys);
+        // Best-effort et signalé : l'audit est sauvegardé quoi qu'il arrive, et
+        // un devis non écrit ne doit pas ressembler à une sauvegarde perdue.
+        const res = await authedFetch('/api/audit/devis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opportunite_id: opportuniteId, codes }),
+        }).catch(() => null);
+
+        if (res?.ok) {
+          const d = await res.json().catch(() => null);
+          toast.success(
+            d?.lignes
+              ? `Audit sauvegardé · devis mis à jour (${d.lignes} ligne${d.lignes > 1 ? 's' : ''})`
+              : 'Audit sauvegardé',
+          );
+        } else {
+          toast.success('Audit sauvegardé');
+          toast.warning("Le devis n'a pas pu être mis à jour — les lignes d'offres sont inchangées.");
+        }
+        return;
+      }
+
       toast.success('Audit sauvegardé');
     } catch (err) {
       if (err instanceof Error && err.message === 'SESSION_EXPIRED') {
@@ -201,7 +291,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
     const win = window.open('', '_blank');
     if (!win) { toast.error("Impossible d'ouvrir une nouvelle fenêtre"); return; }
     Promise.resolve().then(() => {
-      const html = generateAuditHtml(content, { logoUrl, forPdf: true });
+      const html = generateAuditHtml(content, { logoUrl, forPdf: true, audit: siteAudit, variante });
       win.document.write(html);
       win.document.close();
       win.focus();
@@ -267,6 +357,21 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
           >
             {isReady ? <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" /> : null}
             {isReady ? 'Prêt' : 'Marquer prêt'}
+          </Button>
+          {/* Un seul document, deux profondeurs. Le bouton dit ce qu'on regarde,
+              et l'export suit l'aperçu — pour ne jamais imprimer autre chose que
+              ce qu'on vient de relire. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setVariante(v => (v === 'court' ? 'complet' : 'court'))}
+            title={
+              variante === 'court'
+                ? "Version envoyée : trois constats et le nombre des autres"
+                : 'Version du rendez-vous : chaque point restant avec sa mesure'
+            }
+          >
+            {variante === 'court' ? 'Version courte' : 'Version complète'}
           </Button>
           <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
@@ -364,6 +469,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
                   activeField={activeField}
                   onFieldClick={handleFieldClick}
                   audit={siteAudit}
+                  variante={variante}
                 />
                 <div style={{ height: 16 }} />
               </div>

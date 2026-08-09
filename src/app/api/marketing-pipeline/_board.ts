@@ -2,6 +2,8 @@ import { isSchemaGap } from "@/app/api/_lib/schema-gap";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { isMissingColumn } from "@/lib/site-builder/clone-template-site";
+import { lireAudits } from "@/lib/audit-site/lecture";
+import type { BoardItem } from "@/components/marketing-pipeline/types";
 import { noteSummaries } from "./_notes";
 
 /**
@@ -13,6 +15,33 @@ import { noteSummaries } from "./_notes";
  * déjà eu lieu en amont). Une seule implémentation, donc pas de dérive entre
  * les deux vues.
  */
+
+/**
+ * La note d'une entreprise, réduite à ce que la colonne affiche.
+ *
+ * `lireAudits` a déjà appliqué la règle de publication : `axes` ne contient que
+ * les axes concluants, et `axes_masques` nomme ceux qu'on a écartés. On n'a donc
+ * rien à décider ici — c'est voulu, la règle ne doit vivre qu'à un endroit.
+ */
+function noteSiteDe(
+  notes: Awaited<ReturnType<typeof lireAudits>>,
+  entrepriseId: number | null,
+): BoardItem["note_site"] {
+  if (!notes || entrepriseId == null) return null;
+  const a = notes.get(entrepriseId);
+  if (!a || a.note_globale == null) return null;
+
+  const noteDe = (id: string) => a.axes.find((x) => x.id === id)?.note ?? null;
+  return {
+    globale: a.note_globale,
+    libelle: a.libelle,
+    vitesse: noteDe("vitesse"),
+    seo: noteDe("seo"),
+    mobile: noteDe("mobile"),
+    conversion: noteDe("conversion"),
+    partielle: a.axes_masques.length > 0,
+  };
+}
 
 /** How many opportunities to pull into the marketing board at once. */
 const OPPORTUNITY_LIMIT = 1000;
@@ -489,6 +518,15 @@ export async function buildBoard(
   // Tickets (notes agent ↔ admin) par opportunité, pour les badges du board.
   const notesByOpp = await noteSummaries(oppIds);
 
+  // Les notes de site, en UN seul select pour toutes les lignes affichées.
+  // Une requête par ligne ferait deux cents allers-retours sur un board complet,
+  // et la colonne coûterait plus cher que tout le reste de la page.
+  //
+  // `null` (table absente) et Map vide (aucune analyse) sont distincts : le
+  // premier cache la colonne, le second l'affiche vide. Une fonctionnalité non
+  // déployée ne doit pas ressembler à une donnée manquante.
+  const notesSite = await lireAudits(supabase, entIds);
+
   // Enrichment run metadata (statut/error/attempts written by the edge function).
   // These columns are optional: the board degrades gracefully if a DB predates
   // them, exactly like `enrichment_validated` above.
@@ -671,6 +709,7 @@ export async function buildBoard(
           }
         : null,
       audit: audit ? { id: audit.id, statut: audit.statut ?? "draft", pdf_url: audit.pdf_url ?? null } : null,
+      note_site: noteSiteDe(notesSite, o.entreprise_id),
       agent: owner ? { id: owner.id, name: owner.name } : null,
       missing_for_site: missing,
       notes: notesByOpp.get(o.id) ?? { open: 0, total: 0, open_subjects: [] },
