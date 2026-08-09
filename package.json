@@ -12,7 +12,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "jest"
+    "test": "jest",
+    "audit:rescorer": "ts-node -O '{\"module\":\"commonjs\",\"moduleResolution\":\"node\",\"isolatedModules\":false}' scripts/audit/rescorer.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.94.0",
