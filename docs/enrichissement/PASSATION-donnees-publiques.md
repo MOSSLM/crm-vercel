@@ -453,10 +453,45 @@ Chacune peut faire plusieurs commits.
 > comportements opposés. 14 tests, dont deux qui passent par le vrai déballage
 > `unwrapRawHtml` + `renderRawSection`.
 >
-> **⛔ CE QUI RESTE : le contrat `data-rge` de `cvc13`.** Sans effet tant que les
-> templates ne sont pas réimportés — le propriétaire ne les a pas encore poussés,
-> c'est l'ancienne version qui tourne. Cf. la fin de
-> [`PROMPT-4b-variantes-rge.md`](./PROMPT-4b-variantes-rge.md).
+> **✅ LIVRÉ le 09/08/2026 — le contrat `data-rge`.**
+> `claude-design/strip-rge-regions.ts`, branché sur les deux surfaces de rendu.
+>
+> **La cause du bug, à ne pas réintroduire.** Le design livre les deux
+> rédactions et compte sur un tiers pour trancher. En aperçu Claude Design, ce
+> tiers est le panneau Tweaks, qui pose `data-sans-rge` sur `<html>` ; le CSS
+> livré fait le reste :
+>
+> ```css
+> html:not([data-sans-rge]) [data-rge="non"] { display: none }
+> ```
+>
+> Sur un site rendu, personne ne pose cet attribut. La variante « non » était
+> donc masquée EN PERMANENCE et la variante « oui » s'affichait pour tout le
+> monde. Cette règle est bien présente sur 112 démos sur 113 (dans
+> `sites.shared_assets.css`, pas dans `theme_sections.code`).
+>
+> **Le piège du correctif naïf.** Retirer les nœuds `data-rge="oui"` NE SUFFIT
+> PAS : les survivants portent encore `data-rge="non"` et le CSS continue de les
+> masquer — on obtiendrait un pied de page VIDE au lieu du texte de repli, un
+> correctif qui a l'air de marcher tout en effaçant ce qu'il devait révéler.
+> D'où `libererSurvivants` : l'attribut est retiré des nœuds gagnants.
+>
+> Quatre gestes : choisir la variante · retirer les perdants · libérer les
+> survivants · remplir `[data-rge-noms]`. Plus la `<meta>`, seul cas qu'aucun
+> CSS ne pourrait traiter puisque la valeur vit dans un attribut.
+>
+> Détail respecté : le séparateur vient du gabarit — « QualiPAC et Qualibat »
+> en prose, « QualiPAC · Qualibat » en badge. Imposer une virgule jurerait.
+>
+> Vérifié sur les **10 pages réelles** du template Agency : 0 phrase affirmant
+> le RGE en variante « sans », 0 attribut résiduel, section aides supprimée.
+> 17 tests.
+>
+> **Nom court obligatoire** : `libelleCourt()` dans `rge-logos.ts`. Les
+> `nom_certificat` de l'ADEME sont exacts mais impubliables — trois « QualiPAC
+> module Chauffage et ECS » d'affilée débordent d'un badge. Ce sont les marques
+> réelles de la nomenclature, pas des libellés inventés ; une clé sans entrée
+> retombe sur le nom brut, long mais vrai.
 >
 > | À écrire | Rôle |
 > |---|---|

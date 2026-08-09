@@ -20,6 +20,9 @@ export { hydrateCertifications, porteDesCertifications } from "./hydrate-certifi
 export type { LogoCertification } from "./hydrate-certifications";
 export { filterRgeBadges } from "./filter-rge-badges";
 import type { EtatRgeBadges } from "./filter-rge-badges";
+export { stripRgeRegions, porteDesVariantesRge } from "./strip-rge-regions";
+import type { EtatRgeRegions } from "./strip-rge-regions";
+import { libelleCourt } from "@/lib/donnees-publiques/rge-logos";
 
 const estLogo = (v: unknown): v is LogoCertification => {
   if (!v || typeof v !== "object") return false;
@@ -49,6 +52,24 @@ export const etatBadgesDepuisVariables = (
   // logo (certificat d'audit nominatif) ne porte aucune marque, donc aucun badge
   // de template ne peut la nommer.
   clesDetenues: logosDepuisVariables(variables?.["__certifications"]).map((l) => l.cle),
+});
+
+/**
+ * Ce que le choix de rédaction doit savoir, décodé des mêmes variables.
+ *
+ * Même exigence que `etatBadgesDepuisVariables` : `verifie` vient du drapeau
+ * dédié, jamais d'une liste vide. Une liste de logos vide ne distingue pas
+ * « l'ADEME confirme zéro » de « on n'a jamais demandé », et ces deux cas
+ * appellent des rédactions opposées — dont l'une ne doit jamais être choisie par
+ * accident.
+ */
+export const etatRegionsDepuisVariables = (
+  variables: Record<string, string> | undefined | null,
+): EtatRgeRegions => ({
+  verifie: variables?.["__rge_verifie"] === "1",
+  // Noms COURTS et distincts : « QualiPAC », pas « QualiPAC module Chauffage et
+  // ECS » — trois noms ADEME complets déborderaient d'un badge de pied de page.
+  noms: logosDepuisVariables(variables?.["__certifications"]).map((l) => libelleCourt(l.cle)),
 });
 
 /** Décode `__certifications`. Toute anomalie rend `[]`, donc aucun bloc. */

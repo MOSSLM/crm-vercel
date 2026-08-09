@@ -18,9 +18,11 @@ import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/conditi
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
 import {
   etatBadgesDepuisVariables,
+  etatRegionsDepuisVariables,
   filterRgeBadges,
   hydrateCertifications,
   logosDepuisVariables,
+  stripRgeRegions,
 } from "@/lib/site-builder/claude-design/certifications-from-variables";
 import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { buildVhRewriteRuntime, buildViewportLockScript, convertVhToPx } from "@/lib/site-builder/preview-viewport";
@@ -544,6 +546,9 @@ export function InlinePreview({ html, sharedCss, fontLinks, tweaks, themeSets, j
       // Les badges texte du pied de page. Même passage que le rendu publié :
       // l'aperçu doit montrer exactement ce qui sera mis en ligne.
       body = filterRgeBadges(body, etatBadgesDepuisVariables(variables));
+      // Le choix entre les deux rédactions du design. Même passage que le rendu
+      // publié : l'aperçu doit montrer exactement ce qui sera mis en ligne.
+      body = stripRgeRegions(body, etatRegionsDepuisVariables(variables));
     }
     const overridesJson = JSON.stringify(overrides).replace(/</g, "\\u003c");
     // Enterprise tags drive image-set resolution in the iframe. Empty when

@@ -18,10 +18,13 @@ import { stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
 import {
   etatBadgesDepuisVariables,
+  etatRegionsDepuisVariables,
   filterRgeBadges,
   hydrateCertifications,
   logosDepuisVariables,
   porteDesCertifications,
+  porteDesVariantesRge,
+  stripRgeRegions,
 } from "@/lib/site-builder/claude-design/certifications-from-variables";
 import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { interpolateData } from "@/lib/library-section/interpolate";
@@ -201,6 +204,12 @@ export async function LibrarySectionInline({
   // qualifications. Purement soustractif, et sans effet tant que rien n'est
   // vérifié.
   html = filterRgeBadges(html, etatBadgesDepuisVariables(variables));
+  // Les designs qui livrent DEUX rédactions (`data-rge="oui"` / `"non"`) :
+  // on choisit celle qui dit vrai. Sans ce passage, le CSS du design masque la
+  // variante « non » en permanence et le site affirme le RGE à tout le monde.
+  if (porteDesVariantesRge(html)) {
+    html = stripRgeRegions(html, etatRegionsDepuisVariables(variables));
+  }
   // One line per section per request, on every published page — noise in the
   // platform logs, and billed there. Keep it for the cases worth knowing about:
   // a render error, or overrides that resolved to no node (a design edit whose
