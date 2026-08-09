@@ -88,6 +88,19 @@ const SEARCH_RESULTS_COLUMNS = [
 ] as const;
 const SEARCH_RESULTS_SELECT = SEARCH_RESULTS_COLUMNS.join(',');
 
+/**
+ * Les colonnes d'archivage, communes à `entreprises` et `opportunites`. Elles
+ * sont lues par les vues (pour masquer et badger les fiches archivées) mais
+ * jamais écrites depuis le navigateur : seule `/api/archive` les modifie.
+ */
+const ARCHIVE_COLUMNS = [
+  'archived_at',
+  'archived_by',
+  'archive_reason',
+  'archive_note',
+  'archive_concurrent_id'
+] as const;
+
 const COMPANY_COLUMNS = [
   'id',
   'canonical_url',
@@ -119,12 +132,19 @@ const COMPANY_COLUMNS = [
   'ville',
   'code_postal',
   'pays',
-  'logo_url'
+  'logo_url',
+  ...ARCHIVE_COLUMNS
 ] as const;
 const COMPANY_SELECT = COMPANY_COLUMNS.join(',');
 
 const COMPANY_WRITEABLE_COLUMNS = COMPANY_COLUMNS.filter(
-  (column) => column !== 'id' && column !== 'created_at' && column !== 'updated_at'
+  (column) =>
+    column !== 'id' &&
+    column !== 'created_at' &&
+    column !== 'updated_at' &&
+    // L'archivage ne s'écrit que par /api/archive : un update navigateur sur
+    // une fiche du pool est refusé par la RLS sans lever d'erreur.
+    !(ARCHIVE_COLUMNS as readonly string[]).includes(column)
 );
 
 const sanitizeCompanyPayload = (input: Partial<Company>): Record<string, unknown> => {
@@ -190,7 +210,8 @@ const OPPORTUNITY_COLUMNS = [
   'name',
   'type',
   'mrr',
-  'recurrence_months'
+  'recurrence_months',
+  ...ARCHIVE_COLUMNS
 ] as const;
 const OPPORTUNITY_SELECT = OPPORTUNITY_COLUMNS.join(',');
 
