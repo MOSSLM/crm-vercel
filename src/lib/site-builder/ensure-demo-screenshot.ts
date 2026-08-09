@@ -74,20 +74,26 @@ export async function ensureDemoScreenshot(
   // Menées ensemble, elles coûtent le temps de la plus lente.
   const [ordinateur, mobile] = await Promise.all([
     capturer(siteId, demoUrl, {
-      largeur: SHOT_WIDTH,
-      hauteur: SHOT_HEIGHT,
+      fenetre: SHOT_WIDTH,
+      largeurDemandee: SHOT_WIDTH,
+      largeurFinale: 1200,
+      hauteurFinale: 750,
       maxOctets: MAX_SHOT_BYTES,
       quoi: "ordinateur",
     }),
     capturer(siteId, demoUrl, {
-      largeur: MOBILE_WIDTH,
-      hauteur: MOBILE_HEIGHT,
+      fenetre: MOBILE_WIDTH,
+      // On demande DEUX FOIS la largeur de la fenêtre : le rendu mobile est en
+      // densité 2, et partir d'une source à cette densité donne une réduction
+      // nette plutôt qu'un agrandissement flou.
+      largeurDemandee: MOBILE_WIDTH * 2,
+      largeurFinale: MOBILE_WIDTH,
+      hauteurFinale: MOBILE_HEIGHT,
       maxOctets: MAX_MOBILE_BYTES,
       quoi: "mobile",
-      // Le service rend en double densité sur une fenêtre mobile : on lui
-      // demande donc 780×1560 et on réduit ici. Lui demander 390 le ferait
-      // rogner, et on perdrait la colonne de droite (menu burger compris).
-      densiteDouble: true,
+      // Indispensable : sans `fullpage`, le service rogne la largeur au lieu de
+      // la réduire, et on perd la colonne de droite (menu burger compris).
+      pleinePage: true,
     }),
   ]);
 
@@ -147,26 +153,31 @@ export async function ensureDemoScreenshot(
 }
 
 interface OptionsCapture {
-  largeur: number;
-  hauteur: number;
+  /** Largeur de la fenêtre du navigateur — décide de la mise en page rendue. */
+  fenetre: number;
+  /** Largeur demandée au service de capture. */
+  largeurDemandee: number;
+  /** Largeur de l'image finalement stockée. */
+  largeurFinale: number;
+  hauteurFinale: number;
   maxOctets: number;
   quoi: string;
-  densiteDouble?: boolean;
+  pleinePage?: boolean;
 }
 
 /** Une capture, vérifiée, recadrée et compressée. Ne lève pas. */
 async function capturer(
   siteId: string,
   url: string,
-  { largeur, hauteur, maxOctets, quoi, densiteDouble }: OptionsCapture,
+  { fenetre, largeurDemandee, largeurFinale, hauteurFinale, maxOctets, quoi, pleinePage }: OptionsCapture,
 ): Promise<{ bytes: Buffer | null; warning?: string }> {
   let raw: ArrayBuffer;
   try {
     const visual = await renderViewportShot(url, {
-      width: largeur,
-      height: hauteur,
-      viewportWidth: largeur,
-      densiteDouble,
+      width: largeurDemandee,
+      height: hauteurFinale,
+      viewportWidth: fenetre,
+      pleinePage,
     });
     raw = visual.bytes;
   } catch (e) {
@@ -189,7 +200,7 @@ async function capturer(
   }
 
   try {
-    return { bytes: await normaliser(raw, largeur, hauteur, maxOctets) };
+    return { bytes: await normaliser(raw, largeurFinale, hauteurFinale, maxOctets) };
   } catch (e) {
     const reason = e instanceof Error ? e.message : "image illisible";
     console.warn(`[og] capture ${quoi} ${siteId} non traitable : ${reason}`);
@@ -207,7 +218,10 @@ async function capturer(
  * son appel à l'action, pas son pied de page.
  *
  * Le redimensionnement se fait ICI plutôt que chez le service de capture parce
- * que celui-ci rogne au lieu de réduire (voir `densiteDouble`).
+ * que celui-ci rogne au lieu de réduire hors mode `fullpage` (voir
+ * `ViewportShotOptions.pleinePage`). En mode page entière, l'image reçue fait
+ * plusieurs milliers de pixels de haut : c'est ce cadrage qui n'en garde que
+ * le premier écran.
  */
 async function normaliser(
   input: ArrayBuffer,

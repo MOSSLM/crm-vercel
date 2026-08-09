@@ -127,30 +127,34 @@ export interface ViewportShotOptions extends RenderOptions {
    */
   viewportWidth?: number;
   /**
-   * Demander la capture à DOUBLE DENSITÉ, puis la réduire localement.
+   * Demander la PAGE ENTIÈRE. Contre-intuitif, et pourtant c'est la seule forme
+   * qui rende la largeur complète.
    *
-   * POURQUOI, ET COMMENT ON LE SAIT. Sur une fenêtre mobile, thum.io rend en
-   * 390 POINTS mais produit une image de 780 PIXELS — densité 2, comme un écran
-   * de téléphone. Or son paramètre `width` ne redimensionne pas : il ROGNE.
+   * ÉTABLI PAR CINQ ESSAIS EN PRODUCTION, faute de pouvoir observer le service
+   * depuis nos environnements (proxy bloquant) :
    *
-   * Les deux essais faits en production le montrent :
-   *   `viewportWidth/390/width/390/crop/780` → mise en page mobile correcte,
-   *      mais amputée de sa moitié droite (menu burger absent, texte coupé en
-   *      plein mot) : on recevait le quart supérieur gauche d'un rendu 780×1560 ;
-   *   `viewportWidth/390` seul → sa taille par défaut et la page ENTIÈRE, donc
-   *      une image à la fois trop étroite et interminable.
+   *   viewportWidth/390/width/390/crop/780   mise en page mobile correcte, mais
+   *                                          amputée de sa moitié droite —
+   *                                          menu burger absent, texte coupé
+   *                                          en plein mot ;
+   *   viewportWidth/390/width/780/crop/1560  toujours coupée à droite ;
+   *   viewportWidth/780/...                  fenêtre tablette, pas téléphone ;
+   *   iphone/6/...                           préréglage ignoré, rendu desktop ;
+   *   viewportWidth/390/fullpage/width/780   LARGEUR COMPLÈTE. ✅
    *
-   * La bonne demande est donc les dimensions RÉELLES du rendu — 780×1560 — et
-   * la réduction se fait ensuite avec sharp, où l'on maîtrise ce qui se passe.
-   * Un service qui rendrait en densité 1 renverrait une image agrandie plutôt
-   * que rognée : moins nette, mais complète. C'est le bon sens de l'erreur.
+   * Autrement dit : SANS `fullpage`, le paramètre `width` ROGNE ; AVEC, il
+   * redimensionne. La page arrive alors entière — plusieurs milliers de pixels
+   * de haut — et c'est sharp qui en garde le haut, ce qui ne coûte rien
+   * puisqu'on recadrait déjà localement.
    */
-  densiteDouble?: boolean;
+  pleinePage?: boolean;
   /** Qualité JPEG (ScreenshotOne uniquement). */
   quality?: number;
 }
 
 const SHOT_TIMEOUT_MS = 30_000;
+/** Plafond de téléchargement d'une capture — le mode page entière peut être long. */
+const MAX_SHOT_BYTES = 25 * 1024 * 1024;
 
 /** True quand une capture est possible — toujours vrai, thum.io ne demande rien. */
 export function viewportShotAvailable(): boolean {
@@ -255,12 +259,12 @@ async function shotThumIo(
   // `viewportWidth` AVANT `width` : le premier fixe la fenêtre du navigateur —
   // donc la mise en page — le second la taille du fichier rendu. Les confondre
   // produit un site desktop rétréci (voir `ViewportShotOptions.viewportWidth`).
-  // On demande les dimensions RÉELLES du rendu, pas celles voulues à l'arrivée :
-  // `width` rogne au lieu de réduire (voir `densiteDouble`). La mise à la taille
-  // finale est faite par l'appelant, avec sharp.
-  const densite = opts.densiteDouble ? 2 : 1;
-  const fenetre =
-    `viewportWidth/${viewportWidth}/width/${width * densite}/crop/${height * densite}`;
+  // `fullpage` change le sens de `width` : il redimensionne au lieu de rogner
+  // (voir `pleinePage`). On ne demande donc AUCUN cadrage vertical dans ce
+  // mode — la page arrive entière et sharp en garde le haut.
+  const fenetre = opts.pleinePage
+    ? `viewportWidth/${viewportWidth}/fullpage/width/${width}`
+    : `viewportWidth/${viewportWidth}/width/${width}/crop/${height}`;
   const avecAttente = (secondes: number) =>
     `https://image.thum.io/get/${fenetre}/wait/${secondes}/noanimate/${url}`;
   // Repli sans `viewportWidth` ni `wait` : si thum.io ne reconnaît pas une de
@@ -326,6 +330,16 @@ async function fetchShot(
   // texte. Sans ce garde-fou on déposerait ça dans le bucket comme une image.
   if (bytes.byteLength < 1024) {
     throw new RenderError("Capture vide ou tronquée.", 502);
+  }
+  // En mode page entière, une longue page d'accueil peut rendre une image de
+  // plusieurs milliers de pixels de haut. Le plafond protège la mémoire de la
+  // fonction serverless ; au-delà, la carte se rend sans mockup plutôt que de
+  // faire tomber tout l'appel.
+  if (bytes.byteLength > MAX_SHOT_BYTES) {
+    throw new RenderError(
+      `Capture trop volumineuse (${Math.round(bytes.byteLength / 1_000_000)} Mo).`,
+      502,
+    );
   }
   return { mime, bytes };
 }
