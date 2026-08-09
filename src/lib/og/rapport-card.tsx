@@ -130,33 +130,66 @@ export function RapportCard(d: RapportCardData): React.ReactElement {
 }
 
 /**
- * L'anneau : un dégradé conique, comme sur la page. Satori le supporte, ce qui
- * évite de fabriquer une image ou de tracer un arc SVG à la main.
+ * L'anneau de note, en SVG.
+ *
+ * PAS de `conic-gradient` : satori ne le connaît pas, et il ne l'ignore pas
+ * poliment — il échoue. La carte du rapport n'aurait donc JAMAIS été produite,
+ * défaut invisible en test puisque rien ne rend cette carte hors production.
+ *
+ * Un cercle avec `stroke-dasharray` fait le même dessin, en SVG que satori
+ * rasterise sans difficulté. La rotation de -90° amène le départ de l'arc en
+ * haut plutôt qu'à droite.
  */
 function Anneau({ note, font }: { note: number; font: string }) {
-  const deg = Math.round((note / 100) * 360);
+  const taille = 260;
+  const epaisseur = 22;
+  const rayon = (taille - epaisseur) / 2;
+  const circonference = 2 * Math.PI * rayon;
+  const rempli = (Math.max(0, Math.min(100, note)) / 100) * circonference;
+
   return (
     <div
       style={{
         display: "flex",
+        position: "relative",
+        width: taille,
+        height: taille,
         alignItems: "center",
         justifyContent: "center",
-        width: 260,
-        height: 260,
-        borderRadius: 260,
-        background: `conic-gradient(${ton(note)} ${deg}deg, rgba(181,208,240,0.16) ${deg}deg)`,
       }}
     >
+      <svg
+        width={taille}
+        height={taille}
+        viewBox={`0 0 ${taille} ${taille}`}
+        style={{ position: "absolute", top: 0, left: 0 }}
+      >
+        <circle
+          cx={taille / 2}
+          cy={taille / 2}
+          r={rayon}
+          fill="none"
+          stroke="rgba(181,208,240,0.16)"
+          strokeWidth={epaisseur}
+        />
+        <circle
+          cx={taille / 2}
+          cy={taille / 2}
+          r={rayon}
+          fill="none"
+          stroke={ton(note)}
+          strokeWidth={epaisseur}
+          strokeDasharray={`${rempli} ${circonference - rempli}`}
+          strokeLinecap="round"
+          transform={`rotate(-90 ${taille / 2} ${taille / 2})`}
+        />
+      </svg>
       <div
         style={{
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          width: 216,
-          height: 216,
-          borderRadius: 216,
-          background: NUIT,
         }}
       >
         <span style={{ fontFamily: font, fontSize: 92, lineHeight: 1, color: "#FFFFFF" }}>{note}</span>

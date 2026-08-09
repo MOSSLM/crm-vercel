@@ -118,8 +118,12 @@ export function PartagerDemoDialog({
 
   const openWhatsApp = async () => {
     const message = defaultMessage(companyName, shareUrl);
-    const cleaned = (phone ?? "").replace(/[^0-9+]/g, "").replace("+", "");
-    window.open(`https://wa.me/${cleaned}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
+    const numero = versFormatInternational(phone);
+    if (!numero) {
+      toast.error("Numéro inutilisable — copiez le lien pour l'envoyer autrement.");
+      return;
+    }
+    window.open(`https://wa.me/${numero}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
 
     // Trace best-effort : l'échange doit apparaître dans l'historique du
     // contact, mais un journal en panne ne doit pas retenir l'envoi.
@@ -250,6 +254,26 @@ function CardPreview({ state, onRetry }: { state: CardState; onRetry: () => void
       </span>
     </div>
   );
+}
+
+/**
+ * Numéro au format que wa.me exige : international, chiffres uniquement.
+ *
+ * LE PIÈGE : les fiches du CRM portent des numéros FRANÇAIS — « 06 12 34 56 78 ».
+ * Se contenter de retirer les caractères non numériques donne `0612345678`, que
+ * wa.me interprète comme un indicatif pays inexistant et refuse en ouvrant une
+ * page d'erreur. Le bouton avait donc l'air de fonctionner et ne menait nulle
+ * part. Même conversion que `sanitizePhone` dans `WhatsAppTab`.
+ */
+function versFormatInternational(brut: string | null | undefined): string | null {
+  let n = (brut ?? "").replace(/[\s.\-()]/g, "");
+  if (!n) return null;
+  if (n.startsWith("00")) n = `+${n.slice(2)}`;
+  if (n.startsWith("0")) n = `+33${n.slice(1)}`;
+  if (!n.startsWith("+")) n = `+${n}`;
+  const chiffres = n.slice(1).replace(/\D/g, "");
+  // Un indicatif plus un numéro national tiennent entre 8 et 15 chiffres (E.164).
+  return chiffres.length >= 8 && chiffres.length <= 15 ? chiffres : null;
 }
 
 /** Message par défaut. L'opérateur le retouche dans WhatsApp avant d'envoyer. */

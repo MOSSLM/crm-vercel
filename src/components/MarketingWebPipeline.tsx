@@ -679,6 +679,59 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
+  /**
+   * Fabrique à l'avance les vignettes de partage de la sélection.
+   *
+   * À lancer AVANT une campagne automatique. Deux captures par site, une
+   * vingtaine de secondes chacune : on avance par petits paquets pour ne pas se
+   * faire limiter par le service, et on nomme les échecs pour pouvoir les
+   * reprendre.
+   */
+  const VIGNETTE_PAR_PAQUET = 3;
+
+  const preparerVignettes = async (items: BoardItem[]) => {
+    const targets = items.filter((it) => it.site);
+    if (targets.length === 0) {
+      toast.error("Aucun site dans la sélection");
+      return;
+    }
+
+    setWorking("create-site");
+    const suivi = toast.loading(`Préparation de ${targets.length} vignette(s)…`);
+    try {
+      let ok = 0;
+      const echecs: string[] = [];
+      for (let i = 0; i < targets.length; i += VIGNETTE_PAR_PAQUET) {
+        const paquet = targets.slice(i, i + VIGNETTE_PAR_PAQUET);
+        const res = await Promise.allSettled(
+          paquet.map(async (it) => {
+            const r = await authedFetch(`/api/og/demo/${it.site!.id}/prepare`, { method: "POST" });
+            const body = (await r.json().catch(() => ({}))) as { error?: string };
+            if (!r.ok) throw new Error(body.error || `Erreur ${r.status}`);
+          }),
+        );
+        res.forEach((r, j) => {
+          if (r.status === "fulfilled") ok++;
+          else echecs.push(displayName(paquet[j]));
+        });
+        toast.loading(`${ok + echecs.length}/${targets.length} préparée(s)…`, { id: suivi });
+      }
+      toast.dismiss(suivi);
+      if (ok > 0) toast.success(`${ok} vignette(s) prête(s) — les liens peuvent partir.`);
+      if (echecs.length > 0) {
+        const noms = echecs.slice(0, 5).join(", ");
+        toast.error(
+          `${echecs.length} échec(s) : ${noms}${echecs.length > 5 ? `… et ${echecs.length - 5} autre(s)` : ""}`,
+        );
+      }
+    } catch (e) {
+      toast.dismiss(suivi);
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la préparation des vignettes");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   // Gate: before creating, every target must have its required variables filled.
   // Otherwise open the edit modal on the first incomplete company (requirement
   // mode) instead of creating anything.
@@ -960,6 +1013,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onCreateSites: (items) => createSites(items),
     onRegenerateSites: (items) => regenerateSites(items),
     onAnalyserSites: (items) => analyserSites(items),
+    onPreparerVignettes: (items) => preparerVignettes(items),
     onValidateSites: (items) => validateSites(items),
     onCreateAudits: (items) => createAudits(items),
     onValidateAudits: (items) => validateAudits(items),
