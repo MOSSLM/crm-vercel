@@ -3,6 +3,69 @@
 > Plan de travail. Révision du plan initial après relecture du code et **du kit
 > d'identité `Sama_Visual_identity2` (dossier `07 Audit/`)**, qui change la nature
 > du lot 3.
+>
+> **Les quatre lots sont implémentés.** Voir « État de l'implémentation » ci-dessous
+> pour les migrations à appliquer et les écarts constatés en chemin.
+
+---
+
+## État de l'implémentation
+
+Les quatre lots sont livrés. `npm run typecheck`, `npm test` (1854 tests) et
+`next lint` passent.
+
+### Migrations à appliquer, dans cet ordre
+
+| Fichier | Effet si non appliquée |
+|---|---|
+| `sql/20260810_sites_og.sql` | La carte OG est fabriquée à chaque unfurl au lieu d'être servie par le CDN (plus lent, jamais blanc). Publication **non affectée** — voir l'écart n°1. |
+| `sql/20260810_audit_site.sql` | Badge CRM caché, rapport « analyse indisponible », cron en 503 explicite. |
+| `sql/20260810_audit_site_cron.sql` | Pas de passage automatique. ⚠️ Remplacer `<PG_CRON_SECRET>` avant exécution. |
+| `sql/20260810_rapport_public.sql` | Pas de lien rapport ; `{{lien_audit}}` retombe sur le PDF. |
+
+`sql/RATTRAPAGE_colonnes_sites.sql` a été mis à jour (constat + `alter`).
+
+### Écarts par rapport au plan, constatés en implémentant
+
+1. **`publishSite` aurait rendu tout site impubliable.** Le plan demandait
+   d'invalider `og_image_url` à la publication. Un `update` nommant une colonne
+   absente échoue **entièrement** — c'est exactement la panne déjà vécue avec
+   `paywall_enabled`. Ajout de `updateDroppingMissingColumns`, pendant en écriture
+   de `selectDroppingMissingColumns`.
+
+2. **`attachAudit` attachait le rapport web sous le nom `audit.pdf`.** Faire
+   pointer `{{lien_audit}}` vers le rapport web suffisait à casser la pièce jointe
+   des séquences e-mail. `auditUrl` (le lien) et `auditPdfUrl` (le fichier) sont
+   désormais deux champs distincts dans `engine.ts`.
+
+3. **Labels réservés : corrigé dans `uniqueSubdomain`, pas dans les appelants.**
+   Le plan proposait d'injecter `RESERVED_SUBDOMAINS` dans le `taken` de chaque
+   route de déploiement. Le faire dans la fonction ferme le trou pour tous les
+   appelants, présents et futurs — y compris ceux qu'on oublierait.
+
+4. **Unité cohérente sur une ligne de preuve.** Un test a révélé « 900 ms » affiché
+   face à un seuil « 2,5 s » : on demandait au prospect de convertir de tête au
+   moment de lui faire accepter le verdict. Le formateur reçoit désormais
+   l'échelle de la ligne, pas chaque nombre isolément.
+
+5. **Le rapport ne dépend pas d'un document rédigé.** Le plan supposait un
+   `audits` existant. La page rend les mesures, le démo et l'appel à l'action dans
+   tous les cas, et n'ajoute le deck que si un `audits` existe — sans quoi on ne
+   pourrait envoyer un rapport qu'aux prospects pour lesquels quelqu'un a déjà
+   rédigé six pages, donc jamais en démarchage froid.
+
+6. **`AuditWorkspace` lit l'analyse via l'API**, pas en direct : c'est l'API qui
+   applique la règle de publication et la cohabitation PSI. Les dupliquer côté
+   client aurait garanti qu'elles divergent.
+
+### Ce qui reste à faire à la main
+
+- **Verser les deux TTF** dans `src/lib/og/fonts/` (Cormorant Garamond Light,
+  DM Sans Regular/Medium) pour la fidélité de marque des cartes. Sans eux, la
+  chaîne fonctionne avec le Noto Sans embarqué par `next/og`.
+- **Tourner le secret pg_cron** (voir Risques) — il est dans l'historique git.
+- **Le test qui compte** : passer une URL démo dans une vraie conversation
+  WhatsApp. Aucun test automatisé ne le remplace.
 
 ---
 
