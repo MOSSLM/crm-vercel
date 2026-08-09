@@ -111,3 +111,31 @@ export const NB_CERTIFICATS_MAPPES = Object.keys(CERTIFICAT_VERS_LOGO).length;
  * ailleurs — cf. `claude-design/filter-rge-badges.ts`.
  */
 export const CLES_LOGOS: string[] = [...new Set(Object.values(CERTIFICAT_VERS_LOGO))];
+
+/**
+ * Le nom court d'une qualification, tel qu'on l'écrit dans une phrase.
+ *
+ * Les `nom_certificat` de l'ADEME sont exacts mais impubliables tels quels :
+ * « QualiPAC module Chauffage et ECS », « QUALIBAT-RGE ». Trois d'affilée dans
+ * un badge de pied de page débordent. Ce sont les **marques réelles** de la
+ * nomenclature, pas des libellés inventés — c'est aussi sous ces noms que les
+ * particuliers les connaissent.
+ *
+ * Une clé sans entrée retombe sur le `nom_certificat` brut : mieux vaut long et
+ * vrai que court et faux.
+ */
+const LIBELLE_COURT: Record<string, string> = {
+  qualipac: "QualiPAC",
+  qualibat: "Qualibat",
+  qualibois: "Qualibois",
+  qualipv: "QualiPV",
+  qualisol: "Qualisol",
+  qualifelec: "Qualifelec",
+  opqibi: "OPQIBI",
+  "chauffage-plus": "Chauffage +",
+  "ventilation-plus": "Ventilation +",
+  certiforage: "Certification forage",
+};
+
+/** Le nom court d'une clé de logo, ou la clé elle-même si on ne la connaît pas. */
+export const libelleCourt = (cle: string): string => LIBELLE_COURT[cle] ?? cle;
