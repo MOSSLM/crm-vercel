@@ -391,8 +391,33 @@ Chacune peut faire plusieurs commits.
 > 5. Les exigences de complétude vivent en double (`required-fields.ts` et `missingForSite`), avec un
 >    test qui vérifie l'alignement. Toute modification doit être faite des deux côtés.
 
-### Prompt 4 — Templates Claude Design ✅ FAIT
+### Prompt 4 — Templates Claude Design 🟡 MOITIÉ FAITE
 
+> **Où on en est, en une ligne : les LOGOS sont pilotés, les BADGES TEXTE ne le
+> sont pas.** Le prompt 4 demandait les deux, et disait du second que c'était
+> « le vrai problème, pas la mise en forme ». Il reste entier.
+>
+> Mesuré sur `template_cvc12`, hors bloc piloté, commentaires exclus :
+>
+> | | |
+> |---|---|
+> | Allégations écrites en dur, par variante | **76** |
+> | …sur 6 variantes | **456** |
+>
+> Quatre familles, toutes affirmant la même chose à **tous** les clients :
+>
+> | Où | Ce qui est écrit |
+> |---|---|
+> | pied de page `.label-badge` | `RGE QualiPAC` · `Qualibat` · `Qualifelec` |
+> | `<meta name="description">` | « Artisan installateur RGE QualiPAC… » |
+> | barre de confiance du hero | « Certifié **RGE QualiPAC** » |
+> | carte argumentaire | « Certifié RGE QualiPAC — une qualification reconnue par l'État » |
+> | section aides | « Étant certifiés RGE QualiPAC, nos installations y ouvrent droit » |
+>
+> Pour 88 projets sur 190, l'ADEME confirme **zéro** qualification : sur ceux-là,
+> chacune de ces phrases est fausse. Le bloc logos disparaît correctement — et
+> le pied de page continue d'afficher trois badges.
+>
 > **MISE À JOUR (09/08/2026, bundle `template_cvc12.zip`).** Le propriétaire a
 > repris les templates dans Claude Design. Les **six** variantes (Agency, Brut,
 > Classique, Nocturne, Studio, Verdure) portent maintenant un markup identique :
