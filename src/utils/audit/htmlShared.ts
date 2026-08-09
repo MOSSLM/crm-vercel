@@ -131,6 +131,7 @@ ${grainRule}
 .alert-icon{width:28px;height:28px;background:rgba(58,123,213,.1);border:1px solid rgba(58,123,213,.2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .problem-title{font-size:12px;font-weight:500;color:var(--nuit)}
 .problem-desc{font-size:11px;line-height:1.6;color:rgba(11,29,58,.55)}
+.problem-autres{font-size:11px;color:rgba(11,29,58,.5);font-style:italic;margin-top:-24px}
 .solution-list{display:flex;flex-direction:column}
 .solution-item{display:grid;grid-template-columns:32px 1fr auto;align-items:start;gap:16px;padding:18px 0;border-bottom:1px solid rgba(11,29,58,.07)}
 .solution-item:last-child{border-bottom:none}

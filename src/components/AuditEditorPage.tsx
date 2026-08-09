@@ -15,7 +15,10 @@ import {
   solutionsFromKeys,
   renumberSolutions,
   ensureMinIssueKeys,
+  CARTES_RETENUES,
+  MAX_AUDIT_ISSUES,
 } from '@/data/auditIssues';
+import { classerParForce } from '@/lib/audit/autres-ameliorations';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 import { supabase } from '@/utils/supabase/client';
 import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
@@ -130,9 +133,14 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
         problems = problems.filter(p => p.key !== key);
         solutions = solutions.filter(s => s.key !== key);
       } else {
-        if (problems.length >= 6) {
-          toast.error('Maximum 6 problèmes — décochez-en un avant.');
+        if (problems.length >= MAX_AUDIT_ISSUES) {
+          toast.error(`Maximum ${MAX_AUDIT_ISSUES} problèmes — décochez-en un avant.`);
           return prev;
+        }
+        // La grille de la page 2 fait trois colonnes : 3 ou 6 cartes remplissent
+        // des rangées nettes, 4 ou 5 laissent des trous visibles à l'impression.
+        if (problems.length + 1 === CARTES_RETENUES + 1) {
+          toast.warning('4 cartes laissent un trou dans la grille — visez 3 ou 6.');
         }
         problems = [...problems, ...problemsFromKeys([key])];
         solutions = [...solutions, ...solutionsFromKeys([key])];
@@ -148,17 +156,30 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
 
   const applyDetectedIssues = useCallback(() => {
     if (!detectedIssueKeys || detectedIssueKeys.length === 0) return;
-    const keys = ensureMinIssueKeys(detectedIssueKeys);
+
+    // L'analyseur émet souvent cinq ou six constats. On n'en retient que les
+    // plus FORTS — le poids de la preuve qui les déclenche, pas leur rang dans
+    // le catalogue. Les autres ne disparaissent pas : ils alimentent la ligne
+    // « et X autres améliorations possibles » en bas de la page 2.
+    const classees = classerParForce(ensureMinIssueKeys(detectedIssueKeys), siteAudit);
+    const keys = classees.slice(0, CARTES_RETENUES);
+
     setContent(prev => {
       const customProblems = prev.page2.problems.filter(p => !p.key);
       const customSolutions = prev.page3.solutions.filter(s => !s.key);
-      const problems = [...problemsFromKeys(keys), ...customProblems].slice(0, 6);
+      const problems = [...problemsFromKeys(keys), ...customProblems].slice(0, MAX_AUDIT_ISSUES);
       const solutions = renumberSolutions([...solutionsFromKeys(keys), ...customSolutions]);
       return { ...prev, page2: { ...prev.page2, problems }, page3: { ...prev.page3, solutions } };
     });
     markChange();
-    toast.success('Problèmes détectés appliqués');
-  }, [detectedIssueKeys]);
+
+    const restants = classees.length - keys.length;
+    toast.success(
+      restants > 0
+        ? `${keys.length} constats retenus · ${restants} autres annoncés en bas de page`
+        : `${keys.length} constats retenus`,
+    );
+  }, [detectedIssueKeys, siteAudit]);
 
   const handleFieldClick = (field: string) => {
     setActiveField(field);

@@ -467,6 +467,23 @@ export const DEFAULT_SELECTED_ISSUE_KEYS = [
 /** Nombre minimum de problèmes à cocher par audit. */
 export const MIN_AUDIT_ISSUES = 3;
 
+/**
+ * Nombre de cartes retenues par défaut.
+ *
+ * Trois, et pas quatre, pour deux raisons qui pointent dans le même sens. Un
+ * audit qui aligne six griefs se lit comme un réquisitoire et dilue son propos.
+ * Et la grille de la page 2 fait exactement trois colonnes : trois cartes
+ * remplissent une rangée nette, quatre ou cinq laissent des trous.
+ *
+ * Ce qui n'est pas retenu n'est pas perdu pour autant — il est annoncé par la
+ * ligne « et X autres améliorations possibles », qui est un décompte de mesures
+ * et non une formule.
+ */
+export const CARTES_RETENUES = 3;
+
+/** Plafond dur : deux rangées pleines. Au-delà, la page 2 déborde de l'A4. */
+export const MAX_AUDIT_ISSUES = 6;
+
 const ISSUE_BY_KEY = new Map(AUDIT_ISSUE_CATALOG.map((i) => [i.key, i]));
 
 export function getIssueDef(key: string): AuditIssueDef | undefined {

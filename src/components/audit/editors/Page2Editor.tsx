@@ -5,7 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, Sparkles, AlertTriangle } from 'lucide-react';
 import type { AuditPage2, AuditProblem } from '@/types';
-import { AUDIT_ISSUE_CATALOG, MIN_AUDIT_ISSUES, PILIERS, type AuditPilier } from '@/data/auditIssues';
+import {
+  AUDIT_ISSUE_CATALOG,
+  MIN_AUDIT_ISSUES,
+  MAX_AUDIT_ISSUES,
+  CARTES_RETENUES,
+  PILIERS,
+  type AuditPilier,
+} from '@/data/auditIssues';
 import { FieldGroup, labelStyle } from './shared';
 
 /** Du plus objectif au plus commercial : c'est l'ordre de lecture de l'audit. */
@@ -39,7 +46,7 @@ export function Page2Editor({
     onChange({ ...data, problems });
   };
   const addProb = () => {
-    if (data.problems.length >= 6) return;
+    if (data.problems.length >= MAX_AUDIT_ISSUES) return;
     onChange({ ...data, problems: [...data.problems, { title: '', desc: '' }] });
   };
   const removeProb = (i: number) => {
@@ -123,8 +130,13 @@ export function Page2Editor({
       </FieldGroup>
 
       <div className="flex items-center justify-between mt-4 mb-2">
-        <p className={labelStyle}>Cartes affichées ({data.problems.length}/6)</p>
-        {data.problems.length < 6 && (
+        <p className={labelStyle}>
+          Cartes affichées ({data.problems.length}/{MAX_AUDIT_ISSUES})
+          {data.problems.length > CARTES_RETENUES && data.problems.length < MAX_AUDIT_ISSUES && (
+            <span className="ml-1 font-normal text-amber-600">· trou dans la grille</span>
+          )}
+        </p>
+        {data.problems.length < MAX_AUDIT_ISSUES && (
           <Button size="sm" variant="outline" onClick={addProb} className="h-6 text-xs px-2">
             <Plus className="h-3 w-3 mr-1" /> Carte libre
           </Button>

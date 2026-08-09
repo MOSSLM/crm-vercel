@@ -4,6 +4,7 @@ import type { AuditContent } from '@/types';
 import { C, Zone, InnerHeader, InnerFooter } from './AuditShared';
 import { AuditNotesBanner } from './AuditNotesBanner';
 import type { AuditLu } from '@/lib/audit-site/lecture';
+import { autresAmeliorations, phraseAutresAmeliorations } from '@/lib/audit/autres-ameliorations';
 
 interface Props {
   content: AuditContent;
@@ -28,6 +29,9 @@ function AlertIcon() {
 export function AuditPage2({ content, activeField, onFieldClick, audit }: Props) {
   const p = content.page2;
   const gs = content.global_style;
+  const autres = phraseAutresAmeliorations(
+    autresAmeliorations(audit, p.problems.map((x) => x.key).filter((k): k is string => !!k)),
+  );
   return (
     <div id="audit-p2" style={{ width: 794, minHeight: 1123, background: C.creme, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       <InnerHeader
@@ -55,7 +59,7 @@ export function AuditPage2({ content, activeField, onFieldClick, audit }: Props)
           </Zone>
         </div>
 
-        {/* Problem cards — jusqu'à 6 */}
+        {/* Problem cards — 3 par rangée, jusqu'à 6 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
           {p.problems.map((prob, i) => (
             <Zone key={i} field={`page2.problems.${i}`} activeField={activeField} onFieldClick={onFieldClick}>
@@ -67,6 +71,15 @@ export function AuditPage2({ content, activeField, onFieldClick, audit }: Props)
             </Zone>
           ))}
         </div>
+
+        {/* On argumente sur trois cartes, on prouve la profondeur par un nombre.
+            Ce nombre est un décompte de preuves en échec, pas une estimation :
+            chacune est nommable si le prospect la demande. */}
+        {autres && (
+          <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.5)', fontStyle: 'italic', marginTop: -24 }}>
+            {autres}
+          </div>
+        )}
 
         {/* Quote */}
         <Zone field="page2.quote" activeField={activeField} onFieldClick={onFieldClick}>

@@ -1,6 +1,7 @@
 import type { AuditContent, AuditProblem, AuditSolution, AuditLivrable, AuditGlobalStyle } from "@/types";
 import type { AuditLu } from "@/lib/audit-site/lecture";
 import { esc, logoSvg, getServices, calcTotal, fmtEur, makeGrainSvgUrl } from "./htmlShared";
+import { autresAmeliorations } from "@/lib/audit/autres-ameliorations";
 
 /**
  * Le rendu « mobile / WhatsApp » de l'audit — écrans verticaux, une idée par
@@ -340,6 +341,28 @@ export function buildScreens(c: AuditContent, m: RapportMesures = { audit: null 
       <div class="m-body" style="justify-content:center">${grp.map((p) => carteProbleme(p, preuveDe(p))).join("")}</div>`,
     }),
   );
+
+  /* 5 bis · « Et X autres améliorations » — son propre écran.
+     On argumente sur trois cartes ; ce nombre prouve la profondeur sans
+     allonger le réquisitoire. C'est un décompte de preuves en échec, donc
+     chacune est nommable si on la demande. */
+  const autres = autresAmeliorations(
+    m.audit,
+    probs.map((p) => p.key).filter((k): k is string => Boolean(k)),
+  );
+  if (autres.nombre > 0) {
+    s.push({
+      label: "Autres points",
+      auto: true,
+      inner: `
+      ${brand(false, p2.section_label ?? "")}
+      <div class="m-body" style="justify-content:center">
+        <div class="m-count" style="font-size:44px;line-height:1">${autres.nombre}</div>
+        <div class="m-intro" style="margin-top:10px">autre${autres.nombre > 1 ? "s" : ""} am\u00e9lioration${autres.nombre > 1 ? "s" : ""} possible${autres.nombre > 1 ? "s" : ""}, relev\u00e9e${autres.nombre > 1 ? "s" : ""} par l'analyse de votre site.</div>
+        <div class="m-note" style="margin-top:14px">${autres.libelles.slice(0, 6).map(esc).join(" · ")}</div>
+      </div>`,
+    });
+  }
 
   /* Citation */
   if (p2.quote) {
