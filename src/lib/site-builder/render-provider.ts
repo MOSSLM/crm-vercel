@@ -110,13 +110,51 @@ async function renderScreenshotOne(url: string, opts: RenderOptions): Promise<Re
 // c'est notre URL que le deck et le rapport servent ensuite.
 
 export interface ViewportShotOptions extends RenderOptions {
+  /** Largeur de l'IMAGE produite. */
   width?: number;
   height?: number;
+  /**
+   * Largeur de la FENÊTRE du navigateur — c'est elle qui décide de la mise en
+   * page rendue. À défaut, `width`.
+   *
+   * LA DISTINCTION N'EST PAS UN DÉTAIL, c'est la différence entre montrer un
+   * site mobile et montrer un site desktop rétréci. Chez thum.io, `width` ne
+   * règle que la taille du fichier de sortie : la page est rendue dans une
+   * fenêtre desktop puis redimensionnée. Demander une image de 390 px de large
+   * sans toucher à la fenêtre produit donc un site desktop miniature et
+   * illisible — exactement ce qu'on ne veut pas mettre dans un cadre de
+   * téléphone sur une carte de vente.
+   */
+  viewportWidth?: number;
+  /**
+   * Demander la PAGE ENTIÈRE. Contre-intuitif, et pourtant c'est la seule forme
+   * qui rende la largeur complète.
+   *
+   * ÉTABLI PAR CINQ ESSAIS EN PRODUCTION, faute de pouvoir observer le service
+   * depuis nos environnements (proxy bloquant) :
+   *
+   *   viewportWidth/390/width/390/crop/780   mise en page mobile correcte, mais
+   *                                          amputée de sa moitié droite —
+   *                                          menu burger absent, texte coupé
+   *                                          en plein mot ;
+   *   viewportWidth/390/width/780/crop/1560  toujours coupée à droite ;
+   *   viewportWidth/780/...                  fenêtre tablette, pas téléphone ;
+   *   iphone/6/...                           préréglage ignoré, rendu desktop ;
+   *   viewportWidth/390/fullpage/width/780   LARGEUR COMPLÈTE. ✅
+   *
+   * Autrement dit : SANS `fullpage`, le paramètre `width` ROGNE ; AVEC, il
+   * redimensionne. La page arrive alors entière — plusieurs milliers de pixels
+   * de haut — et c'est sharp qui en garde le haut, ce qui ne coûte rien
+   * puisqu'on recadrait déjà localement.
+   */
+  pleinePage?: boolean;
   /** Qualité JPEG (ScreenshotOne uniquement). */
   quality?: number;
 }
 
 const SHOT_TIMEOUT_MS = 30_000;
+/** Plafond de téléchargement d'une capture — le mode page entière peut être long. */
+const MAX_SHOT_BYTES = 25 * 1024 * 1024;
 
 /** True quand une capture est possible — toujours vrai, thum.io ne demande rien. */
 export function viewportShotAvailable(): boolean {
@@ -137,15 +175,19 @@ export async function renderViewportShot(
 ): Promise<RenderedVisual> {
   const width = opts.width ?? 1280;
   const height = opts.height ?? 800;
+  // La fenêtre suit la largeur demandée par défaut : c'est le cas courant, et
+  // c'est ce qui rend une capture « mobile » réellement mobile.
+  const viewportWidth = opts.viewportWidth ?? width;
   return RENDER_API_KEY
-    ? shotScreenshotOne(url, width, height, opts)
-    : shotThumIo(url, width, height, opts);
+    ? shotScreenshotOne(url, width, height, viewportWidth, opts)
+    : shotThumIo(url, width, height, viewportWidth, opts);
 }
 
 async function shotScreenshotOne(
   url: string,
   width: number,
   height: number,
+  viewportWidth: number,
   opts: ViewportShotOptions,
 ): Promise<RenderedVisual> {
   const base = RENDER_API_URL || "https://api.screenshotone.com/take";
@@ -154,8 +196,12 @@ async function shotScreenshotOne(
     url,
     format: "jpg",
     full_page: "false",
-    viewport_width: String(width),
+    viewport_width: String(viewportWidth),
     viewport_height: String(height),
+    // Émulation mobile complète en dessous de 500 px : sans elle, un site peut
+    // servir sa version desktop malgré une fenêtre étroite, en se fiant à
+    // l'agent utilisateur ou au type de pointeur.
+    ...(viewportWidth <= 500 ? { device_scale_factor: "2", is_mobile: "true", has_touch: "true" } : {}),
     image_quality: String(opts.quality ?? 82),
     block_cookie_banners: "true",
     block_ads: "true",
@@ -203,15 +249,28 @@ async function shotThumIo(
   url: string,
   width: number,
   height: number,
+  viewportWidth: number,
   opts: ViewportShotOptions,
 ): Promise<RenderedVisual> {
   // `wait` demande à thum.io d'attendre le chargement AVANT de déclencher son
   // obturateur. Le paramètre n'est pas garanti par leur documentation publique :
   // s'il fait échouer l'appel, on retombe sur la forme sans lui plutôt que de
   // perdre la capture.
+  // `viewportWidth` AVANT `width` : le premier fixe la fenêtre du navigateur —
+  // donc la mise en page — le second la taille du fichier rendu. Les confondre
+  // produit un site desktop rétréci (voir `ViewportShotOptions.viewportWidth`).
+  // `fullpage` change le sens de `width` : il redimensionne au lieu de rogner
+  // (voir `pleinePage`). On ne demande donc AUCUN cadrage vertical dans ce
+  // mode — la page arrive entière et sharp en garde le haut.
+  const fenetre = opts.pleinePage
+    ? `viewportWidth/${viewportWidth}/fullpage/width/${width}`
+    : `viewportWidth/${viewportWidth}/width/${width}/crop/${height}`;
   const avecAttente = (secondes: number) =>
-    `https://image.thum.io/get/width/${width}/crop/${height}/wait/${secondes}/noanimate/${url}`;
-  const sansAttente = `https://image.thum.io/get/width/${width}/crop/${height}/${url}`;
+    `https://image.thum.io/get/${fenetre}/wait/${secondes}/noanimate/${url}`;
+  // Repli sans `viewportWidth` ni `wait` : si thum.io ne reconnaît pas une de
+  // ces options, mieux vaut une capture desktop qu'aucune capture. L'appelant
+  // écarte ensuite le téléphone si les deux images se ressemblent trop.
+  const sansAttente = `https://image.thum.io/get/${fenetre}/${url}`;
 
   const tenter = async (endpoint: string, repli: string): Promise<RenderedVisual> => {
     try {
@@ -271,6 +330,16 @@ async function fetchShot(
   // texte. Sans ce garde-fou on déposerait ça dans le bucket comme une image.
   if (bytes.byteLength < 1024) {
     throw new RenderError("Capture vide ou tronquée.", 502);
+  }
+  // En mode page entière, une longue page d'accueil peut rendre une image de
+  // plusieurs milliers de pixels de haut. Le plafond protège la mémoire de la
+  // fonction serverless ; au-delà, la carte se rend sans mockup plutôt que de
+  // faire tomber tout l'appel.
+  if (bytes.byteLength > MAX_SHOT_BYTES) {
+    throw new RenderError(
+      `Capture trop volumineuse (${Math.round(bytes.byteLength / 1_000_000)} Mo).`,
+      502,
+    );
   }
   return { mime, bytes };
 }

@@ -96,7 +96,16 @@ async function capturerSite(
 
   let brut: ArrayBuffer;
   try {
-    const visuel = await renderViewportShot(url, { width: LARGEUR_MOBILE, height: HAUTEUR_MOBILE });
+    // Mêmes réglages que la capture mobile du démo : sans `pleinePage` le
+    // service rogne la largeur, et l'écran « avant / après » du rapport
+    // montrerait un site du prospect amputé de sa colonne de droite — donc une
+    // comparaison faussée, exactement ce qu'on ne peut pas se permettre.
+    const visuel = await renderViewportShot(url, {
+      width: LARGEUR_MOBILE * 2,
+      height: HAUTEUR_MOBILE,
+      viewportWidth: LARGEUR_MOBILE,
+      pleinePage: true,
+    });
     brut = visuel.bytes;
   } catch (e) {
     const motif = e instanceof Error ? e.message : "capture impossible";
@@ -188,11 +197,27 @@ async function mesurerDemo(
   }
 }
 
+/**
+ * Recadre au premier écran mobile, puis compresse.
+ *
+ * `fit: cover` ancré en haut : la page entière arrive du service (voir
+ * `pleinePage`), on n'en garde que ce qu'un visiteur voit en arrivant. C'est
+ * aussi le seul cadrage honnête pour une comparaison avant/après — comparer le
+ * haut d'un site au haut d'un autre.
+ */
 async function compresser(input: ArrayBuffer): Promise<Buffer> {
-  const base = sharp(Buffer.from(input)).resize({ width: 780, withoutEnlargement: true });
+  const source = Buffer.from(input);
+  const cadrer = () =>
+    sharp(source).resize({
+      width: LARGEUR_MOBILE,
+      height: HAUTEUR_MOBILE,
+      fit: "cover",
+      position: "top",
+    });
+
   for (const quality of [80, 68, 55]) {
-    const out = await base.clone().jpeg({ quality, mozjpeg: true }).toBuffer();
+    const out = await cadrer().jpeg({ quality, mozjpeg: true }).toBuffer();
     if (out.length <= MAX_BYTES) return out;
   }
-  return base.clone().jpeg({ quality: 45, mozjpeg: true }).toBuffer();
+  return cadrer().jpeg({ quality: 45, mozjpeg: true }).toBuffer();
 }
