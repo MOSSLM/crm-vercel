@@ -60,6 +60,8 @@ export interface SalesBoardRow {
   position: string | null
   cells: Record<string, CellStatus>
   hasTodo: boolean
+  /** Non nul = fiche archivée. Absent tant que la migration n'est pas jouée. */
+  archive?: { at: string; reason: string | null; note: string | null } | null
 }
 
 export interface SalesSequenceOption {
@@ -115,7 +117,7 @@ export interface SalesBoardData {
 export type SalesFilters = {
   q: string
   view: string
-  status: 'actifs' | 'rdv' | 'won' | 'closed' | 'tous'
+  status: 'actifs' | 'rdv' | 'won' | 'closed' | 'tous' | 'archives'
   todoOnly: boolean
   page: number
   pipelineId: string | null

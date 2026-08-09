@@ -12,6 +12,7 @@
 //
 // Partagé entre le board admin (tout le CRM) et le board agent (`ownerId` posé).
 
+import { isSchemaGap } from '@/app/api/_lib/schema-gap'
 import { getServiceClient } from '@/app/api/_lib/service-client'
 import { SITE_DOMAIN } from '@/lib/site-domain'
 import type { Automation, SequenceDefinition } from '@/components/automations/types'
@@ -36,7 +37,7 @@ import type { HoldReason, SendWindow } from '@/lib/automations/regulator'
 /** Combien d'opportunités on remonte au maximum avant filtrage. */
 const OPPORTUNITY_LIMIT = 1000
 
-export type SalesStatusFilter = 'actifs' | 'rdv' | 'won' | 'closed' | 'tous'
+export type SalesStatusFilter = 'actifs' | 'rdv' | 'won' | 'closed' | 'tous' | 'archives'
 
 export interface SalesBoardQuery {
   /** Agent : restreint aux prospects qui lui appartiennent. */
@@ -116,6 +117,11 @@ export interface SalesBoardRow {
   position: string | null
   cells: Record<string, CellStatus>
   hasTodo: boolean
+  /**
+   * Non nul = fiche archivée. Toujours `null` tant que la migration
+   * `20260809_archivage_motive_et_concurrents.sql` n'est pas jouée.
+   */
+  archive: { at: string; reason: string | null; note: string | null } | null
 }
 
 export interface SalesBoardCounts {
@@ -195,6 +201,9 @@ type OppRow = {
   owner_id: string | null
   created_at: string | null
   updated_at: string | null
+  archived_at?: string | null
+  archive_reason?: string | null
+  archive_note?: string | null
 }
 
 type StateRow = {
@@ -390,16 +399,36 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
   })
 
   // ── 3. Opportunités du pipeline choisi ───────────────────────────────────
+  const OPP_COLUMNS =
+    'id, entreprise_id, contact_id, pipeline_id, stage_id, name, montant, type, mrr, owner_id, created_at, updated_at'
   let oppQuery = sb
     .from('opportunites')
-    .select('id, entreprise_id, contact_id, pipeline_id, stage_id, name, montant, type, mrr, owner_id, created_at, updated_at')
+    .select(`${OPP_COLUMNS}, archived_at, archive_reason, archive_note`)
     .eq('pipeline_id', selectedPipeline.id)
     .order('updated_at', { ascending: false })
     .limit(OPPORTUNITY_LIMIT)
   if (query.ownerId) oppQuery = oppQuery.eq('owner_id', query.ownerId)
 
-  const { data: oppData, error: oppError } = await oppQuery
-  if (oppError) return { ok: false, error: oppError.message, status: 500 }
+  const firstTry = await oppQuery
+  let oppData = firstTry.data as OppRow[] | null
+  let oppError: { code?: string; message?: string } | null = firstTry.error
+
+  // Le board doit continuer de tourner tant que la migration d'archivage n'est
+  // pas jouée : on relit sans ces colonnes, et rien n'est archivé.
+  if (isSchemaGap(oppError)) {
+    let fallback = sb
+      .from('opportunites')
+      .select(OPP_COLUMNS)
+      .eq('pipeline_id', selectedPipeline.id)
+      .order('updated_at', { ascending: false })
+      .limit(OPPORTUNITY_LIMIT)
+    if (query.ownerId) fallback = fallback.eq('owner_id', query.ownerId)
+    const retry = await fallback
+    oppData = retry.data as OppRow[] | null
+    oppError = retry.error
+  }
+
+  if (oppError) return { ok: false, error: oppError.message ?? 'erreur', status: 500 }
   const opps = (oppData ?? []) as OppRow[]
 
   const oppIds = opps.map((o) => o.id)
@@ -696,6 +725,13 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       position,
       cells,
       hasTodo: columns.some((c) => isPendingTask(columns, position, state, c.id)),
+      archive: opp.archived_at
+        ? {
+            at: opp.archived_at,
+            reason: opp.archive_reason ?? null,
+            note: opp.archive_note ?? null,
+          }
+        : null,
     }
   })
 
@@ -713,6 +749,9 @@ export async function buildSalesBoard(query: SalesBoardQuery = {}): Promise<
       if (query.view === 'none' ? row.owner != null : row.owner?.id !== query.view) return false
     }
     const status = query.status ?? 'actifs'
+    // Les archivées ne sont visibles que sous leur propre onglet — y compris
+    // sous « Tous », qui parle des états du pipeline, pas des fiches rangées.
+    if (status === 'archives' ? !row.archive : !!row.archive) return false
     if (status === 'actifs' && row.state.state !== 'progress') return false
     // « RDV et + » = la ligne est passée dans le groupe pipeline.
     if (status === 'rdv' && (firstDealIndex < 0 || indexOf(row.position) < firstDealIndex)) return false

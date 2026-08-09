@@ -10,7 +10,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const OPTIONS = (req: Request) => preflight(req)
 
-const STATUSES: SalesStatusFilter[] = ['actifs', 'rdv', 'won', 'closed', 'tous']
+const STATUSES: SalesStatusFilter[] = ['actifs', 'rdv', 'won', 'closed', 'tous', 'archives']
 
 export function parseBoardQuery(url: URL, ownerId: string | null) {
   const status = url.searchParams.get('status') as SalesStatusFilter | null
