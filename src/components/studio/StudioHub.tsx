@@ -52,7 +52,14 @@ type Tool = { title: string; href: string; icon: LucideIcon; meta?: string };
 type WorkflowStep = { step: string; title: string; subtitle: string; tools: Tool[] };
 
 export function StudioHub() {
-  const { contacts, companies, opportunities } = useAppData();
+  // Les compteurs de l'accueil parlent du livre actif : les fiches archivées en
+  // sortent, sinon la valeur de pipeline affichée reste gonflée par des
+  // affaires qu'on sait perdues.
+  const {
+    contacts,
+    activeCompanies: companies,
+    activeOpportunities: opportunities,
+  } = useAppData();
   const { user } = useAuth();
 
   const today = React.useMemo(() => new Date(), []);

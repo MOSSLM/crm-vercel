@@ -63,7 +63,8 @@ export const GET = withAuth({ role: "admin" }, async ({ req, cors }) => {
   const { data: opps } = await sc
     .from("opportunites")
     .select("id, entreprise_id, pipeline_id, stage_id, updated_at, owner_id")
-    .in("entreprise_id", entIds);
+    .in("entreprise_id", entIds)
+    .is("archived_at", null);
   const oppIds = (opps ?? []).map((o) => o.id as string);
   const entByOpp = new Map((opps ?? []).map((o) => [o.id as string, o.entreprise_id as number]));
 

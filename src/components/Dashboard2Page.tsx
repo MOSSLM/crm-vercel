@@ -117,9 +117,12 @@ interface WeekDone {
 /* ── Composant principal ───────────────────────────────────── */
 
 export const Dashboard2Page: React.FC = () => {
+  // `activeCompanies` / `activeOpportunities` : ce tableau de bord ne compte que
+  // le livre actif — une piste archivée ne doit plus gonfler ni la valeur du
+  // pipeline ni le backlog.
   const {
-    companies,
-    opportunities,
+    activeCompanies: companies,
+    activeOpportunities: opportunities,
     pipelineStages,
     totalCompanies,
     totalQualifiedCompanies,

@@ -188,7 +188,8 @@ function CompanyRow({
 type FilterMode = "all_qualified" | "lm_linked" | "lm_ready";
 
 export function LeadMagnetReadyCompanies() {
-  const { companies, opportunities, loading } = useAppData();
+  // Écran de production : une entreprise archivée n'a plus de site à préparer.
+  const { activeCompanies: companies, activeOpportunities: opportunities, loading } = useAppData();
   const [search, setSearch] = React.useState("");
   const [filter, setFilter] = React.useState<FilterMode>("all_qualified");
   const [lmProjects, setLmProjects] = React.useState<Map<string, LMProject>>(new Map());

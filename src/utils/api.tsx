@@ -2326,10 +2326,12 @@ export const statisticsApi = {
         { count: totalContacts },
         { count: totalOpportunities }
       ] = await Promise.all([
-        supabase.from('entreprises').select('*', { count: 'exact', head: true }),
-        supabase.from('entreprises').select('*', { count: 'exact', head: true }).eq('qualifie', true),
+        // Les fiches archivées sortent des compteurs : elles ne font plus partie
+        // du livre actif.
+        supabase.from('entreprises').select('*', { count: 'exact', head: true }).is('archived_at', null),
+        supabase.from('entreprises').select('*', { count: 'exact', head: true }).eq('qualifie', true).is('archived_at', null),
         supabase.from('contacts').select('*', { count: 'exact', head: true }),
-        supabase.from('opportunites').select('*', { count: 'exact', head: true })
+        supabase.from('opportunites').select('*', { count: 'exact', head: true }).is('archived_at', null)
       ]);
       
       return {

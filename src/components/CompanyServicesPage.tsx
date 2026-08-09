@@ -18,7 +18,16 @@ import logger from "@/utils/logger";
 import { SprintFlowBanner, useSprintFlowState } from "@/components/SprintFlowBanner";
 
 export const CompanyServicesPage: React.FC<{ sprintModule?: boolean }> = ({ sprintModule = false }) => {
-  const { companies, opportunities, pipelines, pipelineStages, updateCompany, updateOpportunity } = useAppData();
+  // Réaffectation de services en masse : une fiche archivée n'a pas à être
+  // embarquée dans un déplacement de pipeline.
+  const {
+    activeCompanies: companies,
+    activeOpportunities: opportunities,
+    pipelines,
+    pipelineStages,
+    updateCompany,
+    updateOpportunity,
+  } = useAppData();
   const { sprintFlow } = useSprintFlowState();
   const [viewMode, setViewMode] = React.useState<"cards" | "list" | "table">("cards");
   const [searchTerm, setSearchTerm] = React.useState("");

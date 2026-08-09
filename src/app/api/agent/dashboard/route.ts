@@ -32,12 +32,16 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
       .select("id, stage_id, pipeline_id, montant, entreprise:entreprises!inner(owner_id)")
       .eq("owner_id", user.id)
       .eq("entreprise.owner_id", user.id)
-      .not("is_test", "is", true),
+      .not("is_test", "is", true)
+      // Une affaire archivée ne compte plus dans la valeur de pipeline de l'agent.
+      .is("archived_at", null),
     sc
       .from("entreprises")
       .select("id", { count: "exact", head: true })
       .is("owner_id", null)
-      .eq("qualifie", true),
+      .eq("qualifie", true)
+      // Le pool disponible ne propose pas des fiches qu'on a rangées.
+      .is("archived_at", null),
     sc
       .from("prospection_tasks")
       .select("id", { count: "exact", head: true })

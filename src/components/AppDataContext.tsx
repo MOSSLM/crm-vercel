@@ -116,6 +116,18 @@ interface AppDataContextType {
   pipelineStages: PipelineStage[];
   offers: Offer[];
 
+  /**
+   * Les mêmes listes, sans les fiches archivées.
+   *
+   * `companies` et `opportunities` restent volontairement brutes : les vues qui
+   * ont une bascule « Archivés » (kanban, /opportunities, Qualifiées) en ont
+   * besoin pour montrer ce qui a été rangé. Mais **tout ce qui compte ou somme**
+   * — valeur de pipeline, KPI, objectifs, entonnoir — doit partir d'ici, sinon
+   * une piste morte continue de gonfler les chiffres pour toujours.
+   */
+  activeCompanies: Company[];
+  activeOpportunities: Opportunity[];
+
   // Computed values
   totalCompanies: number;
   totalQualifiedCompanies: number;
@@ -614,8 +626,18 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
   };
 
   // Computed values
-  const totalCompanies = companies.length;
-  const totalQualifiedCompanies = companies.filter((c) => c.qualifie).length;
+  //
+  // Une fiche archivée sort du livre actif : elle ne compte plus, et sa valeur
+  // ne compte plus. Sans ça, archiver une piste morte ne changeait rien aux
+  // chiffres — le pipeline restait gonflé par des affaires qu'on sait perdues.
+  const activeCompanies = React.useMemo(() => companies.filter((c) => !c.archived_at), [companies]);
+  const activeOpportunities = React.useMemo(
+    () => opportunities.filter((o) => !o.archived_at),
+    [opportunities],
+  );
+
+  const totalCompanies = activeCompanies.length;
+  const totalQualifiedCompanies = activeCompanies.filter((c) => c.qualifie).length;
 
   const getCompanyCanonicalSite = React.useCallback((company: Company): string | undefined => {
     const legacySite = 'site_web_canonique' in company
@@ -1341,7 +1363,9 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     }
   };
 
-  const getOpportunitiesByStage = (stageId: number) => opportunities.filter((opp) => opp.stage_id === stageId);
+  // Sert les KPI du tableau de bord : on part des actives, pas de la liste brute.
+  const getOpportunitiesByStage = (stageId: number) =>
+    activeOpportunities.filter((opp) => opp.stage_id === stageId);
 
   const addOpportunityNote = async (opportunityId: string, note: Omit<OpportunityNote, 'id' | 'created_at'>) => {
     try {
@@ -1457,6 +1481,8 @@ const [currentObjectives, setCurrentObjectives] = useState<Objectives>(getDefaul
     urlBlacklist,
     contacts,
     opportunities,
+    activeCompanies,
+    activeOpportunities,
     pipelines,
     pipelineStages,
     offers,

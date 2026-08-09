@@ -739,7 +739,8 @@ export const GET = withAuth<undefined, RouterParams>({}, async ({ req, params, c
       const { data: lmData } = await supabase
         .from("opportunites")
         .select("id, updated_at")
-        .eq("lead_magnet", true);
+        .eq("lead_magnet", true)
+        .is("archived_at", null);
       const lmRows = (lmData ?? []) as Array<{ id: string; updated_at: string }>;
       const lmByDate = (fromDate: Date) =>
         lmRows.filter((r) => new Date(r.updated_at) >= fromDate).length;

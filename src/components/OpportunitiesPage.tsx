@@ -100,6 +100,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const supabase = createClient();
   const {
     opportunities,
+    activeOpportunities,
     pipelines,
     pipelineStages,
     updateOpportunity,
@@ -162,13 +163,13 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
 
   const lmStatusCounts = React.useMemo(() => {
     const counts = { all: 0, draft: 0, framer: 0, ready: 0, failed: 0 };
-    for (const opp of opportunities) {
+    for (const opp of activeOpportunities) {
       counts.all++;
       const s = lmProjectStatuts.get(opp.id) ?? 'draft';
       if (s in counts) counts[s as keyof typeof counts]++;
     }
     return counts;
-  }, [opportunities, lmProjectStatuts]);
+  }, [activeOpportunities, lmProjectStatuts]);
 
   const filteredOpportunities = React.useMemo(() => opportunities
     .filter(opportunity => {
@@ -994,7 +995,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
               <CardTitle className="text-sm">Total opportunités</CardTitle>
             </CardHeader>
             <CardContent className="px-3 pb-3 md:pb-4">
-              <div className="text-xl md:text-2xl font-bold">{opportunities.length}</div>
+              <div className="text-xl md:text-2xl font-bold">{activeOpportunities.length}</div>
             </CardContent>
           </Card>
 
@@ -1004,7 +1005,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
             </CardHeader>
             <CardContent className="px-3 pb-3 md:pb-4">
               <div className="text-xl md:text-2xl font-bold text-green-600">
-                {opportunities.reduce((sum, opp) => sum + (opp.value || opp.montant || 0), 0).toLocaleString()}€
+                {activeOpportunities.reduce((sum, opp) => sum + (opp.value || opp.montant || 0), 0).toLocaleString()}€
               </div>
             </CardContent>
           </Card>
@@ -1015,10 +1016,10 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
             </CardHeader>
             <CardContent className="px-3 pb-3 md:pb-4">
               <div className="text-xl md:text-2xl font-bold text-pink-600">
-                {opportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length}
+                {activeOpportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length}
               </div>
               <p className="text-xs text-muted-foreground">
-                {opportunities.length > 0 ? Math.round((opportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length / opportunities.length) * 100) : 0}% du total
+                {activeOpportunities.length > 0 ? Math.round((activeOpportunities.filter(opp => opp.leadMagnet || opp.lead_magnet).length / activeOpportunities.length) * 100) : 0}% du total
               </p>
             </CardContent>
           </Card>
@@ -1029,7 +1030,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
             </CardHeader>
             <CardContent className="px-3 pb-3 md:pb-4">
               <div className="text-xl md:text-2xl font-bold text-red-600">
-                {opportunities.filter(opp => opp.priority === 'high' || opp.priorite === 'haute').length}
+                {activeOpportunities.filter(opp => opp.priority === 'high' || opp.priorite === 'haute').length}
               </div>
             </CardContent>
           </Card>

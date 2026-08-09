@@ -107,7 +107,16 @@ const getEmployeeBandLabel = (band: EmployeeBand | undefined): string => {
 };
 
 export const CompanyDetailPage: React.FC<CompanyDetailPageProps> = ({ companyId, onBack }) => {
-  const { companies, updateCompany, opportunities, pipelineStages, addOpportunity, updateOpportunity } = useAppData();
+  // La fiche entreprise ne liste que les opportunités vivantes : une archivée se
+  // retrouve depuis /opportunities, avec sa bascule « Archivées ».
+  const {
+    companies,
+    updateCompany,
+    activeOpportunities: opportunities,
+    pipelineStages,
+    addOpportunity,
+    updateOpportunity,
+  } = useAppData();
   const [company, setCompany] = useState<Company | null>(null);
   const [detailedCompany, setDetailedCompany] = useState<Company | null>(null);
   const [isEditing, setIsEditing] = useState(false);
