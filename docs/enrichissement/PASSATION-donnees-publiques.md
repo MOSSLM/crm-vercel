@@ -391,7 +391,78 @@ Chacune peut faire plusieurs commits.
 > 5. Les exigences de complétude vivent en double (`required-fields.ts` et `missingForSite`), avec un
 >    test qui vérifie l'alignement. Toute modification doit être faite des deux côtés.
 
-### Prompt 4 — Templates Claude Design
+### Prompt 4 — Templates Claude Design ⚠️ MESURÉ LE 08/08/2026, PLUS URGENT QUE PRÉVU
+
+État réel des sections au moment de l'écriture :
+
+| | |
+|---|---|
+| Sections en HTML brut (`render_mode='raw'`) | **460** |
+| …mentionnant certif / Qualibat / RGE | **454** |
+| …portant le marqueur `data-certifications` | **0** |
+
+Et ce ne sont pas des logos : ce sont des **badges TEXTE écrits en dur**, du type
+`<span class="label-badge">RGE QualiPAC</span> <span class="label-badge">Qualibat</span>`,
+généralement en pied de page. Ils attribuent donc les mêmes trois certifications à **tous** les
+clients, quels qu'ils soient. Le CRM sait maintenant lesquelles sont réelles (66 projets avec des
+qualifications vérifiées, 88 pour lesquels l'ADEME confirme ZÉRO), mais **aucun template ne sait les
+recevoir** : le tweak `hydrate-certifications` ne trouve aucun marqueur et ne fait rien.
+
+Le prompt ci-dessous est celui à passer à Claude Design.
+
+---
+
+> Les blocs « certifications » / « RGE » des templates doivent être repris. Aujourd'hui ils portent
+> des badges écrits en dur — `RGE QualiPAC`, `Qualibat`, `Qualifelec` — affichés pour **toutes** les
+> entreprises. C'est une allégation trompeuse : le CRM sait désormais lesquelles sont réellement
+> détenues, et pour beaucoup d'entreprises la réponse vérifiée est « aucune ».
+>
+> **Ce qu'il faut produire : un bloc pilotable par le CRM.** Trois attributs, et c'est tout :
+>
+> ```html
+> <div data-certifications class="...">
+>   <div data-certification-item class="...">
+>     <img data-certification-logo src="/rge/qualipac.png" alt="QualiPAC module Chauffage et ECS">
+>   </div>
+> </div>
+> ```
+>
+> - `data-certifications` — le conteneur. **Le CRM le SUPPRIME entièrement** quand l'entreprise n'a
+>   aucune qualification vérifiée. Il ne doit donc rien contenir d'autre que les logos : pas de
+>   titre « Nos certifications » à l'intérieur si vous voulez le voir disparaître avec, pas de
+>   marge portée par un parent qui resterait orphelin.
+> - `data-certification-item` — la carte-modèle. La **première** sert de gabarit et sera dupliquée
+>   autant de fois qu'il y a de logos réels. Mettez-en une seule dans le markup livré.
+> - `data-certification-logo` — le `<img>` à remplir. Le CRM y écrit `src`, `srcset`, `alt`,
+>   `width`, `height`.
+>
+> **Retirez tous les badges texte en dur.** C'est le vrai problème, pas la mise en forme.
+>
+> **Le jeu de logos** est dans `public/rge/`, déjà normalisé : 12 fichiers PNG sur un canvas unique
+> de **360×180**, plus une version `@2x`, tous mis à l'échelle sur leur aire optique et non sur leur
+> hauteur. Une rangée s'aligne donc sans ajustement. **Ne les recadrez pas, ne les redimensionnez
+> pas un par un**, ne leur imposez pas une hauteur commune — ce serait défaire la normalisation.
+>
+> Noms de fichiers, qui font foi et servent de clé depuis le CRM :
+> `qualipac`, `qualibois`, `qualipv`, `qualisol`, `chauffage-plus`, `ventilation-plus`, `qualibat`,
+> `qualifelec`, `opqibi`, `opqibi-rge`, `certiforage`, `recharge-elec`.
+>
+> **Deux comportements à prévoir dans la mise en page :**
+>
+> - **nombre variable, de 1 à 6 logos** selon l'entreprise. Une rangée qui suppose exactement trois
+>   éléments cassera. Mesuré sur le parc : la plupart en ont 1 ou 2, le maximum observé est 6.
+> - **zéro logo** : le bloc entier disparaît, sans laisser d'espace, de séparateur ni de titre
+>   orphelin. C'est le cas le PLUS FRÉQUENT — 88 projets sur 190 ont une absence vérifiée contre 66
+>   avec des qualifications réelles. Concevez donc la section pour être belle *absente*, pas
+>   seulement pleine.
+>
+> **Ne fabriquez aucun badge RGE par-dessus un logo existant** : ce serait créer une marque. Et
+> n'ajoutez pas de logo « générique RGE » — il manque toujours dans `public/rge/`, et l'inventer
+> serait exactement l'allégation qu'on cherche à supprimer.
+
+---
+
+### Prompt 4 (version d'origine) — Templates Claude Design
 
 > À passer à Claude Design, pas au CRM.
 >
