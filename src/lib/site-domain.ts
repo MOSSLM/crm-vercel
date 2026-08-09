@@ -24,6 +24,31 @@ export const DEFAULT_SITE_DOMAIN = "samadigitalstudio.fr";
 export const CRM_SUBDOMAINS = new Set(["app", "www", "admin", "crm", "api"]);
 
 /**
+ * Sous-domaines publics servis par l'app, hors CRM : `rapport.{SITE_DOMAIN}` →
+ * `/rapport`.
+ *
+ * Pourquoi un sous-domaine plutôt qu'un chemin sur `app.` : le wildcard
+ * `*.{SITE_DOMAIN}` est déjà branché sur Vercel (cf. `docs/site-builder-v2.md`),
+ * donc zéro travail DNS ; et « rapport.… » se lit par un prospect, contrairement
+ * à « app.… », qui a l'air d'un outil interne.
+ */
+export const PUBLIC_SUBDOMAINS = new Map<string, string>([["rapport", "/rapport"]]);
+
+/**
+ * Labels qu'un site client ne doit JAMAIS pouvoir s'approprier.
+ *
+ * `derive-subdomain.ts` n'avait aucune liste de réservation, et le `taken` des
+ * routes de déploiement ne contient que les sous-domaines déjà attribués. Un
+ * client dont le site s'appelle « rapport.fr » — ou « app.fr » — recevrait donc
+ * le label `rapport` ou `app` et prendrait l'hôte à l'application. Le défaut
+ * existait déjà pour `app` avant ce module ; il est corrigé pour les deux.
+ */
+export const RESERVED_SUBDOMAINS: ReadonlySet<string> = new Set([
+  ...CRM_SUBDOMAINS,
+  ...PUBLIC_SUBDOMAINS.keys(),
+]);
+
+/**
  * Reduce a configured value to the bare apex domain: tolerate a protocol, a
  * port, a trailing path or dot, and an `app.` / `www.` host label (a natural
  * thing to paste in, and the exact value that used to break `extractSubdomain`).

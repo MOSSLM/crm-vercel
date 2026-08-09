@@ -2,6 +2,7 @@ import { json, jsonError } from "@/app/api/_lib/respond";
 import { requireUser } from "@/app/api/_lib/auth";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { analyserEntreprise } from "@/lib/audit-site/service";
+import { enrichirAnalyse } from "@/lib/audit-site/shot";
 import { UNDEFINED_TABLE, lireAudit } from "@/lib/audit-site/lecture";
 
 /**
@@ -65,6 +66,18 @@ export async function POST(
     telephone: ent.telephone,
   }, { declencheur: "bouton" });
 
+  // Capture 390 px + mesure du démo : les deux compléments « chers » de
+  // l'analyse. Ils ne tournent QUE sur ce chemin — un humain a cliqué, donc
+  // cette entreprise est réellement démarchée. Jamais dans le passage en masse.
+  const complements =
+    resultat.statut === "erreur"
+      ? { captureUrl: null, noteDemo: null, avertissements: [] }
+      : await enrichirAnalyse(sb, id, { urlActuelle: ent.site_web_canonique }).catch(() => ({
+          captureUrl: null,
+          noteDemo: null,
+          avertissements: ["Compléments visuels indisponibles."],
+        }));
+
   if (resultat.statut === "erreur") {
     // La table peut manquer : on le nomme, plutôt que de laisser l'opérateur
     // conclure que le site du prospect est en cause.
@@ -82,5 +95,6 @@ export async function POST(
     ok: true,
     statut: resultat.statut,
     audit: lu.disponible ? lu.audit : null,
+    avertissements: complements.avertissements,
   });
 }
