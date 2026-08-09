@@ -3,6 +3,7 @@ import sharp from "sharp";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderViewportShot } from "@/lib/site-builder/render-provider";
 import { putOgAsset } from "@/lib/og/storage";
+import { imageQuasiVide } from "@/lib/images/image-quasi-vide";
 import { collecter } from "./collect";
 import { analyser } from "./analyze";
 import { scorer } from "./score";
@@ -101,6 +102,16 @@ async function capturerSite(
     const motif = e instanceof Error ? e.message : "capture impossible";
     console.warn(`[audit-site] capture ${entrepriseId} échouée : ${motif}`);
     return { url: null, avertissement: `Capture du site actuel indisponible (${motif}).` };
+  }
+
+  // Même filet que pour le démo : une capture blanche du site du prospect
+  // apparaîtrait dans l'écran « avant / après » du rapport, et donnerait
+  // l'impression qu'on truque la comparaison.
+  if (await imageQuasiVide(brut)) {
+    return {
+      url: null,
+      avertissement: "Le site n'a pas fini de s'afficher au moment de la capture.",
+    };
   }
 
   let image: Buffer;

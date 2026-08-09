@@ -160,24 +160,95 @@ async function shotScreenshotOne(
     block_cookie_banners: "true",
     block_ads: "true",
     cache: "true",
+    // Attendre que le réseau se calme AVANT de déclencher l'obturateur : les
+    // sites du parc sont des Claude Designs qui chargent Tailwind depuis un CDN
+    // en script synchrone, plus leurs propres polices. Photographiés « au
+    // chargement », ils rendent une page nue.
+    wait_until: "networkidle2",
+    // Marge après le calme réseau, le temps que la peinture se fasse.
+    delay: "3",
+    timeout: "30",
   });
   return fetchShot(`${base}?${params.toString()}`, "image/jpeg", opts.signal);
 }
 
 /**
- * thum.io — pas de clé, pas de compte. L'URL cible est encodée dans le CHEMIN,
- * pas dans un paramètre : `…/get/width/1200/crop/800/https://exemple.fr`. Elle ne
- * doit donc surtout pas être `encodeURIComponent`é, sinon le service reçoit une
- * URL littérale avec des `%3A` et renvoie une image d'erreur en 200.
+ * thum.io — pas de clé, pas de compte. Deux pièges, tous les deux constatés en
+ * production.
+ *
+ * 1. L'URL cible est encodée dans le CHEMIN, pas dans un paramètre :
+ *    `…/get/width/1200/crop/800/https://exemple.fr`. Elle ne doit donc surtout
+ *    pas être `encodeURIComponent`ée, sinon le service reçoit une URL littérale
+ *    avec des `%3A` et renvoie une image d'erreur en 200.
+ *
+ * 2. **LE PREMIER APPEL NE RENVOIE PAS LA CAPTURE.** thum.io répond
+ *    immédiatement par une image d'attente — un fond blanc avec une roue et son
+ *    logo — et lance la capture en arrière-plan. C'est cette image d'attente qui
+ *    se retrouvait intégrée à la carte de partage, ce qui donnait une vignette
+ *    parfaite… avec une page blanche dedans.
+ *
+ * D'où le déroulé ci-dessous : un appel de chauffe qu'on JETTE, une pause, puis
+ * l'appel qui compte. Et une vérification derrière, parce qu'un site lent peut
+ * ne pas être prêt même après la pause.
  */
+
+/** Pause avant l'appel utile — le temps que thum.io ait rendu la page. */
+const THUMIO_CHAUFFE_MS = 7_000;
+/** Rallonge quand la première tentative rend encore une image d'attente. */
+const THUMIO_RALLONGE_MS = 9_000;
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function shotThumIo(
   url: string,
   width: number,
   height: number,
   opts: ViewportShotOptions,
 ): Promise<RenderedVisual> {
-  const endpoint = `https://image.thum.io/get/width/${width}/crop/${height}/${url}`;
-  return fetchShot(endpoint, "image/jpeg", opts.signal);
+  // `wait` demande à thum.io d'attendre le chargement AVANT de déclencher son
+  // obturateur. Le paramètre n'est pas garanti par leur documentation publique :
+  // s'il fait échouer l'appel, on retombe sur la forme sans lui plutôt que de
+  // perdre la capture.
+  const avecAttente = (secondes: number) =>
+    `https://image.thum.io/get/width/${width}/crop/${height}/wait/${secondes}/noanimate/${url}`;
+  const sansAttente = `https://image.thum.io/get/width/${width}/crop/${height}/${url}`;
+
+  const tenter = async (endpoint: string, repli: string): Promise<RenderedVisual> => {
+    try {
+      return await fetchShot(endpoint, "image/jpeg", opts.signal);
+    } catch {
+      return fetchShot(repli, "image/jpeg", opts.signal);
+    }
+  };
+
+  // Appel de chauffe : son résultat est l'image d'attente, on ne le garde pas.
+  // Il sert uniquement à déclencher la génération côté thum.io.
+  const chauffe = await tenter(avecAttente(8), sansAttente).catch(() => null);
+  await dormir(THUMIO_CHAUFFE_MS);
+
+  const premier = await tenter(avecAttente(8), sansAttente);
+
+  // Identique à l'appel de chauffe ⇒ rien n'a bougé, c'est encore l'image
+  // d'attente. On laisse une seconde chance, plus longue.
+  //
+  // La comparaison d'octets est plus fiable qu'un seuil sur le contenu :
+  // l'image d'attente est rigoureusement la même à chaque appel, alors que deux
+  // captures d'une vraie page diffèrent dès que quelque chose a fini de charger.
+  if (chauffe && memesOctets(chauffe.bytes, premier.bytes)) {
+    await dormir(THUMIO_RALLONGE_MS);
+    return tenter(avecAttente(12), sansAttente);
+  }
+  return premier;
+}
+
+function memesOctets(a: ArrayBuffer, b: ArrayBuffer): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  const va = new Uint8Array(a);
+  const vb = new Uint8Array(b);
+  for (let i = 0; i < va.length; i++) {
+    if (va[i] !== vb[i]) return false;
+  }
+  return true;
 }
 
 async function fetchShot(
