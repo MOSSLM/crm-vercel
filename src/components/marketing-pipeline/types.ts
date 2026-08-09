@@ -48,6 +48,13 @@ export interface BoardItem {
    * antérieure à la fonctionnalité ne le porte pas.
    */
   notes?: NoteSummary | null;
+  /**
+   * Archivage. Optionnel : une réponse d'API antérieure à la migration
+   * `20260809_archivage_motive_et_concurrents.sql` ne les porte pas.
+   */
+  archived_at?: string | null;
+  archive_reason?: string | null;
+  archive_note?: string | null;
   column: number;
 }
 
@@ -146,6 +153,11 @@ export interface BulkHandlers {
   /** Absent en mode agent : l'attribution ne fait pas partie de son pipeline. */
   onAssign?: (items: BoardItem[], agentId: string) => void;
   onMove: (items: BoardItem[], pipelineId: string) => void;
+  /**
+   * Archive les lignes cochées. `kind` distingue « la fiche entreprise, et ses
+   * opportunités avec elle » de « cette opportunité seule ».
+   */
+  onArchive: (items: BoardItem[], kind: "entreprise" | "opportunite") => void;
 }
 
 /** Per-item action callbacks the matrix cells invoke (bound to real handlers). */
@@ -166,4 +178,11 @@ export interface MatrixHandlers {
    * concernée quand on arrive depuis une carte (site, audit…).
    */
   onNotes: (item: BoardItem, subject?: NoteSubject) => void;
+  /**
+   * Archive cette ligne. `kind` distingue « la fiche entreprise, et ses
+   * opportunités avec elle » de « cette opportunité seule ».
+   */
+  onArchive: (item: BoardItem, kind: "entreprise" | "opportunite") => void;
+  /** Sort la ligne des archives — proposé à la place quand elle y est déjà. */
+  onUnarchive: (item: BoardItem) => void;
 }

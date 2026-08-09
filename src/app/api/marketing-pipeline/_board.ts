@@ -1,3 +1,4 @@
+import { isSchemaGap } from "@/app/api/_lib/schema-gap";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { SITE_DOMAIN } from "@/lib/site-domain";
 import { isMissingColumn } from "@/lib/site-builder/clone-template-site";
@@ -29,6 +30,9 @@ type OppRow = {
   tags: string | null;
   updated_at: string | null;
   created_at: string | null;
+  archived_at?: string | null;
+  archive_reason?: string | null;
+  archive_note?: string | null;
 };
 
 type EntRow = {
@@ -315,8 +319,13 @@ export type BoardResult =
  *
  * @param ownerId Restreint aux entreprises appartenant à cet agent. Omis côté
  *   admin, où le board est global.
+ * @param archived Bascule « Archivés » : le board montre alors uniquement les
+ *   fiches archivées, pour pouvoir les relire et les désarchiver. Par défaut il
+ *   ne montre que les actives.
  */
-export async function buildBoard(opts: { ownerId?: string } = {}): Promise<BoardResult> {
+export async function buildBoard(
+  opts: { ownerId?: string; archived?: boolean } = {},
+): Promise<BoardResult> {
   const supabase = getServiceClient();
 
   const empty = {
@@ -325,6 +334,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
     agents: [],
     pipelines: [],
     has_validated_column: true,
+    has_archivage: true,
   };
 
   // Scope agent : on part des entreprises qui lui appartiennent, puis on ne
@@ -343,7 +353,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
   let oppQuery = supabase
     .from("opportunites")
     .select(
-      "id, entreprise_id, pipeline_id, name, montant, priorite, type, mrr, recurrence_months, tags, updated_at, created_at",
+      "id, entreprise_id, pipeline_id, name, montant, priorite, type, mrr, recurrence_months, tags, updated_at, created_at, archived_at, archive_reason, archive_note",
     )
     .not("entreprise_id", "is", null)
     .order("updated_at", { ascending: false })
@@ -351,8 +361,40 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
 
   if (ownedEntIds) oppQuery = oppQuery.in("entreprise_id", ownedEntIds);
 
-  const { data: oppsData, error: oppErr } = await oppQuery;
-  if (oppErr) return { ok: false, error: oppErr.message, status: 500 };
+  // Filtrer ici et pas côté client : l'archivage d'une entreprise a cascadé sur
+  // ses opportunités, donc exclure les opportunités archivées suffit à faire
+  // disparaître les deux.
+  oppQuery = opts.archived
+    ? oppQuery.not("archived_at", "is", null)
+    : oppQuery.is("archived_at", null);
+
+  const firstTry = await oppQuery;
+  let oppsData = firstTry.data as OppRow[] | null;
+  let oppErr: { code?: string; message?: string } | null = firstTry.error;
+
+  // Tant que la migration d'archivage n'est pas jouée, le board doit continuer
+  // de s'afficher : on retombe sur la requête sans filtre (cf. `has_archivage`).
+  let hasArchivage = true;
+  if (isSchemaGap(oppErr)) {
+    hasArchivage = false;
+    let fallback = supabase
+      .from("opportunites")
+      .select(
+        "id, entreprise_id, pipeline_id, name, montant, priorite, type, mrr, recurrence_months, tags, updated_at, created_at",
+      )
+      .not("entreprise_id", "is", null)
+      .order("updated_at", { ascending: false })
+      .limit(OPPORTUNITY_LIMIT);
+    if (ownedEntIds) fallback = fallback.in("entreprise_id", ownedEntIds);
+    const retry = await fallback;
+    oppsData = retry.data as OppRow[] | null;
+    oppErr = retry.error;
+    // Rien n'est archivable sans la migration : la bascule « Archivés » est
+    // masquée, et si elle a été demandée quand même le board sort vide.
+    if (!oppErr && opts.archived) return { ok: true, data: { ...empty, has_archivage: false } };
+  }
+
+  if (oppErr) return { ok: false, error: oppErr.message ?? "erreur", status: 500 };
 
   const opps = (oppsData ?? []) as OppRow[];
   const oppIds = opps.map((o) => o.id);
@@ -583,6 +625,9 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
       mrr: o.mrr ?? null,
       recurrence_months: o.recurrence_months ?? null,
       tags: o.tags ?? null,
+      archived_at: o.archived_at ?? null,
+      archive_reason: o.archive_reason ?? null,
+      archive_note: o.archive_note ?? null,
       enriched,
       enrichment: enrich
         ? { status: enrich.status ?? null, website_url: enrich.website_url ?? null }
@@ -667,6 +712,7 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
       agents: opts.ownerId ? [] : agents,
       pipelines,
       has_validated_column: hasValidatedColumn,
+      has_archivage: hasArchivage,
     },
   };
 }

@@ -35,6 +35,7 @@ import {
   requiredFieldControl,
 } from "./marketing-pipeline/RequiredFieldControl";
 import type { MatrixHandlers, BulkHandlers, NoteSubject } from "./marketing-pipeline/types";
+import { ArchiveDialog, type ArchiveTarget } from "./archive/ArchiveDialog";
 
 /* ── Types (mirror /api/marketing-pipeline/board) ─────────────────────────── */
 
@@ -53,6 +54,10 @@ interface BoardItem {
   mrr: number | null;
   recurrence_months: number | null;
   tags: string | null;
+  /** Absents tant que la migration d'archivage n'est pas jouée. */
+  archived_at?: string | null;
+  archive_reason?: string | null;
+  archive_note?: string | null;
   enriched: boolean;
   enrichment: { status: string | null; website_url: string | null } | null;
   project: {
@@ -101,6 +106,8 @@ interface BoardData {
   agents: AgentRef[];
   pipelines: PipelineRef[];
   has_validated_column: boolean;
+  /** `false` tant que la migration d'archivage n'est pas jouée : pas de bascule. */
+  has_archivage?: boolean;
 }
 
 /* ── Helpers ──────────────────────────────────────────────────────────────── */
@@ -152,9 +159,11 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
 }) => {
   const supabase = React.useMemo(() => createClient(), []);
   const isAgent = variant === "agent";
-  const boardUrl = isAgent
-    ? "/api/agent/marketing-pipeline/board"
-    : "/api/marketing-pipeline/board";
+  // Le filtre « archivés » est côté serveur : basculer, c'est recharger.
+  const [showArchived, setShowArchived] = React.useState(false);
+  const boardUrl =
+    (isAgent ? "/api/agent/marketing-pipeline/board" : "/api/marketing-pipeline/board") +
+    (showArchived ? "?archived=1" : "");
 
   const [board, setBoard] = React.useState<BoardData | null>(null);
   const [loading, setLoading] = React.useState(true);
@@ -167,6 +176,8 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   const [notesItem, setNotesItem] = React.useState<BoardItem | null>(null);
   const [notesSubject, setNotesSubject] = React.useState<NoteSubject | undefined>(undefined);
   const [notesInbox, setNotesInbox] = React.useState(false);
+  /** Lignes visées par le dialogue d'archivage (`null` = fermé). */
+  const [archiveTarget, setArchiveTarget] = React.useState<ArchiveTarget | null>(null);
   // When the edit modal is opened because a site can't be created yet, it shows
   // the missing required variables in red and gates the "create site" button.
   const [siteRequirement, setSiteRequirement] = React.useState(false);
@@ -806,6 +817,44 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
+  /* ── Archivage ────────────────────────────────────────────────────────── */
+
+  /**
+   * Ouvre le dialogue sur un lot de lignes. Le motif est demandé une seule
+   * fois pour tout le lot : archiver quarante pistes mortes une par une,
+   * personne ne le ferait.
+   */
+  const openArchive = (items: BoardItem[], kind: "entreprise" | "opportunite") => {
+    if (items.length === 0) return;
+    const entrepriseIds =
+      kind === "entreprise"
+        ? [...new Set(items.map((it) => it.entreprise_id).filter((v): v is number => v != null))]
+        : [];
+    if (kind === "entreprise" && entrepriseIds.length === 0) {
+      toast.error("Ces lignes ne sont rattachées à aucune entreprise.");
+      return;
+    }
+    setArchiveTarget({
+      kind,
+      entrepriseIds,
+      opportunityIds: kind === "opportunite" ? items.map((it) => it.id) : [],
+      label: items.length === 1 ? displayName(items[0]) : `${items.length} fiches`,
+    });
+  };
+
+  const openUnarchive = (item: BoardItem) => {
+    setArchiveTarget({
+      // On désarchive au niveau de l'entreprise quand on la connaît : c'est
+      // elle qui porte `hidden_in_qualification`, et ses opportunités suivent.
+      kind: item.entreprise_id != null ? "entreprise" : "opportunite",
+      entrepriseIds: item.entreprise_id != null ? [item.entreprise_id] : [],
+      opportunityIds: item.entreprise_id != null ? [] : [item.id],
+      label: displayName(item),
+      currentReason: item.archive_reason ?? "autre",
+      currentNote: item.archive_note ?? null,
+    });
+  };
+
   /* ── Per-item handlers bound to the matrix cells ──────────────────────── */
 
   const matrixHandlers: MatrixHandlers = {
@@ -828,6 +877,8 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       setNotesSubject(subject);
       setNotesItem(item);
     },
+    onArchive: (item, kind) => openArchive([item], kind),
+    onUnarchive: openUnarchive,
   };
 
   /* ── Actions de masse (barre de sélection) ────────────────────────────── */
@@ -844,6 +895,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onValidateAudits: (items) => validateAudits(items),
     onAssign: isAgent ? undefined : (items, aId) => assignAgentTo(items, aId),
     onMove: (items, pId) => movePipeline(items, pId),
+    onArchive: openArchive,
   };
 
   return (
@@ -869,6 +921,17 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
           setNotesItem(null);
           setNotesInbox(true);
         }}
+        showArchived={showArchived}
+        onToggleArchived={
+          board?.has_archivage === false ? undefined : () => setShowArchived((v) => !v)
+        }
+      />
+
+      <ArchiveDialog
+        target={archiveTarget}
+        apiBase={isAgent ? "/api/agent/archive" : "/api/archive"}
+        onClose={() => setArchiveTarget(null)}
+        onDone={load}
       />
 
       <NotesDialog

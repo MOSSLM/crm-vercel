@@ -17,8 +17,9 @@ export const OPTIONS = (req: Request) => preflight(req);
  */
 export const GET = withAuth(
   { role: "freelance", capability: "marketing_pipeline" },
-  async ({ user, cors }) => {
-    const result = await buildBoard({ ownerId: user.id });
+  async ({ req, user, cors }) => {
+    const archived = new URL(req.url).searchParams.get("archived") === "1";
+    const result = await buildBoard({ ownerId: user.id, archived });
     if (!result.ok) return jsonError(result.error, result.status, {}, cors);
     return json(result.data, { headers: cors });
   },
