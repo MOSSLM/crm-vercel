@@ -27,8 +27,27 @@ import { getAppUrl } from "@/lib/app-url";
  * du site — le choix tient aux deux raisons ci-dessus, pas à une contrainte de
  * routage.)
  */
-export function demoOgImageUrl(siteId: string): string {
-  return `${getAppUrl()}/api/og/demo/${siteId}`;
+export function demoOgImageUrl(
+  siteId: string,
+  opts: { origine?: string | null; version?: string | null } = {},
+): string {
+  const base = opts.origine ?? getAppUrl();
+  // Le suffixe de version porte le hash du fichier stocké. Sans lui, l'URL de
+  // la carte ne changerait jamais : un client qui la garde en cache — navigateur,
+  // Slack, Facebook — resservirait indéfiniment la première version, alors même
+  // qu'on a régénéré. C'est la même raison qui fait hacher le nom du fichier
+  // dans le stockage ; ici on la reporte sur l'URL publique.
+  const v = opts.version ? `?v=${opts.version}` : "";
+  return `${base}/api/og/demo/${siteId}${v}`;
+}
+
+/**
+ * Le hash contenu dans le nom du fichier déposé (`card-<hash>.jpg`), pour
+ * versionner l'URL publique. `null` si l'image n'existe pas encore.
+ */
+export function versionDepuisUrl(url: string | null | undefined): string | null {
+  const nom = (url ?? "").split("/").pop() ?? "";
+  return /-([0-9a-f]{8,32})\.[a-z0-9]+$/i.exec(nom)?.[1] ?? null;
 }
 
 /**
@@ -44,6 +63,8 @@ export function buildPageMetadata(
   site: ResolvedSite,
   page: SitemapPage | undefined,
   fallbackTitle: string,
+  /** Origine réellement demandée, pour servir la carte depuis le MÊME hôte. */
+  origine?: string | null,
 ): Metadata {
   const vars = site.enterpriseVariables ?? {};
   const seo = site.seo ?? {};
@@ -65,7 +86,14 @@ export function buildPageMetadata(
   // logo carré servi comme image OpenGraph et annoncé 1200×630. WhatsApp
   // l'étirait, ou ne l'affichait pas du tout.
   const chosenImage = ip(page?.ogImage) || ip(seo.ogImage) || "";
-  const generatedImage = site.ogImageUrl ?? demoOgImageUrl(site.siteId);
+  // Toujours la route, jamais l'URL de stockage en direct : elle sert les
+  // octets depuis l'hôte du site, sans redirection. Un robot d'unfurl qui ne
+  // suit pas les redirections pour une image — il en existe — repartait sinon
+  // sans vignette.
+  const generatedImage = demoOgImageUrl(site.siteId, {
+    origine,
+    version: versionDepuisUrl(site.ogImageUrl),
+  });
 
   // `width`/`height` ne sont annoncés QUE pour l'image dont on connaît le
   // format. Mentir sur les dimensions d'une image choisie à la main, c'est
@@ -80,7 +108,7 @@ export function buildPageMetadata(
     icons: { icon },
     // Sans `metadataBase`, Next ne sait pas rendre absolue une URL relative et
     // laisse tomber la balise sans rien dire.
-    metadataBase: new URL(getAppUrl()),
+    metadataBase: new URL(origine ?? getAppUrl()),
     openGraph: {
       title: ogTitle,
       description: ogDescription,
