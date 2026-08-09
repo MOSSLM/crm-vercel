@@ -391,11 +391,74 @@ Chacune peut faire plusieurs commits.
 > 5. Les exigences de complétude vivent en double (`required-fields.ts` et `missingForSite`), avec un
 >    test qui vérifie l'alignement. Toute modification doit être faite des deux côtés.
 
-### Prompt 4 — Templates Claude Design 🟡 MOITIÉ FAITE
+### Prompt 4 — Templates Claude Design ✅ CÔTÉ DESIGN · ⛔ CÔTÉ CRM
 
-> **Où on en est, en une ligne : les LOGOS sont pilotés, les BADGES TEXTE ne le
-> sont pas.** Le prompt 4 demandait les deux, et disait du second que c'était
-> « le vrai problème, pas la mise en forme ». Il reste entier.
+> **MISE À JOUR (09/08/2026, bundle `template_cvc13.zip`).** Le second volet est
+> livré : le texte est pilotable. **Il ne reste RIEN à passer à Claude Design.**
+> Les quatre prompts du plan sont épuisés côté design.
+>
+> Audité en simulant ce que le CRM retirera — les 6 variantes sont identiques :
+>
+> | Vérification | Résultat |
+> |---|---|
+> | Contrat | 81 `data-rge="oui"` · 61 `"non"` · 12 `data-rge-noms` · 28 metas jumelés |
+> | Allégations restantes en version « sans RGE » | **0** |
+> | `<meta>` affirmant le RGE sans jumeau | **0** |
+> | Barre de confiance / grille `assure-card` | 3 items · 4 cartes dans les DEUX variantes |
+> | Section aides en version « sans RGE » | supprimée |
+> | Bloc de logos de `cvc12` | intact |
+>
+> Le défaut CSS est sûr et respecte §A10 par construction :
+> `html:not([data-sans-rge]) [data-rge="non"] { display: none }`. Sans action du
+> CRM, la page reste celle qui est livrée. Ce CSS voyage avec la section à
+> l'import (68 sections portent déjà un `<style>`), donc **importer `cvc13`
+> aujourd'hui est sans risque — mais sans effet** tant que le CRM ne retire pas
+> les nœuds.
+>
+> Le panneau Tweaks est fusionné : `masquerCertifications` a disparu, un seul
+> curseur « Vérifiées par l'ADEME » (0→5) bascule bandeau + 6 zones + meta.
+> L'état incohérent (logos masqués, texte affirmant le RGE) n'existe plus.
+>
+> **⛔ CE QUI BLOQUE : rien n'est écrit côté CRM.** Cf. la fin de
+> [`PROMPT-4b-variantes-rge.md`](./PROMPT-4b-variantes-rge.md).
+>
+> | À écrire | Rôle |
+> |---|---|
+> | `strip-rge-regions.ts` | **retirer** les nœuds de la variante inutilisée — pas les masquer en CSS : un texte caché reste dans la source et lisible par les moteurs |
+> | bascule `data-content-sans-rge` | remplacer l'attribut `content` du `<meta>` |
+> | remplissage `data-rge-noms` | y écrire les `nom_certificat` réels |
+>
+> Verdict repris tel quel de `rge-compteur.ts` : `> 0` → « oui » ; ADEME
+> interrogée et zéro → « non » ; **non vérifié → on ne touche à rien**.
+> Branchement dans `condition-service-markup.ts`, garde-fou via
+> `porteDesCertifications` (jamais une liste de marqueurs recopiée, cf. le bug
+> du 09/08 où le site publié divergeait de l'aperçu).
+>
+> **Deux résidus connus, réparables côté CRM, non bloquants :**
+>
+> 1. **5 `<meta description>` nomment une qualification en dur** côté « oui »
+>    (« RGE QualiPAC », « qualifié Qualifelec »). Faux pour une entreprise qui ne
+>    détient que Qualibat. Inapplicable via `data-rge-noms` : c'est un attribut,
+>    pas un élément. À traiter au rendu.
+> 2. **Un avis d'exemple** : « Ils nous ont monté tout le dossier MaPrimeRénov'. »
+>    Remplacé dès qu'il y a de vrais avis, mais `hydrateReviews` conserve
+>    délibérément les cartes d'exemple quand il n'y en a aucun.
+>    Exposition mesurée : **12 projets** (sans avis ET zéro RGE vérifié).
+>
+> **Plafond de logos, mesuré — ce n'est pas 12.** `mapping.json` reconnaît 16
+> certificats qui se réduisent à **10 logos distincts** (QualiPAC ×2 → un seul,
+> QualiPV ×2 → un seul, Qualisol ×3 → un seul, Qualibois ×2 → un seul). 8 sont en
+> usage aujourd'hui ; `opqibi-rge.png` et `recharge-elec.png` existent mais aucun
+> certificat ne pointe dessus. Maximum observé sur une entreprise : **5**.
+> **Aucun plafond dans le code** — 20 logos en entrée donnent 20 cartes ; le
+> curseur d'aperçu s'arrête à 5, le rendu non. Le commentaire du template dit
+> « 12 au maximum » : c'est 10.
+>
+> ---
+>
+> **Historique — l'état avant `cvc13` :** les LOGOS étaient pilotés, les BADGES
+> TEXTE non. Le prompt 4 demandait les deux et disait du second que c'était « le
+> vrai problème, pas la mise en forme ».
 >
 > Mesuré sur `template_cvc12`, hors bloc piloté, commentaires exclus :
 >
