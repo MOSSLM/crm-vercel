@@ -6,7 +6,13 @@
  * découvre qu'en voyant « CA : 0 € » sur la démo d'un client.
  */
 
-import { parseFinances, parseUniteLegale, etablissementsCandidats } from "../recherche-entreprises";
+import {
+  parseFinances,
+  parseUniteLegale,
+  etablissementsCandidats,
+  fetchIdentite,
+  __resetCadenceurPourTests,
+} from "../recherche-entreprises";
 import { parseLine, estValide } from "../ademe-rge";
 import { trancheEffectifLabel, trancheEffectif } from "../effectif";
 import { isValidSiret, isValidSiren, normalizeSiret, normalizeSiren } from "../siret";
@@ -350,4 +356,65 @@ describe("scoreCandidat", () => {
     expect(r[0].candidat.siret).toBe("88829510200014");
     expect(r[0].score).toBeGreaterThanOrEqual(r[1].score);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Quota : le 429 mesuré sur l'API
+// ---------------------------------------------------------------------------
+describe("quota recherche-entreprises", () => {
+  beforeEach(() => __resetCadenceurPourTests());
+
+  const reponseOk = {
+    results: [{ siren: "351378351", nom_raison_sociale: "ECLEIS", siege: { siret: "35137835100040" } }],
+  };
+
+  const reponse = (status: number, retryAfter?: string) => ({
+    ok: status < 400,
+    status,
+    headers: { get: (h: string) => (h === "retry-after" ? retryAfter ?? null : null) },
+    json: async () => reponseOk,
+  });
+
+  it("réessaie après un 429 au lieu d'abandonner", async () => {
+    // 26 requêtes sur 40 ont été rejetées en 429 lors du remplissage : sans
+    // reprise, chaque rejet ressemblerait à « entreprise introuvable ».
+    let appels = 0;
+    const f = (async () => {
+      appels += 1;
+      return appels === 1 ? reponse(429) : reponse(200);
+    }) as unknown as typeof fetch;
+
+    const r = await fetchIdentite("35137835100040", { fetchImpl: f });
+    expect(appels).toBe(2);
+    expect(r?.siren).toBe("351378351");
+  });
+
+  it("respecte le Retry-After annoncé par le serveur", async () => {
+    let appels = 0;
+    const debut = Date.now();
+    const f = (async () => {
+      appels += 1;
+      return appels === 1 ? reponse(429, "1") : reponse(200);
+    }) as unknown as typeof fetch;
+
+    await fetchIdentite("35137835100040", { fetchImpl: f });
+    expect(Date.now() - debut).toBeGreaterThanOrEqual(900);
+  }, 10_000);
+
+  it("finit par abandonner plutôt que de boucler indéfiniment", async () => {
+    const f = (async () => reponse(429)) as unknown as typeof fetch;
+    await expect(fetchIdentite("35137835100040", { fetchImpl: f })).rejects.toThrow(/429/);
+  }, 15_000);
+
+  it("espace les appels successifs pour ne pas provoquer le 429", async () => {
+    const departs: number[] = [];
+    const f = (async () => {
+      departs.push(Date.now());
+      return reponse(200);
+    }) as unknown as typeof fetch;
+
+    await fetchIdentite("35137835100040", { fetchImpl: f });
+    await fetchIdentite("74989284000028", { fetchImpl: f });
+    expect(departs[1] - departs[0]).toBeGreaterThanOrEqual(200);
+  }, 10_000);
 });

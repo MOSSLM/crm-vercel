@@ -17,6 +17,7 @@
  * priment en revanche sur `entreprises.stats` — la source de vérité des chiffres
  * clés est l'enrichissement.
  */
+import { verdictRge, type EtatVerificationRge } from "../donnees-publiques/rge-compteur";
 import type { StatItem } from "./menu-overrides";
 
 export interface ProjectEnrichmentRow {
@@ -38,6 +39,11 @@ export interface ProjectEnrichmentRow {
   stat_installations_completed_official?: string | null;
   stat_rge_count_official?: string | null;
   variables?: Record<string, unknown> | null;
+  /**
+   * Ce qu'on sait de l'état RGE VÉRIFIÉ de la fiche (ADEME). Absent = on n'a
+   * rien vérifié, et `stat_rge_count` reste la seule source — cf. `verdictRge`.
+   */
+  rge?: EtatVerificationRge | null;
 }
 
 export interface ProjectEnrichmentResult {
@@ -140,6 +146,17 @@ export function effectiveStat(
   key: keyof ProjectEnrichmentRow,
   officialKey: keyof ProjectEnrichmentRow,
 ): string {
+  // Les qualifications RGE ne sont plus une saisie : quand l'ADEME a été
+  // interrogée, c'est ELLE qui fait le compte, et un 0 vérifié efface le
+  // chiffre. Le `_official` du client reste prioritaire sur tout, y compris sur
+  // l'ADEME — et n'est jamais écrit par l'enrichissement.
+  //
+  // Quand rien n'a été vérifié, la saisie est conservée : ignorance n'est pas
+  // absence, et retirer des logos qu'on n'a pas contrôlés en supprimerait de
+  // légitimes.
+  if (key === "stat_rge_count" && proj.rge) {
+    return verdictRge(proj.rge, proj.stat_rge_count, proj.stat_rge_count_official).valeur;
+  }
   const official = statValue(proj[officialKey] as string | null | undefined);
   return official || statValue(proj[key] as string | null | undefined);
 }

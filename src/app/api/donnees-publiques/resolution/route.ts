@@ -36,6 +36,15 @@ const trancherSchema = z.object({
   siret: z.string().regex(/^\d{14}$/),
   decision: z.enum(["valide", "rejete"]),
   commentaire: z.string().max(500).optional(),
+  /**
+   * D'où vient le numéro. `recherche_web` est le cas d'un SIRET trouvé hors du
+   * CRM — pied de page d'un site, annuaire, registre consulté à la main — puis
+   * rapporté ici. Il n'est PAS moins vérifié pour autant : la validation
+   * interroge le registre avant d'écrire, quelle que soit la source.
+   */
+  source: z.enum(["resolution", "recherche_web", "saisie"]).optional(),
+  /** L'URL où le numéro a été lu. Consignée dans le commentaire du candidat. */
+  source_url: z.string().url().max(500).optional(),
 });
 
 type FicheRow = {
@@ -178,9 +187,16 @@ export const PATCH = withAuth({ role: "admin", body: trancherSchema }, async ({ 
     entreprise_id: body.entreprise_id,
     siret: body.siret,
     decide_par: user.id,
-    commentaire: body.commentaire,
+    source: body.source,
+    // La preuve voyage avec la décision : dans six mois, devant une fiche
+    // douteuse, on veut pouvoir dire OÙ le numéro a été lu.
+    commentaire: [body.commentaire, body.source_url && `source : ${body.source_url}`]
+      .filter(Boolean)
+      .join(" — ") || undefined,
   });
 
   if (!res.ok) return jsonError(res.erreur, 409, {}, cors);
-  return json({ ok: true, decision: "valide" }, { headers: cors });
+  // Les divergences ne bloquent pas mais remontent : un code postal qui ne
+  // correspond pas, ou une entreprise cessée, méritent d'être vus.
+  return json({ ok: true, decision: "valide", avertissements: res.avertissements }, { headers: cors });
 });

@@ -237,17 +237,66 @@ export type RechercheOptions = {
   signal?: AbortSignal;
 };
 
+/**
+ * L'API A un quota, contrairement à ce qu'on a cru longtemps.
+ *
+ * Mesuré : 40 requêtes lancées en parallèle, **26 rejetées en HTTP 429**. En
+ * cadençant à ~4 requêtes par seconde, les 40 passent. Le quota est propre à
+ * `recherche-entreprises` — l'ADEME encaisse 40 requêtes simultanées sans
+ * broncher.
+ *
+ * Deux protections, parce qu'elles ne servent pas à la même chose :
+ *   - l'espacement ÉVITE le 429 (on ne le provoque pas) ;
+ *   - le backoff le SURVIT quand il arrive quand même, par exemple si une autre
+ *     instance de la fonction tape en même temps.
+ *
+ * Sans ça, une passe de résolution sur les 150 fiches sans identifiant — jusqu'à
+ * huit requêtes chacune — se ferait jeter en masse, et chaque échec ressemblerait
+ * à « entreprise introuvable ».
+ */
+const ESPACEMENT_MS = 260;
+const MAX_TENTATIVES = 4;
+
+/** Dernier départ de requête, pour espacer les appels successifs d'un même lot. */
+let dernierAppel = 0;
+
+const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const attendreSonTour = async (): Promise<void> => {
+  const attente = dernierAppel + ESPACEMENT_MS - Date.now();
+  if (attente > 0) await dormir(attente);
+  dernierAppel = Date.now();
+};
+
+/** Test-only : remet le cadenceur à zéro entre deux cas. */
+export const __resetCadenceurPourTests = () => {
+  dernierAppel = 0;
+};
+
 const call = async (url: string, opts: RechercheOptions): Promise<{ results: RawUniteLegale[] }> => {
   const doFetch = opts.fetchImpl ?? fetch;
-  const res = await doFetch(url, {
-    signal: opts.signal,
-    headers: { accept: "application/json" },
-  });
-  if (!res.ok) {
-    throw new Error(`recherche-entreprises HTTP ${res.status}`);
+
+  for (let tentative = 1; ; tentative += 1) {
+    await attendreSonTour();
+    const res = await doFetch(url, {
+      signal: opts.signal,
+      headers: { accept: "application/json" },
+    });
+
+    if (res.status === 429 && tentative < MAX_TENTATIVES) {
+      // `Retry-After` fait foi quand le serveur le donne : deviner mieux que ce
+      // qu'il annonce n'a pas de sens. Sinon on double à chaque tentative.
+      const annonce = Number(res.headers?.get?.("retry-after"));
+      const attente = Number.isFinite(annonce) && annonce > 0 ? annonce * 1000 : 2 ** tentative * 500;
+      await dormir(attente);
+      continue;
+    }
+
+    if (!res.ok) throw new Error(`recherche-entreprises HTTP ${res.status}`);
+
+    const body = (await res.json()) as { results?: RawUniteLegale[] };
+    return { results: Array.isArray(body.results) ? body.results : [] };
   }
-  const body = (await res.json()) as { results?: RawUniteLegale[] };
-  return { results: Array.isArray(body.results) ? body.results : [] };
 };
 
 /**

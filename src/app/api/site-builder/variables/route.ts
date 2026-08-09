@@ -1,5 +1,6 @@
 import { json, jsonError } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
+import { chargerRgePourSite } from "@/lib/donnees-publiques/rge-pour-site";
 import { withAuth } from "@/app/api/_lib/with-auth";
 import {
   applyDerivedVariables,
@@ -108,7 +109,9 @@ export const GET = withAuth({}, async ({ req }) => {
             "override_entreprise_name, override_city, override_location, " +
             "override_phone, override_email, override_address, variables, " +
             "logo_url, service_tags_snapshot, stat_years_experience, " +
-            "stat_satisfied_clients, stat_installations_completed, stat_rge_count"
+            "stat_satisfied_clients, stat_installations_completed, stat_rge_count, " +
+            "stat_years_experience_official, stat_satisfied_clients_official, " +
+            "stat_installations_completed_official, stat_rge_count_official"
           )
           .eq("id", effectiveProjectId)
           .single()
@@ -194,10 +197,18 @@ export const GET = withAuth({}, async ({ req }) => {
   }
 
   // Enrichissement du projet (edge function) : logo, stats, zones desservies.
+  // État RGE VÉRIFIÉ : décide si `stat_rge_count` est un compte ADEME ou la
+  // saisie conservée, et fournit les logos que le tweak posera. Cf.
+  // `rge-compteur.ts` — ignorance et absence vérifiée ne se confondent pas.
+  const rge = await chargerRgePourSite(supabase, enterpriseId);
+  if (rge.logos.length > 0) {
+    variables["__certifications"] = JSON.stringify(rge.logos);
+  }
+
   let projectServiceTags: string[] | null = null;
   let projectStats: StatItem[] | null = null;
   if (proj) {
-    const projEnrichment = applyProjectEnrichment(variables, proj);
+    const projEnrichment = applyProjectEnrichment(variables, { ...proj, rge: rge.etat });
     projectServiceTags = projEnrichment.serviceTags;
     projectStats = projEnrichment.stats;
   }
