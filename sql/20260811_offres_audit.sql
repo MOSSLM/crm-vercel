@@ -137,6 +137,17 @@ where metadata ? 'repond_a'
   and coalesce(metadata->>'role_audit', '') = ''
   and code <> 'site_sur_mesure';
 
+-- ── 4. Une addition n'est pas une affaire ────────────────────────────────
+-- `visible_in_qualification` vaut `true` par défaut : les offres insérées
+-- ci-dessus apparaîtraient donc dans le sélecteur d'offre de la qualification,
+-- où l'on choisit ce qu'on VEND à une entreprise. Un abonnement de relance
+-- d'avis à 49 € n'y a pas sa place — il se conseille en plus d'un site, il ne
+-- fonde pas une opportunité, et l'y laisser fausserait les montants du pipeline.
+update public.offres
+set visible_in_qualification = false
+where metadata->>'role_audit' = 'addition'
+  and visible_in_qualification = true;
+
 -- Contrôle après application :
 --   select code, nom, prix_ht, billing_period,
 --          metadata->>'role_audit' as role,
