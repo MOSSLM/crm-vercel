@@ -391,9 +391,58 @@ Chacune peut faire plusieurs commits.
 > 5. Les exigences de complétude vivent en double (`required-fields.ts` et `missingForSite`), avec un
 >    test qui vérifie l'alignement. Toute modification doit être faite des deux côtés.
 
-### Prompt 4 — Templates Claude Design ⚠️ EN GRANDE PARTIE RÉSOLU CÔTÉ CRM
+### Prompt 4 — Templates Claude Design ✅ FAIT
 
-> **MISE À JOUR (08/08/2026, après lecture du bundle `template_cvc11.zip`).**
+> **MISE À JOUR (09/08/2026, bundle `template_cvc12.zip`).** Le propriétaire a
+> repris les templates dans Claude Design. Les **six** variantes (Agency, Brut,
+> Classique, Nocturne, Studio, Verdure) portent maintenant un markup identique :
+>
+> ```html
+> <section class="section certif-band" id="sec-certifs">
+>   <p class="certif-lead">Certifications &amp; qualifications reconnues par l'État</p>
+>   <div class="certif-row reveal" data-certifications="">
+>     <div class="certif-logo" data-certification-item=""><img … data-certification-logo="" width="360" height="180"></div>
+>   </div>
+> </section>
+> ```
+>
+> Tout ce qui était « souhaitable » est fait : attributs `data-*`, **une seule**
+> carte-gabarit au lieu de cinq logos en dur, canevas 360×180, `.certif-logo--tall`
+> supprimée. Et trois ajouts qui vont au-delà :
+>
+> - `site.js` bascule la rangée en **bandeau défilant à partir de 4** logos. Il
+>   clone les cartes en leur retirant `data-certification-item` /
+>   `data-certification-logo` et en posant `aria-hidden` — donc les clones ne se
+>   font jamais re-hydrater ni annoncer. Il sort en `if (!row) return;` quand le
+>   CRM a supprimé la section.
+> - CSS `.certif-band:not(:has(.certif-logo)) { display: none }` — ceinture et
+>   bretelles : même une rangée vide ne laisserait pas de chapeau orphelin.
+> - Un curseur `nbQualifications` (0→5) dans `index-tweaks.jsx` pour prévisualiser
+>   le rendu à chaque nombre. **Aperçu seulement** (clones `data-certif-apercu`),
+>   sans effet sur le site publié.
+>
+> **Deux défauts trouvés côté CRM en vérifiant, et corrigés :**
+>
+> 1. `LibrarySectionInline` — le rendu du site **publié** — court-circuitait
+>    l'hydratation sur `html.includes("data-certifications")` seul. Les sections
+>    déjà en base ne portent que `.certif-row` : elles étaient corrigées dans
+>    l'aperçu de l'éditeur et **pas en ligne**. La divergence allait dans le pire
+>    sens. Le garde-fou vient maintenant du module (`porteDesCertifications`), il
+>    ne se recopie plus.
+> 2. Conteneurs imbriqués : un design posant `data-certifications` sur la
+>    `<section>` en gardant `.certif-row` dedans faisait garnir la section
+>    elle-même — `set_content` y effaçait la rangée flex ET le chapeau, laissant
+>    les cartes nues. Règle posée : **le conteneur le plus profond gagne**.
+>
+> 20 tests sur `hydrate-certifications`, dont 7 sur le markup réel de `cvc12`.
+>
+> **Reste ouvert, mineur** : si un design est exporté avec le curseur
+> `nbQualifications` à 0, le markup capturé n'a plus de carte-gabarit ; le tweak
+> ne sait alors rien dupliquer et la section disparaît quelles que soient les
+> vraies qualifications. Remettre le curseur à ≥1 avant export.
+
+> **Mise à jour précédente (08/08/2026, bundle `template_cvc11.zip`),
+> conservée pour mémoire.**
 > Il n'est plus nécessaire de reprendre les templates pour que le contrôle ADEME
 > fonctionne. `hydrate-certifications` reconnaît **la convention que les
 > templates CVC portent déjà** :

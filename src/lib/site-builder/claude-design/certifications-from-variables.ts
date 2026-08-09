@@ -16,7 +16,7 @@
 
 import type { LogoCertification } from "./hydrate-certifications";
 
-export { hydrateCertifications } from "./hydrate-certifications";
+export { hydrateCertifications, porteDesCertifications } from "./hydrate-certifications";
 export type { LogoCertification } from "./hydrate-certifications";
 
 const estLogo = (v: unknown): v is LogoCertification => {

@@ -72,15 +72,71 @@ const remplirCarte = (gabarit: string, logo: LogoCertification): string => {
 /**
  * Les deux conventions reconnues, dans cet ordre.
  *
- * `data-certifications` est le contrat explicite, à privilégier pour les
- * nouveaux designs. `.certif-row` est celle que les templates CVC livrés
- * portent DÉJÀ : les reconnaître évite d'avoir à reprendre chaque template
- * avant que le contrôle ADEME serve à quelque chose. C'est la même raison qui
- * fait accepter `img` à défaut d'un `[data-certification-logo]`.
+ * `data-certifications` est le contrat explicite : les templates CVC le portent
+ * depuis leur révision du 09/08/2026. `.certif-row` reste indispensable pour les
+ * sections DÉJÀ importées en base, qui ne l'ont pas et ne l'auront jamais
+ * — 47 d'entre elles affichent des logos en dur. Les abandonner rendrait le
+ * contrôle ADEME muet exactement là où il sert. C'est la même raison qui fait
+ * accepter `img` à défaut d'un `[data-certification-logo]`.
+ *
+ * Deux conventions pour une seule rangée, ça veut dire qu'un même bloc peut
+ * répondre plusieurs fois. `conteneursGarnis` tranche : LE PLUS PROFOND GAGNE.
  */
 const CONTENEURS = ["[data-certifications]", ".certif-row"];
+
+/** `parent` contient-il `enfant` ? (remontée de chaîne, pas de `contains`) */
+const contient = (parent: unknown, enfant: unknown): boolean => {
+  let cur = (enfant as { parentNode?: unknown } | null)?.parentNode;
+  while (cur) {
+    if (cur === parent) return true;
+    cur = (cur as { parentNode?: unknown }).parentNode;
+  }
+  return false;
+};
+
+/**
+ * Les conteneurs à garnir : distincts, et les plus profonds seulement.
+ *
+ * Deux situations imposent ce filtre, et la seconde abîme le rendu :
+ *
+ *   - MÊME nœud, deux fois. Le template révisé écrit
+ *     `.certif-row[data-certifications]` : il répond aux deux sélecteurs. Le
+ *     garnir deux fois est sans conséquence visible mais gaspille le travail,
+ *     et fait appeler `remove()` sur un nœud déjà détaché quand il n'y a rien.
+ *
+ *   - Conteneurs IMBRIQUÉS. Un design qui poserait `data-certifications` sur la
+ *     `<section>` en gardant `.certif-row` à l'intérieur ferait garnir la
+ *     section elle-même : `set_content` y remplace TOUT, donc la rangée flex et
+ *     son chapeau disparaissent, et les cartes se retrouvent nues dans la
+ *     section. La mise en page s'effondre sans que rien ne signale l'erreur.
+ *
+ * Garnir le plus profond règle les deux : c'est la rangée qui porte la mise en
+ * forme, jamais son enveloppe. La suppression, elle, remonte toujours à la
+ * `<section>` porteuse — cf. `aRetirer`.
+ */
+const conteneursGarnis = (root: ReturnType<typeof parse>) => {
+  const tous: ReturnType<typeof root.querySelectorAll> = [];
+  for (const sel of CONTENEURS) {
+    for (const el of root.querySelectorAll(sel)) {
+      if (!tous.includes(el)) tous.push(el);
+    }
+  }
+  return tous.filter((el) => !tous.some((autre) => autre !== el && contient(el, autre)));
+};
 const ITEMS = "[data-certification-item], .certif-logo";
 const IMG = "[data-certification-logo]";
+
+/**
+ * Ce markup porte-t-il un bloc de certifications ?
+ *
+ * Exporté pour que les appelants qui court-circuitent l'appel — parser du HTML
+ * pour rien coûte cher sur chaque section de chaque page publiée — testent la
+ * MÊME chose que la fonction. Une liste de marqueurs recopiée à la main avait
+ * déjà divergé une fois, et du côté publié : les sections en `.certif-row`
+ * gardaient les logos du template sur le site en ligne.
+ */
+export const porteDesCertifications = (html: string): boolean =>
+  html.includes("data-certifications") || html.includes("certif-row");
 
 /**
  * Ce qu'il faut retirer quand il n'y a AUCUNE qualification.
@@ -108,10 +164,10 @@ const aRetirer = (conteneur: ReturnType<typeof parse>): ReturnType<typeof parse>
 };
 
 export function hydrateCertifications(html: string, logos: LogoCertification[]): string {
-  if (!html.includes("data-certifications") && !html.includes("certif-row")) return html;
+  if (!porteDesCertifications(html)) return html;
 
   const root = parse(html);
-  const conteneurs = CONTENEURS.flatMap((sel) => root.querySelectorAll(sel));
+  const conteneurs = conteneursGarnis(root);
   if (conteneurs.length === 0) return html;
 
   for (const conteneur of conteneurs) {

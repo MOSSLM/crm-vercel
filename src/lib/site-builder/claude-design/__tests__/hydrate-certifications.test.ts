@@ -4,7 +4,11 @@
  * le comportement qui l'empêche.
  */
 
-import { hydrateCertifications, type LogoCertification } from "../hydrate-certifications";
+import {
+  hydrateCertifications,
+  porteDesCertifications,
+  type LogoCertification,
+} from "../hydrate-certifications";
 
 const logo = (cle: string, alt: string): LogoCertification => ({
   cle,
@@ -173,5 +177,128 @@ describe("template CVC livré", () => {
     expect(out).not.toContain("sec-certifs");
     expect(out).not.toContain("qualifications reconnues");
     expect(out.trim()).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Le template CVC révisé — markup RÉEL de `template_cvc12`, 09/08/2026
+// ---------------------------------------------------------------------------
+/**
+ * Le template porte maintenant le contrat explicite ET l'ancienne convention :
+ * `.certif-row[data-certifications]` sur le même élément, et une SEULE carte
+ * livrée en gabarit au lieu de cinq logos en dur.
+ *
+ * Ce sont les six variantes (Agency, Brut, Classique, Nocturne, Studio,
+ * Verdure) qui partagent ce markup à l'identique — le vérifier une fois suffit.
+ *
+ * Le double marquage est ce qui rend le dédoublonnage nécessaire : sans lui le
+ * bloc serait hydraté deux fois, et supprimé deux fois quand il n'y a rien.
+ */
+const CVC_REVISE = `<section class="section certif-band" id="sec-certifs">
+  <div class="wrap">
+    <p class="certif-lead">Certifications &amp; qualifications reconnues par l'État</p>
+    <div class="certif-row reveal" data-certifications="">
+      <div class="certif-logo" data-certification-item=""><img src="../images/certifications/qualibat.png" alt="RGE Qualibat" data-certification-logo="" loading="lazy" width="360" height="180"></div>
+    </div>
+  </div>
+</section>`;
+
+describe("template CVC révisé (contrat explicite)", () => {
+  it("garnit la rangée qui porte les deux conventions, sans doubler les cartes", () => {
+    const out = hydrateCertifications(CVC_REVISE, [
+      logo("qualipac", "QualiPAC module Chauffage et ECS"),
+      logo("qualibois", "Qualibois Eau"),
+    ]);
+    expect(out.match(/data-certification-item/g)).toHaveLength(2);
+    expect(out.match(/certif-logo/g)).toHaveLength(2);
+    expect(out).not.toContain("images/certifications/qualibat.png");
+  });
+
+  it("duplique l'unique carte-gabarit autant de fois qu'il y a de qualifications", () => {
+    // Le maximum observé en base est 5 ; au-delà de 4, site.js bascule la
+    // rangée en bandeau défilant sans que le CRM ait à s'en occuper.
+    const cles = ["qualibat", "qualipac", "qualipv", "qualibois", "qualisol"];
+    const out = hydrateCertifications(CVC_REVISE, cles.map((c) => logo(c, c)));
+    expect(out.match(/certif-logo/g)).toHaveLength(5);
+    for (const c of cles) expect(out).toContain(`/rge/${c}.png`);
+  });
+
+  it("rend une seule carte sans casser la rangée quand il n'y a qu'une qualification", () => {
+    const out = hydrateCertifications(CVC_REVISE, [logo("qualipac", "QualiPAC")]);
+    expect(out.match(/certif-logo/g)).toHaveLength(1);
+    expect(out).toContain('class="certif-row reveal"');
+    expect(out).toContain("qualifications reconnues par l");
+  });
+
+  it("SUPPRIME la section entière une seule fois quand rien n'est vérifié", () => {
+    // Le double marquage faisait passer deux fois par `.remove()`, sur un nœud
+    // déjà détaché au second tour.
+    const out = hydrateCertifications(CVC_REVISE, []);
+    expect(out.trim()).toBe("");
+  });
+
+  it("garde le contrat data-* sur les cartes produites, pour site.js", () => {
+    // site.js lit `[data-certifications]` puis clone les cartes ; s'il ne
+    // retrouve pas la rangée, le bandeau défilant ne se déclenche jamais.
+    const out = hydrateCertifications(CVC_REVISE, [logo("qualipac", "QualiPAC")]);
+    expect(out).toContain("data-certifications");
+    expect(out).toContain("data-certification-item");
+    expect(out).toContain("data-certification-logo");
+  });
+});
+
+describe("conteneurs imbriqués", () => {
+  /**
+   * Le piège qu'un futur design tendra tôt ou tard : poser le marqueur sur la
+   * `<section>` plutôt que sur la rangée, en gardant `.certif-row` dedans.
+   * Garnir la section reviendrait à y remplacer TOUT — la rangée flex et son
+   * chapeau partiraient avec, et les cartes se retrouveraient nues.
+   */
+  const IMBRIQUE = `<section class="certif-band" id="sec-certifs" data-certifications>
+  <p class="certif-lead">Certifications reconnues par l'État</p>
+  <div class="certif-row reveal">
+    <div class="certif-logo"><img src="/tpl/qualibat.png" alt="Qualibat"></div>
+  </div>
+</section>`;
+
+  it("garnit la rangée, pas la section qui l'enveloppe", () => {
+    const out = hydrateCertifications(IMBRIQUE, [logo("qualipac", "QualiPAC"), logo("qualibois", "Qualibois")]);
+    // La rangée survit : c'est elle qui porte le flex, le centrage et le gap.
+    expect(out).toContain('class="certif-row reveal"');
+    // Le chapeau aussi — il est frère de la rangée, pas dedans.
+    expect(out).toContain("Certifications reconnues");
+    expect(out.match(/certif-logo/g)).toHaveLength(2);
+    expect(out).not.toContain("/tpl/qualibat.png");
+  });
+
+  it("supprime quand même la section entière quand rien n'est vérifié", () => {
+    expect(hydrateCertifications(IMBRIQUE, []).trim()).toBe("");
+  });
+});
+
+describe("porteDesCertifications", () => {
+  /**
+   * Ce prédicat existe parce qu'un appelant qui court-circuite l'hydratation
+   * doit tester la même chose qu'elle. `LibrarySectionInline` — le rendu du site
+   * PUBLIÉ — ne testait que `data-certifications`, donc les sections en
+   * `.certif-row` gardaient les logos du template en ligne alors que l'aperçu de
+   * l'éditeur, lui, les corrigeait. La divergence allait dans le mauvais sens.
+   */
+  it("reconnaît les deux conventions", () => {
+    expect(porteDesCertifications('<div data-certifications></div>')).toBe(true);
+    expect(porteDesCertifications('<div class="certif-row"></div>')).toBe(true);
+  });
+
+  it("ignore un markup sans bloc de certifications", () => {
+    expect(porteDesCertifications("<section><h2>Nos garanties</h2></section>")).toBe(false);
+  });
+
+  it("est vrai partout où hydrateCertifications agit", () => {
+    // L'invariant qui empêche la divergence de revenir : si l'hydratation
+    // modifie le markup, le garde-fou doit laisser passer.
+    for (const markup of [DESIGN, CVC_REEL, CVC_REVISE]) {
+      expect(hydrateCertifications(markup, [])).not.toBe(markup);
+      expect(porteDesCertifications(markup)).toBe(true);
+    }
   });
 });
