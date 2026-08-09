@@ -599,6 +599,75 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     }
   };
 
+  /**
+   * Analyse en masse le site ACTUEL des entreprises sélectionnées.
+   *
+   * Même déroulé par paquets que la refonte, et pour la même raison : chaque
+   * analyse sort sur le réseau vers un site tiers, parfois lent, parfois mort.
+   * Cent appels lâchés d'un coup font expirer les derniers au hasard.
+   *
+   * Les échecs sont NOMMÉS. « 7 échecs » sur un lot de cent ne dit pas
+   * lesquelles reprendre, et le rattrapage se fait alors à l'aveugle.
+   */
+  const ANALYSE_PAR_PAQUET = 4;
+
+  const analyserSites = async (items: BoardItem[]) => {
+    const targets = items.filter((it) => it.entreprise_id != null);
+    if (targets.length === 0) {
+      toast.error("Aucune entreprise dans la sélection");
+      return;
+    }
+
+    setWorking("create-site");
+    const suivi = toast.loading(`Analyse de ${targets.length} site(s)…`);
+    try {
+      let ok = 0;
+      let sansSite = 0;
+      const echecs: string[] = [];
+      for (let i = 0; i < targets.length; i += ANALYSE_PAR_PAQUET) {
+        const paquet = targets.slice(i, i + ANALYSE_PAR_PAQUET);
+        const res = await Promise.allSettled(
+          paquet.map(async (it) => {
+            const r = await authedFetch(`/api/audit-site/${it.entreprise_id}`, { method: "POST" });
+            const body = (await r.json().catch(() => ({}))) as { error?: string; statut?: string };
+            if (!r.ok) throw new Error(body.error || `Erreur ${r.status}`);
+            return body.statut;
+          }),
+        );
+        res.forEach((r, j) => {
+          if (r.status !== "fulfilled") {
+            echecs.push(displayName(paquet[j]));
+            return;
+          }
+          ok++;
+          // « Pas de site » n'est pas un échec : c'est un résultat, et l'un des
+          // plus vendables du parc. Il mérite son propre compte.
+          if (r.value === "injoignable") sansSite++;
+        });
+        toast.loading(`${ok + echecs.length}/${targets.length} analysé(s)…`, { id: suivi });
+      }
+      toast.dismiss(suivi);
+      if (ok > 0) {
+        toast.success(
+          `${ok} site(s) analysé(s)` +
+            (sansSite > 0 ? ` — dont ${sansSite} sans site ou injoignable(s)` : ""),
+        );
+      }
+      if (echecs.length > 0) {
+        const noms = echecs.slice(0, 5).join(", ");
+        toast.error(
+          `${echecs.length} échec(s) : ${noms}${echecs.length > 5 ? `… et ${echecs.length - 5} autre(s)` : ""}`,
+        );
+      }
+      await afterAction();
+    } catch (e) {
+      toast.dismiss(suivi);
+      toast.error(e instanceof Error ? e.message : "Erreur lors de l'analyse des sites");
+    } finally {
+      setWorking(null);
+    }
+  };
+
   // Gate: before creating, every target must have its required variables filled.
   // Otherwise open the edit modal on the first incomplete company (requirement
   // mode) instead of creating anything.
@@ -839,6 +908,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onValidateEnrich: (items) => validateEnrichment(items),
     onCreateSites: (items) => createSites(items),
     onRegenerateSites: (items) => regenerateSites(items),
+    onAnalyserSites: (items) => analyserSites(items),
     onValidateSites: (items) => validateSites(items),
     onCreateAudits: (items) => createAudits(items),
     onValidateAudits: (items) => validateAudits(items),

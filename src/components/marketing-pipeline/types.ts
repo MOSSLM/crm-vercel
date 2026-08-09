@@ -144,6 +144,12 @@ export interface BulkHandlers {
    * son avancement — seules ses pages sont reconstruites.
    */
   onRegenerateSites: (items: BoardItem[]) => void;
+  /**
+   * Analyse le site ACTUEL des entreprises sélectionnées (pas notre démo) et
+   * enregistre les notes. Sert à prioriser le démarchage : on appelle d'abord
+   * ceux dont le site est le plus faible, avec les mesures sous les yeux.
+   */
+  onAnalyserSites: (items: BoardItem[]) => void;
   onValidateSites: (items: BoardItem[]) => void;
   onCreateAudits: (items: BoardItem[]) => void;
   onValidateAudits: (items: BoardItem[]) => void;

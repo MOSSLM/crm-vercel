@@ -29,6 +29,7 @@ import {
   ChevronRight,
   MessageSquare,
   ListChecks,
+  Gauge,
   Share2,
   X,
   type LucideIcon,
@@ -849,6 +850,10 @@ function BulkBar({
   // bouton, donc elle est dite avant de cliquer.
   const toSwapTemplate = toRegenerateSite.filter((r) => templateMismatch(r, templateId));
   const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
+  // Analyser le site ACTUEL du prospect ne dépend d'aucune étape du pipeline :
+  // il suffit d'une entreprise. C'est même l'inverse — les notes servent à
+  // décider qui démarcher, donc avant que quoi que ce soit soit construit.
+  const toAnalyse = rows.filter((r) => r.entreprise_id != null);
   const toCreateAudit = rows.filter((r) => !r.audit);
   const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready");
 
@@ -911,6 +916,16 @@ function BulkBar({
         <Check className="ico-sm" />
         Valider les sites
         {ct(toValidateSite.length)}
+      </button>
+      <button
+        className="btn sm"
+        disabled={busy || toAnalyse.length === 0}
+        title="Mesurer le site ACTUEL de ces entreprises (vitesse, SEO, mobile, conversion) pour prioriser le démarchage"
+        onClick={() => bulk.onAnalyserSites(toAnalyse)}
+      >
+        <Gauge className="ico-sm" />
+        Analyser les sites
+        {ct(toAnalyse.length)}
       </button>
       <button className="btn sm" disabled={busy || toCreateAudit.length === 0} onClick={() => bulk.onCreateAudits(toCreateAudit)}>
         <FileText className="ico-sm" />
