@@ -13,7 +13,8 @@
 --     'tweaks','shared_assets','published_tweaks','published_shared_assets',
 --     'style_guide','sitemap','published_style_guide','published_site_config',
 --     'published_sitemap','published_instances','published_variables',
---     'published_reviews','paywall_enabled','booking_url','client_brief'
+--     'published_reviews','paywall_enabled','booking_url','client_brief',
+--     'og_image_url','og_shot_url','og_logo_url','og_generated_at','og_shot_at'
 --   ]) as c(nom)
 --   where not exists (
 --     select 1 from information_schema.columns
@@ -112,6 +113,14 @@ alter table public.sites
   add column if not exists paywall_enabled boolean not null default false,
   add column if not exists booking_url     text,
   add column if not exists client_brief    text;
+
+-- 20260810_sites_og.sql — carte OpenGraph pré-générée (preview WhatsApp)
+alter table public.sites
+  add column if not exists og_image_url    text,
+  add column if not exists og_shot_url     text,
+  add column if not exists og_logo_url     text,
+  add column if not exists og_generated_at timestamptz,
+  add column if not exists og_shot_at      timestamptz;
 
 commit;
 

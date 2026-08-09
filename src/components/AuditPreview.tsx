@@ -8,20 +8,27 @@ import { AuditPage3 } from './audit/AuditPage3';
 import { AuditPage4 } from './audit/AuditPage4';
 import { AuditPage5 } from './audit/AuditPage5';
 import { AuditPage6 } from './audit/AuditPage6';
+import type { AuditLu } from '@/lib/audit-site/lecture';
 
 interface Props {
   content: AuditContent;
   logoUrl?: string;
   activeField?: string | null;
   onFieldClick?: (field: string) => void;
+  /**
+   * Mesures du site actuel, affichées en tête de la page « Situation ».
+   * Optionnelles : sans elles le deck est exactement celui d'avant, ce qui
+   * permet de le rendre pour un audit dont l'entreprise n'a pas été analysée.
+   */
+  audit?: AuditLu | null;
 }
 
-export function AuditPreview({ content, logoUrl, activeField, onFieldClick }: Props) {
+export function AuditPreview({ content, logoUrl, activeField, onFieldClick, audit }: Props) {
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <AuditPage1 content={content} logoUrl={logoUrl} activeField={activeField} onFieldClick={onFieldClick} />
       <div style={{ height: 24, background: '#1a1a1e' }} />
-      <AuditPage2 content={content} activeField={activeField} onFieldClick={onFieldClick} />
+      <AuditPage2 content={content} activeField={activeField} onFieldClick={onFieldClick} audit={audit} />
       <div style={{ height: 24, background: '#1a1a1e' }} />
       <AuditPage3 content={content} activeField={activeField} onFieldClick={onFieldClick} />
       <div style={{ height: 24, background: '#1a1a1e' }} />

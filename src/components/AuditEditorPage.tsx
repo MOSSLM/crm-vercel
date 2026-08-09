@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { ArrowLeft, Download, Save, Check, Loader2, Globe, MapPin } from 'lucide-react';
 import type { Audit, AuditContent, AuditGlobalStyle } from '@/types';
 import { AuditPreview } from './AuditPreview';
+import type { AuditLu } from '@/lib/audit-site/lecture';
 import { saveAudit } from '@/utils/auditApi';
 import {
   problemsFromKeys,
@@ -69,9 +70,11 @@ interface AuditEditorPageProps {
   googleUrl?: string;
   /** Problèmes pré-détectés par l'enrichissement, pour pré-cocher en un clic. */
   detectedIssueKeys?: string[];
+  /** Mesures du site actuel, affichées en tête de la page « Situation ». */
+  siteAudit?: AuditLu | null;
 }
 
-export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys }: AuditEditorPageProps) {
+export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys, siteAudit }: AuditEditorPageProps) {
   const router = useRouter();
   const [content, setContent] = useState<AuditContent>(initialAudit.content);
   const debouncedContent = useDebounce(content, AUDIT_PREVIEW_DEBOUNCE_MS);
@@ -360,6 +363,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
                   logoUrl={logoUrl || undefined}
                   activeField={activeField}
                   onFieldClick={handleFieldClick}
+                  audit={siteAudit}
                 />
                 <div style={{ height: 16 }} />
               </div>

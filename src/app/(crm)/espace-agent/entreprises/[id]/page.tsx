@@ -24,13 +24,16 @@ import {
   Check,
   Monitor,
   History,
+  Share2,
 } from "lucide-react";
 import { formatPrice } from "@/components/agent-portal/format";
 import { AgentExchangeHistory } from "@/components/agent-portal/AgentExchangeHistory";
 import { ClickToCallButton } from "@/components/telephony/ClickToCallButton";
 import { CallJournal } from "@/components/telephony/CallJournal";
-import { SITE_DOMAIN } from "@/lib/site-domain";
+import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import DossierEntreprise from "@/components/donnees-publiques/DossierEntreprise";
+import { CarteAnalyseSite } from "@/components/audit-site/CarteAnalyseSite";
 import BoutonDonneesPubliques from "@/components/donnees-publiques/BoutonDonneesPubliques";
 
 
@@ -41,11 +44,8 @@ type SiteRow = {
   paywall_enabled: boolean | null;
 };
 
-function demoShareUrl(site: SiteRow): string {
-  return site.published_subdomain
-    ? `https://${site.published_subdomain}.${SITE_DOMAIN}`
-    : `https://${site.id}.${SITE_DOMAIN}`;
-}
+// `demoShareUrl` était défini ici ET dans `SiteKanban`, en copies verbatim.
+// Source unique : `@/lib/site-builder/demo-share-url` (voir son en-tête).
 
 type Entreprise = {
   id: number;
@@ -84,6 +84,7 @@ export default function AgentEntrepriseDetailPage() {
   const [claiming, setClaiming] = useState(false);
   const [copied, setCopied] = useState(false);
   const [savingPaywall, setSavingPaywall] = useState(false);
+  const [sharing, setSharing] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -253,6 +254,10 @@ export default function AgentEntrepriseDetailPage() {
           de décrocher, donc ça passe avant le site démo et les opportunités. */}
       <DossierEntreprise entrepriseId={ent.id} />
 
+      {/* Les mesures du site actuel, juste après le dossier public : c'est ce
+          qui donne l'accroche de l'appel, donc ça passe avant le site démo. */}
+      <CarteAnalyseSite entrepriseId={ent.id} />
+
       {!ent.siret && (
         <Card>
           <CardHeader className="pb-2">
@@ -285,7 +290,21 @@ export default function AgentEntrepriseDetailPage() {
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
                 Copier le lien
               </Button>
+              <Button size="sm" className="gap-1" onClick={() => setSharing(true)}>
+                <Share2 className="h-4 w-4" />
+                Partager
+              </Button>
             </div>
+
+            <PartagerDemoDialog
+              open={sharing}
+              onOpenChange={setSharing}
+              demo={site}
+              companyName={ent.name}
+              phone={ent.telephone}
+              entrepriseId={ent.id}
+            />
+
             <div className="flex items-center justify-between rounded-md border px-3 py-2">
               <div>
                 <div className="text-sm font-medium">Paywall d’achat</div>

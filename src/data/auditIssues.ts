@@ -10,10 +10,15 @@ import type { AuditProblem, AuditSolution } from '@/types';
 // l'entreprise (au moins 3). Cocher un problème affiche sa carte sur la
 // page « Situation » ET sa solution pairée sur la page « Solution ».
 //
-// IMPORTANT : les clés (`key`) sont aussi utilisées par l'edge function
-// d'enrichissement Supabase pour pré-cocher les cases automatiquement.
-// Si tu ajoutes / renommes une clé ici, garde-la synchronisée avec
-// `edge function enrich/audit.ts` (AUDIT_ISSUE_KEYS).
+// IMPORTANT : les clés (`key`) sont émises par l'analyseur de sites
+// (`src/lib/audit-site/score.ts`, `issueKeysDepuisSignaux`), qui les écrit
+// dans `entreprises_audit_site.issue_keys`. C'est de là que viennent les
+// cases pré-cochées de l'éditeur.
+//
+// (L'en-tête renvoyait auparavant vers `edge function enrich/audit.ts`
+// (AUDIT_ISSUE_KEYS) : ce fichier n'a jamais existé, et personne n'écrivait
+// donc `audit_detected_issues` — que `AuditWorkspace` lit pourtant depuis
+// toujours.)
 // =====================================================================
 
 export interface AuditIssueDef {
@@ -88,6 +93,22 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
       name: 'Parcours de conversion clair',
       desc: "Des appels à l'action visibles et répétés aux bons endroits, qui guident naturellement le visiteur vers la prise de contact.",
       tag: 'Conversion',
+    },
+  },
+  {
+    // Le cas le plus fréquent et le plus vendable du parc — et il n'était
+    // représentable par aucune carte. Émis quand l'entreprise n'a pas d'URL,
+    // ou quand son site ne répond plus (DNS mort, 4xx/5xx persistant).
+    key: 'no_site_or_unreachable',
+    label: 'Pas de site / site injoignable',
+    problem: {
+      title: "Votre site est introuvable en ligne",
+      desc: "Nous n'avons pas réussi à ouvrir votre site : il n'existe pas, ou il ne répond plus. Pendant ce temps, les clients qui cherchent votre nom sur Google ne trouvent que vos concurrents.",
+    },
+    solution: {
+      name: 'Une présence en ligne, enfin',
+      desc: "Un site complet, en ligne sous 7 jours, qui apparaît quand on cherche votre métier dans votre ville — et qui vous appartient à vie.",
+      tag: 'Visibilité',
     },
   },
   {

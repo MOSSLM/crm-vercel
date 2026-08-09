@@ -29,11 +29,14 @@ import {
   ChevronRight,
   MessageSquare,
   ListChecks,
+  Gauge,
+  Share2,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
+import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import type {
   BoardItem,
   AgentRef,
@@ -186,6 +189,38 @@ function templateMismatch(item: BoardItem, templateId: string): boolean {
 /** Nombre de variables requises encore manquantes (tri « incomplets d'abord »). */
 function missingCount(item: BoardItem): number {
   return item.missing_for_site?.length ?? 0;
+}
+
+/**
+ * « Partager » depuis la cellule Site.
+ *
+ * Un composant à part parce que le rendu des cellules est une simple fonction,
+ * pas un composant : elle ne peut pas porter de `useState`, et le dialogue en a
+ * besoin. C'est aussi le seul endroit du pipeline d'où l'on envoie réellement un
+ * lien, donc le bon endroit pour voir la vignette avant de l'envoyer.
+ */
+function PartagerButton({ item }: { item: BoardItem }) {
+  const [open, setOpen] = React.useState(false);
+  if (!item.site) return null;
+  return (
+    <>
+      <button
+        className="btn ghost sm icon"
+        title="Voir la vignette de partage et envoyer"
+        onClick={() => setOpen(true)}
+      >
+        <Share2 className="ico-sm" />
+      </button>
+      <PartagerDemoDialog
+        open={open}
+        onOpenChange={setOpen}
+        demo={{ id: item.site.id, published_subdomain: item.site.published_subdomain ?? null }}
+        companyName={displayName(item)}
+        entrepriseId={item.entreprise_id}
+        opportuniteId={item.id}
+      />
+    </>
+  );
 }
 
 /** Bouton « Signaler un problème » posé sur les cartes d'étape. */
@@ -590,6 +625,7 @@ function StageActions({ item, stage, done, busy, templateId, templateName, agent
             >
               <RefreshCw className="ico-sm" />
             </button>
+            <PartagerButton item={item} />
             <NoteButton item={item} subject="site" handlers={handlers} />
             {!done && (
               <button className="btn ok sm icon" disabled={busy} title="Valider le site" onClick={() => handlers.onValidateSite(item)}>
@@ -814,6 +850,10 @@ function BulkBar({
   // bouton, donc elle est dite avant de cliquer.
   const toSwapTemplate = toRegenerateSite.filter((r) => templateMismatch(r, templateId));
   const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
+  // Analyser le site ACTUEL du prospect ne dépend d'aucune étape du pipeline :
+  // il suffit d'une entreprise. C'est même l'inverse — les notes servent à
+  // décider qui démarcher, donc avant que quoi que ce soit soit construit.
+  const toAnalyse = rows.filter((r) => r.entreprise_id != null);
   const toCreateAudit = rows.filter((r) => !r.audit);
   const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready");
 
@@ -876,6 +916,16 @@ function BulkBar({
         <Check className="ico-sm" />
         Valider les sites
         {ct(toValidateSite.length)}
+      </button>
+      <button
+        className="btn sm"
+        disabled={busy || toAnalyse.length === 0}
+        title="Mesurer le site ACTUEL de ces entreprises (vitesse, SEO, mobile, conversion) pour prioriser le démarchage"
+        onClick={() => bulk.onAnalyserSites(toAnalyse)}
+      >
+        <Gauge className="ico-sm" />
+        Analyser les sites
+        {ct(toAnalyse.length)}
       </button>
       <button className="btn sm" disabled={busy || toCreateAudit.length === 0} onClick={() => bulk.onCreateAudits(toCreateAudit)}>
         <FileText className="ico-sm" />

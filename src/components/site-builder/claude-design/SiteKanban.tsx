@@ -5,10 +5,12 @@ import Link from "next/link";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
 import { toast } from "sonner";
-import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen, Layers } from "lucide-react";
+import { Pencil, Rocket, GripVertical, Copy, Check, Lock, LockOpen, Layers, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { authedFetch } from "@/utils/authedFetch";
 import { SITE_DOMAIN } from "@/lib/site-domain";
+import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 
 interface Demo {
   id: string;
@@ -39,12 +41,10 @@ const STAGES: Array<{ key: string; label: string; hint: string }> = [
 ];
 
 
-/** Shareable URL for a demo: its deployed subdomain, else the id-based preview. */
-function demoShareUrl(demo: Demo): string {
-  return demo.published_subdomain
-    ? `https://${demo.published_subdomain}.${SITE_DOMAIN}`
-    : `https://${demo.id}.${SITE_DOMAIN}`;
-}
+// `demoShareUrl` vivait ici, en copie verbatim de la fiche entreprise de
+// l'espace agent. Les deux devaient rester d'accord avec le middleware ET avec
+// la route OG — trois endroits à corriger ensemble. Source unique désormais :
+// `@/lib/site-builder/demo-share-url`.
 
 type DragItem = { kind: "demo"; id: string } | { kind: "company"; id: number };
 
@@ -80,6 +80,7 @@ function DemoCard({
     collect: (m) => ({ isDragging: m.isDragging() }),
   }), [demo.id]);
   const [copied, setCopied] = React.useState(false);
+  const [sharing, setSharing] = React.useState(false);
 
   const copyLink = async () => {
     try {
@@ -157,10 +158,27 @@ function DemoCard({
         <Button variant="ghost" size="sm" className="text-xs h-7 gap-1" onClick={copyLink} title="Copier le lien à envoyer au client">
           {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} Lien
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-xs h-7 gap-1"
+          onClick={() => setSharing(true)}
+          title="Voir la vignette de partage et envoyer sur WhatsApp"
+        >
+          <Share2 className="h-3 w-3" /> Partager
+        </Button>
         <Button variant="ghost" size="sm" className="text-xs h-7 gap-1" onClick={() => onDeploy(demo.id)}>
           <Rocket className="h-3 w-3" /> Déployer
         </Button>
       </div>
+
+      <PartagerDemoDialog
+        open={sharing}
+        onOpenChange={setSharing}
+        demo={demo}
+        companyName={demo.company_name ?? demo.name}
+        entrepriseId={demo.enterprise_id}
+      />
     </div>
   );
 }

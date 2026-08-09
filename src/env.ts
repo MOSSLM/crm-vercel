@@ -42,6 +42,13 @@ const envSchema = z
     RENDER_PROVIDER: z.string().min(1).optional(),
     RENDER_API_KEY: z.string().min(1).optional(),
     RENDER_API_URL: z.string().url().optional(),
+    // PageSpeed Insights — la seule source de Core Web Vitals (LCP/CLS/INP),
+    // que l'analyseur maison ne peut pas mesurer sans navigateur.
+    // OPTIONNELLE, et elle doit le rester : ce schéma jette à l'import quand
+    // une variable requise manque, donc la rendre obligatoire casserait tout
+    // le déploiement au lieu de désactiver cette seule fonctionnalité. Sans
+    // clé, le quota public suffit pour un usage à la demande.
+    PAGESPEED_API_KEY: z.string().min(1).optional(),
     // Google Calendar (module Rendez-vous) — optional; the OAuth routes return
     // 503 when absent and the scheduling module works without external busy.
     GOOGLE_CALENDAR_CLIENT_ID: z.string().min(1).optional(),
@@ -81,6 +88,7 @@ const envResult = envSchema.safeParse({
   RENDER_PROVIDER: process.env.RENDER_PROVIDER,
   RENDER_API_KEY: process.env.RENDER_API_KEY,
   RENDER_API_URL: process.env.RENDER_API_URL,
+  PAGESPEED_API_KEY: process.env.PAGESPEED_API_KEY,
   GOOGLE_CALENDAR_CLIENT_ID: process.env.GOOGLE_CALENDAR_CLIENT_ID,
   GOOGLE_CALENDAR_CLIENT_SECRET: process.env.GOOGLE_CALENDAR_CLIENT_SECRET,
   CRON_SECRET: process.env.CRON_SECRET,
@@ -115,6 +123,7 @@ export const {
   RENDER_PROVIDER,
   RENDER_API_KEY,
   RENDER_API_URL,
+  PAGESPEED_API_KEY,
   GOOGLE_CALENDAR_CLIENT_ID,
   GOOGLE_CALENDAR_CLIENT_SECRET,
   CRON_SECRET,

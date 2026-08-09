@@ -6,6 +6,8 @@ import { upsertAudit } from '@/utils/auditApi';
 import { supabase } from '@/utils/supabase/client';
 import { normalizeIssueKeys } from '@/data/auditIssues';
 import type { Audit } from '@/types';
+import type { AuditLu } from '@/lib/audit-site/lecture';
+import { authedFetch } from '@/utils/authedFetch';
 import { Loader2 } from 'lucide-react';
 
 /**
@@ -32,6 +34,8 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
   const [siteUrl, setSiteUrl] = useState<string>('');
   const [googleUrl, setGoogleUrl] = useState<string>('');
   const [detectedIssueKeys, setDetectedIssueKeys] = useState<string[]>([]);
+  /** Mesures du site actuel, pour le bandeau de notes du deck. */
+  const [siteAudit, setSiteAudit] = useState<AuditLu | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,7 +48,7 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
         const [{ data: opp }, { data: plm }, { data: lmp }] = await Promise.all([
           supabase
             .from('opportunites')
-            .select('id, name, entreprise_id, entreprises(name, adresse, ville, logo_url, site_web_canonique, canonical_url, google_url, google_maps_url)')
+            .select('id, name, entreprise_id, entreprises(id, name, adresse, ville, logo_url, site_web_canonique, canonical_url, google_url, google_maps_url)')
             .eq('id', opportuniteId)
             .maybeSingle(),
           supabase
@@ -85,8 +89,35 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
         // avec repli sur son miroir historique puis sur la vraie ville.
         const companyVille = lmpData?.override_city || lmpData?.override_location || company?.ville || '';
 
-        // Problèmes pré-détectés par l'edge function d'enrichissement
-        const detected = normalizeIssueKeys((lmpVariables as { audit_detected_issues?: string[] }).audit_detected_issues);
+        // Problèmes détectés — MESURÉS d'abord, devinés ensuite.
+        //
+        // La source de vérité est `entreprises_audit_site.issue_keys`, écrite par
+        // l'analyseur. `lead_magnet_projects.variables.audit_detected_issues`
+        // n'est plus qu'un repli : c'est l'emplacement historique, lu ici depuis
+        // toujours et que personne n'écrivait — l'« edge function enrich/audit.ts »
+        // annoncée dans `auditIssues.ts` n'a jamais existé.
+        const entrepriseId = (opp as { entreprise_id?: number | null } | null)?.entreprise_id ?? null;
+        let detected: string[] = [];
+
+        if (entrepriseId != null) {
+          // Via l'API plutôt qu'en lecture directe : c'est elle qui applique la
+          // règle de publication (axes en confiance faible retirés) et la
+          // cohabitation PSI / analyseur maison. Les dupliquer ici, c'est
+          // garantir que les deux divergent.
+          const res = await authedFetch(`/api/audit-site/${entrepriseId}`).catch(() => null);
+          const body = res && res.ok
+            ? ((await res.json().catch(() => null)) as { disponible?: boolean; audit?: AuditLu | null } | null)
+            : null;
+          if (body?.disponible && body.audit) {
+            setSiteAudit(body.audit);
+            detected = normalizeIssueKeys(body.audit.issue_keys);
+          }
+        }
+        if (detected.length === 0) {
+          detected = normalizeIssueKeys(
+            (lmpVariables as { audit_detected_issues?: string[] }).audit_detected_issues,
+          );
+        }
         setDetectedIssueKeys(detected);
 
         setOpportunityName((opp as { name?: string } | null)?.name || companyName || opportuniteId);
@@ -131,6 +162,7 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
       siteUrl={siteUrl}
       googleUrl={googleUrl}
       detectedIssueKeys={detectedIssueKeys}
+      siteAudit={siteAudit}
     />
   );
 };

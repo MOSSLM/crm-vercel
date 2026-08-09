@@ -13,10 +13,22 @@
  * Security: arbitrary user-supplied URLs are fetched server-side, so we apply an
  * SSRF guard (block localhost / private / link-local addresses, resolved via
  * DNS) before connecting, and re-validate the final URL after redirects.
+ *
+ * La couche « atteindre » (garde SSRF, en-têtes de navigateur, variantes
+ * www/apex, marqueurs anti-robot) vit désormais dans `@/lib/http/reach-page`,
+ * partagée avec l'analyseur de sites. Ce module garde ce qui lui est propre :
+ * la validation du contenu et la normalisation pour l'IA — qui détruit les
+ * balises que l'audit doit compter, d'où la séparation.
  */
-import { isIP } from "node:net";
-import { lookup } from "node:dns/promises";
-import { buildUrlCandidates } from "@/lib/http/url-variants";
+import {
+  BLOCK_MARKERS,
+  ReachError,
+  assertFinalHost,
+  blockMarkerIn,
+  normalizeUrlInput,
+  reachPage,
+  visibleTextLength,
+} from "@/lib/http/reach-page";
 import { normalizeImportedHtml, type NormalizeResult } from "./normalize-imported-html";
 import { extractPageAssets } from "@/lib/ai/import-page-sections";
 import { slimImportHtml } from "@/lib/ai/slim-import-html";
@@ -50,177 +62,44 @@ const PASTE_HINT =
 const FETCH_TIMEOUT_MS = 25_000;
 const MAX_BYTES = 5_000_000;
 
-const BROWSER_HEADERS: Record<string, string> = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-  "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
-  "Upgrade-Insecure-Requests": "1",
-  "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-  "Sec-Ch-Ua-Mobile": "?0",
-  "Sec-Ch-Ua-Platform": '"Windows"',
-  "Sec-Fetch-Dest": "document",
-  "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "none",
-  "Sec-Fetch-User": "?1",
-};
+/** Ré-exporté : des appelants historiques importaient la liste depuis ici. */
+export { BLOCK_MARKERS };
 
-/** Markers of anti-bot challenge pages / JS-gated walls. */
-const BLOCK_MARKERS = [
-  "just a moment",
-  "cf-browser-verification",
-  "cf_chl_",
-  "/cdn-cgi/challenge-platform",
-  "attention required! | cloudflare",
-  "enable javascript and cookies",
-  "captcha-delivery",
-  "datadome",
-  "perimeterx",
-  "px-captcha",
-  "incapsula",
-  "_imperva",
-];
-
-function ipv4ToOctets(ip: string): number[] | null {
-  const parts = ip.split(".");
-  if (parts.length !== 4) return null;
-  const nums = parts.map((p) => Number(p));
-  if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
-  return nums;
-}
-
-/** Private / loopback / link-local / reserved address check (IPv4 + IPv6). */
-function isPrivateIp(ip: string): boolean {
-  const v4 = ipv4ToOctets(ip);
-  if (v4) {
-    const [a, b] = v4;
-    if (a === 10 || a === 127 || a === 0) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true; // link-local
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    return false;
-  }
-  const v6 = ip.toLowerCase();
-  if (v6 === "::1" || v6 === "::") return true;
-  if (v6.startsWith("fc") || v6.startsWith("fd")) return true; // unique-local
-  if (v6.startsWith("fe80")) return true; // link-local
-  const mapped = v6.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIp(mapped[1]);
-  return false;
-}
-
-/** Reject hostnames that resolve to internal/private addresses (SSRF guard). */
-async function assertPublicHost(hostname: string): Promise<void> {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".local") || h.endsWith(".internal") || h.endsWith(".localhost")) {
-    throw new FetchPageError("Adresse non autorisée.", 400);
-  }
-  let addresses: string[];
-  if (isIP(h)) {
-    addresses = [h];
-  } else {
-    try {
-      const resolved = await lookup(h, { all: true });
-      addresses = resolved.map((r) => r.address);
-    } catch {
-      throw new FetchPageError("Nom de domaine introuvable.", 400);
-    }
-  }
-  if (addresses.length === 0 || addresses.some(isPrivateIp)) {
-    throw new FetchPageError("Adresse non autorisée (réseau interne).", 400);
-  }
-}
-
-/** Parse + validate a user-supplied URL; default the scheme to https. */
-function normalizeUrlInput(input: string): URL {
-  let s = input.trim();
-  if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
-  let url: URL;
-  try {
-    url = new URL(s);
-  } catch {
-    throw new FetchPageError("URL invalide.", 400);
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new FetchPageError("Seules les URLs http(s) sont prises en charge.", 400);
-  }
-  return url;
-}
-
-/** Rough text length with tags stripped — to spot empty SPA shells. */
-function visibleTextLength(html: string): number {
-  return html
-    .replace(/<(script|style|head|noscript)[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim().length;
+/** `ReachError` porte déjà message / statut / indication : on ne fait que retyper. */
+function asFetchPageError(e: unknown): FetchPageError {
+  if (e instanceof ReachError) return new FetchPageError(e.message, e.status, e.hint ?? PASTE_HINT);
+  if (e instanceof FetchPageError) return e;
+  return new FetchPageError("Impossible de joindre l'URL.", 504, PASTE_HINT);
 }
 
 function detectBlocked(html: string): string | null {
-  const lower = html.toLowerCase();
-  for (const m of BLOCK_MARKERS) {
-    if (lower.includes(m)) return "Le site affiche une protection anti-robot.";
-  }
+  if (blockMarkerIn(html)) return "Le site affiche une protection anti-robot.";
   if (visibleTextLength(html) < 200 && /<script/i.test(html)) {
     return "La page semble rendue côté JavaScript (peu de contenu statique).";
   }
   return null;
 }
 
-/**
- * Joint l'URL, en essayant les variantes www/apex et https/http.
- *
- * Un `www` en trop ou un `https` que le serveur ne sert pas suffisait à faire
- * échouer l'import sur un site parfaitement en ligne. On ne bascule QUE sur les
- * échecs de connexion : un site qui répond (même par une erreur HTTP) a bien été
- * joint, et son message doit remonter tel quel.
- */
-async function reachPage(url: URL): Promise<Response> {
-  const candidates = buildUrlCandidates(url.href);
-  let lastError: FetchPageError | null = null;
-
-  for (const candidate of candidates.length > 0 ? candidates : [url.href]) {
-    const target = new URL(candidate);
-    try {
-      await assertPublicHost(target.hostname);
-    } catch (e) {
-      // Hôte refusé (réseau interne) : la variante est écartée, pas l'import.
-      lastError = e instanceof FetchPageError ? e : lastError;
-      continue;
-    }
-    try {
-      return await fetch(target.href, {
-        method: "GET",
-        headers: BROWSER_HEADERS,
-        redirect: "follow",
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-    } catch (e) {
-      const aborted = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-      lastError = new FetchPageError(
-        aborted ? "Délai dépassé lors de la récupération de la page." : "Impossible de joindre l'URL.",
-        504,
-        PASTE_HINT,
-      );
-    }
+export async function fetchPageHtml(input: string): Promise<FetchPageResult> {
+  let url: URL;
+  try {
+    url = normalizeUrlInput(input);
+  } catch (e) {
+    throw asFetchPageError(e);
   }
 
-  throw lastError ?? new FetchPageError("Impossible de joindre l'URL.", 504, PASTE_HINT);
-}
-
-export async function fetchPageHtml(input: string): Promise<FetchPageResult> {
-  const url = normalizeUrlInput(input);
-  const res = await reachPage(url);
+  let res: Response;
+  try {
+    res = await reachPage(url, { timeoutMs: FETCH_TIMEOUT_MS, hint: PASTE_HINT });
+  } catch (e) {
+    throw asFetchPageError(e);
+  }
 
   // Re-validate after redirects (best-effort SSRF guard against open redirects).
   try {
-    const finalHost = new URL(res.url || url.href).hostname;
-    if (finalHost.toLowerCase() !== url.hostname.toLowerCase()) {
-      await assertPublicHost(finalHost);
-    }
+    await assertFinalHost(res.url || url.href, url.hostname);
   } catch (e) {
-    if (e instanceof FetchPageError) throw e;
+    throw asFetchPageError(e);
   }
 
   if (res.status === 403 || res.status === 429 || res.status === 503) {
