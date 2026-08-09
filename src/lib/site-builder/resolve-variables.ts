@@ -171,6 +171,13 @@ export async function resolveEnterpriseVariables(
     if (rgePourSite.logos.length > 0) {
       vars["__certifications"] = JSON.stringify(rgePourSite.logos);
     }
+    // Une liste de logos vide ne dit PAS si l'entreprise n'a rien : elle peut
+    // aussi bien n'avoir jamais été interrogée. Les deux cas appellent des
+    // comportements opposés — retirer les badges, ou ne toucher à rien — d'où ce
+    // drapeau explicite plutôt qu'une déduction sur `__certifications`.
+    if (rgePourSite.etat.aSiret && rgePourSite.etat.rgeInterroge) {
+      vars["__rge_verifie"] = "1";
+    }
 
     const [projResult, reviewsResult] = await Promise.all([
       supabase

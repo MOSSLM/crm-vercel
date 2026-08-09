@@ -16,7 +16,13 @@ import { conditionServiceMarkup } from "@/lib/site-builder/claude-design/conditi
 import { resolveImageSets } from "@/lib/site-builder/claude-design/resolve-image-sets";
 import { stampDomPaths } from "@/lib/site-builder/claude-design/dom-paths";
 import { hydrateReviews } from "@/lib/site-builder/claude-design/hydrate-reviews";
-import { hydrateCertifications, logosDepuisVariables, porteDesCertifications } from "@/lib/site-builder/claude-design/certifications-from-variables";
+import {
+  etatBadgesDepuisVariables,
+  filterRgeBadges,
+  hydrateCertifications,
+  logosDepuisVariables,
+  porteDesCertifications,
+} from "@/lib/site-builder/claude-design/certifications-from-variables";
 import { hydrateStats } from "@/lib/site-builder/claude-design/hydrate-stats";
 import { interpolateData } from "@/lib/library-section/interpolate";
 import { generateColorShades } from "@/lib/color-utils";
@@ -188,6 +194,13 @@ export async function LibrarySectionInline({
   if (porteDesCertifications(html)) {
     html = hydrateCertifications(html, logosDepuisVariables(variables?.["__certifications"]));
   }
+  // Les badges TEXTE du pied de page, que le bandeau de logos ne couvre pas.
+  // 450 sections affichent « RGE QualiPAC · Qualibat · Qualifelec » en dur, et
+  // les 47 qui portent aussi le bandeau les portent toutes : sans ce passage,
+  // retirer les logos laissait le pied de page revendiquer trois
+  // qualifications. Purement soustractif, et sans effet tant que rien n'est
+  // vérifié.
+  html = filterRgeBadges(html, etatBadgesDepuisVariables(variables));
   // One line per section per request, on every published page — noise in the
   // platform logs, and billed there. Keep it for the cases worth knowing about:
   // a render error, or overrides that resolved to no node (a design edit whose

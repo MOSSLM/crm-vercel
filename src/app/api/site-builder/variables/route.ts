@@ -204,6 +204,11 @@ export const GET = withAuth({}, async ({ req }) => {
   if (rge.logos.length > 0) {
     variables["__certifications"] = JSON.stringify(rge.logos);
   }
+  // Cf. `resolve-variables.ts` : une liste vide ne distingue pas « rien » de
+  // « jamais interrogé », et les deux cas appellent des comportements opposés.
+  if (rge.etat.aSiret && rge.etat.rgeInterroge) {
+    variables["__rge_verifie"] = "1";
+  }
 
   let projectServiceTags: string[] | null = null;
   let projectStats: StatItem[] | null = null;
