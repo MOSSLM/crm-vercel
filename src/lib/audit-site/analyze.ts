@@ -223,32 +223,126 @@ function attr(root: HTMLElement, selector: string, name: string): string | null 
 }
 
 /**
+ * Balises dont l'attribut `width` décrit une dimension INTRINSÈQUE, et non une
+ * largeur de mise en page.
+ *
+ * `<img width="1200">` est le balisage normal d'une image adaptative — WordPress
+ * et Next.js l'écrivent systématiquement — et le CSS la rend fluide par un
+ * `max-width: 100%`. En le comptant comme « élément figé », l'analyseur relevait
+ * jusqu'à 502 largeurs fixes sur une seule page, et déclarait « site mal adapté
+ * au mobile » sur 21 des 22 sites concernés, dont un seul manquait réellement de
+ * `meta viewport`.
+ */
+const BALISES_DIMENSION_INTRINSEQUE = new Set([
+  "img", "svg", "video", "canvas", "iframe", "embed", "object", "source", "picture", "input",
+]);
+
+/**
+ * Le motif qui distingue `width` de `max-width`.
+ *
+ * `/(?:min-)?width/` reconnaissait « width » à l'intérieur de « max-width » :
+ * l'idiome le plus adaptatif du CSS était donc compté à charge. La garde arrière
+ * refuse tout tiret ou toute lettre avant le mot ; `min-` reste admis parce qu'il
+ * est consommé par le groupe optionnel avant que la garde ne s'applique.
+ */
+const MOTIF_LARGEUR_FIGEE = String.raw`(?<![-\w])(?:min-)?width\s*:\s*(\d{2,5})\s*px`;
+
+const motifLargeur = () => new RegExp(MOTIF_LARGEUR_FIGEE, "gi");
+
+/**
  * Éléments dont la largeur est figée au-delà de ce qu'un téléphone affiche.
- * On regarde l'attribut `width` HTML et les `width: NNNpx` du CSS inline —
- * les deux marqueurs d'un site conçu avant le mobile.
+ *
+ * Quatre règles, chacune née d'un faux positif constaté en base :
+ * 1. les dimensions intrinsèques ne comptent pas ;
+ * 2. `max-width` n'est pas `width` ;
+ * 3. un élément ne compte qu'une fois, même s'il porte `width` ET `style` ;
+ * 4. une largeur accompagnée d'un `max-width` fluide ne fige rien.
  */
 function compterLargeursFixes(root: HTMLElement, css: string): number {
   let n = 0;
+
   for (const el of root.querySelectorAll("[width], [style]")) {
-    const w = Number(el.getAttribute("width"));
-    if (Number.isFinite(w) && w > SEUILS.largeurMobilePx) n++;
+    const balise = (el.rawTagName ?? "").toLowerCase();
+    let fige = false;
+
+    if (!BALISES_DIMENSION_INTRINSEQUE.has(balise)) {
+      const w = Number(el.getAttribute("width"));
+      if (Number.isFinite(w) && w > SEUILS.largeurMobilePx) fige = true;
+    }
+
     const style = el.getAttribute("style") ?? "";
-    const m = /width\s*:\s*(\d+)\s*px/i.exec(style);
-    if (m && Number(m[1]) > SEUILS.largeurMobilePx) n++;
+    if (style && !aUneLargeurFluide(style)) {
+      for (const m of style.matchAll(motifLargeur())) {
+        if (Number(m[1]) > SEUILS.largeurMobilePx) fige = true;
+      }
+    }
+
+    if (fige) n++;
   }
-  // Les largeurs figées d'une feuille inline comptent autant : c'est le même
-  // symptôme, écrit ailleurs.
-  for (const m of css.matchAll(/(?:min-)?width\s*:\s*(\d{3,4})\s*px/gi)) {
-    if (Number(m[1]) > SEUILS.largeurMobilePx) n++;
+
+  // Les largeurs figées d'une feuille de style comptent autant — sauf celles qui
+  // vivent dans une media query, dont c'est précisément le rôle de ne s'appliquer
+  // qu'aux grands écrans.
+  for (const bloc of cssHorsMediaQueries(css)) {
+    for (const m of bloc.matchAll(motifLargeur())) {
+      if (Number(m[1]) > SEUILS.largeurMobilePx) n++;
+    }
   }
+
   return n;
+}
+
+/** `max-width: 100%` (ou `auto`, ou une unité relative) rend la largeur fluide. */
+function aUneLargeurFluide(style: string): boolean {
+  return /max-width\s*:\s*(100\s*%|none|auto|\d+\s*(vw|%))/i.test(style);
+}
+
+/**
+ * Le CSS débarrassé de ses blocs `@media`.
+ *
+ * Sans cette découpe, une feuille correctement écrite — largeurs fixes réservées
+ * au bureau dans un `@media (min-width: 1024px)` — était comptée à charge, à
+ * rebours exact de ce que ces règles font.
+ */
+export function cssHorsMediaQueries(css: string): string[] {
+  const out: string[] = [];
+  let reste = css;
+
+  for (;;) {
+    const debut = reste.search(/@media[^{]*\{/i);
+    if (debut === -1) {
+      out.push(reste);
+      break;
+    }
+    out.push(reste.slice(0, debut));
+
+    // Sauter le bloc en comptant les accolades : une media query contient des
+    // règles, donc des accolades imbriquées.
+    let i = reste.indexOf("{", debut);
+    let profondeur = 0;
+    for (; i < reste.length; i++) {
+      if (reste[i] === "{") profondeur++;
+      else if (reste[i] === "}") {
+        profondeur--;
+        if (profondeur === 0) break;
+      }
+    }
+    if (i >= reste.length) break; // accolade jamais refermée : on s'arrête là
+    reste = reste.slice(i + 1);
+  }
+
+  return out;
 }
 
 /** Tailles de police en dur sous 12 px : illisible sur un téléphone. */
 function compterPolicesTropPetites(css: string): number {
   let n = 0;
-  for (const m of css.matchAll(/font-size\s*:\s*(\d+(?:\.\d+)?)\s*px/gi)) {
-    if (Number(m[1]) < 12) n++;
+  for (const bloc of cssHorsMediaQueries(css)) {
+    for (const m of bloc.matchAll(/font-size\s*:\s*(\d+(?:\.\d+)?)\s*px/gi)) {
+      const taille = Number(m[1]);
+      // `font-size: 0` est une technique de mise en page, pas un texte illisible.
+      if (taille > 0 && taille < 12) n++;
+    }
   }
   return n;
 }
