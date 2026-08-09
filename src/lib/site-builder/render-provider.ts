@@ -126,6 +126,21 @@ export interface ViewportShotOptions extends RenderOptions {
    * téléphone sur une carte de vente.
    */
   viewportWidth?: number;
+  /**
+   * Ne demander AUCUN cadrage au service : on récupère ce qu'il rend
+   * nativement et on normalise nous-mêmes avec sharp.
+   *
+   * POURQUOI CE MODE EXISTE. Sur une capture mobile, thum.io rend la page dans
+   * une fenêtre de 390 POINTS mais produit une image de 780 PIXELS — double
+   * densité. Lui demander en plus une sortie de 390 px de large ne la réduit
+   * pas : il la ROGNE. On perd alors toute la colonne de droite — menu burger
+   * compris — et le texte est coupé en plein mot.
+   *
+   * Plutôt que de deviner le facteur de densité de chaque service, on prend le
+   * rendu tel quel et on le met à la bonne taille localement, où l'on maîtrise
+   * exactement ce qui se passe.
+   */
+  sortieNative?: boolean;
   /** Qualité JPEG (ScreenshotOne uniquement). */
   quality?: number;
 }
@@ -235,13 +250,19 @@ async function shotThumIo(
   // `viewportWidth` AVANT `width` : le premier fixe la fenêtre du navigateur —
   // donc la mise en page — le second la taille du fichier rendu. Les confondre
   // produit un site desktop rétréci (voir `ViewportShotOptions.viewportWidth`).
-  const fenetre = `viewportWidth/${viewportWidth}/width/${width}/crop/${height}`;
+  // En sortie native, on ne fixe QUE la fenêtre : ni `width` ni `crop`, qui
+  // rognent au lieu de réduire (voir `sortieNative`).
+  const fenetre = opts.sortieNative
+    ? `viewportWidth/${viewportWidth}`
+    : `viewportWidth/${viewportWidth}/width/${width}/crop/${height}`;
   const avecAttente = (secondes: number) =>
     `https://image.thum.io/get/${fenetre}/wait/${secondes}/noanimate/${url}`;
   // Repli sans `viewportWidth` ni `wait` : si thum.io ne reconnaît pas une de
   // ces options, mieux vaut une capture desktop qu'aucune capture. L'appelant
   // écarte ensuite le téléphone si les deux images se ressemblent trop.
-  const sansAttente = `https://image.thum.io/get/width/${width}/crop/${height}/${url}`;
+  const sansAttente = opts.sortieNative
+    ? `https://image.thum.io/get/viewportWidth/${viewportWidth}/${url}`
+    : `https://image.thum.io/get/width/${width}/crop/${height}/${url}`;
 
   const tenter = async (endpoint: string, repli: string): Promise<RenderedVisual> => {
     try {

@@ -73,8 +73,21 @@ export async function ensureDemoScreenshot(
   // série, la carte demanderait une demi-minute et l'opérateur abandonnerait.
   // Menées ensemble, elles coûtent le temps de la plus lente.
   const [ordinateur, mobile] = await Promise.all([
-    capturer(siteId, demoUrl, SHOT_WIDTH, SHOT_HEIGHT, MAX_SHOT_BYTES, "ordinateur"),
-    capturer(siteId, demoUrl, MOBILE_WIDTH, MOBILE_HEIGHT, MAX_MOBILE_BYTES, "mobile"),
+    capturer(siteId, demoUrl, {
+      largeur: SHOT_WIDTH,
+      hauteur: SHOT_HEIGHT,
+      maxOctets: MAX_SHOT_BYTES,
+      quoi: "ordinateur",
+    }),
+    capturer(siteId, demoUrl, {
+      largeur: MOBILE_WIDTH,
+      hauteur: MOBILE_HEIGHT,
+      maxOctets: MAX_MOBILE_BYTES,
+      quoi: "mobile",
+      // Le service rend en double densité : on prend sa sortie telle quelle et
+      // on la met à la bonne taille ici, sinon il rogne la colonne de droite.
+      sortieNative: true,
+    }),
   ]);
 
   // La capture ordinateur commande : sans elle il n'y a pas de mockup, donc la
@@ -132,18 +145,28 @@ export async function ensureDemoScreenshot(
   };
 }
 
-/** Une capture, vérifiée et compressée. Ne lève pas. */
+interface OptionsCapture {
+  largeur: number;
+  hauteur: number;
+  maxOctets: number;
+  quoi: string;
+  sortieNative?: boolean;
+}
+
+/** Une capture, vérifiée, recadrée et compressée. Ne lève pas. */
 async function capturer(
   siteId: string,
   url: string,
-  width: number,
-  height: number,
-  maxBytes: number,
-  quoi: string,
+  { largeur, hauteur, maxOctets, quoi, sortieNative }: OptionsCapture,
 ): Promise<{ bytes: Buffer | null; warning?: string }> {
   let raw: ArrayBuffer;
   try {
-    const visual = await renderViewportShot(url, { width, height });
+    const visual = await renderViewportShot(url, {
+      width: largeur,
+      height: hauteur,
+      viewportWidth: largeur,
+      sortieNative,
+    });
     raw = visual.bytes;
   } catch (e) {
     const reason = e instanceof Error ? e.message : "capture impossible";
@@ -165,7 +188,7 @@ async function capturer(
   }
 
   try {
-    return { bytes: await compressUnder(raw, maxBytes, width) };
+    return { bytes: await normaliser(raw, largeur, hauteur, maxOctets) };
   } catch (e) {
     const reason = e instanceof Error ? e.message : "image illisible";
     console.warn(`[og] capture ${quoi} ${siteId} non traitable : ${reason}`);
@@ -174,25 +197,30 @@ async function capturer(
 }
 
 /**
- * Redimensionne en 1200 de large et descend la qualité JPEG jusqu'à passer sous
- * `maxBytes`. Trois paliers suffisent en pratique ; au-delà on rend quand même,
- * parce qu'une capture un peu lourde vaut mieux que pas de capture.
+ * Met la capture aux dimensions exactes attendues par la carte, puis compresse.
+ *
+ * `fit: "cover"` avec `position: "top"` fait les deux choses qui comptent :
+ * l'image occupe toute la largeur — donc plus rien n'est coupé sur les côtés —
+ * et c'est le HAUT de la page qui est conservé quand elle est trop longue.
+ * C'est le seul cadrage défendable : le haut d'un site, c'est son identité et
+ * son appel à l'action, pas son pied de page.
+ *
+ * Le redimensionnement se fait ICI plutôt que chez le service de capture parce
+ * que celui-ci rogne au lieu de réduire (voir `sortieNative`).
  */
-async function compressUnder(
+async function normaliser(
   input: ArrayBuffer,
-  maxBytes: number,
-  largeurCible = 1200,
+  largeur: number,
+  hauteur: number,
+  maxOctets: number,
 ): Promise<Buffer> {
   const source = Buffer.from(input);
+  const cadrer = () =>
+    sharp(source).resize({ width: largeur, height: hauteur, fit: "cover", position: "top" });
+
   for (const quality of [80, 68, 55]) {
-    const out = await sharp(source)
-      .resize({ width: largeurCible, withoutEnlargement: true })
-      .jpeg({ quality, mozjpeg: true })
-      .toBuffer();
-    if (out.length <= maxBytes) return out;
+    const out = await cadrer().jpeg({ quality, mozjpeg: true }).toBuffer();
+    if (out.length <= maxOctets) return out;
   }
-  return sharp(source)
-    .resize({ width: largeurCible, withoutEnlargement: true })
-    .jpeg({ quality: 45, mozjpeg: true })
-    .toBuffer();
+  return cadrer().jpeg({ quality: 45, mozjpeg: true }).toBuffer();
 }
