@@ -19,7 +19,6 @@
 import { json } from "@/app/api/_lib/respond";
 import { getServiceClient } from "@/app/api/_lib/service-client";
 import { analyserLot, chargerCibles, compterCandidats } from "@/lib/audit-site/service";
-import { preparerCartesManquantes } from "@/lib/og/preparer-cartes-manquantes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,9 +44,7 @@ const verifyCron = (req: Request): boolean => {
 };
 
 /** Budget sous `maxDuration`, pour rendre un compte plutôt qu'une 504. */
-const BUDGET_MS = 45_000;
-/** Part du budget laissée aux cartes OG en retard (voir plus bas). */
-const BUDGET_OG_MS = 8_000;
+const BUDGET_MS = 50_000;
 
 async function handle(req: Request): Promise<Response> {
   if (!verifyCron(req)) return json({ error: "Unauthorized" }, { status: 401 });
@@ -90,17 +87,9 @@ async function handle(req: Request): Promise<Response> {
 
   const { traitees, reste } = await analyserLot(sb, cibles, {
     declencheur: "cron",
-    budgetMs: BUDGET_MS - BUDGET_OG_MS,
+    budgetMs: BUDGET_MS,
     ttlJours: r.ttl_jours ?? 30,
   });
-
-  // Filet pour les envois automatiques (séquences), qui ne passent par aucun
-  // dialogue « Partager » et n'ont donc jamais fait fabriquer leur carte OG.
-  // Un petit lot par tick suffit : ce sont des sites déjà publiés, pas un parc.
-  const cartes = await preparerCartesManquantes(sb, {
-    limite: 3,
-    budgetMs: Math.max(0, BUDGET_MS - (Date.now() - debut)),
-  }).catch(() => ({ preparees: 0, echecs: 0 }));
 
   return json({
     ok: true,
@@ -110,7 +99,6 @@ async function handle(req: Request): Promise<Response> {
     reste,
     injoignables: traitees.filter((t) => t.statut === "injoignable").length,
     erreurs: traitees.filter((t) => t.statut === "erreur").length,
-    cartes_og: cartes,
     duree_ms: Date.now() - debut,
   });
 }

@@ -854,6 +854,9 @@ function BulkBar({
   // il suffit d'une entreprise. C'est même l'inverse — les notes servent à
   // décider qui démarcher, donc avant que quoi que ce soit soit construit.
   const toAnalyse = rows.filter((r) => r.entreprise_id != null);
+  // Toute ligne qui a un site peut voir sa vignette préparée — publiée ou non,
+  // puisque c'est justement le lien d'aperçu qui part le plus souvent.
+  const toVignette = rows.filter((r) => r.site);
   const toCreateAudit = rows.filter((r) => !r.audit);
   const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready");
 
@@ -916,6 +919,16 @@ function BulkBar({
         <Check className="ico-sm" />
         Valider les sites
         {ct(toValidateSite.length)}
+      </button>
+      <button
+        className="btn sm"
+        disabled={busy || toVignette.length === 0}
+        title="Fabriquer à l'avance la vignette WhatsApp de ces sites — indispensable avant une campagne automatique"
+        onClick={() => bulk.onPreparerVignettes(toVignette)}
+      >
+        <Share2 className="ico-sm" />
+        Préparer les vignettes
+        {ct(toVignette.length)}
       </button>
       <button
         className="btn sm"

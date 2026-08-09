@@ -150,6 +150,15 @@ export interface BulkHandlers {
    * ceux dont le site est le plus faible, avec les mesures sous les yeux.
    */
   onAnalyserSites: (items: BoardItem[]) => void;
+  /**
+   * Fabrique à l'avance la vignette de partage des sites sélectionnés.
+   *
+   * Indispensable AVANT une campagne automatique : une séquence n'ouvre aucun
+   * dialogue, et un robot d'unfurl abandonne bien avant qu'une carte soit
+   * fabriquée. Sans carte préparée, le lien part en URL nue — et le vide est
+   * mis en cache par le destinataire.
+   */
+  onPreparerVignettes: (items: BoardItem[]) => void;
   onValidateSites: (items: BoardItem[]) => void;
   onCreateAudits: (items: BoardItem[]) => void;
   onValidateAudits: (items: BoardItem[]) => void;
