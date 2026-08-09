@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { ensureHostedLogo } from "@/lib/site-builder/ensure-hosted-logo";
 import { resolveEnterpriseVariables } from "@/lib/site-builder/resolve-variables";
+import { UNDEFINED_COLUMN, missingColumnFrom, type PgErrorLike } from "@/lib/schema-drift";
 
 export interface PublishSiteResult {
   ok: boolean;
@@ -86,16 +87,24 @@ export async function publishSite(
     published_shared_assets: (currentSite as { shared_assets?: unknown } | null)?.shared_assets ?? null,
     published_tweaks: (currentSite as { tweaks?: unknown } | null)?.tweaks ?? null,
     published_at: new Date().toISOString(),
+    // Carte de partage : on INVALIDE, on ne régénère pas.
+    //
+    // Régénérer ici coûterait une capture — plusieurs secondes — et
+    // `publishSite` est appelé EN BOUCLE par `deploy-batch`. Publier 50 sites
+    // partirait droit en timeout, pour une image que personne ne regarde encore.
+    // La fabrication a lieu à l'ouverture du dialogue « Partager », c'est-à-dire
+    // juste avant l'envoi, et le cron ramasse ce qui reste.
+    //
+    // La capture est invalidée avec la carte : elle montrerait l'état d'AVANT
+    // la republication, ce qui est précisément ce qu'on vient de corriger.
+    og_image_url: null,
+    og_shot_url: null,
+    og_generated_at: null,
   };
   if (subdomain) updatePayload.published_subdomain = subdomain;
   if (domain) updatePayload.published_domain = domain;
 
-  const { data, error } = await supabase
-    .from("sites")
-    .update(updatePayload)
-    .eq("id", siteId)
-    .select()
-    .single();
+  const { data, error } = await updateDroppingMissingColumns(supabase, siteId, updatePayload);
 
   if (error) {
     if (error.code === "23505") return { ok: false, error: "Ce sous-domaine est déjà utilisé par un autre site", status: 409 };
@@ -108,4 +117,47 @@ export async function publishSite(
     publishedSubdomain: (data as { published_subdomain?: string | null } | null)?.published_subdomain ?? subdomain ?? null,
     ...(logo.warnings.length ? { warnings: logo.warnings } : {}),
   };
+}
+
+/**
+ * `update` sur `sites`, en retirant les colonnes que CET environnement n'a pas.
+ *
+ * Pendant sur le chemin d'écriture de `selectDroppingMissingColumns`, et pour la
+ * même raison — les migrations s'appliquent à la main, donc un environnement
+ * traîne régulièrement d'une colonne. La différence est que l'écriture est plus
+ * dangereuse que la lecture : un `update` qui nomme une colonne absente échoue
+ * ENTIÈREMENT, et ici cela rendrait tout site impubliable. C'est exactement le
+ * scénario qui avait déjà mis tous les sites hors ligne (une seule colonne
+ * manquante, `paywall_enabled`, cf. `docs/site-builder-v2.md`).
+ *
+ * Les colonnes retirées ici ne portent que la carte de partage : la perdre
+ * dégrade la vignette WhatsApp, elle n'empêche rien.
+ */
+async function updateDroppingMissingColumns(
+  supabase: SupabaseClient,
+  siteId: string,
+  payload: Record<string, unknown>,
+): Promise<{ data: unknown; error: PgErrorLike | null }> {
+  const remaining = { ...payload };
+
+  for (;;) {
+    const { data, error } = await supabase
+      .from("sites")
+      .update(remaining)
+      .eq("id", siteId)
+      .select()
+      .single();
+
+    if (!error || error.code !== UNDEFINED_COLUMN) return { data, error };
+
+    const missing = missingColumnFrom(error.message);
+    if (!missing || !(missing in remaining)) return { data, error };
+
+    delete remaining[missing];
+    console.warn(
+      `[publish-site] colonne « ${missing} » absente de la base — publication ` +
+        `poursuivie sans elle (migration SQL non appliquée sur cet environnement).`,
+    );
+    if (Object.keys(remaining).length === 0) return { data, error };
+  }
 }

@@ -93,6 +93,9 @@ interface SiteRowLike {
   tweaks?: Record<string, unknown> | null;
   published_shared_assets?: ClaudeSharedAssets | null;
   published_tweaks?: Record<string, unknown> | null;
+  og_image_url?: string | null;
+  og_shot_url?: string | null;
+  og_logo_url?: string | null;
 }
 
 /** Columns read for a PUBLISHED site (`resolveSite`). */
@@ -102,12 +105,14 @@ const PUBLISHED_SITE_COLUMNS = [
   "published_style_guide", "published_site_config", "published_sitemap", "published_instances",
   "published_variables", "published_reviews", "is_claude_design", "shared_assets", "tweaks",
   "published_shared_assets", "published_tweaks",
+  "og_image_url", "og_shot_url", "og_logo_url",
 ] as const;
 
 /** Columns read for a DRAFT/template site (`resolveDraftSite`). */
 const DRAFT_SITE_COLUMNS = [
   "id", "name", "enterprise_id", "paywall_enabled", "booking_url", "lead_magnet_project_id",
   "site_config", "style_guide", "sitemap", "is_claude_design", "shared_assets", "tweaks",
+  "og_image_url", "og_shot_url", "og_logo_url",
 ] as const;
 
 function warnDroppedColumns(where: string, dropped: string[]) {
@@ -150,6 +155,16 @@ export interface ResolvedSite {
   publishedSitemap?: SitemapPage[] | null;
   /** Site-level SEO/social defaults from the published site_config snapshot. */
   seo?: SeoMeta | null;
+  /** Carte OpenGraph pré-générée (URL storage). null ⇒ à fabriquer.
+   *  Toujours lue avec `?? null` : la colonne peut manquer en base — c'est la
+   *  règle de `schema-drift.ts`, et c'est ce qui empêche une migration non
+   *  appliquée de remettre tous les sites hors ligne. */
+  ogImageUrl?: string | null;
+  /** Capture du site démo intégrée à la carte. Son absence bascule la carte sur
+   *  sa variante sans mockup, jamais sur une image blanche. */
+  ogShotUrl?: string | null;
+  /** Logo client normalisé en PNG pour satori. */
+  ogLogoUrl?: string | null;
   /** Claude Design render data (shared CSS/JS, fonts, remote script libs, theme)
    *  when this is one. `js`/`scriptLinks` carry the design's own runtime so its
    *  animations run on the deployed site; injected at the bottom of the page. */
@@ -318,6 +333,9 @@ async function resolveSiteUncached(
     reviews,
     publishedSitemap: (siteRow as { published_sitemap?: SitemapPage[] | null }).published_sitemap ?? null,
     seo,
+    ogImageUrl: siteRow.og_image_url ?? null,
+    ogShotUrl: siteRow.og_shot_url ?? null,
+    ogLogoUrl: siteRow.og_logo_url ?? null,
     claudeDesign,
   };
 }
@@ -467,6 +485,9 @@ async function resolveDraftSiteUncached(siteId: string): Promise<DraftSiteResult
       reviews,
       publishedSitemap: sitemap,
       seo: null,
+      ogImageUrl: (siteRow as SiteRowLike).og_image_url ?? null,
+      ogShotUrl: (siteRow as SiteRowLike).og_shot_url ?? null,
+      ogLogoUrl: (siteRow as SiteRowLike).og_logo_url ?? null,
       claudeDesign,
     },
   };

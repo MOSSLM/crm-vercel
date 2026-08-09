@@ -33,6 +33,10 @@ export interface BoardItem {
     build_stage: string;
     is_published: boolean;
     url: string | null;
+    /** Sous-domaine déployé, ou null quand le site n'est encore qu'un brouillon.
+     *  Distinct de `url`, qui vaut null dans ce second cas : c'est ce champ qui
+     *  permet à `demoShareUrl` de produire le lien d'aperçu. */
+    published_subdomain?: string | null;
     is_claude_design: boolean;
     /** Template dont le site est issu — absent tant que la migration
      *  `20260730_sites_source_template.sql` n'est pas appliquée, ou pour un

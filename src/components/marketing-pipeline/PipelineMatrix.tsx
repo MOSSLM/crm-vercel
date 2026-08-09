@@ -29,11 +29,13 @@ import {
   ChevronRight,
   MessageSquare,
   ListChecks,
+  Share2,
   X,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
+import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import type {
   BoardItem,
   AgentRef,
@@ -186,6 +188,38 @@ function templateMismatch(item: BoardItem, templateId: string): boolean {
 /** Nombre de variables requises encore manquantes (tri « incomplets d'abord »). */
 function missingCount(item: BoardItem): number {
   return item.missing_for_site?.length ?? 0;
+}
+
+/**
+ * « Partager » depuis la cellule Site.
+ *
+ * Un composant à part parce que le rendu des cellules est une simple fonction,
+ * pas un composant : elle ne peut pas porter de `useState`, et le dialogue en a
+ * besoin. C'est aussi le seul endroit du pipeline d'où l'on envoie réellement un
+ * lien, donc le bon endroit pour voir la vignette avant de l'envoyer.
+ */
+function PartagerButton({ item }: { item: BoardItem }) {
+  const [open, setOpen] = React.useState(false);
+  if (!item.site) return null;
+  return (
+    <>
+      <button
+        className="btn ghost sm icon"
+        title="Voir la vignette de partage et envoyer"
+        onClick={() => setOpen(true)}
+      >
+        <Share2 className="ico-sm" />
+      </button>
+      <PartagerDemoDialog
+        open={open}
+        onOpenChange={setOpen}
+        demo={{ id: item.site.id, published_subdomain: item.site.published_subdomain ?? null }}
+        companyName={displayName(item)}
+        entrepriseId={item.entreprise_id}
+        opportuniteId={item.id}
+      />
+    </>
+  );
 }
 
 /** Bouton « Signaler un problème » posé sur les cartes d'étape. */
@@ -590,6 +624,7 @@ function StageActions({ item, stage, done, busy, templateId, templateName, agent
             >
               <RefreshCw className="ico-sm" />
             </button>
+            <PartagerButton item={item} />
             <NoteButton item={item} subject="site" handlers={handlers} />
             {!done && (
               <button className="btn ok sm icon" disabled={busy} title="Valider le site" onClick={() => handlers.onValidateSite(item)}>

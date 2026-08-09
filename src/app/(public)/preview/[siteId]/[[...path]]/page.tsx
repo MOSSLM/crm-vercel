@@ -13,6 +13,8 @@ import {
   type ServiceGateDetail,
 } from "@/components/site-builder/PreviewDiagnostic";
 import { serviceTagGate } from "@/utils/serviceTags";
+import { demoOgImageUrl } from "@/lib/site-builder/build-page-metadata";
+import { getAppUrl } from "@/lib/app-url";
 
 interface PreviewProps {
   params: Promise<{ siteId: string; path?: string[] }>;
@@ -51,9 +53,58 @@ function unavailable(kind: PreviewFailureKind, reason: string, gate?: ServiceGat
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 export const dynamic = "force-dynamic";
 
-// The draft preview is reachable on an unguessable {siteId}.<domain> subdomain;
-// keep it out of every search index so it stays truly private ("introuvable").
-export const metadata: Metadata = { robots: { index: false, follow: false } };
+/**
+ * Métadonnées de l'aperçu brouillon.
+ *
+ * C'ÉTAIT LE TROU LE PLUS COÛTEUX de la chaîne de partage : cette route
+ * n'exportait qu'un `metadata` statique réduit à `robots: noindex`. Ni titre,
+ * ni description, ni image. Or `demoShareUrl()` renvoie précisément cette URL
+ * (`{siteId}.{SITE_DOMAIN}`) tant que le site n'est pas publié — donc une bonne
+ * part des liens réellement envoyés aux prospects s'affichaient en URL nue dans
+ * WhatsApp.
+ *
+ * `noindex` est CONSERVÉ, et il n'empêche pas l'unfurl : un robot de messagerie
+ * qui déplie un lien n'indexe rien. C'est exactement le cas d'usage recherché —
+ * un lien privé, joliment déplié dans une conversation.
+ *
+ * Aucune donnée sensible n'entre ici : le nom de l'entreprise et son secteur
+ * sont déjà affichés par la page elle-même, à qui détient le lien.
+ */
+export async function generateMetadata({ params }: PreviewProps): Promise<Metadata> {
+  const { siteId } = await params;
+  const noindex = { index: false, follow: false } as const;
+
+  const result = await resolveDraftSite(siteId).catch(() => null);
+  if (!result?.ok) {
+    return { robots: noindex, title: "Aperçu du site" };
+  }
+
+  const { site } = result;
+  const name = site.companyName?.trim() || "Votre site";
+  const city = site.enterpriseVariables?.["entreprise.ville"]?.trim();
+
+  return {
+    robots: noindex,
+    metadataBase: new URL(getAppUrl()),
+    title: `${name} — votre nouveau site`,
+    description: city
+      ? `Aperçu du site conçu pour ${name}, ${city}.`
+      : `Aperçu du site conçu pour ${name}.`,
+    openGraph: {
+      type: "website",
+      title: `${name} — votre nouveau site`,
+      description: city
+        ? `Aperçu du site conçu pour ${name}, ${city}.`
+        : `Aperçu du site conçu pour ${name}.`,
+      images: [{ url: site.ogImageUrl ?? demoOgImageUrl(siteId), width: 1200, height: 630 }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${name} — votre nouveau site`,
+      images: [site.ogImageUrl ?? demoOgImageUrl(siteId)],
+    },
+  };
+}
 
 /** Everything the renderer needs, or a PreviewUnavailable carrying the reason. */
 async function loadPreview(siteId: string, path: string[] | undefined) {

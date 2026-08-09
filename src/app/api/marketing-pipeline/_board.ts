@@ -604,6 +604,11 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
             build_stage: site.build_stage ?? "a_faire",
             is_published: site.is_published === true,
             url: siteUrl(site),
+            // Le sous-domaine, brut, en plus de `url` : `demoShareUrl` en a
+            // besoin pour distinguer « site déployé » de « aperçu brouillon »,
+            // et `url` vaut null dans le second cas — qui est précisément celui
+            // où le lien partagé n'avait aucune preview sociale.
+            published_subdomain: site.published_subdomain ?? null,
             is_claude_design: site.is_claude_design === true,
             // Template d'origine : la carte peut ainsi dire d'où vient le site,
             // et signaler qu'il ne vient pas du template sélectionné en haut.
