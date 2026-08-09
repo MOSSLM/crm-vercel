@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AxeId, Confiance, Preuve } from "./types";
 import { libelleDeNote } from "./score";
+import { psiEstFraiche } from "./pagespeed";
 
 /**
  * Lire une analyse, et savoir dire « pas disponible » sans faire croire à une
@@ -26,6 +27,12 @@ export interface AxePublie {
   confiance: Confiance;
   /** Uniquement les preuves réellement mesurées : les autres n'existent pas. */
   preuves: Preuve[];
+  /**
+   * Vrai quand la note vient de PageSpeed Insights et non de notre analyseur.
+   * La page l'affiche alors avec la mention « mesuré par Google » — qui vaut
+   * caution auprès du prospect, et qu'on ne peut donc pas revendiquer à tort.
+   */
+  mesureGoogle?: boolean;
 }
 
 export interface AuditLu {
@@ -105,8 +112,25 @@ export async function lireAudits(
 function versAuditLu(row: Record<string, unknown>): AuditLu {
   const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>>;
   const confiance = (row.confiance ?? {}) as Partial<Record<AxeId, Confiance>>;
+
+  /**
+   * COHABITATION DES DEUX VITESSES — la règle, écrite une seule fois.
+   *
+   * Quand une mesure PageSpeed est fraîche, elle REMPLACE la note vitesse
+   * maison. Jamais les deux côte à côte : une page qui affiche « vitesse 64 »
+   * et « performance Google 31 » se contredit sous les yeux du prospect, et
+   * c'est la crédibilité de tout le rapport qui part avec.
+   *
+   * Le remplacement se fait ici, au point de lecture, pour que ni la page
+   * publique ni le badge CRM n'aient à trancher — donc pour qu'ils ne puissent
+   * pas trancher différemment.
+   */
+  const psiFraiche = psiEstFraiche(str(row.psi_recupere_le));
+  const psiPerf = num(row.psi_performance);
+  const vitesseGoogle = psiFraiche && psiPerf != null;
+
   const noteParAxe: Record<AxeId, number | null> = {
-    vitesse: num(row.note_vitesse),
+    vitesse: vitesseGoogle ? psiPerf : num(row.note_vitesse),
     seo: num(row.note_seo),
     mobile: num(row.note_mobile),
     conversion: num(row.note_conversion),
@@ -117,7 +141,9 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
 
   for (const id of AXES) {
     const note = noteParAxe[id];
-    const conf = confiance[id] ?? "faible";
+    // Une mesure Google est faite dans un vrai navigateur : elle est concluante
+    // même là où notre analyse ne l'était pas (une SPA, typiquement).
+    const conf = id === "vitesse" && vitesseGoogle ? "haute" : (confiance[id] ?? "faible");
     // La règle, à un seul endroit : sous le seuil de confiance, l'axe n'est pas
     // publié. Le griser reviendrait à publier le chiffre en le décorant.
     if (note == null || conf === "faible") {
@@ -128,7 +154,11 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
       id,
       note,
       confiance: conf,
-      preuves: (detail[id] ?? []).filter((p) => p.verdict !== "inconnu" && p.valeur !== null),
+      preuves:
+        id === "vitesse" && vitesseGoogle
+          ? preuvesPsi(row)
+          : (detail[id] ?? []).filter((p) => p.verdict !== "inconnu" && p.valeur !== null),
+      ...(id === "vitesse" && vitesseGoogle ? { mesureGoogle: true } : {}),
     });
   }
 
@@ -156,6 +186,51 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     psi_performance: num(row.psi_performance),
     psi_recupere_le: str(row.psi_recupere_le),
   };
+}
+
+/**
+ * Les preuves de l'axe vitesse quand c'est Google qui mesure : les Core Web
+ * Vitals, que notre analyseur ne voit pas. Les seuils sont ceux de Google —
+ * les reprendre plutôt que d'en inventer, c'est ce qui rend la ligne
+ * vérifiable par le prospect s'il fait le test lui-même.
+ */
+function preuvesPsi(row: Record<string, unknown>): Preuve[] {
+  const out: Preuve[] = [];
+  const lcp = num(row.psi_lcp_ms);
+  const cls = num(row.psi_cls);
+  const tbt = num(row.psi_tbt_ms);
+
+  if (lcp != null) {
+    out.push({
+      cle: "psi_lcp",
+      libelle: "Affichage du contenu principal",
+      valeur: `${(lcp / 1000).toFixed(1).replace(".", ",")} s`,
+      seuil: "2,5 s",
+      poids: 40,
+      verdict: lcp <= 2500 ? "ok" : lcp <= 4000 ? "moyen" : "probleme",
+    });
+  }
+  if (cls != null) {
+    out.push({
+      cle: "psi_cls",
+      libelle: "Stabilité de la mise en page",
+      valeur: cls.toFixed(2).replace(".", ","),
+      seuil: "0,10",
+      poids: 25,
+      verdict: cls <= 0.1 ? "ok" : cls <= 0.25 ? "moyen" : "probleme",
+    });
+  }
+  if (tbt != null) {
+    out.push({
+      cle: "psi_tbt",
+      libelle: "Temps où la page ne répond pas",
+      valeur: `${Math.round(tbt)} ms`,
+      seuil: "200 ms",
+      poids: 35,
+      verdict: tbt <= 200 ? "ok" : tbt <= 600 ? "moyen" : "probleme",
+    });
+  }
+  return out;
 }
 
 function num(v: unknown): number | null {

@@ -25,6 +25,7 @@ import type {
   TraceEntry,
 } from '@/components/automations/types'
 import { SITE_DOMAIN } from '@/lib/site-domain'
+import { rapportPublicUrl } from '@/lib/audit-site/rapport-url'
 
 export interface RunContext {
   opportunite_id?: string | null
@@ -47,7 +48,18 @@ type ResolvedEntities = {
   contactName: string | null
   contactPhone: string | null
   contactLinkedin: string | null
+  /** Lien montré au prospect : le rapport web s'il existe, sinon le PDF. */
   auditUrl: string | null
+  /**
+   * Le PDF, et lui seul.
+   *
+   * Distinct d'`auditUrl` parce que la pièce jointe e-mail (`attachAudit`) est
+   * ENVOYÉE comme `audit.pdf` : y mettre l'URL du rapport web attacherait une
+   * page HTML sous un nom de PDF, illisible pour le destinataire. Un lien et un
+   * fichier ne sont pas la même chose, et cette distinction doit survivre à la
+   * bascule vers le rapport web.
+   */
+  auditPdfUrl: string | null
   demoUrl: string | null
   vars: VarBag
 }
@@ -91,6 +103,7 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     }
   }
   let auditUrl: string | null = null
+  let auditPdfUrl: string | null = null
   let demoUrl: string | null = null
   if (entrepriseId) {
     const { data: e } = await sb
@@ -123,7 +136,10 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
         list[0] ??
         null
       if (audit) {
-        if (audit.statut === 'ready' && audit.pdf_url) auditUrl = audit.pdf_url
+        if (audit.statut === 'ready' && audit.pdf_url) {
+          auditUrl = audit.pdf_url
+          auditPdfUrl = audit.pdf_url
+        }
         demoUrl = audit.demo_site_url ?? null
       }
     }
@@ -147,6 +163,18 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
       }
     }
 
+    // Le rapport web PRIME sur le PDF quand un jeton actif existe.
+    //
+    // Sur WhatsApp comme en e-mail, un PDF est un téléchargement : aucune
+    // vignette, une friction, et rien qui dise si le prospect l'a ouvert. Le
+    // rapport web se déplie, se lit sur téléphone, et compte ses vues.
+    //
+    // Le repli sur le PDF est conservé tel quel : les séquences déjà écrites
+    // continuent de fonctionner sans être retouchées, et `attachAudit`
+    // (pièce jointe e-mail) garde le PDF puisqu'on ne peut pas joindre une page.
+    const rapportUrl = await lireRapportUrl(sb, entrepriseId)
+    if (rapportUrl) auditUrl = rapportUrl
+
     vars['company.audit_url'] = auditUrl ?? ''
     vars['company.demo_url'] = demoUrl ?? ''
   }
@@ -162,8 +190,31 @@ async function resolveEntities(sb: SupabaseClient, ctx: RunContext): Promise<Res
     contactPhone,
     contactLinkedin,
     auditUrl,
+    auditPdfUrl,
     demoUrl,
     vars,
+  }
+}
+
+/**
+ * L'URL du rapport web de l'entreprise, si un jeton actif existe.
+ *
+ * Silencieuse en cas d'erreur : la table peut ne pas exister (migration non
+ * appliquée), et une séquence en cours d'exécution ne doit pas s'interrompre
+ * pour ça — elle repart simplement sur le PDF.
+ */
+async function lireRapportUrl(sb: SupabaseClient, entrepriseId: number): Promise<string | null> {
+  try {
+    const { data, error } = await sb
+      .from('entreprises_rapport_public')
+      .select('token, actif')
+      .eq('entreprise_id', entrepriseId)
+      .maybeSingle()
+    const row = data as { token: string; actif: boolean } | null
+    if (error || !row?.actif || !row.token) return null
+    return rapportPublicUrl(row.token)
+  } catch {
+    return null
   }
 }
 
@@ -737,7 +788,12 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
           automationId: automation.id,
           enrollmentId: enrollment.id,
           attachmentUrls:
-            step.attachAudit && ent.auditUrl ? [{ filename: 'audit.pdf', url: ent.auditUrl }] : undefined,
+            // `auditPdfUrl`, jamais `auditUrl` : depuis que ce dernier peut
+            // porter le rapport web, les confondre attacherait une page HTML
+            // sous le nom `audit.pdf`.
+            step.attachAudit && ent.auditPdfUrl
+              ? [{ filename: 'audit.pdf', url: ent.auditPdfUrl }]
+              : undefined,
         })
         // Retenu par un garde : l'inscription est GELÉE, pas franchie. Sur un
         // vrai prospect, avancer d'une étape sans avoir rien envoyé lui ferait

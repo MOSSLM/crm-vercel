@@ -24,7 +24,7 @@ const VARIABLES = [
   { v: '{{contact.role}}', desc: 'Poste' },
   { v: '{{owner.first_name}}', desc: 'Prénom du SDR' },
   { v: '{{calendar_link}}', desc: 'Lien de réservation' },
-  { v: '{{company.audit_url}}', desc: "Lien de l'audit (si prêt)" },
+  { v: '{{company.audit_url}}', desc: "Lien du rapport (repli : PDF de l'audit)" },
   { v: '{{company.demo_url}}', desc: 'Lien du site démo' },
 ]
 

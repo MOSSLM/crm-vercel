@@ -2,11 +2,15 @@
 import React from 'react';
 import type { AuditContent } from '@/types';
 import { C, Zone, InnerHeader, InnerFooter } from './AuditShared';
+import { AuditNotesBanner } from './AuditNotesBanner';
+import type { AuditLu } from '@/lib/audit-site/lecture';
 
 interface Props {
   content: AuditContent;
   activeField?: string | null;
   onFieldClick?: (field: string) => void;
+  /** Mesures du site actuel. Absentes ⇒ la page est exactement celle d'avant. */
+  audit?: AuditLu | null;
 }
 
 function AlertIcon() {
@@ -21,7 +25,7 @@ function AlertIcon() {
   );
 }
 
-export function AuditPage2({ content, activeField, onFieldClick }: Props) {
+export function AuditPage2({ content, activeField, onFieldClick, audit }: Props) {
   const p = content.page2;
   const gs = content.global_style;
   return (
@@ -33,6 +37,7 @@ export function AuditPage2({ content, activeField, onFieldClick }: Props) {
         onFieldClick={onFieldClick}
       />
       <div style={{ flex: 1, padding: '56px 72px 48px', display: 'flex', flexDirection: 'column', gap: 40 }}>
+        <AuditNotesBanner audit={audit} />
         <div>
           <Zone field="page2.section_label" activeField={activeField} onFieldClick={onFieldClick}>
             <div style={{ fontSize: 9, letterSpacing: '0.25em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 10 }}>

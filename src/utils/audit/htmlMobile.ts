@@ -171,6 +171,12 @@ function axe(a: AuditLu["axes"][number]): string {
   // Trois preuves suffisent : au-delà, c'est un rapport technique, et le
   // prospect décroche avant d'arriver au bouton.
   const preuves = a.preuves.slice(0, 3);
+  // « mesuré par Google » n'apparaît que si PageSpeed a réellement fourni la
+  // note (cf. la règle de cohabitation dans `lecture.ts`). C'est une caution
+  // auprès du prospect : la revendiquer à tort serait la pire des tricheries.
+  const source = a.mesureGoogle
+    ? `<div class="m-preuve-seuil" style="margin-top:6px">mesuré par Google PageSpeed</div>`
+    : "";
   return `<div class="m-axe">
     <div class="m-axe-head"><div class="m-axe-name">${esc(NOM_AXE[a.id] ?? a.id)}</div><div class="m-axe-note" style="color:${couleur}">${a.note}<span style="font-size:13px;opacity:.5">/100</span></div></div>
     <div class="m-axe-bar"><div class="m-axe-fill" style="width:${a.note}%;background:${couleur}"></div></div>
@@ -182,6 +188,7 @@ function axe(a: AuditLu["axes"][number]): string {
           }</div>`,
       )
       .join("")}</div>
+    ${source}
   </div>`;
 }
 

@@ -15,6 +15,7 @@ import {
   Sparkles, ExternalLink, Copy, Check, Filter, Bold, Save, Plus, Trash2, X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { rapportPublicUrl } from "@/lib/audit-site/rapport-url";
 import { listLeadMagnetCards } from "@/utils/leadMagnetV2Api";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
@@ -73,7 +74,7 @@ const AVAILABLE_VARS = [
   { key: "{{prénom}}", label: "Prénom" },
   { key: "{{entreprise}}", label: "Entreprise" },
   { key: "{{lien_site}}", label: "Lien site démo" },
-  { key: "{{lien_audit}}", label: "Lien audit PDF" },
+  { key: "{{lien_audit}}", label: "Lien du rapport" },
   { key: "{{lien_lm}}", label: "Lien lead magnet" },
 ];
 
@@ -112,15 +113,29 @@ Je m'appelle [Votre prénom], j'accompagne des entreprises comme {{entreprise}} 
 J'aurais quelques idées à vous soumettre — auriez-vous 10 min cette semaine ?`,
   },
   {
-    id: "envoi_audit",
-    label: "Envoi Audit PDF",
+    // `{{lien_site}}` existait depuis toujours mais AUCUN template ne s'en
+    // servait : le lien démo — le seul actif dont on dispose avant le premier
+    // appel — n'était donc jamais envoyé en un clic.
+    id: "envoi_site",
+    label: "Envoi Site démo",
     body: `Bonjour {{prénom}},
 
-Voici votre audit pour {{entreprise}} :
+Nous avons construit un site de démonstration pour {{entreprise}} — il est déjà en ligne :
+
+{{lien_site}}
+
+Aucune inscription, aucun engagement. Dites-moi ce que vous en pensez.`,
+  },
+  {
+    id: "envoi_audit",
+    label: "Envoi du rapport",
+    body: `Bonjour {{prénom}},
+
+Voici l'analyse de votre site pour {{entreprise}} :
 
 {{lien_audit}}
 
-Il détaille les points d'amélioration identifiés sur votre présence en ligne.
+Elle détaille les points mesurés sur votre présence en ligne, et ce qu'on peut y faire.
 
 N'hésitez pas si vous avez des questions.`,
   },
@@ -188,6 +203,8 @@ export function WhatsAppTab() {
     Map<string, { url: string | null; ready: boolean; demoSiteUrl: string | null }>
   >(new Map());
   const [siteMap, setSiteMap] = useState<Map<number, string>>(new Map());
+  /** URL du rapport web par entreprise, quand un jeton actif existe. */
+  const [rapportMap, setRapportMap] = useState<Map<number, string>>(new Map());
 
   // Custom templates
   const [templates, setTemplates] = useState<WaTemplate[]>(DEFAULT_TEMPLATES);
@@ -225,6 +242,29 @@ export function WhatsAppTab() {
       }
       setLmMap(map);
     }).catch(() => {});
+  }, []);
+
+  // Jetons de rapport public, par entreprise. `{{lien_audit}}` les préfère au
+  // PDF : sur WhatsApp, un PDF est un téléchargement — donc une friction et
+  // aucune vignette — là où le rapport web se déplie dans la conversation.
+  // Le repli sur le PDF reste en place, pour que les séquences déjà écrites
+  // continuent de fonctionner à l'identique.
+  useEffect(() => {
+    const supabase = createClient();
+    void supabase
+      .from("entreprises_rapport_public")
+      .select("entreprise_id, token, actif")
+      .eq("actif", true)
+      .then(({ data, error }) => {
+        // Table absente (migration non appliquée) : on garde la carte vide et
+        // tout retombe sur le PDF, sans rien signaler à l'opérateur.
+        if (error || !data) return;
+        const map = new Map<number, string>();
+        for (const r of data as Array<{ entreprise_id: number; token: string }>) {
+          map.set(r.entreprise_id, rapportPublicUrl(r.token));
+        }
+        setRapportMap(map);
+      });
   }, []);
 
   // Load the real audit PDFs and demo sites so {{lien_audit}} / {{lien_site}}
@@ -303,12 +343,14 @@ export function WhatsAppTab() {
         hasLeadMagnet: !!lmInfo || (opp?.lead_magnet ?? false),
         leadMagnetReady: lmInfo?.ready ?? false,
         leadMagnetUrl: lmInfo?.url,
-        auditUrl: auditInfo?.ready ? auditInfo.url ?? undefined : undefined,
+        auditUrl:
+          rapportMap.get(contact.entreprise_id) ??
+          (auditInfo?.ready ? auditInfo.url ?? undefined : undefined),
         demoUrl: siteMap.get(contact.entreprise_id) ?? auditInfo?.demoSiteUrl ?? undefined,
         opportunityId: opp?.id,
       };
     });
-  }, [contacts, opportunities, companies, pipelines, pipelineStages, lmMap, auditMap, siteMap]);
+  }, [contacts, opportunities, companies, pipelines, pipelineStages, lmMap, auditMap, siteMap, rapportMap]);
 
   const companyRows = useMemo<CompanyRow[]>(() => {
     return companies.map((company) => {
@@ -328,12 +370,14 @@ export function WhatsAppTab() {
         hasLeadMagnet: !!lmInfo || (opp?.lead_magnet ?? false),
         leadMagnetReady: lmInfo?.ready ?? false,
         leadMagnetUrl: lmInfo?.url,
-        auditUrl: auditInfo?.ready ? auditInfo.url ?? undefined : undefined,
+        auditUrl:
+          rapportMap.get(company.id) ??
+          (auditInfo?.ready ? auditInfo.url ?? undefined : undefined),
         demoUrl: siteMap.get(company.id) ?? auditInfo?.demoSiteUrl ?? undefined,
         opportunityId: opp?.id,
       };
     });
-  }, [companies, opportunities, pipelines, pipelineStages, lmMap, auditMap, siteMap]);
+  }, [companies, opportunities, pipelines, pipelineStages, lmMap, auditMap, siteMap, rapportMap]);
 
   const rows = mode === "contacts" ? contactRows : companyRows;
 

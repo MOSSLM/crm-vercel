@@ -33,6 +33,7 @@ import { CallJournal } from "@/components/telephony/CallJournal";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import DossierEntreprise from "@/components/donnees-publiques/DossierEntreprise";
+import { CarteAnalyseSite } from "@/components/audit-site/CarteAnalyseSite";
 import BoutonDonneesPubliques from "@/components/donnees-publiques/BoutonDonneesPubliques";
 
 
@@ -252,6 +253,10 @@ export default function AgentEntrepriseDetailPage() {
       {/* Le dossier public, juste sous l'en-tête : c'est ce qu'on lit AVANT
           de décrocher, donc ça passe avant le site démo et les opportunités. */}
       <DossierEntreprise entrepriseId={ent.id} />
+
+      {/* Les mesures du site actuel, juste après le dossier public : c'est ce
+          qui donne l'accroche de l'appel, donc ça passe avant le site démo. */}
+      <CarteAnalyseSite entrepriseId={ent.id} />
 
       {!ent.siret && (
         <Card>
