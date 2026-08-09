@@ -60,6 +60,7 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     ttfbMs: c.ttfbMs,
     chargementMs: c.chargementMs,
     poidsOctets: c.poidsOctets,
+    poidsTotalOctets: c.poidsTotalOctets,
     compression: Boolean(c.enTetes["content-encoding"]),
     cacheControl: Boolean(c.enTetes["cache-control"]),
     longueurTexteVisible: 0,

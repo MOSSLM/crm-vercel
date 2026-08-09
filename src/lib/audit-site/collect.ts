@@ -42,6 +42,10 @@ const MAX_FEUILLES = 3;
 const FEUILLE_TIMEOUT_MS = 2_500;
 const MAX_OCTETS_FEUILLE = 400_000;
 
+/** Ressources pesées par `HEAD`, au maximum. Les plus lourdes sont en tête de page. */
+const MAX_RESSOURCES_PESEES = 12;
+const PESEE_TIMEOUT_MS = 2_500;
+
 export async function collecter(rawUrl: string): Promise<CollecteSite> {
   const base: CollecteSite = {
     urlDemandee: rawUrl,
@@ -57,6 +61,8 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     ttfbMs: null,
     chargementMs: null,
     poidsOctets: null,
+    poidsTotalOctets: null,
+    ressourcesPesees: 0,
     cssExterne: "",
     nbFeuillesDeclarees: 0,
     nbFeuillesLues: 0,
@@ -139,10 +145,11 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
   // Les trois sondes partent ENSEMBLE : elles sont indépendantes, et les
   // enchaîner additionnerait leurs délais sur chacun des 2 000 sites de la file.
   const origine = origineDe(urlFinale);
-  const [robotsTxt, sitemapXml, feuilles] = await Promise.all([
+  const [robotsTxt, sitemapXml, feuilles, pesee] = await Promise.all([
     origine ? sonder(`${origine}/robots.txt`) : Promise.resolve(null),
     origine ? sonder(`${origine}/sitemap.xml`) : Promise.resolve(null),
     html ? lireFeuillesExternes(html, urlFinale) : Promise.resolve(FEUILLES_VIDES),
+    html ? peserRessources(html, urlFinale, poidsOctets) : Promise.resolve(PESEE_VIDE),
   ]);
 
   return {
@@ -161,6 +168,8 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     ttfbMs,
     chargementMs,
     poidsOctets,
+    poidsTotalOctets: pesee.total,
+    ressourcesPesees: pesee.pesees,
     cssExterne: feuilles.css,
     nbFeuillesDeclarees: feuilles.declarees,
     nbFeuillesLues: feuilles.lues,
@@ -222,6 +231,81 @@ export function extraireHrefsFeuilles(html: string, base: string): string[] {
     if (absolu && absolu.startsWith(origine) && !out.includes(absolu)) out.push(absolu);
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// Pesée réelle de la page
+// ---------------------------------------------------------------------------
+
+const PESEE_VIDE: { total: number | null; pesees: number } = { total: null, pesees: 0 };
+
+/**
+ * Poids de la page = document + ressources déclarées, additionné depuis les
+ * `content-length` renvoyés en `HEAD`.
+ *
+ * Le poids du seul document ne voulait rien dire : 587 Ko au maximum sur tout le
+ * parc, pour un seuil à 2 Mo — la preuve ne se déclenchait donc jamais, sur aucun
+ * site. Ce qui ralentit un visiteur, ce sont les images.
+ *
+ * Renvoie `null` si aucun serveur n'expose de taille : « on n'a pas pu peser »
+ * n'est pas « c'est léger », et la preuve restera `inconnu`.
+ */
+async function peserRessources(
+  html: string,
+  urlFinale: string,
+  poidsDocument: number | null,
+): Promise<{ total: number | null; pesees: number }> {
+  const urls = extraireRessources(html, urlFinale).slice(0, MAX_RESSOURCES_PESEES);
+  // Aucune ressource déclarée : le document EST la page, son poids suffit.
+  if (urls.length === 0) return { total: poidsDocument, pesees: 0 };
+
+  const tailles = await Promise.all(urls.map(tailleParHead));
+  const connues = tailles.filter((t): t is number => t !== null);
+  if (connues.length === 0) return PESEE_VIDE;
+
+  return {
+    total: connues.reduce((a, b) => a + b, 0) + (poidsDocument ?? 0),
+    pesees: connues.length,
+  };
+}
+
+/** Images, scripts et feuilles déclarés dans la page, en absolu et dédoublonnés. */
+export function extraireRessources(html: string, base: string): string[] {
+  const out: string[] = [];
+  const pousser = (valeur: string | undefined) => {
+    if (!valeur) return;
+    const absolu = resoudre(valeur, base);
+    // Les `data:` ne coûtent aucun aller-retour : leur poids est déjà dans le
+    // document, les compter une seconde fois gonflerait la mesure.
+    if (absolu && absolu.startsWith("http") && !out.includes(absolu)) out.push(absolu);
+  };
+
+  for (const m of html.matchAll(/<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) pousser(m[1]);
+  for (const m of html.matchAll(/<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/gi)) pousser(m[1]);
+  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+    if (!/stylesheet/i.test(m[0])) continue;
+    pousser(/href\s*=\s*["']([^"']+)["']/i.exec(m[0])?.[1]);
+  }
+
+  return out;
+}
+
+async function tailleParHead(url: string): Promise<number | null> {
+  try {
+    const u = new URL(url);
+    await assertPublicHost(u.hostname);
+    const res = await fetch(u.href, {
+      method: "HEAD",
+      headers: BROWSER_HEADERS,
+      redirect: "follow",
+      signal: AbortSignal.timeout(PESEE_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const n = Number(res.headers.get("content-length"));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Corps textuel d'une ressource, plafonné. `null` au moindre incident. */

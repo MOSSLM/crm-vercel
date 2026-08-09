@@ -129,7 +129,7 @@ export function NoteSiteBadge({
     ? `\nNon concluant : ${audit.axes_masques.map((a) => LABELS[a] ?? a).join(", ")}`
     : "";
   const mesures = [
-    audit.chargement_ms != null ? `chargement ${(audit.chargement_ms / 1000).toFixed(1)} s` : null,
+    audit.chargement_ms != null ? `réponse ${(audit.chargement_ms / 1000).toFixed(1)} s` : null,
     audit.poids_octets != null ? `${Math.round(audit.poids_octets / 1000)} Ko` : null,
   ]
     .filter(Boolean)

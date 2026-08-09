@@ -27,6 +27,8 @@ function collecte(html: string, feuilles?: Partial<CollecteSite>): CollecteSite 
     ttfbMs: 200,
     chargementMs: 400,
     poidsOctets: 40_000,
+    poidsTotalOctets: 380_000,
+    ressourcesPesees: 4,
     cssExterne: "",
     nbFeuillesDeclarees: 0,
     nbFeuillesLues: 0,

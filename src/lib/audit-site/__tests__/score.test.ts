@@ -18,6 +18,7 @@ function signauxSains(): SignauxSite {
     ttfbMs: 200,
     chargementMs: 900,
     poidsOctets: 300_000,
+    poidsTotalOctets: 900_000,
     compression: true,
     cacheControl: true,
     longueurTexteVisible: 4000,
@@ -90,11 +91,11 @@ describe("scorer — cas nominal", () => {
 
   it("attache à chaque preuve la valeur mesurée ET son seuil", () => {
     const r = scorer(signauxSains());
-    const chargement = r.axes.vitesse.preuves.find((p) => p.cle === "chargement");
-    expect(chargement).toBeDefined();
-    expect(chargement?.valeur).toBe("0,9 s");
-    expect(chargement?.seuil).toBe("2,5 s");
-    expect(chargement?.verdict).toBe("ok");
+    const ttfb = r.axes.vitesse.preuves.find((p) => p.cle === "ttfb");
+    expect(ttfb).toBeDefined();
+    expect(ttfb?.valeur).toBe("200 ms");
+    expect(ttfb?.seuil).toBe("800 ms");
+    expect(ttfb?.verdict).toBe("ok");
   });
 });
 
@@ -206,18 +207,42 @@ describe("scorer — noindex", () => {
 });
 
 describe("scorer — site lent", () => {
-  it("émet slow_site au-delà du seuil et le justifie par la mesure", () => {
-    const lent: SignauxSite = { ...signauxSains(), chargementMs: 4_200 };
+  it("émet slow_site sur un serveur qui traîne, et le justifie par la mesure", () => {
+    const lent: SignauxSite = { ...signauxSains(), ttfbMs: 4_200 };
     expect(issueKeysDepuisSignaux(lent, {})).toContain("slow_site");
-    const p = scorer(lent).axes.vitesse.preuves.find((p) => p.cle === "chargement");
+    const p = scorer(lent).axes.vitesse.preuves.find((p) => p.cle === "ttfb");
     expect(p?.valeur).toBe("4,2 s");
     expect(p?.verdict).toBe("probleme");
   });
 
   it("n'accable pas un site juste au-dessus du seuil", () => {
-    const limite: SignauxSite = { ...signauxSains(), chargementMs: SEUILS.chargementMs + 200 };
-    const p = scorer(limite).axes.vitesse.preuves.find((p) => p.cle === "chargement");
+    const limite: SignauxSite = { ...signauxSains(), ttfbMs: SEUILS.ttfbMs + 100 };
+    const p = scorer(limite).axes.vitesse.preuves.find((p) => p.cle === "ttfb");
     expect(p?.verdict).toBe("moyen");
+  });
+
+  it("émet slow_site sur une page trop lourde, serveur rapide compris", () => {
+    const lourde: SignauxSite = { ...signauxSains(), poidsTotalOctets: 6_000_000 };
+    const r = scorer(lourde);
+    expect(r.issueKeys).toContain("slow_site");
+    expect(r.axes.vitesse.preuves.find((p) => p.cle === "poids")?.valeur).toBe("6,0 Mo");
+  });
+
+  it("ne pèse rien quand aucun serveur n'a donné de taille", () => {
+    // « On n'a pas pu peser » n'est pas « c'est léger » : la preuve sort du
+    // dénominateur au lieu de créditer le site de points qu'il n'a pas gagnés.
+    const nonPesee: SignauxSite = { ...signauxSains(), poidsTotalOctets: null };
+    const p = scorer(nonPesee).axes.vitesse.preuves.find((p) => p.cle === "poids");
+    expect(p?.verdict).toBe("inconnu");
+    expect(scorer(nonPesee).issueKeys).not.toContain("slow_site");
+  });
+
+  it("ne mesure plus deux fois le même événement", () => {
+    // TTFB et réception du HTML ne sont séparés que par le transfert du
+    // document : deux preuves pour un seul phénomène, 55 points sur 100.
+    const cles = scorer(signauxSains()).axes.vitesse.preuves.map((p) => p.cle);
+    expect(cles).toContain("ttfb");
+    expect(cles).not.toContain("chargement");
   });
 });
 

@@ -235,15 +235,17 @@ function ecranAvantApres(m: RapportMesures, demoUrl: string): Ecran | null {
 function preuvePourIssue(cle: string, a: AuditLu | null): string | null {
   if (!a) return null;
   switch (cle) {
-    case "slow_site":
-      return a.chargement_ms != null
-        ? `${(a.chargement_ms / 1000).toFixed(1).replace(".", ",")} s pour afficher la page`
-        : null;
     case "no_site_or_unreachable":
       return a.url_analysee ? `${domainOf(a.url_analysee)} ne répond pas` : "aucune adresse de site";
     default: {
-      // Les autres clés se justifient par la preuve de l'axe correspondant.
+      // Chaque clé se justifie par la preuve qui l'a déclenchée.
+      //
+      // `slow_site` s'appuyait sur `chargement_ms`, annoncé au prospect comme
+      // « X s pour afficher la page » — alors que rien n'est affiché à ce
+      // moment-là : ni CSS, ni JS, ni images n'ont été exécutés. On ne promet
+      // plus qu'un temps de réponse, qui est ce qu'on mesure vraiment.
       const parCle: Record<string, string> = {
+        slow_site: "ttfb",
         outdated_or_not_mobile: "viewport",
         phone_not_clickable: "tel",
         form_not_accessible: "formulaire",

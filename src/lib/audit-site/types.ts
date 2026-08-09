@@ -90,6 +90,17 @@ export interface CollecteSite {
   poidsOctets: number | null;
 
   /**
+   * Poids de la page entière — document, images, scripts, feuilles — additionné
+   * depuis les `content-length` des ressources déclarées.
+   *
+   * `null` quand aucun serveur n'a exposé de taille. C'est « on n'a pas pu
+   * peser », jamais « c'est léger » : la preuve reste alors `inconnu`.
+   */
+  poidsTotalOctets: number | null;
+  /** Ressources dont la taille a effectivement été obtenue. */
+  ressourcesPesees: number;
+
+  /**
    * CSS des feuilles externes, concaténé.
    *
    * Sans lui, `nbMediaQueries` valait 0 sur la moitié du parc — non parce que ces
@@ -119,6 +130,8 @@ export interface SignauxSite {
   ttfbMs: number | null;
   chargementMs: number | null;
   poidsOctets: number | null;
+  /** Document + ressources déclarées. `null` = non pesé, jamais « léger ». */
+  poidsTotalOctets: number | null;
   compression: boolean;
   cacheControl: boolean;
 

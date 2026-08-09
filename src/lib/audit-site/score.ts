@@ -158,9 +158,20 @@ function agreger(preuves: Preuve[], degrade: boolean): NoteAxe {
 
 function axeVitesse(s: SignauxSite): NoteAxe {
   const preuves: Preuve[] = [
-    pSeuil("ttfb", "Temps de réponse du serveur", s.ttfbMs, SEUILS.ttfbMs, 25, ms),
-    pSeuil("chargement", "Temps pour afficher la page", s.chargementMs, SEUILS.chargementMs, 30, ms),
-    pSeuil("poids", "Poids de la page", s.poidsOctets, SEUILS.poidsOctets, 15, ko),
+    // UNE seule preuve de temps, et elle porte le nom de ce qu'elle mesure.
+    //
+    // Il y en avait deux — « temps de réponse du serveur » et « temps pour
+    // afficher la page » — pesant ensemble 55 points sur 100. Or elles
+    // chronométraient le même événement : entre le premier octet et le dernier du
+    // HTML il n'y a que le transfert du document, d'où les relevés 534/535 ms,
+    // 3 418/3 420 ms, 5 123/5 125 ms. Et « afficher » promettait un rendu qui n'a
+    // pas lieu : ni CSS, ni JS, ni images ne sont exécutés ici. Le seul vrai temps
+    // d'affichage est le LCP, que seul PageSpeed nous donne.
+    pSeuil("ttfb", "Temps de réponse du serveur", s.ttfbMs, SEUILS.ttfbMs, 35, ms),
+    // Le poids qui compte est celui de la page entière, pas du seul document :
+    // le maximum de HTML observé sur tout le parc est de 587 Ko, pour un seuil à
+    // 2 Mo — la preuve ne se déclenchait donc jamais.
+    pSeuil("poids", "Poids total de la page", s.poidsTotalOctets, SEUILS.poidsOctets, 25, ko),
     pBool("compression", "Compression activée", s.joignable ? s.compression : null, 10, {
       oui: "activée",
       non: "absente",
@@ -174,7 +185,7 @@ function axeVitesse(s: SignauxSite): NoteAxe {
       "Scripts qui retardent l'affichage",
       s.joignable ? s.nbScriptsBloquants : null,
       3,
-      10,
+      15,
       compte,
     ),
     pSeuil(
@@ -182,10 +193,13 @@ function axeVitesse(s: SignauxSite): NoteAxe {
       "Images chargées inutilement au démarrage",
       s.joignable && s.nbImages > 0 ? s.nbImagesSansLazy : null,
       3,
-      5,
+      10,
       compte,
     ),
   ];
+  // Poids des preuves : 35 + 25 + 10 + 5 + 15 + 10 = 100. Les points libérés par
+  // la fusion des deux mesures de temps sont rendus au poids et aux scripts, qui
+  // sont les deux leviers qu'on vend réellement.
   // La vitesse ne dépend pas du contenu : une SPA se chronomètre aussi bien
   // qu'un site statique. Cet axe garde donc sa confiance.
   return agreger(preuves, !s.joignable);
@@ -427,7 +441,7 @@ interface RegleCle {
 
 const REGLES_CLES: RegleCle[] = [
   // La lenteur se constate sur le temps de réponse, la réception ou le poids.
-  { cle: "slow_site", preuves: ["ttfb", "chargement", "poids"], mode: "une" },
+  { cle: "slow_site", preuves: ["ttfb", "poids"], mode: "une" },
 
   // Un site sans `viewport` n'est pas adaptatif, point.
   { cle: "outdated_or_not_mobile", preuves: ["viewport"], mode: "une" },
