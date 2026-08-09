@@ -5,12 +5,27 @@ import { interpolateVars } from "@/lib/site-builder/interpolate-vars";
 import { getAppUrl } from "@/lib/app-url";
 
 /**
- * URL absolue de la carte de partage d'un site.
+ * URL de SECOURS de la carte de partage — celle qui la fabrique à la volée.
  *
- * Toujours absolue, et toujours sur l'hôte du CRM : les routes `(public)` n'ont
- * pas de `metadataBase`, et le site est servi depuis `{sub}.samadigitalstudio.fr`
- * où `/api` n'existe pas (le middleware réécrit vers `/site/{sub}`). Une URL
- * relative ou construite sur l'hôte courant ne donnerait donc rien.
+ * CE N'EST PAS LE CHEMIN NORMAL. Une fois la carte fabriquée, `og:image` pointe
+ * directement l'objet du CDN Supabase (`sites.og_image_url`), servi en statique
+ * sans invoquer la moindre fonction. Cette route-ci ne sert que tant que la
+ * carte n'existe pas encore.
+ *
+ * Pourquoi sur l'hôte du CRM plutôt que sur celui du site :
+ *
+ *   - c'est un hôte que NOUS contrôlons. Un site publié peut vivre sur le
+ *     domaine du client (`published_domain`) : son DNS et son certificat nous
+ *     échappent, et une image de partage qui dépend d'eux tombe avec eux ;
+ *   - c'est une base absolue unique, alors que l'hôte de la page varie selon
+ *     qu'on est sur un sous-domaine publié, un domaine client ou un aperçu
+ *     brouillon en UUID.
+ *
+ * (Une note antérieure affirmait ici que `/api` n'existait pas sur les hôtes de
+ * site parce que le middleware y réécrivait tout. C'est FAUX : `src/middleware.ts`
+ * saute explicitement `/api`. La route répondrait donc aussi bien depuis l'hôte
+ * du site — le choix tient aux deux raisons ci-dessus, pas à une contrainte de
+ * routage.)
  */
 export function demoOgImageUrl(siteId: string): string {
   return `${getAppUrl()}/api/og/demo/${siteId}`;
