@@ -391,7 +391,42 @@ Chacune peut faire plusieurs commits.
 > 5. Les exigences de complétude vivent en double (`required-fields.ts` et `missingForSite`), avec un
 >    test qui vérifie l'alignement. Toute modification doit être faite des deux côtés.
 
-### Prompt 4 — Templates Claude Design ⚠️ MESURÉ LE 08/08/2026, PLUS URGENT QUE PRÉVU
+### Prompt 4 — Templates Claude Design ⚠️ EN GRANDE PARTIE RÉSOLU CÔTÉ CRM
+
+> **MISE À JOUR (08/08/2026, après lecture du bundle `template_cvc11.zip`).**
+> Il n'est plus nécessaire de reprendre les templates pour que le contrôle ADEME
+> fonctionne. `hydrate-certifications` reconnaît **la convention que les
+> templates CVC portent déjà** :
+>
+> | Rôle | Contrat explicite | Convention CVC existante |
+> |---|---|---|
+> | conteneur | `data-certifications` | `.certif-row` |
+> | carte-modèle | `data-certification-item` | `.certif-logo` |
+> | image | `data-certification-logo` | `img` |
+>
+> La suppression remonte à la `<section>` porteuse (`#sec-certifs` /
+> `.certif-band`) pour emporter le chapeau « Certifications & qualifications
+> reconnues par l'État » — sans quoi il resterait orphelin.
+>
+> Quatre tests tournent sur le markup RÉEL du template, copié tel quel.
+>
+> **Gain visuel non prévu** : le CSS du template force `height: 84px; width:
+> auto` alors que ses images vont de 120×120 à **719×968** — la rangée est
+> bancale. Les fichiers de `public/rge/` partagent tous le canevas 360×180, donc
+> ils se rendent à l'identique. Le remplacement corrige l'alignement en même
+> temps que l'exactitude, et rend la variante `.certif-logo--tall` inutile.
+>
+> **Nombre de logos, mesuré** : 43 entreprises en ont 1, 25 en ont 2, 9 en ont 3,
+> 4 en ont 4, 2 en ont 5. Maximum théorique 12, **maximum observé 5**. Le
+> `.certif-row` est déjà en `flex-wrap: wrap`, il encaisse.
+>
+> Ce qui reste souhaitable, mais NON bloquant : poser les attributs `data-*`
+> (plus robustes qu'une classe qu'on renomme), ne laisser qu'UNE `.certif-logo`
+> comme gabarit, retirer `.certif-logo--tall`, et vérifier que la section est
+> belle **absente** — c'est le cas de 88 projets sur 190, donc le cas fréquent.
+
+Le reste de cette section décrit l'état AVANT cette mise à jour, conservé pour
+mémoire.
 
 État réel des sections au moment de l'écriture :
 
