@@ -115,6 +115,12 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
   const [pipelineFilter, setPipelineFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [flagFilter, setFlagFilter] = useState('all');
+  /**
+   * Les opportunités archivées sortent de la liste par défaut. Sans cette
+   * bascule, une fiche archivée depuis un autre écran réapparaîtrait ici sans
+   * qu'on ait le moyen de la désarchiver.
+   */
+  const [showArchived, setShowArchived] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list' | 'kanban' | 'cold_call'>('grid');
   const [kanbanMode, setKanbanMode] = useState<KanbanGroupingMode>('flags');
   const [newTagName, setNewTagName] = useState('');
@@ -166,6 +172,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
 
   const filteredOpportunities = React.useMemo(() => opportunities
     .filter(opportunity => {
+    if (showArchived ? !opportunity.archived_at : !!opportunity.archived_at) return false;
     const companyName = opportunity.companyName || '';
     const tags = parseTags(opportunity.tags);
     const flags = parseFlags(opportunity.flags);
@@ -202,7 +209,7 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
     }),
   [opportunities, searchTerm, pipelineFilter, stageFilter, priorityFilter, flagFilter,
    sprintModule, sprintFlow, sprintOpportunityIds, lmEnrichmentFilter, lmProjectStatuts,
-   sortByPipeline, pipelines]);
+   sortByPipeline, pipelines, showArchived]);
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Date inconnue';
@@ -1180,6 +1187,17 @@ export const OpportunitiesPage: React.FC<{ sprintModule?: boolean }> = ({ sprint
           </Select>
 
           <span className="grow" />
+
+          <button
+            type="button"
+            className="toggle-w"
+            aria-pressed={showArchived}
+            title="Voir les opportunités archivées, et les désarchiver"
+            onClick={() => setShowArchived((prev) => !prev)}
+          >
+            <span>Archivées</span>
+            <span className={cn('switch sm', showArchived && 'on')} />
+          </button>
 
           <button
             type="button"

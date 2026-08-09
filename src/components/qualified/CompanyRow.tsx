@@ -6,28 +6,33 @@ import { Badge } from '../ui/badge';
 import { getCompanyDisplayName } from '../../utils/displayHelpers';
 import { Employee, QUALIFIED_COMPANIES_CONSTANTS } from './types';
 import { Company } from '../../types';
+import { archiveReasonLabel } from '../../lib/archive/reasons';
 import { normalizeServiceTags } from '../../utils/serviceTags';
+import { CompanyArchiveMenu } from './CompanyArchiveMenu';
 
 interface CompanyRowProps {
   company: Company;
   employees: Employee[];
   onContactClick?: (companyId: number) => void;
   onEmployeeClick: (employee: Employee, e: React.MouseEvent) => void;
+  /** Ouvre le dialogue d'archivage (ou de désarchivage) sur cette fiche. */
+  onArchive?: (company: Company) => void;
 }
 
-export const CompanyRow: React.FC<CompanyRowProps> = React.memo(({ 
-  company, 
-  employees, 
-  onContactClick, 
-  onEmployeeClick 
+export const CompanyRow: React.FC<CompanyRowProps> = React.memo(({
+  company,
+  employees,
+  onContactClick,
+  onEmployeeClick,
+  onArchive
 }) => {
   const displayName = getCompanyDisplayName(company.name, company.canonical_url);
   const serviceTags = normalizeServiceTags(company.service_tags, company.premiers_tags);
 
   return (
-    <div 
-      className="flex items-center justify-between p-4 border rounded-lg cursor-pointer bg-card"
-      style={{ 
+    <div
+      className="group flex items-center justify-between p-4 border rounded-lg cursor-pointer bg-card"
+      style={{
         transition: 'none',
         transform: 'none',
         animation: 'none'
@@ -50,6 +55,17 @@ export const CompanyRow: React.FC<CompanyRowProps> = React.memo(({
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
             <span className="font-medium truncate">{displayName}</span>
+            {company.archived_at && (
+              <Badge
+                variant="destructive"
+                className="text-xs flex-shrink-0"
+                title={[archiveReasonLabel(company.archive_reason), company.archive_note]
+                  .filter(Boolean)
+                  .join(' — ')}
+              >
+                Archivée
+              </Badge>
+            )}
             <Badge variant="default" className="text-xs flex-shrink-0">
               <CheckCircle className="h-3 w-3 mr-1" />
               Qualifiée
@@ -111,15 +127,22 @@ export const CompanyRow: React.FC<CompanyRowProps> = React.memo(({
         </div>
       </div>
       
-      <div className="text-right flex-shrink-0">
-        <div className="text-sm">
-          <div>{employees.length} contact{employees.length > 1 ? 's' : ''}</div>
-        </div>
-        {company.updated_at && (
-          <div className="text-xs text-muted-foreground">
-            {new Date(company.updated_at).toLocaleDateString('fr-FR')}
+      <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="text-right">
+          <div className="text-sm">
+            <div>{employees.length} contact{employees.length > 1 ? 's' : ''}</div>
           </div>
-        )}
+          {company.updated_at && (
+            <div className="text-xs text-muted-foreground">
+              {new Date(company.updated_at).toLocaleDateString('fr-FR')}
+            </div>
+          )}
+        </div>
+        <CompanyArchiveMenu
+          company={company}
+          onOpen={(c) => onContactClick?.(c.id)}
+          onArchive={onArchive}
+        />
       </div>
     </div>
   );

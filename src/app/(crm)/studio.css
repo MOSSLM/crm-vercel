@@ -347,6 +347,7 @@
   & .kp-card .flag.flag-site { background: var(--warn-tint); color: var(--warn); }
   & .kp-card .flag.flag-old { background: var(--magic-tint); color: var(--magic); }
   & .kp-card .flag.flag-later { background: var(--info-tint); color: var(--info); }
+  & .kp-card .flag.flag-archived { background: var(--danger-tint); color: var(--danger); }
   & .kp-card .channels { display: flex; gap: 4px; margin-top: 4px; }
   & .kp-card .channels .ch { width: 22px; height: 22px; border-radius: 5px; background: var(--bg-2); color: var(--text-3); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; border: 0; }
   & .kp-card .channels .ch[aria-pressed="true"] { background: var(--accent-tint); color: var(--accent-2); }

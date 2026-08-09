@@ -18,12 +18,14 @@ import {
   PaginationPrevious,
 } from "./ui/pagination";
 import { getCompanyDisplayName } from "../utils/displayHelpers";
-import { LayoutGrid, List, Search, Filter, CheckCircle } from "lucide-react";
+import { Archive, LayoutGrid, List, Search, Filter, CheckCircle } from "lucide-react";
 import { Employee, QualifiedCompaniesPageProps, QUALIFIED_COMPANIES_CONSTANTS } from "./qualified/types";
 import { CompanyCard } from "./qualified/CompanyCard";
 import { CompanyRow } from "./qualified/CompanyRow";
 import { filterCompanies } from "./qualified/utils";
 import { QualifiedColdCallWorkspace } from "./QualifiedColdCallWorkspace";
+import { ArchiveDialog, type ArchiveTarget } from "./archive/ArchiveDialog";
+import type { Company } from "../types";
 import logger from "../utils/logger";
 
 export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ onContactClick }) => {
@@ -40,9 +42,29 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [selectedCompanyName, setSelectedCompanyName] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null);
 
-  // Entreprises qualifiées
-  const qualifiedCompanies = companies.filter((c) => c.qualifie);
+  // Entreprises qualifiées. Les archivées sortent de la liste par défaut : la
+  // bascule est le seul chemin pour les revoir — et pour les désarchiver.
+  const qualifiedCompanies = React.useMemo(
+    () => companies.filter((c) => c.qualifie && (showArchived ? !!c.archived_at : !c.archived_at)),
+    [companies, showArchived],
+  );
+  const archivedCount = React.useMemo(
+    () => companies.filter((c) => c.qualifie && c.archived_at).length,
+    [companies],
+  );
+
+  const openArchive = (company: Company) =>
+    setArchiveTarget({
+      kind: "entreprise",
+      entrepriseIds: [company.id],
+      opportunityIds: [],
+      label: getCompanyDisplayName(company.name, company.canonical_url),
+      currentReason: company.archived_at ? (company.archive_reason ?? "autre") : null,
+      currentNote: company.archive_note ?? null,
+    });
 
   const companyEmployees = React.useMemo(() => {
     const employeesMap: Record<number, Employee[]> = {};
@@ -79,7 +101,7 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterBy]);
+  }, [searchTerm, filterBy, showArchived]);
 
   React.useEffect(() => {
     setQualifiedMode(searchParams.get("mode") === "cold_call" ? "cold_call" : "standard");
@@ -153,6 +175,15 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
             </SelectContent>
           </Select>
 
+          <Button
+            variant={showArchived ? "default" : "outline"}
+            onClick={() => setShowArchived((v) => !v)}
+            title="Voir les entreprises archivées, et les désarchiver"
+          >
+            <Archive className="h-4 w-4 mr-2" />
+            {showArchived ? "Fiches actives" : `Archivées${archivedCount > 0 ? ` (${archivedCount})` : ""}`}
+          </Button>
+
           <div className="flex border rounded-lg">
             <Button variant={viewMode === "cards" ? "default" : "ghost"} size="sm" onClick={() => setViewMode("cards")} className="rounded-r-none">
               <LayoutGrid className="h-4 w-4" />
@@ -178,6 +209,7 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
               employees={companyEmployees[company.id] || []}
               // Utilise le clic sur la carte pour naviguer
               onContactClick={() => goToCompany(company.id)}
+              onArchive={openArchive}
             />
           ))}
         </div>
@@ -198,6 +230,7 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
                 employees={companyEmployees[company.id] || []}
                 onContactClick={onContactClick}
                 onEmployeeClick={handleEmployeeClick} // empêche la propagation
+                onArchive={openArchive}
               />
             </div>
           ))}
@@ -294,6 +327,13 @@ export const QualifiedCompaniesPage: React.FC<QualifiedCompaniesPageProps> = ({ 
           </p>
         </div>
       )}
+
+      <ArchiveDialog
+        target={archiveTarget}
+        apiBase="/api/archive"
+        onClose={() => setArchiveTarget(null)}
+        onDone={refreshData}
+      />
 
       <EditEmployeeModal
         open={showEditEmployeeModal}
