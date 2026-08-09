@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderViewportShot } from "@/lib/site-builder/render-provider";
 import { putOgAsset } from "@/lib/og/storage";
 import { imageQuasiVide } from "@/lib/images/image-quasi-vide";
+import { urlPourCapture } from "@/lib/site-builder/demo-share-url";
 
 /**
  * Capturer le site démo pour l'intégrer à la carte de partage.
@@ -72,8 +73,12 @@ export async function ensureDemoScreenshot(
   // une quinzaine de secondes par capture (appel de chauffe + attente). En
   // série, la carte demanderait une demi-minute et l'opérateur abandonnerait.
   // Menées ensemble, elles coûtent le temps de la plus lente.
+  // Le marqueur demande à la page de retirer ce qui n'a rien à faire dans une
+  // vignette de vente — aujourd'hui la barre « Acheter ce site ».
+  const urlCapture = urlPourCapture(demoUrl);
+
   const [ordinateur, mobile] = await Promise.all([
-    capturer(siteId, demoUrl, {
+    capturer(siteId, urlCapture, {
       fenetre: SHOT_WIDTH,
       largeurDemandee: SHOT_WIDTH,
       largeurFinale: 1200,
@@ -81,7 +86,7 @@ export async function ensureDemoScreenshot(
       maxOctets: MAX_SHOT_BYTES,
       quoi: "ordinateur",
     }),
-    capturer(siteId, demoUrl, {
+    capturer(siteId, urlCapture, {
       fenetre: MOBILE_WIDTH,
       // On demande DEUX FOIS la largeur de la fenêtre : le rendu mobile est en
       // densité 2, et partir d'une source à cette densité donne une réduction

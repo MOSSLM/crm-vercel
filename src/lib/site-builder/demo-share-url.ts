@@ -26,6 +26,29 @@ export function demoShareUrl(demo: DemoLike): string {
     : `https://${demo.id}.${SITE_DOMAIN}`;
 }
 
+/**
+ * Marqueur ajouté à l'URL donnée au service de capture.
+ *
+ * Il dit à la page : « tu es photographiée pour une vignette de vente, retire
+ * ce qui n'a rien à y faire ». Aujourd'hui, la barre « Acheter ce site » — qui
+ * se retrouverait sinon incrustée dans la carte envoyée au prospect, lui
+ * proposant d'acheter avant même qu'on lui ait parlé.
+ *
+ * Le défaut est aujourd'hui DORMANT (aucun site du parc n'a le paywall actif),
+ * et c'est précisément pourquoi il fallait le traiter : le jour où quelqu'un
+ * l'active, les vignettes se dégradent sans que personne fasse le lien.
+ *
+ * Aucun enjeu de sécurité : cette barre est un appel à l'action, pas un verrou.
+ * Un visiteur qui ajouterait le paramètre à la main ne contournerait rien.
+ */
+export const PARAM_CAPTURE = "sama_shot";
+
+/** L'URL à photographier : celle du partage, plus le marqueur de capture. */
+export function urlPourCapture(shareUrl: string): string {
+  const sep = shareUrl.includes("?") ? "&" : "?";
+  return `${shareUrl}${sep}${PARAM_CAPTURE}=1`;
+}
+
 /** Vrai quand le lien partagé est l'aperçu brouillon et non le site publié. */
 export function isDraftShareUrl(demo: DemoLike): boolean {
   return !demo.published_subdomain;

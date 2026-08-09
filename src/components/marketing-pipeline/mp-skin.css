@@ -27,7 +27,7 @@
   --font-serif: "Instrument Serif", "Times New Roman", serif;
   /* Fixed columns, middle ground: narrower than the stretched original but
      roomy enough for the cards; height unchanged. */
-  --rowh: 216px; --colw: 230px;
+  --rowh: 216px; --colw: 230px; --vignw: 268px;
 
   display: flex;
   flex-direction: column;
@@ -137,7 +137,7 @@
 /* Fixed column widths (no 1fr stretch) so cells stay compact; the grid
    scrolls horizontally when the stages don't fit, and leaves a clean paper
    margin on the right on wide screens. */
-.mp-scope .matrix{ display:grid; grid-template-columns:var(--rowh) repeat(var(--ncol),var(--colw)); gap:1px; background:var(--border); width:max-content; position:relative; }
+.mp-scope .matrix{ display:grid; grid-template-columns:var(--rowh) repeat(var(--ncol),var(--colw)) var(--vignw); gap:1px; background:var(--border); width:max-content; position:relative; }
 .mp-scope .mx-corner{ position:sticky; top:0; left:0; z-index:40; background:var(--bg-2); padding:13px 16px; display:flex; flex-direction:column; justify-content:center; min-height:60px; }
 .mp-scope .mx-corner .t{ font-size:12px; font-weight:600; color:var(--text); }
 .mp-scope .mx-corner .s{ font-size:10.5px; color:var(--text-3); font-family:var(--font-mono); margin-top:2px; }
@@ -329,3 +329,14 @@
 .mp-scope .tk.on{ background:var(--danger-tint); color:var(--danger); }
 .mp-scope .tk:hover{ border-color:currentColor; }
 .mp-scope .note-company{ margin-top:7px; font-size:10.5px; font-family:var(--font-mono); text-transform:uppercase; letter-spacing:.06em; color:var(--text-3); }
+
+/* ── Colonne « Vignette » ────────────────────────────────────────────────
+   La carte telle qu'elle partira sur WhatsApp, à droite du parcours. Elle
+   est là pour qu'un défaut se voie AVANT l'envoi — logo illisible, capture
+   blanche, téléphone manquant — plutôt que dans la conversation du
+   prospect, où il est trop tard. */
+.mp-scope .vign-cell{ background:var(--surface); padding:10px; display:flex; flex-direction:column; gap:7px; justify-content:center; }
+.mp-scope .vign-img{ width:100%; aspect-ratio:1200/630; border-radius:6px; border:1px solid var(--border-2); object-fit:cover; background:var(--bg-3); display:block; }
+.mp-scope .vign-vide{ width:100%; aspect-ratio:1200/630; border-radius:6px; border:1px dashed var(--border-2); display:flex; align-items:center; justify-content:center; text-align:center; font-size:11px; color:var(--text-3); padding:0 12px; }
+.mp-scope .vign-warn{ font-size:10.5px; line-height:1.45; color:var(--warn); }
+.mp-scope .vign-actions{ display:flex; gap:6px; align-items:center; }

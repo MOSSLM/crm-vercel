@@ -187,6 +187,8 @@ type SiteRow = {
   is_claude_design: boolean | null;
   /** Template dont ce site est le clone (migration 20260730, optionnelle). */
   source_template_id?: string | null;
+  /** Vignette de partage déjà fabriquée (migration 20260810, optionnelle). */
+  og_image_url?: string | null;
 };
 
 type AuditRow = {
@@ -292,7 +294,7 @@ async function fetchDemoSites(
   if (entIds.length === 0) return { data: [], error: null };
   // `source_template_id` vient d'une migration tardive : on retente sans elle
   // plutôt que de faire tomber le board (même parti pris qu'ailleurs ici).
-  let columns = `${DEMO_SITE_COLUMNS}, source_template_id`;
+  let columns = `${DEMO_SITE_COLUMNS}, source_template_id, og_image_url`;
   const rows: SiteRow[] = [];
   for (let i = 0; i < entIds.length; i += ENT_CHUNK) {
     const chunk = entIds.slice(i, i + ENT_CHUNK);
@@ -654,6 +656,10 @@ export async function buildBoard(
             // et `url` vaut null dans le second cas — qui est précisément celui
             // où le lien partagé n'avait aucune preview sociale.
             published_subdomain: site.published_subdomain ?? null,
+            // La vignette telle qu'elle est aujourd'hui : le pipeline l'affiche
+            // pour qu'un défaut se voie AVANT l'envoi, pas dans la conversation
+            // du prospect.
+            og_image_url: site.og_image_url ?? null,
             is_claude_design: site.is_claude_design === true,
             // Template d'origine : la carte peut ainsi dire d'où vient le site,
             // et signaler qu'il ne vient pas du template sélectionné en haut.
