@@ -106,6 +106,11 @@ export function PartagerDemoDialog({
       await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+      // Copier un lien, c'est s'apprêter à l'envoyer — ailleurs que par le
+      // bouton WhatsApp d'à côté. On s'assure donc que la carte existe : sans
+      // elle, le premier robot qui déplie le lien déclenche une fabrication de
+      // ~20 s, abandonne bien avant, et le prospect reçoit une URL nue.
+      if (card.status !== "ready") void prepare(false);
     } catch {
       toast.error("Copie impossible — sélectionnez le lien à la main.");
     }

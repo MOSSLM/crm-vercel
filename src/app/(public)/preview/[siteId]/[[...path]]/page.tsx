@@ -13,7 +13,8 @@ import {
   type ServiceGateDetail,
 } from "@/components/site-builder/PreviewDiagnostic";
 import { serviceTagGate } from "@/utils/serviceTags";
-import { demoOgImageUrl } from "@/lib/site-builder/build-page-metadata";
+import { demoOgImageUrl, versionDepuisUrl } from "@/lib/site-builder/build-page-metadata";
+import { origineRequete } from "@/lib/site-builder/origine-requete";
 import { getAppUrl } from "@/lib/app-url";
 
 interface PreviewProps {
@@ -74,6 +75,9 @@ export async function generateMetadata({ params }: PreviewProps): Promise<Metada
   const { siteId } = await params;
   const noindex = { index: false, follow: false } as const;
 
+  // Servie depuis {siteId}.{SITE_DOMAIN}, l'hôte même de l'aperçu.
+  const origine = (await origineRequete()) ?? getAppUrl();
+
   const result = await resolveDraftSite(siteId).catch(() => null);
   if (!result?.ok) {
     return { robots: noindex, title: "Aperçu du site" };
@@ -83,9 +87,14 @@ export async function generateMetadata({ params }: PreviewProps): Promise<Metada
   const name = site.companyName?.trim() || "Votre site";
   const city = site.enterpriseVariables?.["entreprise.ville"]?.trim();
 
+  const carte = demoOgImageUrl(siteId, {
+    origine,
+    version: versionDepuisUrl(site.ogImageUrl),
+  });
+
   return {
     robots: noindex,
-    metadataBase: new URL(getAppUrl()),
+    metadataBase: new URL(origine),
     title: `${name} — votre nouveau site`,
     description: city
       ? `Aperçu du site conçu pour ${name}, ${city}.`
@@ -96,12 +105,12 @@ export async function generateMetadata({ params }: PreviewProps): Promise<Metada
       description: city
         ? `Aperçu du site conçu pour ${name}, ${city}.`
         : `Aperçu du site conçu pour ${name}.`,
-      images: [{ url: site.ogImageUrl ?? demoOgImageUrl(siteId), width: 1200, height: 630 }],
+      images: [{ url: carte, width: 1200, height: 630 }],
     },
     twitter: {
       card: "summary_large_image",
       title: `${name} — votre nouveau site`,
-      images: [site.ogImageUrl ?? demoOgImageUrl(siteId)],
+      images: [carte],
     },
   };
 }

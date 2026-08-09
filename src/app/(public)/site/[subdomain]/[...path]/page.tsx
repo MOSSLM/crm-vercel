@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { resolveSite } from "@/lib/site-resolver";
 import { SitePageView } from "@/components/site-builder/SitePageView";
 import { buildPageMetadata } from "@/lib/site-builder/build-page-metadata";
+import { origineRequete } from "@/lib/site-builder/origine-requete";
 import type { Metadata } from "next";
 
 interface CatchAllProps {
@@ -26,7 +27,9 @@ export async function generateMetadata({ params }: CatchAllProps): Promise<Metad
   const pageSlug = slugFromPath(path);
   const page = site.publishedSitemap?.find((p) => p.slug === pageSlug);
 
-  return buildPageMetadata(site, page, subdomain);
+  // L'origine réellement demandée : la carte de partage est servie depuis le
+  // MÊME hôte que la page qui la déclare (sous-domaine, ou domaine du client).
+  return buildPageMetadata(site, page, subdomain, await origineRequete());
 }
 
 export default async function CatchAllSitePage({ params }: CatchAllProps) {
