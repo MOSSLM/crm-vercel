@@ -18,6 +18,19 @@ export type EmployeeBand =
   | '501-1000'
   | '1000+';
 
+/**
+ * Champs d'archivage, communs à `Company` et `Opportunity`. Ils sont lus par
+ * les vues (masquer la fiche, afficher le badge et le motif) mais ne s'écrivent
+ * jamais depuis le navigateur : seule `/api/archive` les modifie.
+ */
+export interface ArchiveFields {
+  archived_at?: string | null;
+  archived_by?: string | null;
+  archive_reason?: string | null;
+  archive_note?: string | null;
+  archive_concurrent_id?: string | null;
+}
+
 export interface SearchResult {
   id: string;
   created_at: string;
@@ -36,7 +49,7 @@ export interface SearchResult {
   date?: string;
 }
 
-export interface Company {
+export interface Company extends ArchiveFields {
   id: number;
   canonical_url?: string;
   name?: string;
@@ -120,7 +133,7 @@ export interface ContactNote {
   updated_at: string;
 }
 
-export interface Opportunity {
+export interface Opportunity extends ArchiveFields {
   id: string;
   contact_id?: string;
   entreprise_id?: number;

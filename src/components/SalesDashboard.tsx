@@ -127,6 +127,8 @@ export function SalesDashboard() {
         .from("entreprises")
         .select("id, name, telephone, email, site_web_canonique")
         .eq("qualifie", false)
+        // L'archivage pose `hidden_in_qualification = true` : ce filtre exclut
+        // donc déjà les fiches archivées.
         .or("hidden_in_qualification.is.null,hidden_in_qualification.eq.false")
         .limit(200);
 
@@ -135,6 +137,7 @@ export function SalesDashboard() {
         .from("entreprises")
         .select("id, name, telephone, email, site_web_canonique")
         .eq("qualifie", true)
+        .is("archived_at", null)
         .limit(200);
 
       const qualifiedIds = (qualifiedAll ?? []).map((c) => c.id);
@@ -146,7 +149,8 @@ export function SalesDashboard() {
           .from("opportunites")
           .select("entreprise_id")
           .in("entreprise_id", qualifiedIds)
-          .eq("lead_magnet", true);
+          .eq("lead_magnet", true)
+          .is("archived_at", null);
         oppWithLm = (oppsLm ?? [])
           .map((o) => o.entreprise_id)
           .filter(Boolean) as number[];
@@ -183,7 +187,8 @@ export function SalesDashboard() {
           const { data: oppsForAudit } = await supabase
             .from("opportunites")
             .select("entreprise_id")
-            .in("id", needAudit);
+            .in("id", needAudit)
+            .is("archived_at", null);
           const entIds = [
             ...new Set(
               (oppsForAudit ?? [])
@@ -233,7 +238,8 @@ export function SalesDashboard() {
           const { data: oppsMsg } = await supabase
             .from("opportunites")
             .select("entreprise_id")
-            .in("id", needMessage);
+            .in("id", needMessage)
+            .is("archived_at", null);
           const entIds = [
             ...new Set(
               (oppsMsg ?? [])
@@ -258,6 +264,7 @@ export function SalesDashboard() {
         .select("id, entreprise_id, date_prochain_suivi")
         .lte("date_prochain_suivi", today)
         .not("date_prochain_suivi", "is", null)
+        .is("archived_at", null)
         .limit(100);
 
       let relances: CompanyItem[] = [];
@@ -289,6 +296,7 @@ export function SalesDashboard() {
           .from("opportunites")
           .select("entreprise_id")
           .in("stage_id", callStageIds)
+          .is("archived_at", null)
           .limit(100);
         const callEntIds = [
           ...new Set(
@@ -312,9 +320,11 @@ export function SalesDashboard() {
         .select("id, nom, ordre")
         .order("ordre");
 
+      // Répartition par étape : une piste archivée n'occupe plus de colonne.
       const { data: allOpps } = await supabase
         .from("opportunites")
-        .select("stage_id");
+        .select("stage_id")
+        .is("archived_at", null);
 
       const stageCounts = new Map<number, number>();
       for (const opp of allOpps ?? []) {

@@ -17,7 +17,8 @@ interface Props {
 }
 
 export function ContactList({ lmMap, selected, onSelect }: Props) {
-  const { contacts, opportunities, companies, pipelines, pipelineStages } = useAppData();
+  // Idem `CompanyList` : l'étape affichée doit venir d'une opportunité vivante.
+  const { contacts, activeOpportunities: opportunities, companies, pipelines, pipelineStages } = useAppData();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterPipeline, setFilterPipeline] = useState("all");

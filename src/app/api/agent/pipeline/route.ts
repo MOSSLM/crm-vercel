@@ -33,6 +33,7 @@ export const GET = withAuth({ role: "freelance" }, async ({ user, cors }) => {
     .eq("owner_id", user.id)
     .eq("entreprise.owner_id", user.id)
     .not("is_test", "is", true)
+    .is("archived_at", null)
     .order("updated_at", { ascending: false });
 
   if (error) return jsonError(error.message, 500, {}, cors);

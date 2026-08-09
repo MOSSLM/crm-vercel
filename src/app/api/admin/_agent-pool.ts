@@ -70,6 +70,9 @@ export async function fetchDeals(sc: ServiceClient, entIds: number[]): Promise<O
         .from("opportunites")
         .select("entreprise_id, pipeline_id, stage_id, updated_at, owner_id")
         .in("entreprise_id", ids)
+        // Le pool admin raisonne sur les affaires vivantes : une archivée ne
+        // doit pas faire croire qu'une entreprise est encore travaillée.
+        .is("archived_at", null)
         .order("id", { ascending: true })
         .range(from, from + PAGE - 1);
       if (error) return rows;
@@ -89,6 +92,7 @@ export async function fetchOwnedCounts(sc: ServiceClient): Promise<Record<string
       .from("entreprises")
       .select("owner_id")
       .not("owner_id", "is", null)
+      .is("archived_at", null)
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) return counts;

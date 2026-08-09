@@ -15,6 +15,15 @@ import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { Checkbox } from './ui/checkbox';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { ArchiveDialog, type ArchiveTarget } from './archive/ArchiveDialog';
+import { archiveReasonLabel } from '@/lib/archive/reasons';
+import {
   Calendar,
   ArrowUp,
   ArrowDown,
@@ -42,7 +51,10 @@ import {
   Trash2,
   Pencil,
   Check,
-  Filter
+  Filter,
+  Archive,
+  ArchiveRestore,
+  MoreVertical
 } from 'lucide-react';
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -134,6 +146,8 @@ interface OpportunityCardProps {
   selectionMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (id: string) => void;
+  /** Ouvre le dialogue d'archivage. `kind` distingue la fiche entreprise de l'opportunité seule. */
+  onArchive?: (opportunity: Opportunity, kind: 'entreprise' | 'opportunite') => void;
 }
 
 const OpportunityCard: React.FC<OpportunityCardProps> = ({
@@ -147,6 +161,7 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
   selectionMode = false,
   isSelected = false,
   onToggleSelect,
+  onArchive,
 }) => {
   const { companies } = useAppData();
   const ref = useRef<HTMLDivElement>(null);
@@ -309,8 +324,19 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
         )}
       </div>
 
-      {flags.length > 0 && (
+      {(flags.length > 0 || opportunity.archived_at) && (
         <div className="flags-line">
+          {opportunity.archived_at && (
+            <span
+              className="flag flag-archived"
+              title={[archiveReasonLabel(opportunity.archive_reason), opportunity.archive_note]
+                .filter(Boolean)
+                .join(' — ')}
+            >
+              <Archive className="ico-xs" />
+              Archivée
+            </span>
+          )}
           {flags.map((flag) => {
             const presentation = FLAG_PRESENTATION[flag];
             const found = OPPORTUNITY_FLAGS.find((item) => item.value === flag);
@@ -434,6 +460,44 @@ const OpportunityCard: React.FC<OpportunityCardProps> = ({
         >
           <Edit className="ico-sm" />
         </button>
+        {onArchive && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="ch" aria-label="Autres actions" title="Autres actions">
+                <MoreVertical className="ico-sm" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => onView(opportunity)}>
+                <Eye className="h-4 w-4 mr-2" /> Voir le détail
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onEdit(opportunity)}>
+                <Edit className="h-4 w-4 mr-2" /> Modifier
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {opportunity.archived_at ? (
+                <DropdownMenuItem onClick={() => onArchive(opportunity, 'opportunite')}>
+                  <ArchiveRestore className="h-4 w-4 mr-2" /> Désarchiver
+                </DropdownMenuItem>
+              ) : (
+                <>
+                  <DropdownMenuItem
+                    className="text-red-600 focus:text-red-600"
+                    onClick={() => onArchive(opportunity, 'opportunite')}
+                  >
+                    <Archive className="h-4 w-4 mr-2" /> Archiver l’opportunité…
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-red-600 focus:text-red-600"
+                    onClick={() => onArchive(opportunity, 'entreprise')}
+                  >
+                    <Archive className="h-4 w-4 mr-2" /> Archiver l’entreprise…
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </div>
   );
@@ -452,6 +516,7 @@ interface PipelineColumnProps {
   selectedCardIds?: Set<string>;
   onToggleSelect?: (id: string) => void;
   onSelectAll?: (ids: string[]) => void;
+  onArchive?: (opportunity: Opportunity, kind: 'entreprise' | 'opportunite') => void;
 }
 
 const PipelineColumn: React.FC<PipelineColumnProps> = ({
@@ -467,6 +532,7 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
   selectedCardIds = new Set(),
   onToggleSelect,
   onSelectAll,
+  onArchive,
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   const stageValue = opportunities.reduce((sum, opp) => {
@@ -571,6 +637,7 @@ const PipelineColumn: React.FC<PipelineColumnProps> = ({
             selectionMode={selectionMode}
             isSelected={selectedCardIds.has(opportunity.id)}
             onToggleSelect={onToggleSelect}
+            onArchive={onArchive}
           />
         ))}
 
@@ -615,6 +682,7 @@ export const PipelinePage: React.FC = () => {
     renamePipelineStage,
     movePipelineStageUp,
     movePipelineStageDown,
+    refreshData,
   } = useAppData();
   
   const [selectedOpportunity, setSelectedOpportunity] = useState<Opportunity | null>(null);
@@ -632,6 +700,9 @@ export const PipelinePage: React.FC = () => {
   const [selectedFlags, setSelectedFlags] = useState<string[]>([]);
   const [selectedService, setSelectedService] = useState('all');
   const [leadMagnetFilter, setLeadMagnetFilter] = useState<LeadMagnetFilter>('all');
+  /** Bascule « Archivés » : le board montre alors uniquement les fiches archivées. */
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null);
   const [pipelineMode, setPipelineMode] = useState<'standard' | 'cold_call'>('standard');
   const [selectedPipelineId, setSelectedPipelineId] = useState<string>('all');
   const [newPipelineName, setNewPipelineName] = useState('');
@@ -735,6 +806,11 @@ export const PipelinePage: React.FC = () => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
     return opportunities.filter(opportunity => {
+      // Les archivées sortent du board par défaut. La bascule est le seul
+      // chemin pour les revoir — et donc pour les désarchiver.
+      if (showArchived ? !opportunity.archived_at : !!opportunity.archived_at) {
+        return false;
+      }
       if (selectedPipelineId !== 'all') {
         const matchesPipelineId = opportunity.pipeline_id === selectedPipelineId;
         const matchesStagePipeline =
@@ -782,7 +858,7 @@ export const PipelinePage: React.FC = () => {
 
       return matchesMin && matchesMax && matchesPriority && matchesPhone && matchesEmployees && matchesFlags && matchesService && matchesLeadMagnet && matchesSearch;
     });
-  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId, leadMagnetFilter, stageIdsForSelectedPipeline]);
+  }, [opportunities, companiesById, minPrice, maxPrice, selectedPriorities, requireMobilePhone, requireEmployees, searchTerm, selectedFlags, selectedService, selectedPipelineId, leadMagnetFilter, stageIdsForSelectedPipeline, showArchived]);
 
   const sortedOpportunities = React.useMemo(() => {
     const priorityOrderHighFirst: Record<string, number> = {
@@ -834,6 +910,33 @@ export const PipelinePage: React.FC = () => {
     [sortedOpportunities]
   );
 
+  /**
+   * Ouvre le dialogue d'archivage sur une carte. En mode « entreprise » on cible
+   * la fiche, qui entraînera ses opportunités ; en mode « opportunite » cette
+   * ligne seule, l'entreprise restant visible dans « Qualifiées ».
+   */
+  const openArchive = (opportunity: Opportunity, kind: 'entreprise' | 'opportunite') => {
+    if (kind === 'entreprise' && opportunity.entreprise_id == null) {
+      toast.error("Cette opportunité n'est rattachée à aucune entreprise.");
+      return;
+    }
+    const company = opportunity.entreprise_id
+      ? companies.find((c) => c.id === opportunity.entreprise_id)
+      : undefined;
+    setArchiveTarget({
+      kind,
+      entrepriseIds: kind === 'entreprise' ? [opportunity.entreprise_id as number] : [],
+      opportunityIds: kind === 'opportunite' ? [opportunity.id] : [],
+      label:
+        getCompanyDisplayName(
+          opportunity.companyName || company?.name,
+          opportunity.companyUrl || company?.canonical_url,
+        ) || opportunity.name || 'cette opportunité',
+      currentReason: opportunity.archived_at ? (opportunity.archive_reason ?? 'autre') : null,
+      currentNote: opportunity.archive_note ?? null,
+    });
+  };
+
   const handleResetFilters = () => {
     setSearchTerm('');
     setMinPrice('');
@@ -845,6 +948,7 @@ export const PipelinePage: React.FC = () => {
     setSelectedFlags([]);
     setSelectedService('all');
     setLeadMagnetFilter('all');
+    setShowArchived(false);
   };
 
   const selectedCompany = selectedOpportunity
@@ -1525,6 +1629,14 @@ export const PipelinePage: React.FC = () => {
                 </div>
               </div>
 
+              <div className="flex items-center gap-2 border rounded-lg px-2.5 py-2">
+                <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+                <div>
+                  <Label className="text-sm">Archivées</Label>
+                  <p className="text-xs text-muted-foreground">Les revoir, et les désarchiver</p>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label className="text-xs md:text-sm">Service offert</Label>
                 <Select value={selectedService} onValueChange={setSelectedService}>
@@ -1559,7 +1671,7 @@ export const PipelinePage: React.FC = () => {
             </div>
 
             <div className="flex flex-wrap gap-3 justify-end">
-              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || selectedService !== 'all' || leadMagnetFilter !== 'all' || sortOption !== 'recent') && (
+              {(searchTerm || minPrice || maxPrice || selectedPriorities.length || selectedFlags.length || requireMobilePhone || requireEmployees || selectedService !== 'all' || leadMagnetFilter !== 'all' || showArchived || sortOption !== 'recent') && (
                 <Badge variant="outline" className="h-7 px-3 text-xs">
                   {[
                     searchTerm ? 'Recherche active' : null,
@@ -1571,6 +1683,7 @@ export const PipelinePage: React.FC = () => {
                     requireEmployees ? 'Avec employés' : null,
                     selectedService !== 'all' ? `Service: ${selectedService}` : null,
                     leadMagnetFilter !== 'all' ? (leadMagnetFilter === 'ready' ? 'LM prêts' : 'LM non prêts') : null,
+                    showArchived ? 'Archivées' : null,
                     sortOption !== 'recent' ? 'Tri personnalisé' : null,
                   ]
                     .filter(Boolean)
@@ -1617,6 +1730,7 @@ export const PipelinePage: React.FC = () => {
                       handleSelectAllInColumn(ids);
                     }
                   }}
+                  onArchive={openArchive}
                 />
               );
             })}
@@ -2194,6 +2308,13 @@ export const PipelinePage: React.FC = () => {
           </Button>
         </div>
       )}
+
+      <ArchiveDialog
+        target={archiveTarget}
+        apiBase="/api/archive"
+        onClose={() => setArchiveTarget(null)}
+        onDone={refreshData}
+      />
     </DndProvider>
   );
 };

@@ -150,6 +150,11 @@ export const QualificationPage: React.FC = () => {
     const hideByManual =
       !showHiddenCompanies && company.hidden_in_qualification;
 
+    // Une fiche archivée sort de la qualification, y compris de l'onglet
+    // « Masquées » — c'est /qualified, avec sa bascule « Archivées », qui sert à
+    // la retrouver et à la désarchiver.
+    if (company.archived_at) return false;
+
     return matchesSearch && matchesSource && matchesQualification && matchesUrl && !hideByDuplicate && !hideByManual;
   });
 
@@ -233,8 +238,13 @@ export const QualificationPage: React.FC = () => {
   const queueCount = companies.filter(
     (c) => !c.qualifie && !c.hidden_in_qualification && !isDuplicate(c.id) && !isCompanyBlacklisted(c)
   ).length;
-  const qualifiedCount = companies.filter((c) => c.qualifie).length;
-  const hiddenCount = companies.filter((c) => !c.qualifie && c.hidden_in_qualification).length;
+  const qualifiedCount = companies.filter((c) => c.qualifie && !c.archived_at).length;
+  // L'archivage pose `hidden_in_qualification = true` : sans l'exclure ici, une
+  // entreprise archivée viendrait grossir l'onglet « Masquées », où on ne peut
+  // ni la reconnaître ni la désarchiver.
+  const hiddenCount = companies.filter(
+    (c) => !c.qualifie && c.hidden_in_qualification && !c.archived_at
+  ).length;
 
   // Active tab derived from existing view state
   const activeTab: 'queue' | 'qualified' | 'hidden' = showHiddenCompanies

@@ -98,7 +98,13 @@ export const QualifiedColdCallWorkspace: React.FC<QualifiedColdCallWorkspaceProp
   includeOnlyQualified = true,
   scopedCompanyIds,
 }) => {
-  const { companies, contacts, opportunities, pipelineStages } = useAppData();
+  // Espace de travail cold call : on n'appelle pas une piste archivée.
+  const {
+    activeCompanies: companies,
+    contacts,
+    activeOpportunities: opportunities,
+    pipelineStages,
+  } = useAppData();
   const companyScope = useMemo(() => {
     const scopedSet = scopedCompanyIds ? new Set(scopedCompanyIds) : null;
     return companies.filter((company) => {

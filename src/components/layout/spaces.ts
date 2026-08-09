@@ -10,6 +10,7 @@ import {
   Search,
   Share2,
   Ban,
+  Swords,
   Copy,
   Workflow,
   User,
@@ -94,6 +95,7 @@ export const SPACES: Space[] = [
       { title: "Réseaux", href: "/networks", icon: Share2 },
       { title: "Séquences", href: "/automations/sequences", icon: Workflow },
       { title: "Blacklist", href: "/blacklist", icon: Ban },
+      { title: "Concurrents", href: "/concurrents", icon: Swords },
       { title: "Duplicats", href: "/duplicates", icon: Copy },
     ],
   },
@@ -210,6 +212,7 @@ const PATH_TO_SPACE: Array<[string, SpaceId]> = [
   ["/networks", "acquisition"],
   ["/automations", "acquisition"],
   ["/blacklist", "acquisition"],
+  ["/concurrents", "acquisition"],
   ["/duplicates", "acquisition"],
 
   ["/contacts", "relation"],

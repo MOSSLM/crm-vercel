@@ -107,6 +107,8 @@ const aggregateFacts = async (
       .from('entreprises')
       .select('id', { count: 'exact', head: true })
       .eq('qualifie', false)
+      // L'archivage pose `hidden_in_qualification = true` : les archivées sont
+      // donc déjà hors de ce stock.
       .or('hidden_in_qualification.is.null,hidden_in_qualification.eq.false'),
   ]);
 
@@ -145,15 +147,20 @@ const aggregateFacts = async (
     const endDateTime = `${period.period_end}T23:59:59.999Z`;
 
     const [{ data: qualifiedRows, error: qualifiedError }, { data: opportunities, error: opportunitiesError }] = await Promise.all([
+      // Les fiches archivées sortent des objectifs : on ne compte pas comme
+      // acquis un lead qu'on a soi-même déclaré mort, et son montant ne doit
+      // pas rester dans le CA prévisionnel de la période.
       supabase
         .from('entreprises')
         .select('id')
         .eq('qualifie', true)
+        .is('archived_at', null)
         .gte('updated_at', startDateTime)
         .lte('updated_at', endDateTime),
       supabase
         .from('opportunites')
         .select('stage_id, montant, lead_magnet, type, mrr, updated_at')
+        .is('archived_at', null)
         .gte('updated_at', startDateTime)
         .lte('updated_at', endDateTime),
     ]);

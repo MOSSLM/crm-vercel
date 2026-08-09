@@ -4,6 +4,7 @@ export const crmEnterpriseTabs = [
   { label: "Duplicats", href: "/duplicates" },
   { label: "Réseaux", href: "/networks" },
   { label: "Blacklist", href: "/blacklist" },
+  { label: "Concurrents", href: "/concurrents" },
 ];
 
 export const actionSearchTabs = [

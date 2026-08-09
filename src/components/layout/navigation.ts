@@ -18,6 +18,7 @@ import {
   CheckCircle,
   Share2,
   Ban,
+  Swords,
   Copy,
   MessageSquare,
   Zap,
@@ -78,6 +79,7 @@ export const ACTION_ITEMS: NavItem[] = [
   { title: "Nouvelle recherche", icon: Search, href: "/search/new" },
   { title: "Réseaux", icon: Share2, href: "/networks" },
   { title: "Blacklist", icon: Ban, href: "/blacklist" },
+  { title: "Concurrents", icon: Swords, href: "/concurrents" },
   { title: "Duplicats", icon: Copy, href: "/duplicates" },
   { title: "Sites", icon: Globe, href: "/site-builder" },
   { title: "Thèmes", icon: Palette, href: "/themes" },
@@ -119,6 +121,7 @@ export function getCategoryFromPath(pathname: string): TopCategoryKey {
     pathname.startsWith("/search") ||
     pathname.startsWith("/networks") ||
     pathname.startsWith("/blacklist") ||
+    pathname.startsWith("/concurrents") ||
     pathname.startsWith("/duplicates") ||
     pathname.startsWith("/site-builder") ||
     pathname.startsWith("/themes") ||

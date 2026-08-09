@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  ARCHIVE_REASON_VALUES,
+  reasonNeedsConcurrent,
+  STATUT_CONCURRENT_VALUES,
+} from "@/lib/archive/reasons";
 import { jsonError } from "./respond";
 
 /**
@@ -722,6 +727,58 @@ export const salesSetEmailSchema = z
     path: ["opportunite_id"],
   });
 export type SalesSetEmailPayload = z.infer<typeof salesSetEmailSchema>;
+
+/**
+ * Archivage motivé d'entreprises et/ou d'opportunités, et son inverse.
+ *
+ * Un seul schéma pour les deux sens : le dialogue poste au même endroit, et le
+ * désarchivage n'a pas de motif à fournir — d'où l'union discriminée plutôt
+ * qu'un booléen `archive` et des champs optionnels qu'il faudrait revalider à
+ * la main.
+ *
+ * `ARCHIVE_REASON_VALUES` vient du module partagé avec l'UI : la liste des
+ * motifs n'est écrite qu'une fois côté TypeScript, et un test la compare à la
+ * contrainte `check` de la migration.
+ */
+const archiveTargetsShape = {
+  opportunity_ids: z.array(z.string().uuid()).max(200).default([]),
+  entreprise_ids: z.array(z.coerce.number().int().positive()).max(200).default([]),
+};
+
+export const archiveSchema = z
+  .discriminatedUnion("action", [
+    z.object({
+      action: z.literal("archive"),
+      ...archiveTargetsShape,
+      reason: z.enum(ARCHIVE_REASON_VALUES),
+      note: z.string().trim().max(1000).nullish(),
+      concurrent_url: z.string().trim().max(500).nullish(),
+    }),
+    z.object({
+      action: z.literal("unarchive"),
+      ...archiveTargetsShape,
+    }),
+  ])
+  .superRefine((v, ctx) => {
+    if (v.opportunity_ids.length + v.entreprise_ids.length === 0) {
+      ctx.addIssue({ code: "custom", message: "aucune_cible", path: ["opportunity_ids"] });
+    }
+    // « Refait par un concurrent » sans dire lequel n'alimente pas le registre,
+    // et la contrainte SQL le refuserait de toute façon en 23514.
+    if (v.action === "archive" && reasonNeedsConcurrent(v.reason) && !v.concurrent_url) {
+      ctx.addIssue({ code: "custom", message: "url_concurrent_requise", path: ["concurrent_url"] });
+    }
+  });
+export type ArchivePayload = z.infer<typeof archiveSchema>;
+
+/** Édition d'une fiche concurrent depuis la page /concurrents. */
+export const concurrentUpdateSchema = z.object({
+  id: z.string().uuid(),
+  nom: z.string().trim().max(200).nullish(),
+  statut: z.enum(STATUT_CONCURRENT_VALUES).optional(),
+  notes: z.string().trim().max(2000).nullish(),
+});
+export type ConcurrentUpdatePayload = z.infer<typeof concurrentUpdateSchema>;
 
 /**
  * Reads JSON from the request and validates it.

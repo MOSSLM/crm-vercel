@@ -3,6 +3,8 @@
 import React from "react";
 import Link from "next/link";
 import {
+  Archive,
+  ArchiveRestore,
   Sparkles,
   ClipboardCheck,
   Globe,
@@ -35,6 +37,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { archiveReasonLabel } from "@/lib/archive/reasons";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
 import type {
@@ -417,6 +420,16 @@ function RowHead({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 7, gap: 6 }}>
           <span className="rh-status">{statusLabel}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {item.archived_at && (
+              <span
+                className="pill danger"
+                title={[archiveReasonLabel(item.archive_reason), item.archive_note]
+                  .filter(Boolean)
+                  .join(" — ")}
+              >
+                Archivé
+              </span>
+            )}
             {missing > 0 && (
               <span className="pill danger" title={`Variables manquantes : ${item.missing_for_site.join(", ")}`}>
                 {missing} manquant{missing > 1 ? "s" : ""}
@@ -976,6 +989,18 @@ function BulkBar({
           ))}
         </select>
       )}
+      {/* Le motif est demandé une seule fois pour tout le lot : archiver
+          quarante pistes mortes une par une, personne ne le fera. */}
+      <button
+        className="btn sm danger-h"
+        disabled={busy || rows.length === 0}
+        title="Archiver les entreprises sélectionnées, avec leurs opportunités"
+        onClick={() => bulk.onArchive(rows, "entreprise")}
+      >
+        <Archive className="ico-sm" />
+        Archiver
+        {ct(rows.length)}
+      </button>
     </div>
   );
 }
@@ -1050,6 +1075,14 @@ interface PipelineMatrixProps {
   agentMode?: boolean;
   /** Ouvre la boîte de réception des tickets (toutes lignes confondues). */
   onOpenTickets?: () => void;
+  /**
+   * Le board montre les fiches archivées au lieu des actives. Le filtre est
+   * fait côté serveur (`buildBoard({ archived })`) : la bascule ne fait que
+   * recharger.
+   */
+  showArchived?: boolean;
+  /** Bascule « Archivés ». Absent = pas de bouton (board sans archivage). */
+  onToggleArchived?: () => void;
 }
 
 export function PipelineMatrix({
@@ -1069,6 +1102,8 @@ export function PipelineMatrix({
   canAssign = true,
   agentMode = false,
   onOpenTickets,
+  showArchived = false,
+  onToggleArchived,
 }: PipelineMatrixProps) {
   const [q, setQ] = React.useState("");
   const [attribution, setAttribution] = React.useState<AttributionFilter>("all");
@@ -1439,6 +1474,20 @@ export function PipelineMatrix({
             {hiddenCount} masqué{hiddenCount > 1 ? "s" : ""}
           </button>
         )}
+        {onToggleArchived && (
+          <button
+            className={"btn subtle sm" + (showArchived ? " on" : "")}
+            onClick={onToggleArchived}
+            title={
+              showArchived
+                ? "Revenir aux fiches actives"
+                : "Voir les fiches archivées, et les désarchiver"
+            }
+          >
+            <Archive className="ico-sm" />
+            {showArchived ? "Fiches actives" : "Archivés"}
+          </button>
+        )}
 
         <div className="tb-div" />
         <span className="tb-lb">Template</span>
@@ -1672,6 +1721,8 @@ export function PipelineMatrix({
                     </span>
                   )}
                 </button>
+                {/* « Masquer » est un confort de session, « Archiver » une
+                    décision : le séparateur les distingue. */}
                 <button
                   className="pop-item"
                   onClick={() => {
@@ -1682,6 +1733,42 @@ export function PipelineMatrix({
                   <EyeOff className="ico-sm" />
                   Masquer la ligne
                 </button>
+                <div className="pop-sep" />
+                {menu.item.archived_at ? (
+                  <button
+                    className="pop-item"
+                    onClick={() => {
+                      handlers.onUnarchive(menu.item);
+                      setMenu(null);
+                    }}
+                  >
+                    <ArchiveRestore className="ico-sm" />
+                    Désarchiver
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="pop-item danger"
+                      onClick={() => {
+                        handlers.onArchive(menu.item, "opportunite");
+                        setMenu(null);
+                      }}
+                    >
+                      <Archive className="ico-sm" />
+                      Archiver l’opportunité…
+                    </button>
+                    <button
+                      className="pop-item danger"
+                      onClick={() => {
+                        handlers.onArchive(menu.item, "entreprise");
+                        setMenu(null);
+                      }}
+                    >
+                      <Archive className="ico-sm" />
+                      Archiver l’entreprise…
+                    </button>
+                  </>
+                )}
                 {pipelines.length > 0 && (
                   <>
                     <div className="pop-sep" />

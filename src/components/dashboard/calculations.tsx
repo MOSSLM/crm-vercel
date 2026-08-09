@@ -32,7 +32,7 @@ export const getCurrentPeriodData = (journalKpis: JournalKpiTotals, selectedPeri
 export const calculateDashboardMetrics = (
   journalKpis: JournalKpiTotals,
   selectedPeriod: PeriodType,
-  opportunities: Opportunity[],
+  allOpportunities: Opportunity[],
   pipelineStages: PipelineStage[],
   getOpportunitiesByStage: (stageId: string) => Opportunity[],
   contacts: Contact[],
@@ -41,6 +41,17 @@ export const calculateDashboardMetrics = (
 ): DashboardCalculations => {
   const findStageByName = (name: string) => 
     pipelineStages.find(stage => stage.nom.toLowerCase().includes(name.toLowerCase()));
+
+  // Toutes les sommes d'argent du tableau de bord passent par ici. On refiltre
+  // les archivées sur place plutôt que de faire confiance à l'appelant : c'est
+  // le seul endroit à ne pas pouvoir se tromper, et un futur appelant qui
+  // passerait la liste brute obtiendrait quand même des chiffres justes.
+  const opportunities = allOpportunities.filter(opp => !opp.archived_at);
+  // Même précaution pour la répartition par étape, qui passe par le callback :
+  // il vient du contexte, qui filtre déjà, mais on ne veut pas que la justesse
+  // des chiffres dépende de ce qu'un appelant a bien voulu injecter.
+  const opportunitiesByStage = (stageId: string) =>
+    getOpportunitiesByStage(stageId).filter(opp => !opp.archived_at);
 
   const currentData = getCurrentPeriodData(journalKpis, selectedPeriod);
   const totalRelances = currentData.total_relances;
@@ -62,7 +73,7 @@ export const calculateDashboardMetrics = (
 
   // Calcul des appels à passer
   const qualifiedStage = findStageByName('qualifié');
-  const callsToBeMade = qualifiedStage ? getOpportunitiesByStage(qualifiedStage.id.toString()).length : 0;
+  const callsToBeMade = qualifiedStage ? opportunitiesByStage(qualifiedStage.id.toString()).length : 0;
 
   // Métriques financières
   const signedOpportunities = opportunities.filter(opp => {
@@ -176,7 +187,7 @@ export const calculateDashboardMetrics = (
   const pipelineBreakdown: PipelineBreakdownData[] = pipelineStages
     .filter(stage => !stage.nom.toLowerCase().includes('côté'))
     .map(stage => {
-      const stageOpps = getOpportunitiesByStage(String(stage.id));
+      const stageOpps = opportunitiesByStage(String(stage.id));
       const stageValue = stageOpps.reduce((sum, opp) => sum + (opp.value || opp.montant || 0), 0);
       return {
         name: stage.nom,

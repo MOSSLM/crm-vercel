@@ -25,6 +25,7 @@ const TITLE_MAP: Record<string, string> = {
   "/duplicates": "Duplicats",
   "/networks": "Réseaux",
   "/blacklist": "Blacklist",
+  "/concurrents": "Concurrents",
   "/qualification": "Démarchage",
   "/opportunities": "Opportunités",
   "/pipeline": "Pipeline",

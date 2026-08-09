@@ -15,6 +15,8 @@ import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import {
   AlertTriangle,
+  Archive,
+  ArchiveRestore,
   Bolt,
   Building2,
   Calendar,
@@ -38,6 +40,7 @@ import {
   User,
   X,
 } from 'lucide-react'
+import { ArchiveDialog, type ArchiveTarget } from '@/components/archive/ArchiveDialog'
 import { authedFetch } from '@/utils/authedFetch'
 import { getCompanyDisplayName } from '@/utils/displayHelpers'
 import {
@@ -65,6 +68,7 @@ const STATUS_TABS: { id: SalesFilters['status']; label: string }[] = [
   { id: 'won', label: 'Signés' },
   { id: 'closed', label: 'Clos' },
   { id: 'tous', label: 'Tous' },
+  { id: 'archives', label: 'Archivés' },
 ]
 
 const displayName = (row: SalesBoardRow) =>
@@ -117,6 +121,9 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
     { type: 'seq'; rows: SalesBoardRow[] } | { type: 'queue' } | { type: 'missing' } | null
   >(null)
   const [popover, setPopover] = React.useState<{ row: SalesBoardRow; x: number; y: number } | null>(null)
+  /** Menu ⋮ d'une ligne — même mécanique portalée que le popover « a réagi ». */
+  const [rowMenu, setRowMenu] = React.useState<{ row: SalesBoardRow; x: number; y: number } | null>(null)
+  const [archiveTarget, setArchiveTarget] = React.useState<ArchiveTarget | null>(null)
   const [reaction, setReaction] = React.useState<{ row: SalesBoardRow; id: SalesReactionId } | null>(null)
   const [emailTarget, setEmailTarget] = React.useState<EmailTarget | null>(null)
 
@@ -635,6 +642,14 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
                 }
                 onReact={(e) => handlers.onReact(e, row)}
                 onAddEmail={() => handlers.onAddEmail(row)}
+                onMore={(e) => {
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  setRowMenu({
+                    row,
+                    x: Math.min(rect.left, window.innerWidth - 280),
+                    y: rect.bottom + 6,
+                  })
+                }}
               />
               {columns.map((column) => (
                 <SalesCell key={column.id} row={row} column={column} now={now} timezone={tz} handlers={handlers} />
@@ -743,6 +758,98 @@ export function SalesPipeline({ variant = 'admin' }: { variant?: SalesPipelineVa
           </>,
           document.body,
         )}
+
+      {/* ── Menu ⋮ d'une ligne ──────────────────────────────────────────── */}
+      {rowMenu &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <>
+            <div className="mp-scope-pop-scrim" onClick={() => setRowMenu(null)} />
+            <div className="mp-scope-pop" style={{ left: rowMenu.x, top: rowMenu.y, minWidth: 232 }}>
+              <div className="ph">{displayName(rowMenu.row)}</div>
+              {rowMenu.row.entrepriseId != null && (
+                <Link
+                  className="pop-item"
+                  href={
+                    isAgent
+                      ? `/espace-agent/entreprises/${rowMenu.row.entrepriseId}`
+                      : `/companies/${rowMenu.row.entrepriseId}`
+                  }
+                  onClick={() => setRowMenu(null)}
+                >
+                  <Building2 className="ico-sm" />
+                  Ouvrir la fiche entreprise
+                </Link>
+              )}
+              <div className="pop-sep" />
+              {rowMenu.row.archive ? (
+                <button
+                  className="pop-item"
+                  onClick={() => {
+                    const row = rowMenu.row
+                    setRowMenu(null)
+                    setArchiveTarget({
+                      kind: 'opportunite',
+                      entrepriseIds: [],
+                      opportunityIds: [row.id],
+                      label: displayName(row),
+                      currentReason: row.archive?.reason ?? 'autre',
+                      currentNote: row.archive?.note ?? null,
+                    })
+                  }}
+                >
+                  <ArchiveRestore className="ico-sm" />
+                  Désarchiver
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="pop-item danger"
+                    onClick={() => {
+                      const row = rowMenu.row
+                      setRowMenu(null)
+                      setArchiveTarget({
+                        kind: 'opportunite',
+                        entrepriseIds: [],
+                        opportunityIds: [row.id],
+                        label: displayName(row),
+                      })
+                    }}
+                  >
+                    <Archive className="ico-sm" />
+                    Archiver l’opportunité…
+                  </button>
+                  {rowMenu.row.entrepriseId != null && (
+                    <button
+                      className="pop-item danger"
+                      onClick={() => {
+                        const row = rowMenu.row
+                        setRowMenu(null)
+                        setArchiveTarget({
+                          kind: 'entreprise',
+                          entrepriseIds: [row.entrepriseId as number],
+                          opportunityIds: [],
+                          label: displayName(row),
+                        })
+                      }}
+                    >
+                      <Archive className="ico-sm" />
+                      Archiver l’entreprise…
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </>,
+          document.body,
+        )}
+
+      <ArchiveDialog
+        target={archiveTarget}
+        apiBase={isAgent ? '/api/agent/archive' : '/api/archive'}
+        onClose={() => setArchiveTarget(null)}
+        onDone={() => void load(true)}
+      />
 
       {/* ── Modales ─────────────────────────────────────────────────────── */}
       {reaction && (
@@ -879,6 +986,7 @@ function RowHead({
   onToggle,
   onReact,
   onAddEmail,
+  onMore,
 }: {
   row: SalesBoardRow
   columns: SalesColumn[]
@@ -889,6 +997,7 @@ function RowHead({
   onToggle: () => void
   onReact: (e: React.MouseEvent) => void
   onAddEmail: () => void
+  onMore: (e: React.MouseEvent) => void
 }) {
   const doneCount = columns.filter((c) => row.cells[c.id] === 'done').length
   const statusLabel =
@@ -931,19 +1040,9 @@ function RowHead({
             )}
           </div>
         </div>
-        <Link
-          href={
-            row.entrepriseId != null
-              ? agentMode
-                ? `/espace-agent/entreprises/${row.entrepriseId}`
-                : `/companies/${row.entrepriseId}`
-              : '#'
-          }
-          className="rh-more"
-          title="Ouvrir la fiche entreprise"
-        >
+        <button className="rh-more" onClick={onMore} title="Options">
           <MoreVertical className="ico-sm" />
-        </Link>
+        </button>
       </div>
 
       <div>

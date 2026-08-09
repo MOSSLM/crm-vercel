@@ -16,7 +16,9 @@ interface Props {
 }
 
 export function CompanyList({ lmMap, selected, onSelect }: Props) {
-  const { companies, opportunities, pipelines, pipelineStages } = useAppData();
+  // Une opportunité archivée ne doit pas « gagner » le `find` et faire afficher
+  // une étape périmée à côté du nom de l'entreprise.
+  const { activeCompanies: companies, activeOpportunities: opportunities, pipelines, pipelineStages } = useAppData();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "pipeline">("name");

@@ -56,10 +56,13 @@ const emptyKpis: JournalKpiTotals = {
 };
 
 export const DashboardPage: React.FC = () => {
+  // Le tableau de bord ne parle que du livre actif : `activeOpportunities`
+  // alimente tous les montants (valeur de pipeline, CA signé, encaissé), et
+  // `getOpportunitiesByStage` filtre déjà les archivées à la source.
   const {
-    companies,
+    activeCompanies: companies,
     contacts,
-    opportunities,
+    activeOpportunities: opportunities,
     pipelineStages,
     getOpportunitiesByStage,
     totalCompanies,

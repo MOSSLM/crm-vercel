@@ -79,6 +79,8 @@ const noopHandlers: MatrixHandlers = {
   onMove: jest.fn(),
   onDetails: jest.fn(),
   onNotes: jest.fn(),
+  onArchive: jest.fn(),
+  onUnarchive: jest.fn(),
 };
 
 /**
@@ -107,6 +109,7 @@ function renderRows(rows: BoardItem[], handlers: MatrixHandlers = noopHandlers) 
     onValidateAudits: jest.fn(),
     onAssign: jest.fn(),
     onMove: jest.fn(),
+    onArchive: jest.fn(),
   };
   render(
     <PipelineMatrix
@@ -137,6 +140,7 @@ function renderMatrix(bulk: Partial<BulkHandlers> = {}) {
     onValidateAudits: jest.fn(),
     onAssign: jest.fn(),
     onMove: jest.fn(),
+    onArchive: jest.fn(),
     ...bulk,
   };
   render(
@@ -387,6 +391,7 @@ describe("PipelineMatrix — éditeur d'audit selon la coque", () => {
           onCreateAudits: jest.fn(),
           onValidateAudits: jest.fn(),
           onMove: jest.fn(),
+          onArchive: jest.fn(),
         }}
         canAssign={false}
         agentMode
@@ -432,5 +437,126 @@ describe("PipelineMatrix — refaire le site avec un autre template", () => {
   it("affiche le template d'origine sur la carte du site", () => {
     renderRows([withSite("t2", "Chantier")]);
     expect(screen.getByText("Chantier")).toBeInTheDocument();
+  });
+});
+
+describe("PipelineMatrix — archivage", () => {
+  const openRowMenu = (name: string) => {
+    const row = screen.getByText(name).closest(".rh") ?? document.body;
+    fireEvent.click(within(row as HTMLElement).getByTitle("Options"));
+  };
+
+  const handlers = (): MatrixHandlers => ({
+    ...noopHandlers,
+    onArchive: jest.fn(),
+    onUnarchive: jest.fn(),
+  });
+
+  it("propose d'archiver l'opportunité ou l'entreprise", () => {
+    const h = handlers();
+    renderRows([item({ id: "a1", name: "Alpha" })], h);
+
+    openRowMenu("Alpha");
+    fireEvent.click(screen.getByText("Archiver l’entreprise…"));
+
+    expect(h.onArchive).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), "entreprise");
+  });
+
+  it("distingue l'opportunité seule de la fiche entreprise", () => {
+    const h = handlers();
+    renderRows([item({ id: "a1", name: "Alpha" })], h);
+
+    openRowMenu("Alpha");
+    fireEvent.click(screen.getByText("Archiver l’opportunité…"));
+
+    expect(h.onArchive).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }), "opportunite");
+  });
+
+  // « Masquer » est un confort de session, « Archiver » une décision : les deux
+  // doivent rester proposés côte à côte.
+  it("garde « Masquer la ligne » à côté de l'archivage", () => {
+    renderRows([item({ id: "a1", name: "Alpha" })]);
+    openRowMenu("Alpha");
+    expect(screen.getByText("Masquer la ligne")).toBeInTheDocument();
+  });
+
+  it("propose de désarchiver — et rien d'autre — quand la ligne est archivée", () => {
+    const h = handlers();
+    renderRows([item({ id: "a1", name: "Alpha", archived_at: "2026-08-01T10:00:00Z" })], h);
+
+    openRowMenu("Alpha");
+    expect(screen.queryByText("Archiver l’entreprise…")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Désarchiver"));
+
+    expect(h.onUnarchive).toHaveBeenCalledWith(expect.objectContaining({ id: "a1" }));
+  });
+
+  it("badge la ligne archivée avec son motif", () => {
+    renderRows([
+      item({
+        id: "a1",
+        name: "Alpha",
+        archived_at: "2026-08-01T10:00:00Z",
+        archive_reason: "refait_par_concurrent",
+        archive_note: "studio-durand.fr",
+      }),
+    ]);
+
+    expect(screen.getByText("Archivé")).toHaveAttribute(
+      "title",
+      "A refait son site avec un concurrent — studio-durand.fr",
+    );
+  });
+
+  it("n'affiche la bascule « Archivés » que si le board la propose", () => {
+    renderRows([item({ id: "a1", name: "Alpha" })]);
+    expect(screen.queryByText("Archivés")).not.toBeInTheDocument();
+
+    const onToggleArchived = jest.fn();
+    render(
+      <PipelineMatrix
+        items={[item({ id: "a2", name: "Beta" })]}
+        agents={[]}
+        templates={[{ id: "t1", name: "Template", is_claude_design: true }]}
+        pipelines={[]}
+        templateId="t1"
+        onTemplateChange={jest.fn()}
+        loading={false}
+        working={null}
+        onRefresh={jest.fn()}
+        handlers={noopHandlers}
+        bulk={{
+          onEnrich: jest.fn(),
+          onComplete: jest.fn(),
+          onValidateEnrich: jest.fn(),
+          onCreateSites: jest.fn(),
+          onRegenerateSites: jest.fn(),
+          onValidateSites: jest.fn(),
+          onCreateAudits: jest.fn(),
+          onValidateAudits: jest.fn(),
+          onMove: jest.fn(),
+          onArchive: jest.fn(),
+        }}
+        onToggleArchived={onToggleArchived}
+      />,
+    );
+    fireEvent.click(screen.getByText("Archivés"));
+    expect(onToggleArchived).toHaveBeenCalled();
+  });
+});
+
+describe("PipelineMatrix — archivage en masse", () => {
+  // Le motif est demandé une seule fois pour tout le lot : archiver quarante
+  // pistes mortes une par une, personne ne le ferait.
+  it("passe toutes les lignes cochées au dialogue, en mode entreprise", () => {
+    const bulk = renderMatrix();
+    fireEvent.click(rowCheckbox("Alpha"));
+    fireEvent.click(rowCheckbox("Beta"));
+
+    fireEvent.click(bar().getByRole("button", { name: /Archiver/ }));
+
+    const [items, kind] = (bulk.onArchive as jest.Mock).mock.calls[0];
+    expect(items.map((i: BoardItem) => i.id)).toEqual(["a", "b"]);
+    expect(kind).toBe("entreprise");
   });
 });

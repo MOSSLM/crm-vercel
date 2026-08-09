@@ -5,26 +5,31 @@ import { Building, MapPin, Globe, Users, Calendar } from 'lucide-react';
 import { getCompanyDisplayName, ensureHttpsUrl } from '../../utils/displayHelpers';
 import { Employee, QUALIFIED_COMPANIES_CONSTANTS } from './types';
 import { Company } from '../../types';
+import { archiveReasonLabel } from '../../lib/archive/reasons';
 import { normalizeServiceTags } from '../../utils/serviceTags';
+import { CompanyArchiveMenu } from './CompanyArchiveMenu';
 
 interface CompanyCardProps {
   company: Company;
   employees: Employee[];
   onContactClick?: (companyId: number) => void;
+  /** Ouvre le dialogue d'archivage (ou de désarchivage) sur cette fiche. */
+  onArchive?: (company: Company) => void;
 }
 
-export const CompanyCard: React.FC<CompanyCardProps> = React.memo(({ 
-  company, 
-  employees, 
-  onContactClick 
+export const CompanyCard: React.FC<CompanyCardProps> = React.memo(({
+  company,
+  employees,
+  onContactClick,
+  onArchive
 }) => {
   const displayName = getCompanyDisplayName(company.name, company.canonical_url);
   const serviceTags = normalizeServiceTags(company.service_tags, company.premiers_tags);
 
   return (
-    <div 
-      className="border border-border rounded-lg p-4 cursor-pointer bg-card"
-      style={{ 
+    <div
+      className="group relative border border-border rounded-lg p-4 cursor-pointer bg-card"
+      style={{
         transition: 'none',
         transform: 'none',
         animation: 'none'
@@ -37,6 +42,14 @@ export const CompanyCard: React.FC<CompanyCardProps> = React.memo(({
       }}
       onClick={() => onContactClick?.(company.id)}
     >
+      <div className="absolute top-2 right-2">
+        <CompanyArchiveMenu
+          company={company}
+          onOpen={(c) => onContactClick?.(c.id)}
+          onArchive={onArchive}
+        />
+      </div>
+
       <div className="space-y-3">
         {/* Titre simplifié */}
         <div className="space-y-2">
@@ -49,6 +62,16 @@ export const CompanyCard: React.FC<CompanyCardProps> = React.memo(({
             </span>
           </div>
           <div className="flex gap-2">
+            {company.archived_at ? (
+              <span
+                className="text-xs bg-destructive text-white px-2 py-1 rounded"
+                title={[archiveReasonLabel(company.archive_reason), company.archive_note]
+                  .filter(Boolean)
+                  .join(' — ')}
+              >
+                Archivée
+              </span>
+            ) : null}
             <span className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded">
               Qualifiée
             </span>
