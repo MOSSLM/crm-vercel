@@ -787,6 +787,8 @@ function BulkBar({
   onOverwriteChange,
   onClear,
   bulk,
+  templateId,
+  templateName,
 }: {
   rows: BoardItem[];
   agents: AgentRef[];
@@ -797,10 +799,20 @@ function BulkBar({
   onOverwriteChange: (v: boolean) => void;
   onClear: () => void;
   bulk: BulkHandlers;
+  /** Le modèle choisi en haut de page : cible de « Refaire les sites ». */
+  templateId: string;
+  templateName: string | null;
 }) {
   const toComplete = rows.filter((r) => missingCount(r) > 0);
   const toValidateEnrich = rows.filter((r) => r.project && !r.project.enrichment_validated);
   const toCreateSite = rows.filter((r) => r.entreprise_id != null && !r.site);
+  // Symétrique de `toCreateSite` : les lignes qui ONT déjà un site. Sans elles,
+  // rebasculer un parc entier sur un nouveau modèle se faisait ligne par ligne.
+  const toRegenerateSite = rows.filter((r) => r.entreprise_id != null && r.site);
+  // Combien changeraient réellement de modèle — le reste est un simple
+  // rafraîchissement des infos de fiche. La distinction change le sens du
+  // bouton, donc elle est dite avant de cliquer.
+  const toSwapTemplate = toRegenerateSite.filter((r) => templateMismatch(r, templateId));
   const toValidateSite = rows.filter((r) => r.site && !siteValidated(r));
   const toCreateAudit = rows.filter((r) => !r.audit);
   const toValidateAudit = rows.filter((r) => r.audit && r.audit.statut !== "ready");
@@ -843,6 +855,22 @@ function BulkBar({
         <Globe className="ico-sm" />
         Créer les sites
         {ct(toCreateSite.length)}
+      </button>
+      <button
+        className={"btn sm" + (toSwapTemplate.length > 0 ? " danger-h" : "")}
+        disabled={busy || toRegenerateSite.length === 0 || !templateId}
+        title={
+          !templateId
+            ? "Choisis d'abord un template en haut de page"
+            : toSwapTemplate.length > 0
+              ? `Refaire ${toRegenerateSite.length} site(s) avec « ${templateName} » — dont ${toSwapTemplate.length} qui changent de modèle. Les retouches faites dans l'éditeur seront perdues.`
+              : `Refaire ${toRegenerateSite.length} site(s) depuis « ${templateName} » et reprendre les infos à jour des fiches. Les retouches faites dans l'éditeur seront perdues.`
+        }
+        onClick={() => bulk.onRegenerateSites(toRegenerateSite)}
+      >
+        <RefreshCw className="ico-sm" />
+        Refaire les sites
+        {ct(toRegenerateSite.length)}
       </button>
       <button className="btn sm" disabled={busy || toValidateSite.length === 0} onClick={() => bulk.onValidateSites(toValidateSite)}>
         <Check className="ico-sm" />
@@ -1439,6 +1467,8 @@ export function PipelineMatrix({
           onOverwriteChange={setOverwriteEnrich}
           onClear={() => setSelected(new Set())}
           bulk={bulk}
+          templateId={templateId}
+          templateName={selectedTemplate?.name ?? null}
         />
       )}
 

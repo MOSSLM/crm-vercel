@@ -18,6 +18,8 @@ import type { LogoCertification } from "./hydrate-certifications";
 
 export { hydrateCertifications, porteDesCertifications } from "./hydrate-certifications";
 export type { LogoCertification } from "./hydrate-certifications";
+export { filterRgeBadges } from "./filter-rge-badges";
+import type { EtatRgeBadges } from "./filter-rge-badges";
 
 const estLogo = (v: unknown): v is LogoCertification => {
   if (!v || typeof v !== "object") return false;
@@ -29,6 +31,25 @@ const estLogo = (v: unknown): v is LogoCertification => {
     o.src.startsWith("/rge/")
   );
 };
+
+/**
+ * Ce que le filtre de badges texte doit savoir, décodé des mêmes variables.
+ *
+ * `verifie` vient d'un drapeau DÉDIÉ, jamais d'une déduction sur la liste de
+ * logos : une liste vide ne distingue pas « l'ADEME confirme zéro » de « on n'a
+ * jamais demandé », et ces deux cas appellent des comportements opposés — retirer
+ * les badges, ou n'y pas toucher. Le repli est le second : sans drapeau, on
+ * considère qu'on ne sait pas.
+ */
+export const etatBadgesDepuisVariables = (
+  variables: Record<string, string> | undefined | null,
+): EtatRgeBadges => ({
+  verifie: variables?.["__rge_verifie"] === "1",
+  // Les clés détenues sortent des logos déjà résolus : une qualification sans
+  // logo (certificat d'audit nominatif) ne porte aucune marque, donc aucun badge
+  // de template ne peut la nommer.
+  clesDetenues: logosDepuisVariables(variables?.["__certifications"]).map((l) => l.cle),
+});
 
 /** Décode `__certifications`. Toute anomalie rend `[]`, donc aucun bloc. */
 export const logosDepuisVariables = (json: string | undefined | null): LogoCertification[] => {

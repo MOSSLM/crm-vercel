@@ -459,6 +459,39 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
    * reprises au passage, et un site déjà publié est republié pour que le rendu
    * public suive.
    */
+  type RegenResult = {
+    template_name?: string | null;
+    template_changed?: boolean;
+    republished?: boolean;
+    error?: string;
+  };
+
+  /**
+   * L'appel réseau seul, sans confirmation ni notification.
+   *
+   * Extrait pour que le bouton d'une ligne et l'action de masse refassent un
+   * site de la MÊME façon : deux implémentations divergeraient, et la
+   * divergence se verrait sur les sites publiés.
+   */
+  const regenerateOne = async (siteId: string): Promise<RegenResult> => {
+    // Côté agent, la route dédiée revérifie que l'entreprise lui est attribuée.
+    const url = isAgent
+      ? "/api/agent/marketing-pipeline/site"
+      : "/api/marketing-pipeline/regenerate-site";
+    const res = await authedFetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        isAgent
+          ? { action: "regenerate", site_id: siteId, template_id: templateId }
+          : { site_id: siteId, template_id: templateId },
+      ),
+    });
+    const data = (await res.json().catch(() => ({}))) as RegenResult;
+    if (!res.ok) throw new Error(data.error || "Échec");
+    return data;
+  };
+
   const regenerateSite = async (item: BoardItem) => {
     if (!templateId || !templateName) {
       toast.error("Choisis d'abord un template en haut de page");
@@ -477,26 +510,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
 
     setWorking("create-site");
     try {
-      // Côté agent, la route dédiée revérifie que l'entreprise lui est attribuée.
-      const url = isAgent
-        ? "/api/agent/marketing-pipeline/site"
-        : "/api/marketing-pipeline/regenerate-site";
-      const res = await authedFetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          isAgent
-            ? { action: "regenerate", site_id: item.site.id, template_id: templateId }
-            : { site_id: item.site.id, template_id: templateId },
-        ),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        template_name?: string | null;
-        template_changed?: boolean;
-        republished?: boolean;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error || "Échec");
+      const data = await regenerateOne(item.site.id);
       const used = data.template_name || templateName;
       toast.success(
         data.template_changed
@@ -506,6 +520,80 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
       await afterAction();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erreur lors de la régénération du site");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  /**
+   * Refait PLUSIEURS sites existants depuis le template choisi en haut de page.
+   *
+   * « Créer les sites » ne sait traiter que les lignes sans site : rebasculer un
+   * parc déjà construit sur un nouveau modèle se faisait donc une ligne à la
+   * fois. Chaque site garde son id — donc son URL publiée, son audit et son
+   * avancement.
+   *
+   * Déroulé par petits paquets et non d'un bloc : refaire un site enchaîne
+   * plusieurs allers-retours en base, supprime puis réinsère ses pages, et
+   * republie s'il l'était. Lâcher cent appels d'un coup saturerait la connexion
+   * et ferait échouer des sites au hasard — un échec ici laisse un site à moitié
+   * refait, ce qu'on ne veut pas subir en masse.
+   */
+  const REGEN_PAR_PAQUET = 4;
+
+  const regenerateSites = async (items: BoardItem[]) => {
+    if (!templateId || !templateName) {
+      toast.error("Choisis d'abord un template en haut de page");
+      return;
+    }
+    const targets = items.filter((it) => it.site);
+    if (targets.length === 0) {
+      toast.error("Aucun site à refaire dans la sélection");
+      return;
+    }
+    // Ceux qui changent réellement de modèle, par opposition à un simple
+    // rafraîchissement : la question posée n'est pas la même.
+    const swapping = targets.filter(
+      (it) => !!it.site?.template_name && it.site.template_name !== templateName,
+    ).length;
+    const question =
+      `Refaire ${targets.length} site(s) depuis « ${templateName} » ?\n\n` +
+      (swapping > 0
+        ? `${swapping} d'entre eux changent de modèle, les autres sont rafraîchis avec les infos à jour des fiches.\n\n`
+        : "Les infos des fiches seront reprises à jour.\n\n") +
+      "Les retouches faites dans l'éditeur sur ces sites seront perdues.";
+    if (typeof window !== "undefined" && !window.confirm(question)) return;
+
+    setWorking("create-site");
+    // Un lot de cent sites prend plusieurs minutes. Sans compteur, l'écran a
+    // l'air figé et on relance — ce qui referait tout une seconde fois.
+    const suivi = toast.loading(`Refonte de ${targets.length} site(s)…`);
+    try {
+      let ok = 0;
+      const echecs: string[] = [];
+      for (let i = 0; i < targets.length; i += REGEN_PAR_PAQUET) {
+        const paquet = targets.slice(i, i + REGEN_PAR_PAQUET);
+        const res = await Promise.allSettled(paquet.map((it) => regenerateOne(it.site!.id)));
+        res.forEach((r, j) => {
+          if (r.status === "fulfilled") ok++;
+          else echecs.push(displayName(paquet[j]));
+        });
+        toast.loading(`${ok + echecs.length}/${targets.length} traité(s)…`, { id: suivi });
+      }
+      toast.dismiss(suivi);
+      if (ok > 0) toast.success(`${ok} site(s) refait(s) depuis « ${templateName} »`);
+      // Nommer les entreprises en échec : sur un lot de cent, « 3 échecs » ne
+      // dit pas lesquelles reprendre.
+      if (echecs.length > 0) {
+        const noms = echecs.slice(0, 5).join(", ");
+        toast.error(
+          `${echecs.length} échec(s) : ${noms}${echecs.length > 5 ? `… et ${echecs.length - 5} autre(s)` : ""}`,
+        );
+      }
+      await afterAction();
+    } catch (e) {
+      toast.dismiss(suivi);
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la régénération des sites");
     } finally {
       setWorking(null);
     }
@@ -750,6 +838,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onComplete: (items) => setCompleting(items),
     onValidateEnrich: (items) => validateEnrichment(items),
     onCreateSites: (items) => createSites(items),
+    onRegenerateSites: (items) => regenerateSites(items),
     onValidateSites: (items) => validateSites(items),
     onCreateAudits: (items) => createAudits(items),
     onValidateAudits: (items) => validateAudits(items),

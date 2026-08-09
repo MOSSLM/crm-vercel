@@ -131,6 +131,15 @@ export interface BulkHandlers {
   onComplete: (items: BoardItem[]) => void;
   onValidateEnrich: (items: BoardItem[]) => void;
   onCreateSites: (items: BoardItem[]) => void;
+  /**
+   * Refait des sites DÉJÀ existants depuis le template choisi en haut de page.
+   *
+   * Distinct de `onCreateSites`, qui ne sait traiter que les lignes SANS site :
+   * changer de modèle sur un parc déjà construit n'était possible qu'une ligne
+   * à la fois. Chaque site garde son id — donc son URL publiée, son audit et
+   * son avancement — seules ses pages sont reconstruites.
+   */
+  onRegenerateSites: (items: BoardItem[]) => void;
   onValidateSites: (items: BoardItem[]) => void;
   onCreateAudits: (items: BoardItem[]) => void;
   onValidateAudits: (items: BoardItem[]) => void;

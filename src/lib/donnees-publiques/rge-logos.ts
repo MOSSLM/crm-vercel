@@ -90,3 +90,24 @@ export const logosDistincts = (
 
 /** Nombre de certificats connus du mapping — utile aux tests et au diagnostic. */
 export const NB_CERTIFICATS_MAPPES = Object.keys(CERTIFICAT_VERS_LOGO).length;
+
+/**
+ * Les clés de logo ATTEIGNABLES, c'est-à-dire celles vers lesquelles un
+ * certificat pointe réellement.
+ *
+ * Elles sont **10**, pas 12. Les 16 certificats se réduisent parce que
+ * plusieurs partagent une image : QualiPAC ×2 (Chauffage+ECS et CET), QualiPV
+ * ×2 (36 et 500), Qualisol ×3 (CESI, Combi, Collectif), Qualibois ×2 (Eau et
+ * Air). C'est aussi le nombre maximum de logos qu'une entreprise puisse
+ * afficher, quoi qu'elle détienne.
+ *
+ * `public/rge/` contient deux fichiers de plus — `opqibi-rge` et
+ * `recharge-elec` — vers lesquels aucun `nom_certificat` ne pointe. Ils ne
+ * s'afficheront jamais tant que le mapping ne les nomme pas ; ce n'est pas un
+ * oubli à combler à l'aveugle, il faut d'abord savoir quel libellé ADEME leur
+ * correspond.
+ *
+ * Sert à reconnaître un badge texte (« Qualibat ») sans redéclarer la liste
+ * ailleurs — cf. `claude-design/filter-rge-badges.ts`.
+ */
+export const CLES_LOGOS: string[] = [...new Set(Object.values(CERTIFICAT_VERS_LOGO))];

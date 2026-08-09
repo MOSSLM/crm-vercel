@@ -419,7 +419,43 @@ Chacune peut faire plusieurs commits.
 > curseur « Vérifiées par l'ADEME » (0→5) bascule bandeau + 6 zones + meta.
 > L'état incohérent (logos masqués, texte affirmant le RGE) n'existe plus.
 >
-> **⛔ CE QUI BLOQUE : rien n'est écrit côté CRM.** Cf. la fin de
+> **✅ LIVRÉ le 09/08/2026 — les badges TEXTE des sections déjà importées.**
+> `claude-design/filter-rge-badges.ts`, branché sur les deux surfaces de rendu.
+>
+> C'était l'urgence, et elle ne dépendait pas de l'import de `cvc13` : les 450
+> sections en base ne portent aucun marqueur `data-rge`, donc le contrat de
+> `cvc13` ne les aurait jamais touchées. Il a fallu reconnaître la convention
+> existante, comme pour `.certif-row`.
+>
+> **Soustractif, jamais substitutif** : on retire un badge qui nomme une
+> qualification connue non détenue, on n'en écrit aucun. Trois libellés existent
+> en base (`RGE QualiPAC`, `Qualibat`, `Qualifelec`, chacun sur 450 sections) et
+> un quatrième — `Attestation fluides n° {{ … }}`, sur 99 sections — qui est un
+> attribut RÉEL de l'entreprise et n'est jamais touché.
+>
+> Impact mesuré sur les 190 projets :
+>
+> | | |
+> |---|---|
+> | Intouchés, faute de vérification (§A10) | 12 |
+> | Perdent les trois badges (zéro vérifié) | **95** |
+> | Perdent « Qualifelec » | 79 |
+> | Perdent « Qualibat » | 63 |
+> | Perdent « RGE QualiPAC » | 14 |
+> | **Gardent légitimement les trois** | **0** |
+>
+> Zéro. Pas une seule entreprise du parc ne détient à la fois QualiPAC, Qualibat
+> et Qualifelec — le trio du pied de page était faux sur 190 fiches sur 190.
+>
+> Nouvelle variable `__rge_verifie`, posée par les deux résolveurs. Elle est
+> indispensable : `__certifications` est ABSENT aussi bien quand l'ADEME confirme
+> zéro que quand on n'a jamais demandé, et ces deux cas appellent des
+> comportements opposés. 14 tests, dont deux qui passent par le vrai déballage
+> `unwrapRawHtml` + `renderRawSection`.
+>
+> **⛔ CE QUI RESTE : le contrat `data-rge` de `cvc13`.** Sans effet tant que les
+> templates ne sont pas réimportés — le propriétaire ne les a pas encore poussés,
+> c'est l'ancienne version qui tourne. Cf. la fin de
 > [`PROMPT-4b-variantes-rge.md`](./PROMPT-4b-variantes-rge.md).
 >
 > | À écrire | Rôle |
