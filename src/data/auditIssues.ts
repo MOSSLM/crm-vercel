@@ -11,9 +11,13 @@ import type { AuditProblem, AuditSolution } from '@/types';
 // page « Situation » ET sa solution pairée sur la page « Solution ».
 //
 // IMPORTANT : les clés (`key`) sont émises par l'analyseur de sites
-// (`src/lib/audit-site/score.ts`, `issueKeysDepuisSignaux`), qui les écrit
-// dans `entreprises_audit_site.issue_keys`. C'est de là que viennent les
-// cases pré-cochées de l'éditeur.
+// (`src/lib/audit-site/score.ts`, `issueKeysDepuisAxes`), qui les écrit dans
+// `entreprises_audit_site.issue_keys`. C'est de là que viennent les cases
+// pré-cochées de l'éditeur.
+//
+// Une clé n'est émise que si la PREUVE correspondante porte le verdict
+// « probleme ». Une carte affichée ici est donc toujours adossée à une mesure
+// qu'on peut montrer au prospect, et ne peut pas contredire la note de son axe.
 //
 // (L'en-tête renvoyait auparavant vers `edge function enrich/audit.ts`
 // (AUDIT_ISSUE_KEYS) : ce fichier n'a jamais existé, et personne n'écrivait

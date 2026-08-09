@@ -228,10 +228,64 @@ describe("scorer — mobile", () => {
     );
   });
 
-  it("l'émet aussi sur des largeurs figées, viewport présent", () => {
-    expect(issueKeysDepuisSignaux({ ...signauxSains(), nbLargeursFixes: 5 }, {})).toContain(
+  it("n'accuse pas un site adaptatif qui a quelques largeurs figées", () => {
+    // Le faux positif qui frappait 21 sites sur 22 : des largeurs figées seules
+    // ne font pas un site inadapté quand les règles mobiles sont là.
+    expect(issueKeysDepuisSignaux({ ...signauxSains(), nbLargeursFixes: 5 }, {})).not.toContain(
       "outdated_or_not_mobile",
     );
+  });
+
+  it("l'émet quand les deux symptômes concordent", () => {
+    const fige: SignauxSite = { ...signauxSains(), nbLargeursFixes: 5, nbMediaQueries: 0 };
+    expect(issueKeysDepuisSignaux(fige, {})).toContain("outdated_or_not_mobile");
+  });
+
+  it("ne l'émet pas quand le CSS n'a pas pu être lu", () => {
+    // `null` = on n'a pas regardé. Le doute n'accuse pas.
+    const inconnu: SignauxSite = {
+      ...signauxSains(),
+      nbLargeursFixes: 5,
+      nbMediaQueries: null,
+      cssLisible: false,
+    };
+    expect(issueKeysDepuisSignaux(inconnu, {})).not.toContain("outdated_or_not_mobile");
+  });
+});
+
+describe("une clé ne contredit jamais la note de son axe", () => {
+  it("un site à 88/100 en vitesse ne reçoit pas la carte « site lent »", () => {
+    // Cas relevé en base : TTFB 1 043 ms, six autres preuves de vitesse au vert.
+    // L'ancienne dérivation émettait `slow_site` sur son seul seuil TTFB.
+    const rapideMaisTtfbHaut: SignauxSite = { ...signauxSains(), ttfbMs: 1_043, chargementMs: 1_139 };
+    const r = scorer(rapideMaisTtfbHaut);
+
+    expect(r.axes.vitesse.note).toBeGreaterThan(70);
+    // Le TTFB est « moyen », pas « problème » : la zone grise joue son rôle.
+    expect(r.axes.vitesse.preuves.find((p) => p.cle === "ttfb")?.verdict).toBe("moyen");
+    expect(r.issueKeys).not.toContain("slow_site");
+  });
+
+  it("toute clé émise s'appuie sur au moins une preuve en problème", () => {
+    const abime: SignauxSite = {
+      ...signauxSains(),
+      ttfbMs: 5_000,
+      viewport: false,
+      formulaire: false,
+      mailto: false,
+      nbCta: 0,
+    };
+    const r = scorer(abime);
+    const enProbleme = new Set(
+      Object.values(r.axes).flatMap((a) => a.preuves.filter((p) => p.verdict === "probleme").map((p) => p.cle)),
+    );
+
+    expect(r.issueKeys.length).toBeGreaterThan(0);
+    expect(enProbleme.size).toBeGreaterThan(0);
+    // Aucune clé sans fondement mesuré.
+    for (const cle of r.issueKeys) {
+      expect(cle).not.toBe("no_site_or_unreachable");
+    }
   });
 });
 

@@ -334,10 +334,18 @@ function axeMobile(s: SignauxSite): NoteAxe {
 function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
   const aDesAvisGoogle = (ctx.nombreAvis ?? 0) > 0;
   const preuves: Preuve[] = [
-    pBool("tel", "Numéro cliquable depuis un mobile", s.joignable ? s.telCliquable : null, 25, {
-      oui: "oui",
-      non: "non",
-    }),
+    // Sans aucun numéro nulle part, la question « est-il cliquable ? » n'a pas de
+    // réponse : c'est `inconnu`. Répondre « non » reprocherait un défaut de forme
+    // sur une information que la page ne porte pas — et, depuis que les clés
+    // dérivent des verdicts, cela émettrait `phone_not_clickable` sur des sites
+    // qui n'affichent pas de téléphone du tout.
+    pBool(
+      "tel",
+      "Numéro cliquable depuis un mobile",
+      s.joignable && (s.telCliquable || s.telephoneEnTexte) ? s.telCliquable : null,
+      25,
+      { oui: "oui", non: "non" },
+    ),
     pBool(
       "formulaire",
       "Moyen de vous contacter en ligne",
@@ -392,42 +400,75 @@ function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
 // ---------------------------------------------------------------------------
 
 /**
- * Les clés du catalogue déclenchées par les mesures — ce qui remplit enfin
- * `audit_detected_issues`, lu depuis toujours par `AuditWorkspace` et écrit par
- * personne.
+ * Les clés du catalogue déclenchées par les mesures — ce qui remplit
+ * `entreprises_audit_site.issue_keys`, lu par `AuditWorkspace` pour pré-cocher
+ * les cartes de l'audit.
  *
- * Chaque clé exige une mesure POSITIVE. Un site injoignable ne déclenche que
- * `no_site_or_unreachable` : lui reprocher en plus son téléphone non cliquable
- * serait une affirmation sur une page qu'on n'a jamais lue.
+ * UNE SEULE SOURCE DE VÉRITÉ : une clé est émise si, et seulement si, la preuve
+ * correspondante porte le verdict `probleme`.
+ *
+ * Cette fonction rejugeait auparavant les signaux bruts avec ses propres seuils,
+ * en parallèle du barème des preuves. D'où deux vérités sur la même page : un
+ * site noté « 88/100 en rapidité » recevait la carte « votre site est lent »
+ * parce que son TTFB dépassait 800 ms, alors que ses six autres preuves de
+ * vitesse étaient bonnes. Le prospect lisait les deux, et l'une des deux suffit à
+ * discréditer le document.
+ *
+ * En lisant les verdicts au lieu de les refaire, la contradiction devient
+ * impossible par construction — pas par vigilance.
  */
-export function issueKeysDepuisSignaux(s: SignauxSite, ctx: ContexteEntreprise): string[] {
-  const keys: string[] = [];
+interface RegleCle {
+  cle: string;
+  /** Preuves à consulter, par leur `cle`, tous axes confondus. */
+  preuves: string[];
+  /** `une` : une preuve en problème suffit. `toutes` : il les faut toutes. */
+  mode: "une" | "toutes";
+}
 
+const REGLES_CLES: RegleCle[] = [
+  // La lenteur se constate sur le temps de réponse, la réception ou le poids.
+  { cle: "slow_site", preuves: ["ttfb", "chargement", "poids"], mode: "une" },
+
+  // Un site sans `viewport` n'est pas adaptatif, point.
+  { cle: "outdated_or_not_mobile", preuves: ["viewport"], mode: "une" },
+  // Sinon il faut DEUX symptômes concordants : des largeurs figées ET aucune
+  // règle d'affichage mobile. Un seul des deux ne suffit pas — un site en
+  // flexbox n'a parfois aucune media query et s'adapte parfaitement, et une
+  // largeur figée isolée ne fait pas un site des années 2000.
+  { cle: "outdated_or_not_mobile", preuves: ["largeurs_fixes", "media_queries"], mode: "toutes" },
+
+  { cle: "phone_not_clickable", preuves: ["tel"], mode: "une" },
+  { cle: "form_not_accessible", preuves: ["formulaire"], mode: "une" },
+  { cle: "weak_cta", preuves: ["cta"], mode: "une" },
+  { cle: "no_reviews_on_site", preuves: ["avis"], mode: "une" },
+];
+
+export function issueKeysDepuisAxes(axes: Record<AxeId, NoteAxe>, s: SignauxSite): string[] {
+  // Un site injoignable ne déclenche que sa propre clé : lui reprocher en plus
+  // son téléphone non cliquable serait une affirmation sur une page jamais lue.
   if (!s.joignable) return ["no_site_or_unreachable"];
 
-  const lent =
-    (s.chargementMs != null && s.chargementMs > SEUILS.chargementMs) ||
-    (s.ttfbMs != null && s.ttfbMs > SEUILS.ttfbMs) ||
-    (s.poidsOctets != null && s.poidsOctets > SEUILS.poidsOctets);
-  if (lent) keys.push("slow_site");
+  const verdicts = new Map<string, Verdict>();
+  for (const axe of Object.values(axes)) {
+    for (const p of axe.preuves) verdicts.set(p.cle, p.verdict);
+  }
 
-  if (!s.viewport || s.nbLargeursFixes > 2) keys.push("outdated_or_not_mobile");
-
-  // Un téléphone qui n'apparaît nulle part n'est pas « non cliquable » : c'est
-  // un autre problème, et l'affirmer serait faux.
-  if (s.telephoneEnTexte && !s.telCliquable) keys.push("phone_not_clickable");
-
-  if (!s.formulaire && !s.mailto) keys.push("form_not_accessible");
-
-  if (s.nbCta < SEUILS.ctaMin) keys.push("weak_cta");
-
-  // Voir `SignauxSite.widgetAvis` : sans ce garde-fou, on annonce des avis
-  // manquants qui sont en réalité chargés par un script.
-  if ((ctx.nombreAvis ?? 0) > 0 && !s.avisDansLaPage && !s.widgetAvis) {
-    keys.push("no_reviews_on_site");
+  const keys: string[] = [];
+  for (const regle of REGLES_CLES) {
+    if (keys.includes(regle.cle)) continue;
+    const etats = regle.preuves.map((c) => verdicts.get(c));
+    // Une preuve non mesurée ne déclenche jamais rien : le doute n'accuse pas.
+    const enProbleme = etats.filter((v) => v === "probleme").length;
+    const declenche = regle.mode === "une" ? enProbleme > 0 : enProbleme === regle.preuves.length;
+    if (declenche) keys.push(regle.cle);
   }
 
   return keys;
+}
+
+/** Confort d'appel : depuis les signaux seuls, en passant par le barème. */
+export function issueKeysDepuisSignaux(s: SignauxSite, ctx: ContexteEntreprise = {}): string[] {
+  return issueKeysDepuisAxes(calculerAxes(s, ctx), s);
 }
 
 // ---------------------------------------------------------------------------
@@ -446,13 +487,18 @@ export function libelleDeNote(note: number): string {
   return LIBELLES.find((l) => note >= l.min)?.texte ?? "Critique";
 }
 
-export function scorer(s: SignauxSite, ctx: ContexteEntreprise = {}): ResultatScore {
-  const axes: Record<AxeId, NoteAxe> = {
+/** Les quatre axes, sans les clés — pour que la dérivation puisse les relire. */
+function calculerAxes(s: SignauxSite, ctx: ContexteEntreprise): Record<AxeId, NoteAxe> {
+  return {
     vitesse: axeVitesse(s),
     seo: axeSeo(s),
     mobile: axeMobile(s),
     conversion: axeConversion(s, ctx),
   };
+}
+
+export function scorer(s: SignauxSite, ctx: ContexteEntreprise = {}): ResultatScore {
+  const axes = calculerAxes(s, ctx);
 
   const alertes: string[] = [];
   if (!s.joignable) alertes.push("Site injoignable — aucune note n'est publiable.");
@@ -487,7 +533,7 @@ export function scorer(s: SignauxSite, ctx: ContexteEntreprise = {}): ResultatSc
     noteGlobale,
     axes,
     libelle: libelleDeNote(noteGlobale),
-    issueKeys: issueKeysDepuisSignaux(s, ctx),
+    issueKeys: issueKeysDepuisAxes(axes, s),
     alertes,
   };
 }
