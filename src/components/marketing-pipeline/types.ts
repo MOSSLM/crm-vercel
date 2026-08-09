@@ -47,6 +47,24 @@ export interface BoardItem {
     template_name?: string | null;
   } | null;
   audit: { id: string; statut: string; pdf_url: string | null } | null;
+  /**
+   * Note du site actuel, mesurée par l'analyseur.
+   *
+   * Optionnel : absent tant que `sql/20260810_audit_site.sql` n'est pas
+   * appliquée, ou pour une entreprise jamais analysée. La colonne se cache alors
+   * plutôt que d'afficher un tiret, parce qu'une fonctionnalité absente ne doit
+   * pas ressembler à une donnée manquante.
+   */
+  note_site?: {
+    globale: number;
+    libelle: string | null;
+    vitesse: number | null;
+    seo: number | null;
+    mobile: number | null;
+    conversion: number | null;
+    /** Un axe au moins a été écarté faute de confiance : l'analyse est partielle. */
+    partielle: boolean;
+  } | null;
   agent: { id: string; name: string } | null;
   missing_for_site: string[];
   /**

@@ -520,6 +520,37 @@ function RowHead({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 7, gap: 6 }}>
           <span className="rh-status">{statusLabel}</span>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            {/* La note du site actuel, là où l'on décide qui démarcher.
+                Absente quand l'entreprise n'a jamais été analysée, ou quand la
+                migration n'est pas appliquée : une fonctionnalité qui n'existe
+                pas ne doit pas ressembler à une donnée manquante. */}
+            {item.note_site && (
+              <span
+                className={
+                  "pill " +
+                  (item.note_site.globale >= 70 ? "ok" : item.note_site.globale >= 45 ? "warn" : "danger")
+                }
+                title={
+                  [
+                    `Site actuel : ${item.note_site.globale}/100${item.note_site.libelle ? ` · ${item.note_site.libelle}` : ""}`,
+                    [
+                      item.note_site.vitesse != null ? `vitesse ${item.note_site.vitesse}` : null,
+                      item.note_site.seo != null ? `SEO ${item.note_site.seo}` : null,
+                      item.note_site.mobile != null ? `mobile ${item.note_site.mobile}` : null,
+                      item.note_site.conversion != null ? `conversion ${item.note_site.conversion}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · "),
+                    item.note_site.partielle ? "Analyse partielle — un axe au moins n'est pas concluant." : null,
+                  ]
+                    .filter(Boolean)
+                    .join("\n")
+                }
+              >
+                {item.note_site.globale}
+                {item.note_site.partielle ? "*" : ""}
+              </span>
+            )}
             {item.archived_at && (
               <span
                 className="pill danger"
