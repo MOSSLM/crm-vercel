@@ -1,7 +1,13 @@
 import type { AuditContent } from '@/types';
 import type { AuditLu } from '@/lib/audit-site/lecture';
 import { esc, innerHeader, innerFooter } from './htmlShared';
-import { autresAmeliorations, phraseAutresAmeliorations } from '@/lib/audit/autres-ameliorations';
+import {
+  autresAmeliorations,
+  phraseAutresAmeliorations,
+  titreDetailAmeliorations,
+  ligneAmelioration,
+  type AuditVariante,
+} from '@/lib/audit/autres-ameliorations';
 
 const alertIconSvg = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none">
   <circle cx="7" cy="7" r="5.5" stroke="#3A7BD5" stroke-width="1"/>
@@ -9,12 +15,14 @@ const alertIconSvg = `<svg width="14" height="14" viewBox="0 0 14 14" fill="none
   <circle cx="7" cy="9.5" r="0.5" fill="#3A7BD5"/>
 </svg>`;
 
-export function page2Html(content: AuditContent, audit?: AuditLu | null) {
+export function page2Html(content: AuditContent, audit?: AuditLu | null, variante: AuditVariante = 'court') {
   const p = content.page2;
   // Miroir de `AuditPage2.tsx` : on argumente sur trois cartes et on prouve la
   // profondeur par un décompte de preuves en échec, jamais par une estimation.
-  const autres = phraseAutresAmeliorations(
-    autresAmeliorations(audit, p.problems.map(x => x.key).filter((k): k is string => !!k)),
+  // La version complète déplie ce décompte au lieu de le résumer.
+  const restantes = autresAmeliorations(
+    audit,
+    p.problems.map(x => x.key).filter((k): k is string => !!k),
   );
   return `
 <div class="page">
@@ -34,7 +42,14 @@ export function page2Html(content: AuditContent, audit?: AuditLu | null) {
         <div class="problem-desc">${esc(prob.desc)}</div>
       </div>`).join('')}
     </div>
-    ${autres ? `<div class="problem-autres">${esc(autres)}</div>` : ''}
+    ${restantes.nombre === 0 ? '' : variante === 'court'
+      ? `<div class="problem-autres">${esc(phraseAutresAmeliorations(restantes) ?? '')}</div>`
+      : `<div class="problem-detail">
+      <div class="problem-detail-titre">${esc(titreDetailAmeliorations(restantes))}</div>
+      <div class="problem-detail-grid">${restantes.entrees
+        .map(e => `<div>· ${esc(ligneAmelioration(e))}</div>`)
+        .join('')}</div>
+    </div>`}
     <div style="padding:24px 28px;border-left:2px solid #3A7BD5;background:rgba(58,123,213,.04);border-radius:0 4px 4px 0">
       <p style="font-family:'Cormorant Garamond',serif;font-size:20px;font-weight:300;color:#0B1D3A;font-style:italic;line-height:1.5;margin-bottom:10px">"${esc(p.quote)}"</p>
       <p style="font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:rgba(11,29,58,.4);font-weight:500">${esc(p.quote_source)}</p>

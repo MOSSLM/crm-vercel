@@ -1,7 +1,11 @@
 import type { AuditContent, AuditProblem, AuditSolution, AuditLivrable, AuditGlobalStyle } from "@/types";
 import type { AuditLu } from "@/lib/audit-site/lecture";
 import { esc, logoSvg, getServices, calcTotal, fmtEur, makeGrainSvgUrl } from "./htmlShared";
-import { autresAmeliorations } from "@/lib/audit/autres-ameliorations";
+import {
+  autresAmeliorations,
+  titreDetailAmeliorations,
+  type AuditVariante,
+} from "@/lib/audit/autres-ameliorations";
 
 /**
  * Le rendu « mobile / WhatsApp » de l'audit — écrans verticaux, une idée par
@@ -49,6 +53,11 @@ export interface RapportMesures {
   captureDemo?: string | null;
   /** Note du démo, pour la comparaison. */
   noteDemo?: number | null;
+  /**
+   * `court` (défaut) part par WhatsApp : trois cartes et un nombre. `complet`
+   * se déplie en rendez-vous, chaque point restant avec sa mesure.
+   */
+  variante?: AuditVariante;
 }
 
 function chunk<T>(arr: T[], n: number): T[][] {
@@ -280,6 +289,9 @@ export function buildScreens(c: AuditContent, m: RapportMesures = { audit: null 
   const s: Ecran[] = [];
   const { page1: p1, page2: p2, page3: p3, page4: p4, page5: p5, page6: p6 } = c;
   const nomClient = p1.client_name || "votre entreprise";
+  // Le rendu mobile est celui qu'on ENVOIE : il est court par défaut. La version
+  // complète se demande explicitement, pour le rendez-vous.
+  const variante = m.variante ?? "court";
 
   /* 1 · Couverture */
   s.push({
@@ -351,6 +363,8 @@ export function buildScreens(c: AuditContent, m: RapportMesures = { audit: null 
     probs.map((p) => p.key).filter((k): k is string => Boolean(k)),
   );
   if (autres.nombre > 0) {
+    // Version courte : le nombre seul. C'est ce qui part par WhatsApp, et un
+    // nombre se retient mieux qu'une liste qu'on fait défiler au pouce.
     s.push({
       label: "Autres points",
       auto: true,
@@ -358,10 +372,32 @@ export function buildScreens(c: AuditContent, m: RapportMesures = { audit: null 
       ${brand(false, p2.section_label ?? "")}
       <div class="m-body" style="justify-content:center">
         <div class="m-count" style="font-size:44px;line-height:1">${autres.nombre}</div>
-        <div class="m-intro" style="margin-top:10px">autre${autres.nombre > 1 ? "s" : ""} am\u00e9lioration${autres.nombre > 1 ? "s" : ""} possible${autres.nombre > 1 ? "s" : ""}, relev\u00e9e${autres.nombre > 1 ? "s" : ""} par l'analyse de votre site.</div>
-        <div class="m-note" style="margin-top:14px">${autres.libelles.slice(0, 6).map(esc).join(" · ")}</div>
+        <div class="m-intro" style="margin-top:10px">autre${autres.nombre > 1 ? "s" : ""} amélioration${autres.nombre > 1 ? "s" : ""} possible${autres.nombre > 1 ? "s" : ""}, relevée${autres.nombre > 1 ? "s" : ""} par l'analyse de votre site.</div>
+        ${variante === "court" ? `<div class="m-note" style="margin-top:14px">On les détaille ensemble au rendez-vous.</div>` : ""}
       </div>`,
     });
+
+    // Version complète : le nombre se déplie, chaque ligne avec sa mesure.
+    // Cinq par écran, comme les autres listes de ce rendu.
+    if (variante === "complet") {
+      chunk(autres.entrees, 5).forEach((grp, i) =>
+        s.push({
+          label: "Autres points (détail)",
+          auto: true,
+          inner: `
+          ${brand(false, p2.section_label ?? "")}
+          <div class="m-body">
+            ${i === 0 ? `<div class="m-eyebrow" style="margin-bottom:12px">${esc(titreDetailAmeliorations(autres))}</div>` : ""}
+            ${grp
+              .map(
+                (e) =>
+                  `<div class="m-preuve probleme"><span class="m-preuve-lib">${esc(e.libelle)}</span><span class="m-preuve-val">${esc(e.valeur ?? "à corriger")}</span></div>`,
+              )
+              .join("")}
+          </div>`,
+        }),
+      );
+    }
   }
 
   /* Citation */

@@ -67,12 +67,14 @@ describe("autresAmeliorations", () => {
     // `weak_title` couvre la preuve `title` : elle ne doit pas être recomptée.
     const r = autresAmeliorations(a, ["weak_title"]);
     expect(r.nombre).toBe(2);
-    expect(r.libelles).not.toContain("Libellé title");
+    expect(r.entrees.map((e) => e.cle)).not.toContain("title");
   });
 
   it("nomme chaque amélioration, pour pouvoir la citer en rendez-vous", () => {
     const a = audit([{ cle: "canonical", verdict: "probleme" }]);
-    expect(autresAmeliorations(a, []).libelles).toEqual(["Libellé canonical"]);
+    const e = autresAmeliorations(a, []).entrees;
+    expect(e).toHaveLength(1);
+    expect(e[0]).toMatchObject({ cle: "canonical", libelle: "Libellé canonical", valeur: "x" });
   });
 
   it("ne dit rien sans analyse, ni sur un site injoignable", () => {
@@ -82,9 +84,9 @@ describe("autresAmeliorations", () => {
   });
 
   it("accorde la phrase, et se tait à zéro", () => {
-    expect(phraseAutresAmeliorations({ nombre: 0, libelles: [] })).toBeNull();
-    expect(phraseAutresAmeliorations({ nombre: 1, libelles: ["x"] })).toContain("1 autre amélioration possible");
-    expect(phraseAutresAmeliorations({ nombre: 4, libelles: [] })).toContain("4 autres améliorations possibles");
+    expect(phraseAutresAmeliorations({ nombre: 0, entrees: [] })).toBeNull();
+    expect(phraseAutresAmeliorations({ nombre: 1, entrees: [] })).toContain("1 autre amélioration possible");
+    expect(phraseAutresAmeliorations({ nombre: 4, entrees: [] })).toContain("4 autres améliorations possibles");
   });
 });
 

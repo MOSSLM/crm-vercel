@@ -132,6 +132,9 @@ ${grainRule}
 .problem-title{font-size:12px;font-weight:500;color:var(--nuit)}
 .problem-desc{font-size:11px;line-height:1.6;color:rgba(11,29,58,.55)}
 .problem-autres{font-size:11px;color:rgba(11,29,58,.5);font-style:italic;margin-top:-24px}
+.problem-detail{margin-top:-24px}
+.problem-detail-titre{font-size:10px;letter-spacing:.15em;text-transform:uppercase;color:rgba(11,29,58,.4);font-weight:500;margin-bottom:10px}
+.problem-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 20px;font-size:10px;line-height:1.5;color:rgba(11,29,58,.6)}
 .solution-list{display:flex;flex-direction:column}
 .solution-item{display:grid;grid-template-columns:32px 1fr auto;align-items:start;gap:16px;padding:18px 0;border-bottom:1px solid rgba(11,29,58,.07)}
 .solution-item:last-child{border-bottom:none}

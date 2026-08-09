@@ -17,14 +17,35 @@ import type { AuditLu } from "@/lib/audit-site/lecture";
  * brochure, et c'est gratuit puisque la mesure est déjà faite.
  */
 
+/**
+ * Les deux façons de rendre le même document.
+ *
+ * `court` part par WhatsApp : trois cartes et un nombre. `complet` se déplie en
+ * rendez-vous : les mêmes cartes, et le détail de tout ce que le nombre
+ * résumait. Ce n'est PAS deux contenus — c'est une option de rendu sur un seul
+ * `audits.content`, pour la même raison que le PDF et le rapport mobile en
+ * partagent un : deux documents finissent toujours par diverger.
+ */
+export type AuditVariante = 'court' | 'complet';
+
+/** Une amélioration non retenue, telle qu'on peut la défendre : chiffrée. */
+export interface AmeliorationRestante {
+  cle: string;
+  libelle: string;
+  /** Ce qu'on a constaté, déjà formaté. */
+  valeur: string | null;
+  /** Le seuil qui juge. `null` sur un signal binaire. */
+  seuil: string | null;
+}
+
 export interface AutresAmeliorations {
   /** Le nombre à afficher. Zéro ⇒ ne rien afficher du tout. */
   nombre: number;
-  /** Les libellés, pour l'annexe et pour répondre en rendez-vous. */
-  libelles: string[];
+  /** Le détail — résumé par le nombre en version courte, déplié en complète. */
+  entrees: AmeliorationRestante[];
 }
 
-const VIDE: AutresAmeliorations = { nombre: 0, libelles: [] };
+const VIDE: AutresAmeliorations = { nombre: 0, entrees: [] };
 
 /**
  * Les preuves en échec qui ne sont derrière aucune des cartes retenues.
@@ -47,7 +68,7 @@ export function autresAmeliorations(
     }
   }
 
-  const libelles: string[] = [];
+  const entrees: AmeliorationRestante[] = [];
   const vues = new Set<string>();
 
   for (const axe of audit.axes) {
@@ -58,11 +79,16 @@ export function autresAmeliorations(
       if (preuve.verdict !== "probleme") continue;
       if (couvertes.has(preuve.cle) || vues.has(preuve.cle)) continue;
       vues.add(preuve.cle);
-      libelles.push(preuve.libelle);
+      entrees.push({
+        cle: preuve.cle,
+        libelle: preuve.libelle,
+        valeur: preuve.valeur,
+        seuil: preuve.seuil,
+      });
     }
   }
 
-  return { nombre: libelles.length, libelles };
+  return { nombre: entrees.length, entrees };
 }
 
 /**
@@ -105,4 +131,21 @@ export function phraseAutresAmeliorations(a: AutresAmeliorations): string | null
   return a.nombre === 1
     ? "Et 1 autre amélioration possible, relevée par l’analyse."
     : `Et ${a.nombre} autres améliorations possibles, relevées par l’analyse.`;
+}
+
+/** L'intitulé de l'annexe, en version complète. */
+export function titreDetailAmeliorations(a: AutresAmeliorations): string {
+  return a.nombre === 1
+    ? "Le point restant, en détail"
+    : `Les ${a.nombre} points restants, en détail`;
+}
+
+/**
+ * Une ligne d'annexe : « Adresse canonique déclarée — absente (attendu : présente) ».
+ * Le seuil n'est répété que s'il apporte quelque chose : sur un signal binaire
+ * il est nul, et « absente (attendu : ) » n'aiderait personne.
+ */
+export function ligneAmelioration(e: AmeliorationRestante): string {
+  const constat = e.valeur ?? "à corriger";
+  return e.seuil ? `${e.libelle} — ${constat} (seuil : ${e.seuil})` : `${e.libelle} — ${constat}`;
 }

@@ -4,7 +4,13 @@ import type { AuditContent } from '@/types';
 import { C, Zone, InnerHeader, InnerFooter } from './AuditShared';
 import { AuditNotesBanner } from './AuditNotesBanner';
 import type { AuditLu } from '@/lib/audit-site/lecture';
-import { autresAmeliorations, phraseAutresAmeliorations } from '@/lib/audit/autres-ameliorations';
+import {
+  autresAmeliorations,
+  phraseAutresAmeliorations,
+  titreDetailAmeliorations,
+  ligneAmelioration,
+  type AuditVariante,
+} from '@/lib/audit/autres-ameliorations';
 
 interface Props {
   content: AuditContent;
@@ -12,6 +18,8 @@ interface Props {
   onFieldClick?: (field: string) => void;
   /** Mesures du site actuel. Absentes ⇒ la page est exactement celle d'avant. */
   audit?: AuditLu | null;
+  /** `court` pour l'envoi, `complet` pour le rendez-vous. */
+  variante?: AuditVariante;
 }
 
 function AlertIcon() {
@@ -26,12 +34,14 @@ function AlertIcon() {
   );
 }
 
-export function AuditPage2({ content, activeField, onFieldClick, audit }: Props) {
+export function AuditPage2({ content, activeField, onFieldClick, audit, variante = 'court' }: Props) {
   const p = content.page2;
   const gs = content.global_style;
-  const autres = phraseAutresAmeliorations(
-    autresAmeliorations(audit, p.problems.map((x) => x.key).filter((k): k is string => !!k)),
+  const restantes = autresAmeliorations(
+    audit,
+    p.problems.map((x) => x.key).filter((k): k is string => !!k),
   );
+  const phrase = phraseAutresAmeliorations(restantes);
   return (
     <div id="audit-p2" style={{ width: 794, minHeight: 1123, background: C.creme, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
       <InnerHeader
@@ -73,11 +83,27 @@ export function AuditPage2({ content, activeField, onFieldClick, audit }: Props)
         </div>
 
         {/* On argumente sur trois cartes, on prouve la profondeur par un nombre.
-            Ce nombre est un décompte de preuves en échec, pas une estimation :
-            chacune est nommable si le prospect la demande. */}
-        {autres && (
+            En version courte — celle qui part par WhatsApp — ce nombre suffit.
+            En version complète — celle du rendez-vous — il se déplie, et chaque
+            ligne porte sa mesure : c'est la même donnée, montrée deux fois plus
+            près. */}
+        {restantes.nombre > 0 && variante === 'court' && (
           <div style={{ fontSize: 11, color: 'rgba(11,29,58,0.5)', fontStyle: 'italic', marginTop: -24 }}>
-            {autres}
+            {phrase}
+          </div>
+        )}
+        {restantes.nombre > 0 && variante === 'complet' && (
+          <div style={{ marginTop: -24 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'rgba(11,29,58,0.4)', fontWeight: 500, marginBottom: 10 }}>
+              {titreDetailAmeliorations(restantes)}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 20px' }}>
+              {restantes.entrees.map((e) => (
+                <div key={e.cle} style={{ fontSize: 10, lineHeight: 1.5, color: 'rgba(11,29,58,0.6)' }}>
+                  · {ligneAmelioration(e)}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

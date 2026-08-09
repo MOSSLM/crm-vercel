@@ -18,7 +18,7 @@ import {
   CARTES_RETENUES,
   MAX_AUDIT_ISSUES,
 } from '@/data/auditIssues';
-import { classerParForce } from '@/lib/audit/autres-ameliorations';
+import { classerParForce, type AuditVariante } from '@/lib/audit/autres-ameliorations';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 import { supabase } from '@/utils/supabase/client';
 import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
@@ -87,6 +87,13 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
   const [isSaving, setIsSaving] = useState(false);
   const [isReady, setIsReady] = useState(initialAudit.statut === 'ready');
   const [hasChanges, setHasChanges] = useState(false);
+  /**
+   * Deux profondeurs pour un seul document. `court` est ce qui part par
+   * WhatsApp — trois constats et un nombre ; `complet` est ce qu'on déplie en
+   * rendez-vous. L'aperçu s'ouvre sur la version envoyée, parce que c'est celle
+   * que le prospect verra en premier et la seule qu'on ne peut pas commenter.
+   */
+  const [variante, setVariante] = useState<AuditVariante>('court');
 
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const previewInnerRef = useRef<HTMLDivElement>(null);
@@ -222,7 +229,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
     const win = window.open('', '_blank');
     if (!win) { toast.error("Impossible d'ouvrir une nouvelle fenêtre"); return; }
     Promise.resolve().then(() => {
-      const html = generateAuditHtml(content, { logoUrl, forPdf: true });
+      const html = generateAuditHtml(content, { logoUrl, forPdf: true, audit: siteAudit, variante });
       win.document.write(html);
       win.document.close();
       win.focus();
@@ -288,6 +295,21 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
           >
             {isReady ? <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" /> : null}
             {isReady ? 'Prêt' : 'Marquer prêt'}
+          </Button>
+          {/* Un seul document, deux profondeurs. Le bouton dit ce qu'on regarde,
+              et l'export suit l'aperçu — pour ne jamais imprimer autre chose que
+              ce qu'on vient de relire. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setVariante(v => (v === 'court' ? 'complet' : 'court'))}
+            title={
+              variante === 'court'
+                ? "Version envoyée : trois constats et le nombre des autres"
+                : 'Version du rendez-vous : chaque point restant avec sa mesure'
+            }
+          >
+            {variante === 'court' ? 'Version courte' : 'Version complète'}
           </Button>
           <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
@@ -385,6 +407,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
                   activeField={activeField}
                   onFieldClick={handleFieldClick}
                   audit={siteAudit}
+                  variante={variante}
                 />
                 <div style={{ height: 16 }} />
               </div>
