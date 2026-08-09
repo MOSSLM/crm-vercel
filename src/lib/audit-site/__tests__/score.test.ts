@@ -46,6 +46,7 @@ function signauxSains(): SignauxSite {
     nbMediaQueries: 6,
     nbLargeursFixes: 0,
     nbPolicesTropPetites: 0,
+    cssLisible: true,
     telCliquable: true,
     telephoneEnTexte: true,
     formulaire: true,

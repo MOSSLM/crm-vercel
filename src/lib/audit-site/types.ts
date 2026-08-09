@@ -89,6 +89,19 @@ export interface CollecteSite {
   chargementMs: number | null;
   poidsOctets: number | null;
 
+  /**
+   * CSS des feuilles externes, concaténé.
+   *
+   * Sans lui, `nbMediaQueries` valait 0 sur la moitié du parc — non parce que ces
+   * sites n'étaient pas adaptatifs, mais parce que leurs règles vivent dans un
+   * fichier qu'on ne lisait pas.
+   */
+  cssExterne: string;
+  /** Feuilles `<link rel=stylesheet>` déclarées par la page. */
+  nbFeuillesDeclarees: number;
+  /** Feuilles effectivement récupérées. Zéro sur des déclarations ⇒ CSS illisible. */
+  nbFeuillesLues: number;
+
   /** null quand la vérification n'a pas pu aboutir — distinct de `false`. */
   robotsTxt: boolean | null;
   sitemapXml: boolean | null;
@@ -141,9 +154,16 @@ export interface SignauxSite {
   // ── Mobile ──────────────────────────────────────────────────────────────
   viewport: boolean;
   viewportZoomBloque: boolean;
-  nbMediaQueries: number;
+  /**
+   * `null` quand la page déclare des feuilles externes dont aucune n'a pu être
+   * lue : on ignore alors si les règles mobiles existent. Compter 0 dans ce cas
+   * revenait à conclure « pas adapté au mobile » faute d'avoir regardé.
+   */
+  nbMediaQueries: number | null;
   nbLargeursFixes: number;
-  nbPolicesTropPetites: number;
+  nbPolicesTropPetites: number | null;
+  /** Le CSS de la page a-t-il pu être lu en entier ? Décide des deux champs ci-dessus. */
+  cssLisible: boolean;
 
   // ── Confiance & conversion ──────────────────────────────────────────────
   telCliquable: boolean;

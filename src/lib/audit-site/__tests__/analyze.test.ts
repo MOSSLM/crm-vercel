@@ -12,7 +12,7 @@ import type { CollecteSite } from "../types";
  * au maximum.
  */
 
-function collecte(html: string): CollecteSite {
+function collecte(html: string, feuilles?: Partial<CollecteSite>): CollecteSite {
   return {
     urlDemandee: "https://exemple.fr",
     urlFinale: "https://exemple.fr",
@@ -27,8 +27,12 @@ function collecte(html: string): CollecteSite {
     ttfbMs: 200,
     chargementMs: 400,
     poidsOctets: 40_000,
+    cssExterne: "",
+    nbFeuillesDeclarees: 0,
+    nbFeuillesLues: 0,
     robotsTxt: true,
     sitemapXml: true,
+    ...feuilles,
   };
 }
 
@@ -107,6 +111,54 @@ describe("compterPolicesTropPetites", () => {
       "<style>@media (min-width:1024px){.note{font-size:10px}}</style>",
     );
     expect(analyser(collecte(html)).nbPolicesTropPetites).toBe(0);
+  });
+});
+
+describe("CSS externe — ne pas conclure d'une absence là où on n'a pas regardé", () => {
+  const AVEC_LIEN = '<link rel="stylesheet" href="https://exemple.fr/style.css">';
+
+  it("compte les media queries de la feuille externe", () => {
+    const s = analyser(
+      collecte(page("<div>Contenu</div>", AVEC_LIEN), {
+        cssExterne: "@media (max-width:768px){.wrap{width:100%}}",
+        nbFeuillesDeclarees: 1,
+        nbFeuillesLues: 1,
+      }),
+    );
+    expect(s.cssLisible).toBe(true);
+    expect(s.nbMediaQueries).toBe(1);
+  });
+
+  it("répond « inconnu » quand la feuille déclarée n'a pas pu être lue", () => {
+    // Le cas qui coûtait 20 points à des sites parfaitement adaptatifs.
+    const s = analyser(
+      collecte(page("<div>Contenu</div>", AVEC_LIEN), {
+        cssExterne: "",
+        nbFeuillesDeclarees: 1,
+        nbFeuillesLues: 0,
+      }),
+    );
+    expect(s.cssLisible).toBe(false);
+    expect(s.nbMediaQueries).toBeNull();
+    expect(s.nbPolicesTropPetites).toBeNull();
+  });
+
+  it("reste concluant quand la page ne déclare aucune feuille externe", () => {
+    // Tout le CSS est alors sous nos yeux : zéro règle mobile est un vrai zéro.
+    const s = analyser(collecte(page("<div>Contenu</div>", "<style>.a{color:red}</style>")));
+    expect(s.cssLisible).toBe(true);
+    expect(s.nbMediaQueries).toBe(0);
+  });
+
+  it("voit une largeur figée qui vit dans la feuille externe", () => {
+    const s = analyser(
+      collecte(page("<div>Contenu</div>", AVEC_LIEN), {
+        cssExterne: ".page{width:1200px}",
+        nbFeuillesDeclarees: 1,
+        nbFeuillesLues: 1,
+      }),
+    );
+    expect(s.nbLargeursFixes).toBe(1);
   });
 });
 

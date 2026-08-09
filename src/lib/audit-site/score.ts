@@ -296,6 +296,9 @@ function axeMobile(s: SignauxSite): NoteAxe {
       10,
       { oui: "autorisé", non: "bloqué" },
     ),
+    // `nbMediaQueries` vaut `null` quand la page déclare des feuilles externes
+    // dont aucune n'a pu être lue : « on ne sait pas » sort du dénominateur au
+    // lieu de valoir zéro et de coûter 20 points.
     pSeuil(
       "media_queries",
       "Règles d'affichage mobile",
@@ -462,6 +465,12 @@ export function scorer(s: SignauxSite, ctx: ContexteEntreprise = {}): ResultatSc
   }
   if (s.widgetAvis) {
     alertes.push(`Widget d'avis détecté (${s.widgetAvis}) — « avis absents » n'est pas émis.`);
+  }
+  if (s.joignable && !s.cssLisible) {
+    alertes.push(
+      "Feuilles de style externes illisibles : les règles d'affichage mobile n'ont pas " +
+        "pu être vérifiées et sont exclues de la note.",
+    );
   }
 
   // La note globale ne moyenne que les axes concluants : intégrer un axe en

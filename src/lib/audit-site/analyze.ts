@@ -84,9 +84,10 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     nbImagesSansLazy: 0,
     viewport: false,
     viewportZoomBloque: false,
-    nbMediaQueries: 0,
+    nbMediaQueries: null,
     nbLargeursFixes: 0,
-    nbPolicesTropPetites: 0,
+    nbPolicesTropPetites: null,
+    cssLisible: false,
     telCliquable: false,
     telephoneEnTexte: false,
     formulaire: false,
@@ -143,10 +144,19 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     viewportContent && /user-scalable\s*=\s*(no|0)|maximum-scale\s*=\s*1(\.0)?\b/i.test(viewportContent),
   );
 
-  const css = root.querySelectorAll("style").map((s) => s.text).join("\n");
-  const nbMediaQueries = (css.match(/@media[^{]*\(/g) ?? []).length;
+  // Le CSS inline ET les feuilles externes. N'examiner que l'inline conduisait à
+  // compter zéro règle mobile sur la moitié du parc, puis à le lui reprocher.
+  const cssInline = root.querySelectorAll("style").map((s) => s.text).join("\n");
+  const css = [cssInline, c.cssExterne].filter(Boolean).join("\n");
+
+  // « Lisible » veut dire : soit la page ne déclare aucune feuille externe — tout
+  // son CSS est alors sous nos yeux —, soit elle en déclare et on en a lu au
+  // moins une. Sinon les compteurs issus du CSS valent `null` : inconnu, pas zéro.
+  const cssLisible = c.nbFeuillesDeclarees === 0 || c.nbFeuillesLues > 0;
+
+  const nbMediaQueries = cssLisible ? (css.match(/@media[^{]*\(/g) ?? []).length : null;
   const nbLargeursFixes = compterLargeursFixes(root, css);
-  const nbPolicesTropPetites = compterPolicesTropPetites(css);
+  const nbPolicesTropPetites = cssLisible ? compterPolicesTropPetites(css) : null;
 
   // ── Conversion ────────────────────────────────────────────────────────────
   const liens = root.querySelectorAll("a");
@@ -197,6 +207,7 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     nbMediaQueries,
     nbLargeursFixes,
     nbPolicesTropPetites,
+    cssLisible,
     telCliquable,
     telephoneEnTexte: telephoneEnTexte || Boolean(contexte.telephone && texte.includes(contexte.telephone)),
     formulaire,

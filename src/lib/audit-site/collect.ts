@@ -1,7 +1,9 @@
 import "server-only";
 import {
+  BROWSER_HEADERS,
   ReachError,
   assertFinalHost,
+  assertPublicHost,
   blockMarkerIn,
   normalizeUrlInput,
   reachPage,
@@ -29,6 +31,17 @@ const MAX_BYTES = 8_000_000;
 /** Budget serré pour les deux sondes annexes : elles ne valent pas une attente. */
 const SONDE_TIMEOUT_MS = 5_000;
 
+/**
+ * Feuilles de style externes lues, au maximum.
+ *
+ * Trois suffisent : au-delà, on paie de l'attente pour des règles qui ne
+ * changent plus le verdict « ce site a des règles d'affichage mobile, ou il n'en
+ * a pas ». Le budget compte : la file porte 2 000 sites.
+ */
+const MAX_FEUILLES = 3;
+const FEUILLE_TIMEOUT_MS = 2_500;
+const MAX_OCTETS_FEUILLE = 400_000;
+
 export async function collecter(rawUrl: string): Promise<CollecteSite> {
   const base: CollecteSite = {
     urlDemandee: rawUrl,
@@ -44,6 +57,9 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     ttfbMs: null,
     chargementMs: null,
     poidsOctets: null,
+    cssExterne: "",
+    nbFeuillesDeclarees: 0,
+    nbFeuillesLues: 0,
     robotsTxt: null,
     sitemapXml: null,
   };
@@ -119,10 +135,15 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
 
   // Sondes annexes seulement si la page principale a répondu : les lancer sur
   // un domaine mort ferait payer deux délais d'attente pour rien.
+  //
+  // Les trois sondes partent ENSEMBLE : elles sont indépendantes, et les
+  // enchaîner additionnerait leurs délais sur chacun des 2 000 sites de la file.
   const origine = origineDe(urlFinale);
-  const [robotsTxt, sitemapXml] = origine
-    ? await Promise.all([sonder(`${origine}/robots.txt`), sonder(`${origine}/sitemap.xml`)])
-    : [null, null];
+  const [robotsTxt, sitemapXml, feuilles] = await Promise.all([
+    origine ? sonder(`${origine}/robots.txt`) : Promise.resolve(null),
+    origine ? sonder(`${origine}/sitemap.xml`) : Promise.resolve(null),
+    html ? lireFeuillesExternes(html, urlFinale) : Promise.resolve(FEUILLES_VIDES),
+  ]);
 
   return {
     urlDemandee: rawUrl,
@@ -140,9 +161,95 @@ export async function collecter(rawUrl: string): Promise<CollecteSite> {
     ttfbMs,
     chargementMs,
     poidsOctets,
+    cssExterne: feuilles.css,
+    nbFeuillesDeclarees: feuilles.declarees,
+    nbFeuillesLues: feuilles.lues,
     robotsTxt,
     sitemapXml,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Feuilles de style externes
+// ---------------------------------------------------------------------------
+
+const FEUILLES_VIDES = { css: "", declarees: 0, lues: 0 };
+
+/**
+ * Récupère les premières feuilles de style de la page.
+ *
+ * Les règles d'affichage mobile vivent presque toujours dans un fichier, jamais
+ * dans la page. Ne lire que les `<style>` inline conduisait à compter zéro règle
+ * mobile sur 16 sites sur 31 — puis à leur reprocher d'être mal adaptés.
+ *
+ * Ne lève jamais : une feuille manquante n'invalide pas l'analyse, elle réduit
+ * seulement ce dont on peut témoigner.
+ */
+async function lireFeuillesExternes(
+  html: string,
+  urlFinale: string,
+): Promise<{ css: string; declarees: number; lues: number }> {
+  const hrefs = extraireHrefsFeuilles(html, urlFinale);
+  if (hrefs.length === 0) return FEUILLES_VIDES;
+
+  const morceaux = await Promise.all(
+    hrefs.slice(0, MAX_FEUILLES).map((h) => lireTexte(h, FEUILLE_TIMEOUT_MS, MAX_OCTETS_FEUILLE)),
+  );
+  const lus = morceaux.filter((m): m is string => m !== null);
+
+  return { css: lus.join("\n"), declarees: hrefs.length, lues: lus.length };
+}
+
+/** `<link rel="stylesheet" href="…">`, résolus en absolu, même origine seulement. */
+export function extraireHrefsFeuilles(html: string, base: string): string[] {
+  const out: string[] = [];
+  const origine = origineDe(base);
+  if (!origine) return out;
+
+  for (const m of html.matchAll(/<link\b[^>]*>/gi)) {
+    const balise = m[0];
+    if (!/rel\s*=\s*["']?[^"'>]*stylesheet/i.test(balise)) continue;
+
+    // Une feuille réservée à l'impression ne dit rien de l'affichage mobile.
+    const media = /media\s*=\s*["']([^"']+)["']/i.exec(balise)?.[1]?.toLowerCase();
+    if (media && /\bprint\b/.test(media) && !/\ball\b|\bscreen\b/.test(media)) continue;
+
+    const href = /href\s*=\s*["']([^"']+)["']/i.exec(balise)?.[1];
+    if (!href) continue;
+
+    const absolu = resoudre(href, base);
+    // Hors origine on ne suit pas : un CDN tiers n'a pas à être sondé pour ça.
+    if (absolu && absolu.startsWith(origine) && !out.includes(absolu)) out.push(absolu);
+  }
+  return out;
+}
+
+/** Corps textuel d'une ressource, plafonné. `null` au moindre incident. */
+async function lireTexte(url: string, timeoutMs: number, maxOctets: number): Promise<string | null> {
+  try {
+    const u = new URL(url);
+    await assertPublicHost(u.hostname);
+    const res = await fetch(u.href, {
+      method: "GET",
+      headers: BROWSER_HEADERS,
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    const utile = buf.byteLength > maxOctets ? buf.slice(0, maxOctets) : buf;
+    return new TextDecoder("utf-8").decode(utile);
+  } catch {
+    return null;
+  }
+}
+
+function resoudre(href: string, base: string): string | null {
+  try {
+    return new URL(href, base).href;
+  } catch {
+    return null;
+  }
 }
 
 /**
