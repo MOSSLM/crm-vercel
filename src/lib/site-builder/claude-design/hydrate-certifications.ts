@@ -45,9 +45,9 @@ const escapeAttr = (s: string): string =>
 
 /** Remplit une carte-gabarit avec un logo vérifié. */
 const remplirCarte = (gabarit: string, logo: LogoCertification): string => {
-  const carte = parse(gabarit).querySelector("[data-certification-item]");
+  const carte = parse(gabarit).querySelector(ITEMS);
   if (!carte) return "";
-  const img = carte.querySelector("[data-certification-logo]") ?? carte.querySelector("img");
+  const img = carte.querySelector(IMG) ?? carte.querySelector("img");
   if (img) {
     img.setAttribute("src", escapeAttr(logo.src));
     img.setAttribute("srcset", escapeAttr(logo.srcSet));
@@ -69,21 +69,59 @@ const remplirCarte = (gabarit: string, logo: LogoCertification): string => {
  * @param html   markup brut du design
  * @param logos  les logos VÉRIFIÉS ; une liste vide déclenche la suppression
  */
+/**
+ * Les deux conventions reconnues, dans cet ordre.
+ *
+ * `data-certifications` est le contrat explicite, à privilégier pour les
+ * nouveaux designs. `.certif-row` est celle que les templates CVC livrés
+ * portent DÉJÀ : les reconnaître évite d'avoir à reprendre chaque template
+ * avant que le contrôle ADEME serve à quelque chose. C'est la même raison qui
+ * fait accepter `img` à défaut d'un `[data-certification-logo]`.
+ */
+const CONTENEURS = ["[data-certifications]", ".certif-row"];
+const ITEMS = "[data-certification-item], .certif-logo";
+const IMG = "[data-certification-logo]";
+
+/**
+ * Ce qu'il faut retirer quand il n'y a AUCUNE qualification.
+ *
+ * Pas la rangée seule : le template CVC met au-dessus un chapeau
+ * « Certifications & qualifications reconnues par l'État ». Supprimer la rangée
+ * en laissant cette phrase produirait exactement le titre orphelin qu'on veut
+ * éviter — une section qui annonce des certifications et n'en montre aucune.
+ * On remonte donc à la `<section>` porteuse quand elle existe.
+ */
+const aRetirer = (conteneur: ReturnType<typeof parse>): ReturnType<typeof parse> => {
+  let cur: any = conteneur;
+  while (cur?.parentNode) {
+    const parent = cur.parentNode;
+    const tag = String(parent.rawTagName ?? "").toLowerCase();
+    const id = String(parent.getAttribute?.("id") ?? "");
+    const cls = String(parent.getAttribute?.("class") ?? "");
+    if (tag === "section" && (id.startsWith("sec-certif") || cls.includes("certif-band"))) {
+      return parent;
+    }
+    if (tag === "body" || tag === "html" || !tag) break;
+    cur = parent;
+  }
+  return conteneur;
+};
+
 export function hydrateCertifications(html: string, logos: LogoCertification[]): string {
-  if (!html.includes("data-certifications")) return html;
+  if (!html.includes("data-certifications") && !html.includes("certif-row")) return html;
 
   const root = parse(html);
-  const conteneurs = root.querySelectorAll("[data-certifications]");
+  const conteneurs = CONTENEURS.flatMap((sel) => root.querySelectorAll(sel));
   if (conteneurs.length === 0) return html;
 
   for (const conteneur of conteneurs) {
-    // ── Cas 3 : rien de vérifié → le bloc entier s'en va.
+    // ── Cas 3 : rien de vérifié → le bloc entier s'en va, chapeau compris.
     if (logos.length === 0) {
-      conteneur.remove();
+      (aRetirer(conteneur as never) as unknown as { remove: () => void }).remove();
       continue;
     }
 
-    const gabaritEl = conteneur.querySelector("[data-certification-item]");
+    const gabaritEl = conteneur.querySelector(ITEMS);
     if (!gabaritEl) continue;
 
     // La première carte sert de gabarit : elle porte la mise en forme du design

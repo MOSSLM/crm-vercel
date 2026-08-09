@@ -103,3 +103,75 @@ describe("hydrateCertifications", () => {
     expect(out).toContain("&quot;");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Le template CVC livré — markup RÉEL, copié de `template CVC - Classique`
+// ---------------------------------------------------------------------------
+/**
+ * Bloc certifications tel qu'il est écrit dans le template, avec ses cinq logos
+ * en dur et son chapeau. Il ne porte AUCUN attribut `data-certification*` :
+ * c'est précisément pour ça que le tweak doit reconnaître aussi la convention
+ * `.certif-row` / `.certif-logo` — sinon rien ne se passerait sur les templates
+ * qui existent déjà, et le contrôle ADEME resterait sans effet visible.
+ */
+const CVC_REEL = `<section class="section certif-band" id="sec-certifs">
+  <div class="wrap">
+    <p class="certif-lead">Certifications &amp; qualifications reconnues par l'État</p>
+    <div class="certif-row reveal">
+      <div class="certif-logo"><img src="../images/certifications/qualibat.png" alt="RGE Qualibat" loading="lazy" width="120" height="120"></div>
+      <div class="certif-logo"><img src="../images/certifications/qualipac.png" alt="RGE QualiPAC, pompes à chaleur" loading="lazy" width="158" height="79"></div>
+      <div class="certif-logo"><img src="../images/certifications/chauffage-plus.png" alt="RGE Chauffage+" loading="lazy" width="158" height="142"></div>
+      <div class="certif-logo certif-logo--tall"><img src="../images/certifications/qualifelec.png" alt="RGE Qualifelec, électricité" loading="lazy" width="719" height="968"></div>
+      <div class="certif-logo"><img src="../images/certifications/qualipv.webp" alt="RGE QualiPV, photovoltaïque" loading="lazy" width="120" height="120"></div>
+    </div>
+  </div>
+</section>`;
+
+describe("template CVC livré", () => {
+  it("remplace les cinq logos en dur par les seuls logos vérifiés", () => {
+    const out = hydrateCertifications(CVC_REEL, [
+      logo("qualipac", "QualiPAC module Chauffage et ECS"),
+      logo("qualibois", "Qualibois Eau"),
+    ]);
+    // Les logos du template disparaissent TOUS — y compris ceux que
+    // l'entreprise ne détient pas, ce qui est le but.
+    expect(out).not.toContain("images/certifications/qualibat.png");
+    expect(out).not.toContain("images/certifications/qualifelec.png");
+    expect(out).not.toContain("images/certifications/qualipv.webp");
+    expect(out).toContain("/rge/qualipac.png");
+    expect(out).toContain("/rge/qualibois.png");
+    expect(out.match(/certif-logo/g)).toHaveLength(2);
+  });
+
+  it("conserve la mise en forme du template", () => {
+    const out = hydrateCertifications(CVC_REEL, [logo("qualipac", "QualiPAC")]);
+    // Seules les images changent : la rangée garde ses classes, la carte la
+    // sienne, le chapeau reste.
+    expect(out).toContain('class="certif-row reveal"');
+    expect(out).toContain('class="certif-logo"');
+    expect(out).toContain("qualifications reconnues par l");
+  });
+
+  it("uniformise des dimensions qui vont de 120x120 à 719x968 dans le template", () => {
+    // Le CSS force `height: 84px; width: auto`. Avec des sources de ratios
+    // différents la rangée est bancale ; toutes sur le canevas 360x180, elles
+    // se rendent à l'identique.
+    const out = hydrateCertifications(CVC_REEL, [
+      logo("qualipac", "QualiPAC"),
+      logo("qualifelec", "Certificat Qualifelec RGE"),
+    ]);
+    expect(out).not.toContain('width="719"');
+    expect(out.match(/width="360"/g)).toHaveLength(2);
+    expect(out.match(/height="180"/g)).toHaveLength(2);
+  });
+
+  it("SUPPRIME la section entière, chapeau compris, quand rien n'est vérifié", () => {
+    const out = hydrateCertifications(CVC_REEL, []);
+    // Le chapeau ne doit pas survivre seul : une section qui annonce des
+    // certifications sans en montrer aucune est pire qu'absente.
+    expect(out).not.toContain("certif-row");
+    expect(out).not.toContain("sec-certifs");
+    expect(out).not.toContain("qualifications reconnues");
+    expect(out.trim()).toBe("");
+  });
+});
