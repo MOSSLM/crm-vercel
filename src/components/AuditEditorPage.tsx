@@ -19,6 +19,8 @@ import {
   MAX_AUDIT_ISSUES,
 } from '@/data/auditIssues';
 import { classerParForce, type AuditVariante } from '@/lib/audit/autres-ameliorations';
+import { construirePage5, type OffreAudit } from '@/lib/audit/offres-audit';
+import { authedFetch } from '@/utils/authedFetch';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 import { supabase } from '@/utils/supabase/client';
 import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
@@ -94,6 +96,27 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
    * que le prospect verra en premier et la seule qu'on ne peut pas commenter.
    */
   const [variante, setVariante] = useState<AuditVariante>('court');
+  /**
+   * Les offres que l'audit a le droit de proposer, chargées une fois.
+   *
+   * Tableau vide tant qu'elles n'arrivent pas — et si elles n'arrivent jamais,
+   * la page tarifs garde ce que le document contenait déjà. Une page de tarifs
+   * vide devant un prospect coûterait plus cher qu'un tarif à revoir.
+   */
+  const [offres, setOffres] = useState<OffreAudit[]>([]);
+
+  useEffect(() => {
+    let vivant = true;
+    authedFetch('/api/audit/offres')
+      .then(r => (r.ok ? r.json() : null))
+      .then(b => {
+        if (vivant && Array.isArray(b?.offres)) setOffres(b.offres);
+      })
+      .catch(() => undefined);
+    return () => {
+      vivant = false;
+    };
+  }, []);
 
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const previewInnerRef = useRef<HTMLDivElement>(null);
@@ -176,7 +199,15 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
       const customSolutions = prev.page3.solutions.filter(s => !s.key);
       const problems = [...problemsFromKeys(keys), ...customProblems].slice(0, MAX_AUDIT_ISSUES);
       const solutions = renumberSolutions([...solutionsFromKeys(keys), ...customSolutions]);
-      return { ...prev, page2: { ...prev.page2, problems }, page3: { ...prev.page3, solutions } };
+      return {
+        ...prev,
+        page2: { ...prev.page2, problems },
+        page3: { ...prev.page3, solutions },
+        // Les tarifs suivent les constats : le socle est toujours là, les
+        // additions ne sont conseillées que si un constat retenu les justifie.
+        // Une addition sans constat serait une vente forcée, et ça se voit.
+        page5: construirePage5(prev.page5, offres, classees),
+      };
     });
     markChange();
 
@@ -186,7 +217,7 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
         ? `${keys.length} constats retenus · ${restants} autres annoncés en bas de page`
         : `${keys.length} constats retenus`,
     );
-  }, [detectedIssueKeys, siteAudit]);
+  }, [detectedIssueKeys, siteAudit, offres]);
 
   const handleFieldClick = (field: string) => {
     setActiveField(field);
