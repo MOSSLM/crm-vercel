@@ -1,5 +1,6 @@
 import { scorer, issueKeysDepuisSignaux, libelleDeNote, SEUILS } from "../score";
 import type { SignauxSite } from "../types";
+import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 
 /**
  * Ces tests protègent une promesse commerciale, pas seulement du code : chaque
@@ -373,6 +374,41 @@ describe("preuves non mesurées", () => {
     // Mais les deux absentes pour de bon, elles, coûtent des points.
     const sansFichiers: SignauxSite = { ...signauxSains(), robotsTxt: false, sitemapXml: false };
     expect(scorer(sansFichiers).axes.seo.note).toBeLessThan(scorer(signauxSains()).axes.seo.note);
+  });
+});
+
+describe("intégrité catalogue ↔ preuves", () => {
+  // Le catalogue déclare les preuves qui le déclenchent. Rien dans le typage ne
+  // garantit que ces clés existent réellement : une faute de frappe rendrait un
+  // constat silencieusement indétectable. Ce test est le seul garde-fou.
+  it("toute preuve citée par un constat existe dans le barème", () => {
+    const connues = new Set(
+      Object.values(scorer(signauxSains()).axes).flatMap((a) => a.preuves.map((p) => p.cle)),
+    );
+
+    const inconnues: string[] = [];
+    for (const constat of AUDIT_ISSUE_CATALOG) {
+      for (const d of constat.declencheurs ?? []) {
+        for (const cle of d.preuves) {
+          if (!connues.has(cle)) inconnues.push(`${constat.key} → ${cle}`);
+        }
+      }
+    }
+
+    expect(inconnues).toEqual([]);
+  });
+
+  it("tout constat détectable porte un pilier", () => {
+    for (const constat of AUDIT_ISSUE_CATALOG) {
+      expect(["technique", "contenu", "popularite"]).toContain(constat.pilier);
+    }
+  });
+
+  it("le seul constat sans déclencheur est celui qu'on décide en amont", () => {
+    // `no_site_or_unreachable` ne se déduit pas d'une preuve : il se décide avant
+    // toute mesure, quand rien ne répond ou que la page se déclare en travaux.
+    const sansDeclencheur = AUDIT_ISSUE_CATALOG.filter((c) => !c.declencheurs).map((c) => c.key);
+    expect(sansDeclencheur).toEqual(["no_site_or_unreachable"]);
   });
 });
 

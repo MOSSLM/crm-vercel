@@ -23,6 +23,7 @@
  *    et contestable.
  */
 
+import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 import type {
   AxeId,
   Confiance,
@@ -426,8 +427,11 @@ function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
  * `entreprises_audit_site.issue_keys`, lu par `AuditWorkspace` pour pré-cocher
  * les cartes de l'audit.
  *
- * UNE SEULE SOURCE DE VÉRITÉ : une clé est émise si, et seulement si, la preuve
- * correspondante porte le verdict `probleme`.
+ * UNE SEULE SOURCE DE VÉRITÉ, À DEUX ÉTAGES. Une clé est émise si, et seulement
+ * si, la preuve correspondante porte le verdict `probleme` — et la liste de ces
+ * correspondances n'est pas tenue ici : elle est déclarée par le catalogue
+ * lui-même (`AUDIT_ISSUE_CATALOG[].declencheurs`). Ajouter un constat au
+ * catalogue suffit donc à le rendre détectable, sans toucher à ce fichier.
  *
  * Cette fonction rejugeait auparavant les signaux bruts avec ses propres seuils,
  * en parallèle du barème des preuves. D'où deux vérités sur la même page : un
@@ -439,32 +443,6 @@ function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
  * En lisant les verdicts au lieu de les refaire, la contradiction devient
  * impossible par construction — pas par vigilance.
  */
-interface RegleCle {
-  cle: string;
-  /** Preuves à consulter, par leur `cle`, tous axes confondus. */
-  preuves: string[];
-  /** `une` : une preuve en problème suffit. `toutes` : il les faut toutes. */
-  mode: "une" | "toutes";
-}
-
-const REGLES_CLES: RegleCle[] = [
-  // La lenteur se constate sur le temps de réponse, la réception ou le poids.
-  { cle: "slow_site", preuves: ["ttfb", "poids"], mode: "une" },
-
-  // Un site sans `viewport` n'est pas adaptatif, point.
-  { cle: "outdated_or_not_mobile", preuves: ["viewport"], mode: "une" },
-  // Sinon il faut DEUX symptômes concordants : des largeurs figées ET aucune
-  // règle d'affichage mobile. Un seul des deux ne suffit pas — un site en
-  // flexbox n'a parfois aucune media query et s'adapte parfaitement, et une
-  // largeur figée isolée ne fait pas un site des années 2000.
-  { cle: "outdated_or_not_mobile", preuves: ["largeurs_fixes", "media_queries"], mode: "toutes" },
-
-  { cle: "phone_not_clickable", preuves: ["tel"], mode: "une" },
-  { cle: "form_not_accessible", preuves: ["formulaire"], mode: "une" },
-  { cle: "weak_cta", preuves: ["cta"], mode: "une" },
-  { cle: "no_reviews_on_site", preuves: ["avis"], mode: "une" },
-];
-
 export function issueKeysDepuisAxes(axes: Record<AxeId, NoteAxe>, s: SignauxSite): string[] {
   // Un site injoignable — ou une page qui se déclare en travaux — ne déclenche
   // que sa propre clé : lui reprocher en plus son téléphone non cliquable serait
@@ -477,13 +455,17 @@ export function issueKeysDepuisAxes(axes: Record<AxeId, NoteAxe>, s: SignauxSite
   }
 
   const keys: string[] = [];
-  for (const regle of REGLES_CLES) {
-    if (keys.includes(regle.cle)) continue;
-    const etats = regle.preuves.map((c) => verdicts.get(c));
-    // Une preuve non mesurée ne déclenche jamais rien : le doute n'accuse pas.
-    const enProbleme = etats.filter((v) => v === "probleme").length;
-    const declenche = regle.mode === "une" ? enProbleme > 0 : enProbleme === regle.preuves.length;
-    if (declenche) keys.push(regle.cle);
+  for (const constat of AUDIT_ISSUE_CATALOG) {
+    if (!constat.declencheurs || keys.includes(constat.key)) continue;
+
+    // Plusieurs déclencheurs pour un même constat = un « ou » entre eux.
+    const declenche = constat.declencheurs.some((d) => {
+      // Une preuve non mesurée ne déclenche jamais rien : le doute n'accuse pas.
+      const enProbleme = d.preuves.filter((c) => verdicts.get(c) === "probleme").length;
+      return d.mode === "une" ? enProbleme > 0 : enProbleme === d.preuves.length;
+    });
+
+    if (declenche) keys.push(constat.key);
   }
 
   return keys;
