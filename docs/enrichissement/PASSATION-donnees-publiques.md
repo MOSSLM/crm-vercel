@@ -418,6 +418,18 @@ Chacune peut faire plusieurs commits.
 > chacune de ces phrases est fausse. Le bloc logos disparaît correctement — et
 > le pied de page continue d'afficher trois badges.
 >
+> S'y ajoute une sixième zone, la plus sensible : **125 mentions d'aides par
+> variante** (MaPrimeRénov', CEE, Coup de pouce, éco-PTZ). Ces aides **exigent
+> légalement** un installateur RGE. Une entreprise sans RGE qui laisse entendre
+> que ses travaux y ouvrent droit fait perdre au client une aide qu'il croyait
+> acquise — ce n'est plus une exagération commerciale.
+>
+> ➜ **Le prompt à passer à Claude Design est dans
+> [`PROMPT-4b-variantes-rge.md`](./PROMPT-4b-variantes-rge.md)**, avec le contrat
+> `data-rge="oui"` / `data-rge="non"` et ce qui reste à écrire côté CRM. Le
+> principe retenu par le propriétaire : **deux rédactions**, pas une zone qui se
+> vide — un site sans RGE doit rester complet, pas troué.
+>
 > **MISE À JOUR (09/08/2026, bundle `template_cvc12.zip`).** Le propriétaire a
 > repris les templates dans Claude Design. Les **six** variantes (Agency, Brut,
 > Classique, Nocturne, Studio, Verdure) portent maintenant un markup identique :
