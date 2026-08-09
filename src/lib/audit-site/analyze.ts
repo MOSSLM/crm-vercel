@@ -49,6 +49,19 @@ const MOTS_MENTIONS = ["mentions légales", "mentions legales", "mentions-legale
 const MOTS_COOKIES = ["cookie", "rgpd", "consentement", "tarteaucitron", "axeptio", "didomi"];
 const MOTS_AVIS = ["avis", "témoignage", "temoignage", "ils nous font confiance", "nos clients"];
 
+/**
+ * Formules par lesquelles une page annonce elle-même qu'elle n'est pas un site.
+ *
+ * Un domaine garé ou une page en travaux ne se note pas : il se signale. Ces
+ * entreprises rejoignent les prospects « sans site », qui sont les plus faciles
+ * à convaincre — et à qui l'on n'a aujourd'hui rien à proposer.
+ */
+const MOTS_PARKING = [
+  "en construction", "en cours de construction", "site en travaux", "under construction",
+  "coming soon", "bientôt disponible", "bientot disponible", "prochainement en ligne",
+  "ce domaine", "nom de domaine", "domain for sale", "page d'attente",
+];
+
 export function analyser(c: CollecteSite, contexte: { telephone?: string | null } = {}): SignauxSite {
   const joignable = !c.injoignable && c.httpStatus != null && c.httpStatus < 400 && Boolean(c.html);
 
@@ -68,6 +81,8 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     nbScriptsBloquants: 0,
     nbCssBloquants: 0,
     ressembleSpa: false,
+    coquille: false,
+    pageParking: false,
     title: null,
     metaDescription: null,
     nbH1: 0,
@@ -118,8 +133,15 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     (l) => !l.getAttribute("media") || l.getAttribute("media") === "all",
   ).length;
 
-  // Une coquille de SPA : peu de texte servi, et du JS pour le fabriquer.
-  const ressembleSpa = texte.length < SEUILS.texteSpa && scripts.length >= 3;
+  // Une page quasi vide, quelle qu'en soit la raison : coquille de SPA, page
+  // parking, « site en construction », redirection HTML. Le critère ne dépend PAS
+  // de la présence de JavaScript — une page de 1 Ko sans script avait sinon droit
+  // à une note de conversion de 0/100 en confiance haute.
+  const coquille =
+    texte.length < SEUILS.texteSpa || (c.poidsOctets ?? Infinity) < SEUILS.htmlCoquilleOctets;
+  // La SPA reste distinguée : elle a du contenu, simplement pas dans le HTML servi.
+  const ressembleSpa = coquille && scripts.length >= 3;
+  const pageParking = coquille && MOTS_PARKING.some((m) => texte.toLowerCase().includes(m));
 
   // ── SEO ───────────────────────────────────────────────────────────────────
   const title = root.querySelector("title")?.text?.trim() || null;
@@ -190,6 +212,8 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     nbScriptsBloquants,
     nbCssBloquants,
     ressembleSpa,
+    coquille,
+    pageParking,
     title,
     metaDescription,
     nbH1,

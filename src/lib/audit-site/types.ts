@@ -146,6 +146,19 @@ export interface SignauxSite {
    * parfaitement référencé rendrait sinon un 12/100 mensonger.
    */
   ressembleSpa: boolean;
+  /**
+   * La page ne contient quasiment rien — coquille de SPA, page parking, « site
+   * en construction », redirection HTML. Contrairement à `ressembleSpa`, ce
+   * drapeau n'exige PAS la présence de JavaScript.
+   *
+   * Il existe parce qu'une page de 1 Ko sans le moindre script a été notée
+   * « conversion 0/100, confiance haute » : on s'apprêtait à envoyer un rapport
+   * accablant sur une page qui n'est pas le site de l'entreprise. Comme
+   * `ressembleSpa`, il baisse la confiance et jamais la note.
+   */
+  coquille: boolean;
+  /** La page annonce elle-même qu'elle n'est pas un site (parking, en travaux). */
+  pageParking: boolean;
 
   // ── SEO ─────────────────────────────────────────────────────────────────
   title: string | null;

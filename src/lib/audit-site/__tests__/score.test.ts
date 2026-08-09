@@ -26,6 +26,8 @@ function signauxSains(): SignauxSite {
     nbScriptsBloquants: 0,
     nbCssBloquants: 1,
     ressembleSpa: false,
+    coquille: false,
+    pageParking: false,
     title: "Menuiserie Berthier — agencement sur mesure à Antibes",
     metaDescription:
       "Menuiserie et agencement sur mesure à Antibes depuis 1998. Devis gratuit sous 48 h.",
@@ -121,6 +123,9 @@ describe("scorer — coquille de SPA", () => {
   it("baisse la CONFIANCE des axes de contenu, pas leur note à zéro", () => {
     const spa: SignauxSite = {
       ...signauxSains(),
+      // Invariant du modèle : une SPA EST une coquille — peu de texte servi —
+      // avec du JavaScript pour la remplir.
+      coquille: true,
       ressembleSpa: true,
       longueurTexteVisible: 120,
       title: null,
@@ -137,7 +142,7 @@ describe("scorer — coquille de SPA", () => {
   });
 
   it("exclut les axes non concluants de la note globale", () => {
-    const spa: SignauxSite = { ...signauxSains(), ressembleSpa: true };
+    const spa: SignauxSite = { ...signauxSains(), coquille: true, ressembleSpa: true };
     const r = scorer(spa);
     // Restent vitesse (30) et mobile (20), tous deux excellents ici.
     expect(r.noteGlobale).toBeGreaterThanOrEqual(85);
@@ -275,6 +280,51 @@ describe("scorer — mobile", () => {
       cssLisible: false,
     };
     expect(issueKeysDepuisSignaux(inconnu, {})).not.toContain("outdated_or_not_mobile");
+  });
+});
+
+describe("page quasi vide — le cas relevé en base : 1 Ko de HTML, conversion 0/100, confiance haute", () => {
+  it("baisse la confiance même sans le moindre script", () => {
+    // `ressembleSpa` exigeait au moins trois scripts : une page d'attente
+    // statique passait donc pour pleinement mesurée, et on s'apprêtait à envoyer
+    // un rapport accablant sur une page qui n'est pas le site de l'entreprise.
+    const vide: SignauxSite = {
+      ...signauxSains(),
+      coquille: true,
+      ressembleSpa: false,
+      nbScripts: 0,
+      longueurTexteVisible: 120,
+      formulaire: false,
+      mailto: false,
+      nbCta: 0,
+    };
+    const r = scorer(vide);
+    expect(r.axes.conversion.confiance).toBe("faible");
+    expect(r.axes.seo.confiance).toBe("faible");
+  });
+
+  it("exclut de la note globale les axes qu'on refuse de publier", () => {
+    const vide: SignauxSite = { ...signauxSains(), coquille: true, nbCta: 0, formulaire: false, mailto: false };
+    const r = scorer(vide);
+    // La vitesse et le mobile se mesurent encore : la note globale existe, mais
+    // elle ne doit rien devoir aux axes en confiance faible.
+    expect(r.axes.vitesse.confiance).not.toBe("faible");
+    expect(r.noteGlobale).toBeGreaterThan(0);
+  });
+
+  it("une page qui se déclare en travaux n'émet que « pas de site »", () => {
+    const parking: SignauxSite = {
+      ...signauxSains(),
+      coquille: true,
+      pageParking: true,
+      viewport: false,
+      formulaire: false,
+      mailto: false,
+      nbCta: 0,
+    };
+    const r = scorer(parking);
+    expect(r.issueKeys).toEqual(["no_site_or_unreachable"]);
+    expect(r.alertes.join(" ")).toContain("en construction");
   });
 });
 

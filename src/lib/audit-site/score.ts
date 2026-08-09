@@ -11,10 +11,12 @@
  *    punit jamais un site pour ce qu'on n'a pas su regarder. Une note est donc
  *    toujours « sur ce qu'on a vu », et `confiance` dit combien on a vu.
  *
- * 2. **La SPA baisse la confiance, pas la note.** Un site rendu côté client
- *    renvoie un HTML quasi vide ; le lire au premier degré donnerait 10/100 à des
- *    sites très corrects. Les axes qui dépendent du contenu passent en confiance
- *    faible, et la page publique ne les affiche pas.
+ * 2. **Une page vide baisse la confiance, pas la note.** Un site rendu côté
+ *    client renvoie un HTML quasi vide ; le lire au premier degré donnerait
+ *    10/100 à des sites très corrects. Il en va de même d'une page d'attente ou
+ *    d'une redirection, qui n'ont pas de JavaScript pour se signaler. Les axes
+ *    qui dépendent du contenu passent en confiance faible, et la page publique
+ *    ne les affiche pas.
  *
  * 3. **Une clé d'audit n'est émise que sur une mesure positive.** Le doute ne
  *    déclenche rien : mieux vaut un rapport court et vrai qu'un rapport complet
@@ -61,6 +63,11 @@ export const SEUILS = {
   largeurMobilePx: 480,
   /** Sous ce nombre de caractères visibles, la page est une coquille. */
   texteSpa: 500,
+  /**
+   * En dessous, le HTML servi ne peut pas être une page d'accueil : c'est une
+   * coquille, une redirection ou une page d'attente.
+   */
+  htmlCoquilleOctets: 5_000,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -293,8 +300,9 @@ function axeSeo(s: SignauxSite): NoteAxe {
       compte,
     ),
   ];
-  // Le SEO se lit dans le HTML : une coquille de SPA rend cet axe non concluant.
-  return agreger(preuves, !s.joignable || s.ressembleSpa);
+  // Le SEO se lit dans le HTML : une page quasi vide rend cet axe non concluant,
+  // qu'elle soit une SPA ou une page d'attente sans le moindre script.
+  return agreger(preuves, !s.joignable || s.coquille);
 }
 
 function axeMobile(s: SignauxSite): NoteAxe {
@@ -406,7 +414,7 @@ function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
       { inverse: true },
     ),
   ];
-  return agreger(preuves, !s.joignable || s.ressembleSpa);
+  return agreger(preuves, !s.joignable || s.coquille);
 }
 
 // ---------------------------------------------------------------------------
@@ -458,9 +466,10 @@ const REGLES_CLES: RegleCle[] = [
 ];
 
 export function issueKeysDepuisAxes(axes: Record<AxeId, NoteAxe>, s: SignauxSite): string[] {
-  // Un site injoignable ne déclenche que sa propre clé : lui reprocher en plus
-  // son téléphone non cliquable serait une affirmation sur une page jamais lue.
-  if (!s.joignable) return ["no_site_or_unreachable"];
+  // Un site injoignable — ou une page qui se déclare en travaux — ne déclenche
+  // que sa propre clé : lui reprocher en plus son téléphone non cliquable serait
+  // une affirmation sur un site qui n'existe pas encore.
+  if (!s.joignable || s.pageParking) return ["no_site_or_unreachable"];
 
   const verdicts = new Map<string, Verdict>();
   for (const axe of Object.values(axes)) {
@@ -517,10 +526,20 @@ export function scorer(s: SignauxSite, ctx: ContexteEntreprise = {}): ResultatSc
   const alertes: string[] = [];
   if (!s.joignable) alertes.push("Site injoignable — aucune note n'est publiable.");
   if (s.bloque) alertes.push("Le site oppose une protection anti-robot : analyse partielle.");
-  if (s.ressembleSpa) {
+  if (s.pageParking) {
+    alertes.push(
+      "La page se déclare elle-même en construction ou en attente : à traiter comme une " +
+        "entreprise sans site, pas comme un site à corriger.",
+    );
+  } else if (s.ressembleSpa) {
     alertes.push(
       "Page rendue côté JavaScript : les axes SEO et conversion sont en confiance faible " +
         "et ne seront pas publiés sur le rapport.",
+    );
+  } else if (s.coquille) {
+    alertes.push(
+      "Page quasi vide : les axes SEO et conversion sont en confiance faible. Vérifier " +
+        "qu'il s'agit bien du site de l'entreprise avant d'envoyer quoi que ce soit.",
     );
   }
   if (s.widgetAvis) {
