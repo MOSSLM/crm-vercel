@@ -41,6 +41,20 @@ export const POIDS_AXES: Record<AxeId, number> = {
   seo: 30,
   mobile: 20,
   conversion: 20,
+  /**
+   * ZÉRO, et c'est délibéré.
+   *
+   * La popularité locale — avis Google, qualifications affichées, ville dans le
+   * titre — se constate et se vend, mais elle ne parle PAS du site. L'inclure
+   * dans la note ferait dire à « votre site : 62/100 » des choses qui ne sont
+   * pas le site, et la première question du prospect (« pourquoi 62 ? »)
+   * n'aurait plus de réponse tenable.
+   *
+   * Un poids nul laisse l'axe s'afficher avec ses preuves et alimenter des
+   * cartes, sans peser sur le chiffre : il ne contribue ni au numérateur ni au
+   * dénominateur de la moyenne pondérée.
+   */
+  popularite: 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -65,6 +79,15 @@ export const SEUILS = {
   /** Sous ce nombre de caractères visibles, la page est une coquille. */
   texteSpa: 500,
   /**
+   * Plancher d'avis Google. La médiane du parc est de 20 : dix est délibérément
+   * bas, pour ne constater qu'un manque criant.
+   */
+  avisMin: 10,
+  /** Sous 4 sur 5, la note affichée dessert plus qu'elle ne rassure. */
+  noteGoogleMin: 4,
+  /** Sous 3,5, ce n'est plus une nuance : c'est un frein à l'achat. */
+  noteGoogleGrave: 3.5,
+  /**
    * En dessous, le HTML servi ne peut pas être une page d'accueil : c'est une
    * coquille, une redirection ou une page d'attente.
    */
@@ -75,15 +98,23 @@ export const SEUILS = {
 // Petits fabricants de preuves
 // ---------------------------------------------------------------------------
 
-/** Preuve binaire : présent = bon, absent = problème. */
+/**
+ * Preuve binaire : présent = bon, absent = problème, INDÉTERMINÉ = inconnu.
+ *
+ * `== null` et non `=== null`, délibérément. Les signaux relus depuis la base
+ * — ceux écrits avant l'ajout d'un champ — arrivent en `undefined`, et un
+ * `=== null` les faisait tomber dans la branche « absent », c'est-à-dire lire
+ * une absence de mesure comme un échec. C'est l'erreur exacte que tout ce
+ * module existe pour ne pas commettre.
+ */
 function pBool(
   cle: string,
   libelle: string,
-  present: boolean | null,
+  present: boolean | null | undefined,
   poids: number,
   labels: { oui: string; non: string },
 ): Preuve {
-  if (present === null) {
+  if (present == null) {
     return { cle, libelle, valeur: null, seuil: null, poids, verdict: "inconnu" };
   }
   return {
@@ -108,20 +139,29 @@ function pBool(
 function pSeuil(
   cle: string,
   libelle: string,
-  valeur: number | null,
+  valeur: number | null | undefined,
   seuil: number,
   poids: number,
   format: (n: number, echelle: number) => string,
-  { inverse = false }: { inverse?: boolean } = {},
+  {
+    inverse = false,
+    limiteGrave: limiteGraveExplicite,
+  }: { inverse?: boolean; limiteGrave?: number } = {},
 ): Preuve {
-  if (valeur === null || !Number.isFinite(valeur)) {
+  if (valeur == null || !Number.isFinite(valeur)) {
     return { cle, libelle, valeur: null, seuil: format(seuil, seuil), poids, verdict: "inconnu" };
   }
   const echelle = Math.max(valeur, seuil);
   const depasse = inverse ? valeur < seuil : valeur > seuil;
   // Zone grise à 1,5× le seuil : « moyen » vaut la moitié des points, ce qui
   // évite qu'un site à 2,6 s soit noté comme un site à 12 s.
-  const limiteGrave = inverse ? seuil * 0.5 : seuil * 1.5;
+  //
+  // Ce facteur suppose une grandeur non bornée — une durée, un poids, un compte.
+  // Sur une échelle fermée comme une note sur 5, il n'a aucun sens : il faudrait
+  // descendre à 2/5 pour déclencher, alors que 3,1/5 est déjà mauvais. D'où la
+  // possibilité de fixer la limite explicitement.
+  const limiteGrave =
+    limiteGraveExplicite ?? (inverse ? seuil * 0.5 : seuil * 1.5);
   const grave = inverse ? valeur < limiteGrave : valeur > limiteGrave;
   const verdict: Verdict = !depasse ? "ok" : grave ? "probleme" : "moyen";
   return {
@@ -135,6 +175,24 @@ function pSeuil(
 }
 
 const pointsDe = (v: Verdict): number => (v === "ok" ? 1 : v === "moyen" ? 0.5 : 0);
+
+/**
+ * La note d'un ensemble de preuves, recalculée à la lecture.
+ *
+ * Existe pour que la popularité locale n'ait pas besoin de colonne dédiée : sa
+ * note se déduit de ses preuves stockées, donc une migration non appliquée ne
+ * peut pas faire échouer l'écriture d'une ligne entière.
+ *
+ * `null` quand rien n'a pu être mesuré — jamais zéro, qui se lirait comme un
+ * jugement.
+ */
+export function noteDepuisPreuves(preuves: readonly Preuve[]): number | null {
+  const mesurees = preuves.filter((p) => p.verdict !== "inconnu");
+  const total = mesurees.reduce((a, p) => a + p.poids, 0);
+  if (total === 0) return null;
+  const obtenus = mesurees.reduce((a, p) => a + p.poids * pointsDe(p.verdict), 0);
+  return Math.round((obtenus / total) * 100);
+}
 
 /**
  * Agrège des preuves en note /100, en ignorant les preuves non mesurées.
@@ -418,6 +476,50 @@ function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
   return agreger(preuves, !s.joignable || s.coquille);
 }
 
+/**
+ * La popularité locale : ce que le croisement révèle, et que la page seule ne
+ * dira jamais.
+ *
+ * Cet axe ne note pas le site — il note la présence. Il pèse zéro dans la note
+ * globale (voir `POIDS_AXES`) et existe pour deux raisons : produire des
+ * constats vendables sur les entreprises dont le site va bien, et donner
+ * quelque chose à dire aux 760 entreprises qui n'ont pas de site du tout.
+ *
+ * Il reste joignable-indépendant : une entreprise sans site a quand même une
+ * fiche Google, des avis, et parfois une qualification RGE qu'elle n'exploite
+ * pas. C'est le seul axe qui se mesure sur un domaine mort.
+ */
+function axePopularite(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
+  const avis = ctx.nombreAvis ?? null;
+  const note = ctx.noteMoyenne ?? null;
+
+  const preuves: Preuve[] = [
+    // La médiane du parc est de 20 avis. Dix est un plancher volontairement bas :
+    // on veut constater un manque criant, pas chicaner un artisan correct.
+    pSeuil("avis_nombre", "Avis Google reçus", avis, SEUILS.avisMin, 35, compte, { inverse: true }),
+    pSeuil("avis_note", "Note Google moyenne", note, SEUILS.noteGoogleMin, 25, etoiles, {
+      inverse: true,
+      limiteGrave: SEUILS.noteGoogleGrave,
+    }),
+    // `null` quand l'entreprise n'a aucune qualification : la question ne se
+    // pose pas, et l'absence de réponse ne doit rien coûter.
+    pBool("rge_affiche", "Qualification RGE mise en avant", s.mentionneRge, 25, {
+      oui: "citée sur le site",
+      non: "détenue mais absente du site",
+    }),
+    // `null` quand on ne connaît pas la ville : on ne juge pas ce qu'on ignore.
+    pBool("seo_local", "Votre ville dans le titre du site", s.villeDansTitre, 15, {
+      oui: "présente",
+      non: "absente",
+    }),
+  ];
+
+  // Aucune dégradation liée au site : ces preuves ne viennent pas de la page,
+  // sauf les deux dernières — et celles-là valent déjà `null` si la page n'a pas
+  // pu être lue, puisque `analyser` renvoie ses valeurs par défaut.
+  return agreger(preuves, false);
+}
+
 // ---------------------------------------------------------------------------
 // Clés d'audit
 // ---------------------------------------------------------------------------
@@ -444,31 +546,41 @@ function axeConversion(s: SignauxSite, ctx: ContexteEntreprise): NoteAxe {
  * impossible par construction — pas par vigilance.
  */
 export function issueKeysDepuisAxes(axes: Record<AxeId, NoteAxe>, s: SignauxSite): string[] {
-  // Un site injoignable — ou une page qui se déclare en travaux — ne déclenche
-  // que sa propre clé : lui reprocher en plus son téléphone non cliquable serait
-  // une affirmation sur un site qui n'existe pas encore.
-  if (!s.joignable || s.pageParking) return ["no_site_or_unreachable"];
-
   const verdicts = new Map<string, Verdict>();
   for (const axe of Object.values(axes)) {
     for (const p of axe.preuves) verdicts.set(p.cle, p.verdict);
   }
 
-  const keys: string[] = [];
-  for (const constat of AUDIT_ISSUE_CATALOG) {
-    if (!constat.declencheurs || keys.includes(constat.key)) continue;
+  const declenchees = (garder: (c: (typeof AUDIT_ISSUE_CATALOG)[number]) => boolean): string[] => {
+    const keys: string[] = [];
+    for (const constat of AUDIT_ISSUE_CATALOG) {
+      if (!constat.declencheurs || keys.includes(constat.key) || !garder(constat)) continue;
 
-    // Plusieurs déclencheurs pour un même constat = un « ou » entre eux.
-    const declenche = constat.declencheurs.some((d) => {
-      // Une preuve non mesurée ne déclenche jamais rien : le doute n'accuse pas.
-      const enProbleme = d.preuves.filter((c) => verdicts.get(c) === "probleme").length;
-      return d.mode === "une" ? enProbleme > 0 : enProbleme === d.preuves.length;
-    });
+      // Plusieurs déclencheurs pour un même constat = un « ou » entre eux.
+      const declenche = constat.declencheurs.some((d) => {
+        // Une preuve non mesurée ne déclenche jamais rien : le doute n'accuse pas.
+        const enProbleme = d.preuves.filter((c) => verdicts.get(c) === "probleme").length;
+        return d.mode === "une" ? enProbleme > 0 : enProbleme === d.preuves.length;
+      });
 
-    if (declenche) keys.push(constat.key);
+      if (declenche) keys.push(constat.key);
+    }
+    return keys;
+  };
+
+  // Un site injoignable — ou une page qui se déclare en travaux — ne se juge
+  // pas : lui reprocher son téléphone non cliquable serait une affirmation sur
+  // une page jamais lue.
+  //
+  // Mais sa FICHE GOOGLE existe, elle. C'est même tout ce qu'on a à dire aux
+  // 760 entreprises sans site, et c'est précisément à elles qu'on a le plus de
+  // chances de vendre. Le pilier popularité ne dépend pas de la page : il reste
+  // donc audible quand le reste se tait.
+  if (!s.joignable || s.pageParking) {
+    return ["no_site_or_unreachable", ...declenchees((c) => c.pilier === "popularite")];
   }
 
-  return keys;
+  return declenchees(() => true);
 }
 
 /** Confort d'appel : depuis les signaux seuls, en passant par le barème. */
@@ -492,13 +604,14 @@ export function libelleDeNote(note: number): string {
   return LIBELLES.find((l) => note >= l.min)?.texte ?? "Critique";
 }
 
-/** Les quatre axes, sans les clés — pour que la dérivation puisse les relire. */
+/** Les axes, sans les clés — pour que la dérivation puisse les relire. */
 function calculerAxes(s: SignauxSite, ctx: ContexteEntreprise): Record<AxeId, NoteAxe> {
   return {
     vitesse: axeVitesse(s),
     seo: axeSeo(s),
     mobile: axeMobile(s),
     conversion: axeConversion(s, ctx),
+    popularite: axePopularite(s, ctx),
   };
 }
 
@@ -573,4 +686,9 @@ function ko(n: number, echelle = n): string {
 /** Un compte reste un compte : même signature, pour rester interchangeable. */
 function compte(n: number): string {
   return `${n}`;
+}
+
+/** Une note Google se lit sur 5, avec une décimale. */
+function etoiles(n: number): string {
+  return `${n.toFixed(1).replace(".", ",")} / 5`;
 }

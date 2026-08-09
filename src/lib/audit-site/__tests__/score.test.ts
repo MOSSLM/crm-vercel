@@ -61,6 +61,8 @@ function signauxSains(): SignauxSite {
     bandeauCookies: true,
     nbReseauxSociaux: 2,
     nbCta: 5,
+    villeDansTitre: true,
+    mentionneRge: null,
   };
 }
 
@@ -78,6 +80,9 @@ function signauxInjoignables(): SignauxSite {
     cacheControl: false,
     robotsTxt: null,
     sitemapXml: null,
+    // Rien n'a été lu : les signaux qui viennent de la page sont indéterminés.
+    villeDansTitre: null,
+    mentionneRge: null,
   };
 }
 
@@ -87,8 +92,10 @@ describe("scorer — cas nominal", () => {
     expect(r.noteGlobale).toBeGreaterThanOrEqual(85);
     expect(r.libelle).toBe("Excellent");
     expect(r.issueKeys).toEqual([]);
-    for (const axe of Object.values(r.axes)) {
-      expect(axe.confiance).toBe("haute");
+    // Les quatre axes qui notent LE SITE. La popularité se juge à part : elle ne
+    // dépend pas de la page et n'entre pas dans la note globale.
+    for (const id of ["vitesse", "seo", "mobile", "conversion"] as const) {
+      expect(r.axes[id].confiance).toBe("haute");
     }
   });
 
@@ -107,8 +114,8 @@ describe("scorer — site injoignable", () => {
     const r = scorer(signauxInjoignables());
     expect(r.noteGlobale).toBe(0);
     expect(r.issueKeys).toEqual(["no_site_or_unreachable"]);
-    for (const axe of Object.values(r.axes)) {
-      expect(axe.confiance).toBe("faible");
+    for (const id of ["vitesse", "seo", "mobile", "conversion"] as const) {
+      expect(r.axes[id].confiance).toBe("faible");
     }
   });
 
@@ -374,6 +381,62 @@ describe("preuves non mesurées", () => {
     // Mais les deux absentes pour de bon, elles, coûtent des points.
     const sansFichiers: SignauxSite = { ...signauxSains(), robotsTxt: false, sitemapXml: false };
     expect(scorer(sansFichiers).axes.seo.note).toBeLessThan(scorer(signauxSains()).axes.seo.note);
+  });
+});
+
+describe("popularité locale — le seul axe qui parle sans site", () => {
+  it("ne pèse rien dans la note globale", () => {
+    // Une réputation catastrophique ne doit pas faire baisser la note du SITE :
+    // « votre site : 62/100 » doit rester une phrase sur le site.
+    const base = signauxSains();
+    const sansContexte = scorer(base);
+    const avecMauvaiseReputation = scorer(base, { nombreAvis: 1, noteMoyenne: 2.4 });
+    expect(avecMauvaiseReputation.noteGlobale).toBe(sansContexte.noteGlobale);
+  });
+
+  it("émet ses constats même quand le site est injoignable", () => {
+    // Le cas des 760 entreprises sans site : c'est tout ce qu'on a à leur dire,
+    // et ce sont les plus faciles à convaincre.
+    const r = scorer(signauxInjoignables(), { nombreAvis: 2, noteMoyenne: 3.1 });
+    expect(r.issueKeys).toContain("no_site_or_unreachable");
+    expect(r.issueKeys).toContain("too_few_reviews");
+    expect(r.issueKeys).toContain("low_rating");
+  });
+
+  it("ne reproche pas une page qu'on n'a pas lue", () => {
+    // `rge_affiche` et `seo_local` viennent de la page : sans page, ils sont
+    // indéterminés et ne déclenchent rien.
+    const r = scorer(signauxInjoignables(), { nombreAvis: 2 });
+    expect(r.issueKeys).not.toContain("rge_not_highlighted");
+    expect(r.issueKeys).not.toContain("no_local_seo");
+  });
+
+  it("se tait sur les qualifications d'une entreprise qui n'en a pas", () => {
+    const sansRge: SignauxSite = { ...signauxSains(), mentionneRge: null };
+    const p = scorer(sansRge).axes.popularite.preuves.find((x) => x.cle === "rge_affiche");
+    expect(p?.verdict).toBe("inconnu");
+    expect(scorer(sansRge).issueKeys).not.toContain("rge_not_highlighted");
+  });
+
+  it("constate une qualification détenue et jamais citée", () => {
+    const rgeCache: SignauxSite = { ...signauxSains(), mentionneRge: false };
+    const r = scorer(rgeCache);
+    expect(r.issueKeys).toContain("rge_not_highlighted");
+    expect(r.axes.popularite.preuves.find((x) => x.cle === "rge_affiche")?.valeur).toBe(
+      "détenue mais absente du site",
+    );
+  });
+
+  it("lit `undefined` comme « non mesuré », pas comme « absent »", () => {
+    // Les signaux relus depuis la base, écrits avant l'ajout d'un champ,
+    // arrivent en `undefined`. Les traiter comme un manque produirait des
+    // reproches inventés sur toutes les analyses existantes.
+    const ancien = { ...signauxSains() } as Record<string, unknown>;
+    delete ancien.mentionneRge;
+    delete ancien.villeDansTitre;
+    const r = scorer(ancien as unknown as SignauxSite);
+    expect(r.issueKeys).not.toContain("rge_not_highlighted");
+    expect(r.issueKeys).not.toContain("no_local_seo");
   });
 });
 

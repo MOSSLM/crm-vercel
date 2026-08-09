@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { collecter } from "./collect";
 import { analyser } from "./analyze";
 import { scorer } from "./score";
-import type { AxeId, ResultatScore } from "./types";
+import type { AxeId, ContexteEntreprise, ResultatScore, SignauxSite } from "./types";
 
 /**
  * Le passage en masse : charger une file, analyser sous contrainte de temps,
@@ -28,6 +28,14 @@ export interface CibleAudit {
   url: string | null;
   nombre_avis?: number | null;
   telephone?: string | null;
+  // ── Contexte du pilier « popularité locale » ────────────────────────────
+  // Fourni par la vue depuis `sql/20260811_audit_popularite.sql`. Absent tant
+  // que la migration n'est pas appliquée : les preuves correspondantes restent
+  // alors « inconnues », donc hors dénominateur, et rien ne casse.
+  nom?: string | null;
+  ville?: string | null;
+  note_moyenne?: number | null;
+  qualifications_rge?: string[] | null;
 }
 
 export interface ResultatAudit {
@@ -45,6 +53,80 @@ export interface OptionsAudit {
   maintenant?: () => Date;
 }
 
+/** Le contexte CRM que la page ne peut pas contenir, tel que la vue le donne. */
+function contexteDe(cible: CibleAudit): ContexteEntreprise {
+  return {
+    nombreAvis: cible.nombre_avis ?? null,
+    telephone: cible.telephone ?? null,
+    noteMoyenne: cible.note_moyenne ?? null,
+    ville: cible.ville ?? null,
+    nom: cible.nom ?? null,
+    qualificationsRge: cible.qualifications_rge ?? null,
+  };
+}
+
+/**
+ * Les signaux d'une entreprise sans site : tout est inconnu du côté de la page.
+ *
+ * Ce n'est pas un site noté zéro — c'est un site qu'on n'a pas. Les quatre axes
+ * qui mesurent la page tombent donc en confiance faible et ne sont pas publiés,
+ * et seul l'axe popularité, qui ne dépend pas de la page, a quelque chose à dire.
+ */
+function signauxSansSite(): SignauxSite {
+  return {
+    joignable: false,
+    bloque: false,
+    httpStatus: null,
+    https: false,
+    ttfbMs: null,
+    chargementMs: null,
+    poidsOctets: null,
+    poidsTotalOctets: null,
+    compression: false,
+    cacheControl: false,
+    longueurTexteVisible: 0,
+    nbScripts: 0,
+    nbScriptsBloquants: 0,
+    nbCssBloquants: 0,
+    ressembleSpa: false,
+    coquille: false,
+    pageParking: false,
+    title: null,
+    metaDescription: null,
+    nbH1: 0,
+    canonical: false,
+    lang: null,
+    noindex: false,
+    robotsTxt: null,
+    sitemapXml: null,
+    jsonLdLocalBusiness: false,
+    napNom: false,
+    napAdresse: false,
+    napTelephone: false,
+    nbImages: 0,
+    nbImagesSansAlt: 0,
+    nbImagesSansLazy: 0,
+    viewport: false,
+    viewportZoomBloque: false,
+    nbMediaQueries: null,
+    nbLargeursFixes: 0,
+    nbPolicesTropPetites: null,
+    cssLisible: false,
+    telCliquable: false,
+    telephoneEnTexte: false,
+    formulaire: false,
+    mailto: false,
+    avisDansLaPage: false,
+    widgetAvis: null,
+    mentionsLegales: false,
+    bandeauCookies: false,
+    nbReseauxSociaux: 0,
+    nbCta: 0,
+    villeDansTitre: null,
+    mentionneRge: null,
+  };
+}
+
 /** Nombre d'entreprises analysables (file complète, avant découpe en lot). */
 export async function compterCandidats(sb: SupabaseClient): Promise<number | null> {
   const { count, error } = await sb
@@ -58,9 +140,12 @@ export async function compterCandidats(sb: SupabaseClient): Promise<number | nul
  * L'ordre vit en SQL pour que la règle de péremption ne soit écrite qu'une fois.
  */
 export async function chargerCibles(sb: SupabaseClient, limite: number): Promise<CibleAudit[]> {
+  // `*` plutôt que la liste des colonnes : la vue gagne des champs avec la
+  // migration du pilier popularité, et un `select` qui NOMME une colonne absente
+  // échoue entièrement. Ici, une vue plus ancienne rend simplement moins.
   const { data, error } = await sb
     .from("v_audit_site_a_rafraichir")
-    .select("entreprise_id, url, nombre_avis, telephone")
+    .select("*")
     .limit(limite);
 
   if (error) throw new Error(`chargerCibles: ${error.message}`);
@@ -80,7 +165,14 @@ export async function analyserEntreprise(
   // On l'enregistre plutôt que de sauter la ligne, sinon la même entreprise
   // revient dans la file à chaque tick sans jamais rien produire.
   if (!url) {
-    await ecrire(sb, cible, null, ["no_site_or_unreachable"], maintenant, opts, {
+    // Pas de site à mesurer, mais une fiche Google à auditer : ces entreprises
+    // sont le quart du parc et les plus faciles à convaincre. Leur écrire une
+    // ligne vide reviendrait à n'avoir rien à leur dire.
+    const contexte = contexteDe(cible);
+    const score = scorer(signauxSansSite(), contexte);
+    const cles = ["no_site_or_unreachable", ...score.issueKeys.filter((k) => k !== "no_site_or_unreachable")];
+
+    await ecrire(sb, cible, score, cles, maintenant, opts, {
       injoignable: true,
       erreur: "aucune URL renseignée",
     });
@@ -88,14 +180,15 @@ export async function analyserEntreprise(
       entreprise_id: cible.entreprise_id,
       statut: "injoignable",
       note_globale: null,
-      issue_keys: ["no_site_or_unreachable"],
+      issue_keys: cles,
     };
   }
 
   try {
     const collecte = await collecter(url);
-    const signaux = analyser(collecte, { telephone: cible.telephone });
-    const score = scorer(signaux, { nombreAvis: cible.nombre_avis });
+    const contexte = contexteDe(cible);
+    const signaux = analyser(collecte, contexte);
+    const score = scorer(signaux, contexte);
 
     await ecrire(sb, cible, score, score.issueKeys, maintenant, opts, {
       urlAnalysee: url,

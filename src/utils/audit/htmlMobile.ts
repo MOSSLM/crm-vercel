@@ -121,6 +121,9 @@ const NOM_AXE: Record<string, string> = {
   seo: "Référencement",
   mobile: "Mobile",
   conversion: "Contact & confiance",
+  // Le seul axe qui ne parle pas du site — et le seul qui ait encore quelque
+  // chose à dire quand il n'y a pas de site du tout.
+  popularite: "Réputation locale",
 };
 
 function tonDeNote(n: number): string {

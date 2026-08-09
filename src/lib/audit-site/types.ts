@@ -23,8 +23,15 @@ export type Verdict = "ok" | "moyen" | "probleme" | "inconnu";
 /** Confiance dans une note, quand la mesure est structurellement partielle. */
 export type Confiance = "haute" | "moyenne" | "faible";
 
-/** Les quatre axes notés. */
-export type AxeId = "vitesse" | "seo" | "mobile" | "conversion";
+/**
+ * Les axes de l'analyse.
+ *
+ * Les quatre premiers notent LE SITE et composent la note globale. Le cinquième
+ * ne parle pas du site mais de la réputation : il s'affiche, il produit des
+ * constats vendables, et il pèse ZÉRO dans la note globale — sinon
+ * « votre site : 62/100 » inclurait des choses qui ne sont pas le site.
+ */
+export type AxeId = "vitesse" | "seo" | "mobile" | "conversion" | "popularite";
 
 /**
  * Un signal mesuré, avec ce qui le rend opposable : la valeur constatée et le
@@ -209,11 +216,41 @@ export interface SignauxSite {
   bandeauCookies: boolean;
   nbReseauxSociaux: number;
   nbCta: number;
+
+  // ── Popularité locale : ce que seul le croisement révèle ─────────────────
+  /**
+   * La ville de l'entreprise apparaît-elle dans le titre ou le h1 ?
+   * `null` quand on ne connaît pas sa ville : on ne juge pas ce qu'on ignore.
+   */
+  villeDansTitre: boolean | null;
+  /**
+   * La page cite-t-elle une qualification que l'ADEME confirme encore ?
+   * `null` quand l'entreprise n'en détient aucune — la question ne se pose pas.
+   */
+  mentionneRge: boolean | null;
 }
 
-/** Contexte CRM utile au scoreur, qu'on ne peut pas lire dans la page. */
+/**
+ * Contexte CRM utile au scoreur, qu'on ne peut pas lire dans la page.
+ *
+ * C'est ce qui rend l'audit intransigeant là où un outil générique reste vague :
+ * croiser la page avec ce qu'on sait déjà de l'entreprise permet de constater
+ * des écarts — 43 avis Google et zéro affiché, une qualification RGE détenue et
+ * jamais citée — qu'aucune lecture de HTML seule ne peut produire.
+ */
 export interface ContexteEntreprise {
   /** Nombre d'avis Google connus : sans lui, « avis absents » ne veut rien dire. */
   nombreAvis?: number | null;
   telephone?: string | null;
+  /** Note Google moyenne, sur 5. */
+  noteMoyenne?: number | null;
+  /** Ville de l'entreprise : la requête qui compte est « métier + ville ». */
+  ville?: string | null;
+  nom?: string | null;
+  /**
+   * Qualifications RGE encore valides, en libellés. Une liste vide et `undefined`
+   * ne veulent pas dire la même chose : la première dit « aucune », la seconde
+   * « on n'a pas regardé ».
+   */
+  qualificationsRge?: string[] | null;
 }

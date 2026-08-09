@@ -318,6 +318,71 @@ export const AUDIT_ISSUE_CATALOG: AuditIssueDef[] = [
     declencheurs: [{ preuves: ['polices'], mode: 'une' }],
   },
 
+  // ── Pilier popularité locale ────────────────────────────────────────────
+  // Ces quatre constats ne se lisent pas dans une page : ils naissent du
+  // croisement entre ce qu'on mesure et ce qu'on sait déjà de l'entreprise.
+  // Ce sont les seuls qui restent audibles quand il n'y a pas de site du tout.
+  {
+    key: 'too_few_reviews',
+    pilier: 'popularite',
+    label: 'Trop peu d’avis Google',
+    problem: {
+      title: 'Trop peu d’avis pour rassurer',
+      desc: "Vos clients vous choisissent en comparant. Avec une poignée d'avis face à des concurrents qui en ont des dizaines, vous partez perdant avant même qu'on ait lu votre offre.",
+    },
+    solution: {
+      name: 'Campagne de relance d’avis',
+      desc: "Une sollicitation régulière de vos clients — y compris les anciens — pour transformer un travail déjà fait en preuve visible. On met en place la demande ; les avis restent ceux de vos clients.",
+      tag: 'Réputation',
+    },
+    declencheurs: [{ preuves: ['avis_nombre'], mode: 'une' }],
+  },
+  {
+    key: 'low_rating',
+    pilier: 'popularite',
+    label: 'Note Google sous 4 étoiles',
+    problem: {
+      title: 'Une note qui dessert votre travail',
+      desc: "Sous 4 sur 5, la note affichée à côté de votre nom fait hésiter avant même le premier clic. C'est souvent quelques avis anciens qui pèsent, faute d'en avoir recueilli depuis.",
+    },
+    solution: {
+      name: 'Redressement de la note',
+      desc: "Traitement des avis négatifs par une réponse publique, puis sollicitation des clients satisfaits pour rééquilibrer la moyenne.",
+      tag: 'Réputation',
+    },
+    declencheurs: [{ preuves: ['avis_note'], mode: 'une' }],
+  },
+  {
+    key: 'rge_not_highlighted',
+    pilier: 'popularite',
+    label: 'Qualification RGE non affichée',
+    problem: {
+      title: 'Votre qualification RGE n’apparaît nulle part',
+      desc: "Vous détenez une qualification que l'ADEME confirme, et votre site n'en parle pas. Vos clients y perdent leurs aides, et vous des chantiers — c'est l'argument le plus rentable que vous n'utilisez pas.",
+    },
+    solution: {
+      name: 'Mise en avant des qualifications',
+      desc: "Vos qualifications affichées avec leur logo et leur validité, là où elles décident : sur l'accueil et sur les pages de service concernées.",
+      tag: 'Confiance',
+    },
+    declencheurs: [{ preuves: ['rge_affiche'], mode: 'une' }],
+  },
+  {
+    key: 'no_local_seo',
+    pilier: 'popularite',
+    label: 'Ville absente du titre',
+    problem: {
+      title: 'Votre ville n’apparaît pas dans votre titre',
+      desc: "On ne cherche pas « chauffagiste », on cherche « chauffagiste » suivi d'un nom de ville. Sans elle dans votre titre, vous n'êtes pas en concurrence — vous êtes absent de la recherche qui compte.",
+    },
+    solution: {
+      name: 'Référencement local',
+      desc: "Titres, contenus et fiche Google alignés sur votre métier et votre zone d'intervention réelle, commune par commune.",
+      tag: 'Visibilité',
+    },
+    declencheurs: [{ preuves: ['seo_local'], mode: 'une' }],
+  },
+
   // ── Pilier contenu & conversion ─────────────────────────────────────────
   {
     key: 'weak_title',

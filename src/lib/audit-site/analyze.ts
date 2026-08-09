@@ -1,5 +1,5 @@
 import { parse, type HTMLElement } from "node-html-parser";
-import type { CollecteSite, SignauxSite } from "./types";
+import type { CollecteSite, ContexteEntreprise, SignauxSite } from "./types";
 import { SEUILS } from "./score";
 
 /**
@@ -50,6 +50,17 @@ const MOTS_COOKIES = ["cookie", "rgpd", "consentement", "tarteaucitron", "axepti
 const MOTS_AVIS = ["avis", "témoignage", "temoignage", "ils nous font confiance", "nos clients"];
 
 /**
+ * Marques sous lesquelles une qualification RGE s'affiche en pratique.
+ * L'ADEME nomme « Qualification QualiPAC Module Chauffage » ce qu'un artisan
+ * écrit « QualiPAC » sur sa page : comparer les libellés bruts raterait presque
+ * toujours, et on reprocherait une omission qui n'existe pas.
+ */
+const MARQUES_RGE = [
+  "qualibat", "qualipac", "qualisol", "qualibois", "qualipv", "qualifelec",
+  "quali'pac", "eco artisan", "ecoartisan", "reconnu garant",
+];
+
+/**
  * Formules par lesquelles une page annonce elle-même qu'elle n'est pas un site.
  *
  * Un domaine garé ou une page en travaux ne se note pas : il se signale. Ces
@@ -62,7 +73,7 @@ const MOTS_PARKING = [
   "ce domaine", "nom de domaine", "domain for sale", "page d'attente",
 ];
 
-export function analyser(c: CollecteSite, contexte: { telephone?: string | null } = {}): SignauxSite {
+export function analyser(c: CollecteSite, contexte: ContexteEntreprise = {}): SignauxSite {
   const joignable = !c.injoignable && c.httpStatus != null && c.httpStatus < 400 && Boolean(c.html);
 
   const vide: SignauxSite = {
@@ -114,6 +125,8 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     bandeauCookies: false,
     nbReseauxSociaux: 0,
     nbCta: 0,
+    villeDansTitre: null,
+    mentionneRge: null,
   };
 
   if (!joignable || !c.html) return vide;
@@ -205,6 +218,25 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
   const napAdresse = /\b\d{5}\b/.test(texte) && /\b(rue|avenue|boulevard|chemin|impasse|route|place|allée|allee)\b/i.test(texte);
   const napNom = Boolean(title) || Boolean(root.querySelector("h1"));
 
+  // ── Popularité locale : ce que seul le croisement révèle ──────────────────
+  // Deux constats qu'aucune lecture de HTML ne produit seule — il faut savoir
+  // OÙ est l'entreprise, et CE QU'ELLE DÉTIENT, pour voir qu'elle ne le dit pas.
+  const h1Texte = root.querySelectorAll("h1").map((h) => h.text).join(" ");
+  const enTete = sansAccents(`${title ?? ""} ${h1Texte}`);
+  const villeDansTitre = contexte.ville?.trim()
+    ? enTete.includes(sansAccents(contexte.ville))
+    : null;
+
+  const texteNorm = sansAccents(texte);
+  const mentionneRge = contexte.qualificationsRge?.length
+    ? /\brge\b/.test(texteNorm) ||
+      contexte.qualificationsRge.some((q) => {
+        const label = sansAccents(q).trim();
+        return label.length >= 4 && texteNorm.includes(label);
+      }) ||
+      MARQUES_RGE.some((m) => texteNorm.includes(m))
+    : null;
+
   return {
     ...vide,
     longueurTexteVisible: texte.length,
@@ -243,7 +275,23 @@ export function analyser(c: CollecteSite, contexte: { telephone?: string | null 
     bandeauCookies,
     nbReseauxSociaux,
     nbCta,
+    villeDansTitre,
+    mentionneRge,
   };
+}
+
+/**
+ * Comparaison insensible aux accents et à la casse.
+ *
+ * « Viry-Châtillon » dans la base et « viry-chatillon » dans un titre sont la
+ * même ville ; sans cette normalisation on annoncerait à l'entreprise qu'elle
+ * n'affiche pas sa propre commune.
+ */
+function sansAccents(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 }
 
 /** Texte réellement lisible : scripts, styles et balises retirés. */
