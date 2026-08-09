@@ -105,7 +105,10 @@ on conflict (code) do update
 -- justifie. Une addition proposée sans constat correspondant serait une vente
 -- forcée : c'est le `repond_a` qui l'en empêche.
 update public.offres o
-set metadata = o.metadata || m.patch
+-- `|| jsonb_build_object(...)` et non `|| m.repond_a` : concaténer un TABLEAU à
+-- un objet jsonb ne pose pas la clé, il écrase l'objet. La distinction ne se
+-- voit qu'à l'exécution, et elle coûterait toutes les métadonnées Stripe.
+set metadata = o.metadata || jsonb_build_object('repond_a', m.repond_a)
 from (values
   ('ADD_LEGAL_PAGES',       jsonb_build_array('no_legal_pages', 'no_cookie_banner')),
   ('ADD_FORM_CRM',          jsonb_build_array('form_not_accessible')),

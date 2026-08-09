@@ -163,6 +163,7 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
       googleUrl={googleUrl}
       detectedIssueKeys={detectedIssueKeys}
       siteAudit={siteAudit}
+      opportuniteId={opportuniteId}
     />
   );
 };

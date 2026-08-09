@@ -19,7 +19,7 @@ import {
   MAX_AUDIT_ISSUES,
 } from '@/data/auditIssues';
 import { classerParForce, type AuditVariante } from '@/lib/audit/autres-ameliorations';
-import { construirePage5, type OffreAudit } from '@/lib/audit/offres-audit';
+import { codesRetenus, construirePage5, type OffreAudit } from '@/lib/audit/offres-audit';
 import { authedFetch } from '@/utils/authedFetch';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
 import { supabase } from '@/utils/supabase/client';
@@ -77,9 +77,11 @@ interface AuditEditorPageProps {
   detectedIssueKeys?: string[];
   /** Mesures du site actuel, affichées en tête de la page « Situation ». */
   siteAudit?: AuditLu | null;
+  /** L'opportunité à laquelle l'audit est rattaché — la cible du devis. */
+  opportuniteId?: string;
 }
 
-export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys, siteAudit }: AuditEditorPageProps) {
+export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys, siteAudit, opportuniteId }: AuditEditorPageProps) {
   const router = useRouter();
   const [content, setContent] = useState<AuditContent>(initialAudit.content);
   const debouncedContent = useDebounce(content, AUDIT_PREVIEW_DEBOUNCE_MS);
@@ -244,6 +246,35 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
         statut: isReady ? 'ready' : 'draft',
       });
       setHasChanges(false);
+
+      // Un audit marqué prêt EST le devis : les offres qu'il propose deviennent
+      // les lignes de l'opportunité, sans ressaisie. Tant qu'il est en
+      // brouillon, on n'écrit rien — un audit qu'on retouche encore ne doit pas
+      // faire bouger un montant que quelqu'un consulte par ailleurs.
+      if (isReady && opportuniteId) {
+        const codes = codesRetenus(offres, selectedIssueKeys);
+        // Best-effort et signalé : l'audit est sauvegardé quoi qu'il arrive, et
+        // un devis non écrit ne doit pas ressembler à une sauvegarde perdue.
+        const res = await authedFetch('/api/audit/devis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ opportunite_id: opportuniteId, codes }),
+        }).catch(() => null);
+
+        if (res?.ok) {
+          const d = await res.json().catch(() => null);
+          toast.success(
+            d?.lignes
+              ? `Audit sauvegardé · devis mis à jour (${d.lignes} ligne${d.lignes > 1 ? 's' : ''})`
+              : 'Audit sauvegardé',
+          );
+        } else {
+          toast.success('Audit sauvegardé');
+          toast.warning("Le devis n'a pas pu être mis à jour — les lignes d'offres sont inchangées.");
+        }
+        return;
+      }
+
       toast.success('Audit sauvegardé');
     } catch (err) {
       if (err instanceof Error && err.message === 'SESSION_EXPIRED') {

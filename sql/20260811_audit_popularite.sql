@@ -26,10 +26,18 @@
 -- depuis ses preuves stockées dans `detail`, précisément pour qu'une migration
 -- non appliquée n'ait aucun effet de bord. Voir `noteDepuisPreuves`.
 --
--- Idempotente : `create or replace`.
+-- Idempotente : `drop` + `create`.
+--
+-- `create or replace view` ne sait PAS insérer une colonne ailleurs qu'à la fin
+-- (« cannot change name of view column »). Comme la vue gagne `nom`, `ville`,
+-- `note_moyenne` et `qualifications_rge` au milieu de sa liste, il faut la
+-- reconstruire. Sans `cascade` : si un objet en dépendait, on veut l'apprendre
+-- par une erreur, pas le supprimer en silence.
 -- =====================================================================
 
-create or replace view public.v_audit_site_a_rafraichir as
+drop view if exists public.v_audit_site_a_rafraichir;
+
+create view public.v_audit_site_a_rafraichir as
 select
   e.id                     as entreprise_id,
   e.site_web_canonique     as url,
