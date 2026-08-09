@@ -4,6 +4,7 @@ import { ImageResponse } from "next/og";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadOgFonts } from "@/lib/og/fonts";
 import { putOgAsset, pruneOgAssets } from "@/lib/og/storage";
+import { versJpegSousLimite, CIBLE_CARTE_OCTETS } from "@/lib/images/vers-jpeg";
 
 /**
  * Le socle commun des cartes de partage : rendu satori, dépôt, invalidation.
@@ -20,14 +21,6 @@ import { putOgAsset, pruneOgAssets } from "@/lib/og/storage";
 /** Le format que réclament OpenGraph et Twitter `summary_large_image`. */
 export const OG_WIDTH = 1200;
 export const OG_HEIGHT = 630;
-
-/**
- * WhatsApp ignore les vignettes trop lourdes. Sa limite exacte n'est pas
- * documentée et bouge ; ~600 Ko est la valeur communément constatée. On vise
- * bien plus bas et on ne fait que journaliser au-delà : une carte un peu lourde
- * qui s'affiche parfois vaut mieux qu'une absence de carte garantie.
- */
-const WARN_BYTES = 300 * 1024;
 
 export type PublishCardResult =
   | { ok: true; url: string; bytes: number }
@@ -82,19 +75,30 @@ export async function publishCard(
     return { ok: false, error: reason };
   }
 
-  if (png.length > WARN_BYTES) {
+  // Conversion en JPEG : voir `vers-jpeg.ts`. Sans elle, WhatsApp rétrograde la
+  // grande carte en vignette carrée minuscule.
+  let jpeg: { bytes: Buffer; qualite: number };
+  try {
+    jpeg = await versJpegSousLimite(png);
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : "conversion impossible";
+    console.warn(`[og] carte ${opts.prefix}/${opts.name} non convertie : ${reason}`);
+    return { ok: false, error: reason };
+  }
+
+  if (jpeg.bytes.length > CIBLE_CARTE_OCTETS) {
     console.warn(
-      `[og] carte ${opts.prefix}/${opts.name} : ${Math.round(png.length / 1024)} Ko — ` +
-        `au-delà de la cible de ${Math.round(WARN_BYTES / 1024)} Ko, WhatsApp peut l'ignorer.`,
+      `[og] carte ${opts.prefix}/${opts.name} : ${Math.round(jpeg.bytes.length / 1024)} Ko ` +
+        `même en qualité ${jpeg.qualite} — au-delà de la cible, WhatsApp peut la rétrograder.`,
     );
   }
 
   const put = await putOgAsset(supabase, {
     prefix: opts.prefix,
     name: opts.name,
-    ext: "png",
-    contentType: "image/png",
-    bytes: png,
+    ext: "jpg",
+    contentType: "image/jpeg",
+    bytes: jpeg.bytes,
   });
   if (!put.ok) return { ok: false, error: put.error };
 
@@ -110,5 +114,5 @@ export async function publishCard(
   // Best-effort, jamais bloquant, et surtout jamais sur la version courante.
   void pruneOgAssets(supabase, opts.prefix, [put.publicUrl, ...(opts.keep ?? [])]).catch(() => {});
 
-  return { ok: true, url: put.publicUrl, bytes: png.length };
+  return { ok: true, url: put.publicUrl, bytes: jpeg.bytes.length };
 }

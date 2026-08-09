@@ -24,20 +24,41 @@ import { putOgAsset } from "@/lib/og/storage";
  * Ne lève jamais, même discipline que `ensure-demo-screenshot`.
  */
 
-/** Le logo n'occupe qu'un coin de la carte : 320 px suffisent largement. */
-const MAX_LOGO_PX = 320;
+/** Le logo est posé nu sur la carte, en grand : 480 px de côté au maximum. */
+const MAX_LOGO_PX = 480;
 
-export type EnsureOgLogoResult = { url: string | null; warning?: string };
+/**
+ * En dessous de cette clarté moyenne, un logo posé nu sur le dégradé bleu nuit
+ * de la carte devient illisible.
+ *
+ * Le cas est loin d'être marginal : la plupart des logos d'artisan sont du texte
+ * noir ou bordeaux sur fond transparent, dessinés pour un papier blanc. Sur ces
+ * logos-là, et sur eux seuls, la carte pose une plaque claire — sinon on ne
+ * montrerait au prospect qu'un rectangle vide à la place de sa marque.
+ *
+ * Mesuré sur les pixels VISIBLES uniquement (voir plus bas) : la transparence
+ * majoritaire d'un PNG de logo tirerait sinon toute moyenne vers le noir.
+ */
+const SEUIL_CLARTE = 118;
+
+export type EnsureOgLogoResult = {
+  url: string | null;
+  /** Vrai quand le logo a besoin d'une plaque claire pour rester lisible. */
+  sombre?: boolean;
+  warning?: string;
+};
 
 export async function ensureOgLogo(
   supabase: SupabaseClient,
   siteId: string,
   logoUrl: string | null | undefined,
-  opts: { force?: boolean; existingUrl?: string | null } = {},
+  opts: { force?: boolean; existingUrl?: string | null; existingSombre?: boolean | null } = {},
 ): Promise<EnsureOgLogoResult> {
   const source = (logoUrl ?? "").trim();
   if (!source) return { url: null };
-  if (!opts.force && opts.existingUrl) return { url: opts.existingUrl };
+  if (!opts.force && opts.existingUrl && opts.existingSombre != null) {
+    return { url: opts.existingUrl, sombre: opts.existingSombre };
+  }
 
   let raw: ArrayBuffer;
   try {
@@ -66,6 +87,8 @@ export async function ensureOgLogo(
     return { url: null, warning: `Logo non converti (${reason}).` };
   }
 
+  const sombre = await logoTropSombre(png);
+
   const put = await putOgAsset(supabase, {
     prefix: siteId,
     name: "logo",
@@ -75,8 +98,62 @@ export async function ensureOgLogo(
   });
   if (!put.ok) return { url: null, warning: `Logo non enregistré (${put.error}).` };
 
-  const { error } = await supabase.from("sites").update({ og_logo_url: put.publicUrl }).eq("id", siteId);
+  const { error } = await supabase
+    .from("sites")
+    .update({ og_logo_url: put.publicUrl, og_logo_sombre: sombre })
+    .eq("id", siteId);
   if (error) console.warn(`[og] og_logo_url non enregistrée (${siteId}) : ${error.message}`);
 
-  return { url: put.publicUrl };
+  return { url: put.publicUrl, sombre };
+}
+
+/**
+ * Le logo est-il trop sombre pour être posé nu sur le fond de la carte ?
+ *
+ * LA MESURE NE PORTE QUE SUR LES PIXELS VISIBLES, et c'est tout l'enjeu. Un PNG
+ * de logo est majoritairement TRANSPARENT : une moyenne naïve sur l'image
+ * entière est dominée par le vide, pas par le dessin.
+ *
+ * Aplatir sur blanc avant de mesurer donnerait même l'inverse de la bonne
+ * réponse : un logo « texte noir sur transparent » — le cas exact qu'on veut
+ * protéger — ressort à 230 de clarté, donc jugé clair, donc posé nu et invisible.
+ *
+ * D'où la pondération par le canal alpha : chaque pixel compte à hauteur de son
+ * opacité. Le résultat est la clarté du DESSIN, indépendante de sa surface.
+ *
+ * Une image sans canal alpha (logo déjà aplati sur son propre fond) est mesurée
+ * telle quelle : elle s'affichera avec ce fond, ce qui la rend lisible de toute
+ * façon.
+ */
+export async function logoTropSombre(png: Buffer | Uint8Array): Promise<boolean> {
+  try {
+    const { data, info } = await sharp(Buffer.from(png))
+      // Miniature : la statistique n'a pas besoin de la pleine résolution.
+      .resize({ width: 120, withoutEnlargement: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const canaux = info.channels;
+    let sommeClarte = 0;
+    let sommeAlpha = 0;
+
+    for (let i = 0; i < data.length; i += canaux) {
+      const alpha = data[i + 3] / 255;
+      if (alpha < 0.15) continue; // quasi transparent : ne se voit pas
+      // Luminance perçue : l'œil est bien plus sensible au vert qu'au bleu, et
+      // une moyenne arithmétique jugerait un bleu marine plus clair qu'il n'est.
+      const luminance = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      sommeClarte += luminance * alpha;
+      sommeAlpha += alpha;
+    }
+
+    // Aucun pixel visible : rien à protéger, et rien à afficher non plus.
+    if (sommeAlpha === 0) return false;
+    return sommeClarte / sommeAlpha < SEUIL_CLARTE;
+  } catch {
+    // Dans le doute, on considère le logo sombre : une plaque inutile est
+    // discrète, un logo invisible ne l'est pas.
+    return true;
+  }
 }

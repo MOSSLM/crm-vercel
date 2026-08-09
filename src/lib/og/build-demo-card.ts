@@ -28,7 +28,7 @@ import { DemoCard } from "@/lib/og/demo-card";
 const SITE_COLUMNS = [
   "id", "name", "enterprise_id", "published_subdomain",
   "style_guide", "published_style_guide",
-  "og_image_url", "og_shot_url", "og_logo_url",
+  "og_image_url", "og_shot_url", "og_shot_mobile_url", "og_logo_url", "og_logo_sombre",
 ] as const;
 
 type SiteRow = {
@@ -40,15 +40,15 @@ type SiteRow = {
   published_style_guide?: StyleGuide | null;
   og_image_url?: string | null;
   og_shot_url?: string | null;
+  og_shot_mobile_url?: string | null;
   og_logo_url?: string | null;
+  og_logo_sombre?: boolean | null;
 };
 
 type CompanyRow = {
   name: string | null;
   ville: string | null;
   logo_url: string | null;
-  note_moyenne: number | string | null;
-  nombre_avis: number | string | null;
   service_tags: string[] | string | null;
 };
 
@@ -82,10 +82,12 @@ export async function buildDemoCard(
     ensureDemoScreenshot(supabase, siteId, shareUrl, {
       force: opts.force,
       existingUrl: data.og_shot_url,
+      existingMobileUrl: data.og_shot_mobile_url,
     }),
     ensureOgLogo(supabase, siteId, company?.logo_url, {
       force: opts.force,
       existingUrl: data.og_logo_url,
+      existingSombre: data.og_logo_sombre,
     }),
   ]);
   if (shot.warning) warnings.push(shot.warning);
@@ -97,7 +99,7 @@ export async function buildDemoCard(
   const card = await publishCard(supabase, {
     prefix: siteId,
     name: "card",
-    keep: [shot.url, logo.url],
+    keep: [shot.url, shot.mobileUrl, logo.url],
     persist: {
       table: "sites",
       column: "og_image_url",
@@ -108,10 +110,10 @@ export async function buildDemoCard(
       companyName: company?.name?.trim() || data.name?.trim() || "Votre entreprise",
       city: company?.ville ?? null,
       serviceTags: normalizeTags(company?.service_tags),
-      rating: toNumber(company?.note_moyenne),
-      reviewCount: toNumber(company?.nombre_avis),
       logoUrl: logo.url,
+      logoSombre: logo.sombre ?? data.og_logo_sombre ?? null,
       shotUrl: shot.url,
+      shotMobileUrl: shot.mobileUrl ?? null,
       primaryColor: styleGuide?.colors?.primary ?? null,
       domain: hostOf(shareUrl),
       displayFont: fontStack(fonts, "display"),
@@ -130,7 +132,7 @@ async function loadCompany(
   if (enterpriseId == null) return null;
   const { data } = await supabase
     .from("entreprises")
-    .select("name, ville, logo_url, note_moyenne, nombre_avis, service_tags")
+    .select("name, ville, logo_url, service_tags")
     .eq("id", enterpriseId)
     .maybeSingle();
   return (data as CompanyRow | null) ?? null;
@@ -141,12 +143,6 @@ function normalizeTags(raw: string[] | string | null | undefined): string[] {
   if (Array.isArray(raw)) return raw.filter(Boolean);
   if (typeof raw === "string" && raw.trim()) return [raw.trim()];
   return [];
-}
-
-function toNumber(raw: number | string | null | undefined): number | null {
-  if (raw == null) return null;
-  const n = typeof raw === "number" ? raw : Number(String(raw).replace(",", "."));
-  return Number.isFinite(n) ? n : null;
 }
 
 function hostOf(url: string): string | null {
