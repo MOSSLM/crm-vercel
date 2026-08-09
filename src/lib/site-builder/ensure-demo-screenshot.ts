@@ -84,9 +84,10 @@ export async function ensureDemoScreenshot(
       hauteur: MOBILE_HEIGHT,
       maxOctets: MAX_MOBILE_BYTES,
       quoi: "mobile",
-      // Le service rend en double densité : on prend sa sortie telle quelle et
-      // on la met à la bonne taille ici, sinon il rogne la colonne de droite.
-      sortieNative: true,
+      // Le service rend en double densité sur une fenêtre mobile : on lui
+      // demande donc 780×1560 et on réduit ici. Lui demander 390 le ferait
+      // rogner, et on perdrait la colonne de droite (menu burger compris).
+      densiteDouble: true,
     }),
   ]);
 
@@ -150,14 +151,14 @@ interface OptionsCapture {
   hauteur: number;
   maxOctets: number;
   quoi: string;
-  sortieNative?: boolean;
+  densiteDouble?: boolean;
 }
 
 /** Une capture, vérifiée, recadrée et compressée. Ne lève pas. */
 async function capturer(
   siteId: string,
   url: string,
-  { largeur, hauteur, maxOctets, quoi, sortieNative }: OptionsCapture,
+  { largeur, hauteur, maxOctets, quoi, densiteDouble }: OptionsCapture,
 ): Promise<{ bytes: Buffer | null; warning?: string }> {
   let raw: ArrayBuffer;
   try {
@@ -165,7 +166,7 @@ async function capturer(
       width: largeur,
       height: hauteur,
       viewportWidth: largeur,
-      sortieNative,
+      densiteDouble,
     });
     raw = visual.bytes;
   } catch (e) {
@@ -206,7 +207,7 @@ async function capturer(
  * son appel à l'action, pas son pied de page.
  *
  * Le redimensionnement se fait ICI plutôt que chez le service de capture parce
- * que celui-ci rogne au lieu de réduire (voir `sortieNative`).
+ * que celui-ci rogne au lieu de réduire (voir `densiteDouble`).
  */
 async function normaliser(
   input: ArrayBuffer,
