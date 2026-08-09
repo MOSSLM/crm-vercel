@@ -37,6 +37,7 @@ import {
 import { toast } from "sonner";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
 import { PartagerDemoDialog } from "@/components/site-builder/PartagerDemoDialog";
+import { authedFetch } from "@/utils/authedFetch";
 import type {
   BoardItem,
   AgentRef,
@@ -220,6 +221,105 @@ function PartagerButton({ item }: { item: BoardItem }) {
         opportuniteId={item.id}
       />
     </>
+  );
+}
+
+/**
+ * La vignette de partage, telle qu'elle partira sur WhatsApp.
+ *
+ * ELLE EST ICI POUR QU'UN DÉFAUT SE VOIE AVANT L'ENVOI. Un logo illisible, une
+ * capture blanche, un téléphone manquant : tout cela ne se constatait
+ * jusqu'ici que dans la conversation du prospect, c'est-à-dire trop tard, et
+ * sans qu'on sache lequel des 113 sites est concerné.
+ *
+ * Les avertissements de fabrication sont affichés tels quels, sous l'image :
+ * ce sont eux qui distinguent « carte complète » de « carte rendue sans son
+ * aperçu parce que le site n'avait pas fini de s'afficher ».
+ */
+function VignetteCell({ item }: { item: BoardItem }) {
+  const [url, setUrl] = React.useState<string | null>(item.site?.og_image_url ?? null);
+  const [warnings, setWarnings] = React.useState<string[]>([]);
+  const [busy, setBusy] = React.useState(false);
+
+  // La ligne peut être remplacée par un rafraîchissement du board : on suit la
+  // valeur venue du serveur tant qu'on n'a pas fabriqué nous-mêmes.
+  React.useEffect(() => {
+    setUrl((prev) => prev ?? item.site?.og_image_url ?? null);
+  }, [item.site?.og_image_url]);
+
+  const preparer = async (force: boolean) => {
+    if (!item.site) return;
+    setBusy(true);
+    try {
+      const res = await authedFetch(
+        `/api/og/demo/${item.site.id}/prepare${force ? "?force=1" : ""}`,
+        { method: "POST" },
+      );
+      const body = (await res.json().catch(() => ({}))) as {
+        url?: string;
+        warnings?: string[];
+        error?: string;
+      };
+      if (!res.ok || !body.url) throw new Error(body.error || `Erreur ${res.status}`);
+      setUrl(body.url);
+      setWarnings(body.warnings ?? []);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Fabrication impossible");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!item.site) {
+    return (
+      <div className="vign-cell">
+        <div className="vign-vide">Pas encore de site</div>
+      </div>
+    );
+  }
+
+  // Avant validation, la vignette photographierait un site en cours de
+  // retouche : on l'annonce plutôt que de fabriquer une image à jeter.
+  if (!siteValidated(item)) {
+    return (
+      <div className="vign-cell">
+        <div className="vign-vide">Vignette après validation du site</div>
+        {url ? <div className="vign-warn">Une vignette existe déjà — elle sera refaite.</div> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="vign-cell">
+      {url ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" title="Ouvrir en grand">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img className="vign-img" src={url} alt="Vignette de partage" loading="lazy" />
+        </a>
+      ) : (
+        <div className="vign-vide">
+          {busy ? "Fabrication… (~20 s)" : "Aucune vignette — le lien partirait nu"}
+        </div>
+      )}
+
+      {warnings.map((w) => (
+        <div key={w} className="vign-warn">
+          {w}
+        </div>
+      ))}
+
+      <div className="vign-actions">
+        <button
+          className="btn ghost sm"
+          disabled={busy}
+          title={url ? "Refaire la vignette, captures comprises" : "Fabriquer la vignette"}
+          onClick={() => preparer(Boolean(url))}
+        >
+          {busy ? <Loader2 className="ico-sm spin" /> : <RefreshCw className="ico-sm" />}
+          {url ? "Refaire" : "Fabriquer"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1564,6 +1664,18 @@ export function PipelineMatrix({
               onFilter={() => setStageFilter((f) => (f === i ? "all" : i))}
             />
           ))}
+          <div
+            className="mx-colhead"
+            style={{ "--seg": "#2B7FB8" } as React.CSSProperties}
+            title="Ce que verra le prospect quand il recevra le lien"
+          >
+            <div className="hd">
+              <span className="sw" style={{ background: rgba("#2B7FB8", 0.12), color: "#2B7FB8" }}>
+                <Share2 className="ico-sm" />
+              </span>
+              <span className="nm">Vignette</span>
+            </div>
+          </div>
 
           {loading && visibleRows.length === 0 ? (
             <div className="empty">
@@ -1608,6 +1720,7 @@ export function PipelineMatrix({
                     />
                   );
                 })}
+                <VignetteCell item={r} />
               </React.Fragment>
             ))
           )}

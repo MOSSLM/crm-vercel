@@ -37,6 +37,8 @@ export interface BoardItem {
      *  Distinct de `url`, qui vaut null dans ce second cas : c'est ce champ qui
      *  permet à `demoShareUrl` de produire le lien d'aperçu. */
     published_subdomain?: string | null;
+    /** Vignette de partage déjà fabriquée, ou null si elle reste à faire. */
+    og_image_url?: string | null;
     is_claude_design: boolean;
     /** Template dont le site est issu — absent tant que la migration
      *  `20260730_sites_source_template.sql` n'est pas appliquée, ou pour un
