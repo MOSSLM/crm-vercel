@@ -3,6 +3,7 @@ import sharp from "sharp";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderViewportShot } from "@/lib/site-builder/render-provider";
 import { putOgAsset } from "@/lib/og/storage";
+import { imageQuasiVide } from "@/lib/images/image-quasi-vide";
 
 /**
  * Capturer le site démo pour l'intégrer à la carte de partage.
@@ -60,6 +61,19 @@ export async function ensureDemoScreenshot(
     const reason = e instanceof Error ? e.message : "capture impossible";
     console.warn(`[og] capture démo ${siteId} échouée : ${reason}`);
     return { url: null, warning: `Capture du site démo indisponible (${reason}).` };
+  }
+
+  // Une capture blanche est pire qu'une capture absente : la carte de repli est
+  // présentable, un rectangle vide au milieu du mockup laisse croire au prospect
+  // que le site qu'on lui propose ne s'affiche pas.
+  if (await imageQuasiVide(raw)) {
+    console.warn(`[og] capture démo ${siteId} ignorée : image quasi vide.`);
+    return {
+      url: null,
+      warning:
+        "Le site démo n'a pas fini de s'afficher au moment de la capture — " +
+        "carte rendue sans aperçu. Réessayez dans un instant.",
+    };
   }
 
   let optimized: Buffer;

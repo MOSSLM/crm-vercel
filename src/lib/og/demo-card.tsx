@@ -74,6 +74,18 @@ function backdrop(primary: string | null | undefined): string {
 const LOGO_PATH =
   "M50,4 L55.85,20.58 L67.6,7.5 L66.67,25.06 L82.5,17.5 L74.95,33.33 L92.5,32.4 L79.42,44.15 L96,50 L79.42,55.85 L92.5,67.6 L74.95,66.67 L82.5,82.5 L66.67,74.94 L67.6,92.5 L55.85,79.42 L50,96 L44.15,79.42 L32.4,92.5 L33.33,74.94 L17.5,82.5 L25.05,66.67 L7.5,67.6 L20.58,55.85 L4,50 L20.58,44.15 L7.5,32.4 L25.05,33.33 L17.5,17.5 L33.33,25.06 L32.4,7.5 L44.15,20.58 Z M50,36 A14,14 0 1 0 50,64 A14,14 0 1 0 50,36 Z";
 
+/** Étoile pleine, tracée — indépendante de la police embarquée. */
+function StarIcon({ size = 21, color = "#FFC65C" }: { size?: number; color?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24">
+      <path
+        fill={color}
+        d="M12 1.8l3.09 6.26 6.91 1-5 4.87 1.18 6.87L12 17.56l-6.18 3.25L7 13.94l-5-4.87 6.91-1z"
+      />
+    </svg>
+  );
+}
+
 function SamaMark({ size, color }: { size: number; color: string }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100">
@@ -264,7 +276,13 @@ function Meta({
             padding: "9px 18px",
           }}
         >
-          <span style={{ color: "#FFC65C", fontSize: 21 }}>★</span>
+          {/* Étoile en SVG inline, pas en caractère « ★ ».
+              La police par défaut de `next/og` (Noto Sans) ne contient pas
+              U+2605 : satori rendait un carré vide à la place — visible sur la
+              première carte produite en vrai. Un tracé SVG ne dépend d'aucune
+              police, donc il s'affichera aussi quand on versera Cormorant
+              Garamond et DM Sans, qui ne l'ont pas davantage. */}
+          <StarIcon />
           <span style={{ fontSize: 21, color: BLANC }}>
             {(data.rating as number).toFixed(1).replace(".", ",")}
           </span>
