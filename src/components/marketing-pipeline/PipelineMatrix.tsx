@@ -247,6 +247,22 @@ function VignetteCell({ item }: { item: BoardItem }) {
     setUrl((prev) => prev ?? item.site?.og_image_url ?? null);
   }, [item.site?.og_image_url]);
 
+  /**
+   * Une carte peut exister et être INCOMPLÈTE : mockup ordinateur présent,
+   * téléphone absent parce que sa capture avait échoué ce jour-là.
+   *
+   * Rien ne le montrait. L'image s'affiche, la case a l'air faite, et
+   * l'avertissement d'origine — émis une fois, à la fabrication — était perdu
+   * dès le rechargement de la page. Le défaut ne se voyait donc plus jamais,
+   * alors qu'un clic sur « Refaire » le répare.
+   *
+   * Masqué après une fabrication d'ici : les avertissements frais disent la
+   * vérité du moment, ces colonnes-là datent du chargement du board.
+   */
+  const carteDuServeur = url != null && url === (item.site?.og_image_url ?? null);
+  const telephoneManquant =
+    carteDuServeur && Boolean(item.site?.og_shot_url) && !item.site?.og_shot_mobile_url;
+
   const preparer = async (force: boolean) => {
     if (!item.site) return;
     setBusy(true);
@@ -301,6 +317,10 @@ function VignetteCell({ item }: { item: BoardItem }) {
           {busy ? "Fabrication… (~20 s)" : "Aucune vignette — le lien partirait nu"}
         </div>
       )}
+
+      {telephoneManquant && warnings.length === 0 ? (
+        <div className="vign-warn">Carte sans le téléphone — « Refaire » le récupère.</div>
+      ) : null}
 
       {warnings.map((w) => (
         <div key={w} className="vign-warn">

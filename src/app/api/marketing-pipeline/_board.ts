@@ -185,6 +185,13 @@ type SiteRow = {
   source_template_id?: string | null;
   /** Vignette de partage déjà fabriquée (migration 20260810, optionnelle). */
   og_image_url?: string | null;
+  /**
+   * Les deux captures qui composent la vignette. Servent à distinguer une carte
+   * COMPLÈTE d'une carte fabriquée sans son téléphone : les deux s'affichent
+   * bien, seule la seconde a un trou, et rien à l'écran ne le disait.
+   */
+  og_shot_url?: string | null;
+  og_shot_mobile_url?: string | null;
 };
 
 type AuditRow = {
@@ -290,7 +297,7 @@ async function fetchDemoSites(
   if (entIds.length === 0) return { data: [], error: null };
   // `source_template_id` vient d'une migration tardive : on retente sans elle
   // plutôt que de faire tomber le board (même parti pris qu'ailleurs ici).
-  let columns = `${DEMO_SITE_COLUMNS}, source_template_id, og_image_url`;
+  let columns = `${DEMO_SITE_COLUMNS}, source_template_id, og_image_url, og_shot_url, og_shot_mobile_url`;
   const rows: SiteRow[] = [];
   for (let i = 0; i < entIds.length; i += ENT_CHUNK) {
     const chunk = entIds.slice(i, i + ENT_CHUNK);
@@ -615,6 +622,8 @@ export async function buildBoard(opts: { ownerId?: string } = {}): Promise<Board
             // pour qu'un défaut se voie AVANT l'envoi, pas dans la conversation
             // du prospect.
             og_image_url: site.og_image_url ?? null,
+            og_shot_url: site.og_shot_url ?? null,
+            og_shot_mobile_url: site.og_shot_mobile_url ?? null,
             is_claude_design: site.is_claude_design === true,
             // Template d'origine : la carte peut ainsi dire d'où vient le site,
             // et signaler qu'il ne vient pas du template sélectionné en haut.

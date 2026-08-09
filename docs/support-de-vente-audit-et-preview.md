@@ -11,7 +11,7 @@
 
 ## État de l'implémentation
 
-Les quatre lots sont livrés. `npm run typecheck`, `npm test` (1854 tests) et
+Les quatre lots sont livrés. `npm run typecheck`, `npm test` (1886 tests) et
 `next lint` passent.
 
 ### Migrations à appliquer, dans cet ordre
@@ -57,6 +57,51 @@ Les quatre lots sont livrés. `npm run typecheck`, `npm test` (1854 tests) et
 6. **`AuditWorkspace` lit l'analyse via l'API**, pas en direct : c'est l'API qui
    applique la règle de publication et la cohabitation PSI. Les dupliquer côté
    client aurait garanti qu'elles divergent.
+
+### Robustesse de la chaîne de vignette — corrections d'audit
+
+Cinq défauts partageant une même cause : **un échec partiel était traité comme un
+succès total.** Aucun ne produit d'erreur visible ; tous se lisent chez le
+prospect, dans une vignette dégradée que personne n'a vue partir.
+
+1. **Le téléphone manquant l'était pour toujours.** La sortie anticipée de
+   `ensureDemoScreenshot` ne regardait que la capture ordinateur. Un timeout du
+   service sur la seule capture mobile laissait `og_shot_mobile_url` à `null`, et
+   tout appel suivant ressortait aussitôt sur la foi de l'ordinateur. Chaque image
+   a désormais sa propre condition : un appel qui ne trouve que le téléphone
+   absent le rattrape **sans repayer** la capture ordinateur.
+
+2. **« Refaire » pouvait dégrader une carte correcte.** En cas d'échec, la capture
+   renvoyait `null` : la carte se refabriquait sans mockup **par-dessus** une
+   carte complète, et les anciennes images sortaient de la liste des fichiers à
+   conserver. Le repli garde ce qui est déjà en base, et l'écriture n'a lieu que
+   s'il y a du neuf — sinon `og_shot_at` mentirait sur la fraîcheur des images.
+   Même repli sur le logo : un serveur d'images momentanément indisponible ne doit
+   pas effacer la marque du client de sa vignette.
+
+3. **Un logo corrigé n'atteignait jamais la carte.** Le dérivé PNG était réutilisé
+   dès qu'il existait, sans jamais regarder d'où il venait. Son nom porte
+   désormais l'empreinte de sa **source** (`logo-{source}-{contenu}.png`) : le
+   changement se détecte sans un seul appel réseau. Invalider à la publication,
+   l'autre piste, ne couvrait pas le cas courant — corriger un logo sans
+   republier — et repayait un téléchargement à chaque republication.
+
+4. **Une colonne de migration récente faisait échouer l'écriture entière.**
+   `updateDroppingMissingColumns` n'existait que dans `publish-site.ts`. Les trois
+   autres écritures de la chaîne — capture, logo, carte — mélangent elles aussi
+   des colonnes v1 et v2 ; `og_shot_mobile_url` absente emportait `og_shot_url`
+   avec elle, et `og_generated_at` absente empêchait la carte d'être **mémorisée**,
+   donc la refabriquait à chaque unfurl. La fonction est remontée dans
+   `schema-drift.ts`, aux côtés de son pendant en lecture.
+
+5. **La republication laissait un téléphone périmé à côté d'un mockup neuf.**
+   `publishSite` n'invalidait qu'une des deux captures. Une carte mi-figue
+   mi-raisin est plus trompeuse que deux images anciennes.
+
+Et, dans le pipeline : une carte **incomplète** — mockup seul, téléphone
+manquant — s'affiche parfaitement, donc l'image ne dit rien. La colonne
+« Vignette » le signale à partir des données du board, et pas seulement dans
+l'avertissement de fabrication qui, lui, disparaissait au rechargement.
 
 ### Ce qui reste à faire à la main
 

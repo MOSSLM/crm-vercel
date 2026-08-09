@@ -1,7 +1,8 @@
 import "server-only";
 import sharp from "sharp";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { putOgAsset } from "@/lib/og/storage";
+import { putOgAsset, contentHash } from "@/lib/og/storage";
+import { updateDroppingMissingColumns } from "@/lib/schema-drift";
 
 /**
  * Un dérivé PNG du logo client, à seule fin de le rendre dans la carte OG.
@@ -48,6 +49,31 @@ export type EnsureOgLogoResult = {
   warning?: string;
 };
 
+/**
+ * Le nom du dérivé porte l'empreinte de sa SOURCE, en plus de celle de son
+ * contenu — `logo-{source}-{contenu}.png`.
+ *
+ * LE DÉFAUT QUE ÇA CORRIGE : le dérivé était réutilisé dès qu'il existait, sans
+ * jamais regarder d'où il venait. Un client envoie son vrai logo, l'opérateur
+ * remplace celui de la fiche, refabrique la carte — et la carte ressort avec
+ * l'ANCIEN logo, indéfiniment. Le seul recours était de forcer, donc de savoir
+ * qu'il fallait forcer.
+ *
+ * Comparer les empreintes de source coûte zéro appel réseau et répond à la seule
+ * question qui compte : « ce fichier vient-il bien du logo d'aujourd'hui ? ».
+ * Invalider à la publication, l'autre piste, ne couvrait pas le cas le plus
+ * courant — corriger un logo sans republier — et repayait un téléchargement à
+ * chaque republication d'un logo inchangé.
+ */
+function jetonSource(source: string): string {
+  return contentHash(Buffer.from(source, "utf8")).slice(0, 8);
+}
+
+/** Ce dérivé a-t-il bien été fabriqué à partir de CETTE source ? */
+function vientDe(existingUrl: string, source: string): boolean {
+  return existingUrl.includes(`/logo-${jetonSource(source)}-`);
+}
+
 export async function ensureOgLogo(
   supabase: SupabaseClient,
   siteId: string,
@@ -56,20 +82,42 @@ export async function ensureOgLogo(
 ): Promise<EnsureOgLogoResult> {
   const source = (logoUrl ?? "").trim();
   if (!source) return { url: null };
-  if (!opts.force && opts.existingUrl && opts.existingSombre != null) {
+  if (
+    !opts.force &&
+    opts.existingUrl &&
+    opts.existingSombre != null &&
+    vientDe(opts.existingUrl, source)
+  ) {
     return { url: opts.existingUrl, sombre: opts.existingSombre };
   }
+
+  /**
+   * Un échec passager ne fait pas disparaître la marque de la carte.
+   *
+   * Le dérivé précédent est un PNG déjà normalisé, déposé chez nous : il reste
+   * parfaitement affichable. Renvoyer `null` refabriquait une carte SANS logo
+   * par-dessus une carte qui en avait un — un serveur d'images momentanément
+   * indisponible suffisait à dégrader la vignette d'un client.
+   */
+  const repli = (raison: string): EnsureOgLogoResult =>
+    opts.existingUrl
+      ? {
+          url: opts.existingUrl,
+          sombre: opts.existingSombre ?? undefined,
+          warning: `${raison} Le logo précédent a été conservé.`,
+        }
+      : { url: null, warning: raison };
 
   let raw: ArrayBuffer;
   try {
     const res = await fetch(source, { redirect: "follow", signal: AbortSignal.timeout(10_000) });
-    if (!res.ok) return { url: null, warning: `Logo inaccessible (HTTP ${res.status}).` };
+    if (!res.ok) return repli(`Logo inaccessible (HTTP ${res.status}).`);
     raw = await res.arrayBuffer();
-    if (raw.byteLength === 0) return { url: null, warning: "Logo vide." };
+    if (raw.byteLength === 0) return repli("Logo vide.");
   } catch (e) {
     const reason = e instanceof Error ? e.message : "téléchargement impossible";
     console.warn(`[og] logo ${siteId} non téléchargé : ${reason}`);
-    return { url: null, warning: `Logo non téléchargé (${reason}).` };
+    return repli(`Logo non téléchargé (${reason}).`);
   }
 
   let png: Buffer;
@@ -84,24 +132,27 @@ export async function ensureOgLogo(
   } catch (e) {
     const reason = e instanceof Error ? e.message : "format non reconnu";
     console.warn(`[og] logo ${siteId} non converti : ${reason}`);
-    return { url: null, warning: `Logo non converti (${reason}).` };
+    return repli(`Logo non converti (${reason}).`);
   }
 
   const sombre = await logoTropSombre(png);
 
   const put = await putOgAsset(supabase, {
     prefix: siteId,
-    name: "logo",
+    name: `logo-${jetonSource(source)}`,
     ext: "png",
     contentType: "image/png",
     bytes: png,
   });
-  if (!put.ok) return { url: null, warning: `Logo non enregistré (${put.error}).` };
+  if (!put.ok) return repli(`Logo non enregistré (${put.error}).`);
 
-  const { error } = await supabase
-    .from("sites")
-    .update({ og_logo_url: put.publicUrl, og_logo_sombre: sombre })
-    .eq("id", siteId);
+  // `og_logo_sombre` vient d'une migration plus tardive que `og_logo_url` : sans
+  // cette tolérance, son absence ferait échouer l'écriture des DEUX colonnes.
+  const { error } = await updateDroppingMissingColumns(
+    { og_logo_url: put.publicUrl, og_logo_sombre: sombre },
+    (patch) => supabase.from("sites").update(patch).eq("id", siteId),
+    (colonne) => console.warn(`[og] colonne « ${colonne} » absente — logo enregistré sans elle.`),
+  );
   if (error) console.warn(`[og] og_logo_url non enregistrée (${siteId}) : ${error.message}`);
 
   return { url: put.publicUrl, sombre };

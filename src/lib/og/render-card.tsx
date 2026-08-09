@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { loadOgFonts } from "@/lib/og/fonts";
 import { putOgAsset, pruneOgAssets } from "@/lib/og/storage";
 import { versJpegSousLimite, CIBLE_CARTE_OCTETS } from "@/lib/images/vers-jpeg";
+import { updateDroppingMissingColumns } from "@/lib/schema-drift";
 
 /**
  * Le socle commun des cartes de partage : rendu satori, dépôt, invalidation.
@@ -103,12 +104,23 @@ export async function publishCard(
   if (!put.ok) return { ok: false, error: put.error };
 
   if (opts.persist) {
-    const patch: Record<string, unknown> = { [opts.persist.column]: put.publicUrl };
-    if (opts.persist.stampColumn) patch[opts.persist.stampColumn] = new Date().toISOString();
-    const { error } = await supabase.from(opts.persist.table).update(patch).match(opts.persist.match);
+    const { table, column, match, stampColumn } = opts.persist;
+    const patch: Record<string, unknown> = { [column]: put.publicUrl };
+    if (stampColumn) patch[stampColumn] = new Date().toISOString();
+
+    // La colonne d'horodatage est arrivée après celle de l'URL. Sans tolérance,
+    // son absence faisait échouer l'écriture ENTIÈRE : la carte n'était jamais
+    // mémorisée, donc refabriquée à chaque unfurl — vingt à quarante secondes,
+    // bien au-delà de ce qu'attend un robot. Le symptôme n'aurait rien eu à voir
+    // avec une migration manquante.
+    const { error } = await updateDroppingMissingColumns(
+      patch,
+      (p) => supabase.from(table).update(p).match(match),
+      (colonne) => console.warn(`[og] colonne « ${colonne} » absente — carte enregistrée sans elle.`),
+    );
     // Colonne absente (migration non appliquée) : l'image existe et l'appelant a
     // son URL. On journalise et on rend quand même — c'est la règle du dépôt.
-    if (error) console.warn(`[og] ${opts.persist.column} non enregistrée : ${error.message}`);
+    if (error) console.warn(`[og] ${column} non enregistrée : ${error.message}`);
   }
 
   // Best-effort, jamais bloquant, et surtout jamais sur la version courante.
