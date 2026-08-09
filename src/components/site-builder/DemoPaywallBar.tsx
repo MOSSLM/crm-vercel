@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PARAM_CAPTURE } from "@/lib/site-builder/demo-share-url";
 
 /**
  * Purchase bar shown at the bottom of a demo site when its paywall is enabled.
@@ -29,6 +30,18 @@ export function DemoPaywallBar({ siteId, bookingUrl, companyName }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  // Page photographiée pour une vignette de vente : cette barre n'y a pas sa
+  // place. Elle proposerait au prospect d'acheter son site depuis l'image même
+  // qui lui annonce qu'on lui en a fait un.
+  //
+  // Le test est côté client parce qu'un layout Next ne reçoit pas les
+  // paramètres d'URL — et il suffit : le service de capture exécute le
+  // JavaScript de la page, c'est même ce qui la rend photographiable.
+  const pourCapture =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get(PARAM_CAPTURE) === "1";
+  if (pourCapture) return null;
 
   const booking = bookingUrl || DEFAULT_BOOKING;
 

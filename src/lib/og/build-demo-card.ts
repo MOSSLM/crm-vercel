@@ -2,6 +2,8 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { StyleGuide } from "@/types";
 import { demoShareUrl } from "@/lib/site-builder/demo-share-url";
+import { deriveSubdomainLabel } from "@/lib/site-builder/derive-subdomain";
+import { SITE_DOMAIN } from "@/lib/site-domain";
 import { ensureDemoScreenshot } from "@/lib/site-builder/ensure-demo-screenshot";
 import { ensureOgLogo } from "@/lib/site-builder/ensure-og-logo";
 import { selectDroppingMissingColumns } from "@/lib/schema-drift";
@@ -115,7 +117,7 @@ export async function buildDemoCard(
       shotUrl: shot.url,
       shotMobileUrl: shot.mobileUrl ?? null,
       primaryColor: styleGuide?.colors?.primary ?? null,
-      domain: hostOf(shareUrl),
+      domain: adresseVitrine(data, company),
       displayFont: fontStack(fonts, "display"),
       bodyFont: fontStack(fonts, "body"),
     }),
@@ -145,10 +147,25 @@ function normalizeTags(raw: string[] | string | null | undefined): string[] {
   return [];
 }
 
-function hostOf(url: string): string | null {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return null;
-  }
+/**
+ * Ce qu'affiche la barre d'adresse du mockup navigateur.
+ *
+ * LE DÉFAUT QU'ON CORRIGE : tant qu'un site n'est pas déployé, son lien de
+ * partage est `{uuid}.samadigitalstudio.fr`. Recopier cet hôte tel quel mettait
+ * « 84c540de-8509-48de-9470-f01ebdbd30d2.samadigitalstudio.fr » dans la barre
+ * d'adresse de la vignette — sur CHACUNE des cartes de ce parc, puisque aucun
+ * démo n'est déployé. Un prospect y lit un truc technique et inachevé, à
+ * l'endroit précis où on veut qu'il voie son propre site.
+ *
+ * On affiche donc l'adresse que le site AURA une fois déployé, dérivée par la
+ * même fonction que le déploiement (`deriveSubdomainLabel`) — donc exactement
+ * celle qu'il portera. Ce n'est pas un décor inventé : c'est une promesse que
+ * le déploiement tiendra à l'identique.
+ *
+ * Un site déjà déployé garde évidemment son vrai hôte.
+ */
+function adresseVitrine(site: SiteRow, company: CompanyRow | null): string {
+  if (site.published_subdomain) return `${site.published_subdomain}.${SITE_DOMAIN}`;
+  const label = deriveSubdomainLabel(null, company?.name ?? site.name ?? "");
+  return label ? `${label}.${SITE_DOMAIN}` : SITE_DOMAIN;
 }
