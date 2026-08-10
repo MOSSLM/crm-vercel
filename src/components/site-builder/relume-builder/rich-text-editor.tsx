@@ -102,7 +102,7 @@ export const RichTextEditor = React.forwardRef<HTMLDivElement, RichTextEditorPro
 
   // Common swatches shown in the inline color popover. These are pulled
   // from the warm-neutral skin tokens so they always match the design.
-  const SWATCHES = ["#14120E", "#E2552B", "#C73E16", "#FFFAF2", "#5C5953", "#1F8A5B", "#2A6FDB", "#7A5AE0", "#C8881F", "#B5322F"];
+  const SWATCHES = ["#122844", "#2F7AE0", "#1F5BC0", "#F7FAFD", "#8AA0C0", "#1F8A5B", "#0E93A6", "#7A5AE0", "#C8881F", "#B5322F"];
   const WEIGHT_CHIPS = [300, 400, 500, 600, 700, 800] as const;
 
   // Tell the browser to apply CSS styles via <span style="…"> instead of

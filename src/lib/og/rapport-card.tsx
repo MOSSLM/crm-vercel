@@ -10,10 +10,10 @@ import { OG_WIDTH, OG_HEIGHT } from "@/lib/og/render-card";
  * WhatsApp se clique — c'est la seule promesse à tenir ici, et tout le reste de
  * la carte lui laisse la place.
  *
- * Palette du kit : nuit #0B1D3A, azur #3A7BD5, brume #B5D0F0.
+ * Palette du kit : nuit #0A1B33, azur #2F7AE0, brume #B5D0F0.
  */
 
-const NUIT = "#0B1D3A";
+const NUIT = "#0A1B33";
 const BRUME = "#B5D0F0";
 const BLANC = "#E8F3FF";
 
@@ -107,7 +107,7 @@ export function RapportCard(d: RapportCardData): React.ReactElement {
                     display: "flex",
                     alignItems: "center",
                     gap: 8,
-                    background: "rgba(58,123,213,0.18)",
+                    background: "rgba(47, 122, 224,0.18)",
                     border: "1px solid rgba(181,208,240,0.24)",
                     borderRadius: 8,
                     padding: "9px 15px",

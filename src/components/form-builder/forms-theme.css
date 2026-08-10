@@ -8,24 +8,24 @@
 
 [data-form-builder] {
   /* Warm neutral — Linear/Notion-ish, with warmth for HVAC/solar */
-  --bg: #FBFAF7;
-  --bg-2: #F4F2EC;
+  --bg: #F7FAFD;
+  --bg-2: #EFF5FC;
   --surface: #FFFFFF;
-  --surface-2: #F8F6F1;
-  --hover: rgba(20, 18, 14, 0.04);
-  --hover-2: rgba(20, 18, 14, 0.07);
-  --border: rgba(20, 18, 14, 0.08);
-  --border-2: rgba(20, 18, 14, 0.14);
-  --border-strong: rgba(20, 18, 14, 0.22);
-  --text: #14120E;
-  --text-2: #5C5953;
-  --text-3: #8A877F;
-  --text-4: #B5B2AA;
+  --surface-2: #F3F8FD;
+  --hover: rgba(18, 40, 68, 0.04);
+  --hover-2: rgba(18, 40, 68, 0.07);
+  --border: rgba(18, 40, 68, 0.08);
+  --border-2: rgba(18, 40, 68, 0.14);
+  --border-strong: rgba(18, 40, 68, 0.22);
+  --text: #122844;
+  --text-2: #4A648C;
+  --text-3: #8AA0C0;
+  --text-4: #B3C4DE;
   /* Accent: warm orange — flame/heat/solar */
-  --accent: #E2552B;
-  --accent-2: #C73E16;
-  --accent-tint: rgba(226, 85, 43, 0.10);
-  --accent-tint-2: rgba(226, 85, 43, 0.18);
+  --accent: #2F7AE0;
+  --accent-2: #1F5BC0;
+  --accent-tint: rgba(47, 122, 224, 0.10);
+  --accent-tint-2: rgba(47, 122, 224, 0.18);
   --ok: #1F8A5B;
   --warn: #C8881F;
   --danger: #B5322F;
@@ -38,9 +38,9 @@
   --radius: 8px;
   --radius-sm: 6px;
   --radius-lg: 12px;
-  --shadow-1: 0 1px 0 rgba(20,18,14,0.04), 0 1px 2px rgba(20,18,14,0.04);
-  --shadow-2: 0 1px 0 rgba(20,18,14,0.04), 0 4px 12px rgba(20,18,14,0.06), 0 12px 32px rgba(20,18,14,0.05);
-  --shadow-pop: 0 1px 0 rgba(20,18,14,0.04), 0 8px 24px rgba(20,18,14,0.10), 0 24px 64px rgba(20,18,14,0.10);
+  --shadow-1: 0 1px 0 rgba(18, 40, 68,0.04), 0 1px 2px rgba(18, 40, 68,0.04);
+  --shadow-2: 0 1px 0 rgba(18, 40, 68,0.04), 0 4px 12px rgba(18, 40, 68,0.06), 0 12px 32px rgba(18, 40, 68,0.05);
+  --shadow-pop: 0 1px 0 rgba(18, 40, 68,0.04), 0 8px 24px rgba(18, 40, 68,0.10), 0 24px 64px rgba(18, 40, 68,0.10);
 
   --row-h: 28px;
   --tap-h: 32px;
@@ -275,7 +275,7 @@
 [data-form-builder] .preview-frame {
   background: white;
   border-radius: 8px;
-  box-shadow: 0 6px 24px rgba(20,18,14,.08), 0 1px 0 var(--border);
+  box-shadow: 0 6px 24px rgba(18, 40, 68,.08), 0 1px 0 var(--border);
   overflow: hidden;
   position: relative;
   width: 100%;
@@ -290,7 +290,7 @@
 [data-form-builder] .pv-progress {
   position: relative;
   height: 4px;
-  background: rgba(20,18,14,.06);
+  background: rgba(18, 40, 68,.06);
   flex-shrink: 0;
 }
 [data-form-builder] .pv-progress .fill {
@@ -334,14 +334,14 @@
   font-weight: 600;
   letter-spacing: -.02em;
   line-height: 1.18;
-  color: #14120E;
+  color: #122844;
   margin-bottom: 10px;
 }
 [data-form-builder] .preview-frame.device-mobile .pv-title { font-size: 24px; }
 [data-form-builder] .pv-subtitle {
   font-family: var(--font-form);
   font-size: 15.5px;
-  color: rgba(20,18,14,.62);
+  color: rgba(18, 40, 68,.62);
   line-height: 1.55;
   margin-bottom: 32px;
 }
@@ -353,16 +353,16 @@
   width: 100%;
   border: 0;
   outline: 0;
-  border-bottom: 2px solid rgba(20,18,14,.18);
+  border-bottom: 2px solid rgba(18, 40, 68,.18);
   background: transparent;
   font-family: var(--font-form);
   font-size: 22px;
   padding: 10px 0 12px;
-  color: #14120E;
+  color: #122844;
   transition: border-color .15s;
 }
 [data-form-builder] .pv-text-input:focus { border-color: var(--accent); }
-[data-form-builder] .pv-text-input::placeholder { color: rgba(20,18,14,.28); }
+[data-form-builder] .pv-text-input::placeholder { color: rgba(18, 40, 68,.28); }
 [data-form-builder] textarea.pv-text-input { resize: vertical; min-height: 80px; font-size: 18px; line-height: 1.5; }
 
 /* ── Choices ──────────────────────────────────────────────────────────────── */
@@ -371,7 +371,7 @@
 [data-form-builder] .pv-choice {
   display: flex; align-items: center; gap: 12px;
   padding: 14px 16px;
-  border: 1.5px solid rgba(20,18,14,.14);
+  border: 1.5px solid rgba(18, 40, 68,.14);
   background: white;
   border-radius: 10px;
   cursor: default;
@@ -392,20 +392,20 @@
 [data-form-builder] .pv-choice .ch-text { flex: 1; min-width: 0; }
 [data-form-builder] .pv-choice .ch-text .lbl {
   font-family: var(--font-form);
-  font-size: 16px; font-weight: 500; color: #14120E;
+  font-size: 16px; font-weight: 500; color: #122844;
   line-height: 1.3;
 }
 [data-form-builder] .pv-choice .ch-text .desc {
   font-family: var(--font-form);
-  font-size: 13px; color: rgba(20,18,14,.5);
+  font-size: 13px; color: rgba(18, 40, 68,.5);
   margin-top: 2px;
 }
 [data-form-builder] .pv-choice .ch-key {
   width: 26px; height: 26px;
-  border: 1.5px solid rgba(20,18,14,.18);
+  border: 1.5px solid rgba(18, 40, 68,.18);
   border-radius: 6px;
   font: 12px/1 var(--font-mono);
-  color: rgba(20,18,14,.5);
+  color: rgba(18, 40, 68,.5);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
   background: white;
@@ -421,10 +421,10 @@
   flex: 1;
   height: 60px;
   font: 17px/1 var(--font-form); font-weight: 500;
-  border: 1.5px solid rgba(20,18,14,.14);
+  border: 1.5px solid rgba(18, 40, 68,.14);
   background: white;
   border-radius: 10px;
-  color: #14120E;
+  color: #122844;
   display: flex; align-items: center; justify-content: center;
   gap: 8px;
   cursor: default;
@@ -433,7 +433,7 @@
 [data-form-builder] .pv-yesno button.on { background: var(--accent); color: white; border-color: var(--accent); }
 [data-form-builder] .pv-yesno button .k {
   font-family: var(--font-mono); font-size: 11px;
-  background: rgba(20,18,14,.06); padding: 2px 6px; border-radius: 4px;
+  background: rgba(18, 40, 68,.06); padding: 2px 6px; border-radius: 4px;
 }
 [data-form-builder] .pv-yesno button.on .k { background: rgba(255,255,255,.2); color: white; }
 
@@ -443,7 +443,7 @@
 [data-form-builder] .pv-star {
   width: 44px; height: 44px;
   display: flex; align-items: center; justify-content: center;
-  color: rgba(20,18,14,.16);
+  color: rgba(18, 40, 68,.16);
   cursor: default;
 }
 [data-form-builder] .pv-star.on { color: var(--accent); }
@@ -460,10 +460,10 @@
 [data-form-builder] .pv-scale button {
   width: 44px; height: 44px;
   font: 16px/1 var(--font-form); font-weight: 500;
-  border: 1.5px solid rgba(20,18,14,.14);
+  border: 1.5px solid rgba(18, 40, 68,.14);
   background: white;
   border-radius: 8px;
-  color: #14120E;
+  color: #122844;
   cursor: default;
 }
 [data-form-builder] .pv-scale button:hover { border-color: var(--accent); }
@@ -475,14 +475,14 @@
   font-family: var(--font-form);
   font-size: 44px; font-weight: 600;
   letter-spacing: -.02em;
-  color: #14120E;
+  color: #122844;
   margin-bottom: 18px;
 }
 [data-form-builder] .pv-slider {
   appearance: none; -webkit-appearance: none;
   width: 100%;
   height: 6px;
-  background: rgba(20,18,14,.1);
+  background: rgba(18, 40, 68,.1);
   border-radius: 999px;
   outline: none;
 }
@@ -492,7 +492,7 @@
   background: var(--accent);
   border: 4px solid white;
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(20,18,14,.12);
+  box-shadow: 0 0 0 1px rgba(18, 40, 68,.12);
 }
 [data-form-builder] .pv-slider::-moz-range-thumb {
   width: 22px; height: 22px;
@@ -504,7 +504,7 @@
   margin-top: 14px;
   display: flex; justify-content: space-between;
   font: 13px var(--font-mono);
-  color: rgba(20,18,14,.45);
+  color: rgba(18, 40, 68,.45);
 }
 
 /* ── Date ─────────────────────────────────────────────────────────────────── */
@@ -516,11 +516,11 @@
 [data-form-builder] .pv-date input {
   width: 70px; height: 56px;
   text-align: center;
-  border: 1.5px solid rgba(20,18,14,.14);
+  border: 1.5px solid rgba(18, 40, 68,.14);
   background: white;
   border-radius: 8px;
   font: 22px var(--font-form);
-  color: #14120E;
+  color: #122844;
   outline: none;
 }
 [data-form-builder] .pv-date input:focus { border-color: var(--accent); }
@@ -532,19 +532,19 @@
   width: 100%;
   height: 52px;
   padding: 0 16px;
-  border: 1.5px solid rgba(20,18,14,.14);
+  border: 1.5px solid rgba(18, 40, 68,.14);
   background: white;
   border-radius: 10px;
   font: 16px var(--font-form);
-  color: #14120E;
+  color: #122844;
   display: flex; align-items: center; gap: 8px;
 }
 [data-form-builder] .pv-dropdown .ico { margin-left: auto; color: var(--text-3); }
-[data-form-builder] .pv-dropdown.placeholder { color: rgba(20,18,14,.4); }
+[data-form-builder] .pv-dropdown.placeholder { color: rgba(18, 40, 68,.4); }
 
 [data-form-builder] .pv-dropdown-list {
   margin-top: 6px;
-  border: 1.5px solid rgba(20,18,14,.14);
+  border: 1.5px solid rgba(18, 40, 68,.14);
   border-radius: 10px;
   background: white;
   overflow: hidden;
@@ -555,20 +555,20 @@
   text-align: left;
   padding: 12px 16px;
   font: 15px var(--font-form);
-  color: #14120E;
+  color: #122844;
   display: block;
 }
-[data-form-builder] .pv-dropdown-list button + button { border-top: 1px solid rgba(20,18,14,.06); }
+[data-form-builder] .pv-dropdown-list button + button { border-top: 1px solid rgba(18, 40, 68,.06); }
 [data-form-builder] .pv-dropdown-list button:hover { background: var(--accent-tint); }
 
 /* ── File ─────────────────────────────────────────────────────────────────── */
 
 [data-form-builder] .pv-file {
-  border: 2px dashed rgba(20,18,14,.16);
+  border: 2px dashed rgba(18, 40, 68,.16);
   border-radius: 12px;
   padding: 36px;
   text-align: center;
-  color: rgba(20,18,14,.5);
+  color: rgba(18, 40, 68,.5);
   font-family: var(--font-form);
 }
 [data-form-builder] .pv-file .ico { color: var(--accent-2); width: 28px; height: 28px; margin-bottom: 8px; }
@@ -592,16 +592,16 @@
   transition: background .12s;
 }
 [data-form-builder] .pv-cta:hover:not(:disabled) { background: var(--accent-2); }
-[data-form-builder] .pv-cta:disabled { background: rgba(20,18,14,.18); cursor: not-allowed; }
+[data-form-builder] .pv-cta:disabled { background: rgba(18, 40, 68,.18); cursor: not-allowed; }
 [data-form-builder] .pv-cta .k {
   font: 10.5px var(--font-mono); font-weight: 500;
   background: rgba(255,255,255,.2); padding: 2px 6px; border-radius: 4px;
 }
 [data-form-builder] .pv-hint {
   font: 12px var(--font-form);
-  color: rgba(20,18,14,.45);
+  color: rgba(18, 40, 68,.45);
 }
-[data-form-builder] .pv-hint b { color: #14120E; font-weight: 500; }
+[data-form-builder] .pv-hint b { color: #122844; font-weight: 500; }
 
 /* ── Welcome / End ────────────────────────────────────────────────────────── */
 
@@ -623,7 +623,7 @@
   bottom: 14px; left: 24px;
   display: flex; align-items: center; gap: 8px;
   font: 11px var(--font-mono);
-  color: rgba(20,18,14,.4);
+  color: rgba(18, 40, 68,.4);
 }
 [data-form-builder] .pv-brand i {
   width: 18px; height: 18px;
@@ -643,7 +643,7 @@
 }
 [data-form-builder] .preview-frame.device-mobile .pv-scroll { padding: 24px 22px; }
 [data-form-builder] .pv-scroll .pv-card-block {
-  border-bottom: 1px dashed rgba(20,18,14,.08);
+  border-bottom: 1px dashed rgba(18, 40, 68,.08);
   padding-bottom: 56px;
 }
 [data-form-builder] .pv-scroll .pv-card-block:last-child { border-bottom: 0; padding-bottom: 0; }
@@ -656,14 +656,14 @@
   display: flex; flex-direction: column; gap: 4px;
 }
 [data-form-builder] .pv-nav button {
-  appearance: none; border: 1px solid rgba(20,18,14,.12);
+  appearance: none; border: 1px solid rgba(18, 40, 68,.12);
   background: white;
   width: 32px; height: 28px;
   border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
-  color: rgba(20,18,14,.4);
+  color: rgba(18, 40, 68,.4);
   cursor: default;
   font-size: 12px;
 }
-[data-form-builder] .pv-nav button:hover { color: #14120E; }
+[data-form-builder] .pv-nav button:hover { color: #122844; }
 [data-form-builder] .pv-nav button:disabled { opacity: .35; cursor: not-allowed; }

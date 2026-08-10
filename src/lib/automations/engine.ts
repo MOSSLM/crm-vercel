@@ -7,6 +7,7 @@ import { wrapEmailBodyHtml, buildSignatureText } from '@/utils/emailTemplate'
 import type { SignatureData } from '@/components/messaging/SignatureSettings'
 import { asWorkflow, findNode, getSlotChild, isCondType } from '@/components/automations/workflow-graph'
 import { routeTask, type RoutingDecision } from '@/lib/automations/task-routing'
+import { readSkippedSteps, readStepShifts } from '@/lib/automations/week'
 import { BLOCK_LABEL, allowRecipient } from '@/lib/email/send-guard'
 import { recordSend } from '@/lib/email/verify/service'
 import {
@@ -744,6 +745,14 @@ export async function processSequenceEnrollment(enrollment: SequenceEnrollment):
     return
   }
 
+  // Étape annulée à la main depuis la vue semaine : on la franchit sans rien
+  // envoyer. L'inscription continue sa route — annuler un envoi n'a jamais
+  // voulu dire sortir le prospect de la séquence.
+  if (readSkippedSteps(enrollment.vars).includes(idx)) {
+    await scheduleNextStep(sb, enrollment, steps, idx + 1)
+    return
+  }
+
   const step = steps[idx]
   const ctx: RunContext = {
     contact_id: enrollment.contact_id,
@@ -1018,7 +1027,10 @@ async function scheduleNextStep(
   }
   const next = steps[nextIdx]
   const entered = new Date(enrollment.entered_at).getTime()
-  let runAt = entered + (next.day ?? 0) * 86400000
+  // Décalage posé à la main depuis la vue semaine : « cette relance, pas demain,
+  // après-demain ». Il s'applique à l'étape, pas à toute la suite.
+  const shift = readStepShifts(enrollment.vars)[String(nextIdx)] ?? 0
+  let runAt = entered + ((next.day ?? 0) + shift) * 86400000
   if (runAt < Date.now()) runAt = Date.now()
   // `next_run_at` reste « pas avant cette date » ; le créneau exact d'un email
   // sera reposé par le régulateur au tick suivant.

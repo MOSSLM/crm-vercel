@@ -38,8 +38,8 @@ interface Ecran {
 }
 
 const ICON = {
-  alert: `<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="#3A7BD5" stroke-width="1"/><line x1="7" y1="4.5" x2="7" y2="7.5" stroke="#3A7BD5" stroke-width="1.1" stroke-linecap="round"/><circle cx="7" cy="9.5" r=".5" fill="#3A7BD5"/></svg>`,
-  check: `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5L4.5 7.5L8 3" stroke="#3A7BD5" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  alert: `<svg width="13" height="13" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="5.5" stroke="#2F7AE0" stroke-width="1"/><line x1="7" y1="4.5" x2="7" y2="7.5" stroke="#2F7AE0" stroke-width="1.1" stroke-linecap="round"/><circle cx="7" cy="9.5" r=".5" fill="#2F7AE0"/></svg>`,
+  check: `<svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5L4.5 7.5L8 3" stroke="#2F7AE0" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
 };
 
 const TON = { ok: "#1F8A5B", moyen: "#C8881F", probleme: "#B5322F" } as const;
@@ -84,7 +84,7 @@ function head(eyebrow: string | undefined, title: string | undefined, em: string
 }
 
 function brand(dark: boolean, label: string): string {
-  return `<div class="m-top"><div class="m-brand${dark ? "" : " ink"}">${logoSvg(16, dark ? "#B5D0F0" : "#3A7BD5")}<span>SAMA</span></div><span class="m-eyebrow">${esc(label)}</span></div>`;
+  return `<div class="m-top"><div class="m-brand${dark ? "" : " ink"}">${logoSvg(16, dark ? "#B5D0F0" : "#2F7AE0")}<span>SAMA</span></div><span class="m-eyebrow">${esc(label)}</span></div>`;
 }
 
 /**
@@ -496,7 +496,7 @@ export function buildScreens(c: AuditContent, m: RapportMesures = { audit: null 
         ${addl
           .map(
             (x) =>
-              `<div class="m-alt"><div class="m-alt-title" style="font-style:normal;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500">${esc(x.label)}</div>${x.description ? `<div class="m-alt-desc">${esc(x.description)}</div>` : ""}<div class="m-alt-price"><span></span><span class="m-alt-amount">${fmtEur(x.amount)}${x.is_mrr ? '<span style="font-size:13px;color:rgba(11,29,58,.5)">/mois</span>' : ""}</span></div></div>`,
+              `<div class="m-alt"><div class="m-alt-title" style="font-style:normal;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:500">${esc(x.label)}</div>${x.description ? `<div class="m-alt-desc">${esc(x.description)}</div>` : ""}<div class="m-alt-price"><span></span><span class="m-alt-amount">${fmtEur(x.amount)}${x.is_mrr ? '<span style="font-size:13px;color:rgba(10, 27, 51,.5)">/mois</span>' : ""}</span></div></div>`,
           )
           .join("")}
       </div>`,
@@ -556,7 +556,7 @@ export function buildScreens(c: AuditContent, m: RapportMesures = { audit: null 
         ${p6.contact_email ? `<a class="m-btn m-btn-ghost" href="mailto:${esc(p6.contact_email)}">${esc(p6.contact_email)}</a>` : ""}
         ${p1.demo_url ? `<a class="m-btn m-btn-ghost" href="${esc(p1.demo_url)}" target="_blank" rel="noopener">Revoir mon site démo →</a>` : ""}
       </div>
-      <div class="m-sign">${logoSvg(18, "#3A7BD5")}<div class="m-sign-text">SAMA · Agence digitale indépendante${p6.contact_website ? `<br>${esc(p6.contact_website)}` : ""}</div></div>
+      <div class="m-sign">${logoSvg(18, "#2F7AE0")}<div class="m-sign-text">SAMA · Agence digitale indépendante${p6.contact_website ? `<br>${esc(p6.contact_website)}` : ""}</div></div>
     </div>`,
   });
 

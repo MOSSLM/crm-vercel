@@ -13,7 +13,7 @@ const SIG: SignatureData = {
   phone: '06 12 34 56 78',
   website: 'https://sama.fr',
   linkedin_url: '',
-  accent_color: '#3A7BD5',
+  accent_color: '#2F7AE0',
 };
 
 describe('emailTemplate — rendu minimal « humain »', () => {
@@ -30,7 +30,7 @@ describe('emailTemplate — rendu minimal « humain »', () => {
     expect(html).not.toContain('letter-spacing');
     expect(html).not.toContain('text-transform');
     expect(html).not.toContain('Georgia');
-    expect(html).not.toContain('#0B1D3A');
+    expect(html).not.toContain('#0A1B33');
     expect(html).not.toMatch(/[📧📞🌐🔗👉]/u);
   });
 

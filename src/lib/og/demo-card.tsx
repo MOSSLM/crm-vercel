@@ -32,7 +32,7 @@ import { OG_WIDTH, OG_HEIGHT } from "@/lib/og/render-card";
  */
 
 /** Palette du kit d'identité — miroir de `C` dans `AuditShared.tsx`. */
-const NUIT = "#0B1D3A";
+const NUIT = "#0A1B33";
 const BRUME = "#B5D0F0";
 const BLANC = "#E8F3FF";
 
@@ -368,7 +368,7 @@ function BrowserMockup({
           display: "flex",
           alignItems: "center",
           gap: 10,
-          background: "rgba(11,29,58,0.92)",
+          background: "rgba(10, 27, 51,0.92)",
           padding: "11px 14px",
         }}
       >

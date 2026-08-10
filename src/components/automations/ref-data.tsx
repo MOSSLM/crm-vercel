@@ -33,7 +33,7 @@ export interface RefData {
   reload: () => void
 }
 
-const USER_COLORS = ['#E2552B', '#7A5AE0', '#2A6FDB', '#1F8A5B', '#C8881F', '#B5322F']
+const USER_COLORS = ['#2F7AE0', '#7A5AE0', '#0E93A6', '#1F8A5B', '#C8881F', '#B5322F']
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)

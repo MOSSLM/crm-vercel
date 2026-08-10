@@ -104,10 +104,10 @@ function ColorChip({ value, size = 28, className }: { value: string; size?: numb
         flexShrink: 0,
         flexGrow: 0,
         border: "1.5px solid var(--surface)",
-        boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(20,18,14,.06)",
+        boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(18,40,68,.06)",
         backgroundImage:
           `linear-gradient(${value}, ${value}), ` +
-          "conic-gradient(rgba(20,18,14,.14) 25%, transparent 0 50%, rgba(20,18,14,.14) 0 75%, transparent 0)",
+          "conic-gradient(rgba(18,40,68,.14) 25%, transparent 0 50%, rgba(18,40,68,.14) 0 75%, transparent 0)",
         backgroundSize: "100% 100%, 8px 8px",
         backgroundPosition: "0 0, 0 0",
       }}
@@ -453,7 +453,7 @@ function ColorsModal({
                 style={{
                   width: 30, height: 30, borderRadius: "50%",
                   border: "2px solid var(--surface)",
-                  boxShadow: "0 0 0 1px var(--border-2), 0 1px 3px rgba(20,18,14,.08)",
+                  boxShadow: "0 0 0 1px var(--border-2), 0 1px 3px rgba(18,40,68,.08)",
                   background: p.hex,
                   cursor: "default",
                 }}
@@ -1029,7 +1029,7 @@ function ButtonVariantEditor({
           className="toggle"
           aria-checked={shadowEnabled ? "true" : "false"}
           onClick={() =>
-            onChange({ shadow: shadowEnabled ? null : { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(20,18,14,.15)" } })
+            onChange({ shadow: shadowEnabled ? null : { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(0,0,0,.15)" } })
           }
         />
       </div>
@@ -1175,9 +1175,9 @@ function ButtonsModal({
           <AlertCircle size={12} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>
             <strong>Convention :</strong> ajoutez{" "}
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, background: "rgba(42,111,219,.15)", padding: "1px 4px", borderRadius: 3 }}>cta-primary</code>
+            <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, background: "rgba(14,147,166,.15)", padding: "1px 4px", borderRadius: 3 }}>cta-primary</code>
             {" "}ou{" "}
-            <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, background: "rgba(42,111,219,.15)", padding: "1px 4px", borderRadius: 3 }}>cta-secondary</code>
+            <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, background: "rgba(14,147,166,.15)", padding: "1px 4px", borderRadius: 3 }}>cta-secondary</code>
             {" "}sur vos boutons d&apos;action pour appliquer ce style.
           </span>
         </div>
@@ -1214,7 +1214,7 @@ function CardsModal({
 }) {
   const c = guide.cards;
   const isCustomShadow = !!c.shadowCustom;
-  const sc = c.shadowCustom ?? { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(20,18,14,0.12)" };
+  const sc = c.shadowCustom ?? { x: 0, y: 4, blur: 12, spread: 0, color: "rgba(0,0,0,0.12)" };
   const radiusNum = parseInt(c.borderRadius);
   const imageRadiusNum = parseInt(c.imageRadius ?? c.borderRadius);
   const borderWidthNum = parseInt(c.borderWidth ?? "0");
@@ -1304,7 +1304,7 @@ function CardsModal({
               ))}
               <HexColorInput
                 label="Couleur d'ombre"
-                value={sc.color.startsWith("rgba") ? "#14120E33" : sc.color}
+                value={sc.color.startsWith("rgba") ? "#00000033" : sc.color}
                 onChange={(hex) => onUpdate({ shadowCustom: { ...sc, color: hex } })}
               />
             </div>
@@ -1320,7 +1320,7 @@ function CardsModal({
 
         <HexColorInput
           label="Couleur de bordure"
-          value={c.borderColor && !c.borderColor.startsWith("rgba") ? c.borderColor : "#14120E1F"}
+          value={c.borderColor && !c.borderColor.startsWith("rgba") ? c.borderColor : "#0000001F"}
           onChange={(hex) => onUpdate({ borderColor: hex })}
         />
 
@@ -1337,7 +1337,7 @@ function CardsModal({
             Aperçu
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            {["#FFFAF2", "#FFEFE2", "#E9F1F8"].map((bg, i) => (
+            {["#FFFFFF", "#F4F4F5", "#E9F1F8"].map((bg, i) => (
               <div
                 key={i}
                 style={{
@@ -1352,9 +1352,9 @@ function CardsModal({
                   gap: 6,
                 }}
               >
-                <div style={{ background: "rgba(20,18,14,.10)", borderRadius: c.imageRadius ?? c.borderRadius, height: "55%" }} />
-                <div style={{ background: "rgba(20,18,14,.16)", borderRadius: 3, height: 8, width: "70%" }} />
-                <div style={{ background: "rgba(20,18,14,.10)", borderRadius: 3, height: 6, width: "85%" }} />
+                <div style={{ background: "rgba(18,40,68,.10)", borderRadius: c.imageRadius ?? c.borderRadius, height: "55%" }} />
+                <div style={{ background: "rgba(18,40,68,.16)", borderRadius: 3, height: 8, width: "70%" }} />
+                <div style={{ background: "rgba(18,40,68,.10)", borderRadius: 3, height: 6, width: "85%" }} />
               </div>
             ))}
           </div>
@@ -1667,7 +1667,7 @@ export function StyleGuideWorkspace({ sectionDefs }: StyleGuideWorkspaceProps) {
 
       {/* ── Right: Live Preview ─────────────────────────────────────────────── */}
       {previewFullscreen ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(20, 18, 14, .6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(18, 40, 68, .6)", display: "flex", alignItems: "center", justifyContent: "center", padding: 32 }}>
           <div style={{ position: "relative", width: "100%", maxWidth: 1100, maxHeight: "100%", overflow: "auto", borderRadius: 14, boxShadow: "var(--shadow-pop)", background: "#fff" }}>
             <button
               onClick={() => setPreviewFullscreen(false)}

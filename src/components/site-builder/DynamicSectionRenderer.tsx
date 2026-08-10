@@ -242,7 +242,7 @@ export function DynamicSectionRenderer({
           onClick={editorMode ? (e) => { e.stopPropagation(); onSelect?.(); } : undefined}
           data-section-id={instance.id}
           className={editorMode ? 'group/section' : ''}
-          style={{ padding: '40px 24px', textAlign: 'center', background: '#f8f6f1', color: '#8A877F', fontSize: 14, cursor: editorMode ? 'pointer' : undefined, position: 'relative', border: selected ? '2px solid #3b82f6' : '2px solid transparent' }}
+          style={{ padding: '40px 24px', textAlign: 'center', background: '#f3f8fd', color: '#8AA0C0', fontSize: 14, cursor: editorMode ? 'pointer' : undefined, position: 'relative', border: selected ? '2px solid #3b82f6' : '2px solid transparent' }}
         >
           Formulaire non configuré — sélectionnez un formulaire dans l'éditeur.
         </div>

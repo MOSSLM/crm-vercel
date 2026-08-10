@@ -24,7 +24,7 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
   return (
     <div id="audit-p1" style={{ width: 794, height: 1123, background: C.nuit, position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
       {/* Sky gradients */}
-      <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 500px 400px at 80% 20%, rgba(58,123,213,0.35) 0%, transparent 65%), radial-gradient(ellipse 600px 500px at 15% 70%, rgba(58,123,213,0.18) 0%, transparent 60%)` }} />
+      <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse 500px 400px at 80% 20%, rgba(47, 122, 224,0.35) 0%, transparent 65%), radial-gradient(ellipse 600px 500px at 15% 70%, rgba(47, 122, 224,0.18) 0%, transparent 60%)` }} />
       <GrainOverlay globalStyle={gs} />
       {/* Content */}
       <div style={{ position: 'relative', zIndex: 4, display: 'flex', flexDirection: 'column', height: '100%', padding: '64px 72px' }}>
@@ -59,7 +59,7 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
           {/* Client block + demo mockup on the same row */}
           <div style={{ marginTop: 64, display: 'flex', alignItems: 'flex-start', gap: 20, flexWrap: 'wrap' }}>
             <Zone field="page1.client" activeField={activeField} onFieldClick={onFieldClick}>
-              <div style={{ padding: '24px 28px', border: `1px solid rgba(181,208,240,0.15)`, borderRadius: 4, background: 'rgba(58,123,213,0.06)', minWidth: 220 }}>
+              <div style={{ padding: '24px 28px', border: `1px solid rgba(181,208,240,0.15)`, borderRadius: 4, background: 'rgba(47, 122, 224,0.06)', minWidth: 220 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <div style={{ fontSize: 9, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'rgba(181,208,240,0.45)', fontWeight: 500 }}>Préparé pour</div>
                   {logoUrl && (
@@ -77,7 +77,7 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
             {p.demo_url && (
               <Zone field="page1.demo" activeField={activeField} onFieldClick={onFieldClick} style={{ flex: 1, minWidth: 200, maxWidth: 300 }}>
                 <a href={p.demo_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', display: 'block' }}>
-                  <div style={{ padding: '12px 14px', border: `1px solid rgba(58,123,213,0.35)`, borderRadius: 6, background: 'rgba(58,123,213,0.1)', cursor: 'pointer' }}>
+                  <div style={{ padding: '12px 14px', border: `1px solid rgba(47, 122, 224,0.35)`, borderRadius: 6, background: 'rgba(47, 122, 224,0.1)', cursor: 'pointer' }}>
                     <div style={{ fontSize: 9, letterSpacing: '0.18em', textTransform: 'uppercase', color: C.azur, fontWeight: 500, marginBottom: 8 }}>Site démo disponible</div>
                     {/* Browser mockup */}
                     <div style={{ background: 'rgba(255,255,255,0.05)', borderRadius: 4, overflow: 'hidden', border: `1px solid rgba(181,208,240,0.1)` }}>
@@ -96,13 +96,13 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
                         </div>
                       </div>
                       {/* Screenshot — contained within frame */}
-                      <div style={{ position: 'relative', height: 110, background: 'rgba(11,29,58,0.6)', overflow: 'hidden' }}>
+                      <div style={{ position: 'relative', height: 110, background: 'rgba(10, 27, 51,0.6)', overflow: 'hidden' }}>
                         {/* Skeleton fallback */}
                         <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 4, position: 'absolute', inset: 0 }}>
-                          <div style={{ height: 14, background: 'rgba(58,123,213,0.18)', borderRadius: 2, width: '70%' }} />
+                          <div style={{ height: 14, background: 'rgba(47, 122, 224,0.18)', borderRadius: 2, width: '70%' }} />
                           <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 2, width: '90%' }} />
                           <div style={{ height: 5, background: 'rgba(255,255,255,0.05)', borderRadius: 2, width: '65%' }} />
-                          <div style={{ height: 18, background: 'rgba(58,123,213,0.3)', borderRadius: 3, width: 52, marginTop: 3 }} />
+                          <div style={{ height: 18, background: 'rgba(47, 122, 224,0.3)', borderRadius: 3, width: 52, marginTop: 3 }} />
                         </div>
                         {screenshotUrl && (
                           <img
@@ -126,7 +126,7 @@ export function AuditPage1({ content, logoUrl, activeField, onFieldClick }: Prop
 
         {/* Bottom */}
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-end', paddingBottom: 8 }}>
-          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 64, fontWeight: 300, color: 'rgba(58,123,213,0.12)', lineHeight: 1 }}>01</div>
+          <div style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 64, fontWeight: 300, color: 'rgba(47, 122, 224,0.12)', lineHeight: 1 }}>01</div>
         </div>
       </div>
     </div>

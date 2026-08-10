@@ -3,10 +3,10 @@ import React from 'react';
 import type { AuditPricingService, AuditPage5, AuditGlobalStyle } from '@/types';
 
 export const C = {
-  nuit: '#0B1D3A',
-  azur: '#3A7BD5',
+  nuit: '#0A1B33',
+  azur: '#2F7AE0',
   brume: '#B5D0F0',
-  creme: '#F4F1EB',
+  creme: '#F7FAFD',
   blanc: '#E8F3FF',
 };
 
@@ -83,9 +83,9 @@ export function InnerHeader({ section, sectionField, activeField, onFieldClick }
 
 export function InnerFooter({ page }: { page: string }) {
   return (
-    <div style={{ padding: '16px 72px', borderTop: `1px solid rgba(11,29,58,0.08)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <span style={{ fontSize: 9, letterSpacing: '0.12em', color: 'rgba(11,29,58,0.3)', textTransform: 'uppercase' }}>Confidentiel</span>
-      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 13, color: 'rgba(11,29,58,0.2)' }}>{page}</span>
+    <div style={{ padding: '16px 72px', borderTop: `1px solid rgba(10, 27, 51,0.08)`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <span style={{ fontSize: 9, letterSpacing: '0.12em', color: 'rgba(10, 27, 51,0.3)', textTransform: 'uppercase' }}>Confidentiel</span>
+      <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 13, color: 'rgba(10, 27, 51,0.2)' }}>{page}</span>
     </div>
   );
 }

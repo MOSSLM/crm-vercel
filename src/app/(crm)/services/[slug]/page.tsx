@@ -77,18 +77,18 @@ export default async function ServiceDescriptionPage({
   const billing = offer.billing_period ? BILLING_LABEL[offer.billing_period] ?? offer.billing_period : null;
 
   return (
-    <main className="min-h-screen bg-[#FBF7EF] text-[#0A1A40]">
-      <header className="border-b border-[#0A1A40]/8 bg-white">
+    <main className="min-h-screen bg-[#F7FAFD] text-[#0A1B33]">
+      <header className="border-b border-[#0A1B33]/8 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-5">
           <Link href="/" className="font-serif text-sm tracking-[0.42em]">SAMA</Link>
-          <Link href="/#contact" className="text-xs font-medium uppercase tracking-[0.16em] text-[#0A1A40]/70 hover:text-[#0A1A40]">
+          <Link href="/#contact" className="text-xs font-medium uppercase tracking-[0.16em] text-[#0A1B33]/70 hover:text-[#0A1B33]">
             Discutons →
           </Link>
         </div>
       </header>
 
       <article className="mx-auto max-w-3xl px-6 py-16">
-        <Link href="/#services" className="text-xs uppercase tracking-[0.16em] text-[#5AA9E6]">
+        <Link href="/#services" className="text-xs uppercase tracking-[0.16em] text-[#5B9BE8]">
           ← Tous nos services
         </Link>
 
@@ -96,16 +96,16 @@ export default async function ServiceDescriptionPage({
 
         <div className="mt-6 flex flex-wrap items-baseline gap-3">
           <span className="font-serif text-3xl font-light">{formatPrice(offer.prix_ht, offer.devise)}</span>
-          {billing && <span className="text-sm text-[#0A1A40]/60">· {billing}</span>}
+          {billing && <span className="text-sm text-[#0A1B33]/60">· {billing}</span>}
           {offer.type && (
-            <span className="rounded-sm border border-[#0A1A40]/15 px-2 py-0.5 text-xs uppercase tracking-wider text-[#0A1A40]/60">
+            <span className="rounded-sm border border-[#0A1B33]/15 px-2 py-0.5 text-xs uppercase tracking-wider text-[#0A1B33]/60">
               {offer.type}
             </span>
           )}
         </div>
 
         {offer.description && (
-          <p className="mt-8 whitespace-pre-line text-base leading-relaxed text-[#0A1A40]/75">
+          <p className="mt-8 whitespace-pre-line text-base leading-relaxed text-[#0A1B33]/75">
             {offer.description}
           </p>
         )}
@@ -113,7 +113,7 @@ export default async function ServiceDescriptionPage({
         {offer.tags && offer.tags.length > 0 && (
           <div className="mt-8 flex flex-wrap gap-2">
             {offer.tags.map((tag) => (
-              <span key={tag} className="rounded-sm bg-[#D6E4F0]/60 px-2 py-1 text-xs text-[#0A1A40]/70">
+              <span key={tag} className="rounded-sm bg-[#E7F0FB]/60 px-2 py-1 text-xs text-[#0A1B33]/70">
                 {tag}
               </span>
             ))}
@@ -123,21 +123,21 @@ export default async function ServiceDescriptionPage({
         <div className="mt-12 flex flex-wrap gap-3">
           <Link
             href="/#contact"
-            className="inline-flex items-center gap-2 rounded-sm bg-[#5AA9E6] px-6 py-3 text-xs font-medium uppercase tracking-[0.14em] text-white transition hover:bg-[#3d8fcd]"
+            className="inline-flex items-center gap-2 rounded-sm bg-[#5B9BE8] px-6 py-3 text-xs font-medium uppercase tracking-[0.14em] text-white transition hover:bg-[#1F5BC0]"
           >
             Discuter de ce service
           </Link>
           <Link
             href="/espace-client/services"
-            className="inline-flex items-center gap-2 rounded-sm border border-[#0A1A40]/15 px-6 py-3 text-xs font-medium uppercase tracking-[0.14em] text-[#0A1A40]/70 transition hover:border-[#5AA9E6] hover:text-[#0A1A40]"
+            className="inline-flex items-center gap-2 rounded-sm border border-[#0A1B33]/15 px-6 py-3 text-xs font-medium uppercase tracking-[0.14em] text-[#0A1B33]/70 transition hover:border-[#5B9BE8] hover:text-[#0A1B33]"
           >
             S'abonner depuis mon espace
           </Link>
         </div>
       </article>
 
-      <footer className="border-t border-[#0A1A40]/8 bg-white">
-        <div className="mx-auto max-w-5xl px-6 py-8 text-center text-xs text-[#0A1A40]/40">
+      <footer className="border-t border-[#0A1B33]/8 bg-white">
+        <div className="mx-auto max-w-5xl px-6 py-8 text-center text-xs text-[#0A1B33]/40">
           © {new Date().getFullYear()} SAMA · Agence digitale française
         </div>
       </footer>

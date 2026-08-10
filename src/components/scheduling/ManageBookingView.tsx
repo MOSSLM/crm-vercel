@@ -244,7 +244,7 @@ export default function ManageBookingView({ token }: { token: string }) {
             style={{
               position: "absolute",
               inset: 0,
-              background: "radial-gradient(ellipse at 80% 0%,rgba(226,85,43,.24),transparent 60%)",
+              background: "radial-gradient(ellipse at 80% 0%,rgba(47, 122, 224,.24),transparent 60%)",
             }}
           />
           <div style={{ position: "relative" }}>

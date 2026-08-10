@@ -13,8 +13,8 @@ import { PARAM_CAPTURE } from "@/lib/site-builder/demo-share-url";
  * link is emailed — see the checkout-demo route + Stripe webhook.
  */
 
-const NUIT = "#0B1D3A";
-const AZUR = "#3A7BD5";
+const NUIT = "#0A1B33";
+const AZUR = "#2F7AE0";
 const BLANC = "#E8F3FF";
 const BRUME = "rgba(181,208,240,0.75)";
 
@@ -85,7 +85,7 @@ export function DemoPaywallBar({ siteId, bookingUrl, companyName }: Props) {
           fontSize: 14,
           fontWeight: 600,
           cursor: "pointer",
-          boxShadow: "0 8px 24px rgba(11,29,58,0.35)",
+          boxShadow: "0 8px 24px rgba(10, 27, 51,0.35)",
           fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
         }}
       >
@@ -106,7 +106,7 @@ export function DemoPaywallBar({ siteId, bookingUrl, companyName }: Props) {
         zIndex: 2147483000,
         background: NUIT,
         color: BLANC,
-        boxShadow: "0 -8px 32px rgba(11,29,58,0.35)",
+        boxShadow: "0 -8px 32px rgba(10, 27, 51,0.35)",
         borderTop: `1px solid rgba(181,208,240,0.15)`,
         fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
       }}

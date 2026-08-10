@@ -15,7 +15,7 @@ export const OPTIONS = (req: Request) => preflight(req, { allowAny: true });
  *    <script src="…/embed.js" async
  *      data-button-url="https://app…/rdv/jean/appel-30min"
  *      data-button-text="Prendre rendez-vous"
- *      data-button-color="#E2552B"
+ *      data-button-color="#2F7AE0"
  *      data-button-position="right"></script>
  *
  * 3) Popup au clic (sur n'importe quel élément) :
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
     overlay.setAttribute("data-sama-rdv-overlay", "1");
     overlay.style.cssText =
       "position:fixed;inset:0;z-index:2147483000;display:none;align-items:center;" +
-      "justify-content:center;background:rgba(20,18,14,.55);padding:16px;";
+      "justify-content:center;background:rgba(18, 40, 68,.55);padding:16px;";
     var box = document.createElement("div");
     box.style.cssText =
       "position:relative;width:100%;max-width:520px;height:min(720px,92vh);" +
@@ -54,7 +54,7 @@ export async function GET(req: Request) {
     close.innerHTML = "&#10005;";
     close.style.cssText =
       "position:absolute;top:8px;right:8px;z-index:2;width:32px;height:32px;" +
-      "border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#14120E;" +
+      "border:0;border-radius:999px;background:rgba(255,255,255,.92);color:#122844;" +
       "font-size:14px;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.2);";
     var iframe = document.createElement("iframe");
     iframe.style.cssText = "width:100%;height:100%;border:0;background:transparent;";
@@ -124,7 +124,7 @@ export async function GET(req: Request) {
     if (!url) return;
     if (document.querySelector("[data-sama-rdv-fab]")) return;
     var text = currentScript.getAttribute("data-button-text") || "Prendre rendez-vous";
-    var color = currentScript.getAttribute("data-button-color") || "#E2552B";
+    var color = currentScript.getAttribute("data-button-color") || "#2F7AE0";
     var position = currentScript.getAttribute("data-button-position") === "left" ? "left" : "right";
     var btn = document.createElement("button");
     btn.type = "button";

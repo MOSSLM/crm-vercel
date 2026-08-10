@@ -26,12 +26,12 @@ export function page6Html(content: AuditContent) {
       <div class="cta-contact">
         ${p.contact_phone ? `<div class="cta-contact-item">${esc(p.contact_phone)}</div>` : ''}
         ${p.contact_email ? `<div class="cta-contact-item">${esc(p.contact_email)}</div>` : ''}
-        ${p.contact_website ? `<div style="font-size:10px;color:rgba(11,29,58,.4);margin-top:4px">${esc(p.contact_website)}</div>` : ''}
+        ${p.contact_website ? `<div style="font-size:10px;color:rgba(10, 27, 51,.4);margin-top:4px">${esc(p.contact_website)}</div>` : ''}
       </div>
     </div>
-    <div style="margin-top:auto;padding-top:32px;border-top:1px solid rgba(11,29,58,.07);display:flex;align-items:center;gap:16px">
-      ${logoSvg(20, '#3A7BD5')}
-      <div style="font-size:10px;color:rgba(11,29,58,.35);line-height:1.7">
+    <div style="margin-top:auto;padding-top:32px;border-top:1px solid rgba(10, 27, 51,.07);display:flex;align-items:center;gap:16px">
+      ${logoSvg(20, '#2F7AE0')}
+      <div style="font-size:10px;color:rgba(10, 27, 51,.35);line-height:1.7">
         SAMA · Agence digitale indépendante<br>
         Document confidentiel préparé exclusivement pour ${esc(content.page1.client_name || 'Entreprise Cliente')}
       </div>
