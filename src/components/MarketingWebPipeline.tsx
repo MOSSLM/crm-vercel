@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { MAX_PSI_PAR_LOT } from "@/utils/constants";
 import { Check, Loader2, Globe, Plus, Trash2, X } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { authedFetch } from "@/utils/authedFetch";
@@ -680,6 +681,89 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
   };
 
   /**
+   * Fait mesurer la sélection par Google PageSpeed.
+   *
+   * TROIS DIFFÉRENCES AVEC « Analyser les sites », et chacune vient du coût.
+   * L'analyse maison prend une seconde et ne coûte rien ; celle-ci fait tourner
+   * un vrai Chrome chez Google pendant une quarantaine de secondes et consomme
+   * un quota journalier.
+   *
+   * 1. **Séquentiel, pas par paquets.** Chaque mesure retient une fonction
+   *    serverless pendant quarante secondes ; quatre en parallèle en retiennent
+   *    quatre. Et Google limite de son côté — les paralléliser ferait surtout
+   *    récolter des 429.
+   * 2. **Plafonné.** Au-delà, on n'outille plus un démarchage, on balaye un
+   *    parc : quarante secondes par site, ça se compte en heures et ça vide le
+   *    quota pour des entreprises qu'on n'appellera pas cette semaine.
+   * 3. **Ce qui est laissé de côté est DIT.** Une sélection tronquée en silence
+   *    se remarque devant un prospect dont l'audit n'a pas les constats Google.
+   *
+   * Seules les entreprises déjà analysées sont éligibles : la route répond 409
+   * sinon, l'analyse maison étant ce qui détermine l'URL réellement atteinte
+   * après redirections.
+   */
+  const mesurerPsiSites = async (items: BoardItem[]) => {
+    // Pas de filtre sur « déjà analysée » ici : le bouton compte déjà les
+    // éligibles, et la route répond 409 avec sa raison. Refaire le test à deux
+    // endroits, c'est deux endroits à tenir d'accord — autant laisser le
+    // serveur, seul à savoir, le dire dans le message d'échec.
+    const eligibles = items.filter((it) => it.entreprise_id != null);
+    if (eligibles.length === 0) {
+      toast.error("Aucune entreprise dans la sélection");
+      return;
+    }
+
+    const targets = eligibles.slice(0, MAX_PSI_PAR_LOT);
+    const ecartes = eligibles.length - targets.length;
+
+    setWorking("create-site");
+    const minutes = Math.ceil((targets.length * 40) / 60);
+    const suivi = toast.loading(
+      `Mesure Google de ${targets.length} site(s) — environ ${minutes} min…`,
+    );
+    try {
+      let ok = 0;
+      const echecs: string[] = [];
+
+      for (const [i, it] of targets.entries()) {
+        try {
+          const r = await authedFetch(`/api/audit-site/${it.entreprise_id}/pagespeed`, {
+            method: "POST",
+          });
+          const body = (await r.json().catch(() => ({}))) as { error?: string };
+          if (!r.ok) throw new Error(body.error || `Erreur ${r.status}`);
+          ok++;
+        } catch (e) {
+          // Le nom ET la cause : « quota dépassé » et « 409 » se corrigent
+          // différemment, et un échec anonyme oblige à tout refaire pour savoir.
+          echecs.push(`${displayName(it)} (${e instanceof Error ? e.message : "échec"})`);
+        }
+        toast.loading(`${i + 1}/${targets.length} mesuré(s) par Google…`, { id: suivi });
+      }
+
+      toast.dismiss(suivi);
+      if (ok > 0) toast.success(`${ok} site(s) mesuré(s) par Google`);
+      if (echecs.length > 0) {
+        const noms = echecs.slice(0, 3).join(" · ");
+        toast.error(
+          `${echecs.length} échec(s) : ${noms}${echecs.length > 3 ? `… et ${echecs.length - 3} autre(s)` : ""}`,
+        );
+      }
+      if (ecartes > 0) {
+        toast.info(
+          `${ecartes} entreprise(s) non mesurée(s) : ${MAX_PSI_PAR_LOT} par lot au maximum. Relancez sur le reste.`,
+        );
+      }
+      await afterAction();
+    } catch (e) {
+      toast.dismiss(suivi);
+      toast.error(e instanceof Error ? e.message : "Erreur lors de la mesure Google");
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  /**
    * Fabrique à l'avance les vignettes de partage de la sélection.
    *
    * À lancer AVANT une campagne automatique. Deux captures par site, une
@@ -1013,6 +1097,7 @@ export const MarketingWebPipeline: React.FC<{ variant?: MarketingPipelineVariant
     onCreateSites: (items) => createSites(items),
     onRegenerateSites: (items) => regenerateSites(items),
     onAnalyserSites: (items) => analyserSites(items),
+    onMesurerPsi: (items) => mesurerPsiSites(items),
     onPreparerVignettes: (items) => preparerVignettes(items),
     onValidateSites: (items) => validateSites(items),
     onCreateAudits: (items) => createAudits(items),

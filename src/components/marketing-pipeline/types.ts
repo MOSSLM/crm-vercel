@@ -177,6 +177,8 @@ export interface BulkHandlers {
    * ceux dont le site est le plus faible, avec les mesures sous les yeux.
    */
   onAnalyserSites: (items: BoardItem[]) => void;
+  /** Mesure Google PageSpeed — quarante secondes par site, quota journalier. */
+  onMesurerPsi: (items: BoardItem[]) => void;
   /**
    * Fabrique à l'avance la vignette de partage des sites sélectionnés.
    *

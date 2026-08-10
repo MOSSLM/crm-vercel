@@ -36,6 +36,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { MAX_PSI_PAR_LOT } from "@/utils/constants";
 import { toast } from "sonner";
 import { archiveReasonLabel } from "@/lib/archive/reasons";
 import { getCompanyDisplayName } from "@/utils/displayHelpers";
@@ -1004,6 +1005,10 @@ function BulkBar({
   // il suffit d'une entreprise. C'est même l'inverse — les notes servent à
   // décider qui démarcher, donc avant que quoi que ce soit soit construit.
   const toAnalyse = rows.filter((r) => r.entreprise_id != null);
+  // `note_site` est le signal qu'une analyse maison existe : sans elle, la route
+  // PageSpeed répond 409. Compter les autres afficherait un nombre que le clic
+  // ne tiendrait pas.
+  const toPsi = rows.filter((r) => r.entreprise_id != null && r.note_site);
   // Toute ligne qui a un site peut voir sa vignette préparée — publiée ou non,
   // puisque c'est justement le lien d'aperçu qui part le plus souvent.
   const toVignette = rows.filter((r) => r.site);
@@ -1089,6 +1094,23 @@ function BulkBar({
         <Gauge className="ico-sm" />
         Analyser les sites
         {ct(toAnalyse.length)}
+      </button>
+      {/*
+        Placé juste après « Analyser les sites » parce que c'est son ordre réel :
+        la mesure Google exige une analyse maison préalable — c'est elle qui
+        détermine l'URL réellement atteinte après redirections — et la route
+        répond 409 sans elle. D'où l'éligibilité sur `note_site` : une entreprise
+        jamais analysée n'est pas comptée.
+      */}
+      <button
+        className="btn sm"
+        disabled={busy || toPsi.length === 0}
+        title={`Faire mesurer le site par Google dans un vrai navigateur : notes officielles et liste de ce qu'il relève. Environ 40 s par site, ${MAX_PSI_PAR_LOT} au maximum par lot.`}
+        onClick={() => bulk.onMesurerPsi(toPsi)}
+      >
+        <Gauge className="ico-sm" />
+        Mesurer avec Google
+        {ct(toPsi.length)}
       </button>
       <button className="btn sm" disabled={busy || toCreateAudit.length === 0} onClick={() => bulk.onCreateAudits(toCreateAudit)}>
         <FileText className="ico-sm" />
