@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AxeId, Confiance, Preuve } from "./types";
+import type { AxeId, Confiance, ConstatGoogle, Preuve } from "./types";
 import { libelleDeNote, noteDepuisPreuves } from "./score";
 import { psiEstFraiche } from "./pagespeed";
 
@@ -49,6 +49,13 @@ export interface AuditLu {
   /** Axes écartés, nommés : l'opérateur doit savoir POURQUOI c'est plus court. */
   axes_masques: AxeId[];
   issue_keys: string[];
+  /**
+   * Ce que Lighthouse relève, trié par gain. Vide quand aucune mesure Google n'a
+   * été faite — ou quand elle a plus de trente jours : un constat périmé sur un
+   * site refait entre-temps est une affirmation fausse, et une seule suffit à
+   * discréditer le reste du rapport.
+   */
+  constats_google: ConstatGoogle[];
   alertes: string[];
   ttfb_ms: number | null;
   chargement_ms: number | null;
@@ -110,7 +117,9 @@ export async function lireAudits(
 }
 
 function versAuditLu(row: Record<string, unknown>): AuditLu {
-  const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>>;
+  const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>> & {
+    google?: ConstatGoogle[];
+  };
   const confiance = (row.confiance ?? {}) as Partial<Record<AxeId, Confiance>>;
 
   /**
@@ -186,6 +195,7 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     axes,
     axes_masques: masques,
     issue_keys: Array.isArray(row.issue_keys) ? (row.issue_keys as string[]) : [],
+    constats_google: psiFraiche && Array.isArray(detail.google) ? detail.google : [],
     alertes: Array.isArray(row.alertes) ? (row.alertes as string[]) : [],
     ttfb_ms: num(row.ttfb_ms),
     chargement_ms: num(row.chargement_ms),

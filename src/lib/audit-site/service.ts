@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { collecter } from "./collect";
 import { analyser } from "./analyze";
 import { scorer } from "./score";
-import type { AxeId, ContexteEntreprise, ResultatScore, SignauxSite } from "./types";
+import type { AxeId, ConstatGoogle, ContexteEntreprise, ResultatScore, SignauxSite } from "./types";
 
 /**
  * Le passage en masse : charger une file, analyser sous contrainte de temps,
@@ -51,6 +51,47 @@ export interface OptionsAudit {
   budgetMs?: number;
   ttlJours?: number;
   maintenant?: () => Date;
+  /**
+   * Les constats Google déjà en base, par entreprise, pour ne pas les effacer.
+   * Rempli une fois pour tout le lot ; voir `chargerConstatsGoogle`.
+   */
+  googleConserves?: Map<number, ConstatGoogle[]>;
+}
+
+/**
+ * Les constats PageSpeed déjà stockés, pour les reconduire à la ré-analyse.
+ *
+ * `ecrire` réécrit `detail` en entier — c'est ce qui garantit qu'une analyse ne
+ * laisse pas traîner les preuves de la précédente. Mais `detail.google` n'est PAS
+ * produit par l'analyseur : il vient d'un appel PageSpeed séparé, payé en quota
+ * et en quarante secondes d'attente. Sans cette reconduction, le premier passage
+ * du cron effacerait silencieusement la mesure Google d'un prospect en cours de
+ * démarchage — et personne ne s'en apercevrait avant le rendez-vous.
+ *
+ * Une seule requête par lot. Un échec ne lève pas : on rend une table vide, et
+ * la reconduction ne se fait simplement pas.
+ */
+export async function chargerConstatsGoogle(
+  sb: SupabaseClient,
+  entrepriseIds: number[],
+): Promise<Map<number, ConstatGoogle[]>> {
+  const out = new Map<number, ConstatGoogle[]>();
+  if (entrepriseIds.length === 0) return out;
+
+  const { data, error } = await sb
+    .from("entreprises_audit_site")
+    .select("entreprise_id, detail")
+    .in("entreprise_id", entrepriseIds);
+
+  if (error) return out;
+
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const google = (row.detail as { google?: unknown } | null)?.google;
+    if (Array.isArray(google) && google.length > 0) {
+      out.set(Number(row.entreprise_id), google as ConstatGoogle[]);
+    }
+  }
+  return out;
 }
 
 /** Le contexte CRM que la page ne peut pas contenir, tel que la vue le donne. */
@@ -161,6 +202,13 @@ export async function analyserEntreprise(
   const maintenant = opts.maintenant?.() ?? new Date();
   const url = (cible.url ?? "").trim();
 
+  // Le lot fournit la table ; l'analyse à l'unité, déclenchée à la main, la
+  // reconstitue pour elle seule.
+  const googleConserve =
+    (opts.googleConserves ?? (await chargerConstatsGoogle(sb, [cible.entreprise_id]))).get(
+      cible.entreprise_id,
+    ) ?? null;
+
   // Pas d'URL du tout : c'est un résultat, et l'un des plus vendables du parc.
   // On l'enregistre plutôt que de sauter la ligne, sinon la même entreprise
   // revient dans la file à chaque tick sans jamais rien produire.
@@ -175,6 +223,7 @@ export async function analyserEntreprise(
     await ecrire(sb, cible, score, cles, maintenant, opts, {
       injoignable: true,
       erreur: "aucune URL renseignée",
+      googleConserve,
     });
     return {
       entreprise_id: cible.entreprise_id,
@@ -201,6 +250,7 @@ export async function analyserEntreprise(
       chargementMs: collecte.chargementMs,
       poidsOctets: collecte.poidsOctets,
       signaux,
+      googleConserve,
     });
 
     return {
@@ -213,7 +263,11 @@ export async function analyserEntreprise(
     const message = e instanceof Error ? e.message : String(e);
     // L'échec est mémorisé DANS la ligne, pas seulement dans les logs : c'est
     // `tentatives` qui finit par sortir un domaine mort de la file.
-    await ecrire(sb, cible, null, [], maintenant, opts, { erreur: message, incrementer: true });
+    await ecrire(sb, cible, null, [], maintenant, opts, {
+      erreur: message,
+      incrementer: true,
+      googleConserve,
+    });
     return { entreprise_id: cible.entreprise_id, statut: "erreur", note_globale: null, issue_keys: [], message };
   }
 }
@@ -228,9 +282,17 @@ export async function analyserLot(
   const debut = Date.now();
   const traitees: ResultatAudit[] = [];
 
+  // Une requête pour tout le lot, avant de commencer : à l'intérieur de la
+  // boucle, chaque aller-retour se paierait sur le budget de 45 s.
+  const options: OptionsAudit = {
+    ...opts,
+    googleConserves:
+      opts.googleConserves ?? (await chargerConstatsGoogle(sb, cibles.map((c) => c.entreprise_id))),
+  };
+
   for (const [i, cible] of cibles.entries()) {
     if (Date.now() - debut > budget) return { traitees, reste: cibles.length - i };
-    traitees.push(await analyserEntreprise(sb, cible, opts));
+    traitees.push(await analyserEntreprise(sb, cible, options));
   }
   return { traitees, reste: 0 };
 }
@@ -251,7 +313,21 @@ type Extra = {
   poidsOctets?: number | null;
   signaux?: unknown;
   incrementer?: boolean;
+  /** Constats PageSpeed à reconduire dans `detail.google`. */
+  googleConserve?: ConstatGoogle[] | null;
 };
+
+/** Le `detail` complet : les preuves par axe, plus `google` s'il y en a. */
+function detailDe(
+  axes: Record<AxeId, { preuves: unknown }> | undefined,
+  google: ConstatGoogle[] | null | undefined,
+): Record<string, unknown> | null {
+  const out: Record<string, unknown> = axes
+    ? Object.fromEntries((Object.keys(axes) as AxeId[]).map((id) => [id, axes[id].preuves]))
+    : {};
+  if (google && google.length > 0) out.google = google;
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 async function ecrire(
   sb: SupabaseClient,
@@ -280,9 +356,10 @@ async function ecrire(
     note_seo: noteDe("seo"),
     note_mobile: noteDe("mobile"),
     note_conversion: noteDe("conversion"),
-    detail: axes
-      ? Object.fromEntries((Object.keys(axes) as AxeId[]).map((id) => [id, axes[id].preuves]))
-      : null,
+    // Les preuves des cinq axes, plus les constats Google reconduits. `null`
+    // seulement quand il n'y a réellement rien : une analyse en échec ne doit pas
+    // emporter une mesure PageSpeed qui, elle, reste valable.
+    detail: detailDe(axes, extra.googleConserve),
     confiance: axes
       ? Object.fromEntries((Object.keys(axes) as AxeId[]).map((id) => [id, axes[id].confiance]))
       : null,
