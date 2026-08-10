@@ -1,45 +1,68 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import type { AuditContent } from '@/types';
-import { AuditPage1 } from './audit/AuditPage1';
-import { AuditPage2 } from './audit/AuditPage2';
-import { AuditPage3 } from './audit/AuditPage3';
-import { AuditPage4 } from './audit/AuditPage4';
-import { AuditPage5 } from './audit/AuditPage5';
-import { AuditPage6 } from './audit/AuditPage6';
-import type { AuditLu } from '@/lib/audit-site/lecture';
-import type { AuditVariante } from '@/lib/audit/autres-ameliorations';
+import type { MesuresAudit } from '@/lib/audit/mesures';
+import { CSS_COMPACT } from '@/utils/audit/compactCss';
+import { corpsCompact } from '@/utils/audit/htmlCompact';
+
+/**
+ * L'aperçu de l'éditeur : le document lui-même, pas une imitation.
+ *
+ * AVANT, six composants React reproduisaient à la main ce que six générateurs de
+ * chaîne produisaient pour l'export. Les deux divergeaient — inévitablement,
+ * puisque toute modification devait être faite deux fois — et l'opérateur
+ * relisait donc autre chose que ce qu'il envoyait. On rend maintenant la MÊME
+ * chaîne, ce qui supprime la question.
+ *
+ * LE CLIC VERS LE CHAMP SURVIT, et il est même plus simple : le rendu pose un
+ * `data-field` sur chaque nœud éditable, et un unique écouteur délégué remonte
+ * jusqu'au plus proche pour ouvrir le bon formulaire. Plus besoin d'un composant
+ * `Zone` autour de chaque bloc.
+ *
+ * `dangerouslySetInnerHTML` est ici sans danger : la chaîne vient de nos propres
+ * fonctions de rendu, qui échappent toute valeur venue du contenu ou de la base.
+ */
 
 interface Props {
   content: AuditContent;
-  logoUrl?: string;
   activeField?: string | null;
   onFieldClick?: (field: string) => void;
-  /**
-   * Mesures du site actuel, affichées en tête de la page « Situation ».
-   * Optionnelles : sans elles le deck est exactement celui d'avant, ce qui
-   * permet de le rendre pour un audit dont l'entreprise n'a pas été analysée.
-   */
-  audit?: AuditLu | null;
-  /** `court` = ce qu'on envoie ; `complet` = ce qu'on montre au rendez-vous. */
-  variante?: AuditVariante;
+  mesures: MesuresAudit;
 }
 
-export function AuditPreview({ content, logoUrl, activeField, onFieldClick, audit, variante }: Props) {
+export function AuditPreview({ content, activeField, onFieldClick, mesures }: Props) {
+  const hote = useRef<HTMLDivElement>(null);
+  const html = useMemo(() => corpsCompact(content, mesures), [content, mesures]);
+
+  // Le liseré de sélection : posé sur le DOM plutôt que dans la chaîne, pour que
+  // changer de champ actif ne relance pas tout le rendu.
+  useEffect(() => {
+    const racine = hote.current;
+    if (!racine) return;
+    const marques = racine.querySelectorAll<HTMLElement>('[data-field]');
+    marques.forEach((el) => {
+      el.style.outline = el.dataset.field === activeField ? '2px solid #3A7BD5' : '';
+      el.style.outlineOffset = '2px';
+      el.style.cursor = onFieldClick ? 'pointer' : '';
+    });
+  }, [activeField, html, onFieldClick]);
+
+  const clic = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!onFieldClick) return;
+    const cible = (e.target as HTMLElement).closest<HTMLElement>('[data-field]');
+    const champ = cible?.dataset.field;
+    if (!champ) return;
+    // Un aperçu n'est pas un site : suivre un lien du document ferait quitter
+    // l'éditeur en plein travail, avec des modifications non sauvegardées.
+    e.preventDefault();
+    onFieldClick(champ);
+  };
+
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <AuditPage1 content={content} logoUrl={logoUrl} activeField={activeField} onFieldClick={onFieldClick} />
-      <div style={{ height: 24, background: '#1a1a1e' }} />
-      <AuditPage2 content={content} activeField={activeField} onFieldClick={onFieldClick} audit={audit} variante={variante} />
-      <div style={{ height: 24, background: '#1a1a1e' }} />
-      <AuditPage3 content={content} activeField={activeField} onFieldClick={onFieldClick} />
-      <div style={{ height: 24, background: '#1a1a1e' }} />
-      <AuditPage4 content={content} activeField={activeField} onFieldClick={onFieldClick} />
-      <div style={{ height: 24, background: '#1a1a1e' }} />
-      <AuditPage5 content={content} activeField={activeField} onFieldClick={onFieldClick} />
-      <div style={{ height: 24, background: '#1a1a1e' }} />
-      <AuditPage6 content={content} activeField={activeField} onFieldClick={onFieldClick} />
-    </div>
+    <>
+      <style>{CSS_COMPACT}</style>
+      <div ref={hote} onClick={clic} dangerouslySetInnerHTML={{ __html: html }} />
+    </>
   );
 }

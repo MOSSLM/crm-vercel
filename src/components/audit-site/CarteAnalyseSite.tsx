@@ -24,6 +24,11 @@ const NOM_AXE: Record<string, string> = {
   seo: "Référencement",
   mobile: "Mobile",
   conversion: "Contact",
+  popularite: "Popularité",
+  // Deux axes que seule une mesure Google produit : notre analyseur lit du HTML,
+  // il n'exécute rien et ne peut donc pas en juger.
+  accessibilite: "Accessibilité",
+  bonnes_pratiques: "Bonnes pratiques",
 };
 
 function ton(n: number): string {
@@ -196,7 +201,7 @@ export function CarteAnalyseSite({ entrepriseId }: { entrepriseId: number }) {
               size="sm"
               variant="ghost"
               disabled={busy !== null}
-              title="Mesure Core Web Vitals dans un vrai navigateur. Remplace notre note de vitesse."
+              title="Mesure dans un vrai navigateur. Remplace nos notes de site par celles de Google, et récupère la liste de ce qu'il relève."
               onClick={() =>
                 appeler(
                   `/api/audit-site/${entrepriseId}/pagespeed`,

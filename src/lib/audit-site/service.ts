@@ -51,6 +51,65 @@ export interface OptionsAudit {
   budgetMs?: number;
   ttlJours?: number;
   maintenant?: () => Date;
+  /**
+   * Ce que `detail` contient et que l'analyseur ne reproduira pas, par
+   * entreprise. Rempli une fois pour tout le lot ; voir `chargerDetailConserve`.
+   */
+  detailConserve?: Map<number, Record<string, unknown>>;
+}
+
+/**
+ * Les axes que l'analyseur écrit lui-même à chaque passage.
+ *
+ * Tout ce qui n'est PAS dans cette liste vient d'ailleurs et doit survivre à une
+ * ré-analyse. Définir la frontière par ce que l'analyseur produit — plutôt que
+ * d'énumérer les clés étrangères — fait que le prochain producteur de données
+ * est protégé sans qu'on ait à y penser.
+ */
+const CLES_ANALYSEUR: ReadonlySet<string> = new Set<AxeId>([
+  "vitesse",
+  "seo",
+  "mobile",
+  "conversion",
+  "popularite",
+]);
+
+/**
+ * Ce qui est déjà stocké dans `detail` et que l'analyseur ne sait pas refaire.
+ *
+ * `ecrire` réécrit `detail` en entier — c'est ce qui garantit qu'une analyse ne
+ * laisse pas traîner les preuves de la précédente. Mais deux clés n'y sont pas
+ * produites par l'analyseur : `google`, qui vient d'un appel PageSpeed payé en
+ * quota et en quarante secondes d'attente, et `observations`, relevées à la main
+ * par l'agent qui prépare l'audit. Sans cette reconduction, le premier passage
+ * du cron effacerait silencieusement l'une et l'autre sur un prospect en cours
+ * de démarchage — et personne ne s'en apercevrait avant le rendez-vous.
+ *
+ * Une seule requête par lot. Un échec ne lève pas : on rend une table vide, et
+ * la reconduction ne se fait simplement pas.
+ */
+export async function chargerDetailConserve(
+  sb: SupabaseClient,
+  entrepriseIds: number[],
+): Promise<Map<number, Record<string, unknown>>> {
+  const out = new Map<number, Record<string, unknown>>();
+  if (entrepriseIds.length === 0) return out;
+
+  const { data, error } = await sb
+    .from("entreprises_audit_site")
+    .select("entreprise_id, detail")
+    .in("entreprise_id", entrepriseIds);
+
+  if (error) return out;
+
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const detail = (row.detail ?? {}) as Record<string, unknown>;
+    const etranger = Object.fromEntries(
+      Object.entries(detail).filter(([cle, v]) => !CLES_ANALYSEUR.has(cle) && v != null),
+    );
+    if (Object.keys(etranger).length > 0) out.set(Number(row.entreprise_id), etranger);
+  }
+  return out;
 }
 
 /** Le contexte CRM que la page ne peut pas contenir, tel que la vue le donne. */
@@ -161,6 +220,13 @@ export async function analyserEntreprise(
   const maintenant = opts.maintenant?.() ?? new Date();
   const url = (cible.url ?? "").trim();
 
+  // Le lot fournit la table ; l'analyse à l'unité, déclenchée à la main, la
+  // reconstitue pour elle seule.
+  const detailConserve =
+    (opts.detailConserve ?? (await chargerDetailConserve(sb, [cible.entreprise_id]))).get(
+      cible.entreprise_id,
+    ) ?? null;
+
   // Pas d'URL du tout : c'est un résultat, et l'un des plus vendables du parc.
   // On l'enregistre plutôt que de sauter la ligne, sinon la même entreprise
   // revient dans la file à chaque tick sans jamais rien produire.
@@ -175,6 +241,7 @@ export async function analyserEntreprise(
     await ecrire(sb, cible, score, cles, maintenant, opts, {
       injoignable: true,
       erreur: "aucune URL renseignée",
+      detailConserve,
     });
     return {
       entreprise_id: cible.entreprise_id,
@@ -201,6 +268,7 @@ export async function analyserEntreprise(
       chargementMs: collecte.chargementMs,
       poidsOctets: collecte.poidsOctets,
       signaux,
+      detailConserve,
     });
 
     return {
@@ -213,7 +281,11 @@ export async function analyserEntreprise(
     const message = e instanceof Error ? e.message : String(e);
     // L'échec est mémorisé DANS la ligne, pas seulement dans les logs : c'est
     // `tentatives` qui finit par sortir un domaine mort de la file.
-    await ecrire(sb, cible, null, [], maintenant, opts, { erreur: message, incrementer: true });
+    await ecrire(sb, cible, null, [], maintenant, opts, {
+      erreur: message,
+      incrementer: true,
+      detailConserve,
+    });
     return { entreprise_id: cible.entreprise_id, statut: "erreur", note_globale: null, issue_keys: [], message };
   }
 }
@@ -228,9 +300,17 @@ export async function analyserLot(
   const debut = Date.now();
   const traitees: ResultatAudit[] = [];
 
+  // Une requête pour tout le lot, avant de commencer : à l'intérieur de la
+  // boucle, chaque aller-retour se paierait sur le budget de 45 s.
+  const options: OptionsAudit = {
+    ...opts,
+    detailConserve:
+      opts.detailConserve ?? (await chargerDetailConserve(sb, cibles.map((c) => c.entreprise_id))),
+  };
+
   for (const [i, cible] of cibles.entries()) {
     if (Date.now() - debut > budget) return { traitees, reste: cibles.length - i };
-    traitees.push(await analyserEntreprise(sb, cible, opts));
+    traitees.push(await analyserEntreprise(sb, cible, options));
   }
   return { traitees, reste: 0 };
 }
@@ -251,7 +331,24 @@ type Extra = {
   poidsOctets?: number | null;
   signaux?: unknown;
   incrementer?: boolean;
+  /** Constats PageSpeed à reconduire dans `detail.google`. */
+  detailConserve?: Record<string, unknown> | null;
 };
+
+/** Le `detail` complet : les preuves par axe, plus `google` s'il y en a. */
+function detailDe(
+  axes: Record<AxeId, { preuves: unknown }> | undefined,
+  conserve: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  const out: Record<string, unknown> = axes
+    ? Object.fromEntries((Object.keys(axes) as AxeId[]).map((id) => [id, axes[id].preuves]))
+    : {};
+  // Les clés étrangères d'abord écrasées par les nôtres serait un bug muet :
+  // l'analyseur ne produit jamais ces clés-là, donc l'ordre est sans danger,
+  // mais on l'écrit dans ce sens pour que ça reste vrai si la liste change.
+  Object.assign(out, conserve ?? {});
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 async function ecrire(
   sb: SupabaseClient,
@@ -280,9 +377,10 @@ async function ecrire(
     note_seo: noteDe("seo"),
     note_mobile: noteDe("mobile"),
     note_conversion: noteDe("conversion"),
-    detail: axes
-      ? Object.fromEntries((Object.keys(axes) as AxeId[]).map((id) => [id, axes[id].preuves]))
-      : null,
+    // Les preuves des cinq axes, plus les constats Google reconduits. `null`
+    // seulement quand il n'y a réellement rien : une analyse en échec ne doit pas
+    // emporter une mesure PageSpeed qui, elle, reste valable.
+    detail: detailDe(axes, extra.detailConserve),
     confiance: axes
       ? Object.fromEntries((Object.keys(axes) as AxeId[]).map((id) => [id, axes[id].confiance]))
       : null,

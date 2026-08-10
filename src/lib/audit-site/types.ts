@@ -52,6 +52,108 @@ export interface Preuve {
   /** Points que ce signal pèse dans son axe. */
   poids: number;
   verdict: Verdict;
+  /**
+   * À quel point CE site-ci rate CE signal — de 0 (au seuil) à 1 (rate tout).
+   *
+   * `poids` et `gravite` répondent à deux questions différentes, et les confondre
+   * produit un document qui ne s'adapte pas au prospect. Le poids dit combien le
+   * signal compte dans la note ; la gravité dit à quel point ce site-là le rate.
+   *
+   * Le cas qui a imposé ce champ : un serveur mesuré à 1,32 s pour un seuil à
+   * 0,8 s bascule en « problème » de 120 ms, mais `ttfb` est la preuve la plus
+   * lourde de son axe (35). Trié sur le seul poids, ce quasi-succès passait
+   * DEVANT un formulaire de contact totalement absent et un téléphone non
+   * cliquable — et faisait la une d'un audit dont ce n'était pas le sujet.
+   *
+   * Absent sur les preuves `ok` et `inconnu` : il n'y a rien à classer.
+   */
+  gravite?: number;
+}
+
+/**
+ * Un constat relevé par Lighthouse, tel que Google le formule.
+ *
+ * POURQUOI UN TYPE À PART, ET PAS UNE `Preuve` DE PLUS.
+ *
+ * Une `Preuve` porte notre mesure et NOTRE seuil : c'est nous qui décidons
+ * qu'au-delà de 2,5 s c'est un problème, et c'est nous qui l'assumons. Un
+ * constat Google porte le sien, plus une chose que nous ne pouvons pas produire :
+ * un GAIN chiffré — « 3,7 s à récupérer ». Ce n'est pas une mesure, c'est une
+ * promesse, et elle est faite par Google.
+ *
+ * Les confondre dans une seule structure ferait passer l'estimation de Google
+ * pour un de nos calculs. En rendez-vous, la distinction est exactement ce qui a
+ * de la valeur : le prospect peut refaire le test lui-même en trente secondes.
+ *
+ * `titre` et `valeur` arrivent déjà en français et déjà formatés (`locale=fr`) :
+ * on affiche les mots de Google, on ne les traduit pas.
+ */
+export interface ConstatGoogle {
+  /** Identifiant Lighthouse — `render-blocking-insight`, `tap-targets`… */
+  id: string;
+  /**
+   * La catégorie Google qui compte ce constat : `performance`, `seo`,
+   * `accessibility`, `best-practices`. C'est elle qui range le constat sous le
+   * bon axe — sans quoi on ne sait dire que « 31 choses », jamais « voilà ce qui
+   * pèse sur votre référencement ».
+   */
+  categorie: string | null;
+  /** Intitulé français de Google : « Réduisez les ressources JavaScript inutilisées ». */
+  titre: string;
+  /** Sa valeur affichée : « Économies estimées : 3 650 ms ». `null` si l'audit n'en donne pas. */
+  valeur: string | null;
+  /** Millisecondes que Google estime récupérables. */
+  gainMs: number | null;
+  /** Octets que Google estime récupérables. */
+  gainOctets: number | null;
+  /** Nombre d'éléments concernés (images, scripts, liens…), quand Google les liste. */
+  elements: number | null;
+  /** Rouge chez Google (< 0,5) ou orange. */
+  verdict: "probleme" | "moyen";
+}
+
+/** Un élément précis visé par un constat : cette image-ci, ce script-là. */
+export interface ElementConstat {
+  /** La ressource en cause, quand l'audit en nomme une. */
+  url: string | null;
+  /** L'élément du DOM concerné (sélecteur ou extrait), quand il y en a un. */
+  element: string | null;
+  gainMs: number | null;
+  gainOctets: number | null;
+  tailleOctets: number | null;
+}
+
+/** Un constat, avec le conseil de Google et la liste de ce qui est visé. */
+export interface ConstatGoogleDetaille extends ConstatGoogle {
+  /**
+   * L'explication de Google : ce qu'il faut faire et pourquoi. C'est la matière
+   * première de la rédaction — la seule partie de PageSpeed qui explique au lieu
+   * de constater.
+   */
+  conseil: string;
+  elementsDetail: ElementConstat[];
+}
+
+/**
+ * Tout ce que Lighthouse a dit d'un site, mis de côté pour préparer l'audit.
+ *
+ * CE N'EST PAS L'AUDIT. C'est le dossier d'instruction : la rédaction y puise,
+ * le prospect n'en voit jamais que ce qu'on en a retenu. D'où le stockage à part
+ * — table dédiée, chargée seulement quand on prépare — et non dans la ligne que
+ * le pipeline liste trente par trente.
+ */
+export interface ContextePsi {
+  url: string;
+  strategie: "mobile" | "desktop";
+  recupereLe: string;
+  versionLighthouse: string | null;
+  /** Les quatre notes de Google, sur 100. */
+  categories: Record<string, number | null>;
+  /** Les métriques chiffrées, avec la valeur telle que Google l'affiche. */
+  metriques: Array<{ cle: string; titre: string; valeur: string | null; numerique: number | null }>;
+  constats: ConstatGoogleDetaille[];
+  /** Ce qui passe : utile pour ne pas reprocher à quelqu'un ce qu'il fait bien. */
+  reussis: string[];
 }
 
 export interface NoteAxe {

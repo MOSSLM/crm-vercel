@@ -124,6 +124,10 @@ function pBool(
     seuil: null,
     poids,
     verdict: present ? "ok" : "probleme",
+    // Un signal binaire raté l'est totalement : il n'y a pas de « presque de
+    // formulaire ». C'est ce qui le fait passer devant une mesure chiffrée qui
+    // ne dépasse son seuil que d'un cheveu.
+    gravite: present ? undefined : 1,
   };
 }
 
@@ -171,7 +175,30 @@ function pSeuil(
     seuil: format(seuil, echelle),
     poids,
     verdict,
+    gravite: depasse ? graviteDepassement(valeur, seuil, inverse) : undefined,
   };
+}
+
+/**
+ * À quel point on rate le seuil : 0 en le touchant, 1 à trois fois.
+ *
+ * LE CHOIX DE LA COURBE. Trois fois le seuil pour la gravité maximale n'est pas
+ * une constante de la nature — c'est le réglage qui range correctement le parc.
+ * Sur le site qui a motivé ce champ : serveur à 1,65× le seuil → 0,33, poids de
+ * page à 2,85× → 0,93. Le serveur passe donc derrière le poids de page, ce qui
+ * est l'ordre qu'un artisan constaterait lui-même en ouvrant son site.
+ *
+ * Plus raide, tout ce qui dépasse un peu deviendrait grave et on retomberait sur
+ * le tri par poids qu'on cherche à corriger. Plus plat, un site dix fois trop
+ * lourd ne se distinguerait plus d'un site deux fois trop lourd.
+ *
+ * `inverse` : le signal est bon quand il est GRAND (une note sur 5, un nombre
+ * d'avis). Rater c'est alors tomber sous le seuil, et zéro est le pire.
+ */
+function graviteDepassement(valeur: number, seuil: number, inverse: boolean): number {
+  if (seuil <= 0) return 1;
+  const rapport = inverse ? seuil / Math.max(valeur, 0.0001) : valeur / seuil;
+  return Math.min(1, Math.max(0, (rapport - 1) / 2));
 }
 
 const pointsDe = (v: Verdict): number => (v === "ok" ? 1 : v === "moyen" ? 0.5 : 0);

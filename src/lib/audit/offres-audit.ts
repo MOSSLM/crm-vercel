@@ -52,7 +52,13 @@ export function versOffreAudit(row: Record<string, unknown>): OffreAudit | null 
 
   return {
     code,
-    nom,
+    // Le libellé client l'emporte sur le nom interne, et c'est le seul endroit
+    // où l'arbitrage se fait : l'audit, le devis et la facture lisent tous
+    // `nom`. Sans ça, un chauffagiste reçoit « Copywriting (light) », « Schema
+    // markup (FAQ/LocalBusiness) » et « Setup Google Search Console » — que la
+    // règle éditoriale interdit, et qui font décrocher un lecteur non technique
+    // en trois mots.
+    nom: typeof meta.libelle_client === "string" && meta.libelle_client.trim() ? meta.libelle_client : nom,
     description: typeof row.description === "string" ? row.description : null,
     prixHt: Number(row.prix_ht ?? 0),
     mensuel: row.billing_period === "monthly",
@@ -87,8 +93,22 @@ export function additionsPour(offres: readonly OffreAudit[], clesRetenues: reado
     .filter((o) => o.role === "addition" && o.repondA.some((k) => retenues.has(k)))
     .map((o) => ({ o, couverts: o.repondA.filter((k) => retenues.has(k)).length }))
     .sort((a, b) => b.couverts - a.couverts || b.o.prixHt - a.o.prixHt)
-    .map((x) => x.o);
+    .map((x) => x.o)
+    .slice(0, MAX_ADDITIONS);
 }
+
+/**
+ * Trois additions au plus, et c'est une décision commerciale autant que
+ * typographique.
+ *
+ * Le catalogue compte quinze additions ; avec six constats retenus, cinq ou six
+ * matchent. Deux conséquences, toutes deux mauvaises : la demi-page déborde — et
+ * `overflow: hidden` fait disparaître les dernières sans rien dire —, et surtout
+ * une liste longue se lit comme un menu, ce qui affaiblit le socle au lieu de le
+ * compléter. Les trois retenues sont celles qui couvrent le plus de constats,
+ * donc les plus faciles à défendre.
+ */
+export const MAX_ADDITIONS = 3;
 
 /** Le badge d'une addition : le pilier du premier constat qu'elle couvre. */
 function badgeDe(offre: OffreAudit, retenues: Set<string>): string | undefined {
@@ -145,6 +165,13 @@ export function construirePage5(
   }));
 
   // ── L'alternative ────────────────────────────────────────────────────────
+  //
+  // Pas de repli sur `page5.secondary_card` ici, contrairement au socle. Le
+  // raisonnement « mieux vaut un tarif périmé qu'une page vide » vaut pour la
+  // ligne qu'on vend ; il ne vaut pas pour une formule alternative, dont
+  // l'absence ne laisse aucun trou. Retirer l'offre du catalogue doit suffire à
+  // la faire disparaître du document — sinon la copie en dur du contenu par
+  // défaut la réinjecte indéfiniment.
   const alt = offres.find((o) => o.role === "alternative");
   const secondaire: AuditSecondaryCard | undefined = alt
     ? {
@@ -154,7 +181,7 @@ export function construirePage5(
         amount: alt.prixHt,
         from: alt.aPartirDe,
       }
-    : page5.secondary_card;
+    : undefined;
 
   return {
     ...page5,

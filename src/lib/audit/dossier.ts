@@ -1,9 +1,13 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lireAudit } from "@/lib/audit-site/lecture";
+import { lireContextePsi } from "@/lib/audit-site/pagespeed";
+import type { ConstatGoogle, ContextePsi } from "@/lib/audit-site/types";
 import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 import { versOffreAudit, type OffreAudit } from "./offres-audit";
 import { nombresDe, type UniversDicible } from "./preparation";
+import { CATALOGUE_OBSERVATIONS, cleFondement, type ObservationValidee } from "./observations";
+import { forcePreuve } from "./autres-ameliorations";
 
 /**
  * Le dossier : tout ce qu'on a le droit de dire d'une entreprise, en un appel.
@@ -47,11 +51,51 @@ export interface DossierAudit {
     axes: Array<{
       id: string;
       note: number;
-      preuves: Array<{ cle: string; libelle: string; valeur: string | null; seuil: string | null; verdict: string }>;
+      preuves: Array<{
+        cle: string;
+        libelle: string;
+        valeur: string | null;
+        seuil: string | null;
+        verdict: string;
+        /** Poids du signal × ampleur de l'échec. Le plus fort porte le constat. */
+        force: number;
+      }>;
     }>;
     /** Constats émis par la mesure — les seules cartes légitimes. */
     constats: Array<{ cle: string; libelle: string; pilier: string }>;
   };
+  /**
+   * Ce que Google relève, dans ses mots. Vide tant qu'aucune mesure PageSpeed
+   * n'a été lancée sur cette entreprise, ou quand la dernière a plus de 30 jours.
+   *
+   * Ces constats sont citables comme fondement d'une carte, sous la clé
+   * `google:<id>` — `google:render-blocking-insight`, par exemple.
+   */
+  google: ConstatGoogle[];
+  /**
+   * Le dossier PageSpeed complet : conseils de Google et ressources visées une
+   * par une. Absent par défaut — c'est volumineux, et la rédaction n'en a besoin
+   * que lorsqu'elle veut nommer précisément ce qui cloche.
+   */
+  psi?: ContextePsi | null;
+  /**
+   * Ce que l'agent a le droit de relever lui-même, et sous quelle forme.
+   *
+   * Sans cette liste dans le dossier, le cadre serait inapplicable : l'agent
+   * devrait deviner le vocabulaire, se tromperait de clé, verrait ses
+   * observations refusées, et conclurait que le mécanisme ne marche pas. On lui
+   * donne donc les cases en même temps que les données — c'est le même
+   * aller-retour, et ça ne coûte que quelques centaines d'octets.
+   */
+  observationsPossibles: Array<{
+    cle: string;
+    libelle: string;
+    unite: string;
+    seuil: number | null;
+    verification: string;
+  }>;
+  /** Celles déjà relevées lors d'une préparation précédente. */
+  observationsFaites: ObservationValidee[];
   offres: OffreAudit[];
   /** Ce que le rédacteur peut réellement affirmer, prêt pour la validation. */
   univers: {
@@ -66,6 +110,7 @@ export interface DossierAudit {
 export async function construireDossier(
   sb: SupabaseClient,
   entrepriseId: number,
+  opts: { psiComplet?: boolean } = {},
 ): Promise<DossierAudit | null> {
   const { data: ent } = await sb
     .from("entreprises")
@@ -76,11 +121,12 @@ export async function construireDossier(
   if (!ent) return null;
   const e = ent as Record<string, unknown>;
 
-  const [lecture, rge, mediane, offres] = await Promise.all([
+  const [lecture, rge, mediane, offres, psi] = await Promise.all([
     lireAudit(sb, entrepriseId),
     chargerRge(sb, entrepriseId),
     medianeAvisCommune(sb, (e.ville as string) ?? null),
     chargerOffres(sb),
+    opts.psiComplet ? lireContextePsi(sb, entrepriseId) : Promise.resolve(null),
   ]);
 
   const audit = lecture.disponible ? lecture.audit : null;
@@ -94,12 +140,40 @@ export async function construireDossier(
       valeur: p.valeur,
       seuil: p.seuil,
       verdict: p.verdict,
+      /**
+       * Ce que cette preuve pèse × à quel point CE site la rate.
+       *
+       * Exposée pour que l'agent argumente sur la bonne jambe. Un constat comme
+       * « site lent » se déclenche sur deux preuves ; sans ce chiffre, il écrit
+       * la première venue — et peut fonder tout son constat sur un serveur qui
+       * ne dépasse son seuil que de 120 ms, alors que la page pèse trois fois
+       * trop lourd juste à côté.
+       */
+      force: Math.round(forcePreuve(p) * 10) / 10,
     })),
   }));
 
-  const preuvesEnEchec = axes.flatMap((a) =>
-    a.preuves.filter((p) => p.verdict === "probleme").map((p) => p.cle),
+  const google = audit?.constats_google ?? [];
+
+  /**
+   * Un constat Google est un fondement au même titre qu'une de nos preuves —
+   * mieux, même : il est vérifiable par le prospect en trente secondes sur
+   * pagespeed.web.dev. Le préfixe `google:` empêche toute collision avec nos
+   * clés et dit d'où vient l'affirmation.
+   */
+  // Les observations d'une préparation précédente valent fondement comme les
+  // autres : sans ça, reprendre un audit ferait retomber des cartes qui étaient
+  // parfaitement fondées la veille.
+  const observationsFaites = (audit?.observations ?? []).filter(
+    (o): o is ObservationValidee =>
+      typeof o === "object" && o !== null && typeof (o as ObservationValidee).cle === "string",
   );
+
+  const preuvesEnEchec = [
+    ...axes.flatMap((a) => a.preuves.filter((p) => p.verdict === "probleme").map((p) => p.cle)),
+    ...google.map((c) => `google:${c.id}`),
+    ...observationsFaites.filter((o) => o.verdict === "probleme").map((o) => cleFondement(o.cle)),
+  ];
 
   const constats = (audit?.issue_keys ?? []).flatMap((cle) => {
     const def = AUDIT_ISSUE_CATALOG.find((c) => c.key === cle);
@@ -116,6 +190,17 @@ export async function construireDossier(
     }
   }
   if (audit?.note_globale != null) nombres.add(String(audit.note_globale));
+  // Les chiffres de Google — « 3 650 ms », « 1 040 Kio » — sont les plus
+  // vendeurs du dossier. Sans eux ici, la règle 3 rejetterait la seule phrase
+  // qu'on voulait vraiment écrire.
+  for (const c of google) {
+    for (const n of nombresDe(`${c.valeur ?? ""} ${c.gainMs ?? ""} ${c.gainOctets ?? ""} ${c.elements ?? ""}`)) {
+      nombres.add(n);
+    }
+  }
+  for (const o of observationsFaites) {
+    for (const n of nombresDe(`${o.valeur} ${o.seuil ?? ""}`)) nombres.add(n);
+  }
   for (const n of nombresDe(`${e.nombre_avis ?? ""} ${e.note_moyenne ?? ""} ${mediane ?? ""}`)) {
     nombres.add(n);
   }
@@ -135,6 +220,14 @@ export async function construireDossier(
       medianeAvisCommune: mediane,
     },
     rge,
+    observationsPossibles: CATALOGUE_OBSERVATIONS.map((d) => ({
+      cle: d.cle,
+      libelle: d.libelle,
+      unite: d.unite,
+      seuil: d.seuil ?? null,
+      verification: d.verification,
+    })),
+    observationsFaites,
     analyse: {
       disponible: lecture.disponible && audit != null,
       noteGlobale: audit?.note_globale ?? null,
@@ -144,6 +237,8 @@ export async function construireDossier(
       axes,
       constats,
     },
+    google,
+    ...(opts.psiComplet ? { psi } : {}),
     offres,
     univers: {
       preuvesEnEchec,

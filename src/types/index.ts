@@ -367,6 +367,14 @@ export interface AuditSolution {
 export interface AuditLivrable {
   title: string;
   items: string[];
+  /**
+   * Le point faible que ce volet corrige, une par ligne.
+   *
+   * C'est ce qui empêche le bloc de redevenir une liste de fonctionnalités :
+   * chaque volet doit pouvoir nommer le constat qui le justifie, sinon il n'a
+   * rien à faire dans un document qui prétend partir de la mesure.
+   */
+  fix?: string;
 }
 
 export interface AuditPlanningStep {
@@ -432,6 +440,31 @@ export interface AuditPage2 {
   quote_source: string;
 }
 
+/**
+ * Une ligne du tableau avant/après.
+ *
+ * `avant` et `apres` doivent porter LA MÊME UNITÉ — « 9,8 s » face à « 1,2 s »,
+ * « 9 champs » face à « 3 champs ». Une ligne dont l'après change de grandeur
+ * (« 9ᵉ sur menuisier Antibes » face à « suivi 30 jours ») ne se lit pas d'un
+ * coup d'œil et transforme un constat en promesse : le rendu ne la détaille pas,
+ * elle rejoint le décompte des constats restants.
+ *
+ * `apres` vient du site préparé, qu'on ne mesure pas : c'est une affirmation sur
+ * notre propre produit, et elle vit donc dans le contenu éditable — pas dans les
+ * mesures, qui ne s'éditent pas.
+ */
+export interface AuditAvantApres {
+  /** La clé de preuve ou de constat qui fonde la ligne. */
+  cle: string;
+  avant: string;
+  /** Le détail sous la valeur : « sur téléphone, réseau mobile ». */
+  precision?: string;
+  /** La valeur obtenue sur le site préparé, dans la même unité que `avant`. */
+  apres?: string;
+  /** Comment on y arrive, en une phrase. */
+  reponse?: string;
+}
+
 export interface AuditPage3 {
   header_section?: string;
   section_label?: string;
@@ -439,6 +472,8 @@ export interface AuditPage3 {
   section_title_em?: string;
   section_intro: string;
   solutions: AuditSolution[];
+  /** Le tableau du document compact. Vide ⇒ le bloc n'affiche que le décompte. */
+  avant_apres?: AuditAvantApres[];
 }
 
 export interface AuditPage4 {
@@ -448,6 +483,8 @@ export interface AuditPage4 {
   section_title_em?: string;
   section_subtitle?: string;
   livrables: AuditLivrable[];
+  /** Les trois en-têtes du tableau « ce qui change ». */
+  recu_head?: string[];
 }
 
 export interface AuditPage5 {

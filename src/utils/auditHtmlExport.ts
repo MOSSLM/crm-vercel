@@ -1,37 +1,36 @@
 import type { AuditContent } from '@/types';
-import type { AuditLu } from '@/lib/audit-site/lecture';
-import type { AuditVariante } from '@/lib/audit/autres-ameliorations';
-import { generateCSS } from './audit/htmlShared';
-import { page1Html } from './audit/htmlPage1';
-import { page2Html } from './audit/htmlPage2';
-import { page3Html } from './audit/htmlPage3';
-import { page4Html } from './audit/htmlPage4';
-import { page5Html } from './audit/htmlPage5';
-import { page6Html } from './audit/htmlPage6';
+import type { MesuresAudit } from '@/lib/audit/mesures';
+import { CSS_COMPACT, CSS_DEBUG_DEBORDEMENT, LIEN_POLICES } from './audit/compactCss';
+import { corpsCompact } from './audit/htmlCompact';
 
+/**
+ * Le document d'audit, en un seul HTML autonome.
+ *
+ * Il n'y a plus qu'un rendu. L'ancien deck de six pages — six composants React
+ * pour l'aperçu, six générateurs de chaîne pour l'export — est supprimé : le
+ * même contenu écrit deux fois finit toujours par diverger, et il divergeait.
+ * L'aperçu de l'éditeur affiche désormais cette chaîne-ci, donc ce que
+ * l'opérateur relit est exactement ce qui part.
+ *
+ * `debordement` neutralise la troncature silencieuse des demi-pages. À n'activer
+ * qu'en recette : en production, une page qui déborde est pire qu'un bloc coupé.
+ */
 export function generateAuditHtml(
   content: AuditContent,
-  opts: { logoUrl?: string; forPdf?: boolean; audit?: AuditLu | null; variante?: AuditVariante } = {},
+  mesures: MesuresAudit,
+  opts: { debordement?: boolean } = {},
 ): string {
-  const forPdf = opts.forPdf === true;
-  const css = generateCSS(content.global_style, { forPdf });
   return `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=794">
 <title>Audit — ${content.page1.client_name || 'Client'}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<style>${css}</style>
+${LIEN_POLICES}
+<style>${CSS_COMPACT}${opts.debordement ? CSS_DEBUG_DEBORDEMENT : ''}</style>
 </head>
 <body>
-${page1Html(content, opts.logoUrl, { forPdf })}
-${page2Html(content, opts.audit, opts.variante ?? 'complet')}
-${page3Html(content)}
-${page4Html(content)}
-${page5Html(content, { forPdf })}
-${page6Html(content)}
+<div id="doc">${corpsCompact(content, mesures)}</div>
 </body>
 </html>`;
 }

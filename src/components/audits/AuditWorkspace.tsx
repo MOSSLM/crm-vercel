@@ -7,6 +7,7 @@ import { supabase } from '@/utils/supabase/client';
 import { normalizeIssueKeys } from '@/data/auditIssues';
 import type { Audit } from '@/types';
 import type { AuditLu } from '@/lib/audit-site/lecture';
+import type { EchantillonMediane } from '@/lib/audit/mesures';
 import { authedFetch } from '@/utils/authedFetch';
 import { Loader2 } from 'lucide-react';
 
@@ -36,6 +37,8 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
   const [detectedIssueKeys, setDetectedIssueKeys] = useState<string[]>([]);
   /** Mesures du site actuel, pour le bandeau de notes du deck. */
   const [siteAudit, setSiteAudit] = useState<AuditLu | null>(null);
+  /** La médiane du parc — le troisième repère de la réglette, calculé serveur. */
+  const [mediane, setMediane] = useState<EchantillonMediane | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,10 +109,15 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
           // garantir que les deux divergent.
           const res = await authedFetch(`/api/audit-site/${entrepriseId}`).catch(() => null);
           const body = res && res.ok
-            ? ((await res.json().catch(() => null)) as { disponible?: boolean; audit?: AuditLu | null } | null)
+            ? ((await res.json().catch(() => null)) as {
+                disponible?: boolean;
+                audit?: AuditLu | null;
+                mediane?: EchantillonMediane | null;
+              } | null)
             : null;
           if (body?.disponible && body.audit) {
             setSiteAudit(body.audit);
+            setMediane(body.mediane ?? null);
             detected = normalizeIssueKeys(body.audit.issue_keys);
           }
         }
@@ -163,6 +171,7 @@ export const AuditWorkspace: React.FC<{ opportuniteId: string }> = ({ opportunit
       googleUrl={googleUrl}
       detectedIssueKeys={detectedIssueKeys}
       siteAudit={siteAudit}
+      mediane={mediane}
       opportuniteId={opportuniteId}
     />
   );

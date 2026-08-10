@@ -1,4 +1,10 @@
-import { autresAmeliorations, classerParForce, phraseAutresAmeliorations } from "../autres-ameliorations";
+import {
+  autresAmeliorations,
+  classerParForce,
+  forcePreuve,
+  phraseAutresAmeliorations,
+} from "../autres-ameliorations";
+import type { Preuve } from "@/lib/audit-site/types";
 import type { AuditLu } from "@/lib/audit-site/lecture";
 
 /**
@@ -105,5 +111,71 @@ describe("classerParForce", () => {
   it("garde un ordre stable quand aucune mesure ne départage", () => {
     const cles = ["weak_cta", "slow_site"];
     expect(classerParForce(cles, null)).toEqual(classerParForce(cles, null));
+  });
+});
+
+describe("la force d'une preuve : ce qu'elle pèse × à quel point on la rate", () => {
+  const p = (cle: string, poids: number, gravite?: number): Preuve => ({
+    cle,
+    libelle: cle,
+    valeur: 'x',
+    seuil: null,
+    poids,
+    verdict: 'probleme',
+    gravite,
+  });
+
+  it("range un quasi-succès lourd derrière un échec total plus léger", () => {
+    // Le cas réel : ttfb pèse 35, le plus lourd de son axe, mais un serveur à
+    // 1,32 s pour un seuil à 0,8 s ne rate que de 120 ms. Le formulaire, lui,
+    // est absent — il n'y a pas de « presque de formulaire ».
+    expect(forcePreuve(p('ttfb', 35, 0.33))).toBeLessThan(forcePreuve(p('formulaire', 20, 1)));
+  });
+
+  it("retombe sur le poids seul quand la gravité manque", () => {
+    // Les preuves écrites avant ce champ ne doivent pas se retrouver dernières
+    // parce qu'elles sont anciennes.
+    expect(forcePreuve(p('vieille', 30))).toBe(30);
+  });
+
+  it("classe les constats de FUSTER dans l'ordre qu'un artisan constaterait", () => {
+    // Preuves réelles de l'entreprise 274, telles qu'elles sont en base.
+    const audit = {
+      injoignable: false,
+      axes: [
+        {
+          id: 'vitesse' as const,
+          note: 10,
+          confiance: 'haute' as const,
+          preuves: [p('ttfb', 35, 0.33), p('poids', 25, 0.93)],
+        },
+        {
+          id: 'conversion' as const,
+          note: 18,
+          confiance: 'haute' as const,
+          preuves: [p('tel', 25, 1), p('formulaire', 20, 1), p('avis', 15, 1)],
+        },
+      ],
+    } as unknown as Parameters<typeof classerParForce>[1];
+
+    const ordre = classerParForce(
+      ['slow_site', 'phone_not_clickable', 'form_not_accessible', 'no_reviews_on_site'],
+      audit,
+    );
+
+    // Le téléphone non cliquable ouvre : échec total sur le signal le plus
+    // lourd de la conversion.
+    expect(ordre[0]).toBe('phone_not_clickable');
+
+    // `slow_site` reste haut, mais PAS pour la raison qu'on croit : il est
+    // déclenché par `ttfb` ET par `poids`, et c'est la page à 5,7 Mo (0,93 de
+    // gravité) qui le porte, pas le serveur à 1,3 s (0,33). La carte doit donc
+    // argumenter sur le poids de la page — écrire « 1,3 s » ferait reposer tout
+    // le constat sur sa jambe la plus faible.
+    expect(forcePreuve(p('poids', 25, 0.93))).toBeGreaterThan(forcePreuve(p('ttfb', 35, 0.33)));
+
+    // Et le serveur seul, s'il portait le constat, passerait derrière le
+    // formulaire absent — ce qui était tout le problème signalé.
+    expect(forcePreuve(p('ttfb', 35, 0.33))).toBeLessThan(forcePreuve(p('formulaire', 20, 1)));
   });
 });

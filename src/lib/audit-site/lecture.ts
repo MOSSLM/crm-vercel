@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { AxeId, Confiance, Preuve } from "./types";
+import type { AxeId, Confiance, ConstatGoogle, Preuve } from "./types";
 import { libelleDeNote, noteDepuisPreuves } from "./score";
 import { psiEstFraiche } from "./pagespeed";
 
@@ -21,8 +21,18 @@ import { psiEstFraiche } from "./pagespeed";
 /** Postgres `undefined_table`. */
 export const UNDEFINED_TABLE = "42P01";
 
+/**
+ * Ce qui peut être publié comme axe.
+ *
+ * Plus large que `AxeId` : quand Google a mesuré, ce sont SES catégories qu'on
+ * affiche, et deux d'entre elles n'ont pas d'équivalent maison. Notre analyseur
+ * ne sait pas juger l'accessibilité réelle ni les bonnes pratiques — il lit du
+ * HTML, il n'exécute rien.
+ */
+export type AxePublieId = AxeId | "accessibilite" | "bonnes_pratiques";
+
 export interface AxePublie {
-  id: AxeId;
+  id: AxePublieId;
   note: number;
   confiance: Confiance;
   /** Uniquement les preuves réellement mesurées : les autres n'existent pas. */
@@ -33,6 +43,8 @@ export interface AxePublie {
    * caution auprès du prospect, et qu'on ne peut donc pas revendiquer à tort.
    */
   mesureGoogle?: boolean;
+  /** Ce que Google relève sur cet axe, dans ses mots. Vide hors mesure Google. */
+  constats?: ConstatGoogle[];
 }
 
 export interface AuditLu {
@@ -47,8 +59,24 @@ export interface AuditLu {
   /** Axes publiables — ceux en confiance faible en sont retirés. */
   axes: AxePublie[];
   /** Axes écartés, nommés : l'opérateur doit savoir POURQUOI c'est plus court. */
-  axes_masques: AxeId[];
+  axes_masques: AxePublieId[];
   issue_keys: string[];
+  /**
+   * Ce que Lighthouse relève, trié par gain. Vide quand aucune mesure Google n'a
+   * été faite — ou quand elle a plus de trente jours : un constat périmé sur un
+   * site refait entre-temps est une affirmation fausse, et une seule suffit à
+   * discréditer le reste du rapport.
+   */
+  constats_google: ConstatGoogle[];
+  /**
+   * Ce que l'agent a relevé lui-même, dans le cadre de `lib/audit/observations`.
+   *
+   * Typé `unknown[]` ici et non `ObservationValidee[]` : `lecture` appartient à
+   * `audit-site`, qui ne doit pas dépendre de `audit`. La forme est garantie à
+   * l'écriture par `validerObservations` — c'est le seul chemin qui remplit
+   * cette clé — et retypée à la lecture par `construireMesures`.
+   */
+  observations: unknown[];
   alertes: string[];
   ttfb_ms: number | null;
   chargement_ms: number | null;
@@ -63,8 +91,6 @@ export interface AuditLu {
 export type LectureAudit =
   | { disponible: true; audit: AuditLu | null }
   | { disponible: false; motif: string };
-
-const AXES: AxeId[] = ["vitesse", "seo", "mobile", "conversion", "popularite"];
 
 export async function lireAudit(
   sb: SupabaseClient,
@@ -110,7 +136,10 @@ export async function lireAudits(
 }
 
 function versAuditLu(row: Record<string, unknown>): AuditLu {
-  const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>>;
+  const detail = (row.detail ?? {}) as Partial<Record<AxeId, Preuve[]>> & {
+    google?: ConstatGoogle[];
+    observations?: unknown[];
+  };
   const confiance = (row.confiance ?? {}) as Partial<Record<AxeId, Confiance>>;
 
   /**
@@ -138,39 +167,76 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
    * c'est exactement la panne déjà vécue avec `paywall_enabled`. Ici, migration
    * ou pas, l'axe apparaît dès que ses preuves sont là.
    */
-  const noteParAxe: Record<AxeId, number | null> = {
-    vitesse: vitesseGoogle ? psiPerf : num(row.note_vitesse),
-    seo: num(row.note_seo),
-    mobile: num(row.note_mobile),
-    conversion: num(row.note_conversion),
-    popularite: noteDepuisPreuves(detail.popularite ?? []),
-  };
+  const google = vitesseGoogle && Array.isArray(detail.google) ? detail.google : [];
+  const constatsDe = (categorie: string) => google.filter((c) => c.categorie === categorie);
 
   const axes: AxePublie[] = [];
-  const masques: AxeId[] = [];
+  const masques: AxePublieId[] = [];
 
-  for (const id of AXES) {
-    const note = noteParAxe[id];
-    // Une mesure Google est faite dans un vrai navigateur : elle est concluante
-    // même là où notre analyse ne l'était pas (une SPA, typiquement).
-    const conf = id === "vitesse" && vitesseGoogle ? "haute" : (confiance[id] ?? "faible");
+  /** Un axe n'est publié que s'il a une note ET assez de confiance. */
+  const publier = (a: AxePublie | null, id: AxePublieId) => (a ? axes.push(a) : masques.push(id));
+
+  const axeGoogle = (
+    id: AxePublieId,
+    note: number | null,
+    categorie: string,
+    preuves: Preuve[] = [],
+  ): AxePublie | null =>
+    note == null
+      ? null
+      // Confiance haute sans condition : la mesure vient d'un vrai navigateur.
+      // Notre réserve — « c'est peut-être une SPA » — n'a plus lieu d'être quand
+      // le JavaScript a réellement été exécuté.
+      : { id, note, confiance: "haute", preuves, mesureGoogle: true, constats: constatsDe(categorie) };
+
+  const axeMaison = (id: AxeId): AxePublie | null => {
+    const note =
+      id === "popularite" ? noteDepuisPreuves(detail.popularite ?? []) : num(row[`note_${id}`]);
+    const conf = confiance[id] ?? "faible";
     // La règle, à un seul endroit : sous le seuil de confiance, l'axe n'est pas
     // publié. Le griser reviendrait à publier le chiffre en le décorant.
-    if (note == null || conf === "faible") {
-      masques.push(id);
-      continue;
-    }
-    axes.push({
+    if (note == null || conf === "faible") return null;
+    return {
       id,
       note,
       confiance: conf,
-      preuves:
-        id === "vitesse" && vitesseGoogle
-          ? preuvesPsi(row)
-          : (detail[id] ?? []).filter((p) => p.verdict !== "inconnu" && p.valeur !== null),
-      ...(id === "vitesse" && vitesseGoogle ? { mesureGoogle: true } : {}),
-    });
+      preuves: (detail[id] ?? []).filter((p) => p.verdict !== "inconnu" && p.valeur !== null),
+    };
+  };
+
+  if (vitesseGoogle) {
+    /**
+     * GOOGLE A MESURÉ : ON S'EFFACE.
+     *
+     * Nos notes de vitesse, de référencement et de mobile ne sont plus publiées.
+     * Ce n'est pas de la modestie — c'est que les nôtres se discutent et que
+     * celles de Google se vérifient en trente secondes sur pagespeed.web.dev,
+     * devant le prospect, depuis son téléphone. Une note qu'on peut nous opposer
+     * vaut moins que la même note que le prospect peut opposer à son prestataire
+     * actuel.
+     *
+     * L'axe `mobile` disparaît alors purement et simplement, et il n'est même pas
+     * listé comme masqué : il n'est pas retenu faute de confiance, il est
+     * REMPLACÉ — l'accessibilité et les cibles tactiles de Google disent la même
+     * chose en mieux, et c'était de loin notre signal le plus fragile.
+     */
+    publier(axeGoogle("vitesse", psiPerf, "performance", preuvesPsi(row)), "vitesse");
+    // Repli sur notre note de référencement si Google n'a pas rendu la sienne :
+    // un seul chiffre affiché, donc aucune contradiction possible à l'écran.
+    publier(axeGoogle("seo", num(row.psi_seo), "seo") ?? axeMaison("seo"), "seo");
+    publier(axeGoogle("accessibilite", num(row.psi_accessibilite), "accessibility"), "accessibilite");
+    publier(
+      axeGoogle("bonnes_pratiques", num(row.psi_bonnes_pratiques), "best-practices"),
+      "bonnes_pratiques",
+    );
+  } else {
+    for (const id of ["vitesse", "seo", "mobile"] as const) publier(axeMaison(id), id);
   }
+
+  // Ce que Google ne mesure pas et ne mesurera jamais : est-ce qu'on peut vous
+  // joindre, et est-ce qu'on parle de vous. Ces deux axes-là restent les nôtres
+  // dans tous les cas — ce sont aussi les deux qui se vendent le mieux.
+  for (const id of ["conversion", "popularite"] as const) publier(axeMaison(id), id);
 
   const noteGlobale = num(row.note_globale);
 
@@ -186,6 +252,11 @@ function versAuditLu(row: Record<string, unknown>): AuditLu {
     axes,
     axes_masques: masques,
     issue_keys: Array.isArray(row.issue_keys) ? (row.issue_keys as string[]) : [],
+    constats_google: psiFraiche && Array.isArray(detail.google) ? detail.google : [],
+    // Pas de péremption ici, contrairement aux constats Google : une observation
+    // est datée par l'audit qui l'a produite, et c'est ce document-là qu'on
+    // renvoie. La périmer indépendamment viderait un audit déjà envoyé.
+    observations: Array.isArray(detail.observations) ? detail.observations : [],
     alertes: Array.isArray(row.alertes) ? (row.alertes as string[]) : [],
     ttfb_ms: num(row.ttfb_ms),
     chargement_ms: num(row.chargement_ms),
