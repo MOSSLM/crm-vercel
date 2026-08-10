@@ -18,10 +18,11 @@ import {
   CARTES_RETENUES,
   MAX_AUDIT_ISSUES,
 } from '@/data/auditIssues';
-import { classerParForce, type AuditVariante } from '@/lib/audit/autres-ameliorations';
+import { classerParForce } from '@/lib/audit/autres-ameliorations';
 import { codesRetenus, construirePage5, type OffreAudit } from '@/lib/audit/offres-audit';
 import { authedFetch } from '@/utils/authedFetch';
 import { generateAuditHtml } from '@/utils/auditHtmlExport';
+import { construireMesures, mesuresVides, type EchantillonMediane } from '@/lib/audit/mesures';
 import { supabase } from '@/utils/supabase/client';
 import { AUDIT_PREVIEW_DEBOUNCE_MS, PRINT_DELAY_MS } from '@/utils/constants';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -79,9 +80,11 @@ interface AuditEditorPageProps {
   siteAudit?: AuditLu | null;
   /** L'opportunité à laquelle l'audit est rattaché — la cible du devis. */
   opportuniteId?: string;
+  /** La médiane du parc, calculée côté serveur : le navigateur ne peut pas. */
+  mediane?: EchantillonMediane | null;
 }
 
-export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys, siteAudit, opportuniteId }: AuditEditorPageProps) {
+export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl, googleUrl, detectedIssueKeys, siteAudit, opportuniteId, mediane }: AuditEditorPageProps) {
   const router = useRouter();
   const [content, setContent] = useState<AuditContent>(initialAudit.content);
   const debouncedContent = useDebounce(content, AUDIT_PREVIEW_DEBOUNCE_MS);
@@ -91,13 +94,12 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
   const [isSaving, setIsSaving] = useState(false);
   const [isReady, setIsReady] = useState(initialAudit.statut === 'ready');
   const [hasChanges, setHasChanges] = useState(false);
-  /**
-   * Deux profondeurs pour un seul document. `court` est ce qui part par
-   * WhatsApp — trois constats et un nombre ; `complet` est ce qu'on déplie en
-   * rendez-vous. L'aperçu s'ouvre sur la version envoyée, parce que c'est celle
-   * que le prospect verra en premier et la seule qu'on ne peut pas commenter.
+  /*
+   * Le sélecteur « version courte / complète » a disparu avec l'ancien deck.
+   * Le document compact ne se déplie pas : il détaille les trois constats qui
+   * se comparent et compte les autres dans son bandeau. Un bouton qui ne change
+   * plus rien à l'écran est pire qu'un bouton absent.
    */
-  const [variante, setVariante] = useState<AuditVariante>('court');
   /**
    * Les offres que l'audit a le droit de proposer, chargées une fois.
    *
@@ -287,11 +289,24 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
     }
   };
 
+  /**
+   * Le relevé affichable — jamais recalculé ici.
+   *
+   * `construireMesures` est la seule porte : elle publie `note_globale` telle
+   * qu'elle est en base et les axes tels que la lecture les a publiés. Rejouer
+   * une moyenne dans le composant recréerait le troisième barème qu'on vient de
+   * supprimer.
+   */
+  const mesures = useMemo(
+    () => (siteAudit ? construireMesures(siteAudit, mediane) : mesuresVides()),
+    [siteAudit, mediane],
+  );
+
   const handleExport = () => {
     const win = window.open('', '_blank');
     if (!win) { toast.error("Impossible d'ouvrir une nouvelle fenêtre"); return; }
     Promise.resolve().then(() => {
-      const html = generateAuditHtml(content, { logoUrl, forPdf: true, audit: siteAudit, variante });
+      const html = generateAuditHtml(content, mesures);
       win.document.write(html);
       win.document.close();
       win.focus();
@@ -357,21 +372,6 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
           >
             {isReady ? <Check className="h-3.5 w-3.5 mr-1.5 text-green-500" /> : null}
             {isReady ? 'Prêt' : 'Marquer prêt'}
-          </Button>
-          {/* Un seul document, deux profondeurs. Le bouton dit ce qu'on regarde,
-              et l'export suit l'aperçu — pour ne jamais imprimer autre chose que
-              ce qu'on vient de relire. */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setVariante(v => (v === 'court' ? 'complet' : 'court'))}
-            title={
-              variante === 'court'
-                ? "Version envoyée : trois constats et le nombre des autres"
-                : 'Version du rendez-vous : chaque point restant avec sa mesure'
-            }
-          >
-            {variante === 'court' ? 'Version courte' : 'Version complète'}
           </Button>
           <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="h-3.5 w-3.5 mr-1.5" />
@@ -465,11 +465,9 @@ export function AuditEditorPage({ audit: initialAudit, opportunityName, siteUrl,
               <div ref={previewInnerRef} style={{ paddingTop: 16 }}>
                 <AuditPreview
                   content={debouncedContent}
-                  logoUrl={logoUrl || undefined}
                   activeField={activeField}
                   onFieldClick={handleFieldClick}
-                  audit={siteAudit}
-                  variante={variante}
+                  mesures={mesures}
                 />
                 <div style={{ height: 16 }} />
               </div>

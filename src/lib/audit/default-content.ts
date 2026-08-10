@@ -44,16 +44,46 @@ const DEFAULT_CONTENT: AuditContent = {
     solutions: solutionsFromKeys(DEFAULT_SELECTED_ISSUE_KEYS),
   },
   page4: {
-    header_section: 'Livrables inclus',
+    header_section: 'Ce que vous recevez',
     section_label: '03 · Ce que vous recevez',
-    section_title: 'Tout est',
-    section_title_em: 'inclus',
-    section_subtitle: 'Aucune mauvaise surprise. Voici exactement ce que comprend la prestation.',
+    section_title: 'Ce qui change,',
+    section_title_em: 'concrètement',
+    section_subtitle: 'Trois volets — et à chaque fois, le point faible qu\u2019il corrige.',
+    recu_head: ['Le volet', 'Ce que vous recevez', 'Ce que ça corrige'],
+    /**
+     * Trois phrases, pas dix-huit puces, et aucun mot technique.
+     *
+     * L'ancienne liste annonçait « Optimisation on-page complète », « Audit
+     * mots-clés local », « Design responsive mobile » et « Contenu &
+     * copywriting » — du vocabulaire que la règle éditoriale du document
+     * interdit, et sur lequel un artisan décroche en trois mots. Une liste de
+     * prestations énumère d'ailleurs des MOYENS ; le lecteur, lui, achète un
+     * état final. La colonne « ce que ça corrige » rattache chaque volet au
+     * constat qui le justifie — c'est la seule chose qui distingue ce bloc
+     * d'une plaquette.
+     */
     livrables: [
-      { title: 'Site web complet', items: ["Page d'accueil optimisée", "Pages services (jusqu'à 5)", "Page à propos", 'Page contact + formulaire devis', 'Design responsive mobile'] },
-      { title: 'SEO & visibilité', items: ['Audit mots-clés local', 'Optimisation on-page complète', 'Intégration Google Search Console', 'Plan de redirection (si nécessaire)', 'Rapport de positionnement initial'] },
-      { title: 'Contenu & copywriting', items: ['Textes de vente rédigés', 'Mise en valeur de vos réalisations', 'Intégration avis clients', 'Photos optimisées web'] },
-      { title: 'Suivi & support', items: ['Rapport mensuel (trafic, leads)', 'Maintenance incluse 6 mois'] },
+      {
+        title: 'Le site',
+        fix: 'Lenteur\nCrédibilité\nBase technique',
+        items: [
+          'Un site actuel qui s\u2019affiche en une seconde sur téléphone et met votre travail en valeur : réalisations, avis clients et certifications visibles dès l\u2019accueil. Chaque photo et chaque page sont décrites pour que Google les comprenne.',
+        ],
+      },
+      {
+        title: 'Sur Google',
+        fix: 'Visibilité locale',
+        items: [
+          'Votre fiche d\u2019entreprise complétée et soignée pour donner envie de cliquer, et une page dédiée à chaque métier et chaque commune que vous couvrez.',
+        ],
+      },
+      {
+        title: 'Le suivi',
+        fix: 'Rien à gérer',
+        items: [
+          'Hébergement, sauvegardes et mises à jour compris. Une question, une modification : vous écrivez, on s\u2019en occupe — et un point chaque mois.',
+        ],
+      },
     ],
   },
   page5: {

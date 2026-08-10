@@ -90,6 +90,8 @@ export interface ConstatMesure {
 
 export interface MesuresAudit {
   url: string | null;
+  /** Capture du site, hébergée chez nous. `null` ⇒ le document dessine un vide. */
+  captureUrl: string | null;
   /** Horodatage de la mesure affichée — jamais omis, une mesure se date. */
   mesureLe: string | null;
   /** Vrai quand les axes viennent des catégories de Google. */
@@ -156,6 +158,7 @@ export function construireMesures(
 
   return {
     url: audit.url_finale ?? audit.url_analysee,
+    captureUrl: audit.capture_url,
     // La date de la mesure AFFICHÉE : celle de Google quand c'est lui qui parle.
     mesureLe: mesureParGoogle ? (audit.psi_recupere_le ?? audit.analyse_le) : audit.analyse_le,
     mesureParGoogle,
@@ -193,6 +196,32 @@ function observationsDe(audit: AuditLu): ObservationValidee[] {
       typeof (o as ObservationValidee).cle === "string" &&
       typeof (o as ObservationValidee).valeur === "string",
   );
+}
+
+/**
+ * Le relevé vide — pour une entreprise jamais analysée.
+ *
+ * Le document doit se rendre quand même : l'opérateur ouvre parfois l'éditeur
+ * avant que l'analyse soit passée, et une page blanche lui ferait croire à une
+ * panne. Tous les blocs qui dépendent d'une mesure savent s'effacer ; ceux qui
+ * n'en dépendent pas restent lisibles.
+ */
+export function mesuresVides(): MesuresAudit {
+  return {
+    url: null,
+    captureUrl: null,
+    mesureLe: null,
+    mesureParGoogle: false,
+    injoignable: false,
+    httpStatus: null,
+    noteGlobale: null,
+    libelle: null,
+    reperes: { prospect: null, demo: NOTE_DEMO, mediane: null, medianeN: null },
+    axes: [],
+    axesNonTestes: [],
+    constats: [],
+    observations: [],
+  };
 }
 
 /**

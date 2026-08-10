@@ -4,6 +4,7 @@ import { getServiceClient } from "@/app/api/_lib/service-client";
 import { analyserEntreprise } from "@/lib/audit-site/service";
 import { enrichirAnalyse } from "@/lib/audit-site/shot";
 import { UNDEFINED_TABLE, lireAudit } from "@/lib/audit-site/lecture";
+import { lireMedianeParc } from "@/lib/audit/mediane-parc";
 
 /**
  * L'analyse d'une entreprise, à la demande.
@@ -30,9 +31,15 @@ export async function GET(
   const id = Number((await ctx.params).entrepriseId);
   if (!Number.isFinite(id)) return jsonError("Identifiant d'entreprise invalide.", 400);
 
-  const res = await lireAudit(getServiceClient(), id);
+  const sb = getServiceClient();
+  const res = await lireAudit(sb, id);
   if (!res.disponible) return json({ disponible: false, motif: res.motif });
-  return json({ disponible: true, audit: res.audit });
+
+  // La médiane du parc voyage avec l'analyse : c'est le troisième repère de la
+  // réglette, et le navigateur n'a aucun moyen de la calculer. Un aller-retour
+  // de plus pour un chiffre serait payé sur chaque ouverture de l'éditeur.
+  const mediane = res.audit ? await lireMedianeParc(sb) : null;
+  return json({ disponible: true, audit: res.audit, mediane });
 }
 
 export async function POST(
