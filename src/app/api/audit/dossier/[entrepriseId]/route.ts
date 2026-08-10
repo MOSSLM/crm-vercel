@@ -15,6 +15,12 @@ import { construireDossier } from "@/lib/audit/dossier";
  * que `POST /api/audit/preparation` utilisera pour accepter ou refuser la
  * rédaction. Ce qui n'y figure pas ne franchira pas l'écriture — autant le
  * savoir avant d'écrire qu'après.
+ *
+ * `?psi=complet` ajoute le dossier PageSpeed entier : les conseils de Google et
+ * les ressources visées une par une. Il n'est pas dans la réponse par défaut, et
+ * c'est délibéré — il pèse dix à cinquante fois le reste, et on ne le veut que
+ * lorsqu'on s'apprête à nommer précisément ce qui cloche. Deux niveaux plutôt
+ * qu'un seul : la liste courte suffit à décider, le dossier sert à rédiger.
  */
 
 export const runtime = "nodejs";
@@ -30,7 +36,9 @@ export async function GET(
   const id = Number((await ctx.params).entrepriseId);
   if (!Number.isFinite(id)) return jsonError("Identifiant d'entreprise invalide.", 400);
 
-  const dossier = await construireDossier(getServiceClient(), id);
+  const psiComplet = new URL(req.url).searchParams.get("psi") === "complet";
+
+  const dossier = await construireDossier(getServiceClient(), id, { psiComplet });
   if (!dossier) return jsonError("Entreprise introuvable.", 404);
 
   return json(dossier);

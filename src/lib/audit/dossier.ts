@@ -1,6 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lireAudit } from "@/lib/audit-site/lecture";
+import { lireContextePsi } from "@/lib/audit-site/pagespeed";
+import type { ConstatGoogle, ContextePsi } from "@/lib/audit-site/types";
 import { AUDIT_ISSUE_CATALOG } from "@/data/auditIssues";
 import { versOffreAudit, type OffreAudit } from "./offres-audit";
 import { nombresDe, type UniversDicible } from "./preparation";
@@ -52,6 +54,20 @@ export interface DossierAudit {
     /** Constats émis par la mesure — les seules cartes légitimes. */
     constats: Array<{ cle: string; libelle: string; pilier: string }>;
   };
+  /**
+   * Ce que Google relève, dans ses mots. Vide tant qu'aucune mesure PageSpeed
+   * n'a été lancée sur cette entreprise, ou quand la dernière a plus de 30 jours.
+   *
+   * Ces constats sont citables comme fondement d'une carte, sous la clé
+   * `google:<id>` — `google:render-blocking-insight`, par exemple.
+   */
+  google: ConstatGoogle[];
+  /**
+   * Le dossier PageSpeed complet : conseils de Google et ressources visées une
+   * par une. Absent par défaut — c'est volumineux, et la rédaction n'en a besoin
+   * que lorsqu'elle veut nommer précisément ce qui cloche.
+   */
+  psi?: ContextePsi | null;
   offres: OffreAudit[];
   /** Ce que le rédacteur peut réellement affirmer, prêt pour la validation. */
   univers: {
@@ -66,6 +82,7 @@ export interface DossierAudit {
 export async function construireDossier(
   sb: SupabaseClient,
   entrepriseId: number,
+  opts: { psiComplet?: boolean } = {},
 ): Promise<DossierAudit | null> {
   const { data: ent } = await sb
     .from("entreprises")
@@ -76,11 +93,12 @@ export async function construireDossier(
   if (!ent) return null;
   const e = ent as Record<string, unknown>;
 
-  const [lecture, rge, mediane, offres] = await Promise.all([
+  const [lecture, rge, mediane, offres, psi] = await Promise.all([
     lireAudit(sb, entrepriseId),
     chargerRge(sb, entrepriseId),
     medianeAvisCommune(sb, (e.ville as string) ?? null),
     chargerOffres(sb),
+    opts.psiComplet ? lireContextePsi(sb, entrepriseId) : Promise.resolve(null),
   ]);
 
   const audit = lecture.disponible ? lecture.audit : null;
@@ -97,9 +115,18 @@ export async function construireDossier(
     })),
   }));
 
-  const preuvesEnEchec = axes.flatMap((a) =>
-    a.preuves.filter((p) => p.verdict === "probleme").map((p) => p.cle),
-  );
+  const google = audit?.constats_google ?? [];
+
+  /**
+   * Un constat Google est un fondement au même titre qu'une de nos preuves —
+   * mieux, même : il est vérifiable par le prospect en trente secondes sur
+   * pagespeed.web.dev. Le préfixe `google:` empêche toute collision avec nos
+   * clés et dit d'où vient l'affirmation.
+   */
+  const preuvesEnEchec = [
+    ...axes.flatMap((a) => a.preuves.filter((p) => p.verdict === "probleme").map((p) => p.cle)),
+    ...google.map((c) => `google:${c.id}`),
+  ];
 
   const constats = (audit?.issue_keys ?? []).flatMap((cle) => {
     const def = AUDIT_ISSUE_CATALOG.find((c) => c.key === cle);
@@ -116,6 +143,14 @@ export async function construireDossier(
     }
   }
   if (audit?.note_globale != null) nombres.add(String(audit.note_globale));
+  // Les chiffres de Google — « 3 650 ms », « 1 040 Kio » — sont les plus
+  // vendeurs du dossier. Sans eux ici, la règle 3 rejetterait la seule phrase
+  // qu'on voulait vraiment écrire.
+  for (const c of google) {
+    for (const n of nombresDe(`${c.valeur ?? ""} ${c.gainMs ?? ""} ${c.gainOctets ?? ""} ${c.elements ?? ""}`)) {
+      nombres.add(n);
+    }
+  }
   for (const n of nombresDe(`${e.nombre_avis ?? ""} ${e.note_moyenne ?? ""} ${mediane ?? ""}`)) {
     nombres.add(n);
   }
@@ -144,6 +179,8 @@ export async function construireDossier(
       axes,
       constats,
     },
+    google,
+    ...(opts.psiComplet ? { psi } : {}),
     offres,
     univers: {
       preuvesEnEchec,
