@@ -160,3 +160,75 @@ describe("codesRetenus", () => {
     ]);
   });
 });
+
+describe("le nom que lit le client", () => {
+  it("préfère le libellé client au nom interne", () => {
+    // Trois mots incompréhensibles font décrocher un lecteur non technique, et
+    // ce nom-là part aussi sur le devis et sur la facture.
+    const o = versOffreAudit({
+      code: "ADD_SCHEMA_MARKUP",
+      nom: "Schema markup (FAQ/LocalBusiness)",
+      prix_ht: 150,
+      metadata: { role_audit: "addition", libelle_client: "Fiche d’entreprise lisible par Google" },
+    });
+    expect(o?.nom).toBe("Fiche d’entreprise lisible par Google");
+  });
+
+  it("retombe sur le nom interne quand le libellé client manque ou est vide", () => {
+    const sans = versOffreAudit({
+      code: "X",
+      nom: "Setup Google Search Console",
+      prix_ht: 120,
+      metadata: { role_audit: "addition" },
+    });
+    const vide = versOffreAudit({
+      code: "Y",
+      nom: "Copywriting (light)",
+      prix_ht: 350,
+      metadata: { role_audit: "addition", libelle_client: "   " },
+    });
+    expect(sans?.nom).toBe("Setup Google Search Console");
+    expect(vide?.nom).toBe("Copywriting (light)");
+  });
+});
+
+describe("le plafond d'additions", () => {
+  const beaucoup: OffreAudit[] = Array.from({ length: 6 }, (_, i) => ({
+    code: `ADD_${i}`,
+    nom: `Addition ${i}`,
+    description: null,
+    prixHt: 100 + i,
+    mensuel: false,
+    role: "addition" as const,
+    repondA: ["weak_cta"],
+    aPartirDe: false,
+    hebergementMensuel: null,
+  }));
+
+  it("n'en conseille jamais plus de trois", () => {
+    // Au-delà, la demi-page déborde — et `overflow: hidden` fait disparaître
+    // les dernières sans rien dire — pendant qu'une liste longue se lit comme
+    // un menu et affaiblit le socle au lieu de le compléter.
+    expect(additionsPour(beaucoup, ["weak_cta"])).toHaveLength(3);
+  });
+
+  it("garde les trois qui couvrent le plus de constats", () => {
+    const cible: OffreAudit = { ...beaucoup[0], code: "LARGE", repondA: ["weak_cta", "slow_site"] };
+    const retenues = additionsPour([...beaucoup, cible], ["weak_cta", "slow_site"]);
+    expect(retenues[0].code).toBe("LARGE");
+  });
+});
+
+describe("la formule alternative", () => {
+  it("disparaît quand le catalogue n'en propose plus", () => {
+    // Le repli « mieux vaut un tarif périmé qu'une page vide » vaut pour la
+    // ligne qu'on vend ; l'absence d'une alternative ne laisse aucun trou.
+    // Sans ça, retirer l'offre du catalogue ne suffirait jamais à la faire
+    // partir du document.
+    const page: AuditPage5 = {
+      ...PAGE5_VIDE,
+      secondary_card: { title: "Site sur mesure", amount: 1990 },
+    };
+    expect(construirePage5(page, [SOCLE], []).secondary_card).toBeUndefined();
+  });
+});

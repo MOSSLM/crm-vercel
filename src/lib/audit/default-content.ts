@@ -71,13 +71,9 @@ const DEFAULT_CONTENT: AuditContent = {
     ],
     pricing_subtitle: 'Solution conseillée',
     hide_total: true,
-    secondary_card: {
-      title: 'Site sur mesure',
-      subtitle: 'Autre formule',
-      description: 'Un site conçu de A à Z pour votre marque : vous choisissez votre direction artistique.',
-      amount: 1990,
-      from: true,
-    },
+    // Pas de carte alternative en dur : c'est le catalogue d'offres qui décide
+    // s'il y en a une, et laquelle. Une copie ici la réinjecterait à chaque
+    // recalcul, y compris après l'avoir retirée du catalogue.
     show_grain: true,
     flatten_grain_for_pdf: false,
     price_note: 'Prix HT. Hébergement & maintenance mensuels sans engagement (résiliable à tout moment). Tarif indicatif — devis définitif sur demande.',
