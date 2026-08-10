@@ -63,7 +63,7 @@ export const eta = (ms: number): string => (ms > 600_000 ? duration(ms) : countd
 
 /* ── Avatars ───────────────────────────────────────────────────────────── */
 
-const AVATAR_COLORS = ['#E2552B', '#2A6FDB', '#7A5AE0', '#1F8A5B', '#C8881F', '#B5322F', '#2B7FB8']
+const AVATAR_COLORS = ['#2F7AE0', '#0E93A6', '#7A5AE0', '#1F8A5B', '#C8881F', '#B5322F', '#A24E86']
 
 export function colorForId(id: string): string {
   let h = 0

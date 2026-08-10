@@ -28,26 +28,34 @@ export function one<T>(v: T | T[] | null | undefined): T | null {
  * sémantique, tout ce qui vient d'ailleurs virait au gris et un « Perdu » de
  * Streak était indistinguable d'une étape neutre.
  */
+/**
+ * Le prune du RDV n'a pas de jeton : c'est une teinte catégorielle, choisie
+ * pour rester distincte des sept autres étapes, pas un rôle de la charte.
+ * Elle doit rester égale à `ROLE_TINT.rdv` de `src/lib/opportunites/stage-roles.ts`
+ * — le CRM et le portail agent peignent la même étape.
+ */
+const RDV_TINT = "#A24E86";
+
 export const STAGE_TINT: Record<string, string> = {
-  "Nouveau lead": "var(--info)",
-  "Première approche": "var(--info)",
-  "Contacté (appelé)": "var(--text-3)",
-  Contacté: "var(--text-3)",
+  "Nouveau lead": "var(--text-3)",
+  "Première approche": "var(--magic)",
+  "Contacté (appelé)": "var(--info)",
+  Contacté: "var(--info)",
   "En échange": "var(--warn)",
-  Intéressé: "var(--accent)",
-  "RDV calé": "var(--accent)",
+  Intéressé: "var(--warn)",
+  "RDV calé": RDV_TINT,
   "Client signé": "var(--ok)",
   Perdu: "var(--danger)",
 };
 
 /** Repli par rôle, valable dans n'importe quel pipeline. */
 const ROLE_TINT: Record<StageRole, string> = {
-  nouveau: "var(--info)",
-  approche: "var(--info)",
-  contacte: "var(--text-3)",
-  interesse: "var(--accent)",
-  rdv: "var(--accent)",
-  propo: "var(--warn)",
+  nouveau: "var(--text-3)",
+  approche: "var(--magic)",
+  contacte: "var(--info)",
+  interesse: "var(--warn)",
+  rdv: RDV_TINT,
+  propo: "var(--primary)",
   signe: "var(--ok)",
   perdu: "var(--danger)",
   autre: "var(--text-3)",

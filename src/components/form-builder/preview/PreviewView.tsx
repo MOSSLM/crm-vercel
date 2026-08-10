@@ -97,7 +97,7 @@ export function PreviewView({ form }: PreviewViewProps) {
             style={{
               background: 'white',
               borderRadius: 8,
-              boxShadow: '0 6px 24px rgba(20,18,14,.08), 0 1px 0 var(--border)',
+              boxShadow: '0 6px 24px rgba(18, 40, 68,.08), 0 1px 0 var(--border)',
               overflow: 'hidden',
               width: device === 'mobile' ? 380 : '100%',
               minHeight: device === 'mobile' ? 720 : '100%',

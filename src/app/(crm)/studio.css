@@ -11,7 +11,7 @@
 
 .studio-surface {
   /* token bridge: design names → app palette */
-  --accent: #e2552b;
+  --accent: #2f7ae0;
   --font-ui: var(--font-family-base);
   --font-mono: var(--font-family-mono);
   --font-serif: var(--font-family-serif);
@@ -124,7 +124,7 @@
   /* ── Sprint banner ── */
   & .sprint-banner {
     display: flex; align-items: center; gap: 14px; padding: 12px 16px;
-    background: linear-gradient(90deg, var(--text) 0%, #2a2522 100%);
+    background: linear-gradient(90deg, var(--text) 0%, #0e2543 100%);
     color: #fff; border-radius: 12px; margin-bottom: 16px;
   }
   & .sprint-banner .icw {
@@ -245,7 +245,7 @@
     font-size: 10.5px; border-radius: 5px; border: 1px solid var(--border-2);
     background: var(--surface-2); color: var(--text-2); font-family: var(--font-mono); width: fit-content;
   }
-  & .dtable-row .src-pill.maps { color: var(--info); border-color: rgba(42, 111, 219, 0.2); background: var(--info-tint); }
+  & .dtable-row .src-pill.maps { color: var(--info); border-color: rgba(14, 147, 166, 0.2); background: var(--info-tint); }
   & .dtable-row .src-pill.search { color: var(--text-2); }
   & .dtable-row .addr { font-size: 11.5px; color: var(--text-2); display: flex; align-items: flex-start; gap: 4px; overflow: hidden; }
   & .dtable-row .addr svg { color: var(--text-4); margin-top: 2px; flex-shrink: 0; }

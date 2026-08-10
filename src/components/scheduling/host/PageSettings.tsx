@@ -20,7 +20,9 @@ import { SectionHeader } from "./CalShell";
 import { getAppUrlClient } from "../rdv/shared";
 import { timezoneOptions } from "./shared";
 
-const BRAND_COLORS = ["#E2552B", "#14120E", "#3B7DD8", "#2E9E6B", "#7A5AE0"];
+// Cinq choix de marque, donc cinq teintes qui ne se confondent pas : l'azur
+// prend la place de l'orange, et l'ancien bleu voisin devient la sarcelle.
+const BRAND_COLORS = ["#2F7AE0", "#122844", "#0E93A6", "#2E9E6B", "#7A5AE0"];
 
 const slugify = (raw: string): string =>
   raw
@@ -320,7 +322,7 @@ export default function PageSettings() {
                 }}
               >
                 <Row style={{ gap: 5 }}>
-                  {["#E2552B", "#C8881F", "#2E9E6B"].map((c) => (
+                  {["#2F7AE0", "#C8881F", "#2E9E6B"].map((c) => (
                     <i
                       key={c}
                       style={{ width: 9, height: 9, borderRadius: "50%", background: c, opacity: 0.8 }}

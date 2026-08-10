@@ -23,9 +23,9 @@ export type MarketingStageId = "enrich" | "validation" | "site" | "audit";
  * lucide-react et sa feuille de style avec lui.
  */
 export const MARKETING_STAGES: Array<{ id: MarketingStageId; label: string; color: string }> = [
-  { id: "enrich", label: "Enrichissement", color: "#2A6FDB" },
+  { id: "enrich", label: "Enrichissement", color: "#0E93A6" },
   { id: "validation", label: "Validation données", color: "#7A5AE0" },
-  { id: "site", label: "Site démo", color: "#E2552B" },
+  { id: "site", label: "Site démo", color: "#2F7AE0" },
   { id: "audit", label: "Audit", color: "#C8881F" },
 ];
 

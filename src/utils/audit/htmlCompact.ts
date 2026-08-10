@@ -2,6 +2,13 @@ import type { AuditContent } from '@/types';
 import type { MesuresAudit } from '@/lib/audit/mesures';
 import { LIBELLE_DEMO, sousTitreNote } from '@/lib/audit/mesures';
 import { esc, logoSvg, makeGrainSvgUrl, getServices, calcTotal, fmtEur } from './htmlShared';
+import { C } from '@/components/audit/AuditShared';
+
+/** Un hexadécimal en triplet `r,g,b`, pour les teintes transparentes. */
+const rgbDe = (hex: string): string => {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+};
 
 /**
  * Le document d'audit : trois feuilles A4, chacune coupée en deux demi-pages.
@@ -97,7 +104,7 @@ function cCouverture(c: AuditContent, m: MesuresAudit): string {
   return `<div class="half half-cover" data-screen-label="A4-1 couverture">
 <div class="cover-sky"></div>${grainLayer(c.global_style?.grain_opacity)}
 <div class="cover-in">
-  <div class="cover-top"><div class="logo-block">${logoSvg(22, '#B5D0F0')}<span class="logo-wm">SAMA</span></div>${z('span', 'cover-date', { field: 'page1.date' })}${esc(p.date)}</span></div>
+  <div class="cover-top"><div class="logo-block">${logoSvg(22, C.brume)}<span class="logo-wm">SAMA</span></div>${z('span', 'cover-date', { field: 'page1.date' })}${esc(p.date)}</span></div>
   <div class="cover-main">
     ${z('div', 'cover-eyebrow', { field: 'page1.eyebrow' })}${esc(p.eyebrow)}</div>
     ${z('div', 'cover-title', { field: 'page1.title' })}${esc(p.title_line1)}<br>${esc(p.title_line2)} <em>${esc(p.title_line3)}</em></div>
@@ -148,7 +155,7 @@ const BANDES = [0.06, 0.1, 0.15, 0.21, 0.28, 0.36, 0.45, 0.56, 0.68, 0.82];
  * du tout, et personne ne verrait la différence.
  */
 function reglette(m: MesuresAudit): string {
-  const bandes = BANDES.map((a) => `<i style="background:rgba(11,29,58,${a})"></i>`).join('');
+  const bandes = BANDES.map((a) => `<i style="background:rgba(${rgbDe(C.nuit)},${a})"></i>`).join('');
   const marque = (cls: string, v: number | null) =>
     v == null ? '' : `<span class="mk mk-${cls}" style="left:${v}%"></span>`;
 
@@ -333,7 +340,7 @@ function cInvestissement(c: AuditContent): string {
       ${services
         .map(
           (s, i) =>
-            `<div class="invest-row"${i < services.length - 1 ? ' style="border-bottom:1px solid rgba(181,208,240,.1)"' : ''}><div><div class="invest-label">${esc(s.label)}</div>${s.sub_label ? `<div class="invest-sublabel">${esc(s.sub_label)}</div>` : ''}</div><div class="invest-amount">${s.from ? 'À partir de ' : ''}${fmtEur(s.amount)}${s.is_mrr ? '/mois' : ''}</div></div>`,
+            `<div class="invest-row"${i < services.length - 1 ? ' style="border-bottom:1px solid rgba(${rgbDe(C.brume)},.1)"' : ''}><div><div class="invest-label">${esc(s.label)}</div>${s.sub_label ? `<div class="invest-sublabel">${esc(s.sub_label)}</div>` : ''}</div><div class="invest-amount">${s.from ? 'À partir de ' : ''}${fmtEur(s.amount)}${s.is_mrr ? '/mois' : ''}</div></div>`,
         )
         .join('')}
       ${!p.hide_total ? `<div class="invest-row-total"><div class="invest-total-label">${hasMrr ? 'Investissement total (an 1)' : 'Investissement total'}</div><div class="invest-total-amount">${fmtEur(total)}</div></div>` : ''}
@@ -384,7 +391,7 @@ ${z('div', 'panel-title', { field: 'page6.section_heading' })}${esc(p.section_ti
   ${z('div', 'cta-block', { field: 'page6.cta' })}<div><div class="cta-title">${esc(p.cta_title)}</div><div class="cta-sub">${esc(p.cta_sub)}</div>${p.contact_website ? `<div class="cta-contact-web">${esc(p.contact_website)}</div>` : ''}</div>
     <div class="cta-contact">${p.contact_phone ? `<a class="cta-btn cta-btn-tel" href="tel:${esc(p.contact_phone.replace(/\s/g, ''))}"><span>Appeler</span><b>${esc(p.contact_phone)}</b></a>` : ''}${p.contact_email ? `<a class="cta-btn cta-btn-mail" href="mailto:${esc(p.contact_email)}"><span>Écrire</span><b>${esc(p.contact_email)}</b></a>` : ''}</div>
   </div>
-  <div class="sign">${logoSvg(18, '#3A7BD5')}<div class="sign-text">SAMA · Agence digitale indépendante<br>Document confidentiel préparé exclusivement pour ${texte(c.page1.client_name, 'Entreprise cliente')}</div></div>
+  <div class="sign">${logoSvg(18, C.azur)}<div class="sign-text">SAMA · Agence digitale indépendante<br>Document confidentiel préparé exclusivement pour ${texte(c.page1.client_name, 'Entreprise cliente')}</div></div>
 </div>
 ${sheetFoot(c.page1.client_name || 'Entreprise cliente', '03')}</div>`;
 }

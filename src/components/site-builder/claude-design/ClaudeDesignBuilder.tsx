@@ -70,7 +70,7 @@ type Viewport = "desktop" | "mobile";
 type SaveState = "saved" | "pending";
 
 /* ── small helpers ─────────────────────────────────────────────── */
-const DOT_COLORS = ["#E2552B", "#2A6FDB", "#1F8A5B", "#7A5AE0", "#C8881F", "#B5322F"];
+const DOT_COLORS = ["#2F7AE0", "#0E93A6", "#1F8A5B", "#7A5AE0", "#C8881F", "#B5322F"];
 function companyColor(id: number) { return DOT_COLORS[Math.abs(id) % DOT_COLORS.length]; }
 function companyInitials(nom: string) {
   return nom.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase() ?? "").join("") || "?";
@@ -814,7 +814,7 @@ function PageTags({ sitemap, company, companyVars, onChange }: {
 
   return (
     <div className="cd-dtweaks">
-      <div className="cd-dtweaks-note" style={{ color: "var(--info)", background: "var(--info-tint)", borderColor: "rgba(42,111,219,.2)" }}>
+      <div className="cd-dtweaks-note" style={{ color: "var(--info)", background: "var(--info-tint)", borderColor: "rgba(14, 147, 166,.2)" }}>
         <Tags className="ico-sm" />
         Une page avec un tag de service ne s’affiche que pour les entreprises ayant ce service.
       </div>
@@ -872,7 +872,7 @@ function HydrationDiagnostic({ pages, companyVars }: {
     .filter((r) => r.findings.length > 0);
 
   const dotColor = (severity: string) =>
-    severity === "unknown" ? "var(--danger, #c0392b)" : severity === "empty" ? "var(--warn, #c8881f)" : "var(--info, #2a6fdb)";
+    severity === "unknown" ? "var(--danger, #c0392b)" : severity === "empty" ? "var(--warn, #c8881f)" : "var(--info, #0e93a6)";
 
   return (
     <div className="cd-vb-group">

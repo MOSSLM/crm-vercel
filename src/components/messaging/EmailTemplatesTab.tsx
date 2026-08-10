@@ -558,20 +558,20 @@ function PreviewPanel({ form, template }: PreviewPanelProps) {
                 >
                   {/* Fake email header */}
                   <div style={{
-                    background: "#0B1D3A",
+                    background: "#0A1B33",
                     padding: "10px 14px",
                   }}>
                     <div style={{ fontFamily: "Georgia, serif", fontSize: 11, letterSpacing: ".3em", color: "rgba(181,208,240,0.7)", textTransform: "uppercase" }}>
                       SAMA
                     </div>
-                    <div style={{ fontSize: 8, letterSpacing: ".15em", textTransform: "uppercase", color: "#3A7BD5", fontWeight: "bold", marginTop: 2 }}>
+                    <div style={{ fontSize: 8, letterSpacing: ".15em", textTransform: "uppercase", color: "#2F7AE0", fontWeight: "bold", marginTop: 2 }}>
                       Agence Digitale
                     </div>
                   </div>
                   {/* Body */}
-                  <div style={{ padding: "14px 14px 10px", background: "#F4F1EB" }}>
+                  <div style={{ padding: "14px 14px 10px", background: "#F7FAFD" }}>
                     {body.split(/\n{2,}/).map((para, i) => (
-                      <p key={i} style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.65, color: "rgba(11,29,58,0.8)" }}>
+                      <p key={i} style={{ margin: "0 0 12px", fontSize: 12.5, lineHeight: 1.65, color: "rgba(10, 27, 51,0.8)" }}>
                         {para.split("\n").map((line, j, arr) => (
                           <React.Fragment key={j}>
                             {line}
@@ -582,7 +582,7 @@ function PreviewPanel({ form, template }: PreviewPanelProps) {
                     ))}
                   </div>
                   {/* Fake footer */}
-                  <div style={{ background: "#0B1D3A", padding: "8px 14px", textAlign: "center" }}>
+                  <div style={{ background: "#0A1B33", padding: "8px 14px", textAlign: "center" }}>
                     <div style={{ fontSize: 9, color: "rgba(181,208,240,0.3)" }}>SAMA · Agence Digitale</div>
                   </div>
                 </div>

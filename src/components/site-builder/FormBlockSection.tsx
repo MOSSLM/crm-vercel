@@ -54,7 +54,7 @@ export function FormBlockSection({
   if (error) {
     if (!editorMode) return null;
     return (
-      <div style={{ padding: 40, textAlign: "center", color: "#8A877F", fontSize: 14 }}>
+      <div style={{ padding: 40, textAlign: "center", color: "#8AA0C0", fontSize: 14 }}>
         Formulaire introuvable ou non publié.
       </div>
     );
@@ -62,7 +62,7 @@ export function FormBlockSection({
 
   if (!form) {
     return (
-      <div style={{ padding: 40, textAlign: "center", color: "#8A877F", fontSize: 14 }}>
+      <div style={{ padding: 40, textAlign: "center", color: "#8AA0C0", fontSize: 14 }}>
         Chargement du formulaire…
       </div>
     );
@@ -79,7 +79,7 @@ export function FormBlockSection({
         border: selected ? "2px solid #3b82f6" : "2px solid transparent",
       }}
     >
-      <React.Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#8A877F" }}>Chargement…</div>}>
+      <React.Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "#8AA0C0" }}>Chargement…</div>}>
         <FormRuntime
           form={form}
           mode={renderMode}

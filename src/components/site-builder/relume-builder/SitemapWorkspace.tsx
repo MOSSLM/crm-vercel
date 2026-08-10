@@ -619,7 +619,7 @@ export function SitemapWorkspace({ siteId, enterpriseId, availableSections, tagC
                 <path
                   key={page.id}
                   d={`M ${fromX} ${fromY} C ${fromX} ${midY}, ${toX} ${midY}, ${toX} ${toY}`}
-                  stroke="rgba(20,18,14,0.18)"
+                  stroke="rgba(18, 40, 68,0.18)"
                   strokeWidth={1.5}
                   fill="none"
                   strokeDasharray="4 3"

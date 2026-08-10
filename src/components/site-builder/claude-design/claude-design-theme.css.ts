@@ -11,20 +11,20 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
    Instrument Serif are already loaded globally by app/layout.tsx.
    ========================================================================== */
 .cd-scope{
-  --bg:#FBFAF7; --bg-2:#F4F2EC; --bg-3:#ECE9E1;
-  --surface:#FFFFFF; --surface-2:#F8F6F1;
-  --hover:rgba(20,18,14,.04); --hover-2:rgba(20,18,14,.07);
-  --cd-border:rgba(20,18,14,.08); --border-2:rgba(20,18,14,.14); --border-strong:rgba(20,18,14,.22);
-  --text:#14120E; --text-2:#5C5953; --text-3:#8A877F; --text-4:#B5B2AA;
-  --cd-accent:#E2552B; --accent-2:#C73E16; --accent-tint:rgba(226,85,43,.10); --accent-tint-2:rgba(226,85,43,.18);
+  --bg:#F7FAFD; --bg-2:#EFF5FC; --bg-3:#E7F0FB;
+  --surface:#FFFFFF; --surface-2:#F3F8FD;
+  --hover:rgba(18,40,68,.04); --hover-2:rgba(18,40,68,.07);
+  --cd-border:rgba(18,40,68,.10); --border-2:rgba(18,40,68,.17); --border-strong:rgba(18,40,68,.26);
+  --text:#122844; --text-2:#4A648C; --text-3:#8AA0C0; --text-4:#B3C4DE;
+  --cd-accent:#2F7AE0; --accent-2:#1F5BC0; --accent-tint:rgba(47,122,224,.10); --accent-tint-2:rgba(47,122,224,.20);
   --ok:#1F8A5B; --ok-tint:rgba(31,138,91,.10);
   --warn:#C8881F; --warn-tint:rgba(200,136,31,.14);
   --danger:#B5322F;
-  --info:#2A6FDB; --info-tint:rgba(42,111,219,.10);
+  --info:#0E93A6; --info-tint:rgba(14,147,166,.10);
   --magic:#7A5AE0; --magic-tint:rgba(122,90,224,.10);
-  --shadow-1:0 1px 0 rgba(20,18,14,.04),0 1px 2px rgba(20,18,14,.04);
-  --shadow-2:0 1px 0 rgba(20,18,14,.04),0 4px 12px rgba(20,18,14,.06),0 12px 32px rgba(20,18,14,.05);
-  --shadow-pop:0 1px 0 rgba(20,18,14,.04),0 8px 24px rgba(20,18,14,.10),0 24px 64px rgba(20,18,14,.10);
+  --shadow-1:0 1px 0 rgba(18,40,68,.04),0 1px 2px rgba(18,40,68,.04);
+  --shadow-2:0 1px 0 rgba(18,40,68,.04),0 4px 12px rgba(18,40,68,.06),0 12px 32px rgba(18,40,68,.05);
+  --shadow-pop:0 1px 0 rgba(18,40,68,.04),0 8px 24px rgba(18,40,68,.10),0 24px 64px rgba(18,40,68,.10);
   --font-ui:"Geist",ui-sans-serif,system-ui,-apple-system,sans-serif;
   --font-mono:"Geist Mono",ui-monospace,"SF Mono",Menlo,monospace;
   --font-serif:"Instrument Serif","Times New Roman",serif;
@@ -37,7 +37,7 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-scope ::selection{background:var(--accent-tint-2);}
 .cd-scope code{font-family:var(--font-mono);}
 .cd-scope ::-webkit-scrollbar{width:10px;height:10px;}
-.cd-scope ::-webkit-scrollbar-thumb{background:rgba(20,18,14,.14);border-radius:8px;border:2px solid transparent;background-clip:content-box;}
+.cd-scope ::-webkit-scrollbar-thumb{background:rgba(18,40,68,.14);border-radius:8px;border:2px solid transparent;background-clip:content-box;}
 .cd-scope .cd-serif{font-family:var(--font-serif);font-weight:400;}
 .cd-scope .cd-grow{flex:1;min-width:0;}
 .cd-scope .ico{width:14px;height:14px;flex-shrink:0;stroke-width:1.6;}
@@ -63,7 +63,7 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 /* ── root shell ── */
 .cd-root{display:grid;grid-template-columns:54px 1fr;height:100vh;overflow:hidden;}
 .cd-main{min-width:0;overflow:hidden;background:var(--bg);display:flex;flex-direction:column;}
-.cd-rail{background:#14120E;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;}
+.cd-rail{background:#122844;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;}
 .cd-brand{width:34px;height:34px;background:var(--cd-accent);color:#fff;border:0;border-radius:9px;font-family:var(--font-mono);font-weight:600;font-size:14px;margin-bottom:6px;}
 .cd-rail-sep{width:22px;height:1px;background:rgba(255,255,255,.08);margin:4px 0;}
 .cd-rail-btn{width:38px;height:38px;border:0;background:transparent;border-radius:9px;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.45);position:relative;}
@@ -116,7 +116,7 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-dot-sep{color:var(--text-4);}
 
 /* ── IMPORT MODAL ── */
-.cd-modal-backdrop{position:fixed;inset:0;background:rgba(20,18,14,.45);backdrop-filter:blur(3px);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;}
+.cd-modal-backdrop{position:fixed;inset:0;background:rgba(18,40,68,.45);backdrop-filter:blur(3px);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;}
 .cd-modal{width:100%;max-width:480px;background:var(--surface);border:1px solid var(--border-2);border-radius:16px;box-shadow:var(--shadow-pop);overflow:hidden;display:flex;flex-direction:column;}
 .cd-modal-hd{display:flex;align-items:center;gap:11px;padding:16px 18px;border-bottom:1px solid var(--cd-border);}
 .cd-modal-ic{width:32px;height:32px;border-radius:8px;background:var(--accent-tint);color:var(--accent-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
@@ -271,7 +271,7 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 .cd-textarea{width:100%;background:var(--surface-2);border:1px solid var(--border-2);border-radius:7px;padding:8px 9px;font:inherit;font-size:12.5px;color:var(--text);resize:vertical;line-height:1.45;outline:0;}
 .cd-textarea:focus{border-color:var(--text);background:var(--surface);}
 .cd-img-slot{display:flex;align-items:center;gap:9px;border:1px dashed var(--border-2);background:var(--surface-2);padding:8px;border-radius:8px;}
-.cd-img-thumb{width:36px;height:36px;border-radius:6px;background:var(--bg-3);background-image:repeating-linear-gradient(135deg,rgba(20,18,14,.06) 0 6px,transparent 6px 12px);display:flex;align-items:center;justify-content:center;color:var(--text-4);flex-shrink:0;}
+.cd-img-thumb{width:36px;height:36px;border-radius:6px;background:var(--bg-3);background-image:repeating-linear-gradient(135deg,rgba(18,40,68,.06) 0 6px,transparent 6px 12px);display:flex;align-items:center;justify-content:center;color:var(--text-4);flex-shrink:0;}
 .cd-img-name{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cd-img-sub{font-size:10.5px;color:var(--text-4);font-family:var(--font-mono);}
 .cd-rep-note{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ok);background:var(--ok-tint);border:1px solid rgba(31,138,91,.2);border-radius:8px;padding:9px 11px;line-height:1.4;}
@@ -329,10 +329,10 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 /* ── canvas ── */
 .cd-canvas-host{position:relative;min-width:0;overflow:hidden;background:var(--bg-3);display:flex;flex-direction:column;}
 .cd-canvas-area{flex:1;overflow:auto;display:flex;justify-content:center;padding:36px;}
-.cd-canvas-area.grid-dots{background-image:radial-gradient(circle,rgba(20,18,14,.07) 1px,transparent 1.4px);background-size:20px 20px;}
+.cd-canvas-area.grid-dots{background-image:radial-gradient(circle,rgba(18,40,68,.07) 1px,transparent 1.4px);background-size:20px 20px;}
 .cd-frame-sizer{flex-shrink:0;position:relative;}
-.cd-frame{transform-origin:top left;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 0 0 1px rgba(20,18,14,.05),0 16px 40px rgba(20,18,14,.12),0 40px 100px rgba(20,18,14,.1);}
-.cd-frame.mobile{border-radius:26px;border:8px solid #14120E;}
+.cd-frame{transform-origin:top left;border-radius:14px;overflow:hidden;background:#fff;box-shadow:0 0 0 1px rgba(18,40,68,.05),0 16px 40px rgba(18,40,68,.12),0 40px 100px rgba(18,40,68,.1);}
+.cd-frame.mobile{border-radius:26px;border:8px solid #122844;}
 .cd-canvas-tools{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;background:var(--surface);border:1px solid var(--border-2);border-radius:10px;padding:4px;box-shadow:var(--shadow-2);}
 .cd-canvas-tools button{appearance:none;border:0;background:transparent;height:26px;padding:0 8px;border-radius:6px;font:inherit;font-size:12px;font-weight:500;color:var(--text-2);display:inline-flex;align-items:center;gap:5px;}
 .cd-canvas-tools button:hover{background:var(--hover);color:var(--text);}
@@ -345,7 +345,7 @@ export const CLAUDE_DESIGN_THEME_CSS = String.raw`
 
 /* zone selection chrome */
 .cd-zone{position:relative;cursor:default;transition:outline-color .1s,box-shadow .1s;outline:1.5px solid transparent;outline-offset:1px;}
-.cd-zone:hover{outline-color:rgba(226,85,43,.45);}
+.cd-zone:hover{outline-color:rgba(47,122,224,.45);}
 .cd-zone.is-bound:hover{outline-color:rgba(122,90,224,.5);}
 .cd-zone.is-selected{outline:2px solid var(--cd-accent);outline-offset:1px;}
 .cd-zone.is-bound.is-selected{outline-color:var(--magic);}

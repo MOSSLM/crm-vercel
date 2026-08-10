@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { corpsCompact, dateLisible, MAX_LIGNES_AVANT_APRES } from '../htmlCompact';
+import { CSS_COMPACT } from '../compactCss';
+import { C } from '@/components/audit/AuditShared';
 import { construireMesures, mesuresVides, NOTE_DEMO } from '@/lib/audit/mesures';
 import { getDefaultAuditContent } from '@/lib/audit/default-content';
 import type { AuditLu } from '@/lib/audit-site/lecture';
@@ -209,5 +213,40 @@ describe('dateLisible', () => {
   it('rend une chaîne vide sur une date absente ou illisible', () => {
     expect(dateLisible(null)).toBe('');
     expect(dateLisible('pas une date')).toBe('');
+  });
+});
+
+describe('la palette suit la charte, elle ne la recopie pas', () => {
+  const SOURCES = ['../compactCss.ts', '../htmlCompact.ts'];
+
+  /** Les couleurs de la charte, plus celles qu'elle a remplacées. */
+  const MARQUE = [...Object.values(C), '#0B1D3A', '#3A7BD5', '#F4F1EB'];
+  const triplet = (hex: string) => {
+    const n = parseInt(hex.replace('#', ''), 16);
+    return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+  };
+
+  it.each(SOURCES)('%s n’écrit aucune couleur de marque en dur', (fichier) => {
+    // Les couleurs étaient recopiées de la maquette. La charte Sama en a changé
+    // trois — nuit, azur, crème — et le document se serait mis à sortir hors
+    // charte sans que rien ne le signale : le seul symptôme aurait été un bleu
+    // légèrement différent du reste du CRM, sur un document qu'on ne regarde
+    // qu'une fois avant de l'envoyer.
+    //
+    // Les anciennes valeurs sont interdites au même titre que les nouvelles :
+    // écrire la bonne couleur en dur aujourd'hui produit la mauvaise demain.
+    const source = readFileSync(join(__dirname, fichier), 'utf-8');
+    for (const hex of MARQUE) {
+      expect(source).not.toContain(hex);
+      // Une `rgba()` recopiée porte le triplet et redevient un point de
+      // divergence, en plus discret.
+      expect(source).not.toContain(`rgba(${triplet(hex)}`);
+    }
+  });
+
+  it('sert bien les valeurs courantes de la charte', () => {
+    expect(CSS_COMPACT).toContain(`--nuit:${C.nuit}`);
+    expect(CSS_COMPACT).toContain(`--azur:${C.azur}`);
+    expect(CSS_COMPACT).toContain(`--creme:${C.creme}`);
   });
 });

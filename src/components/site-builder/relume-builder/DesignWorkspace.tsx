@@ -1666,7 +1666,7 @@ function SectionPanel({
         )}
 
         {/* Click-to-edit hint */}
-        <div style={{ margin: "0 14px 8px", display: "flex", gap: 6, alignItems: "flex-start", padding: "6px 8px", background: "var(--info-tint)", border: "1px solid rgba(42,111,219,.22)", borderRadius: 6 }}>
+        <div style={{ margin: "0 14px 8px", display: "flex", gap: 6, alignItems: "flex-start", padding: "6px 8px", background: "var(--info-tint)", border: "1px solid rgba(14, 147, 166,.22)", borderRadius: 6 }}>
           <MousePointer size={11} style={{ color: "var(--info)", flexShrink: 0, marginTop: 2 }} />
           <span style={{ fontSize: 10.5, color: "#0d4a98", lineHeight: 1.45 }}>
             Cliquez sur un titre, image ou bouton dans le canvas pour l&apos;éditer directement.

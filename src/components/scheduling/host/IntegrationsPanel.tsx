@@ -119,7 +119,7 @@ export default function IntegrationsPanel() {
             `<script src="${embedJs}" async`,
             `  data-button-url="${url}"`,
             `  data-button-text="${txt}"`,
-            `  data-button-color="#E2552B"`,
+            `  data-button-color="#2F7AE0"`,
             `  data-button-position="${pos}"></script>`,
           ];
 

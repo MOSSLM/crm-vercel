@@ -23,75 +23,78 @@
   --font-family-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
   --font-family-mono: "Geist Mono", var(--font-dm-mono), ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Color system - Light mode (Sama CRM — Direction Artistique) */
-  --background: #FBFAF7;
-  --foreground: #14120E;
+  /* Color system - Light mode (Sama CRM — Direction Artistique : nuit, azur, brume) */
+  --background: #F7FAFD;
+  --foreground: #122844;
   --card: #FFFFFF;
-  --card-foreground: #14120E;
+  --card-foreground: #122844;
   --popover: #FFFFFF;
-  --popover-foreground: #14120E;
-  --primary: #E2552B;
+  --popover-foreground: #122844;
+  --primary: #2F7AE0;
   --primary-foreground: #FFFFFF;
-  --secondary: #F4F2EC;
-  --secondary-foreground: #14120E;
-  --muted: #F4F2EC;
-  --muted-foreground: #8A877F;
-  --accent: #F4F2EC;
-  --accent-foreground: #E2552B;
+  --secondary: #EFF5FC;
+  --secondary-foreground: #122844;
+  --muted: #EFF5FC;
+  /* Un cran plus sombre que --text-3 : ce jeton porte le texte courant
+     secondaire de tout le CRM et doit passer AA (4,8:1 sur blanc), là où
+     --text-3 reste la brume des étiquettes discrètes. */
+  --muted-foreground: #5F7396;
+  --accent: #EFF5FC;
+  --accent-foreground: #2F7AE0;
   --destructive: #B5322F;
   --destructive-foreground: #FFFFFF;
-  --border: rgba(20, 18, 14, 0.10);
+  --border: rgba(18, 40, 68, 0.10);
   /* Studio nav — extra border/hover steps (from the Studio V1 design system) */
-  --border-2: rgba(20, 18, 14, 0.14);
-  --border-strong: rgba(20, 18, 14, 0.22);
-  --hover: rgba(20, 18, 14, 0.04);
-  --input: rgba(20, 18, 14, 0.12);
+  --border-2: rgba(18, 40, 68, 0.14);
+  --border-strong: rgba(18, 40, 68, 0.22);
+  --hover: rgba(18, 40, 68, 0.04);
+  --input: rgba(18, 40, 68, 0.12);
   --input-background: #FFFFFF;
-  --switch-background: #ECE9E1;
-  --ring: rgba(226, 85, 43, 0.30);
+  --switch-background: #E7F0FB;
+  --ring: rgba(47, 122, 224, 0.30);
 
   /* Layout */
   --radius: 0.75rem;
-  --shadow-card: 0 1px 0 rgba(20, 18, 14, 0.04), 0 4px 12px rgba(20, 18, 14, 0.06);
-  --shadow-elevated: 0 1px 0 rgba(20, 18, 14, 0.04), 0 12px 32px rgba(20, 18, 14, 0.08);
+  --shadow-card: 0 1px 0 rgba(18, 40, 68, 0.04), 0 4px 12px rgba(18, 40, 68, 0.06);
+  --shadow-elevated: 0 1px 0 rgba(18, 40, 68, 0.04), 0 12px 32px rgba(18, 40, 68, 0.08);
 
   /* Sidebar colors */
-  --sidebar: #F4F2EC;
-  --sidebar-foreground: #14120E;
-  --sidebar-primary: #E2552B;
+  --sidebar: #EFF5FC;
+  --sidebar-foreground: #122844;
+  --sidebar-primary: #2F7AE0;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #ECE9E1;
-  --sidebar-accent-foreground: #14120E;
-  --sidebar-border: rgba(20, 18, 14, 0.08);
-  --sidebar-ring: rgba(226, 85, 43, 0.30);
+  --sidebar-accent: #E7F0FB;
+  --sidebar-accent-foreground: #122844;
+  --sidebar-border: rgba(18, 40, 68, 0.08);
+  --sidebar-ring: rgba(47, 122, 224, 0.30);
 
   /* Semantic colors */
   --success: #1F8A5B;
   --success-foreground: #FFFFFF;
   --warning: #C8881F;
   --warning-foreground: #FFFFFF;
-  --info: #2A6FDB;
+  --info: #0E93A6;
   --info-foreground: #FFFFFF;
 
-  /* Direction Artistique — extra tokens (warm cream palette) */
-  --bg: #FBFAF7;
-  --bg-2: #F4F2EC;
-  --bg-3: #ECE9E1;
+  /* Direction Artistique Sama — jetons complémentaires (nuit #0A1B33 · azur #2F7AE0 · brume) */
+  --bg: #F7FAFD;
+  --bg-2: #EFF5FC;
+  --bg-3: #E7F0FB;
   --surface: #FFFFFF;
-  --surface-2: #F8F6F1;
-  --text: #14120E;
-  --text-2: #5C5953;
-  --text-3: #8A877F;
-  --text-4: #B5B2AA;
-  --accent-2: #C73E16;
-  --accent-tint: rgba(226, 85, 43, 0.10);
+  --surface-2: #F3F8FD;
+  --text: #122844;
+  --text-2: #4A648C;
+  --text-3: #8AA0C0;
+  --text-4: #B3C4DE;
+  --accent-2: #1F5BC0;
+  --accent-tint: rgba(47, 122, 224, 0.10);
   --ok: #1F8A5B;
   --ok-tint: rgba(31, 138, 91, 0.10);
   --warn: #C8881F;
   --warn-tint: rgba(200, 136, 31, 0.14);
   --danger: #B5322F;
   --danger-tint: rgba(181, 50, 47, 0.10);
-  --info-tint: rgba(42, 111, 219, 0.10);
+  --info-tint: rgba(14, 147, 166, 0.10);
   --magic: #7A5AE0;
   --magic-tint: rgba(122, 90, 224, 0.10);
 
@@ -116,49 +119,73 @@
 
 }
 
-/* Dark mode overrides - lpura blue dark theme */
+/* Dark mode overrides — la nuit Sama (#0A1B33) plutôt qu'un bleu générique */
 .dark {
-  --gradient: linear-gradient(to top left, #007adf, #00ecbc);
+  --gradient: linear-gradient(to top left, #2F7AE0, #0E93A6);
 
-  --background: #060d1a;
-  --foreground: #f3f5f8;
-  --card: #08101e;
-  --card-foreground: #f3f5f8;
-  --popover: #08101e;
-  --popover-foreground: #f3f5f8;
-  --primary: #004be0;
-  --primary-foreground: #f3f5f8;
-  --secondary: #10213d;
-  --secondary-foreground: #f3f5f8;
-  --muted: #10213d;
-  --muted-foreground: #7f8999;
-  --accent: #10213d;
-  --accent-foreground: #f3f5f8;
-  --destructive: #ef4444;
-  --destructive-foreground: #f5f8fc;
-  --border: #25252c;
-  --border-2: rgba(255, 255, 255, 0.14);
-  --border-strong: rgba(255, 255, 255, 0.24);
+  --background: #071426;
+  --foreground: #E8F0FA;
+  --card: #0A1B33;
+  --card-foreground: #E8F0FA;
+  --popover: #0E2543;
+  --popover-foreground: #E8F0FA;
+  --primary: #4A90E8;
+  --primary-foreground: #071426;
+  --secondary: #0E2543;
+  --secondary-foreground: #E8F0FA;
+  --muted: #0E2543;
+  --muted-foreground: #7E97BC;
+  --accent: #0E2543;
+  --accent-foreground: #7FB2F0;
+  --destructive: #E0625F;
+  --destructive-foreground: #071426;
+  --border: rgba(255, 255, 255, 0.10);
+  --border-2: rgba(255, 255, 255, 0.16);
+  --border-strong: rgba(255, 255, 255, 0.26);
   --hover: rgba(255, 255, 255, 0.05);
-  --input: #10213d;
-  --input-background: #08101e;
-  --switch-background: #10213d;
-  --ring: rgba(0, 75, 224, 0.44);
-  --success: #46b98a;
-  --success-foreground: #060d1a;
-  --warning: #f0b54a;
-  --warning-foreground: #060d1a;
-  --info: #7bc1d1;
-  --info-foreground: #060d1a;
-  --sidebar: #060d1a;
-  --sidebar-foreground: #f3f5f8;
-  --sidebar-primary: #004be0;
-  --sidebar-primary-foreground: #f3f5f8;
-  --sidebar-accent: #10213d;
-  --sidebar-accent-foreground: #f3f5f8;
-  --sidebar-border: #25252c;
-  --sidebar-ring: rgba(0, 75, 224, 0.44);
-  --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.28);
+  --input: rgba(255, 255, 255, 0.12);
+  --input-background: #0A1B33;
+  --switch-background: #16325A;
+  --ring: rgba(74, 144, 232, 0.45);
+  --success: #46B98A;
+  --success-foreground: #071426;
+  --warning: #E3A94A;
+  --warning-foreground: #071426;
+  --info: #3FB6C6;
+  --info-foreground: #071426;
+  --sidebar: #0A1B33;
+  --sidebar-foreground: #E8F0FA;
+  --sidebar-primary: #4A90E8;
+  --sidebar-primary-foreground: #071426;
+  --sidebar-accent: #0E2543;
+  --sidebar-accent-foreground: #E8F0FA;
+  --sidebar-border: rgba(255, 255, 255, 0.10);
+  --sidebar-ring: rgba(74, 144, 232, 0.45);
+  --shadow-card: 0 10px 28px rgba(0, 0, 0, 0.38);
+  --shadow-elevated: 0 12px 40px rgba(0, 0, 0, 0.46);
+
+  /* Direction Artistique — mêmes noms qu'en clair, pour que les « skins » suivent */
+  --bg: #071426;
+  --bg-2: #0A1B33;
+  --bg-3: #0E2543;
+  --surface: #0A1B33;
+  --surface-2: #0E2543;
+  --text: #E8F0FA;
+  --text-2: #A8BEDD;
+  --text-3: #7E97BC;
+  --text-4: #55719B;
+  --accent-2: #7FB2F0;
+  --accent-tint: rgba(74, 144, 232, 0.16);
+  --ok: #46B98A;
+  --ok-tint: rgba(70, 185, 138, 0.16);
+  --warn: #E3A94A;
+  --warn-tint: rgba(227, 169, 74, 0.18);
+  --danger: #E0625F;
+  --danger-tint: rgba(224, 98, 95, 0.16);
+  --info-tint: rgba(63, 182, 198, 0.16);
+  --magic: #A18BF0;
+  --magic-tint: rgba(161, 139, 240, 0.16);
+
   --chart-1: #60a5fa;
   --chart-2: #f87171;
   --chart-3: #34d399;
@@ -1791,7 +1818,7 @@
   /* Tabs avec meilleur contraste */
   .tab-active {
     background-color: #ffffff;
-    color: #030213;
+    color: #122844;
     border-color: #e5e7eb;
   }
 

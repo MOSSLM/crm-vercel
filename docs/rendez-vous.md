@@ -78,7 +78,7 @@ texte, de la couleur et de la position) :
 <script src="https://app.samadigitalstudio.fr/api/public/scheduling/embed.js" async
   data-button-url="https://app.samadigitalstudio.fr/rdv/jean/appel-30min"
   data-button-text="Prendre rendez-vous"
-  data-button-color="#E2552B"
+  data-button-color="#2F7AE0"
   data-button-position="right"></script>
 
 <!-- 3) Popup au clic : sur n'importe quel élément -->

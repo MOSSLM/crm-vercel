@@ -1370,7 +1370,7 @@ function QueueDrawer({
     <div className="modal-scrim right" onClick={onClose}>
       <div className="drawer" onClick={(e) => e.stopPropagation()}>
         <div className="modal-hd">
-          <span className="sw" style={{ background: rgba('#2A6FDB', 0.12), color: '#2A6FDB' }}>
+          <span className="sw" style={{ background: rgba('#0E93A6', 0.12), color: '#0E93A6' }}>
             <Bolt className="ico" />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -1594,7 +1594,7 @@ function EmailDialog({
     <div className="modal-scrim" onClick={onClose}>
       <div className="modal" style={{ width: 460 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-hd">
-          <span className="sw" style={{ background: rgba('#2A6FDB', 0.12), color: '#2A6FDB' }}>
+          <span className="sw" style={{ background: rgba('#0E93A6', 0.12), color: '#0E93A6' }}>
             <MailPlus className="ico" />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>

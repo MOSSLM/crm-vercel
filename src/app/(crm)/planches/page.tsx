@@ -155,10 +155,10 @@ export default function PlanchesGalleryPage() {
                 onClick={() => router.push(`/planches/${board.id}`)}
               >
                 <div
-                  className="aspect-[4/3] flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-100 dark:from-slate-800 dark:to-slate-900"
+                  className="aspect-[4/3] flex items-center justify-center bg-gradient-to-br from-[#EFF5FC] to-[#E7F0FB] dark:from-[#0A1B33] dark:to-[#0E2543]"
                   style={board.color ? { background: board.color } : undefined}
                 >
-                  <StickyNote className="h-10 w-10 text-amber-400/70 dark:text-slate-600" />
+                  <StickyNote className="h-10 w-10 text-[#8AA0C0]/70 dark:text-[#55719B]" />
                 </div>
                 <CardContent className="p-3">
                   <p className="text-sm font-medium truncate" title={board.title}>

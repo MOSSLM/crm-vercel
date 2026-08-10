@@ -148,7 +148,7 @@ export default function CollaborationFreelancePage() {
         <nav id="sama-nav" className="nav" aria-label="Navigation">
           <a href="#hero" className="nav-logo" aria-label="SAMA — retour en haut">
             <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <rect width="100" height="100" fill="#D6E4F0" mask="url(#sun-ring-light)" />
+              <rect width="100" height="100" fill="#E7F0FB" mask="url(#sun-ring-light)" />
             </svg>
             <span className="nav-logo-text">SAMA</span>
           </a>
@@ -387,7 +387,7 @@ export default function CollaborationFreelancePage() {
           <div className="cta-bg-glow" />
           <div className="cta-sun-wrap fade-up" aria-hidden="true">
             <svg className="cta-sun-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-              <rect width="100" height="100" fill="rgba(90,169,230,0.25)" mask="url(#sun-ring-light)" />
+              <rect width="100" height="100" fill="rgba(91,155,232,0.25)" mask="url(#sun-ring-light)" />
             </svg>
           </div>
           <div className="cta-content fade-up d2">

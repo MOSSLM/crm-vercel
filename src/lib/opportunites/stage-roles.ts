@@ -70,11 +70,14 @@ export function findStageByRole<T extends StageLike>(stages: T[], ...roles: Stag
  */
 const ROLE_TINT: Record<StageRole, string> = {
   nouveau: "var(--text-3)",
-  approche: "#2B7FB8",
-  contacte: "#2A6FDB",
+  // Un seul bleu dans la file, et c'est `propo` (l'azur de marque, l'étape
+  // qui compte). `approche` prend le violet, `contacte` la sarcelle : les
+  // trois premières étapes restent lisibles côte à côte.
+  approche: "#7A5AE0",
+  contacte: "#0E93A6",
   interesse: "#C8881F",
   rdv: "#A24E86",
-  propo: "#E2552B",
+  propo: "#2F7AE0",
   signe: "#1F8A5B",
   perdu: "#B5322F",
   autre: "var(--text-3)",

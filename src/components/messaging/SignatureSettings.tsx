@@ -32,7 +32,7 @@ const EMPTY: SignatureData = {
   phone:        "",
   website:      "",
   linkedin_url: "",
-  accent_color: "#3A7BD5",
+  accent_color: "#2F7AE0",
 };
 
 /** Re-exported for callers that only need the HTML string (e.g. EmailCompose preview). */

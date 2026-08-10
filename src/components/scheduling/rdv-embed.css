@@ -143,7 +143,7 @@
   align-items: flex-start;
   padding: 40px 20px 60px;
   background: var(--bg-2);
-  background-image: radial-gradient(rgba(20, 18, 14, 0.05) 1px, transparent 1px);
+  background-image: radial-gradient(rgba(18, 40, 68, 0.05) 1px, transparent 1px);
   background-size: 20px 20px;
   overflow: visible;
   height: auto;

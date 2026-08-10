@@ -16,11 +16,11 @@ interface SettingsSheetProps {
   onSave: (patch: Partial<Form>) => void;
 }
 
-const PRESET_COLORS = ['#E2552B', '#2B7FB8', '#1F8A5B', '#6B5BD9', '#C8881F'];
+const PRESET_COLORS = ['#2F7AE0', '#0E93A6', '#1F8A5B', '#6B5BD9', '#C8881F'];
 
 export function SettingsSheet({ open, form, onClose, onSave }: SettingsSheetProps) {
   const [name, setName] = useState('');
-  const [color, setColor] = useState('#E2552B');
+  const [color, setColor] = useState('#2F7AE0');
   const [logoUrl, setLogoUrl] = useState('');
   const [progressBar, setProgressBar] = useState(true);
   const [showQuestionNumber, setShowQuestionNumber] = useState(true);
@@ -35,7 +35,7 @@ export function SettingsSheet({ open, form, onClose, onSave }: SettingsSheetProp
   useEffect(() => {
     if (form) {
       setName(form.brand?.name ?? form.name);
-      setColor(form.brand?.color ?? '#E2552B');
+      setColor(form.brand?.color ?? '#2F7AE0');
       setLogoUrl(form.brand?.logo_url ?? '');
       setProgressBar(form.settings?.progressBar ?? true);
       setShowQuestionNumber(form.settings?.showQuestionNumber ?? true);
@@ -148,7 +148,7 @@ export function SettingsSheet({ open, form, onClose, onSave }: SettingsSheetProp
                   style={{ ...inputStyle, flex: 1 }}
                   value={color}
                   onChange={(e) => setColor(e.target.value)}
-                  placeholder="#E2552B"
+                  placeholder="#2F7AE0"
                 />
               </div>
             </div>
@@ -235,7 +235,7 @@ export function SettingsSheet({ open, form, onClose, onSave }: SettingsSheetProp
                 style={inputStyle}
                 value={accent}
                 onChange={(e) => setAccent(e.target.value)}
-                placeholder="Ex: #E2552B"
+                placeholder="Ex: #2F7AE0"
               />
             </div>
           </div>

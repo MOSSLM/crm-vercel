@@ -15,7 +15,7 @@ interface TemplateRef { id: string; name: string; demo_count?: number }
 
 type Tab = "templates" | "projets";
 
-const CARD_ACCENTS = ["#E2552B", "#2A6FDB", "#1F8A5B", "#7A5AE0", "#C8881F"];
+const CARD_ACCENTS = ["#2F7AE0", "#0E93A6", "#1F8A5B", "#7A5AE0", "#C8881F"];
 
 export default function ClaudeDesignHubPage() {
   const [tab, setTab] = React.useState<Tab>("templates");
