@@ -171,7 +171,7 @@ async function ensureCalendarCategory(sc: SupabaseClient): Promise<string | null
     if (existing) return existing.id as string;
     const { data: created } = await sc
       .from("crm_calendar_categories")
-      .insert({ nom: "Rendez-vous", color: "#E2552B", position: 40 })
+      .insert({ nom: "Rendez-vous", color: "#2F7AE0", position: 40 })
       .select("id")
       .single();
     return (created?.id as string) ?? null;

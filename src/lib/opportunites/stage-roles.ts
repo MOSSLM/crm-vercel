@@ -71,10 +71,12 @@ export function findStageByRole<T extends StageLike>(stages: T[], ...roles: Stag
 const ROLE_TINT: Record<StageRole, string> = {
   nouveau: "var(--text-3)",
   approche: "#2B7FB8",
-  contacte: "#2A6FDB",
+  // `contacte` suit `approche` dans la file : la sarcelle l'en écarte
+  // franchement, là où un second bleu se serait confondu avec lui.
+  contacte: "#0E93A6",
   interesse: "#C8881F",
   rdv: "#A24E86",
-  propo: "#E2552B",
+  propo: "#2F7AE0",
   signe: "#1F8A5B",
   perdu: "#B5322F",
   autre: "var(--text-3)",

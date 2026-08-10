@@ -21,7 +21,7 @@ const META: Record<string, { icon: string; color: string; textCol: string; field
   supabase: { icon: 'database', color: '#3ECF8E', textCol: 'var(--supa-dark)', fields: [] },
   resend: {
     icon: 'mail',
-    color: '#E2552B',
+    color: '#2F7AE0',
     textCol: 'var(--accent-2)',
     fields: [
       { key: 'from_email', label: 'Email expéditeur', placeholder: 'contact@votredomaine.fr' },
@@ -53,7 +53,7 @@ const META: Record<string, { icon: string; color: string; textCol: string; field
   claude: { icon: 'ai', color: '#D97757', textCol: 'var(--accent-2)', fields: [] },
   webhook: {
     icon: 'webhook',
-    color: '#8A877F',
+    color: '#8AA0C0',
     textCol: 'var(--text-2)',
     fields: [
       { key: 'base_url', label: 'URL de base', placeholder: 'https://api.exemple.com' },

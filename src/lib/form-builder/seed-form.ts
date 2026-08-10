@@ -4,7 +4,7 @@ export const SEED_FORM: Form = {
   id: 'form_lead_2026',
   name: 'Demande de devis — Énergie & confort',
   tags: [],
-  brand: { name: 'Thermalis', color: '#E2552B' },
+  brand: { name: 'Thermalis', color: '#2F7AE0' },
   settings: {
     progressBar: true,
     showQuestionNumber: true,

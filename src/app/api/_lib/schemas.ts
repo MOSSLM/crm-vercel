@@ -638,6 +638,30 @@ export const sequenceRegulatorSchema = z
   .strict();
 export type SequenceRegulatorPayload = z.infer<typeof sequenceRegulatorSchema>;
 
+/**
+ * Action posée sur une vague de la vue semaine : annuler l'envoi d'une étape
+ * pour ces contacts, le rétablir, ou le décaler de quelques jours.
+ *
+ * On passe les inscriptions explicitement plutôt que de rejouer la projection
+ * côté serveur : l'utilisateur agit sur ce qu'il VOIT, et la vue a déjà résolu
+ * quelles inscriptions composent la vague.
+ */
+export const weekWaveActionSchema = z
+  .object({
+    automation_id: z.string().uuid(),
+    step_index: z.coerce.number().int().min(0).max(100),
+    action: z.enum(["cancel", "restore", "shift"]),
+    /** Décalage en jours, requis pour `shift`. */
+    days: z.coerce.number().int().min(-14).max(14).optional(),
+    enrollment_ids: z.array(z.string().uuid()).min(1).max(1000),
+  })
+  .strict()
+  .refine((v) => v.action !== "shift" || (v.days != null && v.days !== 0), {
+    message: "days est requis (et non nul) pour un décalage",
+    path: ["days"],
+  });
+export type WeekWaveActionPayload = z.infer<typeof weekWaveActionSchema>;
+
 /* ── Pipeline commercial ─────────────────────────────────────────────────── */
 
 /**

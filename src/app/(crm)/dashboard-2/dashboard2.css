@@ -5,32 +5,32 @@
    ─────────────────────────────────────────────────────────── */
 
 .da2 {
-  --bg: #FBFAF7;
-  --bg-2: #F4F2EC;
-  --bg-3: #ECE9E1;
+  --bg: #F7FAFD;
+  --bg-2: #EFF5FC;
+  --bg-3: #E7F0FB;
   --surface: #FFFFFF;
-  --surface-2: #F8F6F1;
-  --hover: rgba(20, 18, 14, 0.04);
-  --hover-2: rgba(20, 18, 14, 0.07);
-  --border: rgba(20, 18, 14, 0.08);
-  --border-2: rgba(20, 18, 14, 0.14);
-  --border-strong: rgba(20, 18, 14, 0.22);
-  --text: #14120E;
-  --text-2: #5C5953;
-  --text-3: #8A877F;
-  --text-4: #B5B2AA;
-  --accent: #E2552B;
-  --accent-2: #C73E16;
-  --accent-tint: rgba(226, 85, 43, 0.10);
-  --accent-tint-2: rgba(226, 85, 43, 0.18);
+  --surface-2: #F3F8FD;
+  --hover: rgba(18, 40, 68, 0.04);
+  --hover-2: rgba(18, 40, 68, 0.07);
+  --border: rgba(18, 40, 68, 0.08);
+  --border-2: rgba(18, 40, 68, 0.14);
+  --border-strong: rgba(18, 40, 68, 0.22);
+  --text: #122844;
+  --text-2: #4A648C;
+  --text-3: #8AA0C0;
+  --text-4: #B3C4DE;
+  --accent: #2F7AE0;
+  --accent-2: #1F5BC0;
+  --accent-tint: rgba(47, 122, 224, 0.10);
+  --accent-tint-2: rgba(47, 122, 224, 0.18);
   --ok: #1F8A5B;
   --ok-tint: rgba(31, 138, 91, .10);
   --warn: #C8881F;
   --warn-tint: rgba(200, 136, 31, .14);
   --danger: #B5322F;
   --danger-tint: rgba(181, 50, 47, .10);
-  --info: #2A6FDB;
-  --info-tint: rgba(42, 111, 219, 0.10);
+  --info: #0E93A6;
+  --info-tint: rgba(14, 147, 166, 0.10);
   --magic: #7A5AE0;
   --magic-tint: rgba(122, 90, 224, 0.10);
 
@@ -38,8 +38,8 @@
   --da2-font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --da2-font-serif: "Instrument Serif", "Times New Roman", serif;
 
-  --shadow-1: 0 1px 0 rgba(20,18,14,0.04), 0 1px 2px rgba(20,18,14,0.04);
-  --shadow-2: 0 1px 0 rgba(20,18,14,0.04), 0 4px 12px rgba(20,18,14,0.06), 0 12px 32px rgba(20,18,14,0.05);
+  --shadow-1: 0 1px 0 rgba(18, 40, 68,0.04), 0 1px 2px rgba(18, 40, 68,0.04);
+  --shadow-2: 0 1px 0 rgba(18, 40, 68,0.04), 0 4px 12px rgba(18, 40, 68,0.06), 0 12px 32px rgba(18, 40, 68,0.05);
 
   min-height: 100%;
   background: var(--bg);

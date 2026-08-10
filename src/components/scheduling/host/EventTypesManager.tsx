@@ -28,7 +28,9 @@ const TABS = [
   { id: "rem", lb: "Rappels" },
   { id: "adv", lb: "Avancé" },
 ];
-const COLORS = ["#E2552B", "#3B7DD8", "#2E9E6B", "#7A5AE0", "#C8881F", "#B5322F", "#14120E"];
+// Sept pastilles pour se repérer d'un type à l'autre : l'azur remplace
+// l'orange, et l'ancien bleu voisin cède la place à la sarcelle.
+const COLORS = ["#2F7AE0", "#0E93A6", "#2E9E6B", "#7A5AE0", "#C8881F", "#B5322F", "#122844"];
 const REMINDER_CHOICES = [2880, 1440, 180, 60, 15];
 
 const slugify = (raw: string): string =>
@@ -80,7 +82,7 @@ const EMPTY: Draft = {
   requires_confirmation: false,
   custom_questions: [],
   reminder_minutes: [1440, 60],
-  color: "#E2552B",
+  color: "#2F7AE0",
   price_cents: null,
   success_redirect_url: "",
   is_active: true,

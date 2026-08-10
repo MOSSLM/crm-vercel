@@ -7,21 +7,21 @@
  * ───────────────────────────────────────────────────────────────────────── */
 
 .mp-scope {
-  --bg: #FBFAF7; --bg-2: #F4F2EC; --bg-3: #ECE9E1;
-  --surface: #FFFFFF; --surface-2: #F8F6F1;
-  --hover: rgba(20,18,14,.04); --hover-2: rgba(20,18,14,.07);
-  --border: rgba(20,18,14,.09); --border-2: rgba(20,18,14,.14); --border-strong: rgba(20,18,14,.22);
-  --text: #14120E; --text-2: #5C5953; --text-3: #8A877F; --text-4: #B5B2AA;
-  --accent: #E2552B; --accent-2: #C73E16; --accent-tint: rgba(226,85,43,.10); --accent-tint-2: rgba(226,85,43,.18);
+  --bg: #F7FAFD; --bg-2: #EFF5FC; --bg-3: #E7F0FB;
+  --surface: #FFFFFF; --surface-2: #F3F8FD;
+  --hover: rgba(18, 40, 68,.04); --hover-2: rgba(18, 40, 68,.07);
+  --border: rgba(18, 40, 68,.09); --border-2: rgba(18, 40, 68,.14); --border-strong: rgba(18, 40, 68,.22);
+  --text: #122844; --text-2: #4A648C; --text-3: #8AA0C0; --text-4: #B3C4DE;
+  --accent: #2F7AE0; --accent-2: #1F5BC0; --accent-tint: rgba(47, 122, 224,.10); --accent-tint-2: rgba(47, 122, 224,.18);
   --ok: #1F8A5B; --ok-tint: rgba(31,138,91,.10);
   --warn: #C8881F; --warn-tint: rgba(200,136,31,.14);
   --danger: #B5322F; --danger-tint: rgba(181,50,47,.10);
-  --info: #2A6FDB; --info-tint: rgba(42,111,219,.10);
+  --info: #0E93A6; --info-tint: rgba(14, 147, 166,.10);
   --magic: #7A5AE0; --magic-tint: rgba(122,90,224,.10);
   --radius: 9px; --radius-sm: 6px; --radius-lg: 13px;
-  --shadow-1: 0 1px 0 rgba(20,18,14,.04), 0 1px 2px rgba(20,18,14,.05);
-  --shadow-2: 0 1px 0 rgba(20,18,14,.04), 0 4px 12px rgba(20,18,14,.06), 0 12px 32px rgba(20,18,14,.06);
-  --shadow-pop: 0 1px 0 rgba(20,18,14,.04), 0 10px 28px rgba(20,18,14,.13), 0 28px 70px rgba(20,18,14,.12);
+  --shadow-1: 0 1px 0 rgba(18, 40, 68,.04), 0 1px 2px rgba(18, 40, 68,.05);
+  --shadow-2: 0 1px 0 rgba(18, 40, 68,.04), 0 4px 12px rgba(18, 40, 68,.06), 0 12px 32px rgba(18, 40, 68,.06);
+  --shadow-pop: 0 1px 0 rgba(18, 40, 68,.04), 0 10px 28px rgba(18, 40, 68,.13), 0 28px 70px rgba(18, 40, 68,.12);
   --font-ui: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --font-serif: "Instrument Serif", "Times New Roman", serif;
@@ -287,13 +287,13 @@
 .mp-scope .legend .k{ width:20px; height:9px; border-radius:3px; flex-shrink:0; }
 
 /* popover menu */
-.mp-scope-pop{ position:fixed; z-index:200; background:var(--surface); border:1px solid rgba(20,18,14,.14); border-radius:10px; box-shadow:0 1px 0 rgba(20,18,14,.04), 0 10px 28px rgba(20,18,14,.13), 0 28px 70px rgba(20,18,14,.12); padding:6px; min-width:210px; font-family:"Geist",ui-sans-serif,system-ui,sans-serif; animation:mp-cardIn .12s ease; }
-.mp-scope-pop .ph{ font-size:10px; font-family:"Geist Mono",ui-monospace,monospace; text-transform:uppercase; letter-spacing:.08em; color:#B5B2AA; padding:5px 9px 3px; }
-.mp-scope-pop .pop-item{ display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:7px; font-size:12.5px; color:#14120E; border:0; background:transparent; width:100%; text-align:left; }
-.mp-scope-pop .pop-item:hover{ background:rgba(20,18,14,.04); }
+.mp-scope-pop{ position:fixed; z-index:200; background:var(--surface); border:1px solid rgba(18, 40, 68,.14); border-radius:10px; box-shadow:0 1px 0 rgba(18, 40, 68,.04), 0 10px 28px rgba(18, 40, 68,.13), 0 28px 70px rgba(18, 40, 68,.12); padding:6px; min-width:210px; font-family:"Geist",ui-sans-serif,system-ui,sans-serif; animation:mp-cardIn .12s ease; }
+.mp-scope-pop .ph{ font-size:10px; font-family:"Geist Mono",ui-monospace,monospace; text-transform:uppercase; letter-spacing:.08em; color:#B3C4DE; padding:5px 9px 3px; }
+.mp-scope-pop .pop-item{ display:flex; align-items:center; gap:9px; padding:7px 9px; border-radius:7px; font-size:12.5px; color:#122844; border:0; background:transparent; width:100%; text-align:left; }
+.mp-scope-pop .pop-item:hover{ background:rgba(18, 40, 68,.04); }
 .mp-scope-pop .pop-item.danger{ color:#B5322F; }
 .mp-scope-pop .pop-item.danger:hover{ background:rgba(181,50,47,.10); }
-.mp-scope-pop .pop-sep{ height:1px; background:rgba(20,18,14,.09); margin:5px 4px; }
+.mp-scope-pop .pop-sep{ height:1px; background:rgba(18, 40, 68,.09); margin:5px 4px; }
 .mp-scope-pop-scrim{ position:fixed; inset:0; z-index:190; }
 .mp-scope .spin{ animation:mp-spin 1s linear infinite; }
 @keyframes mp-spin{ to{ transform:rotate(360deg); } }

@@ -63,8 +63,8 @@ const detailsHtml = (ctx: BookingEmailContext, timezone: string): string => {
   const tr = rows
     .map(
       ([k, v]) =>
-        `<tr><td style="padding:4px 12px 4px 0;color:#8A877F;white-space:nowrap;vertical-align:top;">${k}</td>` +
-        `<td style="padding:4px 0;color:#14120E;">${v}</td></tr>`,
+        `<tr><td style="padding:4px 12px 4px 0;color:#8AA0C0;white-space:nowrap;vertical-align:top;">${k}</td>` +
+        `<td style="padding:4px 0;color:#122844;">${v}</td></tr>`,
     )
     .join("");
   return `<table style="border-collapse:collapse;font-size:14px;line-height:1.5;margin:16px 0;">${tr}</table>`;
@@ -79,28 +79,28 @@ const answersHtml = (ctx: BookingEmailContext): string => {
     items.push(`<p style="margin:4px 0;"><strong>Notes de l'invité</strong><br>${esc(ctx.invitee.notes)}</p>`);
   }
   if (items.length === 0) return "";
-  return `<div style="margin:16px 0;padding:12px 16px;background:#F4F2EC;border-radius:8px;font-size:14px;">${items.join("")}</div>`;
+  return `<div style="margin:16px 0;padding:12px 16px;background:#EFF5FC;border-radius:8px;font-size:14px;">${items.join("")}</div>`;
 };
 
 const button = (href: string, label: string, primary = true): string =>
   `<a href="${esc(href)}" style="display:inline-block;margin:4px 8px 4px 0;padding:10px 18px;` +
   `border-radius:8px;font-size:14px;text-decoration:none;` +
   (primary
-    ? "background:#E2552B;color:#ffffff;"
-    : "background:#ffffff;color:#14120E;border:1px solid #D8D4C8;") +
+    ? "background:#2F7AE0;color:#ffffff;"
+    : "background:#ffffff;color:#122844;border:1px solid #DCE7F5;") +
   `">${esc(label)}</a>`;
 
 /** Gabarit commun : carte sobre, accent orange, footer discret. */
 const layout = (title: string, bodyHtml: string): string => `
-<div style="background:#FBFAF7;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #E8E4DA;border-radius:12px;overflow:hidden;">
-    <div style="height:4px;background:#E2552B;"></div>
+<div style="background:#F7FAFD;padding:24px 12px;font-family:Arial,Helvetica,sans-serif;">
+  <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #E3EBF5;border-radius:12px;overflow:hidden;">
+    <div style="height:4px;background:#2F7AE0;"></div>
     <div style="padding:24px 28px;">
-      <h1 style="margin:0 0 12px 0;font-size:18px;color:#14120E;">${title}</h1>
+      <h1 style="margin:0 0 12px 0;font-size:18px;color:#122844;">${title}</h1>
       ${bodyHtml}
     </div>
   </div>
-  <p style="max-width:560px;margin:12px auto 0;font-size:12px;color:#8A877F;text-align:center;">
+  <p style="max-width:560px;margin:12px auto 0;font-size:12px;color:#8AA0C0;text-align:center;">
     Rendez-vous géré automatiquement — merci de ne pas répondre si ce message ne vous concerne pas.
   </p>
 </div>`;
@@ -150,12 +150,12 @@ export const confirmedInviteeEmail = (ctx: BookingEmailContext): SchedulingEmail
   subject: `Confirmé : ${ctx.eventTitle} avec ${ctx.host.name}`,
   html: layout(
     "Votre rendez-vous est confirmé ✅",
-    `<p style="font-size:14px;color:#14120E;">Bonjour ${esc(ctx.invitee.name)},<br>
+    `<p style="font-size:14px;color:#122844;">Bonjour ${esc(ctx.invitee.name)},<br>
      votre rendez-vous avec <strong>${esc(ctx.host.name)}</strong> est confirmé.</p>` +
       detailsHtml(ctx, ctx.invitee.timezone) +
       (ctx.meetingUrl ? `<p style="margin:16px 0;">${button(ctx.meetingUrl, "Rejoindre la visio")}</p>` : "") +
       `<p style="margin:20px 0 4px 0;">${button(ctx.manageUrl, "Reprogrammer ou annuler", false)}</p>
-       <p style="font-size:12px;color:#8A877F;">L'invitation (.ics) est en pièce jointe — ajoutez-la à votre agenda.</p>`,
+       <p style="font-size:12px;color:#8AA0C0;">L'invitation (.ics) est en pièce jointe — ajoutez-la à votre agenda.</p>`,
   ),
   icsContent: icsFor(ctx, "REQUEST"),
   icsMethod: "REQUEST",
@@ -168,7 +168,7 @@ export const confirmedHostEmail = (ctx: BookingEmailContext): SchedulingEmail =>
   subject: `Nouveau RDV : ${ctx.invitee.name} — ${ctx.eventTitle}`,
   html: layout(
     "Nouvelle réservation 📅",
-    `<p style="font-size:14px;color:#14120E;"><strong>${esc(ctx.invitee.name)}</strong>
+    `<p style="font-size:14px;color:#122844;"><strong>${esc(ctx.invitee.name)}</strong>
      (${esc(ctx.invitee.email)}) a réservé un créneau.</p>` +
       detailsHtml(ctx, ctx.hostTimezone) +
       answersHtml(ctx) +
@@ -185,7 +185,7 @@ export const pendingInviteeEmail = (ctx: BookingEmailContext): SchedulingEmail =
   subject: `Demande envoyée : ${ctx.eventTitle} avec ${ctx.host.name}`,
   html: layout(
     "Demande de rendez-vous envoyée ⏳",
-    `<p style="font-size:14px;color:#14120E;">Bonjour ${esc(ctx.invitee.name)},<br>
+    `<p style="font-size:14px;color:#122844;">Bonjour ${esc(ctx.invitee.name)},<br>
      votre demande a bien été transmise à <strong>${esc(ctx.host.name)}</strong>.
      Vous recevrez un email dès qu'elle sera confirmée.</p>` +
       detailsHtml(ctx, ctx.invitee.timezone) +
@@ -200,7 +200,7 @@ export const pendingHostEmail = (ctx: BookingEmailContext): SchedulingEmail => (
   subject: `À valider : ${ctx.invitee.name} — ${ctx.eventTitle}`,
   html: layout(
     "Demande de rendez-vous à valider ⏳",
-    `<p style="font-size:14px;color:#14120E;"><strong>${esc(ctx.invitee.name)}</strong>
+    `<p style="font-size:14px;color:#122844;"><strong>${esc(ctx.invitee.name)}</strong>
      (${esc(ctx.invitee.email)}) demande un créneau. Confirmez ou refusez depuis le CRM.</p>` +
       detailsHtml(ctx, ctx.hostTimezone) +
       answersHtml(ctx) +
@@ -215,9 +215,9 @@ export const declinedInviteeEmail = (ctx: BookingEmailContext, reason?: string |
   subject: `Demande refusée : ${ctx.eventTitle}`,
   html: layout(
     "Demande de rendez-vous refusée",
-    `<p style="font-size:14px;color:#14120E;">Bonjour ${esc(ctx.invitee.name)},<br>
+    `<p style="font-size:14px;color:#122844;">Bonjour ${esc(ctx.invitee.name)},<br>
      ${esc(ctx.host.name)} n'a pas pu accepter ce créneau.</p>` +
-      (reason ? `<p style="font-size:14px;color:#14120E;">Motif : ${esc(reason)}</p>` : "") +
+      (reason ? `<p style="font-size:14px;color:#122844;">Motif : ${esc(reason)}</p>` : "") +
       detailsHtml(ctx, ctx.invitee.timezone),
   ),
 });
@@ -241,8 +241,8 @@ export const cancelledEmail = (
     )}`,
     html: layout(
       "Rendez-vous annulé ❌",
-      `<p style="font-size:14px;color:#14120E;">Ce rendez-vous a été annulé par ${who}.</p>` +
-        (reason ? `<p style="font-size:14px;color:#14120E;">Motif : ${esc(reason)}</p>` : "") +
+      `<p style="font-size:14px;color:#122844;">Ce rendez-vous a été annulé par ${who}.</p>` +
+        (reason ? `<p style="font-size:14px;color:#122844;">Motif : ${esc(reason)}</p>` : "") +
         detailsHtml(ctx, toInvitee ? ctx.invitee.timezone : ctx.hostTimezone) +
         (toInvitee ? "" : `<p style="margin:20px 0 4px 0;">${button(ctx.dashboardUrl, "Voir dans le CRM", false)}</p>`),
     ),
@@ -266,7 +266,7 @@ export const rescheduledEmail = (
     subject: `Reprogrammé : ${ctx.eventTitle} — ${formatSlotRangeFr(ctx.startUtc, ctx.endUtc, tz)}`,
     html: layout(
       "Rendez-vous reprogrammé 🔁",
-      `<p style="font-size:14px;color:#14120E;">Ancien créneau :
+      `<p style="font-size:14px;color:#122844;">Ancien créneau :
         <s>${esc(formatSlotRangeFr(oldStartUtc, oldEndUtc, tz))}</s></p>` +
         detailsHtml(ctx, tz) +
         (ctx.meetingUrl && toInvitee
@@ -296,7 +296,7 @@ export const reminderEmail = (
     subject: `Rappel : ${ctx.eventTitle} — ${formatSlotRangeFr(ctx.startUtc, ctx.endUtc, tz)}`,
     html: layout(
       "Rappel de rendez-vous ⏰",
-      `<p style="font-size:14px;color:#14120E;">${
+      `<p style="font-size:14px;color:#122844;">${
         toInvitee
           ? `Votre rendez-vous avec <strong>${esc(ctx.host.name)}</strong> approche.`
           : `Rendez-vous à venir avec <strong>${esc(ctx.invitee.name)}</strong>.`

@@ -148,7 +148,7 @@ export const rvInit = (name: string): string => {
 };
 
 /** Couleur d'avatar stable, dérivée du nom (même palette que la maquette). */
-const AV_COLORS = ["#E2552B", "#3B7DD8", "#7A5AE0", "#2E9E6B", "#D8912E", "#C64B8C"];
+const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AE0", "#2E9E6B", "#D8912E", "#C64B8C"];
 export const rvColor = (name: string): string => {
   let h = 0;
   for (let i = 0; i < (name || "").length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;

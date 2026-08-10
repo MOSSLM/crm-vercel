@@ -27,7 +27,7 @@ export function AgentRail() {
   const { user, logout } = useAuth();
 
   return (
-    <aside className="hidden md:flex w-14 shrink-0 flex-col items-center gap-1 border-r border-white/5 bg-[#14120E] py-2.5">
+    <aside className="hidden md:flex w-14 shrink-0 flex-col items-center gap-1 border-r border-white/5 bg-[#122844] py-2.5">
       {/* Brand → agent dashboard */}
       <Tooltip>
         <TooltipTrigger asChild>

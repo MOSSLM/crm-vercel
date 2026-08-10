@@ -38,7 +38,7 @@ const KEYS: Array<[string, string]> = [
   ["#", ""],
 ];
 
-const AV_COLORS = ["#E2552B", "#2A6FDB", "#1F8A5B", "#7A5AE0", "#C8881F", "#B5322F"];
+const AV_COLORS = ["#2F7AE0", "#0E93A6", "#1F8A5B", "#7A5AE0", "#C8881F", "#B5322F"];
 function avatarFor(name: string): { initials: string; color: string } {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   const initials =

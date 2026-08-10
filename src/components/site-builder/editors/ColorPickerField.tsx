@@ -61,10 +61,10 @@ function ColorChip({ value, size = 22 }: { value: string; size?: number }) {
         flexShrink: 0,
         flexGrow: 0,
         border: "1.5px solid var(--surface)",
-        boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(20,18,14,.06)",
+        boxShadow: "0 0 0 1px var(--border-2), 0 1px 2px rgba(18,40,68,.06)",
         backgroundImage:
           `linear-gradient(${value}, ${value}), ` +
-          "conic-gradient(rgba(20,18,14,.14) 25%, transparent 0 50%, rgba(20,18,14,.14) 0 75%, transparent 0)",
+          "conic-gradient(rgba(18,40,68,.14) 25%, transparent 0 50%, rgba(18,40,68,.14) 0 75%, transparent 0)",
         backgroundSize: "100% 100%, 8px 8px",
       }}
     />

@@ -71,6 +71,6 @@ export async function GET(
     event_slug: eventSlug,
     custom_questions: customQuestions,
     host_display_name: (pageRow?.display_name as string) ?? null,
-    brand_color: (pageRow?.brand_color as string) ?? "#2A6FDB",
+    brand_color: (pageRow?.brand_color as string) ?? "#0E93A6",
   });
 }

@@ -263,7 +263,7 @@ export default function BookingLinkPanel({
         `<p style="margin:0 0 16px 0;">Comme convenu, voici le lien pour réserver directement un créneau` +
         (type ? ` pour « ${type.title} »` : "") +
         ` :</p>` +
-        `<p style="margin:0 0 16px 0;"><a href="${link}" style="display:inline-block;padding:10px 18px;background:#E2552B;color:#ffffff;border-radius:8px;text-decoration:none;">Choisir mon créneau</a></p>` +
+        `<p style="margin:0 0 16px 0;"><a href="${link}" style="display:inline-block;padding:10px 18px;background:#2F7AE0;color:#ffffff;border-radius:8px;text-decoration:none;">Choisir mon créneau</a></p>` +
         `<p style="margin:0;">À très vite,<br>${hostName}</p></div>`;
 
       const res = await authedFetch("/api/email/send", {

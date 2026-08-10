@@ -70,12 +70,14 @@ export function parseColumnId(id: string): { group: ColumnGroup; ref: string } |
 /* ── Canaux ──────────────────────────────────────────────────────────────── */
 
 const CHANNEL: Record<string, { label: string; color: string; mode: ColumnMode; cta: string }> = {
-  email: { label: 'Email', color: '#2A6FDB', mode: 'auto', cta: 'Voir la file d’envoi' },
+  // L'email prend la sarcelle et non l'azur : le canal LinkedIn porte déjà sa
+  // couleur de marque (#0A66C2), qui est à la teinte de l'azur Sama.
+  email: { label: 'Email', color: '#0E93A6', mode: 'auto', cta: 'Voir la file d’envoi' },
   whatsapp: { label: 'WhatsApp', color: '#1F8A5B', mode: 'manual', cta: 'Ouvrir WhatsApp' },
   linkedin: { label: 'LinkedIn', color: '#0A66C2', mode: 'manual', cta: 'Ouvrir LinkedIn' },
   call: { label: 'Appel', color: '#C8881F', mode: 'manual', cta: 'Ouvrir le cockpit d’appel' },
-  task: { label: 'Tâche', color: '#8A877F', mode: 'manual', cta: 'Traiter la tâche' },
-  wait: { label: 'Attente', color: '#8A877F', mode: 'auto', cta: 'Voir la file d’envoi' },
+  task: { label: 'Tâche', color: '#8AA0C0', mode: 'manual', cta: 'Traiter la tâche' },
+  wait: { label: 'Attente', color: '#8AA0C0', mode: 'auto', cta: 'Voir la file d’envoi' },
 }
 
 export const channelOf = (kind: string | null | undefined) => CHANNEL[kind ?? ''] ?? CHANNEL.task
@@ -87,8 +89,11 @@ export const SEQUENCE_TINT = '#7A5AE0'
  * Couleur d'une étape de pipeline. `etapes_pipeline` n'a pas de colonne
  * couleur : on en dérive une stable à partir du rang, dans la palette du
  * Marketing Pipeline, pour que deux étapes voisines restent distinguables.
+ *
+ * L'étape de reprise (rang 0) prend l'azur Sama ; le bleu acier, lui, recule
+ * au rang 5 — voisin du rang 0, il n'aurait été qu'un second bleu.
  */
-const STAGE_PALETTE = ['#E2552B', '#2B7FB8', '#A24E86', '#1F8A5B', '#C8881F', '#2A6FDB', '#B5322F', '#5C5953']
+const STAGE_PALETTE = ['#2F7AE0', '#0E93A6', '#A24E86', '#1F8A5B', '#C8881F', '#2B7FB8', '#B5322F', '#4A648C']
 export const stageColor = (rank: number) => STAGE_PALETTE[rank % STAGE_PALETTE.length]
 
 /** CTA d'une étape de pipeline, deviné d'après son nom. */
@@ -144,7 +149,7 @@ export function buildColumns(opts: {
       label: 'À démarcher',
       hint: null,
       mode: 'deal',
-      color: '#5C5953',
+      color: '#4A648C',
       kind: null,
       cta: 'Mettre en séquence',
       index: 0,

@@ -317,7 +317,7 @@ export function RegulatorPage() {
                   <div className="rg-now" style={{ ['--x' as string]: nowPct / 100 }} />
                   <StripRow
                     label="File globale"
-                    color="#14120E"
+                    color="#122844"
                     windows={windowsUnion(view.sequences.filter((x) => x.status === 'on').map((x) => x.windows))}
                     points={planned.map((p) => ({ id: p.id, at: p.sendAt!, title: `${hm(p.sendAt, tz)} · ${p.contactName}` }))}
                     done={view.sent.map((e) => ({ id: e.id, at: e.at, title: `${hm(e.at, tz)} · ${e.toName ?? ''}` }))}

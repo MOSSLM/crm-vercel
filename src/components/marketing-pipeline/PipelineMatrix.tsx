@@ -72,9 +72,9 @@ interface StageDef {
 
 /** Les 5 étapes du board admin. */
 export const STAGES: StageDef[] = [
-  { id: "enrich", name: "Enrichissement", short: "Enrichi", color: "#2A6FDB", icon: Sparkles },
+  { id: "enrich", name: "Enrichissement", short: "Enrichi", color: "#0E93A6", icon: Sparkles },
   { id: "validation", name: "Validation données", short: "Validées", color: "#7A5AE0", icon: ClipboardCheck },
-  { id: "site", name: "Site démo", short: "Site", color: "#E2552B", icon: Globe },
+  { id: "site", name: "Site démo", short: "Site", color: "#2F7AE0", icon: Globe },
   { id: "audit", name: "Audit", short: "Audit", color: "#C8881F", icon: Search },
   { id: "attribution", name: "Attribution", short: "Attribué", color: "#1F8A5B", icon: UserPlus },
 ];
@@ -121,7 +121,13 @@ function rgba(hex: string, a: number): string {
   return `rgba(${r},${g},${b},${a})`;
 }
 
-const AGENT_COLORS = ["#E2552B", "#2A6FDB", "#7A5AE0", "#1F8A5B", "#C8881F", "#B5322F", "#2B7FB8"];
+/**
+ * Sept teintes d'identité, tirées au hasard du nom : n'importe quelles deux
+ * peuvent se retrouver côte à côte, donc aucune ne doit ressembler à une autre.
+ * L'azur de marque n'en fait pas partie — le bleu acier occupe déjà sa teinte,
+ * et un avatar ne se déguise pas en bouton.
+ */
+const AGENT_COLORS = ["#A24E86", "#0E93A6", "#7A5AE0", "#1F8A5B", "#C8881F", "#B5322F", "#2B7FB8"];
 function colorForId(id: string): string {
   let h = 0;
   for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;

@@ -15,7 +15,7 @@
   margin-top: 28px;
   font-size: 12px; letter-spacing: 0.04em;
   color: var(--ink-soft);
-  border: 1px solid rgba(10, 26, 64, 0.12);
+  border: 1px solid rgba(18, 40, 68, 0.12);
   border-radius: 2px; padding: 12px 18px;
   background: var(--cream);
 }
@@ -35,7 +35,7 @@
 .sama-landing .validity-num {
   font-family: 'Cormorant Garamond', serif;
   font-size: 22px; font-weight: 300; line-height: 1.2;
-  color: rgba(90, 169, 230, 0.7);
+  color: rgba(91, 155, 232, 0.7);
   flex-shrink: 0; width: 20px;
 }
 
@@ -44,12 +44,12 @@
   background: var(--navy);
   border-radius: 4px;
   padding: 48px 44px;
-  box-shadow: 0 28px 70px rgba(10, 26, 64, 0.22);
+  box-shadow: 0 28px 70px rgba(18, 40, 68, 0.22);
 }
 .sama-landing .pricing-card-glow {
   position: absolute; top: -80px; right: -80px;
   width: 320px; height: 320px;
-  background: radial-gradient(circle, rgba(90, 169, 230, 0.28) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(91, 155, 232, 0.28) 0%, transparent 70%);
   pointer-events: none;
 }
 .sama-landing .pricing-card-label {
@@ -73,16 +73,16 @@
 }
 .sama-landing .pricing-price-unit {
   font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase;
-  color: rgba(214, 228, 240, 0.55); margin-top: 10px;
+  color: rgba(231, 240, 251, 0.55); margin-top: 10px;
   font-weight: 500; position: relative;
 }
 .sama-landing .pricing-divider {
-  height: 1px; background: rgba(214, 228, 240, 0.12);
+  height: 1px; background: rgba(231, 240, 251, 0.12);
   margin: 30px 0; position: relative;
 }
 .sama-landing .pricing-includes-title {
   font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-  color: rgba(214, 228, 240, 0.45); font-weight: 500;
+  color: rgba(231, 240, 251, 0.45); font-weight: 500;
   margin-bottom: 16px; position: relative;
 }
 .sama-landing .pricing-includes {
@@ -92,7 +92,7 @@
 .sama-landing .pricing-include {
   display: flex; gap: 12px; align-items: flex-start;
   font-size: 13.5px; line-height: 1.65;
-  color: rgba(214, 228, 240, 0.85); font-weight: 300;
+  color: rgba(231, 240, 251, 0.85); font-weight: 300;
 }
 .sama-landing .pricing-include svg {
   width: 15px; height: 15px; flex-shrink: 0;
@@ -105,11 +105,11 @@
 .sama-landing .pricing-condition {
   display: flex; gap: 12px; align-items: flex-start;
   font-size: 12.5px; line-height: 1.65;
-  color: rgba(214, 228, 240, 0.55); font-weight: 300;
+  color: rgba(231, 240, 251, 0.55); font-weight: 300;
 }
 .sama-landing .pricing-condition svg {
   width: 13px; height: 13px; flex-shrink: 0;
-  color: rgba(214, 228, 240, 0.4); margin-top: 3px;
+  color: rgba(231, 240, 251, 0.4); margin-top: 3px;
 }
 .sama-landing .pricing-card .btn-primary {
   margin-top: 32px; position: relative;

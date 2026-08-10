@@ -33,7 +33,7 @@ function dayLabel(iso: string): string {
   return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long" });
 }
 
-const AV_COLORS = ["#E2552B", "#3B7DD8", "#7A5AF0", "#2E9E6B", "#D8912E", "#C64B8C"];
+const AV_COLORS = ["#2F7AE0", "#0E93A6", "#7A5AF0", "#2E9E6B", "#D8912E", "#C64B8C"];
 function numColor(n: string): string {
   let h = 0;
   for (let i = 0; i < n.length; i++) h = (h * 31 + n.charCodeAt(i)) >>> 0;

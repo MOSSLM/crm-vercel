@@ -3,32 +3,32 @@
    All rules live under .pboard so the CRM theme is untouched. */
 
 .pboard {
-  --bg: #FBFAF7;
-  --bg-2: #F4F2EC;
-  --bg-3: #ECE9E1;
+  --bg: #F7FAFD;
+  --bg-2: #EFF5FC;
+  --bg-3: #E7F0FB;
   --surface: #FFFFFF;
-  --surface-2: #F8F6F1;
-  --hover: rgba(20, 18, 14, 0.04);
-  --hover-2: rgba(20, 18, 14, 0.07);
-  --border: rgba(20, 18, 14, 0.08);
-  --border-2: rgba(20, 18, 14, 0.14);
-  --border-strong: rgba(20, 18, 14, 0.22);
-  --text: #14120E;
-  --text-2: #5C5953;
-  --text-3: #8A877F;
-  --text-4: #B5B2AA;
-  --accent: #E2552B;
-  --accent-2: #C73E16;
-  --accent-tint: rgba(226, 85, 43, 0.10);
-  --accent-tint-2: rgba(226, 85, 43, 0.18);
+  --surface-2: #F3F8FD;
+  --hover: rgba(18, 40, 68, 0.04);
+  --hover-2: rgba(18, 40, 68, 0.07);
+  --border: rgba(18, 40, 68, 0.08);
+  --border-2: rgba(18, 40, 68, 0.14);
+  --border-strong: rgba(18, 40, 68, 0.22);
+  --text: #122844;
+  --text-2: #4A648C;
+  --text-3: #8AA0C0;
+  --text-4: #B3C4DE;
+  --accent: #2F7AE0;
+  --accent-2: #1F5BC0;
+  --accent-tint: rgba(47, 122, 224, 0.10);
+  --accent-tint-2: rgba(47, 122, 224, 0.18);
   --ok: #1F8A5B;
   --danger: #B5322F;
   --radius: 8px;
   --radius-sm: 6px;
   --radius-lg: 12px;
-  --shadow-1: 0 1px 0 rgba(20,18,14,0.04), 0 1px 2px rgba(20,18,14,0.05);
-  --shadow-2: 0 1px 0 rgba(20,18,14,0.04), 0 4px 12px rgba(20,18,14,0.07), 0 12px 32px rgba(20,18,14,0.06);
-  --shadow-pop: 0 1px 0 rgba(20,18,14,0.04), 0 8px 24px rgba(20,18,14,0.12), 0 24px 64px rgba(20,18,14,0.12);
+  --shadow-1: 0 1px 0 rgba(18, 40, 68,0.04), 0 1px 2px rgba(18, 40, 68,0.05);
+  --shadow-2: 0 1px 0 rgba(18, 40, 68,0.04), 0 4px 12px rgba(18, 40, 68,0.07), 0 12px 32px rgba(18, 40, 68,0.06);
+  --shadow-pop: 0 1px 0 rgba(18, 40, 68,0.04), 0 8px 24px rgba(18, 40, 68,0.12), 0 24px 64px rgba(18, 40, 68,0.12);
   --font-ui: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --font-serif: "Instrument Serif", "Times New Roman", serif;
@@ -540,7 +540,7 @@
 
 .pboard .note-el.sticky {
   border: 0;
-  box-shadow: 0 2px 6px rgba(20,18,14,.12), 0 10px 24px rgba(20,18,14,.08);
+  box-shadow: 0 2px 6px rgba(18, 40, 68,.12), 0 10px 24px rgba(18, 40, 68,.08);
   transform: rotate(-1deg);
 }
 
@@ -851,7 +851,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: rgba(20,18,14,.14);
+  background: rgba(18, 40, 68,.14);
 }
 
 .pboard .link-thumb-globe {
@@ -996,7 +996,7 @@
 
 .pboard .stripe-ph {
   background-color: var(--bg-2);
-  background-image: repeating-linear-gradient(45deg, transparent, transparent 7px, rgba(20,18,14,.045) 7px, rgba(20,18,14,.045) 14px);
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 7px, rgba(18, 40, 68,.045) 7px, rgba(18, 40, 68,.045) 14px);
   border: 1px solid var(--border);
   display: flex;
   align-items: flex-end;
@@ -1407,7 +1407,7 @@
   align-items: center;
   justify-content: center;
   color: #fff;
-  box-shadow: inset 0 0 0 1px rgba(20,18,14,.08);
+  box-shadow: inset 0 0 0 1px rgba(18, 40, 68,.08);
 }
 
 .pboard .swatch.on {

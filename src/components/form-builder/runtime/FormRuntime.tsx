@@ -285,7 +285,7 @@ function AnswerInput({ q, value, onChange, onSubmit }: AnswerInputProps) {
         <div className="pv-file">
           <FormIcon name="upload" className="ico" />
           <br />
-          <strong style={{ color: '#14120E' }}>Glissez un fichier</strong> ou cliquez pour parcourir
+          <strong style={{ color: '#122844' }}>Glissez un fichier</strong> ou cliquez pour parcourir
           <br />
           <span style={{ fontSize: 12, opacity: 0.6 }}>Max 10 Mo · PDF, JPG, PNG</span>
         </div>
@@ -526,7 +526,7 @@ export function FormRuntime({
         {form.brand?.name && (
           <div className="pv-brand">
             <i>T</i> propulsé par{' '}
-            <b style={{ color: 'rgba(20,18,14,.6)' }}>{form.brand.name}</b>
+            <b style={{ color: 'rgba(18, 40, 68,.6)' }}>{form.brand.name}</b>
           </div>
         )}
       </div>
@@ -605,7 +605,7 @@ export function FormRuntime({
       {form.brand?.name && (
         <div className="pv-brand">
           <i>T</i> propulsé par{' '}
-          <b style={{ color: 'rgba(20,18,14,.6)' }}>{form.brand.name}</b>
+          <b style={{ color: 'rgba(18, 40, 68,.6)' }}>{form.brand.name}</b>
         </div>
       )}
     </div>
